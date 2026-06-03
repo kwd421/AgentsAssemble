@@ -135,6 +135,7 @@ export default function FriendsView({
   const [status, setStatus] = useState("");
   const [busyId, setBusyId] = useState("");
   const [loading, setLoading] = useState(true);
+  const [dmFocusSignal, setDmFocusSignal] = useState(0);
 
   function refresh() {
     setLoading(true);
@@ -356,12 +357,13 @@ export default function FriendsView({
           <FriendProfileCard
             friend={selectedFriend}
             activeRoomName={activeRoomName}
+            onStartDm={() => setDmFocusSignal((value) => value + 1)}
             inviteLabel={
               selectedFriend && busyId === `invite:${selectedFriend.friend_id}` ? "초대 중" : "방에 초대"
             }
             onInvite={onInviteFriendToRoom ? handleInvite : undefined}
           />
-          <FriendDmPanel friend={selectedFriend} />
+          <FriendDmPanel friend={selectedFriend} focusSignal={dmFocusSignal} />
         </aside>
       </div>
     </div>

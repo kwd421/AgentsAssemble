@@ -13,13 +13,20 @@ function timeLabel(value: string) {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-export default function FriendDmPanel({ friend }: { friend: RoomFriend | null }) {
+export default function FriendDmPanel({
+  friend,
+  focusSignal = 0,
+}: {
+  friend: RoomFriend | null;
+  focusSignal?: number;
+}) {
   const [events, setEvents] = useState<RoomFriendDmEvent[]>([]);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [posting, setPosting] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const friendId = friend?.friend_id || "";
   const placeholder = useMemo(
@@ -57,6 +64,11 @@ export default function FriendDmPanel({ friend }: { friend: RoomFriend | null })
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [events.length, friendId]);
+
+  useEffect(() => {
+    if (!friendId || !focusSignal) return;
+    inputRef.current?.focus();
+  }, [focusSignal, friendId]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -112,6 +124,7 @@ export default function FriendDmPanel({ friend }: { friend: RoomFriend | null })
       {status && <p className="dc-friend-dm-status preserve-words">{status}</p>}
       <form className="dc-friend-dm-composer" onSubmit={submit}>
         <input
+          ref={inputRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder={placeholder}

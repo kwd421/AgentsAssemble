@@ -18,11 +18,13 @@ function friendInitial(friend: RoomFriend) {
 export default function FriendProfileCard({
   friend,
   activeRoomName,
+  onStartDm,
   inviteLabel,
   onInvite,
 }: {
   friend: RoomFriend | null;
   activeRoomName?: string;
+  onStartDm?: (friend: RoomFriend) => void;
   inviteLabel?: string;
   onInvite?: (friend: RoomFriend) => void;
 }) {
@@ -59,9 +61,13 @@ export default function FriendProfileCard({
         </p>
         <p className="dc-friend-profile-type preserve-words">{meta.detail}</p>
         <div className="dc-friend-profile-actions">
-          <button type="button" className="dc-friend-profile-secondary" disabled>
+          <button
+            type="button"
+            className="dc-friend-profile-secondary"
+            onClick={() => onStartDm?.(friend)}
+          >
             <MessageCircle size={15} />
-            DM 준비
+            로컬 DM
           </button>
           {onInvite && (
             <button type="button" onClick={() => onInvite(friend)}>
