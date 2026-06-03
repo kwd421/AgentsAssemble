@@ -1039,15 +1039,14 @@ textarea {
 
 .dc-profile-card {
   position: absolute;
-  left: 8px;
+  left: 0;
   bottom: calc(100% + 10px);
   z-index: 70;
-  width: min(340px, calc(100vw - 32px));
-  max-height: calc(100vh - 92px);
-  max-height: min(640px, calc(100vh - 92px), calc(100vh - 192px));
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(672px, calc(100vh - 88px));
   overflow-x: hidden;
   overflow-y: auto;
-  border-radius: 8px;
+  border-radius: 10px;
   background: #232428;
   box-shadow:
     0 18px 50px rgba(0, 0, 0, 0.48),
@@ -1055,11 +1054,11 @@ textarea {
 }
 
 .dc-profile-card[data-settings="true"] {
-  width: min(560px, calc(100vw - 32px));
+  width: min(640px, calc(100vw - 32px));
 }
 
 .dc-profile-banner {
-  height: 108px;
+  height: 132px;
   background: var(--profile-accent, #5865f2);
 }
 
@@ -1101,11 +1100,11 @@ textarea {
 
 .dc-profile-avatar-wrap {
   position: absolute;
-  top: 60px;
-  left: 16px;
+  top: 78px;
+  left: 20px;
   display: grid;
-  width: 96px;
-  height: 96px;
+  width: 108px;
+  height: 108px;
   place-items: center;
   border-radius: 50%;
   background: #232428;
@@ -1113,23 +1112,23 @@ textarea {
 
 .dc-profile-avatar {
   display: grid;
-  width: 82px;
-  height: 82px;
+  width: 94px;
+  height: 94px;
   place-items: center;
   border-radius: 50%;
   background: var(--profile-accent, #f23f42);
   color: #fff;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 950;
 }
 
 .dc-profile-status {
   position: absolute;
-  right: 9px;
-  bottom: 9px;
-  width: 22px;
-  height: 22px;
-  border: 5px solid #232428;
+  right: 10px;
+  bottom: 10px;
+  width: 24px;
+  height: 24px;
+  border: 6px solid #232428;
   border-radius: 50%;
 }
 
@@ -1150,7 +1149,7 @@ textarea {
 }
 
 .dc-profile-body {
-  padding: 58px 16px 16px;
+  padding: 72px 24px 22px;
 }
 
 .dc-profile-card-title {
@@ -1191,14 +1190,14 @@ textarea {
 
 .dc-profile-body h2 {
   color: #fff;
-  font-size: 22px;
+  font-size: 28px;
   font-weight: 950;
   letter-spacing: 0;
 }
 
 .dc-profile-body p {
   color: var(--color-text-secondary);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
 }
 

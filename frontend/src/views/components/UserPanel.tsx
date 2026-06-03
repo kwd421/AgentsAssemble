@@ -164,12 +164,8 @@ export default function UserPanel({
           <div className="dc-profile-body">
             <div className="dc-profile-card-title">
               <div>
-                <span>내 프로필</span>
                 <h2>{profile.displayName}</h2>
               </div>
-              <button type="button" onClick={() => openSettings("profile")}>
-                전체 프로필 보기
-              </button>
             </div>
             <p>{profile.handle}</p>
             <div className="dc-profile-badges">
