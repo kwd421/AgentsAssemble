@@ -492,7 +492,7 @@ export default function App() {
     ? channelForActiveRoom(menuChannel, activeRoom, scopedMafiaGame)
     : undefined;
   const visibleChannels = guestLocked
-    ? CHANNELS.filter((item) => item.id !== "records")
+    ? CHANNELS.filter((item) => item.id === "lobby")
     : CHANNELS;
 
   function selectRoom(roomId: string) {
@@ -664,7 +664,7 @@ export default function App() {
   }
 
   function goToChannel(next: Channel) {
-    setChannel(next);
+    setChannel(guestLocked && next !== "lobby" ? "lobby" : next);
     setAdminOpen(false);
     setChannelMenu(null);
   }
