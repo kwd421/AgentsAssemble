@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Code2, Crown, MoreHorizontal, Search, ShieldCheck, User, UserCheck } from "lucide-react";
+import { Bot, Code2, Crown, Search, ShieldCheck, User, UserCheck, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { LiveAgent, RoomMember } from "../../api";
 import {
@@ -92,17 +92,61 @@ function memberRole(member: RoomMember): RoleId {
     : "agent";
 }
 
+function inlineQuotaChips(agent: LiveAgent) {
+  const quotaWindows = agentQuotaWindowSignals(agent);
+  if (quotaWindows.length > 0) {
+    return quotaWindows.slice(0, 2).map((window) => ({
+      label: window.label,
+      value: window.usageLabel || `${window.percent}%`,
+      tone: signalToneClass(window.tone),
+      title: window.title,
+    }));
+  }
+  return [
+    {
+      label: "5h",
+      value: String(agent.quota_5h || "").trim() || "—",
+      tone: signalToneClass("muted"),
+      title: "5-hour usage",
+    },
+    {
+      label: "1w",
+      value: String(agent.quota_1w || "").trim() || "—",
+      tone: signalToneClass("muted"),
+      title: "1-week usage",
+    },
+  ];
+}
+
 function MemberRow({
   entry,
+  onOpenDetails,
   onRoleChange,
 }: {
   entry: MemberEntry;
+  onOpenDetails: (entry: MemberEntry) => void;
   onRoleChange: (memberId: string, role: RoleId) => void;
 }) {
   const Icon = entry.icon;
-  const quotaWindows = entry.agent ? agentQuotaWindowSignals(entry.agent) : [];
+  const quotaChips = entry.agent ? inlineQuotaChips(entry.agent) : [];
   return (
-    <div className="dc-member group" data-role={entry.role} data-active={entry.active}>
+    <div
+      className="dc-member group"
+      data-role={entry.role}
+      data-active={entry.active}
+      role={entry.agent ? "button" : undefined}
+      tabIndex={entry.agent ? 0 : undefined}
+      onClick={() => {
+        if (entry.agent) onOpenDetails(entry);
+      }}
+      onKeyDown={(event) => {
+        if (!entry.agent) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpenDetails(entry);
+        }
+      }}
+    >
       <span className="relative shrink-0">
         <span className="dc-member-avatar">
           <Icon size={15} />
@@ -115,7 +159,7 @@ function MemberRow({
         />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 pr-1">
+        <div className="dc-member-name-row">
           <p className="dc-member-name truncate preserve-words">
             {entry.displayName}
           </p>
@@ -124,15 +168,28 @@ function MemberRow({
               YOU
             </span>
           )}
+          {quotaChips.length > 0 && (
+            <span className="dc-member-inline-quota" aria-label={`${entry.displayName} 사용량`}>
+              {quotaChips.map((chip) => (
+                <span key={`${chip.label}-${chip.value}`} data-tone={chip.tone} title={chip.title}>
+                  <b>{chip.label}</b> {chip.value}
+                </span>
+              ))}
+            </span>
+          )}
         </div>
         <div className="dc-member-detail-row">
           <p className="min-w-0 flex-1 truncate preserve-words" title={entry.fullDetail || entry.detail}>
             {entry.detail}
           </p>
+        </div>
+        <div className="dc-member-role-row">
           <select
             className="dc-role-select"
             value={entry.role}
             aria-label={`${entry.displayName} 역할`}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
             onChange={(event) => onRoleChange(entry.id, event.target.value as RoleId)}
           >
             {ROLE_OPTIONS.map((option) => (
@@ -142,56 +199,96 @@ function MemberRow({
             ))}
           </select>
         </div>
-        {entry.agent && (
-          <details className="dc-member-details">
-            <summary
-              className="dc-member-more"
-              aria-label={`${entry.displayName} 세부 정보`}
-            >
-              <MoreHorizontal size={14} />
-            </summary>
-            <div className="dc-member-popover">
-              {quotaWindows.length > 0 && (
-                <div className="dc-member-quota-row" aria-label={`${entry.displayName} 할당량`}>
-                  {quotaWindows.map((window) => (
-                    <span
-                      key={`${window.label}-${window.percent}`}
-                      className="dc-member-quota-window"
-                      data-tone={signalToneClass(window.tone)}
-                      title={window.title}
-                      aria-label={window.title}
-                    >
-                      <span className="dc-member-quota-label preserve-words">{window.label}</span>
-                      <span className="dc-member-quota-bar" aria-hidden>
-                        <span style={{ width: `${window.percent}%` }} />
-                      </span>
-                      <span className="dc-member-quota-percent">{window.percent}%</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="dc-member-signal-row" aria-label={`${entry.displayName} 세션 상태`}>
-                {agentMemberSignals(entry.agent).map((signal) => (
-                  <span
-                    key={signal.label}
-                    className="dc-member-signal preserve-words"
-                    data-tone={signalToneClass(signal.tone)}
-                    title={signal.title || signal.label}
-                  >
-                    {signal.label}
-                  </span>
-                ))}
-              </div>
-              <ProviderTruthChips badges={agentTruthBadges(entry.agent)} compact limit={4} />
-              {lastObservedSummary(entry.agent) && (
-                <p className="mt-1 text-[10px] text-text-muted preserve-words">
-                  {lastObservedSummary(entry.agent)}
-                </p>
-              )}
-            </div>
-          </details>
-        )}
       </div>
+    </div>
+  );
+}
+
+function MemberDetailModal({
+  entry,
+  onClose,
+}: {
+  entry: MemberEntry;
+  onClose: () => void;
+}) {
+  if (!entry.agent) return null;
+  const DetailIcon = entry.icon;
+  const quotaWindows = agentQuotaWindowSignals(entry.agent);
+  const quotaFallback = inlineQuotaChips(entry.agent);
+  const signals = agentMemberSignals(entry.agent).filter((signal) => !/^5h |^1w /.test(signal.label));
+  const lastObserved = lastObservedSummary(entry.agent);
+  return (
+    <div className="dc-modal-backdrop" role="presentation" onClick={onClose}>
+      <section
+        className="dc-member-detail-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="member-detail-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="dc-member-detail-modal-head">
+          <span className="dc-member-detail-modal-avatar" data-role={entry.role}>
+            <DetailIcon size={22} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 id="member-detail-title" className="truncate preserve-words">
+              {entry.displayName}
+            </h2>
+            <p className="truncate preserve-words">{entry.fullDetail || entry.detail}</p>
+          </div>
+          <button type="button" className="dc-modal-close" onClick={onClose} aria-label="멤버 정보 닫기">
+            <X size={18} />
+          </button>
+        </header>
+        <section className="dc-member-detail-section" aria-label={`${entry.displayName} 사용량`}>
+          <h3>사용량</h3>
+          {quotaWindows.length > 0 ? (
+            <div className="dc-member-quota-row">
+              {quotaWindows.map((window) => (
+                <span
+                  key={`${window.label}-${window.percent}`}
+                  className="dc-member-quota-window"
+                  data-tone={signalToneClass(window.tone)}
+                  title={window.title}
+                  aria-label={window.title}
+                >
+                  <span className="dc-member-quota-label preserve-words">{window.label}</span>
+                  <span className="dc-member-quota-bar" aria-hidden>
+                    <span style={{ width: `${window.percent}%` }} />
+                  </span>
+                  <span className="dc-member-quota-percent">{window.percent}%</span>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="dc-member-quota-fallback">
+              {quotaFallback.map((chip) => (
+                <span key={`${chip.label}-${chip.value}`} data-tone={chip.tone} title={chip.title}>
+                  <b>{chip.label}</b>
+                  {chip.value}
+                </span>
+              ))}
+            </div>
+          )}
+        </section>
+        <section className="dc-member-detail-section" aria-label={`${entry.displayName} 세션 상태`}>
+          <h3>연결 상태</h3>
+          <div className="dc-member-signal-row">
+            {signals.map((signal) => (
+              <span
+                key={signal.label}
+                className="dc-member-signal preserve-words"
+                data-tone={signalToneClass(signal.tone)}
+                title={signal.title || signal.label}
+              >
+                {signal.label}
+              </span>
+            ))}
+          </div>
+          <ProviderTruthChips badges={agentTruthBadges(entry.agent)} compact limit={8} />
+          {lastObserved && <p className="dc-member-detail-note preserve-words">{lastObserved}</p>}
+        </section>
+      </section>
     </div>
   );
 }
@@ -213,6 +310,7 @@ export default function MemberList({
 }) {
   const [localRoleOverrides, setLocalRoleOverrides] = useState<Record<string, RoleId>>({});
   const [query, setQuery] = useState("");
+  const [detailEntry, setDetailEntry] = useState<MemberEntry | null>(null);
   const contextBadges = roomContextSummaryBadges(agents);
   const effectiveRoleOverrides = (roleOverrides || localRoleOverrides) as Record<string, RoleId>;
   const entries = useMemo<MemberEntry[]>(() => {
@@ -339,7 +437,12 @@ export default function MemberList({
                 {label} — {roleEntries.length}
               </p>
               {roleEntries.map((entry) => (
-                <MemberRow key={entry.id} entry={entry} onRoleChange={handleRoleChange} />
+                <MemberRow
+                  key={entry.id}
+                  entry={entry}
+                  onOpenDetails={setDetailEntry}
+                  onRoleChange={handleRoleChange}
+                />
               ))}
             </section>
           );
@@ -353,6 +456,7 @@ export default function MemberList({
           </details>
         )}
       </div>
+      {detailEntry && <MemberDetailModal entry={detailEntry} onClose={() => setDetailEntry(null)} />}
     </div>
   );
 }
