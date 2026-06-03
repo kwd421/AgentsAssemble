@@ -391,7 +391,7 @@ export default function App() {
   const guestMeetingId = guestInvite?.meetingId || "";
   const guestReadOnly = guestInvite?.inviteScope === "read_only";
   const flowFetcher = useCallback(() => fetchLiveAgentFlow(guestMeetingId), [guestMeetingId]);
-  const [flowData, flowLoading, flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
+  const [flowData, , flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
   const flow = flowData?.flow ?? { status: "idle" };
   const lifecycleFetcher = useCallback((): Promise<MeetingLifecycleResponse> => {
     if (!flow.meeting_id) return Promise.resolve({ meeting_id: "", lifecycle: null });
@@ -604,11 +604,6 @@ export default function App() {
   const visibleChannels = guestLocked
     ? CHANNELS.filter((item) => item.id !== "records")
     : CHANNELS;
-  const backendStatusText = flowLoading
-    ? "백엔드 확인 중"
-    : flowError
-      ? "백엔드 응답 없음"
-      : "백엔드 응답";
 
   function selectRoom(roomId: string) {
     setActiveRoomId(roomId);
@@ -1182,7 +1177,6 @@ export default function App() {
         <HomeSidebar
           activeFilter={homeFilter}
           onFilterChange={setHomeFilter}
-          backendStatusText={backendStatusText}
           onlineCount={scopedOnlineCount}
           agentCount={scopedAgents.length || 0}
           hasBackendError={Boolean(flowError)}
@@ -1283,7 +1277,6 @@ export default function App() {
 
         <footer className="dc-user-area shrink-0 px-2 py-2">
           <UserPanel
-            backendStatusText={backendStatusText}
             onlineCount={scopedOnlineCount}
             agentCount={scopedAgents.length || 0}
             hasBackendError={Boolean(flowError)}

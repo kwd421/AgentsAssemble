@@ -24,11 +24,26 @@ const DEFAULT_USER_PROFILE: UserProfile = {
   deafened: false,
 };
 
+const PROFILE_STATUS_OPTIONS: Array<{
+  id: UserProfile["status"];
+  label: string;
+  helper: string;
+}> = [
+  { id: "online", label: "온라인으로 표시", helper: "대화 가능" },
+  { id: "idle", label: "자리 비움으로 표시", helper: "잠시 자리 비움" },
+  { id: "dnd", label: "방해 금지로 표시", helper: "알림을 줄임" },
+  { id: "offline", label: "오프라인 표시", helper: "조용히 관찰" },
+];
+
 function profileStatusClass(profile: UserProfile, hasBackendError: boolean) {
   if (hasBackendError || profile.status === "offline") return "offline";
   if (profile.status === "idle") return "idle";
   if (profile.status === "dnd") return "dnd";
   return "online";
+}
+
+function profileStatusLabel(status: UserProfile["status"]) {
+  return PROFILE_STATUS_OPTIONS.find((option) => option.id === status)?.label || "온라인으로 표시";
 }
 
 function profileCssVars(profile: UserProfile): CSSProperties {
@@ -40,12 +55,10 @@ function saveDisplayNameForComposers(profile: UserProfile) {
 }
 
 export default function UserPanel({
-  backendStatusText,
   onlineCount,
   agentCount,
   hasBackendError,
 }: {
-  backendStatusText: string;
   onlineCount: number;
   agentCount: number;
   hasBackendError: boolean;
@@ -139,6 +152,10 @@ export default function UserPanel({
     void persistProfile({ ...profile, [key]: value });
   }
 
+  function setProfileStatus(status: UserProfile["status"]) {
+    void persistProfile({ ...profile, status });
+  }
+
   async function saveDraft() {
     await persistProfile(draft);
     setSettingsOpen(false);
@@ -225,9 +242,27 @@ export default function UserPanel({
             <div className="dc-profile-menu">
               <button type="button" onClick={() => openSettings("account")}>
                 <span className={`dc-profile-menu-dot ${statusClass}`} aria-hidden />
-                내 상태: {profile.status === "offline" ? "오프라인 표시" : backendStatusText}
+                내 상태: {profileStatusLabel(profile.status)}
                 <ChevronDown size={16} />
               </button>
+              <div className="dc-profile-status-options" aria-label="빠른 상태 변경">
+                {PROFILE_STATUS_OPTIONS.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className="dc-profile-status-option"
+                    data-status={option.id}
+                    aria-pressed={profile.status === option.id}
+                    onClick={() => setProfileStatus(option.id)}
+                  >
+                    <span className={`dc-profile-menu-dot ${option.id}`} aria-hidden />
+                    <span>
+                      <strong>{option.label}</strong>
+                      <small>{option.helper}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
                 onClick={() => reportLocalOnlyAction("계정 바꾸기는 로컬 프로필만 지원합니다.")}
@@ -303,7 +338,7 @@ export default function UserPanel({
                 }`}
                 aria-hidden
               />
-              {backendStatusText} · {onlineCount}/{agentCount}
+              {profileStatusLabel(profile.status)} · {onlineCount}/{agentCount}
             </span>
           </span>
         </button>

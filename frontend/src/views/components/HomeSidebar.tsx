@@ -16,7 +16,6 @@ export type HomeFilter = (typeof HOME_ITEMS)[number]["id"];
 export default function HomeSidebar({
   activeFilter,
   onFilterChange,
-  backendStatusText,
   onlineCount,
   agentCount,
   hasBackendError,
@@ -26,7 +25,6 @@ export default function HomeSidebar({
 }: {
   activeFilter: HomeFilter;
   onFilterChange: (filter: HomeFilter) => void;
-  backendStatusText: string;
   onlineCount: number;
   agentCount: number;
   hasBackendError: boolean;
@@ -103,7 +101,6 @@ export default function HomeSidebar({
       </nav>
       <footer className="dc-user-area shrink-0 px-2 py-2">
         <UserPanel
-          backendStatusText={backendStatusText}
           onlineCount={onlineCount}
           agentCount={agentCount}
           hasBackendError={hasBackendError}
