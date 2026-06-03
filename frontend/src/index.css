@@ -9,17 +9,17 @@
  */
 
 @theme {
-  --color-server-rail: #111214;
-  --color-sidebar: #17181c;
-  --color-sidebar-hover: #26272c;
-  --color-sidebar-active: #303136;
+  --color-server-rail: #1e1f22;
+  --color-sidebar: #2b2d31;
+  --color-sidebar-hover: #35373c;
+  --color-sidebar-active: #404249;
   --color-sidebar-text: #949ba4;
   --color-sidebar-text-active: #f2f3f5;
-  --color-chat-bg: #1e1f22;
-  --color-chat-hover: #292a2f;
-  --color-panel: #242529;
-  --color-panel-bg: #242529;
-  --color-panel-soft: #2b2d31;
+  --color-chat-bg: #313338;
+  --color-chat-hover: #2e3035;
+  --color-panel: #2b2d31;
+  --color-panel-bg: #2b2d31;
+  --color-panel-soft: #383a40;
   --color-panel-border: rgba(255, 255, 255, 0.06);
   --color-line: rgba(255, 255, 255, 0.07);
   --color-text-primary: #f2f3f5;
@@ -42,7 +42,7 @@
 
 * {
   box-sizing: border-box;
-  scrollbar-color: #111214 transparent;
+  scrollbar-color: #1a1b1e transparent;
   scrollbar-width: thin;
 }
 
@@ -53,11 +53,11 @@
 
 *::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: #111214;
+  background: #1a1b1e;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #0b0c0d;
+  background: #111214;
 }
 
 *::-webkit-scrollbar-track {
@@ -72,7 +72,7 @@ body,
 
 body {
   margin: 0;
-  background: #111214;
+  background: var(--color-server-rail);
   color: #f2f3f5;
   font-family: var(--font-body);
   line-height: 1.5;
@@ -90,7 +90,7 @@ textarea {
 /* ---------------------------------------------------------------- shell ---- */
 
 .dc-shell {
-  background: #111214;
+  background: var(--color-server-rail);
 }
 
 /* Server rail: far-left narrow column of round icons. */
@@ -936,7 +936,7 @@ textarea {
   align-items: center;
   gap: 6px;
   border-radius: 8px;
-  background: #232428;
+  background: var(--color-panel);
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.04),
     0 8px 24px rgba(0, 0, 0, 0.22);
@@ -944,7 +944,7 @@ textarea {
 }
 
 .dc-current-user:hover {
-  background: #2b2d31;
+  background: var(--color-panel-soft);
 }
 
 .dc-user-identity {
