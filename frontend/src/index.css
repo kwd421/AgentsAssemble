@@ -920,19 +920,20 @@ textarea {
 .dc-user-area {
   position: relative;
   z-index: 20;
-  width: calc(100% + 64px);
-  margin-left: -64px;
+  width: calc(100% + 72px);
+  margin-left: -72px;
   background: transparent;
   padding: 8px;
 }
 
 .dc-user-panel {
   position: relative;
+  max-width: 384px;
 }
 
 .dc-current-user {
   display: flex;
-  min-height: 64px;
+  min-height: 58px;
   align-items: center;
   gap: 4px;
   border-radius: 8px;
@@ -940,7 +941,7 @@ textarea {
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.04),
     0 8px 24px rgba(0, 0, 0, 0.22);
-  padding: 6px;
+  padding: 6px 8px;
 }
 
 .dc-current-user:hover {
@@ -950,7 +951,7 @@ textarea {
 .dc-user-identity {
   display: flex;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 0;
   align-items: center;
   gap: 8px;
   border-radius: 6px;
@@ -1014,7 +1015,7 @@ textarea {
   flex-shrink: 0;
   align-items: center;
   gap: 0;
-  margin-left: auto;
+  margin-left: 2px;
 }
 
 .dc-user-actions button {
@@ -3482,7 +3483,7 @@ textarea {
 }
 
 .dc-friend-profile-banner {
-  height: 92px;
+  height: 112px;
   background: #5865f2;
 }
 
@@ -3504,22 +3505,22 @@ textarea {
 
 .dc-friend-profile-body {
   position: relative;
-  padding: 50px 16px 16px;
+  padding: 62px 16px 16px;
 }
 
 .dc-friend-profile-avatar {
   position: absolute;
-  top: -44px;
+  top: -52px;
   left: 16px;
   display: grid;
-  width: 82px;
-  height: 82px;
+  width: 96px;
+  height: 96px;
   place-items: center;
-  border: 7px solid #232428;
+  border: 8px solid #232428;
   border-radius: 50%;
   background: var(--color-accent);
   color: #fff;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 950;
 }
 
@@ -3534,7 +3535,7 @@ textarea {
 
 .dc-friend-profile-body h2 {
   color: var(--color-text-primary);
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 950;
   letter-spacing: 0;
 }
@@ -3557,6 +3558,7 @@ textarea {
 
 .dc-friend-profile-actions button {
   display: inline-flex;
+  min-height: 36px;
   align-items: center;
   justify-content: center;
   gap: 7px;
@@ -3591,16 +3593,22 @@ textarea {
 
 .dc-friend-profile-facts {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   margin-top: 16px;
+  border-radius: 8px;
+  background: #2b2d31;
+  padding: 10px;
 }
 
 .dc-friend-profile-facts div {
   display: grid;
   gap: 2px;
-  border-radius: 6px;
-  background: var(--color-panel-soft);
-  padding: 9px 10px;
+  padding: 0;
+}
+
+.dc-friend-profile-facts div + div {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 9px;
 }
 
 .dc-friend-profile-facts dt {
