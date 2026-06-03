@@ -122,7 +122,7 @@ export default function HomeSidebar({
           ) : (
             <button type="button" className="dc-dm-row" onClick={() => onStartAddFriend?.()}>
               <Compass size={18} />
-              <span>이전 세션에서 친구 추가</span>
+              <span>이전 세션을 친구로 저장</span>
             </button>
           )}
         </div>

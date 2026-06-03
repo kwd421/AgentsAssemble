@@ -220,7 +220,7 @@ export default function FriendsView({
           <section className="dc-friend-add-panel">
             <div className="min-w-0">
               <h2>친구 추가하기</h2>
-              <p>사람, 구독형 AI, API, Local 세션을 디렉터리에 저장해 다시 초대할 수 있게 준비합니다.</p>
+              <p>사람, 구독형 AI, API, Local 세션을 친구 목록에 저장하고 DM과 방 초대 후보로 관리합니다.</p>
             </div>
             <div className="dc-friend-add-grid">
               <input
@@ -273,7 +273,7 @@ export default function FriendsView({
               <p className="dc-friend-empty">
                 {filter === "online"
                   ? "온라인 친구가 없습니다. 모두 탭에서 저장된 친구를 관리할 수 있습니다."
-                  : "아직 친구가 없습니다. 친구 추가하기에서 이전 세션 후보를 추가해 보세요."}
+                  : "아직 친구가 없습니다. 친구 추가하기에서 이전 세션을 친구로 저장해 보세요."}
               </p>
             )}
           </section>
@@ -281,7 +281,7 @@ export default function FriendsView({
 
           {filter === "add" && (
           <section className="dc-friend-section">
-            <h2>이전 세션에서 추가 — {visibleCandidates.length}</h2>
+            <h2>이전 세션 후보 — {visibleCandidates.length}</h2>
             {visibleCandidates.length ? (
               visibleCandidates.map((friend) => (
                 <FriendRow

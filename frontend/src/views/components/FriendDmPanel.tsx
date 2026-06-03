@@ -122,7 +122,7 @@ export default function FriendDmPanel({
             <h2 className="preserve-words">{friend.display_name}</h2>
             <p className="preserve-words">
               이 대화는 AgentsAssemble 안에 저장되는 로컬 DM입니다. 외부 Discord로 전송되지 않고,
-              저장된 세션이나 에이전트를 다시 초대하기 전 맥락을 남길 때 씁니다.
+              저장된 세션이나 에이전트와 로컬 메모를 남길 때 씁니다.
             </p>
           </div>
         )}
