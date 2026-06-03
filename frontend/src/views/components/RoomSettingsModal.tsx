@@ -1,11 +1,11 @@
 import { useState, type ChangeEvent } from "react";
 import { Image as ImageIcon, UserPlus, X } from "lucide-react";
 import { type ChannelNotificationSetting, type ChannelSettings, uploadLobbyAttachment } from "../../api";
-import type { RoomDockItem } from "../../App";
 import {
   roomAppearanceStyle,
   type RoomAppearance,
 } from "../../lib/roomAppearance";
+import type { RoomDockItem } from "../../lib/roomDockModel";
 
 const ROOM_CHANNEL_OPTIONS = [
   { id: "lobby", label: "general" },

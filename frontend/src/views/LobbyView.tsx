@@ -12,7 +12,7 @@ import {
   type LobbyEvent,
   type MafiaGame,
 } from "../api";
-import type { RoomDockItem } from "../App";
+import type { RoomDockItem } from "../lib/roomDockModel";
 import LobbyAttachments from "./components/LobbyAttachments";
 import LobbyComposer from "./components/LobbyComposer";
 import ChannelHeader from "./components/ChannelHeader";
