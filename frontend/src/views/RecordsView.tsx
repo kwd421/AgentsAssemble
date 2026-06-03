@@ -9,6 +9,7 @@ import {
 } from "../api";
 import { usePoll } from "../hooks";
 import ChannelHeader from "./components/ChannelHeader";
+import type { ChannelHeaderActions } from "./components/ChannelHeader";
 
 export type ArchiveArtifactMap = Record<string, string | null | undefined>;
 
@@ -356,7 +357,7 @@ function ArchiveDetail({ detail }: { detail: MeetingDetailResponse | null }) {
   );
 }
 
-export default function RecordsView() {
+export default function RecordsView({ headerActions }: { headerActions?: ChannelHeaderActions }) {
   const meetingsFetcher = useCallback(() => fetchMeetings(), []);
   const [data, loading] = usePoll<{ meetings: MeetingSummary[] }>(meetingsFetcher, 10000);
   const [selectedId, setSelectedId] = useState<string | undefined>();
@@ -398,6 +399,7 @@ export default function RecordsView() {
         icon={<Archive size={20} />}
         title="records"
         subtitle="완료된 세션의 transcript · decision · shared memory"
+        headerActions={headerActions}
       />
       <div className="flex min-h-0 flex-1">
         <div className="flex w-60 shrink-0 flex-col border-r border-line bg-sidebar/40">

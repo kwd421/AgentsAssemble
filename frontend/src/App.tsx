@@ -61,6 +61,7 @@ import LiveView from "./views/LiveView";
 import LobbyView from "./views/LobbyView";
 import RecordsView from "./views/RecordsView";
 import ChannelContextMenu from "./views/components/ChannelContextMenu";
+import type { ChannelHeaderActions } from "./views/components/ChannelHeader";
 import HomeSidebar from "./views/components/HomeSidebar";
 import type { HomeFilter } from "./views/components/HomeSidebar";
 import MemberList from "./views/components/MemberList";
@@ -134,6 +135,30 @@ const CHANNEL_SECTIONS: Array<{ id: string; label: string; channels: Channel[] }
   { id: "conversation", label: "Text Channels", channels: ["lobby", "live"] },
   { id: "work", label: "Workroom", channels: ["board", "records"] },
 ];
+
+const CHANNEL_NOTIFICATION_LABELS: Record<ChannelNotificationSetting, string> = {
+  default: "서버 기본 알림",
+  all: "모든 메시지 알림",
+  mentions: "@멘션만 알림",
+  mute: "알림 끔",
+};
+
+function channelNotificationSummary(setting?: ChannelSettings): string {
+  return `현재 알림: ${CHANNEL_NOTIFICATION_LABELS[setting?.notifications || "default"]}`;
+}
+
+function channelLastReadSummary(setting?: ChannelSettings): string {
+  if (!setting?.lastReadAt) return "아직 이 채널을 읽음으로 표시하지 않았습니다.";
+  try {
+    const readAt = new Date(setting.lastReadAt).toLocaleString("ko-KR", {
+      dateStyle: "short",
+      timeStyle: "short",
+    });
+    return `마지막 읽음 표시: ${readAt}`;
+  } catch {
+    return "마지막 읽음 표시 시간이 올바르지 않습니다.";
+  }
+}
 
 const PINNED_ROOMS: RoomDockItem[] = [
   {
@@ -998,6 +1023,16 @@ export default function App() {
     setChannelMenu(null);
   }
 
+  function channelHeaderActions(channelId: Channel): ChannelHeaderActions {
+    const setting = activeChannelSettings[channelId];
+    return {
+      notificationSummary: channelNotificationSummary(setting),
+      lastReadSummary: channelLastReadSummary(setting),
+      onMarkRead: () => markChannelRead(channelId),
+      onOpenSettings: guestLocked ? undefined : () => openRoomSettings(activeRoom.id),
+    };
+  }
+
   function toggleChannelSection(sectionId: string) {
     setCollapsedChannelSections((previous) => ({
       ...previous,
@@ -1396,6 +1431,7 @@ export default function App() {
             canPostMessages={!guestReadOnly}
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
+            headerActions={channelHeaderActions("lobby")}
             appearance={activeAppearance}
             onOpenSideThread={openSideChatThread}
           />
@@ -1410,6 +1446,7 @@ export default function App() {
             streamError={activeRoomFlowVisible ? meetingStreamError : null}
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
+            headerActions={channelHeaderActions("live")}
           />
         ) : channel === "board" ? (
           <BoardView
@@ -1420,9 +1457,10 @@ export default function App() {
             workroomQueueEvidence={activeRoomFlowVisible ? scopedWorkroomQueueEvidence : null}
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
+            headerActions={channelHeaderActions("board")}
           />
         ) : (
-          <RecordsView />
+          <RecordsView headerActions={channelHeaderActions("records")} />
         )}
       </main>
 

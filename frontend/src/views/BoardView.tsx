@@ -9,6 +9,7 @@ import type {
 import { summarizeBoardLifecycle } from "../lib/boardLifecycle";
 import WorkroomQueuePanel from "./components/WorkroomQueuePanel";
 import ChannelHeader from "./components/ChannelHeader";
+import type { ChannelHeaderActions } from "./components/ChannelHeader";
 
 function attentionToneClass(tone: "info" | "warn" | "danger") {
   if (tone === "danger") return "border-danger/45 bg-danger/10 text-danger";
@@ -28,6 +29,7 @@ export default function BoardView({
   workroomQueueEvidence,
   membersOpen,
   onToggleMembers,
+  headerActions,
 }: {
   flow: FlowState;
   agents: LiveAgent[];
@@ -36,6 +38,7 @@ export default function BoardView({
   workroomQueueEvidence: WorkroomQueueEvidence | null;
   membersOpen?: boolean;
   onToggleMembers?: () => void;
+  headerActions?: ChannelHeaderActions;
 }) {
   const summary = summarizeBoardLifecycle(lifecycle);
 
@@ -47,6 +50,7 @@ export default function BoardView({
         subtitle={flow.topic || flow.meeting_id || "회의 진행 상태 · 읽기 전용"}
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}
+        headerActions={headerActions}
       >
         <span className="rounded border border-line px-2 py-0.5 text-[11px] font-bold text-text-muted">
           보기 전용

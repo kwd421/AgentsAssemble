@@ -28,6 +28,7 @@ import {
 } from "../lib/liveTimelineState";
 import LobbyAttachments from "./components/LobbyAttachments";
 import ChannelHeader from "./components/ChannelHeader";
+import type { ChannelHeaderActions } from "./components/ChannelHeader";
 import DiscordText from "./components/DiscordText";
 
 function formatTime(iso: string): string {
@@ -356,6 +357,7 @@ export default function LiveView({
   streamError,
   membersOpen,
   onToggleMembers,
+  headerActions,
 }: {
   flow: FlowState;
   flowEvents: LobbyEvent[];
@@ -366,6 +368,7 @@ export default function LiveView({
   streamError: Error | null;
   membersOpen?: boolean;
   onToggleMembers?: () => void;
+  headerActions?: ChannelHeaderActions;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToLatestRef = useRef(true);
@@ -474,6 +477,7 @@ export default function LiveView({
           subtitle="전체 채팅과 팀 채팅이 분리된 Play Mode 게임 채널"
           membersOpen={membersOpen}
           onToggleMembers={onToggleMembers}
+          headerActions={headerActions}
         />
         <MafiaPanel game={mafiaGame} refreshMafia={refreshMafia} />
       </div>
@@ -488,6 +492,7 @@ export default function LiveView({
         subtitle="Play Mode와 시스템 이벤트가 흐르는 채널"
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}
+        headerActions={headerActions}
       >
         {isRunning && (
           <span className="flex items-center gap-1.5 rounded bg-online/15 px-2 py-0.5 text-[11px] font-black text-online">

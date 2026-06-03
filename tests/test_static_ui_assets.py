@@ -310,6 +310,41 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("export function loadRoomDockItems", room_dock_source)
         self.assertIn("export function persistRoomDockItems", room_dock_source)
 
+    def test_react_channel_header_actions_are_connected_to_room_state(self):
+        app_source = frontend_file("App.tsx")
+        header_source = frontend_file("views/components/ChannelHeader.tsx")
+        css = (FRONTEND_DIR / "index.css").read_text()
+
+        self.assertIn("export type ChannelHeaderActions", header_source)
+        self.assertIn("notificationSummary?: string;", header_source)
+        self.assertIn("lastReadSummary?: string;", header_source)
+        self.assertIn("onMarkRead?: () => void;", header_source)
+        self.assertIn("onOpenSettings?: () => void;", header_source)
+        self.assertIn("const [activePanel, setActivePanel]", header_source)
+        self.assertIn("const [searchQuery, setSearchQuery]", header_source)
+        self.assertIn("function handleSearchChange", header_source)
+        self.assertIn('aria-label="알림 설정"', header_source)
+        self.assertIn('onClick={() => togglePanel("notifications")}', header_source)
+        self.assertIn('aria-label="고정 메시지"', header_source)
+        self.assertIn('onClick={() => togglePanel("pins")}', header_source)
+        self.assertIn('value={searchQuery}', header_source)
+        self.assertIn("onChange={handleSearchChange}", header_source)
+        self.assertIn('role="status"', header_source)
+        self.assertIn('className="dc-head-popover"', header_source)
+
+        self.assertIn("function channelHeaderActions(channelId: Channel)", app_source)
+        self.assertIn("notificationSummary: channelNotificationSummary(setting)", app_source)
+        self.assertIn("lastReadSummary: channelLastReadSummary(setting)", app_source)
+        self.assertIn("onMarkRead: () => markChannelRead(channelId)", app_source)
+        self.assertIn("onOpenSettings: guestLocked ? undefined : () => openRoomSettings(activeRoom.id)", app_source)
+        self.assertIn('headerActions={channelHeaderActions("lobby")}', app_source)
+        self.assertIn('headerActions={channelHeaderActions("live")}', app_source)
+        self.assertIn('headerActions={channelHeaderActions("board")}', app_source)
+        self.assertIn('headerActions={channelHeaderActions("records")}', app_source)
+
+        self.assertIn(".dc-head-popover", css)
+        self.assertIn(".dc-head-popover-actions", css)
+
     def test_react_user_panel_uses_persisted_discord_profile(self):
         api_source = frontend_file("api.ts")
         user_panel_source = frontend_file("views/components/UserPanel.tsx")

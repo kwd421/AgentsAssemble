@@ -16,6 +16,7 @@ import type { RoomDockItem } from "../App";
 import LobbyAttachments from "./components/LobbyAttachments";
 import LobbyComposer from "./components/LobbyComposer";
 import ChannelHeader from "./components/ChannelHeader";
+import type { ChannelHeaderActions } from "./components/ChannelHeader";
 import DiscordText from "./components/DiscordText";
 import type { RoomAppearance } from "../lib/roomAppearance";
 
@@ -108,6 +109,7 @@ export default function LobbyView({
   canPostMessages = true,
   membersOpen,
   onToggleMembers,
+  headerActions,
   appearance,
   onOpenSideThread,
 }: {
@@ -122,6 +124,7 @@ export default function LobbyView({
   canPostMessages?: boolean;
   membersOpen?: boolean;
   onToggleMembers?: () => void;
+  headerActions?: ChannelHeaderActions;
   appearance?: RoomAppearance;
   onOpenSideThread?: (event: LobbyEvent) => void;
 }) {
@@ -267,6 +270,7 @@ export default function LobbyView({
         subtitle="사람과 에이전트가 함께 보는 기본 채널"
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}
+        headerActions={headerActions}
       />
 
       <div className="dc-room-status-line">

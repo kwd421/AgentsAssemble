@@ -96,6 +96,13 @@ UI helpers only: they may insert short local message markers or show a local
 notice, but they do not open Discord, search remote media services, send an
 external message, start providers, or grant room access.
 
+Discord-style channel header controls are also local room UI. The bell reads
+the saved per-channel notification mode and can mark the selected channel as
+read or open the room settings modal. The pin button shows the local pinned
+message state, and the search box shows local channel-search state. These
+controls do not query Discord, contact external search services, send messages,
+start providers, or grant access.
+
 The lower-left user panel is the local Discord-style identity surface. Its
 profile card, quick status buttons, mic/headset display toggles, banner preset,
 avatar label, accent color, handle, and custom status are persisted through

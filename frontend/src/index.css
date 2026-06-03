@@ -1410,6 +1410,10 @@ textarea {
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
 }
 
+.dc-head-actions {
+  position: relative;
+}
+
 .dc-head-icon {
   display: grid;
   width: 32px;
@@ -1423,7 +1427,8 @@ textarea {
 }
 
 .dc-head-icon:hover,
-.dc-head-icon:focus-visible {
+.dc-head-icon:focus-visible,
+.dc-head-icon[aria-pressed="true"] {
   background: var(--color-sidebar-hover);
   color: var(--color-text-primary);
   outline: none;
@@ -1452,6 +1457,55 @@ textarea {
 
 .dc-head-search input::placeholder {
   color: var(--color-text-muted);
+}
+
+.dc-head-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: min(300px, calc(100vw - 32px));
+  border: 1px solid rgba(78, 80, 88, 0.92);
+  border-radius: 8px;
+  background: #232428;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
+  padding: 12px;
+}
+
+.dc-head-popover-title {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.dc-head-popover-copy {
+  margin-top: 6px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dc-head-popover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dc-head-popover-actions button {
+  border-radius: 4px;
+  background: var(--color-sidebar-hover);
+  padding: 7px 10px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dc-head-popover-actions button:hover,
+.dc-head-popover-actions button:focus-visible {
+  background: #3a3c42;
+  color: var(--color-text-primary);
+  outline: none;
 }
 
 .dc-room-status-line {
