@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { AtSign, MessageSquare, Send, Smile } from "lucide-react";
+import { AtSign, ChevronLeft, MessageSquare, Send, Smile, X } from "lucide-react";
 import { postSideChatMessage, type SideChatEvent } from "../../api";
 import DiscordText from "./DiscordText";
 import MentionInput from "./MentionInput";
@@ -45,6 +45,7 @@ export default function SideChatDock({
   onPosted,
   mentionables = [],
   threadContext = null,
+  onCloseThread,
 }: {
   meetingId: string;
   events: SideChatEvent[];
@@ -52,6 +53,7 @@ export default function SideChatDock({
   onPosted: (events: SideChatEvent[]) => void;
   mentionables?: string[];
   threadContext?: SideChatThreadContext | null;
+  onCloseThread?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
@@ -101,11 +103,37 @@ export default function SideChatDock({
       data-thread-active={threadContext ? "true" : "false"}
     >
       <header className="dc-side-chat-head">
-        <span className="flex items-center gap-2">
-          <MessageSquare size={15} />
-          {threadContext ? "스레드" : "사이드챗"}
+        <span className="flex min-w-0 items-center gap-2">
+          {threadContext && onCloseThread ? (
+            <button
+              type="button"
+              className="dc-side-thread-back"
+              onClick={onCloseThread}
+              aria-label="사이드챗으로 돌아가기"
+              title="사이드챗"
+            >
+              <ChevronLeft size={15} />
+            </button>
+          ) : (
+            <MessageSquare size={15} />
+          )}
+          <span className="truncate preserve-words">
+            {threadContext ? "스레드" : "사이드챗"}
+          </span>
         </span>
+        {threadContext && onCloseThread ? (
+          <button
+            type="button"
+            className="dc-side-thread-close"
+            onClick={onCloseThread}
+            aria-label="스레드 닫기"
+            title="닫기"
+          >
+            <X size={14} />
+          </button>
+        ) : (
         <span className="text-[10px] font-bold text-text-muted">공식 기록 제외</span>
+        )}
       </header>
       {threadContext && (
         <article

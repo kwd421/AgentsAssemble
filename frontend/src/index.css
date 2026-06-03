@@ -1551,6 +1551,35 @@ textarea {
   font-weight: 900;
 }
 
+.dc-side-thread-back,
+.dc-side-thread-close {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+}
+
+.dc-side-thread-back {
+  width: 24px;
+  height: 24px;
+  margin-left: -2px;
+}
+
+.dc-side-thread-close {
+  width: 26px;
+  height: 26px;
+}
+
+.dc-side-thread-back:hover,
+.dc-side-thread-back:focus-visible,
+.dc-side-thread-close:hover,
+.dc-side-thread-close:focus-visible {
+  background: var(--color-sidebar-hover);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
 .dc-side-chat-feed {
   min-height: 0;
   flex: 1;

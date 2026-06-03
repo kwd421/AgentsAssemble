@@ -540,6 +540,11 @@ export default function App() {
     setRightPanelMode("side-chat");
   }
 
+  function closeSideChatThread() {
+    setSideChatThread(null);
+    setRightPanelMode("side-chat");
+  }
+
   const activeMeetingStreamState = meetingStreamStateForActiveMeeting(
     meetingStreamState,
     flow.meeting_id || ""
@@ -1399,7 +1404,7 @@ export default function App() {
               aria-controls="side-chat-panel"
               onClick={() => setRightPanelMode("side-chat")}
             >
-              사이드챗
+              {sideChatThread ? "스레드" : "사이드챗"}
             </button>
           </div>
           {rightPanelMode === "room-info" ? (
@@ -1434,6 +1439,7 @@ export default function App() {
                 onPosted={handleSideChatPosted}
                 mentionables={scopedMentionables}
                 threadContext={sideChatThread}
+                onCloseThread={closeSideChatThread}
               />
             </section>
           )}
