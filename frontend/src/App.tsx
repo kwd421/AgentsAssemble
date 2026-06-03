@@ -1379,7 +1379,7 @@ export default function App() {
       {showMembers && membersOpen && (
         <aside
           className="dc-members hidden shrink-0 xl:flex xl:flex-col"
-          aria-label="방 정보와 멤버"
+          aria-label="멤버와 스레드"
           data-testid="room-right-panel"
           data-panel-mode={rightPanelMode}
         >
@@ -1393,7 +1393,7 @@ export default function App() {
               aria-controls="room-info-panel"
               onClick={() => setRightPanelMode("room-info")}
             >
-              방 연결 정보
+              멤버
             </button>
             <button
               type="button"
@@ -1404,7 +1404,7 @@ export default function App() {
               aria-controls="side-chat-panel"
               onClick={() => setRightPanelMode("side-chat")}
             >
-              {sideChatThread ? "스레드" : "사이드챗"}
+              스레드
             </button>
           </div>
           {rightPanelMode === "room-info" ? (

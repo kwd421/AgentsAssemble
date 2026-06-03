@@ -118,7 +118,7 @@ export default function SideChatDock({
             <MessageSquare size={15} />
           )}
           <span className="truncate preserve-words">
-            {threadContext ? "스레드" : "사이드챗"}
+            스레드
           </span>
         </span>
         {threadContext && onCloseThread ? (
@@ -153,7 +153,7 @@ export default function SideChatDock({
           <p className="dc-side-empty preserve-words">
             {threadContext && events.length === 0
               ? "이 메시지에 대한 비공식 스레드를 시작하세요."
-              : "오른쪽에 붙어 있는 비공식 대화입니다."}
+              : "메시지에서 스레드를 열면 여기에 표시됩니다. 필요하면 비공식 메모도 남길 수 있습니다."}
           </p>
         ) : (
           events.map((event) => <SideChatMessage key={event.id} event={event} />)
@@ -173,7 +173,7 @@ export default function SideChatDock({
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.nativeEvent.isComposing) void handleSend();
           }}
-          placeholder={threadContext ? "스레드에 답장" : "사이드챗 메시지"}
+          placeholder={threadContext ? "스레드에 답장" : "스레드 메모"}
           ariaLabel="비공식 사이드챗 입력"
           mentionables={mentionables}
         />

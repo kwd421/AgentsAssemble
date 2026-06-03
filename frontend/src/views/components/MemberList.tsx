@@ -333,7 +333,7 @@ export default function MemberList({
         {contextBadges.length > 0 && (
           <details className="dc-member-context mb-3 px-2" aria-label="참가자 맥락 요약">
             <summary className="cursor-pointer list-none text-[11px] font-bold text-text-muted hover:text-text-secondary">
-              방 연결 정보
+              연결 상태
             </summary>
             <ProviderTruthChips badges={contextBadges} compact />
           </details>
