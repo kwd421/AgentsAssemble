@@ -499,6 +499,11 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("이 링크로 들어온 사람은 이 방만 보고 채팅합니다.", app_source)
         self.assertIn("초대 링크", app_source)
         self.assertIn("링크 복사", app_source)
+        self.assertIn("dc-invite-link-input", app_source)
+        self.assertIn("dc-invite-copy-button", app_source)
+        invite_modal_section = app_source[app_source.index("dc-invite-modal") : app_source.index("settingsModalRoom")]
+        self.assertNotIn("ops-input", invite_modal_section)
+        self.assertNotIn("ops-cta", invite_modal_section)
         self.assertIn("RoomSettingsModal", app_source)
         self.assertIn("ChannelContextMenu", app_source)
         self.assertIn("type ChannelSettings", api_source)

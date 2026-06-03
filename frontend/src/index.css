@@ -343,6 +343,44 @@ textarea {
   box-shadow: 0 24px 90px rgba(0, 0, 0, 0.5);
 }
 
+.dc-invite-link-input {
+  min-width: 0;
+  height: 40px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: #1e1f22;
+  padding: 0 12px;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+}
+
+.dc-invite-link-input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 24%, transparent);
+}
+
+.dc-invite-copy-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 4px;
+  background: var(--color-accent);
+  padding: 0 12px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.dc-invite-copy-button:hover,
+.dc-invite-copy-button:focus-visible {
+  background: var(--color-accent-hover);
+  outline: none;
+}
+
 .dc-modal-close {
   display: grid;
   height: 32px;

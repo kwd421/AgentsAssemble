@@ -1272,14 +1272,14 @@ export default function App() {
               초대 링크
               <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px]">
                 <input
-                  className="ops-input min-w-0 rounded px-3 py-2.5 text-[13px]"
+                  className="dc-invite-link-input"
                   value={inviteUrl}
                   readOnly
                   onFocus={(event) => event.currentTarget.select()}
                 />
                 <button
                   type="button"
-                  className="ops-cta inline-flex items-center justify-center gap-2 px-3 py-2.5 text-[13px]"
+                  className="dc-invite-copy-button"
                   onClick={() => void copyInviteLink(inviteModalRoom, inviteModalAppearance)}
                 >
                   <Copy size={15} />
