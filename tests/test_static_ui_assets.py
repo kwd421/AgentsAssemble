@@ -1140,7 +1140,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("Meeting:", app_source)
         self.assertIn('label: "general"', app_source)
         self.assertIn('label: "live-room"', app_source)
-        self.assertIn("setAdminOpen((value) => !value)", app_source)
+        self.assertNotIn('aria-label="관리 패널"', app_source)
+        self.assertNotIn("setAdminOpen((value) => !value)", app_source)
 
         for forbidden in [
             "startProvider",

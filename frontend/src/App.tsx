@@ -1134,19 +1134,6 @@ export default function App() {
           </div>
         )}
         <div className="mt-auto" />
-        {!guestLocked && (
-          <button
-            type="button"
-            aria-label="관리 패널"
-            aria-pressed={adminOpen}
-            onClick={() => setAdminOpen((value) => !value)}
-            data-active={adminOpen}
-            className="dc-rail-btn"
-            title="관리"
-          >
-            <Settings size={20} />
-          </button>
-        )}
       </nav>
 
       {inviteModalRoom && (

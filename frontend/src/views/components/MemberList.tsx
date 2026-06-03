@@ -143,43 +143,6 @@ function MemberRow({
           </select>
         </div>
         {entry.agent && (
-          <>
-            {quotaWindows.length > 0 && (
-              <div className="dc-member-quota-row" aria-label={`${entry.displayName} 할당량`}>
-                {quotaWindows.map((window) => (
-                  <span
-                    key={`${window.label}-${window.percent}`}
-                    className="dc-member-quota-window"
-                    data-tone={signalToneClass(window.tone)}
-                    title={window.title}
-                    aria-label={window.title}
-                  >
-                    <span className="dc-member-quota-label preserve-words">{window.label}</span>
-                    <span className="dc-member-quota-bar" aria-hidden>
-                      <span style={{ width: `${window.percent}%` }} />
-                    </span>
-                    <span className="dc-member-quota-percent">{window.percent}%</span>
-                  </span>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-        {entry.agent && (
-          <div className="dc-member-signal-row" aria-label={`${entry.displayName} 세션 상태`}>
-            {agentMemberSignals(entry.agent).map((signal) => (
-              <span
-                key={signal.label}
-                className="dc-member-signal preserve-words"
-                data-tone={signalToneClass(signal.tone)}
-                title={signal.title || signal.label}
-              >
-                {signal.label}
-              </span>
-            ))}
-          </div>
-        )}
-        {entry.agent && (
           <details className="dc-member-details">
             <summary
               className="dc-member-more"
@@ -188,6 +151,37 @@ function MemberRow({
               <MoreHorizontal size={14} />
             </summary>
             <div className="dc-member-popover">
+              {quotaWindows.length > 0 && (
+                <div className="dc-member-quota-row" aria-label={`${entry.displayName} 할당량`}>
+                  {quotaWindows.map((window) => (
+                    <span
+                      key={`${window.label}-${window.percent}`}
+                      className="dc-member-quota-window"
+                      data-tone={signalToneClass(window.tone)}
+                      title={window.title}
+                      aria-label={window.title}
+                    >
+                      <span className="dc-member-quota-label preserve-words">{window.label}</span>
+                      <span className="dc-member-quota-bar" aria-hidden>
+                        <span style={{ width: `${window.percent}%` }} />
+                      </span>
+                      <span className="dc-member-quota-percent">{window.percent}%</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="dc-member-signal-row" aria-label={`${entry.displayName} 세션 상태`}>
+                {agentMemberSignals(entry.agent).map((signal) => (
+                  <span
+                    key={signal.label}
+                    className="dc-member-signal preserve-words"
+                    data-tone={signalToneClass(signal.tone)}
+                    title={signal.title || signal.label}
+                  >
+                    {signal.label}
+                  </span>
+                ))}
+              </div>
               <ProviderTruthChips badges={agentTruthBadges(entry.agent)} compact limit={4} />
               {lastObservedSummary(entry.agent) && (
                 <p className="mt-1 text-[10px] text-text-muted preserve-words">
