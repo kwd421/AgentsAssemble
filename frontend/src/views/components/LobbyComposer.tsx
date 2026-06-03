@@ -1,5 +1,6 @@
 import { useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { AtSign, Paperclip, Send, Smile, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { AtSign, Gift, Paperclip, Send, Smile, Sparkles, Sticker, X } from "lucide-react";
 import {
   postLobbyMessage,
   uploadLobbyAttachment,
@@ -14,6 +15,48 @@ import {
   selectLobbyAttachmentFiles,
 } from "../../lib/lobbyComposerModel";
 import MentionInput from "./MentionInput";
+
+type ComposerAccessory = {
+  id: "gift" | "gif" | "sticker" | "apps";
+  label: string;
+  title: string;
+  notice: string;
+  insertText?: string;
+  icon?: LucideIcon;
+};
+
+const COMPOSER_ACCESSORIES: ComposerAccessory[] = [
+  {
+    id: "gift",
+    label: "선물",
+    title: "선물",
+    notice: "선물 기능은 외부 Discord로 전송하지 않습니다. 지금은 로컬 방 안에서만 안내합니다.",
+    icon: Gift,
+  },
+  {
+    id: "gif",
+    label: "GIF",
+    title: "GIF",
+    notice: "GIF 검색은 외부 Discord로 전송하지 않습니다. 로컬 메시지에 GIF 설명을 남길 수 있습니다.",
+    insertText: "[GIF: ]",
+  },
+  {
+    id: "sticker",
+    label: "스티커",
+    title: "스티커",
+    notice: "스티커는 외부 Discord로 전송하지 않습니다. 로컬 메시지에 스티커 설명을 남길 수 있습니다.",
+    insertText: "[스티커: ]",
+    icon: Sticker,
+  },
+  {
+    id: "apps",
+    label: "앱",
+    title: "앱",
+    notice: "앱 명령은 외부 Discord로 전송하지 않습니다. AgentsAssemble 로컬 기능만 이 방에서 다룹니다.",
+    insertText: "/",
+    icon: Sparkles,
+  },
+];
 
 function currentLobbyName() {
   try {
@@ -41,6 +84,7 @@ export default function LobbyComposer({
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [accessoryNotice, setAccessoryNotice] = useState("");
   const disabled = Boolean(disabledReason);
   const canSubmit = Boolean(message.trim() || pendingAttachments.length) && !busy && !uploading && !disabled;
 
@@ -54,6 +98,13 @@ export default function LobbyComposer({
       inputRef.current?.focus();
       inputRef.current?.setSelectionRange(start + text.length, start + text.length);
     }, 0);
+  }
+
+  function handleAccessoryClick(accessory: ComposerAccessory) {
+    if (disabled || busy) return;
+    setError("");
+    setAccessoryNotice(accessory.notice);
+    if (accessory.insertText) insertText(accessory.insertText);
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -149,6 +200,11 @@ export default function LobbyComposer({
           {disabledReason}
         </p>
       )}
+      {accessoryNotice && !disabledReason && (
+        <p className="dc-composer-accessory-notice preserve-words" aria-live="polite">
+          {accessoryNotice}
+        </p>
+      )}
 
       {pendingAttachments.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
@@ -202,6 +258,22 @@ export default function LobbyComposer({
         >
           <Paperclip size={17} />
         </button>
+        {COMPOSER_ACCESSORIES.map((accessory) => {
+          const Icon = accessory.icon;
+          return (
+            <button
+              key={accessory.id}
+              type="button"
+              onClick={() => handleAccessoryClick(accessory)}
+              disabled={busy || disabled}
+              className="dc-composer-button"
+              aria-label={`채팅 ${accessory.label}`}
+              title={accessory.title}
+            >
+              {Icon ? <Icon size={17} /> : <span className="dc-composer-button-label">{accessory.label}</span>}
+            </button>
+          );
+        })}
         <button
           type="button"
           onClick={() => insertText("@")}

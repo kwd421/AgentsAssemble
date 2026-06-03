@@ -89,6 +89,13 @@ Mention rendering is display-only; typing `@Codex` or selecting
 `<@Codex Friend>` does not start that provider, grant permissions, or promote
 the message into official Work Mode records.
 
+The main room composer also exposes Discord-style accessory controls for gift,
+GIF, sticker, emoji, app, mention, and attachment affordances. Attachment uses
+the real local upload path below. Gift/GIF/sticker/app actions are local room
+UI helpers only: they may insert short local message markers or show a local
+notice, but they do not open Discord, search remote media services, send an
+external message, start providers, or grant room access.
+
 The lower-left user panel is the local Discord-style identity surface. Its
 profile card, quick status buttons, mic/headset display toggles, banner preset,
 avatar label, accent color, handle, and custom status are persisted through

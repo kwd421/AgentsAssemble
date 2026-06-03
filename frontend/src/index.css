@@ -2162,7 +2162,7 @@ textarea {
 .dc-composer-bar {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px 36px 36px 36px;
+  grid-template-columns: minmax(0, 1fr) repeat(8, 36px);
   min-height: 44px;
   align-items: center;
   gap: 2px;
@@ -2205,6 +2205,22 @@ textarea {
 
 .dc-composer-button.send {
   color: var(--color-accent);
+}
+
+.dc-composer-button-label {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.dc-composer-accessory-notice {
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: rgba(35, 165, 90, 0.1);
+  padding: 8px 10px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .dc-composer-button.send:not(:disabled):hover,

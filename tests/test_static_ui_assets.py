@@ -543,6 +543,24 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("pendingAttachments", composer_source)
         self.assertIn("removePendingAttachment", composer_source)
 
+    def test_react_lobby_composer_has_discord_style_local_accessories(self):
+        composer_source = frontend_file("views/components/LobbyComposer.tsx")
+        css = (FRONTEND_DIR / "index.css").read_text()
+
+        self.assertIn("type ComposerAccessory", composer_source)
+        self.assertIn("COMPOSER_ACCESSORIES", composer_source)
+        self.assertIn('id: "gift"', composer_source)
+        self.assertIn('id: "gif"', composer_source)
+        self.assertIn('id: "sticker"', composer_source)
+        self.assertIn('id: "apps"', composer_source)
+        self.assertIn("handleAccessoryClick", composer_source)
+        self.assertIn("setAccessoryNotice", composer_source)
+        self.assertIn("외부 Discord로 전송하지 않습니다", composer_source)
+        self.assertIn('aria-live="polite"', composer_source)
+        self.assertIn('aria-label={`채팅 ${accessory.label}`}', composer_source)
+        self.assertIn(".dc-composer-accessory-notice", css)
+        self.assertIn(".dc-composer-button-label", css)
+
     def test_react_frontend_does_not_expose_lobby_promotion_button_yet(self):
         source = frontend_source()
 
