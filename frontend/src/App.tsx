@@ -437,6 +437,17 @@ function statusDotClass(status?: string) {
   return "bg-idle";
 }
 
+function channelForActiveRoom(
+  channelConfig: ChannelConfig,
+  room: RoomDockItem,
+  mafiaGame: MafiaGame | null
+): ChannelConfig {
+  if (channelConfig.id === "live" && (room.tone === "mafia" || mafiaGame?.game_id === room.meetingId)) {
+    return { ...channelConfig, label: "mafia-night", icon: Gamepad2 };
+  }
+  return channelConfig;
+}
+
 export default function App() {
   const [startupRoute] = useState(() => {
     const guestInvite = roomFromInviteParams();
@@ -725,6 +736,9 @@ export default function App() {
   const menuRoom = roomMenu ? rooms.find((room) => room.id === roomMenu.roomId) : undefined;
   const menuChannel = channelMenu
     ? CHANNELS.find((item) => item.id === channelMenu.channelId)
+    : undefined;
+  const menuChannelDisplay = menuChannel
+    ? channelForActiveRoom(menuChannel, activeRoom, scopedMafiaGame)
     : undefined;
   const visibleChannels = guestLocked
     ? CHANNELS.filter((item) => item.id !== "records")
@@ -1128,7 +1142,7 @@ export default function App() {
 
   return (
     <div
-      className="ops-shell flex h-screen max-h-screen overflow-hidden text-text-primary"
+      className="dc-shell flex h-screen max-h-screen overflow-hidden text-text-primary"
       style={activeRoomStyle}
       data-banner-preset={activeAppearance.bannerPreset}
     >
@@ -1410,31 +1424,38 @@ export default function App() {
                   <ChevronDown size={12} />
                   {section.label}
                 </button>
-                {visibleSectionChannels.map(({ id, label, icon: Icon }) => (
-                  <div key={id}>
-                    <button
-                      type="button"
-                      data-active={!adminOpen && channel === id}
-                      data-muted={activeChannelSettings[id]?.notifications === "mute"}
-                      data-read-at={activeChannelSettings[id]?.lastReadAt || undefined}
-                      onClick={() => goToChannel(id)}
-                      onContextMenu={(event) => openChannelMenu(event, id)}
-                      className="dc-channel"
-                    >
-                      <Icon size={18} className="shrink-0 opacity-70" />
-                      <span className="truncate">{label}</span>
-                      {id === "live" && activeRoomFlowVisible && flowRunning && (
-                        <span className="dc-channel-live-dot" aria-label="진행 중" />
-                      )}
-                    </button>
-                  </div>
-                ))}
+                {visibleSectionChannels.map((channelConfig) => {
+                  const { id, label, icon: Icon } = channelForActiveRoom(
+                    channelConfig,
+                    activeRoom,
+                    scopedMafiaGame
+                  );
+                  return (
+                    <div key={id}>
+                      <button
+                        type="button"
+                        data-active={!adminOpen && channel === id}
+                        data-muted={activeChannelSettings[id]?.notifications === "mute"}
+                        data-read-at={activeChannelSettings[id]?.lastReadAt || undefined}
+                        onClick={() => goToChannel(id)}
+                        onContextMenu={(event) => openChannelMenu(event, id)}
+                        className="dc-channel"
+                      >
+                        <Icon size={18} className="shrink-0 opacity-70" />
+                        <span className="truncate">{label}</span>
+                        {id === "live" && activeRoomFlowVisible && flowRunning && (
+                          <span className="dc-channel-live-dot" aria-label="진행 중" />
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
               </section>
             );
           })}
-          {menuChannel && channelMenu && (
+          {menuChannelDisplay && channelMenu && (
             <ChannelContextMenu
-              channelLabel={menuChannel.label}
+              channelLabel={menuChannelDisplay.label}
               settings={activeChannelSettings[channelMenu.channelId]}
               x={channelMenu.x}
               y={channelMenu.y}

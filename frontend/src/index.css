@@ -69,7 +69,7 @@ textarea {
 
 /* ---------------------------------------------------------------- shell ---- */
 
-.ops-shell {
+.dc-shell {
   background: #1a1b1e;
 }
 
@@ -1580,6 +1580,40 @@ textarea {
   flex-shrink: 0;
 }
 
+.dc-channel-empty {
+  display: grid;
+  height: 100%;
+  min-height: 220px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  padding: 32px;
+  text-align: center;
+}
+
+.dc-channel-empty-icon {
+  display: grid;
+  width: 68px;
+  height: 68px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-panel-soft);
+  color: var(--color-text-muted);
+}
+
+.dc-channel-empty h2 {
+  color: var(--color-text-primary);
+  font-size: 22px;
+  font-weight: 950;
+}
+
+.dc-channel-empty p {
+  max-width: 320px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  font-weight: 650;
+}
+
 .dc-room-mini-button {
   display: inline-flex;
   align-items: center;
@@ -2270,6 +2304,230 @@ textarea {
 
 .dc-message-avatar.agent {
   background: var(--color-accent-soft);
+}
+
+.dc-mafia-channel-tabs {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.2);
+  padding: 6px 12px;
+}
+
+.dc-mafia-channel-tab {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  border-radius: 4px;
+  padding: 0 10px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.dc-mafia-channel-tab:hover:not(:disabled),
+.dc-mafia-channel-tab:focus-visible,
+.dc-mafia-channel-tab[data-active="true"] {
+  background: var(--color-sidebar-active);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.dc-mafia-channel-tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.dc-mafia-composer {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  background: #383a40;
+  padding: 6px;
+}
+
+.dc-mafia-speaker,
+.dc-mafia-input,
+.dc-mafia-select {
+  min-width: 0;
+  border: 0;
+  border-radius: 5px;
+  background: #1e1f22;
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.dc-mafia-speaker,
+.dc-mafia-select {
+  height: 34px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dc-mafia-input {
+  height: 38px;
+  padding: 0 11px;
+  font-size: 14px;
+}
+
+.dc-mafia-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.dc-mafia-speaker:focus,
+.dc-mafia-input:focus,
+.dc-mafia-select:focus {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 56%, transparent);
+}
+
+.dc-mafia-send {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--color-accent);
+}
+
+.dc-mafia-send:hover:not(:disabled),
+.dc-mafia-send:focus-visible {
+  background: rgba(88, 101, 242, 0.12);
+  outline: none;
+}
+
+.dc-mafia-send:disabled {
+  opacity: 0.4;
+}
+
+.dc-mafia-panel {
+  border-left: 1px solid rgba(0, 0, 0, 0.22);
+  background: var(--color-sidebar);
+  padding: 14px 8px;
+}
+
+.dc-mafia-panel section + section {
+  margin-top: 18px;
+}
+
+.dc-mafia-panel h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 6px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.dc-mafia-panel h2 span {
+  color: var(--color-text-secondary);
+  text-transform: none;
+}
+
+.dc-mafia-player-list,
+.dc-mafia-control-stack {
+  display: grid;
+  gap: 4px;
+}
+
+.dc-mafia-player {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.dc-mafia-player:hover {
+  background: var(--color-sidebar-hover);
+  color: var(--color-text-primary);
+}
+
+.dc-mafia-player-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.dc-mafia-player-dot.alive {
+  background: var(--color-online);
+}
+
+.dc-mafia-player-dot.dead {
+  background: var(--color-danger);
+}
+
+.dc-mafia-player span.alive,
+.dc-mafia-player span.dead {
+  font-size: 10px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.dc-mafia-player span.alive {
+  color: var(--color-online);
+}
+
+.dc-mafia-player span.dead {
+  color: var(--color-danger);
+}
+
+.dc-mafia-control-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 5px;
+  background: var(--color-sidebar-hover);
+  padding: 0 10px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.dc-mafia-control-button:hover:not(:disabled),
+.dc-mafia-control-button:focus-visible {
+  background: var(--color-sidebar-active);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.dc-mafia-control-button.primary {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.dc-mafia-control-button.primary:hover:not(:disabled),
+.dc-mafia-control-button.primary:focus-visible {
+  background: var(--color-accent-hover);
+}
+
+.dc-mafia-control-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+@media (max-width: 760px) {
+  .dc-mafia-composer {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+
+  .dc-mafia-speaker {
+    grid-column: 1 / -1;
+  }
 }
 
 .dc-composer-shell {

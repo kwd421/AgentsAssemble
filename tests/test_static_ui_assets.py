@@ -42,7 +42,7 @@ class StaticUiAssetTests(unittest.TestCase):
     def test_react_responsive_layout_hooks_are_present(self):
         css = (FRONTEND_DIR / "index.css").read_text(encoding="utf-8")
 
-        self.assertIn(".ops-shell", css)
+        self.assertIn(".dc-shell", css)
         self.assertIn(".dc-rail", css)
         self.assertIn(".dc-sidebar", css)
         self.assertIn(".dc-friends-body", css)
@@ -948,8 +948,9 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('query.get("room")', app_source)
         self.assertIn('query.get("scope")', app_source)
         self.assertIn("directRoom", app_source)
-        self.assertIn("initialOperatorRooms(directRoom)", app_source)
-        self.assertIn('const initialChannel: Channel = guestInvite || directRoom ? "lobby" : "friends";', app_source)
+        self.assertIn("routeRoom", app_source)
+        self.assertIn("initialOperatorRooms(routeRoom)", app_source)
+        self.assertIn('const initialChannel: Channel = guestInvite || directRoom ? "lobby" : mafiaRoom ? "live" : "friends";', app_source)
         self.assertIn("guestLocked", app_source)
         self.assertIn("guestReadOnly", app_source)
         self.assertIn('canPostMessages={!guestReadOnly}', app_source)

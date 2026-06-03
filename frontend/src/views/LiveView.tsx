@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import {
   Bot,
+  ChevronRight,
   Moon,
   Radio,
   Send,
@@ -191,59 +192,70 @@ function MafiaPanel({ game, refreshMafia }: { game: MafiaGame; refreshMafia: () 
   }
 
   return (
-    <div className="grid min-h-0 flex-1 gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_280px] lg:p-4">
-      <div className="ops-inner flex min-h-0 flex-col overflow-hidden">
-        <div className="flex shrink-0 items-center gap-2 border-b border-line p-2">
+    <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_264px]">
+      <div className="flex min-h-0 flex-col overflow-hidden">
+        <div className="dc-mafia-channel-tabs">
           <button
             type="button"
             onClick={() => setChannel("all")}
             data-active={channel === "all"}
-            className="ops-button rounded px-3 py-1.5 text-[12px] font-bold data-[active=true]:border-accent/70 data-[active=true]:text-accent"
+            className="dc-mafia-channel-tab"
           >
-            전체채팅
+            # 전체
           </button>
           <button
             type="button"
             onClick={() => setChannel("mafia_team")}
             disabled={!canUseTeamChat}
             data-active={channel === "mafia_team"}
-            className="ops-button rounded px-3 py-1.5 text-[12px] font-bold data-[active=true]:border-danger/70 data-[active=true]:text-danger disabled:opacity-40"
+            className="dc-mafia-channel-tab"
           >
-            마피아 팀채팅
+            # mafia
           </button>
-          <span className="ml-auto flex items-center gap-1.5 text-[12px] font-bold text-text-muted">
+          <span className="ml-auto flex items-center gap-1.5 text-[12px] font-bold text-text-muted preserve-words">
             {game.phase === "night" ? <Moon size={15} className="text-violet-300" /> : <Sun size={15} className="text-idle" />}
             {phaseLabel(game.phase)} · {game.day_number}일차 · {winnerLabel(game.winner)}
           </span>
         </div>
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 chat-scroll">
+        <div className="min-h-0 flex-1 overflow-y-auto py-3 chat-scroll">
           {visibleEvents.length === 0 ? (
-            <p className="flex h-full items-center justify-center text-center text-[13px] text-text-muted preserve-words">
-              아직 이 채널에 메시지가 없습니다.
-            </p>
+            <div className="dc-channel-empty">
+              <span className="dc-channel-empty-icon">
+                {channel === "mafia_team" ? <Moon size={24} /> : <Skull size={24} />}
+              </span>
+              <h2>{channel === "mafia_team" ? "mafia 채널" : "mafia-night"}</h2>
+              <p className="preserve-words">아직 메시지가 없습니다.</p>
+            </div>
           ) : (
             visibleEvents.map((event) => (
-              <article key={event.id} className="rounded-lg bg-panel-soft/60 p-2.5">
-                <div className="mb-1 flex items-center justify-between gap-3">
-                  <p className="font-semibold text-text-primary preserve-words">{event.name}</p>
-                  <span className="text-[11px] text-text-muted">{formatTime(event.created_at)}</span>
+              <article key={event.id} className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-1.5">
+                <span className={`dc-message-avatar mt-0.5 ${channel === "mafia_team" ? "agent" : "system"}`}>
+                  {channel === "mafia_team" ? <Moon size={16} /> : <Bot size={16} />}
+                </span>
+                <div className="min-w-0">
+                  <p className="flex items-baseline gap-2">
+                    <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">
+                      {event.name}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-text-muted">{formatTime(event.created_at)}</span>
+                  </p>
+                  <p className="text-[14px] leading-relaxed text-text-secondary preserve-words">{event.message}</p>
                 </div>
-                <p className="text-[13px] leading-relaxed text-text-secondary preserve-words">{event.message}</p>
               </article>
             ))
           )}
         </div>
-        <div className="shrink-0 border-t border-line p-2">
+        <div className="shrink-0 px-4 pb-5">
           {error && (
-            <p className="mb-2 rounded border border-danger/30 bg-danger/10 px-3 py-1.5 text-[12px] text-danger preserve-words">
+            <p className="mb-2 rounded bg-danger/15 px-3 py-1.5 text-[12px] font-bold text-danger preserve-words">
               {error}
             </p>
           )}
-          <div className="grid gap-2 md:grid-cols-[150px_minmax(0,1fr)_40px]">
+          <div className="dc-mafia-composer">
             <select
               value={speakerId}
               onChange={(event) => setSpeakerId(event.target.value)}
-              className="ops-input rounded px-2.5 py-2 text-[13px]"
+              className="dc-mafia-speaker"
               aria-label="발언자"
             >
               {speakerOptions.map((player) => (
@@ -258,14 +270,14 @@ function MafiaPanel({ game, refreshMafia }: { game: MafiaGame; refreshMafia: () 
               onKeyDown={(event) => {
                 if (event.key === "Enter") void handleSend();
               }}
-              className="ops-input min-w-0 rounded px-3 py-2 text-[13px]"
-              placeholder={channel === "mafia_team" ? "마피아 팀채팅..." : "전체채팅..."}
+              className="dc-mafia-input"
+              placeholder={channel === "mafia_team" ? "#mafia에 메시지 보내기" : "#mafia-night에 메시지 보내기"}
             />
             <button
               type="button"
               onClick={handleSend}
               disabled={busy || !message.trim() || !speakerId}
-              className="grid h-10 place-items-center rounded border border-line bg-accent/10 text-accent disabled:opacity-40"
+              className="dc-mafia-send"
               aria-label="마피아 채팅 보내기"
             >
               <Send size={16} />
@@ -274,33 +286,34 @@ function MafiaPanel({ game, refreshMafia }: { game: MafiaGame; refreshMafia: () 
         </div>
       </div>
 
-      <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto chat-scroll">
-        <section className="ops-inner p-3">
-          <h2 className="mb-2 flex items-center gap-2 text-[14px] font-bold">
-            <Skull size={15} className="text-danger" />
-            생존자
+      <aside className="dc-mafia-panel hidden min-h-0 flex-col overflow-y-auto chat-scroll lg:flex">
+        <section>
+          <h2>
+            플레이어
+            <span>{game.players.filter((player) => player.alive).length}</span>
           </h2>
-          <div className="space-y-1.5">
+          <div className="dc-mafia-player-list">
             {game.players.map((player) => (
-              <div key={player.agent_id} className="flex items-center justify-between gap-3 rounded bg-panel-soft/60 px-2.5 py-1.5">
-                <span className="min-w-0 truncate text-[13px] font-semibold preserve-words">{playerName(player)}</span>
-                <span className={player.alive ? "text-[11px] font-bold text-online" : "text-[11px] font-bold text-danger"}>
-                  {player.alive ? "생존" : "탈락"}
+              <div key={player.agent_id} className="dc-mafia-player">
+                <span className={`dc-mafia-player-dot ${player.alive ? "alive" : "dead"}`} aria-hidden />
+                <span className="min-w-0 truncate preserve-words">{playerName(player)}</span>
+                <span className={player.alive ? "alive" : "dead"}>
+                  {player.alive ? "alive" : "out"}
                 </span>
               </div>
             ))}
           </div>
         </section>
-        <section className="ops-inner p-3">
-          <h2 className="mb-2 flex items-center gap-2 text-[14px] font-bold">
-            <Vote size={15} className="text-idle" />
-            투표 / 진행
+        <section>
+          <h2>
+            진행
+            <span>{phaseLabel(game.phase)}</span>
           </h2>
-          <div className="space-y-2">
+          <div className="dc-mafia-control-stack">
             <select
               value={voterId}
               onChange={(event) => setVoterId(event.target.value)}
-              className="ops-input w-full rounded px-2.5 py-2 text-[13px]"
+              className="dc-mafia-select"
               aria-label="투표자"
             >
               {voterOptions.map((player) => (
@@ -312,7 +325,7 @@ function MafiaPanel({ game, refreshMafia }: { game: MafiaGame; refreshMafia: () 
             <select
               value={targetId}
               onChange={(event) => setTargetId(event.target.value)}
-              className="ops-input w-full rounded px-2.5 py-2 text-[13px]"
+              className="dc-mafia-select"
               aria-label="대상"
             >
               {targetOptions.map((player) => (
@@ -325,7 +338,7 @@ function MafiaPanel({ game, refreshMafia }: { game: MafiaGame; refreshMafia: () 
               type="button"
               onClick={handleVote}
               disabled={busy || game.phase === "ended" || !voterId || !targetId}
-              className="ops-button flex w-full items-center justify-center gap-2 rounded px-3 py-2 text-[13px] font-bold disabled:opacity-40"
+              className="dc-mafia-control-button"
             >
               <Vote size={15} />
               투표
@@ -334,9 +347,10 @@ function MafiaPanel({ game, refreshMafia }: { game: MafiaGame; refreshMafia: () 
               type="button"
               onClick={handleResolve}
               disabled={busy || game.phase === "ended"}
-              className="ops-cta flex w-full items-center justify-center gap-2 px-3 py-2 text-[13px] disabled:opacity-40"
+              className="dc-mafia-control-button primary"
             >
-              다음 단계 처리
+              다음 단계
+              <ChevronRight size={15} />
             </button>
           </div>
         </section>
@@ -474,7 +488,6 @@ export default function LiveView({
         <ChannelHeader
           icon={<Skull size={20} />}
           title="mafia-night"
-          subtitle="전체 채팅과 팀 채팅이 분리된 Play Mode 게임 채널"
           membersOpen={membersOpen}
           onToggleMembers={onToggleMembers}
           headerActions={headerActions}
@@ -489,7 +502,7 @@ export default function LiveView({
       <ChannelHeader
         icon={<Radio size={20} />}
         title="stage-log"
-        subtitle="대화 채널이 아니라 Play Mode 진행 이벤트를 보는 읽기 전용 스테이지"
+        subtitle={flow.topic || "Play Mode"}
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}
         headerActions={headerActions}
@@ -519,16 +532,13 @@ export default function LiveView({
           </button>
         )}
         {feedItems.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-            <div className="mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-panel-soft text-text-muted">
+          <div className="dc-channel-empty">
+            <div className="dc-channel-empty-icon">
               <Radio size={24} />
             </div>
-            <p className="max-w-md text-[14px] text-text-secondary preserve-words">
-              {isRunning
-                ? "방은 열려 있습니다. 진행 이벤트를 기다리는 중입니다."
-                : isFinished
-                  ? "세션이 종료되었습니다. #general에서 새 세션을 시작할 수 있습니다."
-                  : "#general에서 Play Mode를 시작하면 이곳에 진행 이벤트가 흐릅니다."}
+            <h2>stage-log</h2>
+            <p className="preserve-words">
+              {isRunning ? "아직 새 기록이 없습니다." : isFinished ? "세션이 종료되었습니다." : "아직 시작된 세션이 없습니다."}
             </p>
           </div>
         ) : (
@@ -536,10 +546,6 @@ export default function LiveView({
             <FlowMessage key={item.key} event={item.event} />
           )
         )}
-      </div>
-
-      <div className="shrink-0 border-t border-line px-4 py-3 text-[12px] font-semibold text-text-muted preserve-words">
-        모두가 보는 대화는 #general에 남습니다. 이 채널은 진행 이벤트만 분리해서 보여줍니다.
       </div>
     </div>
   );
