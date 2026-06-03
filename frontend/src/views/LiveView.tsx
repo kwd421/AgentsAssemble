@@ -488,8 +488,8 @@ export default function LiveView({
     <div className="flex h-full min-h-0 flex-col">
       <ChannelHeader
         icon={<Radio size={20} />}
-        title="live-room"
-        subtitle="Play Mode와 시스템 이벤트가 흐르는 채널"
+        title="stage-log"
+        subtitle="대화 채널이 아니라 Play Mode 진행 이벤트를 보는 읽기 전용 스테이지"
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}
         headerActions={headerActions}
@@ -525,10 +525,10 @@ export default function LiveView({
             </div>
             <p className="max-w-md text-[14px] text-text-secondary preserve-words">
               {isRunning
-                ? "방은 열려 있습니다. 에이전트 이벤트를 기다리는 중입니다."
+                ? "방은 열려 있습니다. 진행 이벤트를 기다리는 중입니다."
                 : isFinished
                   ? "세션이 종료되었습니다. #general에서 새 세션을 시작할 수 있습니다."
-                  : "#general에서 Play Mode를 시작하면 이곳에 라이브 이벤트가 흐릅니다."}
+                  : "#general에서 Play Mode를 시작하면 이곳에 진행 이벤트가 흐릅니다."}
             </p>
           </div>
         ) : (
@@ -539,7 +539,7 @@ export default function LiveView({
       </div>
 
       <div className="shrink-0 border-t border-line px-4 py-3 text-[12px] font-semibold text-text-muted preserve-words">
-        모두가 보는 대화는 #general에 남습니다. 이 채널은 라이브 이벤트만 분리해서 보여줍니다.
+        모두가 보는 대화는 #general에 남습니다. 이 채널은 진행 이벤트만 분리해서 보여줍니다.
       </div>
     </div>
   );

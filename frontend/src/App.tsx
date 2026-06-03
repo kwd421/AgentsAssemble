@@ -126,13 +126,14 @@ export type RoomDockItem = {
 
 const CHANNELS: ChannelConfig[] = [
   { id: "lobby", label: "general", icon: Hash },
-  { id: "live", label: "live-room", icon: Radio },
+  { id: "live", label: "stage-log", icon: Radio },
   { id: "board", label: "work-board", icon: LayoutDashboard },
   { id: "records", label: "records", icon: Archive },
 ];
 
 const CHANNEL_SECTIONS: Array<{ id: string; label: string; channels: Channel[] }> = [
-  { id: "conversation", label: "Text Channels", channels: ["lobby", "live"] },
+  { id: "conversation", label: "Text Channels", channels: ["lobby"] },
+  { id: "stage", label: "Stage", channels: ["live"] },
   { id: "work", label: "Workroom", channels: ["board", "records"] },
 ];
 
@@ -337,6 +338,28 @@ function roomFromDirectParams(): RoomDockItem | null {
   }
 }
 
+function roomFromMafiaParams(): RoomDockItem | null {
+  try {
+    const query = new URLSearchParams(window.location.search);
+    const gameId = cleanInviteValue(query.get("mafia") || query.get("mafiaGameId"), "", 128);
+    if (!gameId) return null;
+    const label = cleanInviteValue(query.get("roomName") || query.get("name"), "Mafia Night", 80);
+    const topic = cleanInviteValue(query.get("topic"), "Play Mode 마피아", 160);
+    return {
+      id: `mafia-${gameId}`,
+      label,
+      meetingId: gameId,
+      topic,
+      shortLabel: "M",
+      icon: Gamepad2,
+      createdAt: "",
+      tone: "mafia",
+    };
+  } catch {
+    return null;
+  }
+}
+
 function activeRoomIdForStartup(rooms: RoomDockItem[], routeRoom?: RoomDockItem | null) {
   if (!routeRoom) return "";
   return (
@@ -418,13 +441,16 @@ export default function App() {
   const [startupRoute] = useState(() => {
     const guestInvite = roomFromInviteParams();
     const directRoom = guestInvite ? null : roomFromDirectParams();
-    const startupRooms = guestInvite ? [guestInvite] : initialOperatorRooms(directRoom);
-    const initialChannel: Channel = guestInvite || directRoom ? "lobby" : "friends";
+    const mafiaRoom = guestInvite || directRoom ? null : roomFromMafiaParams();
+    const routeRoom = directRoom || mafiaRoom;
+    const startupRooms = guestInvite ? [guestInvite] : initialOperatorRooms(routeRoom);
+    const initialChannel: Channel = guestInvite || directRoom ? "lobby" : mafiaRoom ? "live" : "friends";
     return {
       guestInvite,
-      directRoom,
+      directRoom: routeRoom,
+      mafiaRoom,
       startupRooms,
-      activeRoomId: guestInvite?.id || activeRoomIdForStartup(startupRooms, directRoom),
+      activeRoomId: guestInvite?.id || activeRoomIdForStartup(startupRooms, routeRoom),
       initialChannel,
     };
   });
@@ -654,6 +680,7 @@ export default function App() {
 
   const flowRunning = flow.status === "running";
   const mafiaGame = mafiaData?.game ?? null;
+  const scopedMafiaGame = mafiaGame?.game_id === activeRoom.meetingId ? mafiaGame : null;
   const activeRoomFlowVisible = Boolean(flow.meeting_id && flow.meeting_id === activeRoom.meetingId);
   const scopedFlow = activeRoomFlowVisible
     ? flow
@@ -1473,7 +1500,7 @@ export default function App() {
             flowEvents={scopedLiveTimelineEvents}
             timelineSource={scopedTimelineSource}
             agents={scopedAgents}
-            mafiaGame={mafiaGame}
+            mafiaGame={scopedMafiaGame}
             refreshMafia={refreshMafia}
             streamError={activeRoomFlowVisible ? meetingStreamError : null}
             membersOpen={membersOpen}

@@ -84,6 +84,12 @@ Room links can deep-link into the React room client. Operator URLs such as
 `/?room=<meeting-id>&roomName=<label>` open the selected room directly in
 `#general`, while guest invite URLs keep `guest=1` and remain scoped to that
 single room without exposing the operator friends surface or the records channel.
+The room's everyday conversation happens in `#general`. The `stage-log` channel
+is a read-only event view for Play Mode/session progress so it does not look
+like a second place where people should chat.
+Mafia links such as `/?mafia=<game-id>` open a matching Mafia Night room, but a
+remembered mafia game must not take over unrelated rooms; the live panel only
+shows a mafia game when the active room id matches that game id.
 
 The main room composer and side-chat composer share the same mention model.
 Their `@` suggestions should include the local user, scoped live residents, and

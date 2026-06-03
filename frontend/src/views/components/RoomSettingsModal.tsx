@@ -9,7 +9,7 @@ import {
 
 const ROOM_CHANNEL_OPTIONS = [
   { id: "lobby", label: "general" },
-  { id: "live", label: "live-room" },
+  { id: "live", label: "stage-log" },
   { id: "board", label: "work-board" },
   { id: "records", label: "records" },
 ];
