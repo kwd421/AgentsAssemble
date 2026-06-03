@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.room_friends import (
+    delete_room_friend,
     read_room_friends,
     room_friend_suggestions_from_agents,
     room_friend_type_for_agent,
@@ -47,6 +48,41 @@ class RoomFriendsTests(unittest.TestCase):
         self.assertTrue(friends[0]["created_at"])
         self.assertEqual(friends[0]["participant_type"], "subscription_ai")
         self.assertEqual(friends[0]["agent_id"], "codex-lead")
+
+    def test_delete_room_friend_removes_saved_entry_only(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            upsert_room_friend(
+                root,
+                {
+                    "friend_id": "friend:codex-lead",
+                    "display_name": "Codex Lead",
+                    "participant_type": "subscription_ai",
+                },
+            )
+            upsert_room_friend(
+                root,
+                {
+                    "friend_id": "friend:seinel",
+                    "display_name": "SeiNel",
+                    "participant_type": "human",
+                },
+            )
+
+            deleted = delete_room_friend(root, "friend:codex-lead")
+            friends = read_room_friends(root)
+
+        self.assertEqual(deleted["friend_id"], "friend:codex-lead")
+        self.assertEqual([friend["friend_id"] for friend in friends], ["friend:seinel"])
+
+    def test_delete_room_friend_rejects_missing_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            with self.assertRaises(ValueError):
+                delete_room_friend(root, "")
+            with self.assertRaises(ValueError):
+                delete_room_friend(root, "friend:missing")
 
     def test_agent_suggestions_classify_participant_types_and_skip_saved_agents(self):
         agents = [

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, MoreVertical, UserPlus } from "lucide-react";
+import { MessageCircle, MoreVertical, Trash2, UserPlus } from "lucide-react";
 import type { RoomFriend } from "../../api";
 import { participantTypeMeta } from "../../lib/participantTypes";
 
@@ -19,6 +19,7 @@ export default function FriendRow({
   inviteLabel,
   onInvite,
   onStartDm,
+  onDelete,
   selected,
   onSelect,
 }: {
@@ -28,6 +29,7 @@ export default function FriendRow({
   inviteLabel?: string;
   onInvite?: (friend: RoomFriend) => void;
   onStartDm?: (friend: RoomFriend) => void;
+  onDelete?: (friend: RoomFriend) => void;
   selected?: boolean;
   onSelect?: (friend: RoomFriend) => void;
 }) {
@@ -35,7 +37,7 @@ export default function FriendRow({
   const rowRef = useRef<HTMLDivElement>(null);
   const meta = participantTypeMeta(friend.participant_type);
   const Icon = meta.icon;
-  const hasMenuActions = Boolean(onStartDm || onInvite || onSelect);
+  const hasMenuActions = Boolean(onStartDm || onInvite || onSelect || onDelete);
   const detail = [
     meta.label,
     friend.last_meeting_id ? `최근 방 ${friend.last_meeting_id}` : "",
@@ -147,6 +149,20 @@ export default function FriendRow({
                   }}
                 >
                   친구 정보 보기
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="danger"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onDelete(friend);
+                  }}
+                >
+                  <Trash2 size={14} />
+                  친구 삭제
                 </button>
               )}
             </div>

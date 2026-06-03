@@ -120,7 +120,7 @@ from agentsassemble.frontend_runtime import (
 )
 from agentsassemble.release_health import release_health_catalog_payload, release_health_queue_payload
 from agentsassemble.room_friend_dms import append_room_friend_dm_event, room_friend_dm_payload
-from agentsassemble.room_friends import room_friends_payload, upsert_room_friend
+from agentsassemble.room_friends import delete_room_friend, room_friends_payload, upsert_room_friend
 from agentsassemble.room_members import room_members_payload, upsert_room_member
 from agentsassemble.room_settings import room_settings_payload, update_room_settings
 from agentsassemble.user_profile import read_user_profile, update_user_profile
@@ -10174,6 +10174,27 @@ def _make_handler(
                     details=operation_details,
                 )
                 self._send_json(join)
+                return
+            self._send_error(HTTPStatus.NOT_FOUND, "Not found")
+
+        def do_DELETE(self) -> None:
+            parsed = urlparse(self.path)
+            if not self._request_is_trusted(path=parsed.path, method="DELETE"):
+                self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
+                return
+            query = parse_qs(parsed.query)
+            if parsed.path == "/api/room-friends":
+                try:
+                    deleted = delete_room_friend(output_root, str(query.get("friend_id", [""])[0] or ""))
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(
+                    {
+                        "deleted": deleted,
+                        **room_friends_payload(output_root, read_live_agents(output_root)),
+                    }
+                )
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")
 

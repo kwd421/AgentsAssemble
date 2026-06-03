@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, UserPlus, Users } from "lucide-react";
 import {
   addRoomFriend,
+  deleteRoomFriend,
   fetchRoomFriends,
   type ParticipantType,
   type RoomFriend,
@@ -167,6 +168,25 @@ export default function FriendsView({
     }
   }
 
+  async function handleDeleteFriend(friend: RoomFriend) {
+    const busyKey = `delete:${friend.friend_id}`;
+    setBusyId(busyKey);
+    setStatus("");
+    try {
+      const result = await deleteRoomFriend(friend.friend_id);
+      setPayload({ friends: result.friends, candidates: result.candidates });
+      onFriendsChanged?.(result);
+      if (activeDmFriendId === friend.friend_id) {
+        onActiveDmFriendChange?.("");
+      }
+      setStatus(`${friend.display_name} 삭제됨`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "친구 삭제 실패");
+    } finally {
+      setBusyId("");
+    }
+  }
+
   return (
     <div className="dc-friends-page">
       <header className="dc-friends-head">
@@ -257,6 +277,7 @@ export default function FriendsView({
                   inviteLabel={busyId === `invite:${friend.friend_id}` ? "초대 중" : "방에 초대"}
                   onInvite={onInviteFriendToRoom ? handleInvite : undefined}
                   onStartDm={openFriendDm}
+                  onDelete={handleDeleteFriend}
                   selected={selectedFriend?.friend_id === friend.friend_id}
                   onSelect={onSelectFriend}
                 />
@@ -269,7 +290,7 @@ export default function FriendsView({
           <section className="dc-friend-section">
             <h2>이전 세션에서 추가 — {visibleCandidates.length}</h2>
             {visibleCandidates.length ? (
-              visibleCandidates.slice(0, 10).map((friend) => (
+              visibleCandidates.map((friend) => (
                 <FriendRow
                   key={friend.friend_id}
                   friend={friend}
@@ -295,6 +316,7 @@ export default function FriendsView({
               profileFriend && busyId === `invite:${profileFriend.friend_id}` ? "초대 중" : "방에 초대"
             }
             onInvite={onInviteFriendToRoom ? handleInvite : undefined}
+            onDelete={profileFriend ? handleDeleteFriend : undefined}
           />
         </aside>
       </div>

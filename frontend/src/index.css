@@ -3027,6 +3027,16 @@ textarea {
   outline: none;
 }
 
+.dc-friend-row-menu button.danger {
+  color: #f23f42;
+}
+
+.dc-friend-row-menu button.danger:hover,
+.dc-friend-row-menu button.danger:focus-visible {
+  background: #da373c;
+  color: #fff;
+}
+
 .dc-friends-activity {
   border-left: 1px solid rgba(0, 0, 0, 0.24);
   padding: 26px 22px;
@@ -3168,6 +3178,17 @@ textarea {
 .dc-friend-profile-actions .dc-friend-profile-secondary {
   background: #2b2d31;
   color: var(--color-text-secondary);
+}
+
+.dc-friend-profile-actions .dc-friend-profile-danger {
+  background: rgba(242, 63, 66, 0.14);
+  color: #ff8a8d;
+}
+
+.dc-friend-profile-actions .dc-friend-profile-danger:hover,
+.dc-friend-profile-actions .dc-friend-profile-danger:focus-visible {
+  background: #da373c;
+  color: #fff;
 }
 
 .dc-friend-profile-facts {

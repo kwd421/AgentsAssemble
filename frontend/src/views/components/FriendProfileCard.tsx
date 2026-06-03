@@ -1,4 +1,4 @@
-import { Bot, MessageCircle, UserPlus } from "lucide-react";
+import { Bot, MessageCircle, Trash2, UserPlus } from "lucide-react";
 import type { RoomFriend } from "../../api";
 import { participantTypeMeta } from "../../lib/participantTypes";
 
@@ -21,12 +21,14 @@ export default function FriendProfileCard({
   onStartDm,
   inviteLabel,
   onInvite,
+  onDelete,
 }: {
   friend: RoomFriend | null;
   activeRoomName?: string;
   onStartDm?: (friend: RoomFriend) => void;
   inviteLabel?: string;
   onInvite?: (friend: RoomFriend) => void;
+  onDelete?: (friend: RoomFriend) => void;
 }) {
   if (!friend) {
     return (
@@ -73,6 +75,12 @@ export default function FriendProfileCard({
             <button type="button" onClick={() => onInvite(friend)}>
               <UserPlus size={15} />
               {inviteLabel || "방에 초대"}
+            </button>
+          )}
+          {onDelete && (
+            <button type="button" className="dc-friend-profile-danger" onClick={() => onDelete(friend)}>
+              <Trash2 size={15} />
+              친구 삭제
             </button>
           )}
         </div>

@@ -108,6 +108,18 @@ def upsert_room_friend(output_root: Path, payload: dict[str, object]) -> dict[st
     return friend
 
 
+def delete_room_friend(output_root: Path, friend_id: object) -> dict[str, object]:
+    target_id = clean_lobby_text(friend_id, limit=96)
+    if not target_id:
+        raise ValueError("friend_id is required")
+    friends = read_room_friends(output_root)
+    remaining = [friend for friend in friends if str(friend.get("friend_id") or "") != target_id]
+    if len(remaining) == len(friends):
+        raise ValueError("Friend not found")
+    _write_room_friends(output_root, remaining)
+    return {"friend_id": target_id}
+
+
 def room_friend_suggestions_from_agents(
     agents: list[dict[str, object]],
     friends: list[dict[str, object]],

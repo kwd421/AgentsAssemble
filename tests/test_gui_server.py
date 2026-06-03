@@ -13,6 +13,7 @@ from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from unittest.mock import ANY, patch
 from urllib.error import HTTPError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import (
@@ -19363,10 +19364,11 @@ class GuiServerTests(unittest.TestCase):
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                with urlopen(f"http://127.0.0.1:{server.server_port}/api/room-friends", timeout=4) as response:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                with urlopen(f"{server_url}/api/room-friends", timeout=4) as response:
                     initial_payload = json.loads(response.read().decode("utf-8"))
                 request = Request(
-                    f"http://127.0.0.1:{server.server_port}/api/room-friends",
+                    f"{server_url}/api/room-friends",
                     data=json.dumps(
                         {
                             "display_name": "SeiNel",
@@ -19379,6 +19381,12 @@ class GuiServerTests(unittest.TestCase):
                 )
                 with urlopen(request, timeout=4) as response:
                     saved_payload = json.loads(response.read().decode("utf-8"))
+                delete_request = Request(
+                    f"{server_url}/api/room-friends?friend_id={quote(str(saved_payload['friend']['friend_id']))}",
+                    method="DELETE",
+                )
+                with urlopen(delete_request, timeout=4) as response:
+                    deleted_payload = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -19387,6 +19395,9 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(initial_payload["suggestions"][0]["participant_type"], "subscription_ai")
             self.assertEqual(saved_payload["friend"]["participant_type"], "human")
             self.assertEqual(saved_payload["friends"][0]["display_name"], "SeiNel")
+            self.assertEqual(deleted_payload["deleted"]["friend_id"], saved_payload["friend"]["friend_id"])
+            self.assertEqual(deleted_payload["friends"], [])
+            self.assertEqual(deleted_payload["suggestions"][0]["agent_id"], "codex-lead")
 
     def test_room_friend_dm_api_posts_local_messages_only_for_saved_friends(self):
         with tempfile.TemporaryDirectory() as temp_dir:

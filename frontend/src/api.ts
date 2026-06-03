@@ -598,6 +598,14 @@ async function postJson<T>(url: string, body: object): Promise<T> {
   return res.json();
 }
 
+async function deleteJson<T>(url: string): Promise<T> {
+  const res = await fetch(url, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(await responseErrorMessage(res));
+  }
+  return res.json();
+}
+
 async function responseErrorMessage(res: Response): Promise<string> {
   const fallback = `${res.status} ${res.statusText}`;
   const text = await res.text().catch(() => "");
@@ -759,6 +767,12 @@ export function fetchRoomFriends() {
 
 export function addRoomFriend(friend: Partial<RoomFriend>) {
   return postJson<{ friend: RoomFriend; friends: RoomFriend[] }>("/api/room-friends", friend);
+}
+
+export function deleteRoomFriend(friendId: string) {
+  return deleteJson<RoomFriendsResponse & { deleted: { friend_id: string } }>(
+    `/api/room-friends${queryString({ friend_id: friendId })}`
+  );
 }
 
 export function fetchRoomFriendDm(friendId: string) {
