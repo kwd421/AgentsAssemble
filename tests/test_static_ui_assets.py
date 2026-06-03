@@ -657,6 +657,26 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("mentionables={scopedMentionables}", app_source)
         self.assertIn(".dc-side-composer .dc-mention-popover", css)
 
+    def test_react_mention_composer_supports_keyboard_selection(self):
+        mention_input_source = frontend_file("views/components/MentionInput.tsx")
+        css = (FRONTEND_DIR / "index.css").read_text()
+
+        self.assertIn("const [activeOptionIndex, setActiveOptionIndex]", mention_input_source)
+        self.assertIn("const [suppressMentionSuggestions, setSuppressMentionSuggestions]", mention_input_source)
+        self.assertIn("function handleMentionKeyDown", mention_input_source)
+        self.assertIn('event.key === "ArrowDown"', mention_input_source)
+        self.assertIn('event.key === "ArrowUp"', mention_input_source)
+        self.assertIn('event.key === "Enter"', mention_input_source)
+        self.assertIn('event.key === "Escape"', mention_input_source)
+        self.assertIn("setSuppressMentionSuggestions(true)", mention_input_source)
+        self.assertIn("setSuppressMentionSuggestions(false)", mention_input_source)
+        self.assertIn("aria-activedescendant", mention_input_source)
+        self.assertIn("aria-selected={index === activeOptionIndex}", mention_input_source)
+        self.assertIn("onMouseEnter={() => setActiveOptionIndex(index)}", mention_input_source)
+        self.assertIn("onKeyDown={handleMentionKeyDown}", mention_input_source)
+        self.assertIn("onKeyDown?.(event)", mention_input_source)
+        self.assertIn('.dc-mention-popover button[aria-selected="true"]', css)
+
     def test_react_lobby_message_actions_open_side_chat_thread_context(self):
         app_source = frontend_file("App.tsx")
         lobby_source = frontend_file("views/LobbyView.tsx")

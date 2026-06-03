@@ -2166,6 +2166,7 @@ textarea {
 }
 
 .dc-mention-popover button:hover,
+.dc-mention-popover button[aria-selected="true"],
 .dc-mention-popover button:focus-visible {
   background: var(--color-accent);
   color: #fff;
