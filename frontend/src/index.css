@@ -562,7 +562,7 @@ textarea {
 
 /* Channel sidebar. */
 .dc-sidebar {
-  width: 336px;
+  width: 312px;
   background: var(--color-sidebar);
 }
 
@@ -919,8 +919,11 @@ textarea {
 
 .dc-user-area {
   position: relative;
+  z-index: 20;
+  width: calc(100% + 64px);
+  margin-left: -64px;
   background: #232428;
-  padding: 8px;
+  padding: 8px 8px 8px 10px;
 }
 
 .dc-user-panel {
@@ -929,11 +932,11 @@ textarea {
 
 .dc-current-user {
   display: flex;
-  min-height: 64px;
+  min-height: 60px;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   border-radius: 8px;
-  padding: 8px;
+  padding: 6px 8px;
 }
 
 .dc-current-user:hover {
@@ -945,7 +948,7 @@ textarea {
   min-width: 0;
   flex: 1;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   border-radius: 6px;
   padding: 5px 6px;
 }
@@ -958,8 +961,8 @@ textarea {
 
 .dc-self-avatar {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   place-items: center;
   border-radius: 50%;
   background: var(--profile-accent, var(--color-accent));
@@ -996,15 +999,16 @@ textarea {
 
 .dc-user-actions {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   margin-left: auto;
 }
 
 .dc-user-actions button {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   place-items: center;
   border-radius: 4px;
   color: var(--color-text-muted);
