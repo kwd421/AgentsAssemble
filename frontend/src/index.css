@@ -2608,6 +2608,60 @@ textarea {
   font-weight: 700;
 }
 
+.dc-member-session-summary {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.dc-member-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dc-member-session-button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 6px;
+  background: var(--color-accent);
+  padding: 0 13px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.dc-member-session-button:hover,
+.dc-member-session-button:focus-visible {
+  background: var(--color-accent-hover);
+  outline: none;
+}
+
+.dc-member-session-button[data-variant="danger"] {
+  background: var(--color-danger);
+}
+
+.dc-member-session-button[data-variant="danger"]:hover,
+.dc-member-session-button[data-variant="danger"]:focus-visible {
+  background: #c73639;
+}
+
+.dc-member-session-button:disabled {
+  cursor: not-allowed;
+  background: rgba(148, 155, 164, 0.18);
+  color: var(--color-text-muted);
+  opacity: 0.72;
+}
+
+.dc-member-session-status {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 /* Message row hover, like a chat client. */
 .dc-message {
   position: relative;

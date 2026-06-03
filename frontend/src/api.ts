@@ -219,6 +219,7 @@ export interface LiveAgent {
   connection_kind?: string;
   engagement_mode: string;
   meeting_id: string;
+  session_id?: string;
   last_seen_at: string;
   last_reply_at: string;
   last_observed_event_id?: string;
@@ -247,6 +248,38 @@ export interface LiveAgent {
   binding_join_mode?: string;
   binding_conflicts?: string[];
   capabilities: string[];
+}
+
+export interface LiveAgentProcessGroup {
+  group_id: string;
+  status: string;
+  pid?: number;
+  meeting_id: string;
+  config_path: string;
+  server?: string;
+  log_path?: string;
+  started_at?: string;
+  stopped_at?: string;
+  last_error?: string;
+  agents?: Array<{
+    agent_id: string;
+    display_name: string;
+    provider_kind: string;
+    connection_kind: string;
+  }>;
+}
+
+export interface LiveAgentProcessesResponse {
+  groups: LiveAgentProcessGroup[];
+}
+
+export interface LiveAgentSessionActionResponse {
+  meeting_id?: string;
+  group_id?: string;
+  status?: string;
+  config_path?: string;
+  last_error?: string;
+  summary?: string;
 }
 
 export interface LiveAgentJoinBriefRequest {
@@ -774,6 +807,39 @@ export function saveRoomSettings({
 
 export function fetchRoomFriends() {
   return fetchJson<RoomFriendsResponse>("/api/room-friends");
+}
+
+export function fetchLiveAgentProcesses() {
+  return fetchJson<LiveAgentProcessesResponse>("/api/live-agent-processes");
+}
+
+export function resumeLiveAgentSession({
+  meetingId,
+  groupId,
+  liveAgentConfigPath,
+}: {
+  meetingId: string;
+  groupId: string;
+  liveAgentConfigPath: string;
+}) {
+  return postJson<LiveAgentSessionActionResponse>("/api/live-agent-sessions/resume", {
+    meeting_id: meetingId,
+    group_id: groupId,
+    live_agent_config_path: liveAgentConfigPath,
+  });
+}
+
+export function stopLiveAgentSession({
+  meetingId,
+  groupId,
+}: {
+  meetingId: string;
+  groupId: string;
+}) {
+  return postJson<LiveAgentSessionActionResponse>("/api/live-agent-sessions/stop", {
+    meeting_id: meetingId,
+    group_id: groupId,
+  });
 }
 
 export function addRoomFriend(friend: Partial<RoomFriend>) {

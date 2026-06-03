@@ -13,6 +13,7 @@ import {
 import {
   createRoomInvite,
   fetchLiveAgentFlow,
+  fetchLiveAgentProcesses,
   fetchRoomFriends,
   fetchRoomSettings,
   fetchRoomMembers,
@@ -34,6 +35,7 @@ import {
   type MeetingStreamState,
   type MeetingLifecycleResponse,
   type LiveAgent,
+  type LiveAgentProcessesResponse,
   type LifecycleProjection,
   type WorkroomQueueEvidence,
   type MafiaGame,
@@ -253,6 +255,14 @@ export default function App() {
   const flowFetcher = useCallback(() => fetchLiveAgentFlow(guestMeetingId), [guestMeetingId]);
   const [flowData, , flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
   const flow = flowData?.flow ?? { status: "idle" };
+  const processFetcher = useCallback((): Promise<LiveAgentProcessesResponse> => {
+    if (guestLocked) return Promise.resolve({ groups: [] });
+    return fetchLiveAgentProcesses();
+  }, [guestLocked]);
+  const [processData, , , refreshProcesses] = usePoll<LiveAgentProcessesResponse>(
+    processFetcher,
+    5000
+  );
   const lifecycleFetcher = useCallback((): Promise<MeetingLifecycleResponse> => {
     if (!flow.meeting_id) return Promise.resolve({ meeting_id: "", lifecycle: null });
     return fetchMeetingLifecycle(flow.meeting_id);
@@ -277,6 +287,17 @@ export default function App() {
     : [];
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? createFreshRoom();
   const activeSideChatMeetingId = activeRoom.meetingId || "";
+  const activeProcessGroup = useMemo(
+    () =>
+      (processData?.groups || []).find(
+        (group) => group.meeting_id && group.meeting_id === activeRoom.meetingId
+      ),
+    [activeRoom.meetingId, processData?.groups]
+  );
+  const refreshSessionSurfaces = useCallback(() => {
+    refreshProcesses();
+    refreshFlow();
+  }, [refreshFlow, refreshProcesses]);
 
   useEffect(() => {
     if (guestLocked) return;
@@ -1231,6 +1252,8 @@ export default function App() {
                 flowStatus={activeRoomFlowVisible ? flow.status : "idle"}
                 guestLocked={guestLocked}
                 channelNotifications={activeChannelSettings}
+                sessionGroup={activeProcessGroup}
+                onSessionActionComplete={refreshSessionSurfaces}
               />
             </section>
           ) : (

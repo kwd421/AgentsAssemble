@@ -1,7 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Code2, Crown, Search, ShieldCheck, User, UserCheck, X } from "lucide-react";
+import {
+  Bot,
+  Code2,
+  Crown,
+  Play,
+  Search,
+  ShieldCheck,
+  Square,
+  User,
+  UserCheck,
+  X,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { LiveAgent, RoomMember } from "../../api";
+import {
+  resumeLiveAgentSession,
+  stopLiveAgentSession,
+  type LiveAgent,
+  type LiveAgentProcessGroup,
+  type RoomMember,
+} from "../../api";
 import {
   agentMemberSignals,
   agentQuotaWindowSignals,
@@ -118,6 +135,25 @@ function inlineQuotaChips(agent: LiveAgent) {
   ];
 }
 
+function processStatusLabel(status?: string) {
+  if (status === "running") return "실행 중";
+  if (status === "stopped") return "중지됨";
+  if (status === "error") return "오류";
+  if (status === "finished") return "종료됨";
+  return "상태 미정";
+}
+
+function agentBelongsToProcessGroup(agent: LiveAgent, group?: LiveAgentProcessGroup) {
+  if (!group) return false;
+  const groupedAgents = group.agents || [];
+  if (groupedAgents.length === 0) return true;
+  return groupedAgents.some(
+    (candidate) =>
+      candidate.agent_id === agent.agent_id ||
+      Boolean(candidate.display_name && candidate.display_name === agent.display_name)
+  );
+}
+
 function MemberRow({
   entry,
   onOpenDetails,
@@ -207,16 +243,78 @@ function MemberRow({
 function MemberDetailModal({
   entry,
   onClose,
+  sessionGroup,
+  onSessionActionComplete,
 }: {
   entry: MemberEntry;
   onClose: () => void;
+  sessionGroup?: LiveAgentProcessGroup;
+  onSessionActionComplete?: () => void;
 }) {
+  const [sessionActionBusy, setSessionActionBusy] = useState(false);
+  const [sessionActionStatus, setSessionActionStatus] = useState("");
   if (!entry.agent) return null;
   const DetailIcon = entry.icon;
   const quotaWindows = agentQuotaWindowSignals(entry.agent);
   const quotaFallback = inlineQuotaChips(entry.agent);
   const signals = agentMemberSignals(entry.agent).filter((signal) => !/^5h |^1w /.test(signal.label));
   const lastObserved = lastObservedSummary(entry.agent);
+  const processOwnsAgent = agentBelongsToProcessGroup(entry.agent, sessionGroup);
+  const processRunning = sessionGroup?.status === "running";
+  const hasProcessControls = Boolean(sessionGroup && processOwnsAgent);
+  const canResumeSession = Boolean(
+    sessionGroup &&
+      processOwnsAgent &&
+      sessionGroup.group_id &&
+      sessionGroup.meeting_id &&
+      sessionGroup.config_path &&
+      !processRunning
+  );
+  const canStopSession = Boolean(
+    sessionGroup && processOwnsAgent && sessionGroup.group_id && sessionGroup.meeting_id && processRunning
+  );
+
+  async function handleResumeSession() {
+    if (!sessionGroup || !canResumeSession) return;
+    setSessionActionBusy(true);
+    setSessionActionStatus("세션 재개 요청 중...");
+    try {
+      const response = await resumeLiveAgentSession({
+        meetingId: sessionGroup.meeting_id,
+        groupId: sessionGroup.group_id,
+        liveAgentConfigPath: sessionGroup.config_path,
+      });
+      setSessionActionStatus(
+        `세션 재개 요청 완료${response.status ? ` · ${processStatusLabel(response.status)}` : ""}`
+      );
+      onSessionActionComplete?.();
+    } catch (error) {
+      setSessionActionStatus(error instanceof Error ? error.message : "세션 재개 실패");
+    } finally {
+      setSessionActionBusy(false);
+    }
+  }
+
+  async function handleStopSession() {
+    if (!sessionGroup || !canStopSession) return;
+    setSessionActionBusy(true);
+    setSessionActionStatus("세션 중단 요청 중...");
+    try {
+      const response = await stopLiveAgentSession({
+        meetingId: sessionGroup.meeting_id,
+        groupId: sessionGroup.group_id,
+      });
+      setSessionActionStatus(
+        `세션 중단 요청 완료${response.status ? ` · ${processStatusLabel(response.status)}` : ""}`
+      );
+      onSessionActionComplete?.();
+    } catch (error) {
+      setSessionActionStatus(error instanceof Error ? error.message : "세션 중단 실패");
+    } finally {
+      setSessionActionBusy(false);
+    }
+  }
+
   return (
     <div className="dc-modal-backdrop" role="presentation" onClick={onClose}>
       <section
@@ -288,6 +386,38 @@ function MemberDetailModal({
           <ProviderTruthChips badges={agentTruthBadges(entry.agent)} compact limit={8} />
           {lastObserved && <p className="dc-member-detail-note preserve-words">{lastObserved}</p>}
         </section>
+        {hasProcessControls && (
+          <section className="dc-member-detail-section" aria-label={`${entry.displayName} 세션 제어`}>
+            <h3>세션 제어</h3>
+            <p className="dc-member-session-summary preserve-words">
+              {sessionGroup?.group_id} · {processStatusLabel(sessionGroup?.status)}
+            </p>
+            <div className="dc-member-session-actions">
+              <button
+                type="button"
+                className="dc-member-session-button"
+                disabled={!canResumeSession || sessionActionBusy}
+                onClick={handleResumeSession}
+              >
+                <Play size={15} />
+                세션 재개
+              </button>
+              <button
+                type="button"
+                className="dc-member-session-button"
+                data-variant="danger"
+                disabled={!canStopSession || sessionActionBusy}
+                onClick={handleStopSession}
+              >
+                <Square size={14} />
+                세션 중단
+              </button>
+            </div>
+            {sessionActionStatus && (
+              <p className="dc-member-session-status preserve-words">{sessionActionStatus}</p>
+            )}
+          </section>
+        )}
       </section>
     </div>
   );
@@ -300,6 +430,8 @@ export default function MemberList({
   roomName,
   roleOverrides,
   onRoleChange,
+  sessionGroup,
+  onSessionActionComplete,
 }: {
   agents: LiveAgent[];
   members?: RoomMember[];
@@ -307,6 +439,8 @@ export default function MemberList({
   roomName: string;
   roleOverrides?: Record<string, string>;
   onRoleChange?: (memberId: string, role: RoleId) => void;
+  sessionGroup?: LiveAgentProcessGroup;
+  onSessionActionComplete?: () => void;
 }) {
   const [localRoleOverrides, setLocalRoleOverrides] = useState<Record<string, RoleId>>({});
   const [query, setQuery] = useState("");
@@ -456,7 +590,14 @@ export default function MemberList({
           </details>
         )}
       </div>
-      {detailEntry && <MemberDetailModal entry={detailEntry} onClose={() => setDetailEntry(null)} />}
+      {detailEntry && (
+        <MemberDetailModal
+          entry={detailEntry}
+          onClose={() => setDetailEntry(null)}
+          sessionGroup={sessionGroup}
+          onSessionActionComplete={onSessionActionComplete}
+        />
+      )}
     </div>
   );
 }

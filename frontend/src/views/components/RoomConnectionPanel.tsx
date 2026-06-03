@@ -1,5 +1,10 @@
 import { Radio, ShieldCheck, UserPlus, Wifi } from "lucide-react";
-import type { ChannelNotificationSetting, LiveAgent, RoomMember } from "../../api";
+import type {
+  ChannelNotificationSetting,
+  LiveAgent,
+  LiveAgentProcessGroup,
+  RoomMember,
+} from "../../api";
 import type { RoomAppearance } from "../../lib/roomAppearance";
 import MemberList, { type RoleId } from "./MemberList";
 
@@ -21,6 +26,8 @@ type RoomConnectionPanelProps = {
   flowStatus?: string;
   guestLocked?: boolean;
   channelNotifications?: Record<string, { notifications: ChannelNotificationSetting; lastReadAt?: string }>;
+  sessionGroup?: LiveAgentProcessGroup;
+  onSessionActionComplete?: () => void;
 };
 
 function inviteScopeLabel(scope: RoomAppearance["inviteScope"]): string {
@@ -62,6 +69,8 @@ export default function RoomConnectionPanel({
   flowStatus,
   guestLocked = false,
   channelNotifications,
+  sessionGroup,
+  onSessionActionComplete,
 }: RoomConnectionPanelProps) {
   const activeCount = activeAgentCount(agents);
   const memberCount = members.length + agents.length + 1;
@@ -114,6 +123,8 @@ export default function RoomConnectionPanel({
         roomName={room.label}
         roleOverrides={roleOverrides}
         onRoleChange={onRoleChange}
+        sessionGroup={sessionGroup}
+        onSessionActionComplete={onSessionActionComplete}
       />
     </div>
   );
