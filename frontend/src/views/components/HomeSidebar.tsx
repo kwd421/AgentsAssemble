@@ -1,4 +1,4 @@
-import { Bot, Cloud, Compass, Cpu, MessageCircle, Search, User, Users, Wifi } from "lucide-react";
+import { Bot, Cloud, Compass, Cpu, Plus, Search, User, Users, Wifi } from "lucide-react";
 import type { RoomFriend } from "../../api";
 import UserPanel from "./UserPanel";
 
@@ -22,6 +22,7 @@ export default function HomeSidebar({
   hasBackendError,
   friends = [],
   onFriendSelect,
+  onStartAddFriend,
 }: {
   activeFilter: HomeFilter;
   onFilterChange: (filter: HomeFilter) => void;
@@ -31,6 +32,7 @@ export default function HomeSidebar({
   hasBackendError: boolean;
   friends?: RoomFriend[];
   onFriendSelect?: (friend: RoomFriend) => void;
+  onStartAddFriend?: () => void;
 }) {
   const directMessages = friends.slice(0, 12);
   return (
@@ -61,7 +63,9 @@ export default function HomeSidebar({
         <div className="dc-dm-section">
           <div className="dc-dm-title">
             <span>다이렉트 메시지</span>
-            <MessageCircle size={14} />
+            <button type="button" aria-label="친구 추가하기" onClick={() => onStartAddFriend?.()}>
+              <Plus size={14} />
+            </button>
           </div>
           {directMessages.length ? (
             directMessages.map((friend) => {
@@ -90,7 +94,7 @@ export default function HomeSidebar({
               );
             })
           ) : (
-            <button type="button" className="dc-dm-row" onClick={() => onFilterChange("friends")}>
+            <button type="button" className="dc-dm-row" onClick={() => onStartAddFriend?.()}>
               <Compass size={18} />
               <span>이전 세션에서 친구 추가</span>
             </button>

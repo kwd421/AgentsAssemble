@@ -598,6 +598,20 @@ textarea {
   text-transform: uppercase;
 }
 
+.dc-dm-title button {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+}
+
+.dc-dm-title button:hover {
+  background: var(--color-sidebar-active);
+  color: var(--color-text-primary);
+}
+
 .dc-sidebar-status {
   display: inline-flex;
   align-items: center;

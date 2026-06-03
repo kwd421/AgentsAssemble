@@ -11,6 +11,8 @@ import { PARTICIPANT_TYPE_OPTIONS, participantTypeMeta } from "../lib/participan
 import FriendDmPanel from "./components/FriendDmPanel";
 import FriendProfileCard from "./components/FriendProfileCard";
 
+export type FriendListFilter = "online" | "all" | "add";
+
 function statusLabel(status: string) {
   if (status === "online") return "온라인";
   if (status === "working") return "작업 중";
@@ -108,6 +110,8 @@ function FriendRow({
 
 export default function FriendsView({
   typeFilter,
+  filter,
+  onFilterChange,
   activeRoomName = "",
   onInviteFriendToRoom,
   onFriendsChanged,
@@ -115,6 +119,8 @@ export default function FriendsView({
   onSelectFriend,
 }: {
   typeFilter: ParticipantType | null;
+  filter: FriendListFilter;
+  onFilterChange: (filter: FriendListFilter) => void;
   activeRoomName?: string;
   onInviteFriendToRoom?: (friend: RoomFriend) => Promise<void>;
   onFriendsChanged?: (payload: RoomFriendsResponse) => void;
@@ -122,7 +128,6 @@ export default function FriendsView({
   onSelectFriend?: (friend: RoomFriend) => void;
 }) {
   const [payload, setPayload] = useState<RoomFriendsResponse>({ friends: [], candidates: [] });
-  const [filter, setFilter] = useState<"online" | "all" | "add">("online");
   const [query, setQuery] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [participantType, setParticipantType] = useState<ParticipantType>("subscription_ai");
@@ -243,17 +248,17 @@ export default function FriendsView({
           <span>친구</span>
         </div>
         <nav className="dc-friends-tabs" aria-label="친구 필터">
-          <button type="button" data-active={filter === "online"} onClick={() => setFilter("online")}>
+          <button type="button" data-active={filter === "online"} onClick={() => onFilterChange("online")}>
             온라인
           </button>
-          <button type="button" data-active={filter === "all"} onClick={() => setFilter("all")}>
+          <button type="button" data-active={filter === "all"} onClick={() => onFilterChange("all")}>
             모두
           </button>
           <button
             type="button"
             className="add-tab"
             data-active={filter === "add"}
-            onClick={() => setFilter("add")}
+            onClick={() => onFilterChange("add")}
           >
             친구 추가하기
           </button>

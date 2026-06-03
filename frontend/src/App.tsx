@@ -56,7 +56,7 @@ import {
 import { usePoll } from "./hooks";
 import AdminPanel from "./views/AdminPanel";
 import BoardView from "./views/BoardView";
-import FriendsView from "./views/FriendsView";
+import FriendsView, { type FriendListFilter } from "./views/FriendsView";
 import LiveView from "./views/LiveView";
 import LobbyView from "./views/LobbyView";
 import RecordsView from "./views/RecordsView";
@@ -341,6 +341,7 @@ export default function App() {
   const guestLocked = Boolean(guestInvite);
   const [channel, setChannel] = useState<Channel>(() => (guestInvite ? "lobby" : "friends"));
   const [homeFilter, setHomeFilter] = useState<HomeFilter>("friends");
+  const [friendListFilter, setFriendListFilter] = useState<FriendListFilter>("online");
   const [adminOpen, setAdminOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(true);
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>("room-info");
@@ -642,12 +643,21 @@ export default function App() {
     setChannel("friends");
     setAdminOpen(false);
     setChannelMenu(null);
+    setFriendListFilter("all");
     if (friend.participant_type === "human") setHomeFilter("human");
     else if (friend.participant_type === "subscription_ai") setHomeFilter("subscription_ai");
     else if (friend.participant_type === "api") setHomeFilter("api");
     else if (friend.participant_type === "local") setHomeFilter("local");
     else if (friend.participant_type === "remote") setHomeFilter("remote");
     else setHomeFilter("friends");
+  }
+
+  function openAddFriendView() {
+    setChannel("friends");
+    setAdminOpen(false);
+    setChannelMenu(null);
+    setHomeFilter("friends");
+    setFriendListFilter("add");
   }
 
   function addFreshRoom() {
@@ -1178,6 +1188,7 @@ export default function App() {
           hasBackendError={Boolean(flowError)}
           friends={homeFriendsPayload.friends}
           onFriendSelect={selectHomeFriend}
+          onStartAddFriend={openAddFriendView}
         />
       ) : (
       <aside className="dc-sidebar flex shrink-0 flex-col" aria-label="채널 목록">
@@ -1286,6 +1297,8 @@ export default function App() {
         {channel === "friends" && !guestLocked ? (
           <FriendsView
             typeFilter={homeFilter === "friends" ? null : homeFilter}
+            filter={friendListFilter}
+            onFilterChange={setFriendListFilter}
             activeRoomName={activeRoom.label}
             onInviteFriendToRoom={inviteFriendToActiveRoom}
             onFriendsChanged={(payload) => {
