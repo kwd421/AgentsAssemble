@@ -125,7 +125,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("const unsubscribe = subscribeSideChat(", app_source)
         self.assertIn("activeSideChatMeetingId,\n      (incoming)", app_source)
         self.assertIn("mergeSideChatEvents(previous, incoming)", app_source)
-        self.assertIn("events={sideChatEvents}", app_source)
+        self.assertIn("events={displayedSideChatEvents}", app_source)
         self.assertIn("meetingId={activeSideChatMeetingId}", app_source)
 
         self.assertIn('type RightPanelMode = "room-info" | "side-chat";', app_source)
@@ -616,6 +616,9 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("sourceEventId: event.id", app_source)
         self.assertIn("threadContext={sideChatThread}", app_source)
         self.assertIn("onOpenSideThread={openSideChatThread}", app_source)
+        self.assertIn("const displayedSideChatEvents = sideChatThread", app_source)
+        self.assertIn("event.thread_source_event_id === sideChatThread.sourceEventId", app_source)
+        self.assertIn("events={displayedSideChatEvents}", app_source)
 
         self.assertIn("MessageCircle", lobby_source)
         self.assertIn("onOpenSideThread?: (event: LobbyEvent) => void;", lobby_source)
@@ -630,10 +633,14 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("스레드", side_chat_source)
         self.assertIn("이 메시지에 대한 비공식 스레드를 시작하세요.", side_chat_source)
         self.assertIn('placeholder={threadContext ? "스레드에 답장" : "사이드챗 메시지"}', side_chat_source)
+        self.assertIn('threadSourceEventId: threadContext?.sourceEventId || ""', side_chat_source)
+        self.assertIn('data-thread-active={threadContext ? "true" : "false"}', side_chat_source)
+        self.assertIn("threadContext && events.length === 0", side_chat_source)
 
         self.assertIn(".dc-message-actions", css)
         self.assertIn(".dc-message-action-button", css)
         self.assertIn(".dc-side-thread-source", css)
+        self.assertIn(".dc-side-chat-dock[data-thread-active=\"true\"]", css)
 
     def test_react_live_flow_switch_keeps_state_updates_outside_event_updater(self):
         live_source = frontend_file("views/LiveView.tsx")

@@ -56,6 +56,7 @@ class LobbyEvent:
     actor_id: str = ""
     target_agent_id: str = ""
     source_event_id: str = ""
+    thread_source_event_id: str = ""
     auto_chain_depth: int = 0
     live_agent_endpoint: bool = False
     flow_id: str = ""
@@ -102,6 +103,7 @@ class LobbyEvent:
             actor_id=clean_lobby_text(payload.get("actor_id", ""), limit=64),
             target_agent_id=clean_lobby_text(payload.get("target_agent_id", ""), limit=64),
             source_event_id=clean_lobby_text(payload.get("source_event_id", ""), limit=128),
+            thread_source_event_id=clean_lobby_text(payload.get("thread_source_event_id", ""), limit=128),
             auto_chain_depth=normalize_chain_depth(payload.get("auto_chain_depth")),
             flow_id=clean_lobby_text(payload.get("flow_id", ""), limit=128),
             flow_meeting_id=clean_lobby_text(payload.get("flow_meeting_id", ""), limit=128),
@@ -144,6 +146,7 @@ class LobbyEvent:
             actor_id=clean_lobby_text(payload.get("actor_id", ""), limit=64),
             target_agent_id=clean_lobby_text(payload.get("target_agent_id", ""), limit=64),
             source_event_id=clean_lobby_text(payload.get("source_event_id", ""), limit=128),
+            thread_source_event_id=clean_lobby_text(payload.get("thread_source_event_id", ""), limit=128),
             auto_chain_depth=normalize_chain_depth(payload.get("auto_chain_depth")),
             live_agent_endpoint=payload.get("live_agent_endpoint") is True,
             flow_id=clean_lobby_text(payload.get("flow_id", ""), limit=128),
@@ -180,6 +183,7 @@ class LobbyEvent:
             "actor_id": self.actor_id,
             "target_agent_id": self.target_agent_id,
             "source_event_id": self.source_event_id,
+            "thread_source_event_id": self.thread_source_event_id,
             "auto_chain_depth": self.auto_chain_depth,
             "live_agent_endpoint": self.live_agent_endpoint,
         }

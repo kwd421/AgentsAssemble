@@ -78,7 +78,13 @@ export default function SideChatDock({
     setBusy(true);
     setSendError("");
     try {
-      const payload = await postSideChatMessage({ name: "나", side: "mine", message: trimmed, meetingId });
+      const payload = await postSideChatMessage({
+        name: "나",
+        side: "mine",
+        message: trimmed,
+        meetingId,
+        threadSourceEventId: threadContext?.sourceEventId || "",
+      });
       onPosted(payload.events?.length ? payload.events : payload.event ? [payload.event] : []);
     } catch (errorValue) {
       setMessage(previousMessage);
@@ -89,7 +95,11 @@ export default function SideChatDock({
   }
 
   return (
-    <section className="dc-side-chat-dock" aria-label="비공식 사이드챗">
+    <section
+      className="dc-side-chat-dock"
+      aria-label="비공식 사이드챗"
+      data-thread-active={threadContext ? "true" : "false"}
+    >
       <header className="dc-side-chat-head">
         <span className="flex items-center gap-2">
           <MessageSquare size={15} />
@@ -113,7 +123,7 @@ export default function SideChatDock({
       <div className="dc-side-chat-feed chat-scroll">
         {events.length === 0 ? (
           <p className="dc-side-empty preserve-words">
-            {threadContext
+            {threadContext && events.length === 0
               ? "이 메시지에 대한 비공식 스레드를 시작하세요."
               : "오른쪽에 붙어 있는 비공식 대화입니다."}
           </p>

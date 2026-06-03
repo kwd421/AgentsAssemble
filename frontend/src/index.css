@@ -1467,6 +1467,12 @@ textarea {
   background: rgba(0, 0, 0, 0.08);
 }
 
+.dc-side-chat-dock[data-thread-active="true"] {
+  background:
+    linear-gradient(180deg, rgba(88, 101, 242, 0.08), transparent 160px),
+    rgba(0, 0, 0, 0.08);
+}
+
 .dc-side-chat-head {
   display: flex;
   min-height: 38px;

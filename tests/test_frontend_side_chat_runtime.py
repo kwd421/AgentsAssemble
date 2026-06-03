@@ -35,12 +35,13 @@ class FrontendSideChatRuntimeTests(unittest.TestCase):
             const snapshot = api.parseSideChatStreamData(JSON.stringify({
               stream: "side_chat",
               events: [
-                { id: "side-a", kind: "message", name: "나", side: "mine", message: "비공식", created_at: "2026-01-01T00:00:00Z", official_record: false },
+                { id: "side-a", kind: "message", name: "나", side: "mine", message: "비공식", created_at: "2026-01-01T00:00:00Z", official_record: false, thread_source_event_id: "lobby-source-1" },
               ],
             }));
             assert.equal(snapshot.length, 1);
             assert.equal(snapshot[0].id, "side-a");
             assert.equal(snapshot[0].message, "비공식");
+            assert.equal(snapshot[0].thread_source_event_id, "lobby-source-1");
 
             const single = api.parseSideChatStreamData(JSON.stringify({
               id: "side-b",
@@ -107,6 +108,25 @@ class FrontendSideChatRuntimeTests(unittest.TestCase):
             unsubscribe();
             assert.deepEqual(seen.map((item) => item.type), ["open", "update", "close"]);
             assert.equal(seen[1].message, "z");
+
+            let posted = null;
+            globalThis.fetch = async (url, options) => {
+              posted = { url, options, body: JSON.parse(options.body) };
+              return {
+                ok: true,
+                json: async () => ({ events: [] }),
+              };
+            };
+            await api.postSideChatMessage({
+              name: "나",
+              message: "스레드 답장",
+              meetingId: "room-a",
+              threadSourceEventId: "lobby-source-1",
+            });
+            assert.equal(posted.url, "/api/side-chat");
+            assert.equal(posted.options.method, "POST");
+            assert.equal(posted.body.flow_meeting_id, "room-a");
+            assert.equal(posted.body.thread_source_event_id, "lobby-source-1");
             """
         )
         completed = subprocess.run(

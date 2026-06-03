@@ -19229,6 +19229,28 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual([event["message"] for event in room_b_events], ["room-b only"])
             self.assertEqual([event["message"] for event in side_payload["events"]], ["room-a only"])
 
+    def test_side_chat_preserves_thread_source_event_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            event = append_side_chat_event(
+                root,
+                {
+                    "name": "나",
+                    "side": "mine",
+                    "message": "원문에 답장",
+                    "flow_meeting_id": "room-a",
+                    "thread_source_event_id": "lobby-source-1",
+                },
+            )
+
+            self.assertEqual(event["thread_source_event_id"], "lobby-source-1")
+            self.assertEqual(read_side_chat(root, meeting_id="room-a")[0]["thread_source_event_id"], "lobby-source-1")
+            self.assertEqual(
+                _stream_snapshot_payload(root, "side_chat", meeting_id="room-a")["events"][0]["thread_source_event_id"],
+                "lobby-source-1",
+            )
+
     def test_side_chat_api_filters_by_meeting_id(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

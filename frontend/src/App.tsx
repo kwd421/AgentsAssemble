@@ -572,6 +572,9 @@ export default function App() {
   const scopedAgents = agents.filter((agent) => roomHasAgent(activeRoom, agent));
   const activeRoomKey = roomSettingsKey(activeRoom);
   const activeRoomMembers = roomMembersByRoom[activeRoomKey] || [];
+  const displayedSideChatEvents = sideChatThread
+    ? sideChatEvents.filter((event) => event.thread_source_event_id === sideChatThread.sourceEventId)
+    : sideChatEvents;
   const scopedMentionables = useMemo(
     () => {
       const seen = new Set<string>();
@@ -1396,7 +1399,7 @@ export default function App() {
             >
               <SideChatDock
                 meetingId={activeSideChatMeetingId}
-                events={sideChatEvents}
+                events={displayedSideChatEvents}
                 error={sideChatError}
                 onPosted={handleSideChatPosted}
                 mentionables={scopedMentionables}
