@@ -77,6 +77,11 @@ it persists short operator notes or follow-up messages for the saved friend id,
 but it does not contact Discord, call a provider, grant room permissions, or
 turn the friend into a live resident.
 
+Room links can deep-link into the React room client. Operator URLs such as
+`/?room=<meeting-id>&roomName=<label>` open the selected room directly in
+`#general`, while guest invite URLs keep `guest=1` and remain scoped to that
+single room without exposing the operator friends surface or the records channel.
+
 The main room composer and side-chat composer share the same mention model.
 Their `@` suggestions should include the local user, scoped live residents, and
 persisted room members such as friends invited through `/api/room-members`.

@@ -221,13 +221,28 @@ function hydrateRoom(room: PersistedRoomDockItem): RoomDockItem {
   };
 }
 
-function initialOperatorRooms() {
+function initialOperatorRooms(directRoom?: RoomDockItem | null) {
   const persisted = loadRoomDockItems().map(hydrateRoom);
-  if (!persisted.length) return [createFreshRoom(), ...PINNED_ROOMS];
+  const baseRooms = persisted.length ? persisted : [createFreshRoom(), ...PINNED_ROOMS];
   const missingPinnedRooms = PINNED_ROOMS.filter(
-    (pinned) => !persisted.some((room) => room.id === pinned.id || room.meetingId === pinned.meetingId)
+    (pinned) => !baseRooms.some((room) => room.id === pinned.id || room.meetingId === pinned.meetingId)
   );
-  return [...persisted, ...missingPinnedRooms];
+  const rooms = [...baseRooms, ...missingPinnedRooms];
+  if (!directRoom) return rooms;
+  const existingIndex = rooms.findIndex(
+    (room) => room.id === directRoom.id || room.meetingId === directRoom.meetingId
+  );
+  if (existingIndex >= 0) {
+    const next = [...rooms];
+    next[existingIndex] = {
+      ...next[existingIndex],
+      label: next[existingIndex].label || directRoom.label,
+      topic: next[existingIndex].topic || directRoom.topic,
+      shortLabel: next[existingIndex].shortLabel || directRoom.shortLabel,
+    };
+    return next;
+  }
+  return [directRoom, ...rooms];
 }
 
 function cleanInviteValue(value: string | null, fallback: string, limit: number) {
@@ -265,6 +280,44 @@ function roomFromInviteParams(): RoomDockItem | null {
   } catch {
     return null;
   }
+}
+
+function roomFromDirectParams(): RoomDockItem | null {
+  try {
+    const query = new URLSearchParams(window.location.search);
+    const guestMode =
+      query.get("guest") === "1" ||
+      query.get("invite") === "1" ||
+      query.get("invite") === "room";
+    const meetingId = cleanInviteValue(
+      query.get("room") || query.get("meeting") || query.get("meeting_id"),
+      "",
+      128
+    );
+    if (guestMode || !meetingId) return null;
+    const label = cleanInviteValue(query.get("roomName") || query.get("name"), meetingId, 80);
+    const topic = cleanInviteValue(query.get("topic"), "직접 열린 방", 160);
+    return {
+      id: `direct-${meetingId}`,
+      label: label || meetingId,
+      meetingId,
+      topic,
+      shortLabel: (label || meetingId).slice(0, 1).toUpperCase() || "R",
+      icon: Users,
+      createdAt: "",
+      tone: "resident",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function activeRoomIdForStartup(rooms: RoomDockItem[], routeRoom?: RoomDockItem | null) {
+  if (!routeRoom) return "";
+  return (
+    rooms.find((room) => room.id === routeRoom.id || room.meetingId === routeRoom.meetingId)?.id ||
+    routeRoom.id
+  );
 }
 
 function roomFromFlow(flow: FlowResponse["flow"]): RoomDockItem | null {
@@ -337,18 +390,29 @@ function statusDotClass(status?: string) {
 }
 
 export default function App() {
-  const [guestInvite] = useState(() => roomFromInviteParams());
+  const [startupRoute] = useState(() => {
+    const guestInvite = roomFromInviteParams();
+    const directRoom = guestInvite ? null : roomFromDirectParams();
+    const startupRooms = guestInvite ? [guestInvite] : initialOperatorRooms(directRoom);
+    const initialChannel: Channel = guestInvite || directRoom ? "lobby" : "friends";
+    return {
+      guestInvite,
+      directRoom,
+      startupRooms,
+      activeRoomId: guestInvite?.id || activeRoomIdForStartup(startupRooms, directRoom),
+      initialChannel,
+    };
+  });
+  const guestInvite = startupRoute.guestInvite;
   const guestLocked = Boolean(guestInvite);
-  const [channel, setChannel] = useState<Channel>(() => (guestInvite ? "lobby" : "friends"));
+  const [channel, setChannel] = useState<Channel>(() => startupRoute.initialChannel);
   const [homeFilter, setHomeFilter] = useState<HomeFilter>("friends");
   const [friendListFilter, setFriendListFilter] = useState<FriendListFilter>("online");
   const [adminOpen, setAdminOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(true);
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>("room-info");
-  const [rooms, setRooms] = useState<RoomDockItem[]>(() =>
-    guestInvite ? [guestInvite] : initialOperatorRooms()
-  );
-  const [activeRoomId, setActiveRoomId] = useState(() => guestInvite?.id || "");
+  const [rooms, setRooms] = useState<RoomDockItem[]>(() => startupRoute.startupRooms);
+  const [activeRoomId, setActiveRoomId] = useState(() => startupRoute.activeRoomId);
   const [roomMenu, setRoomMenu] = useState<RoomMenuState>(null);
   const [channelMenu, setChannelMenu] = useState<ChannelMenuState>(null);
   const [inviteModal, setInviteModal] = useState<InviteModalState>(null);
