@@ -16,8 +16,6 @@ export default function FriendRow({
   friend,
   actionLabel,
   onAction,
-  inviteLabel,
-  onInvite,
   onStartDm,
   onDelete,
   selected,
@@ -26,8 +24,6 @@ export default function FriendRow({
   friend: RoomFriend;
   actionLabel?: string;
   onAction?: (friend: RoomFriend) => void;
-  inviteLabel?: string;
-  onInvite?: (friend: RoomFriend) => void;
   onStartDm?: (friend: RoomFriend) => void;
   onDelete?: (friend: RoomFriend) => void;
   selected?: boolean;
@@ -37,7 +33,7 @@ export default function FriendRow({
   const rowRef = useRef<HTMLDivElement>(null);
   const meta = participantTypeMeta(friend.participant_type);
   const Icon = meta.icon;
-  const hasMenuActions = Boolean(onStartDm || onInvite || onSelect || onDelete);
+  const hasMenuActions = Boolean(onStartDm || onSelect || onDelete);
   const detail = [
     meta.label,
     friend.last_meeting_id ? `최근 방 ${friend.last_meeting_id}` : "",
@@ -124,19 +120,6 @@ export default function FriendRow({
                 >
                   <MessageCircle size={14} />
                   로컬 DM 열기
-                </button>
-              )}
-              {onInvite && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onInvite(friend);
-                  }}
-                >
-                  <UserPlus size={14} />
-                  {inviteLabel === "초대 중" ? inviteLabel : "방에 초대하기"}
                 </button>
               )}
               {onSelect && (

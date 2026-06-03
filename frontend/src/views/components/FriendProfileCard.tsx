@@ -1,4 +1,4 @@
-import { Bot, MessageCircle, Trash2, UserPlus } from "lucide-react";
+import { Bot, MessageCircle, Trash2 } from "lucide-react";
 import type { RoomFriend } from "../../api";
 import { participantTypeMeta } from "../../lib/participantTypes";
 
@@ -17,17 +17,11 @@ function friendInitial(friend: RoomFriend) {
 
 export default function FriendProfileCard({
   friend,
-  activeRoomName,
   onStartDm,
-  inviteLabel,
-  onInvite,
   onDelete,
 }: {
   friend: RoomFriend | null;
-  activeRoomName?: string;
   onStartDm?: (friend: RoomFriend) => void;
-  inviteLabel?: string;
-  onInvite?: (friend: RoomFriend) => void;
   onDelete?: (friend: RoomFriend) => void;
 }) {
   if (!friend) {
@@ -71,12 +65,6 @@ export default function FriendProfileCard({
             <MessageCircle size={15} />
             로컬 DM
           </button>
-          {onInvite && (
-            <button type="button" onClick={() => onInvite(friend)}>
-              <UserPlus size={15} />
-              {inviteLabel || "방에 초대"}
-            </button>
-          )}
           {onDelete && (
             <button type="button" className="dc-friend-profile-danger" onClick={() => onDelete(friend)}>
               <Trash2 size={15} />
@@ -93,9 +81,7 @@ export default function FriendProfileCard({
           ))}
         </dl>
         <p className="dc-friend-profile-note preserve-words">
-          {activeRoomName
-            ? `${activeRoomName}에 초대하면 이 로컬 방의 멤버 목록에만 기록됩니다.`
-            : "저장된 친구는 로컬 AgentsAssemble 디렉터리에만 남습니다."}
+          저장된 친구는 로컬 AgentsAssemble 디렉터리에만 남습니다.
         </p>
       </div>
     </article>

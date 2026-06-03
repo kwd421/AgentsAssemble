@@ -19,8 +19,6 @@ export default function FriendsView({
   typeFilter,
   filter,
   onFilterChange,
-  activeRoomName = "",
-  onInviteFriendToRoom,
   onFriendsChanged,
   selectedFriendId,
   activeDmFriendId,
@@ -30,8 +28,6 @@ export default function FriendsView({
   typeFilter: ParticipantType | null;
   filter: FriendListFilter;
   onFilterChange: (filter: FriendListFilter) => void;
-  activeRoomName?: string;
-  onInviteFriendToRoom?: (friend: RoomFriend) => Promise<void>;
   onFriendsChanged?: (payload: RoomFriendsResponse) => void;
   selectedFriendId?: string;
   activeDmFriendId?: string;
@@ -153,21 +149,6 @@ export default function FriendsView({
     }
   }
 
-  async function handleInvite(friend: RoomFriend) {
-    if (!onInviteFriendToRoom) return;
-    const busyKey = `invite:${friend.friend_id}`;
-    setBusyId(busyKey);
-    setStatus("");
-    try {
-      await onInviteFriendToRoom(friend);
-      setStatus(`${friend.display_name} ${activeRoomName ? `${activeRoomName}에 ` : ""}초대됨`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "방 초대 실패");
-    } finally {
-      setBusyId("");
-    }
-  }
-
   async function handleDeleteFriend(friend: RoomFriend) {
     const busyKey = `delete:${friend.friend_id}`;
     setBusyId(busyKey);
@@ -274,8 +255,6 @@ export default function FriendsView({
                 <FriendRow
                   key={friend.friend_id}
                   friend={friend}
-                  inviteLabel={busyId === `invite:${friend.friend_id}` ? "초대 중" : "방에 초대"}
-                  onInvite={onInviteFriendToRoom ? handleInvite : undefined}
                   onStartDm={openFriendDm}
                   onDelete={handleDeleteFriend}
                   selected={selectedFriend?.friend_id === friend.friend_id}
@@ -310,12 +289,7 @@ export default function FriendsView({
           <h2>{profileFriend ? "프로필" : "현재 활동 중"}</h2>
           <FriendProfileCard
             friend={profileFriend}
-            activeRoomName={activeRoomName}
             onStartDm={openFriendDm}
-            inviteLabel={
-              profileFriend && busyId === `invite:${profileFriend.friend_id}` ? "초대 중" : "방에 초대"
-            }
-            onInvite={onInviteFriendToRoom ? handleInvite : undefined}
             onDelete={profileFriend ? handleDeleteFriend : undefined}
           />
         </aside>

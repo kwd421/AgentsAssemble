@@ -836,36 +836,6 @@ export default function App() {
     }));
   }
 
-  async function inviteFriendToActiveRoom(friend: RoomFriend) {
-    if (guestLocked) throw new Error("게스트 화면에서는 초대할 수 없습니다.");
-    if (!activeRoom.meetingId) throw new Error("초대할 방이 선택되지 않았습니다.");
-    const participantId =
-      friend.source_agent_id || friend.handle || friend.friend_id || friend.display_name;
-    const role: RoleId = friend.participant_type === "human" ? "human" : "agent";
-    const payload = await upsertRoomMember({
-      meeting_id: activeRoom.meetingId,
-      participant_id: participantId,
-      display_name: friend.display_name,
-      role,
-      participant_type: friend.participant_type || "unknown",
-      provider_kind: friend.provider_kind,
-      connection_kind: friend.connection_kind,
-      status: friend.status || "offline",
-      source: "friend_invite",
-    });
-    setRoomMembersByRoom((previous) => ({
-      ...previous,
-      [activeRoom.meetingId]: payload.members || [],
-    }));
-    setRoomMemberRoles((previous) => ({
-      ...previous,
-      [activeRoomKey]: {
-        ...(previous[activeRoomKey] || {}),
-        [participantId]: role,
-      },
-    }));
-  }
-
   return (
     <div
       className="dc-shell flex h-screen max-h-screen overflow-hidden text-text-primary"
@@ -1092,8 +1062,6 @@ export default function App() {
             typeFilter={homeFilter === "friends" ? null : homeFilter}
             filter={friendListFilter}
             onFilterChange={setFriendListFilter}
-            activeRoomName={activeRoom.label}
-            onInviteFriendToRoom={inviteFriendToActiveRoom}
             onFriendsChanged={(payload) => {
               setHomeFriendsPayload(payload);
               setSelectedHomeFriendId((previous) => previous || payload.friends[0]?.friend_id || "");
