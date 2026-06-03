@@ -1005,6 +1005,23 @@ export default function App() {
     const nextRoles = { ...activeMemberRoles, [memberId]: role };
     setRoomMemberRoles((previous) => ({ ...previous, [key]: nextRoles }));
     persistRoomSettings(activeRoom, activeAppearance, nextRoles);
+    const existingMember = activeRoomMembers.find((member) => member.participant_id === memberId);
+    if (existingMember && activeRoom.meetingId) {
+      void upsertRoomMember({
+        ...existingMember,
+        meeting_id: activeRoom.meetingId,
+        role,
+      })
+        .then((payload) => {
+          setRoomMembersByRoom((previous) => ({
+            ...previous,
+            [activeRoom.meetingId]: payload.members || [],
+          }));
+        })
+        .catch(() => {
+          // Keep the optimistic role grouping; the next members refresh can reconcile persistence.
+        });
+    }
   }
 
   function updateChannelSetting(channelId: Channel, updates: Partial<ChannelSettings>) {

@@ -173,6 +173,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("roleOverrides={activeMemberRoles}", app_source)
         self.assertIn("onRoleChange={updateMemberRole}", app_source)
         self.assertIn("channelNotifications={activeChannelSettings}", app_source)
+        self.assertIn("const existingMember = activeRoomMembers.find", app_source)
+        self.assertIn("void upsertRoomMember({", app_source)
+        self.assertIn("role,", app_source)
+        self.assertIn("[activeRoom.meetingId]: payload.members || []", app_source)
 
         self.assertIn("방 연결 정보", room_connection_source)
         self.assertIn("inviteScopeLabel", room_connection_source)
