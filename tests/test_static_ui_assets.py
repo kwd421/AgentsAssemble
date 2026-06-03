@@ -160,6 +160,7 @@ class StaticUiAssetTests(unittest.TestCase):
         app_source = frontend_file("App.tsx")
         member_source = frontend_file("views/components/MemberList.tsx")
         room_connection_source = frontend_file("views/components/RoomConnectionPanel.tsx")
+        user_panel_source = frontend_file("views/components/UserPanel.tsx")
         css = (FRONTEND_DIR / "index.css").read_text()
 
         self.assertIn("export interface RoomSettings", api_source)
@@ -197,6 +198,9 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("dc-member-quota-window", member_source)
         self.assertIn(".dc-member-inline-quota", css)
         self.assertIn("max-width: 176px;", css)
+        self.assertIn("box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.035);", css)
+        self.assertIn("text-[14px] font-bold leading-5", user_panel_source)
+        self.assertIn("text-[12px] leading-4", user_panel_source)
         self.assertIn("agentTruthBadges", member_source)
         self.assertIn("lastObservedSummary", member_source)
         self.assertIn("roomContextSummaryBadges", member_source)

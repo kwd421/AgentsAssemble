@@ -320,22 +320,10 @@ export default function UserPanel({
             <span className={`dc-self-status ${statusClass}`} aria-hidden />
           </span>
           <span className="min-w-0 flex-1 text-left">
-            <span className="block truncate text-[13px] font-bold text-text-primary">
+            <span className="block truncate text-[14px] font-bold leading-5 text-text-primary">
               {profile.displayName}
             </span>
-            <span className="flex items-center gap-1 truncate text-[11px] text-text-muted">
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  statusClass === "offline"
-                    ? "bg-danger"
-                    : statusClass === "idle"
-                      ? "bg-yellow-400"
-                      : statusClass === "dnd"
-                        ? "bg-red-500"
-                        : "bg-online"
-                }`}
-                aria-hidden
-              />
+            <span className="block truncate text-[12px] leading-4 text-text-muted">
               {profileStatusLabel(profile.status)}
             </span>
           </span>
