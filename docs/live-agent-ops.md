@@ -92,6 +92,15 @@ Mention rendering is display-only; typing `@Codex` or selecting
 `<@Codex Friend>` does not start that provider, grant permissions, or promote
 the message into official Work Mode records.
 
+The Discord-style right panel is a mode switch, not an extra stacked console.
+`방 연결 정보` shows the selected room label, topic, invite scope, local-first
+connection state, flow status, muted-channel count, and the persisted
+member/role list. `사이드챗` replaces that same right panel with the informal
+side-chat surface; opening a message thread keeps the source event attached and
+stores replies through `/api/side-chat` with `thread_source_event_id`. This
+keeps room connection state, role assignment, and informal thread notes visible
+without making side chat look like official transcript or decision evidence.
+
 The main room composer also exposes Discord-style accessory controls for gift,
 GIF, sticker, emoji, app, mention, and attachment affordances. Attachment uses
 the real local upload path below. Gift/GIF/sticker/app actions are local room

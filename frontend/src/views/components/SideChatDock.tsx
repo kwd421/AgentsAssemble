@@ -118,7 +118,7 @@ export default function SideChatDock({
             <MessageSquare size={15} />
           )}
           <span className="truncate preserve-words">
-            스레드
+            {threadContext ? "스레드" : "사이드챗"}
           </span>
         </span>
         {threadContext && onCloseThread ? (

@@ -64,8 +64,8 @@ import ChannelContextMenu from "./views/components/ChannelContextMenu";
 import type { ChannelHeaderActions } from "./views/components/ChannelHeader";
 import HomeSidebar from "./views/components/HomeSidebar";
 import type { HomeFilter } from "./views/components/HomeSidebar";
-import MemberList from "./views/components/MemberList";
 import type { RoleId } from "./views/components/MemberList";
+import RoomConnectionPanel from "./views/components/RoomConnectionPanel";
 import RoomSettingsModal from "./views/components/RoomSettingsModal";
 import SideChatDock, { type SideChatThreadContext } from "./views/components/SideChatDock";
 import UserPanel from "./views/components/UserPanel";
@@ -1465,11 +1465,11 @@ export default function App() {
         )}
       </main>
 
-      {/* Member list */}
+      {/* Right panel */}
       {showMembers && membersOpen && (
         <aside
           className="dc-members hidden shrink-0 xl:flex xl:flex-col"
-          aria-label="멤버와 스레드"
+          aria-label="방 연결 정보와 사이드챗"
           data-testid="room-right-panel"
           data-panel-mode={rightPanelMode}
         >
@@ -1483,7 +1483,7 @@ export default function App() {
               aria-controls="room-info-panel"
               onClick={() => setRightPanelMode("room-info")}
             >
-              멤버
+              방 연결 정보
             </button>
             <button
               type="button"
@@ -1494,7 +1494,7 @@ export default function App() {
               aria-controls="side-chat-panel"
               onClick={() => setRightPanelMode("side-chat")}
             >
-              스레드
+              사이드챗
             </button>
           </div>
           {rightPanelMode === "room-info" ? (
@@ -1505,13 +1505,16 @@ export default function App() {
               className="min-h-0 flex-1"
               data-testid="room-info-panel"
             >
-              <MemberList
+              <RoomConnectionPanel
+                room={activeRoom}
+                appearance={activeAppearance}
                 agents={scopedAgents}
                 members={activeRoomMembers}
-                roomId={activeRoom.id}
-                roomName={activeRoom.label}
                 roleOverrides={activeMemberRoles}
                 onRoleChange={updateMemberRole}
+                flowStatus={activeRoomFlowVisible ? flow.status : "idle"}
+                guestLocked={guestLocked}
+                channelNotifications={activeChannelSettings}
               />
             </section>
           ) : (

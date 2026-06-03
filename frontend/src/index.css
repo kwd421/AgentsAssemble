@@ -1693,6 +1693,74 @@ textarea {
   color: var(--color-sidebar-text-active);
 }
 
+.dc-room-connection-panel {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+}
+
+.dc-room-connection-card {
+  margin: 10px;
+  border-radius: 6px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--room-accent) 18%, transparent), transparent 62%),
+    rgba(0, 0, 0, 0.18);
+  padding: 10px;
+}
+
+.dc-room-connection-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.dc-room-connection-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--room-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 1000;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.24);
+}
+
+.dc-room-connection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.dc-room-connection-grid span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.16);
+  padding: 6px 7px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.dc-room-connection-grid svg {
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+
+.dc-room-connection-note {
+  margin-top: 9px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
 .dc-side-chat-dock {
   display: flex;
   min-height: 0;

@@ -21,6 +21,7 @@ class FrontendRosterTruthTests(unittest.TestCase):
 
     def test_used_participant_surfaces_render_provider_context_and_cursor_evidence(self):
         app = frontend_file("App.tsx")
+        room_connection = frontend_file("views/components/RoomConnectionPanel.tsx")
         member_list = frontend_file("views/components/MemberList.tsx")
         agent_labels = frontend_file("lib/agentLabels.ts")
 
@@ -28,8 +29,10 @@ class FrontendRosterTruthTests(unittest.TestCase):
             self.assertIn(f"import {component_name}", app)
             self.assertIn(f"<{component_name}", app)
 
-        self.assertIn('import MemberList from "./views/components/MemberList";', app)
-        self.assertIn("<MemberList", app)
+        self.assertIn('import RoomConnectionPanel from "./views/components/RoomConnectionPanel";', app)
+        self.assertIn("<RoomConnectionPanel", app)
+        self.assertIn('import MemberList, { type RoleId } from "./MemberList";', room_connection)
+        self.assertIn("<MemberList", room_connection)
         self.assertIn('channel !== "records"', app)
         self.assertIn('channel !== "friends"', app)
         self.assertIn("ProviderTruthChips", member_list)
@@ -61,12 +64,14 @@ class FrontendRosterTruthTests(unittest.TestCase):
 
     def test_lobby_and_live_participant_panels_surface_context_summary(self):
         component = frontend_file("views/components/MemberList.tsx")
+        room_connection = frontend_file("views/components/RoomConnectionPanel.tsx")
         app = frontend_file("App.tsx")
 
         self.assertIn("roomContextSummaryBadges(agents)", component)
         self.assertIn("ProviderTruthChips", component)
         self.assertIn('aria-label="참가자 맥락 요약"', component)
-        self.assertIn("<MemberList", app)
+        self.assertIn("<RoomConnectionPanel", app)
+        self.assertIn("<MemberList", room_connection)
         self.assertNotIn("ParticipantContextSummary", app)
 
         for unsafe in ("session_id", "argv", "command", "provider_output", "last_error", "source_path"):
