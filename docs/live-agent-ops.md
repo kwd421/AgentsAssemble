@@ -104,7 +104,7 @@ without making side chat look like official transcript or decision evidence.
 The main room composer also exposes Discord-style accessory controls for gift,
 GIF, sticker, emoji, app, mention, and attachment affordances. Attachment uses
 the real local upload path below. Gift/GIF/sticker/app actions are local room
-UI helpers only: they may insert short local message markers or show a local
+UI helpers only: they insert short local message markers and show a local
 notice, but they do not open Discord, search remote media services, send an
 external message, start providers, or grant room access.
 

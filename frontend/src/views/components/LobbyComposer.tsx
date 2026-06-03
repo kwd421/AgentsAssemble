@@ -30,7 +30,8 @@ const COMPOSER_ACCESSORIES: ComposerAccessory[] = [
     id: "gift",
     label: "선물",
     title: "선물",
-    notice: "선물 기능은 외부 Discord로 전송하지 않습니다. 지금은 로컬 방 안에서만 안내합니다.",
+    notice: "선물 기능은 외부 Discord로 전송하지 않습니다. 로컬 메시지에 선물 설명을 남길 수 있습니다.",
+    insertText: "[선물: ]",
     icon: Gift,
   },
   {
