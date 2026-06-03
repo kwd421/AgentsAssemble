@@ -7480,11 +7480,11 @@ def _print_gui_startup_banner(server_url: str, *, frontend_dist_root: Path | Non
     print(f"AgentsAssemble GUI: {base_url}")
     if dist_status.static_available:
         print(f"- Operator console (default): {base_url}/ (React)")
-        print(f"- React console alias: {base_url}/app/")
+        print(f"- Same Discord room client alias: {base_url}/app/")
     else:
         print(f"- Operator console unavailable until the React build exists: {base_url}/")
         print(f"- Build React for the default console: {REACT_APP_BUILD_COMMAND}")
-        print(f"- React console alias: {base_url}/app/ (build required)")
+        print(f"- Same Discord room client alias: {base_url}/app/ (build required)")
 
 
 _LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}

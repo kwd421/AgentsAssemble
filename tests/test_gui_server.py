@@ -7839,7 +7839,7 @@ class GuiServerTests(unittest.TestCase):
         output = stdout.getvalue()
         self.assertIn("AgentsAssemble GUI:", output)
         self.assertIn("Operator console (default): http://127.0.0.1:48765/ (React)", output)
-        self.assertIn("React console alias: http://127.0.0.1:48765/app/", output)
+        self.assertIn("Same Discord room client alias: http://127.0.0.1:48765/app/", output)
         self.assertNotIn("Legacy vanilla console", output)
         self.assertNotIn("/legacy/", output)
         self.assertNotIn("legacy vanilla fallback", output)
@@ -7881,7 +7881,7 @@ class GuiServerTests(unittest.TestCase):
             output,
         )
         self.assertIn("Build React for the default console: npm --prefix frontend run build", output)
-        self.assertIn("React console alias: http://127.0.0.1:48766/app/ (build required)", output)
+        self.assertIn("Same Discord room client alias: http://127.0.0.1:48766/app/ (build required)", output)
         self.assertNotIn("(React)", output)
         self.assertNotIn("/legacy/", output)
         self.assertNotIn("legacy vanilla fallback", output)
@@ -7928,7 +7928,7 @@ class GuiServerTests(unittest.TestCase):
             output,
         )
         self.assertIn("Build React for the default console: npm --prefix frontend run build", output)
-        self.assertIn("React console alias: http://127.0.0.1:48767/app/ (build required)", output)
+        self.assertIn("Same Discord room client alias: http://127.0.0.1:48767/app/ (build required)", output)
         self.assertNotIn("(React)", output)
         self.assertNotIn("/legacy/", output)
         self.assertNotIn("legacy vanilla fallback", output)
