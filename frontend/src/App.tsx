@@ -683,16 +683,33 @@ export default function App() {
       let link = inviteUrl;
       const isAiFriend = friend.participant_type !== "human";
       const isLiveSession = ["online", "working", "ready", "running"].includes(friend.status);
+      const participantId = friend.source_agent_id || friend.friend_id;
+      const memberStatus = isAiFriend ? (isLiveSession ? friend.status : "pending") : "invited";
       try {
         const invite = await createRoomInvite({
           meetingId: inviteModalRoom.meetingId,
-          agentId: friend.source_agent_id || friend.friend_id,
+          agentId: participantId,
           displayName: friend.display_name,
         });
         link = invite.join_url || link;
       } catch {
         // Public invite token creation can be host-token gated; the friend DM still carries the scoped room link.
       }
+      const memberPayload = await upsertRoomMember({
+        meeting_id: inviteModalRoom.meetingId,
+        participant_id: participantId,
+        display_name: friend.display_name,
+        role: isAiFriend ? "agent" : "human",
+        participant_type: friend.participant_type,
+        provider_kind: friend.provider_kind,
+        connection_kind: friend.connection_kind,
+        status: memberStatus,
+        source: "friend_invite",
+      });
+      setRoomMembersByRoom((previous) => ({
+        ...previous,
+        [inviteModalRoom.meetingId]: memberPayload.members || [],
+      }));
       await postRoomFriendDm({
         friendId,
         name: "AgentsAssemble",
