@@ -461,6 +461,7 @@ class StaticUiAssetTests(unittest.TestCase):
         api_source = frontend_file("api.ts")
         channel_menu_source = frontend_file("views/components/ChannelContextMenu.tsx")
         settings_source = frontend_file("views/components/RoomSettingsModal.tsx")
+        invite_modal_source = frontend_file("views/components/RoomInviteModal.tsx")
 
         self.assertIn('type Channel = "friends" | "lobby" | "live" | "board" | "records";', app_source)
         self.assertIn("const CHANNELS", app_source)
@@ -496,12 +497,13 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("inviteRoom", app_source)
         self.assertIn("leaveRoom", app_source)
         self.assertIn("inviteUrlForRoom", app_source)
-        self.assertIn("이 링크로 들어온 사람은 이 방만 보고 채팅합니다.", app_source)
-        self.assertIn("초대 링크", app_source)
-        self.assertIn("링크 복사", app_source)
-        self.assertIn("dc-invite-link-input", app_source)
-        self.assertIn("dc-invite-copy-button", app_source)
-        invite_modal_section = app_source[app_source.index("dc-invite-modal") : app_source.index("settingsModalRoom")]
+        self.assertIn("RoomInviteModal", app_source)
+        self.assertIn("이 링크로 들어온 사람은 이 방만 보고 채팅합니다.", invite_modal_source)
+        self.assertIn("초대 링크", invite_modal_source)
+        self.assertIn("링크 복사", invite_modal_source)
+        self.assertIn("dc-invite-link-input", invite_modal_source)
+        self.assertIn("dc-invite-copy-button", invite_modal_source)
+        invite_modal_section = invite_modal_source[invite_modal_source.index("dc-invite-modal") :]
         self.assertNotIn("ops-input", invite_modal_section)
         self.assertNotIn("ops-cta", invite_modal_section)
         self.assertIn("RoomSettingsModal", app_source)
@@ -944,6 +946,7 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_react_public_join_route_renders_guest_only_invite_panel(self):
         app_source = frontend_file("App.tsx")
+        invite_modal_source = frontend_file("views/components/RoomInviteModal.tsx")
 
         self.assertIn("roomFromInviteParams", app_source)
         self.assertIn("roomFromDirectParams", app_source)
@@ -960,7 +963,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("guestReadOnly", app_source)
         self.assertIn('canPostMessages={!guestReadOnly}', app_source)
         self.assertIn("visibleChannels = guestLocked", app_source)
-        self.assertIn("이 링크로 들어온 사람은 이 방만 보고 채팅합니다.", app_source)
+        self.assertIn("RoomInviteModal", app_source)
+        self.assertIn("이 링크로 들어온 사람은 이 방만 보고 채팅합니다.", invite_modal_source)
         self.assertNotIn("RoomInvitePanel", app_source)
 
     def test_react_lobby_external_participation_uses_safe_command_skeletons_with_env_secret_refs(self):
