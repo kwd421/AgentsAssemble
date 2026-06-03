@@ -96,6 +96,18 @@ class RoomFriendsTests(unittest.TestCase):
                 "provider_kind": "codex",
                 "connection_kind": "manual",
             },
+            {
+                "agent_id": "grok-build",
+                "display_name": "Grok Build",
+                "provider_kind": "grok_build_cli",
+                "connection_kind": "local_cli",
+            },
+            {
+                "agent_id": "yanagi-local",
+                "display_name": "츠키시로 야나기",
+                "provider_kind": "local_cli",
+                "connection_kind": "local_cli",
+            },
             {"agent_id": "remote-user", "display_name": "Remote", "connection_kind": "native_remote_room_client"},
         ]
         saved = [{"agent_id": "codex-a"}]
@@ -109,6 +121,8 @@ class RoomFriendsTests(unittest.TestCase):
                 "llama-local": "local",
                 "guest-human": "human",
                 "gpt-54-mini-smoke": "subscription_ai",
+                "grok-build": "subscription_ai",
+                "yanagi-local": "local",
                 "remote-user": "remote",
             },
         )

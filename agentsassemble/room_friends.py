@@ -58,12 +58,12 @@ def room_friend_type_for_agent(agent: dict[str, object]) -> str:
     )
     if any(token in text for token in _REMOTE_AGENT_MARKERS):
         return "remote"
-    if any(token in text for token in _LOCAL_MODEL_MARKERS):
-        return "local"
     if any(token in text for token in _API_AGENT_MARKERS):
         return "api"
     if any(token in text for token in _SUBSCRIPTION_AGENT_MARKERS):
         return "subscription_ai"
+    if any(token in text for token in _LOCAL_MODEL_MARKERS):
+        return "local"
     if any(token in text for token in _HUMAN_AGENT_MARKERS):
         return "human"
     return "unknown"
