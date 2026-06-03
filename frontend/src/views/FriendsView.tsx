@@ -73,22 +73,29 @@ export default function FriendsView({
   }, [filter, payload.friends, query, typeFilter]);
 
   const visibleCandidates = useMemo(() => {
-    if (!typeFilter) return payload.candidates;
-    return payload.candidates.filter((friend) => friend.participant_type === typeFilter);
-  }, [payload.candidates, typeFilter]);
-  const selectedFriend = useMemo(
-    () =>
-      payload.friends.find((friend) => friend.friend_id === selectedFriendId) ||
-      visibleFriends[0] ||
-      payload.friends[0] ||
-      null,
-    [payload.friends, selectedFriendId, visibleFriends]
-  );
+    const needle = query.trim().toLowerCase();
+    const typedCandidates = typeFilter
+      ? payload.candidates.filter((friend) => friend.participant_type === typeFilter)
+      : payload.candidates;
+    if (!needle) return typedCandidates;
+    return typedCandidates.filter((friend) =>
+      [friend.display_name, friend.provider_kind, friend.participant_type, friend.last_meeting_id].some((value) =>
+        String(value || "").toLowerCase().includes(needle)
+      )
+    );
+  }, [payload.candidates, query, typeFilter]);
+  const selectedFriend = useMemo(() => {
+    if (activeDmFriendId) return null;
+    const explicitSelection = visibleFriends.find((friend) => friend.friend_id === selectedFriendId);
+    if (explicitSelection) return explicitSelection;
+    if (filter === "online" || filter === "all") return visibleFriends[0] || null;
+    return null;
+  }, [activeDmFriendId, filter, selectedFriendId, visibleFriends]);
   const activeDmFriend = useMemo(
     () => payload.friends.find((friend) => friend.friend_id === activeDmFriendId) || null,
     [activeDmFriendId, payload.friends]
   );
-  const profileFriend = selectedFriend || activeDmFriend;
+  const profileFriend = activeDmFriend || selectedFriend;
 
   function showDirectory(nextFilter: FriendListFilter) {
     onFilterChange(nextFilter);
@@ -246,6 +253,7 @@ export default function FriendsView({
 
           {status && <p className="dc-friend-status-line preserve-words">{status}</p>}
 
+          {filter !== "add" && (
           <section className="dc-friend-section">
             <h2>{filter === "online" ? "온라인" : "모든 친구"} — {visibleFriends.length}</h2>
             {loading ? (
@@ -262,10 +270,16 @@ export default function FriendsView({
                 />
               ))
             ) : (
-              <p className="dc-friend-empty">아직 친구가 없습니다. 이전 세션 후보를 추가해 보세요.</p>
+              <p className="dc-friend-empty">
+                {filter === "online"
+                  ? "온라인 친구가 없습니다. 모두 탭에서 저장된 친구를 관리할 수 있습니다."
+                  : "아직 친구가 없습니다. 친구 추가하기에서 이전 세션 후보를 추가해 보세요."}
+              </p>
             )}
           </section>
+          )}
 
+          {filter === "add" && (
           <section className="dc-friend-section">
             <h2>이전 세션에서 추가 — {visibleCandidates.length}</h2>
             {visibleCandidates.length ? (
@@ -281,6 +295,7 @@ export default function FriendsView({
               <p className="dc-friend-empty">추가할 수 있는 새 세션 후보가 없습니다.</p>
             )}
           </section>
+          )}
           </>
           )}
         </main>

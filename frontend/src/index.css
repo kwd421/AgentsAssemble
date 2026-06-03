@@ -922,7 +922,7 @@ textarea {
   z-index: 20;
   width: calc(100% + 64px);
   margin-left: -64px;
-  background: #232428;
+  background: transparent;
   padding: 8px 8px 8px 10px;
 }
 
@@ -936,11 +936,15 @@ textarea {
   align-items: center;
   gap: 6px;
   border-radius: 8px;
+  background: #232428;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 8px 24px rgba(0, 0, 0, 0.22);
   padding: 6px 8px;
 }
 
 .dc-current-user:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: #2b2d31;
 }
 
 .dc-user-identity {
