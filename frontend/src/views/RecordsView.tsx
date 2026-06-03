@@ -250,7 +250,7 @@ function ArchiveDetail({ detail }: { detail: MeetingDetailResponse | null }) {
             왼쪽에서 세션을 선택하면 transcript, decision, shared memory를 확인할 수 있습니다.
           </p>
           <p className="mt-3 text-[13px] text-text-secondary preserve-words">
-            회의가 없다면 채팅 채널에서 새 회의를 시작하세요.
+            회의가 없다면 #general에서 새 회의를 시작하세요.
           </p>
         </div>
       </div>
@@ -396,7 +396,7 @@ export default function RecordsView() {
     <div className="flex h-full min-h-0 flex-col">
       <ChannelHeader
         icon={<Archive size={20} />}
-        title="아카이브"
+        title="records"
         subtitle="완료된 세션의 transcript · decision · shared memory"
       />
       <div className="flex min-h-0 flex-1">

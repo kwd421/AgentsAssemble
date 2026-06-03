@@ -374,8 +374,12 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("data-collapsed={sectionCollapsed}", app_source)
         self.assertIn("dc-channel-category-button", app_source)
         self.assertIn("visibleSectionChannels", app_source)
-        self.assertIn('label: "채팅"', app_source)
-        self.assertIn('label: "진행 로그"', app_source)
+        self.assertIn('label: "general"', app_source)
+        self.assertIn('label: "live-room"', app_source)
+        self.assertIn('label: "work-board"', app_source)
+        self.assertIn('label: "records"', app_source)
+        self.assertIn('label: "Text Channels"', app_source)
+        self.assertIn('label: "Workroom"', app_source)
         self.assertIn('aria-label="룸 레일"', app_source)
         self.assertIn('aria-label="채널 목록"', app_source)
         self.assertIn('aria-label="채널"', app_source)
@@ -1094,7 +1098,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("export function summarizeCompactLifecycle", label_source)
         self.assertIn("회의 목표와 역할 바인딩을 확인하세요.", label_source)
         self.assertIn("회의 없음", label_source)
-        self.assertIn("채팅 채널에서 새 회의를 시작하거나 기존 회의를 선택하세요.", label_source)
+        self.assertIn("#general에서 새 회의를 시작하거나 기존 회의를 선택하세요.", label_source)
         self.assertIn("summary.nextAction", board_source)
         self.assertIn("summary.stepLabel", board_source)
         self.assertIn("summary.attentionItems", board_source)
@@ -1129,8 +1133,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("Local-first", app_source)
         self.assertNotIn("빠른 시작", app_source)
         self.assertNotIn("Meeting:", app_source)
-        self.assertIn('label: "채팅"', app_source)
-        self.assertIn('label: "진행 로그"', app_source)
+        self.assertIn('label: "general"', app_source)
+        self.assertIn('label: "live-room"', app_source)
         self.assertIn("setAdminOpen((value) => !value)", app_source)
 
         for forbidden in [
@@ -1175,7 +1179,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("아카이브에서 최종 산출물과 리뷰 기록을 확인하세요.", label_source)
         self.assertIn("ArtifactContent", records_source)
         self.assertIn("artifactNames.map", records_source)
-        self.assertIn("회의가 없다면 채팅 채널에서 새 회의를 시작하세요.", records_source)
+        self.assertIn("회의가 없다면 #general에서 새 회의를 시작하세요.", records_source)
         self.assertIn("일반적으로 회의 최종화 후 transcript", records_source)
 
         for forbidden in [

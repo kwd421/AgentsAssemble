@@ -170,7 +170,7 @@ class FrontendLifecycleLabelTests(unittest.TestCase):
         self.assertEqual(payload["emptySummary"]["stepLabel"], "회의 없음")
         self.assertEqual(
             payload["emptySummary"]["nextAction"],
-            "채팅 채널에서 새 회의를 시작하거나 기존 회의를 선택하세요.",
+            "#general에서 새 회의를 시작하거나 기존 회의를 선택하세요.",
         )
         self.assertEqual(payload["emptySummary"]["statusSourceLabel"], "기록 없음")
         self.assertEqual(payload["emptySummary"]["hasLifecycle"], False)

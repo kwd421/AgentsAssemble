@@ -470,8 +470,8 @@ export default function LiveView({
       <div className="flex h-full min-h-0 flex-col">
         <ChannelHeader
           icon={<Skull size={20} />}
-          title="진행 로그 · Mafia Night"
-          subtitle="전체채팅과 마피아 팀채팅이 분리된 Play Mode 게임"
+          title="mafia-night"
+          subtitle="전체 채팅과 팀 채팅이 분리된 Play Mode 게임 채널"
           membersOpen={membersOpen}
           onToggleMembers={onToggleMembers}
         />
@@ -484,8 +484,8 @@ export default function LiveView({
     <div className="flex h-full min-h-0 flex-col">
       <ChannelHeader
         icon={<Radio size={20} />}
-        title="진행 로그"
-        subtitle="에이전트와 시스템 이벤트만 보는 보조 기록"
+        title="live-room"
+        subtitle="Play Mode와 시스템 이벤트가 흐르는 채널"
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}
       >
@@ -522,8 +522,8 @@ export default function LiveView({
               {isRunning
                 ? "방은 열려 있습니다. 에이전트 이벤트를 기다리는 중입니다."
                 : isFinished
-                  ? "세션이 종료되었습니다. 채팅 채널에서 새 세션을 시작할 수 있습니다."
-                  : "채팅 채널에서 Play Mode를 시작하면 이곳에 진행 로그가 흐릅니다."}
+                  ? "세션이 종료되었습니다. #general에서 새 세션을 시작할 수 있습니다."
+                  : "#general에서 Play Mode를 시작하면 이곳에 라이브 이벤트가 흐릅니다."}
             </p>
           </div>
         ) : (
@@ -534,7 +534,7 @@ export default function LiveView({
       </div>
 
       <div className="shrink-0 border-t border-line px-4 py-3 text-[12px] font-semibold text-text-muted preserve-words">
-        모두가 보는 대화는 #채팅에 남습니다. 이 화면은 진행 로그만 분리해서 보여줍니다.
+        모두가 보는 대화는 #general에 남습니다. 이 채널은 라이브 이벤트만 분리해서 보여줍니다.
       </div>
     </div>
   );

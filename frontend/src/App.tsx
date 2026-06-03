@@ -124,15 +124,15 @@ export type RoomDockItem = {
 };
 
 const CHANNELS: ChannelConfig[] = [
-  { id: "lobby", label: "채팅", icon: Hash },
-  { id: "live", label: "진행 로그", icon: Radio },
-  { id: "board", label: "작전판", icon: LayoutDashboard },
-  { id: "records", label: "아카이브", icon: Archive },
+  { id: "lobby", label: "general", icon: Hash },
+  { id: "live", label: "live-room", icon: Radio },
+  { id: "board", label: "work-board", icon: LayoutDashboard },
+  { id: "records", label: "records", icon: Archive },
 ];
 
 const CHANNEL_SECTIONS: Array<{ id: string; label: string; channels: Channel[] }> = [
-  { id: "conversation", label: "대화", channels: ["lobby", "live"] },
-  { id: "work", label: "작업 채널", channels: ["board", "records"] },
+  { id: "conversation", label: "Text Channels", channels: ["lobby", "live"] },
+  { id: "work", label: "Workroom", channels: ["board", "records"] },
 ];
 
 const PINNED_ROOMS: RoomDockItem[] = [

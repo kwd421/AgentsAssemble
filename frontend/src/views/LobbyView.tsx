@@ -263,8 +263,8 @@ export default function LobbyView({
     <div className="flex h-full min-h-0 flex-col">
       <ChannelHeader
         icon={<Hash size={20} />}
-        title="채팅"
-        subtitle="사람과 에이전트가 같이 보는 메인 대화"
+        title="general"
+        subtitle="사람과 에이전트가 함께 보는 기본 채널"
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}
       />
@@ -285,7 +285,7 @@ export default function LobbyView({
               {canPostMessages
                 ? isRunning
                   ? flow.topic || flow.meeting_id || "진행 중"
-                  : "채팅과 읽기만 가능합니다"
+                  : "이 방의 general 채널만 볼 수 있습니다"
                 : "이 링크에서는 메시지를 보낼 수 없습니다"}
             </span>
           </div>

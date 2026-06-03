@@ -43,7 +43,7 @@ export default function BoardView({
     <div className="flex h-full min-h-0 flex-col">
       <ChannelHeader
         icon={<LayoutDashboard size={20} />}
-        title="작전판"
+        title="work-board"
         subtitle={flow.topic || flow.meeting_id || "회의 진행 상태 · 읽기 전용"}
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}

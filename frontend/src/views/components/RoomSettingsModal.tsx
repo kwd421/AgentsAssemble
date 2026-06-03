@@ -8,10 +8,10 @@ import {
 } from "../../lib/roomAppearance";
 
 const ROOM_CHANNEL_OPTIONS = [
-  { id: "lobby", label: "채팅" },
-  { id: "live", label: "진행 로그" },
-  { id: "board", label: "작전판" },
-  { id: "records", label: "아카이브" },
+  { id: "lobby", label: "general" },
+  { id: "live", label: "live-room" },
+  { id: "board", label: "work-board" },
+  { id: "records", label: "records" },
 ];
 
 const CHANNEL_NOTIFICATION_LABELS: Array<{
