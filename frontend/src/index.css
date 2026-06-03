@@ -2432,6 +2432,46 @@ textarea {
   color: var(--color-text-muted);
 }
 
+.dc-friend-menu-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.dc-friend-row-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  display: grid;
+  min-width: 168px;
+  gap: 2px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  background: #111214;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+  padding: 6px;
+}
+
+.dc-friend-row-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 3px;
+  padding: 8px 9px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.dc-friend-row-menu button:hover,
+.dc-friend-row-menu button:focus-visible {
+  background: var(--color-accent);
+  color: #fff;
+  outline: none;
+}
+
 .dc-friends-activity {
   border-left: 1px solid rgba(0, 0, 0, 0.24);
   padding: 26px 22px;

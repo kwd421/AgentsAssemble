@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { MoreVertical, Search, UserPlus, Users } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { MessageCircle, MoreVertical, Search, UserPlus, Users } from "lucide-react";
 import {
   addRoomFriend,
   fetchRoomFriends,
@@ -28,6 +28,7 @@ function FriendRow({
   onAction,
   inviteLabel,
   onInvite,
+  onStartDm,
   selected,
   onSelect,
 }: {
@@ -36,11 +37,15 @@ function FriendRow({
   onAction?: (friend: RoomFriend) => void;
   inviteLabel?: string;
   onInvite?: (friend: RoomFriend) => void;
+  onStartDm?: (friend: RoomFriend) => void;
   selected?: boolean;
   onSelect?: (friend: RoomFriend) => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
   const meta = participantTypeMeta(friend.participant_type);
   const Icon = meta.icon;
+  const hasMenuActions = Boolean(onStartDm || onInvite || onSelect);
   const detail = [
     meta.label,
     friend.last_meeting_id ? `최근 방 ${friend.last_meeting_id}` : "",
@@ -68,8 +73,19 @@ function FriendRow({
       <span className="dc-friend-status">{statusLabel(friend.status)}</span>
     </>
   );
+  useEffect(() => {
+    if (!menuOpen) return;
+    function closeOnOutside(event: MouseEvent) {
+      if (!rowRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    window.addEventListener("mousedown", closeOnOutside);
+    return () => window.removeEventListener("mousedown", closeOnOutside);
+  }, [menuOpen]);
+
   return (
-    <div className="dc-friend-row" data-type={meta.tone} data-selected={selected ? "true" : "false"}>
+    <div ref={rowRef} className="dc-friend-row" data-type={meta.tone} data-selected={selected ? "true" : "false"}>
       {onSelect ? (
         <button
           type="button"
@@ -84,19 +100,65 @@ function FriendRow({
           {rowContent}
         </span>
       )}
-      {onAction || onInvite ? (
+      {onAction ? (
         <div className="dc-friend-actions">
-          {onInvite && (
-            <button type="button" className="dc-friend-action" onClick={() => onInvite(friend)}>
-              <UserPlus size={15} />
-              {inviteLabel || "방에 초대"}
-            </button>
-          )}
-          {onAction && (
-            <button type="button" className="dc-friend-action" onClick={() => onAction(friend)}>
-              <UserPlus size={15} />
-              {actionLabel || "추가"}
-            </button>
+          <button type="button" className="dc-friend-action" onClick={() => onAction(friend)}>
+            <UserPlus size={15} />
+            {actionLabel || "추가"}
+          </button>
+        </div>
+      ) : hasMenuActions ? (
+        <div className="dc-friend-menu-wrap">
+          <button
+            type="button"
+            className="dc-friend-icon-action"
+            aria-label={`${friend.display_name} 작업`}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((value) => !value)}
+          >
+            <MoreVertical size={18} />
+          </button>
+          {menuOpen && (
+            <div className="dc-friend-row-menu" role="menu" aria-label={`${friend.display_name} 작업 메뉴`}>
+              {onStartDm && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onStartDm(friend);
+                  }}
+                >
+                  <MessageCircle size={14} />
+                  로컬 DM 열기
+                </button>
+              )}
+              {onInvite && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onInvite(friend);
+                  }}
+                >
+                  <UserPlus size={14} />
+                  {inviteLabel === "초대 중" ? inviteLabel : "방에 초대하기"}
+                </button>
+              )}
+              {onSelect && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onSelect(friend);
+                  }}
+                >
+                  친구 정보 보기
+                </button>
+              )}
+            </div>
           )}
         </div>
       ) : (
@@ -177,6 +239,11 @@ export default function FriendsView({
       null,
     [payload.friends, selectedFriendId, visibleFriends]
   );
+
+  function openFriendDm(friend: RoomFriend) {
+    onSelectFriend?.(friend);
+    setDmFocusSignal((value) => value + 1);
+  }
 
   async function handleAddCandidate(friend: RoomFriend) {
     setBusyId(friend.friend_id);
@@ -326,6 +393,7 @@ export default function FriendsView({
                   friend={friend}
                   inviteLabel={busyId === `invite:${friend.friend_id}` ? "초대 중" : "방에 초대"}
                   onInvite={onInviteFriendToRoom ? handleInvite : undefined}
+                  onStartDm={openFriendDm}
                   selected={selectedFriend?.friend_id === friend.friend_id}
                   onSelect={onSelectFriend}
                 />
@@ -357,7 +425,7 @@ export default function FriendsView({
           <FriendProfileCard
             friend={selectedFriend}
             activeRoomName={activeRoomName}
-            onStartDm={() => setDmFocusSignal((value) => value + 1)}
+            onStartDm={openFriendDm}
             inviteLabel={
               selectedFriend && busyId === `invite:${selectedFriend.friend_id}` ? "초대 중" : "방에 초대"
             }
