@@ -63,7 +63,10 @@ unknown participants as room friends from previous sessions or active resident
 suggestions. Saved friends also appear in the home sidebar's direct-message
 list, grouped with their participant type and status, so old sessions and
 agents can be found from the Discord home icon without opening a separate
-operator panel. Selecting a saved friend or direct-message row shows a local
+operator panel. The home sidebar search filters that saved direct-message list
+locally by name, handle, provider, participant type, or recent room, and the
+selected row stays highlighted like a Discord DM selection. Selecting a saved
+friend or direct-message row shows a local
 Discord-style profile card in the right panel with participant type, provider,
 connection kind, status, and recent-room evidence. Inviting a saved friend into
 the selected room writes a `friend_invite` member record through

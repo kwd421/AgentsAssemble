@@ -540,9 +540,14 @@ textarea {
 
 .dc-home-nav-item:hover,
 .dc-home-nav-item[data-active="true"],
-.dc-dm-row:hover {
+.dc-dm-row:hover,
+.dc-dm-row[data-active="true"] {
   background: var(--color-sidebar-active);
   color: var(--color-sidebar-text-active);
+}
+
+.dc-dm-row[data-active="true"] {
+  box-shadow: inset 3px 0 0 var(--color-brand);
 }
 
 .dc-dm-section {

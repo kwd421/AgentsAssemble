@@ -1282,6 +1282,7 @@ export default function App() {
           agentCount={scopedAgents.length || 0}
           hasBackendError={Boolean(flowError)}
           friends={homeFriendsPayload.friends}
+          selectedFriendId={selectedHomeFriendId}
           onFriendSelect={selectHomeFriend}
           onStartAddFriend={openAddFriendView}
         />

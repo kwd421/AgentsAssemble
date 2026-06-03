@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { Bot, Cloud, Compass, Cpu, Plus, Search, User, Users, Wifi } from "lucide-react";
 import type { RoomFriend } from "../../api";
 import UserPanel from "./UserPanel";
@@ -20,6 +21,7 @@ export default function HomeSidebar({
   agentCount,
   hasBackendError,
   friends = [],
+  selectedFriendId,
   onFriendSelect,
   onStartAddFriend,
 }: {
@@ -29,17 +31,37 @@ export default function HomeSidebar({
   agentCount: number;
   hasBackendError: boolean;
   friends?: RoomFriend[];
+  selectedFriendId?: string;
   onFriendSelect?: (friend: RoomFriend) => void;
   onStartAddFriend?: () => void;
 }) {
-  const directMessages = friends.slice(0, 12);
+  const [dmQuery, setDmQuery] = useState("");
+  const filteredDirectMessages = useMemo(() => {
+    const needle = dmQuery.trim().toLowerCase();
+    const directMessages = friends.slice(0, 12);
+    if (!needle) return directMessages;
+    return directMessages.filter((friend) =>
+      [
+        friend.display_name,
+        friend.handle,
+        friend.provider_kind,
+        friend.participant_type,
+        friend.last_meeting_id,
+      ].some((value) => String(value || "").toLowerCase().includes(needle))
+    );
+  }, [dmQuery, friends]);
   return (
     <aside className="dc-sidebar dc-home-sidebar flex shrink-0 flex-col" aria-label="친구와 DM">
       <header className="dc-home-search">
         <label>
           <span className="sr-only">대화 찾기 또는 시작하기</span>
           <Search size={15} />
-          <input type="search" placeholder="대화 찾기 또는 시작하기" />
+          <input
+            type="search"
+            value={dmQuery}
+            onChange={(event) => setDmQuery(event.target.value)}
+            placeholder="대화 찾기 또는 시작하기"
+          />
         </label>
       </header>
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3 chat-scroll" aria-label="친구 분류">
@@ -65,8 +87,8 @@ export default function HomeSidebar({
               <Plus size={14} />
             </button>
           </div>
-          {directMessages.length ? (
-            directMessages.map((friend) => {
+          {filteredDirectMessages.length ? (
+            filteredDirectMessages.map((friend) => {
               const meta = HOME_ITEMS.find((item) => item.id === friend.participant_type);
               const Icon = meta?.icon || Compass;
               return (
@@ -75,6 +97,7 @@ export default function HomeSidebar({
                   type="button"
                   className="dc-dm-row"
                   data-status={friend.status || "offline"}
+                  data-active={selectedFriendId === friend.friend_id}
                   onClick={() => onFriendSelect?.(friend)}
                   title={`${friend.display_name} · ${meta?.label || "미분류"}`}
                 >
@@ -91,6 +114,11 @@ export default function HomeSidebar({
                 </button>
               );
             })
+          ) : dmQuery.trim() ? (
+            <button type="button" className="dc-dm-row" onClick={() => onStartAddFriend?.()}>
+              <Compass size={18} />
+              <span className="preserve-words">검색 결과가 없습니다</span>
+            </button>
           ) : (
             <button type="button" className="dc-dm-row" onClick={() => onStartAddFriend?.()}>
               <Compass size={18} />
