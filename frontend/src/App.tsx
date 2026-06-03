@@ -130,9 +130,9 @@ const CHANNELS: ChannelConfig[] = [
   { id: "records", label: "아카이브", icon: Archive },
 ];
 
-const CHANNEL_SECTIONS: Array<{ label: string; channels: Channel[] }> = [
-  { label: "대화", channels: ["lobby", "live"] },
-  { label: "작업 채널", channels: ["board", "records"] },
+const CHANNEL_SECTIONS: Array<{ id: string; label: string; channels: Channel[] }> = [
+  { id: "conversation", label: "대화", channels: ["lobby", "live"] },
+  { id: "work", label: "작업 채널", channels: ["board", "records"] },
 ];
 
 const PINNED_ROOMS: RoomDockItem[] = [
@@ -367,6 +367,9 @@ export default function App() {
   const [roomChannelSettings, setRoomChannelSettings] = useState<
     Record<string, Record<string, ChannelSettings>>
   >({});
+  const [collapsedChannelSections, setCollapsedChannelSections] = useState<Record<string, boolean>>(
+    {}
+  );
   const [mafiaGameId, setMafiaGameId] = useState(() => {
     try {
       const query = new URLSearchParams(window.location.search);
@@ -926,6 +929,13 @@ export default function App() {
     setChannelMenu(null);
   }
 
+  function toggleChannelSection(sectionId: string) {
+    setCollapsedChannelSections((previous) => ({
+      ...previous,
+      [sectionId]: !previous[sectionId],
+    }));
+  }
+
   async function inviteFriendToActiveRoom(friend: RoomFriend) {
     if (guestLocked) throw new Error("게스트 화면에서는 초대할 수 없습니다.");
     if (!activeRoom.meetingId) throw new Error("초대할 방이 선택되지 않았습니다.");
@@ -1232,13 +1242,27 @@ export default function App() {
               .map((id) => visibleChannels.find((item) => item.id === id))
               .filter(Boolean) as ChannelConfig[];
             if (!channels.length) return null;
+            const sectionCollapsed = Boolean(collapsedChannelSections[section.id]);
+            const activeSectionChannel = channels.find((item) => item.id === channel);
+            const visibleSectionChannels =
+              sectionCollapsed && activeSectionChannel
+                ? [activeSectionChannel]
+                : sectionCollapsed
+                  ? []
+                  : channels;
             return (
-              <section key={section.label} className="dc-channel-section">
-                <p className="dc-channel-category">
+              <section key={section.id} className="dc-channel-section">
+                <button
+                  type="button"
+                  className="dc-channel-category dc-channel-category-button"
+                  data-collapsed={sectionCollapsed}
+                  aria-expanded={!sectionCollapsed}
+                  onClick={() => toggleChannelSection(section.id)}
+                >
                   <ChevronDown size={12} />
                   {section.label}
-                </p>
-                {channels.map(({ id, label, icon: Icon }) => (
+                </button>
+                {visibleSectionChannels.map(({ id, label, icon: Icon }) => (
                   <div key={id}>
                     <button
                       type="button"

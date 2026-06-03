@@ -366,6 +366,14 @@ class StaticUiAssetTests(unittest.TestCase):
 
         self.assertIn('type Channel = "friends" | "lobby" | "live" | "board" | "records";', app_source)
         self.assertIn("const CHANNELS", app_source)
+        self.assertIn("id: \"conversation\"", app_source)
+        self.assertIn("id: \"work\"", app_source)
+        self.assertIn("collapsedChannelSections", app_source)
+        self.assertIn("toggleChannelSection", app_source)
+        self.assertIn("aria-expanded={!sectionCollapsed}", app_source)
+        self.assertIn("data-collapsed={sectionCollapsed}", app_source)
+        self.assertIn("dc-channel-category-button", app_source)
+        self.assertIn("visibleSectionChannels", app_source)
         self.assertIn('label: "채팅"', app_source)
         self.assertIn('label: "진행 로그"', app_source)
         self.assertIn('aria-label="룸 레일"', app_source)
@@ -409,6 +417,9 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("ROOM_CHANNEL_OPTIONS", settings_source)
         self.assertIn("onChannelSettingChange", settings_source)
         self.assertIn("channelSettings[channel.id]", settings_source)
+        css = (FRONTEND_DIR / "index.css").read_text()
+        self.assertIn(".dc-channel-category-button", css)
+        self.assertIn(".dc-channel-category-button[data-collapsed=\"true\"] svg", css)
 
     def test_react_lobby_sse_uses_shared_parser_and_merge_helpers(self):
         api_source = frontend_file("api.ts")

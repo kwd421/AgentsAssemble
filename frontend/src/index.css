@@ -626,16 +626,33 @@ textarea {
   display: flex;
   align-items: center;
   gap: 3px;
+  width: calc(100% - 4px);
   margin: 10px 0 4px;
   padding: 0 6px;
+  border-radius: 4px;
   color: var(--color-text-muted);
   font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.03em;
+  text-align: left;
 }
 
 .dc-channel-section:first-child .dc-channel-category {
   margin-top: 0;
+}
+
+.dc-channel-category-button:hover,
+.dc-channel-category-button:focus-visible {
+  color: var(--color-text-secondary);
+  outline: none;
+}
+
+.dc-channel-category-button svg {
+  transition: transform 120ms ease;
+}
+
+.dc-channel-category-button[data-collapsed="true"] svg {
+  transform: rotate(-90deg);
 }
 
 .dc-channel {
