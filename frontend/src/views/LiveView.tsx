@@ -372,6 +372,8 @@ export default function LiveView({
   membersOpen,
   onToggleMembers,
   headerActions,
+  onOpenMobileSidebar,
+  onOpenMobileInfo,
 }: {
   flow: FlowState;
   flowEvents: LobbyEvent[];
@@ -383,6 +385,8 @@ export default function LiveView({
   membersOpen?: boolean;
   onToggleMembers?: () => void;
   headerActions?: ChannelHeaderActions;
+  onOpenMobileSidebar?: () => void;
+  onOpenMobileInfo?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToLatestRef = useRef(true);
@@ -491,6 +495,8 @@ export default function LiveView({
           membersOpen={membersOpen}
           onToggleMembers={onToggleMembers}
           headerActions={headerActions}
+          onOpenMobileSidebar={onOpenMobileSidebar}
+          onOpenMobileInfo={onOpenMobileInfo}
         />
         <MafiaPanel game={mafiaGame} refreshMafia={refreshMafia} />
       </div>
@@ -506,6 +512,8 @@ export default function LiveView({
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}
         headerActions={headerActions}
+        onOpenMobileSidebar={onOpenMobileSidebar}
+        onOpenMobileInfo={onOpenMobileInfo}
       >
         {isRunning && (
           <span className="flex items-center gap-1.5 rounded bg-online/15 px-2 py-0.5 text-[11px] font-black text-online">

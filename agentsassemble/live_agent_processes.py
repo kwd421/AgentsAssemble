@@ -121,6 +121,27 @@ class LiveAgentProcessSupervisor:
         with self._lock:
             return self._stop_group_unlocked(group_id, timeout_seconds=timeout_seconds)
 
+    def stop_group_if_owned(
+        self,
+        group_id: str,
+        *,
+        meeting_id: str,
+        agent_ids: list[str],
+        timeout_seconds: float = 5.0,
+    ) -> dict[str, object]:
+        with self._lock:
+            clean_group_id = _clean_group_id(group_id)
+            clean_meeting_id = _clean_meeting_id(meeting_id)
+            expected_agent_ids = [str(agent_id or "").strip() for agent_id in agent_ids if str(agent_id or "").strip()]
+            record = self._records.get(clean_group_id)
+            if record is None:
+                raise ValueError(f"Live agent group {clean_group_id} was not found.")
+            if str(record.get("meeting_id") or "") != clean_meeting_id:
+                raise ValueError(f"Live agent group {clean_group_id} does not belong to meeting {clean_meeting_id}.")
+            if _manifest_agent_ids(record.get("agents")) != expected_agent_ids:
+                raise ValueError(f"Live agent group {clean_group_id} is not an agent-owned process.")
+            return self._stop_group_unlocked(clean_group_id, timeout_seconds=timeout_seconds)
+
     def stop_running_groups(self, *, timeout_seconds: float = 5.0) -> dict[str, object]:
         with self._lock:
             self._refresh_running_process_exits()

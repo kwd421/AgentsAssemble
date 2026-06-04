@@ -132,6 +132,8 @@ export default function LobbyView({
   membersOpen,
   onToggleMembers,
   headerActions,
+  onOpenMobileSidebar,
+  onOpenMobileInfo,
   appearance,
   onOpenSideThread,
   onGuestSessionExpired,
@@ -152,6 +154,8 @@ export default function LobbyView({
   membersOpen?: boolean;
   onToggleMembers?: () => void;
   headerActions?: ChannelHeaderActions;
+  onOpenMobileSidebar?: () => void;
+  onOpenMobileInfo?: () => void;
   appearance?: RoomAppearance;
   onOpenSideThread?: (event: LobbyEvent) => void;
   onGuestSessionExpired?: () => void;
@@ -307,6 +311,8 @@ export default function LobbyView({
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}
         headerActions={headerActions}
+        onOpenMobileSidebar={onOpenMobileSidebar}
+        onOpenMobileInfo={onOpenMobileInfo}
       />
 
       <div className="dc-room-status-line">

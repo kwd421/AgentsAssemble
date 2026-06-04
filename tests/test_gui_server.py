@@ -18938,6 +18938,7 @@ class GuiServerTests(unittest.TestCase):
                                 "meeting_id": "room-1",
                                 "agent_id": "guest-a",
                                 "display_name": "Guest A",
+                                "local_dev_preview": True,
                             }
                         ).encode("utf-8"),
                         headers={"Content-Type": "application/json"},

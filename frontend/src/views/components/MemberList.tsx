@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
-  resumeLiveAgentSession,
-  stopLiveAgentSession,
+  resumeLiveAgentSessionAgent,
+  stopLiveAgentSessionAgent,
   type LiveAgent,
   type LiveAgentProcessGroup,
   type RoomMember,
@@ -31,6 +31,11 @@ import {
   canViewAgentQuota,
   type AgentQuotaVisibilityViewer,
 } from "../../lib/agentQuotaVisibility";
+import {
+  findProcessGroupForAgent,
+  processGroupCanControlSingleAgent,
+  processGroupIndividualControlReason,
+} from "../../lib/liveAgentProcessControls";
 import { participantTypeMeta } from "../../lib/participantTypes";
 import { isActivePresence, presenceStatusLabel } from "../../lib/presenceStatus";
 import ProviderTruthChips from "./ProviderTruthChips";
@@ -154,17 +159,6 @@ function processStatusLabel(status?: string) {
   return "상태 미정";
 }
 
-function agentBelongsToProcessGroup(agent: LiveAgent, group?: LiveAgentProcessGroup) {
-  if (!group) return false;
-  const groupedAgents = group.agents || [];
-  if (groupedAgents.length === 0) return true;
-  return groupedAgents.some(
-    (candidate) =>
-      candidate.agent_id === agent.agent_id ||
-      Boolean(candidate.display_name && candidate.display_name === agent.display_name)
-  );
-}
-
 function MemberRow({
   entry,
   onOpenDetails,
@@ -269,26 +263,38 @@ function MemberRow({
 function MemberDetailModal({
   entry,
   onClose,
-  sessionGroup,
+  processGroups = [],
   onSessionActionComplete,
 }: {
   entry: MemberEntry;
   onClose: () => void;
-  sessionGroup?: LiveAgentProcessGroup;
+  processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
 }) {
   const [sessionActionBusy, setSessionActionBusy] = useState(false);
   const [sessionActionStatus, setSessionActionStatus] = useState("");
   if (!entry.agent) return null;
+  const agent = entry.agent;
   const DetailIcon = entry.icon;
   const quotaWindows = entry.canViewQuota ? agentQuotaWindowSignals(entry.agent) : [];
-  const quotaFallback = entry.canViewQuota ? inlineQuotaChips(entry.agent) : [];
+  const quotaFallback = entry.canViewQuota ? inlineQuotaChips(agent) : [];
   const signals = agentMemberSignals(entry.agent).filter((signal) => !/^5h |^1w /.test(signal.label));
   const lastObserved = lastObservedSummary(entry.agent);
-  const processOwnsAgent = agentBelongsToProcessGroup(entry.agent, sessionGroup);
+  const processIdentity = {
+    agent_id: agent.agent_id,
+    display_name: agent.display_name,
+  };
+  const sessionGroup = findProcessGroupForAgent(processGroups, processIdentity);
+  const canControlSingleAgent = processGroupCanControlSingleAgent(sessionGroup, processIdentity);
+  const processOwnsAgent = Boolean(sessionGroup);
+  const individualControlReason = processGroupIndividualControlReason(
+    sessionGroup,
+    processIdentity,
+    entry.displayName || "이 AI"
+  );
   const processRunning = sessionGroup?.status === "running";
-  const hasProcessControls = Boolean(sessionGroup && processOwnsAgent);
-  const canResumeSession = Boolean(
+  const showIndividualControlReason = Boolean(individualControlReason && processRunning);
+  const hasResumeControl = Boolean(
     sessionGroup &&
       processOwnsAgent &&
       sessionGroup.group_id &&
@@ -296,8 +302,19 @@ function MemberDetailModal({
       sessionGroup.config_path &&
       !processRunning
   );
+  const hasStopControl = Boolean(
+    sessionGroup &&
+      canControlSingleAgent &&
+      sessionGroup.group_id &&
+      sessionGroup.meeting_id &&
+      processRunning
+  );
+  const hasSessionSection = Boolean(hasResumeControl || hasStopControl || showIndividualControlReason);
+  const canResumeSession = Boolean(
+    hasResumeControl
+  );
   const canStopSession = Boolean(
-    sessionGroup && processOwnsAgent && sessionGroup.group_id && sessionGroup.meeting_id && processRunning
+    hasStopControl
   );
 
   async function handleResumeSession() {
@@ -305,9 +322,10 @@ function MemberDetailModal({
     setSessionActionBusy(true);
     setSessionActionStatus("RESUME 요청 중...");
     try {
-      const response = await resumeLiveAgentSession({
+      const response = await resumeLiveAgentSessionAgent({
         meetingId: sessionGroup.meeting_id,
         groupId: sessionGroup.group_id,
+        agentId: agent.agent_id,
         liveAgentConfigPath: sessionGroup.config_path,
       });
       setSessionActionStatus(
@@ -326,9 +344,10 @@ function MemberDetailModal({
     setSessionActionBusy(true);
     setSessionActionStatus("STOP(KILL) 요청 중...");
     try {
-      const response = await stopLiveAgentSession({
+      const response = await stopLiveAgentSessionAgent({
         meetingId: sessionGroup.meeting_id,
         groupId: sessionGroup.group_id,
+        agentId: agent.agent_id,
       });
       setSessionActionStatus(
         `STOP(KILL) 완료${response.status ? ` · ${processStatusLabel(response.status)}` : ""}`
@@ -416,33 +435,37 @@ function MemberDetailModal({
           <ProviderTruthChips badges={agentTruthBadges(entry.agent)} compact limit={4} />
           {lastObserved && <p className="dc-member-detail-note preserve-words">{lastObserved}</p>}
         </section>
-        {hasProcessControls && (
+        {hasSessionSection && (
           <section className="dc-member-detail-section" aria-label={`${entry.displayName} 세션 제어`}>
             <h3>세션 제어</h3>
             <p className="dc-member-session-summary preserve-words">
               {sessionGroup?.group_id} · {processStatusLabel(sessionGroup?.status)}
             </p>
-            <div className="dc-member-session-actions">
-              <button
-                type="button"
-                className="dc-member-session-button"
-                disabled={!canResumeSession || sessionActionBusy}
-                onClick={handleResumeSession}
-              >
-                <Play size={15} />
-                RESUME
-              </button>
-              <button
-                type="button"
-                className="dc-member-session-button"
-                data-variant="danger"
-                disabled={!canStopSession || sessionActionBusy}
-                onClick={handleStopSession}
-              >
-                <Square size={14} />
-                STOP(KILL)
-              </button>
-            </div>
+            {hasResumeControl || hasStopControl ? (
+              <div className="dc-member-session-actions">
+                <button
+                  type="button"
+                  className="dc-member-session-button"
+                  disabled={!canResumeSession || sessionActionBusy}
+                  onClick={handleResumeSession}
+                >
+                  <Play size={15} />
+                  RESUME
+                </button>
+                <button
+                  type="button"
+                  className="dc-member-session-button"
+                  data-variant="danger"
+                  disabled={!canStopSession || sessionActionBusy}
+                  onClick={handleStopSession}
+                >
+                  <Square size={14} />
+                  STOP(KILL)
+                </button>
+              </div>
+            ) : (
+              <p className="dc-member-detail-note preserve-words">{individualControlReason}</p>
+            )}
             {sessionActionStatus && (
               <p className="dc-member-session-status preserve-words">{sessionActionStatus}</p>
             )}
@@ -461,7 +484,7 @@ export default function MemberList({
   roleOverrides,
   onRoleChange,
   canEditRoles = true,
-  sessionGroup,
+  processGroups = [],
   onSessionActionComplete,
   quotaViewer,
 }: {
@@ -472,7 +495,7 @@ export default function MemberList({
   roleOverrides?: Record<string, string>;
   onRoleChange?: (memberId: string, role: RoleId) => void;
   canEditRoles?: boolean;
-  sessionGroup?: LiveAgentProcessGroup;
+  processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
   quotaViewer?: AgentQuotaVisibilityViewer;
 }) {
@@ -633,7 +656,7 @@ export default function MemberList({
         <MemberDetailModal
           entry={detailEntry}
           onClose={() => setDetailEntry(null)}
-          sessionGroup={sessionGroup}
+          processGroups={processGroups}
           onSessionActionComplete={onSessionActionComplete}
         />
       )}

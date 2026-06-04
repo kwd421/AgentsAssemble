@@ -8,18 +8,25 @@ import type {
 import type { LucideIcon } from "lucide-react";
 import {
   Archive,
+  Bell,
+  CalendarDays,
   ChevronDown,
   Gamepad2,
   Hash,
+  Home,
   LayoutDashboard,
   Radio,
+  Search,
   UserPlus,
+  UserRound,
 } from "lucide-react";
 import {
   createCompanionRoomInvite,
   createRoomInvite,
+  configurePublicInvitePublicUrl,
   fetchLiveAgentFlow,
   fetchLiveAgentProcesses,
+  fetchPublicInviteStatus,
   fetchRoomFriends,
   fetchRoomSettings,
   fetchRoomMembers,
@@ -27,10 +34,15 @@ import {
   fetchMeetingLifecycle,
   fetchWorkroomQueueEvidence,
   fetchSideChat,
+  generatePublicInviteHostToken,
   joinRoomInvite,
   leaveRoomInvite,
+  loadHostToken,
   postRoomFriendDm,
+  saveHostToken,
   saveRoomSettings,
+  startPublicInviteTunnel,
+  stopPublicInviteTunnel,
   upsertRoomMember,
   applyMeetingStreamUpdate,
   initialMeetingStreamState,
@@ -55,6 +67,7 @@ import {
   type RoomFriend,
   type RoomFriendsResponse,
   type RoomMember,
+  type PublicInviteStatus,
 } from "./api";
 import { usePoll } from "./hooks";
 import AdminPanel from "./views/AdminPanel";
@@ -70,6 +83,7 @@ import type { HomeFilter } from "./views/components/HomeSidebar";
 import type { RoleId } from "./views/components/MemberList";
 import RoomConnectionPanel from "./views/components/RoomConnectionPanel";
 import RoomInviteModal from "./views/components/RoomInviteModal";
+import MobileRoomInfoPanel from "./views/components/MobileRoomInfoPanel";
 import RoomRail from "./views/components/RoomRail";
 import type { RoomMenuState } from "./views/components/RoomRail";
 import RoomSettingsModal from "./views/components/RoomSettingsModal";
@@ -105,6 +119,7 @@ import {
   type RoomDockItem,
 } from "./lib/roomDockModel";
 import {
+  loadRoomGuestSession,
   persistRoomGuestSession,
   roomGuestSessionFromJoinPayload,
   type RoomGuestSession,
@@ -145,6 +160,12 @@ type SidebarResizeState = {
   startWidth: number;
   startX: number;
   currentWidth: number;
+};
+
+type MobilePanelDragState = {
+  startX: number;
+  startY: number;
+  sidebarOpen: boolean;
 };
 
 type InviteModalState = {
@@ -210,6 +231,9 @@ const CHANNEL_NOTIFICATION_LABELS: Record<ChannelNotificationSetting, string> = 
   mute: "알림 끔",
 };
 
+const MOBILE_SWIPE_THRESHOLD = 42;
+const MOBILE_SWIPE_VERTICAL_TOLERANCE = 80;
+
 function channelNotificationSummary(setting?: ChannelSettings): string {
   return `현재 알림: ${CHANNEL_NOTIFICATION_LABELS[setting?.notifications || "default"]}`;
 }
@@ -272,6 +296,13 @@ function channelForActiveRoom(
   return channelConfig;
 }
 
+function mobileViewportMatches() {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(max-width: 760px)").matches
+  );
+}
+
 export default function App() {
   const [startupRoute] = useState(createStartupRoute);
   const guestInvite = startupRoute.guestInvite;
@@ -281,7 +312,15 @@ export default function App() {
   );
   const [guestExpired, setGuestExpired] = useState(false);
   const guestLocked = Boolean(guestInvite || guestSession || guestJoinToken || guestExpired);
-  const [channel, setChannel] = useState<Channel>(() => startupRoute.initialChannel);
+  const [channel, setChannel] = useState<Channel>(() => {
+    if (
+      startupRoute.initialChannel === "friends" &&
+      mobileViewportMatches()
+    ) {
+      return "lobby";
+    }
+    return startupRoute.initialChannel;
+  });
   const [homeFilter, setHomeFilter] = useState<HomeFilter>("friends");
   const [friendListFilter, setFriendListFilter] = useState<FriendListFilter>("online");
   const [adminOpen, setAdminOpen] = useState(false);
@@ -294,6 +333,10 @@ export default function App() {
   const [inviteModal, setInviteModal] = useState<InviteModalState>(null);
   const [settingsModal, setSettingsModal] = useState<RoomSettingsState>(null);
   const [inviteCopyStatus, setInviteCopyStatus] = useState("");
+  const [secureInviteUrl, setSecureInviteUrl] = useState("");
+  const [publicInviteStatus, setPublicInviteStatus] = useState<PublicInviteStatus | null>(null);
+  const [publicInviteUrlDraft, setPublicInviteUrlDraft] = useState("");
+  const [hostTokenDraft, setHostTokenDraft] = useState("");
   const [inviteFriendStatuses, setInviteFriendStatuses] = useState<Record<string, string>>({});
   const [inviteRemoteClientPacket, setInviteRemoteClientPacket] =
     useState<InviteRemoteClientPacketState>({ friendName: "", preview: "" });
@@ -318,8 +361,12 @@ export default function App() {
   const [collapsedChannelSections, setCollapsedChannelSections] = useState<Record<string, boolean>>(
     {}
   );
+  const [channelSearchQuery, setChannelSearchQuery] = useState("");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(mobileViewportMatches);
+  const [mobileRoomInfoOpen, setMobileRoomInfoOpen] = useState(false);
   const [channelSidebarWidth, setChannelSidebarWidth] = useState(loadSidebarWidth);
   const sidebarResizeRef = useRef<SidebarResizeState | null>(null);
+  const mobilePanelDragRef = useRef<MobilePanelDragState | null>(null);
   const [mafiaGameId, setMafiaGameId] = useState(() => {
     try {
       const query = new URLSearchParams(window.location.search);
@@ -342,8 +389,26 @@ export default function App() {
   const [sideChatThread, setSideChatThread] = useState<SideChatThreadContext | null>(null);
 
   const guestMeetingId = guestSession?.meetingId || guestInvite?.meetingId || "";
+  const guestJoinPending = Boolean(guestJoinToken && guestSession?.inviteToken !== guestJoinToken);
   const guestReadOnly =
     guestInvite?.inviteScope === "read_only" || guestSession?.inviteScope === "read_only";
+  const guestPanelProfile = guestLocked
+    ? {
+        displayName:
+          guestSession?.displayName ||
+          (guestJoinPending ? "입장 확인 중" : guestExpired ? "게스트 세션 만료" : "게스트"),
+        avatarLabel:
+          (guestSession?.displayName || guestSession?.agentId || "G").slice(0, 1).toUpperCase() || "G",
+        statusLabel: guestExpired
+          ? "세션 만료"
+          : guestJoinPending
+          ? "초대 확인 중"
+          : guestSession?.sessionToken
+          ? "게스트로 접속"
+          : "읽기 전용 미리보기",
+        expired: guestExpired,
+      }
+    : undefined;
   const lobbyPostingState = useMemo(
     () =>
       roomPostingState({
@@ -355,7 +420,7 @@ export default function App() {
   );
   const flowFetcher = useCallback(
     () => {
-      if (guestExpired) {
+      if (guestExpired || guestJoinPending) {
         return Promise.resolve({
           flow: { status: "idle" },
           agents: [],
@@ -365,7 +430,7 @@ export default function App() {
       }
       return fetchLiveAgentFlow(guestMeetingId, guestSession?.sessionToken || "");
     },
-    [guestExpired, guestMeetingId, guestSession?.sessionToken]
+    [guestExpired, guestJoinPending, guestMeetingId, guestSession?.sessionToken]
   );
   const [flowData, , flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
   const flow = flowData?.flow ?? { status: "idle" };
@@ -401,13 +466,14 @@ export default function App() {
     : [];
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? createFreshRoom();
   const activeSideChatMeetingId = activeRoom.meetingId || "";
-  const activeProcessGroup = useMemo(
+  const activeProcessGroups = useMemo(
     () =>
-      (processData?.groups || []).find(
+      (processData?.groups || []).filter(
         (group) => group.meeting_id && group.meeting_id === activeRoom.meetingId
       ),
     [activeRoom.meetingId, processData?.groups]
   );
+  const activeProcessGroup = activeProcessGroups[0];
   const guestOwnedAgentIds = useMemo(() => {
     const agentId = guestSession?.agentId || "";
     return agentId ? [agentId, `${agentId}-ai`] : [];
@@ -445,10 +511,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (guestLocked && isUnauthorizedApiError(flowError)) {
+    if (guestLocked && guestSession?.sessionToken && isUnauthorizedApiError(flowError)) {
       expireGuestSession();
     }
-  }, [expireGuestSession, flowError, guestLocked]);
+  }, [expireGuestSession, flowError, guestLocked, guestSession?.sessionToken]);
 
   useEffect(() => {
     if (!guestJoinToken || guestSession?.inviteToken === guestJoinToken) return;
@@ -474,6 +540,22 @@ export default function App() {
       })
       .catch((error) => {
         if (!cancelled) {
+          const restoredSession = loadRoomGuestSession();
+          if (restoredSession?.inviteToken === guestJoinToken) {
+            setGuestSession(restoredSession);
+            setGuestExpired(false);
+            const restoredRoom = roomFromGuestSession(restoredSession);
+            setRooms([restoredRoom]);
+            setActiveRoomId(restoredRoom.id);
+            setChannel("lobby");
+            setGuestJoinStatus("");
+            try {
+              window.history.replaceState({}, "", window.location.pathname || "/join");
+            } catch {
+              // URL cleanup is best-effort; the restored session remains in memory.
+            }
+            return;
+          }
           setGuestJoinStatus(error instanceof Error ? error.message : "초대 링크 입장 실패");
         }
       });
@@ -525,6 +607,68 @@ export default function App() {
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, [roomMenu, channelMenu]);
+
+  useEffect(() => {
+    if (!mobileSidebarOpen && !mobileRoomInfoOpen) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") closeMobileOverlays();
+    }
+    function closeOnDesktopResize() {
+      if (!mobileViewportIsActive()) closeMobileOverlays();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", closeOnDesktopResize);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", closeOnDesktopResize);
+    };
+  }, [mobileRoomInfoOpen, mobileSidebarOpen]);
+
+  useEffect(() => {
+    function handleTouchStart(event: TouchEvent) {
+      if (!mobileViewportIsActive() || mobileRoomInfoOpen || event.touches.length !== 1) return;
+      const target = event.target as HTMLElement | null;
+      if (!mobileGestureCanStart(target, mobileSidebarOpen)) return;
+      const touch = event.touches[0];
+      mobilePanelDragRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        sidebarOpen: mobileSidebarOpen,
+      };
+    }
+
+    function handleTouchEnd(event: TouchEvent) {
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      finishMobilePanelGesture(touch.clientX, touch.clientY);
+    }
+
+    function handleTouchMove(event: TouchEvent) {
+      const drag = mobilePanelDragRef.current;
+      const touch = event.touches[0];
+      if (!drag || !touch) return;
+      const deltaX = touch.clientX - drag.startX;
+      const deltaY = Math.abs(touch.clientY - drag.startY);
+      if (Math.abs(deltaX) > 12 && Math.abs(deltaX) > deltaY) {
+        event.preventDefault();
+      }
+    }
+
+    function handleTouchCancel() {
+      mobilePanelDragRef.current = null;
+    }
+
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handleTouchEnd, { passive: true });
+    window.addEventListener("touchcancel", handleTouchCancel, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+      window.removeEventListener("touchcancel", handleTouchCancel);
+    };
+  }, [mobileRoomInfoOpen, mobileSidebarOpen]);
 
   useEffect(() => {
     const meetingId = flow.meeting_id || "";
@@ -668,9 +812,90 @@ export default function App() {
   const menuChannelDisplay = menuChannel
     ? channelForActiveRoom(menuChannel, activeRoom, scopedMafiaGame)
     : undefined;
+  const activeChannelDisplay = channelForActiveRoom(
+    CHANNELS.find((item) => item.id === channel) || CHANNELS[0],
+    activeRoom,
+    scopedMafiaGame
+  );
   const visibleChannels = guestLocked
     ? CHANNELS.filter((item) => item.id === "lobby")
     : CHANNELS;
+  const channelSearchNeedle = channelSearchQuery.trim().toLowerCase();
+
+  function mobileViewportIsActive() {
+    return mobileViewportMatches();
+  }
+
+  function openMobileSidebar() {
+    setMobileRoomInfoOpen(false);
+    setMobileSidebarOpen(true);
+  }
+
+  function closeMobileSidebar() {
+    setMobileSidebarOpen(false);
+  }
+
+  function openMobileRoomInfo() {
+    if (channel === "friends") return;
+    setMobileSidebarOpen(false);
+    setMobileRoomInfoOpen(true);
+  }
+
+  function closeMobileRoomInfo() {
+    setMobileRoomInfoOpen(false);
+  }
+
+  function openMobileProfileFromPanel() {
+    document.querySelector<HTMLElement>(".dc-sidebar .dc-user-identity")?.click();
+  }
+
+  function closeMobileOverlays() {
+    setMobileSidebarOpen(false);
+    setMobileRoomInfoOpen(false);
+  }
+
+  function mobileGestureCanStart(target: HTMLElement | null, sidebarOpen: boolean) {
+    const blockedSelector = sidebarOpen
+      ? "input, textarea, select, a, [role='dialog']"
+      : "button, input, textarea, select, a, [role='dialog']";
+    return !target?.closest(blockedSelector);
+  }
+
+  function finishMobilePanelGesture(currentX: number, currentY: number) {
+    const drag = mobilePanelDragRef.current;
+    if (!drag) return;
+    mobilePanelDragRef.current = null;
+    if (!mobileViewportIsActive()) return;
+    const deltaX = currentX - drag.startX;
+    const deltaY = Math.abs(currentY - drag.startY);
+    if (deltaY > MOBILE_SWIPE_VERTICAL_TOLERANCE || Math.abs(deltaX) < MOBILE_SWIPE_THRESHOLD) return;
+    if (drag.sidebarOpen && deltaX < -MOBILE_SWIPE_THRESHOLD) {
+      closeMobileSidebar();
+      return;
+    }
+    if (!drag.sidebarOpen && deltaX > MOBILE_SWIPE_THRESHOLD) {
+      openMobileSidebar();
+    }
+  }
+
+  function handleMobileShellPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!mobileViewportIsActive() || mobileRoomInfoOpen) return;
+    const target = event.target as HTMLElement | null;
+    if (!mobileGestureCanStart(target, mobileSidebarOpen)) return;
+    mobilePanelDragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      sidebarOpen: mobileSidebarOpen,
+    };
+  }
+
+  function handleMobileShellPointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    finishMobilePanelGesture(event.clientX, event.clientY);
+  }
+
+  function cancelMobileShellPointer() {
+    mobilePanelDragRef.current = null;
+  }
 
   function selectRoom(roomId: string) {
     setActiveRoomId(roomId);
@@ -680,6 +905,7 @@ export default function App() {
     setSideChatThread(null);
     setRoomMenu(null);
     setChannelMenu(null);
+    closeMobileOverlays();
   }
 
   useEffect(() => {
@@ -714,6 +940,7 @@ export default function App() {
     setChannel("friends");
     setAdminOpen(false);
     setChannelMenu(null);
+    closeMobileOverlays();
     setFriendListFilter("all");
     if (intent === "dm") {
       setActiveHomeDmFriendId(friend.friend_id);
@@ -732,6 +959,7 @@ export default function App() {
     setChannel("friends");
     setAdminOpen(false);
     setChannelMenu(null);
+    closeMobileOverlays();
     setHomeFilter("friends");
     setActiveHomeDmFriendId("");
     setFriendAddDraftName(draftName.trim());
@@ -747,6 +975,7 @@ export default function App() {
     setChannel("lobby");
     setRoomMenu(null);
     setChannelMenu(null);
+    closeMobileOverlays();
   }
 
   function openRoomMenu(event: ReactMouseEvent, room: RoomDockItem) {
@@ -784,13 +1013,38 @@ export default function App() {
     setActiveRoomId(roomId);
     setChannel("lobby");
     setAdminOpen(false);
+    closeMobileOverlays();
     setInviteModal({ roomId });
     setInviteCopyStatus("");
+    setSecureInviteUrl("");
+    setHostTokenDraft(loadHostToken());
     setInviteFriendStatuses({});
     setInviteRemoteClientPacket({ friendName: "", preview: "" });
     setRoomMenu(null);
     setChannelMenu(null);
   }
+
+  useEffect(() => {
+    if (!inviteModal) return;
+    let cancelled = false;
+    setSecureInviteUrl("");
+    setInviteCopyStatus("");
+    setHostTokenDraft(loadHostToken());
+    fetchPublicInviteStatus()
+      .then((status) => {
+        if (cancelled) return;
+        setPublicInviteStatus(status);
+        setPublicInviteUrlDraft(status.public_url || status.tunnel?.public_url || "");
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setInviteCopyStatus(error instanceof Error ? error.message : "공개 초대 상태를 불러오지 못했습니다.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteModal?.roomId]);
 
   function openRoomSettings(roomId: string, initialSectionId: RoomSettingsSectionId = "settings-overview") {
     if (guestLocked) return;
@@ -840,6 +1094,7 @@ export default function App() {
     setChannel("live");
     setAdminOpen(false);
     setChannelMenu(null);
+    closeMobileOverlays();
   }
 
   function handleFlowStarted() {
@@ -853,16 +1108,159 @@ export default function App() {
     setChannel("live");
     setAdminOpen(false);
     setChannelMenu(null);
+    closeMobileOverlays();
   }
 
   function goToChannel(next: Channel) {
     setChannel(guestLocked && next !== "lobby" ? "lobby" : next);
     setAdminOpen(false);
     setChannelMenu(null);
+    closeMobileOverlays();
   }
 
-  async function copyInviteLink(room: RoomDockItem) {
+  async function refreshPublicInviteState() {
+    const status = await fetchPublicInviteStatus();
+    setPublicInviteStatus(status);
+    if (status.public_url || status.tunnel?.public_url) {
+      setPublicInviteUrlDraft(status.public_url || status.tunnel?.public_url || "");
+    }
+    return status;
+  }
+
+  async function ensureHostTokenForInvite(status: PublicInviteStatus | null) {
+    const existingToken = loadHostToken();
+    if (existingToken) return existingToken;
+    if (status && !status.host_token_configured && status.can_generate_host_token) {
+      const payload = await generatePublicInviteHostToken();
+      if (payload.host_token) {
+        saveHostToken(payload.host_token);
+        setHostTokenDraft(payload.host_token);
+      }
+      if (payload.public_invite) setPublicInviteStatus(payload.public_invite);
+      return payload.host_token || "";
+    }
+    throw new Error("Host token required");
+  }
+
+  async function requirePublicInviteReady() {
+    const status = publicInviteStatus || (await refreshPublicInviteState());
+    if (!status.public_url) {
+      throw new Error("공개 URL을 먼저 설정하세요. Paste public URL / Start tunnel first.");
+    }
+    if (status.tunnel?.phase === "starting" && !status.tunnel.public_url) {
+      throw new Error("터널 시작 중입니다. 공개 URL이 표시될 때까지 기다려 주세요.");
+    }
+    await ensureHostTokenForInvite(status);
+    return status;
+  }
+
+  async function createSecureInviteForRoom({
+    room,
+    agentId,
+    displayName,
+    inviteScope,
+  }: {
+    room: RoomDockItem;
+    agentId: string;
+    displayName: string;
+    inviteScope: RoomAppearance["inviteScope"];
+  }) {
+    await requirePublicInviteReady();
     const localPreviewUrl = localPreviewInviteUrlForRoom(room);
+    const invite = await createRoomInvite({
+      meetingId: room.meetingId,
+      agentId,
+      displayName,
+      inviteScope,
+    });
+    const target = secureInviteCopyTarget({
+      joinUrl: invite.join_url || "",
+      localPreviewUrl,
+    });
+    if (!target.copyUrl) {
+      throw new Error(target.status);
+    }
+    setSecureInviteUrl(target.copyUrl);
+    return { invite, target };
+  }
+
+  async function configureInvitePublicUrl() {
+    const publicUrl = publicInviteUrlDraft.trim();
+    if (!publicUrl) {
+      setInviteCopyStatus("공개 URL을 먼저 입력하세요.");
+      return;
+    }
+    setInviteCopyStatus("공개 URL 설정 중...");
+    try {
+      const status = publicInviteStatus || (await refreshPublicInviteState());
+      await ensureHostTokenForInvite(status);
+      const payload = await configurePublicInvitePublicUrl(publicUrl);
+      if (payload.public_invite) {
+        setPublicInviteStatus(payload.public_invite);
+      } else {
+        await refreshPublicInviteState();
+      }
+      setInviteCopyStatus("공개 URL 설정됨");
+    } catch (error) {
+      setInviteCopyStatus(error instanceof Error ? error.message : "공개 URL 설정 실패");
+    }
+  }
+
+  async function saveHostTokenFromDraft() {
+    const token = hostTokenDraft.trim();
+    if (!token) {
+      setInviteCopyStatus("Host token required");
+      return;
+    }
+    saveHostToken(token);
+    setInviteCopyStatus("Host token saved");
+    try {
+      await refreshPublicInviteState();
+    } catch {
+      // Token save is still useful even if a transient status request fails.
+    }
+  }
+
+  async function startInviteTunnel() {
+    setInviteCopyStatus("터널 시작 중...");
+    try {
+      const status = publicInviteStatus || (await refreshPublicInviteState());
+      await ensureHostTokenForInvite(status);
+      const started = await startPublicInviteTunnel();
+      if (started.public_invite) setPublicInviteStatus(started.public_invite);
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const nextStatus = await refreshPublicInviteState();
+        if (nextStatus.public_url && nextStatus.tunnel?.phase === "running") {
+          setInviteCopyStatus("터널 공개 URL 준비됨");
+          return;
+        }
+        if (nextStatus.tunnel?.phase === "stopped" || nextStatus.tunnel?.last_error) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      }
+      const latest = await refreshPublicInviteState();
+      setInviteCopyStatus(
+        latest.public_url
+          ? "터널 공개 URL 준비됨"
+          : latest.tunnel?.last_error || "터널이 아직 공개 URL을 보고하지 않았습니다."
+      );
+    } catch (error) {
+      setInviteCopyStatus(error instanceof Error ? error.message : "터널 시작 실패");
+    }
+  }
+
+  async function stopInviteTunnel() {
+    setInviteCopyStatus("터널 중지 중...");
+    try {
+      const payload = await stopPublicInviteTunnel();
+      if (payload.public_invite) setPublicInviteStatus(payload.public_invite);
+      else await refreshPublicInviteState();
+      setInviteCopyStatus("터널 중지됨");
+    } catch (error) {
+      setInviteCopyStatus(error instanceof Error ? error.message : "터널 중지 실패");
+    }
+  }
+
+  async function generateInviteLink(room: RoomDockItem) {
     const inviteScope =
       completeRoomAppearance(roomAppearances[roomSettingsKey(room)] || roomAppearances[room.id])
         .inviteScope ||
@@ -870,25 +1268,34 @@ export default function App() {
       "room";
     setInviteCopyStatus("보안 초대 링크 생성 중...");
     try {
-      const invite = await createRoomInvite({
-        meetingId: room.meetingId,
+      const { target } = await createSecureInviteForRoom({
+        room,
         agentId: "guest",
         displayName: "Guest",
         inviteScope,
       });
-      const target = secureInviteCopyTarget({
-        joinUrl: invite.join_url || "",
-        localPreviewUrl,
-      });
-      if (!target.copyUrl) {
-        setInviteCopyStatus(target.status);
-        return;
-      }
-      const copied = await copyText(target.copyUrl);
-      setInviteCopyStatus(copied ? target.status : "보안 초대 링크 복사 실패");
-    } catch {
-      setInviteCopyStatus("보안 초대 링크 생성 실패. 공개 URL과 host 권한 설정을 확인하세요.");
+      setInviteCopyStatus(target.copyUrl ? "보안 초대 링크 생성됨" : target.status);
+    } catch (error) {
+      setInviteCopyStatus(error instanceof Error ? error.message : "보안 초대 링크 생성 실패");
     }
+  }
+
+  async function copyInviteLink(room: RoomDockItem) {
+    const target = secureInviteCopyTarget({
+      joinUrl: secureInviteUrl,
+      localPreviewUrl: localPreviewInviteUrlForRoom(room),
+    });
+    if (!target.copyUrl) {
+      setInviteCopyStatus(target.status);
+      return;
+    }
+    const copied = await copyText(target.copyUrl);
+    setInviteCopyStatus(copied ? target.status : "보안 초대 링크 복사 실패");
+  }
+
+  async function copyLocalPreviewLink(room: RoomDockItem) {
+    const copied = await copyText(localPreviewInviteUrlForRoom(room));
+    setInviteCopyStatus(copied ? "로컬 미리보기 복사됨" : "로컬 미리보기 복사 실패");
   }
 
   async function copyRemoteClientPacket() {
@@ -935,23 +1342,12 @@ export default function App() {
       const participantId = friend.source_agent_id || friend.friend_id;
       const memberStatus = isAiFriend ? (isLiveSession ? friend.status : "pending") : "invited";
       let remotePacketPreview = "";
-      const invite = await createRoomInvite({
-        meetingId: inviteModalRoom.meetingId,
+      const { invite, target } = await createSecureInviteForRoom({
+        room: inviteModalRoom,
         agentId: participantId,
         displayName: friend.display_name,
         inviteScope,
       });
-      const target = secureInviteCopyTarget({
-        joinUrl: invite.join_url || "",
-        localPreviewUrl,
-      });
-      if (!target.copyUrl) {
-        setInviteFriendStatuses((previous) => ({
-          ...previous,
-          [friendId]: target.status,
-        }));
-        return;
-      }
       link = target.copyUrl;
       remotePacketPreview = isAiFriend ? remoteClientPacketPreview(invite.remote_client_packet) : "";
       setInviteRemoteClientPacket({
@@ -991,10 +1387,10 @@ export default function App() {
         ...previous,
         [friendId]: isAiFriend ? (isLiveSession ? "호출됨" : "실행 필요") : "초대됨",
       }));
-    } catch {
+    } catch (error) {
       setInviteFriendStatuses((previous) => ({
         ...previous,
-        [friendId]: "초대 실패. 공개 URL과 host 권한 설정을 확인하세요.",
+        [friendId]: error instanceof Error ? error.message : "초대 실패. 공개 URL과 host 권한 설정을 확인하세요.",
       }));
     }
   }
@@ -1014,6 +1410,8 @@ export default function App() {
   const localPreviewUrl = inviteModalRoom
     ? localPreviewInviteUrlForRoom(inviteModalRoom)
     : "";
+  const invitePublicUrl = publicInviteStatus?.public_url || publicInviteStatus?.tunnel?.public_url || "";
+  const inviteHostTokenRequired = Boolean(publicInviteStatus?.host_token_configured && !loadHostToken());
   const inviteModalMembers = inviteModalRoom
     ? roomMembersByRoom[roomSettingsKey(inviteModalRoom)] || []
     : [];
@@ -1278,6 +1676,11 @@ export default function App() {
       className="dc-shell flex h-screen max-h-screen overflow-hidden text-text-primary"
       style={shellStyle}
       data-banner-preset={activeAppearance.bannerPreset}
+      data-mobile-sidebar-open={mobileSidebarOpen}
+      data-mobile-room-info-open={mobileRoomInfoOpen}
+      onPointerDown={handleMobileShellPointerDown}
+      onPointerUp={handleMobileShellPointerEnd}
+      onPointerCancel={cancelMobileShellPointer}
     >
       <RoomRail
         rooms={rooms}
@@ -1301,7 +1704,13 @@ export default function App() {
       {inviteModalRoom && (
         <RoomInviteModal
           roomLabel={inviteModalRoom.label}
+          secureInviteUrl={secureInviteUrl}
           localPreviewUrl={localPreviewUrl}
+          publicUrl={invitePublicUrl}
+          publicUrlDraft={publicInviteUrlDraft}
+          hostTokenDraft={hostTokenDraft}
+          hostTokenRequired={inviteHostTokenRequired}
+          tunnelStatus={publicInviteStatus?.tunnel}
           inviteScope={inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room"}
           friends={homeFriendsPayload.friends}
           members={inviteModalMembers}
@@ -1310,7 +1719,15 @@ export default function App() {
           remoteClientPacketPreview={inviteRemoteClientPacket.preview}
           remoteClientPacketFriendName={inviteRemoteClientPacket.friendName}
           onClose={() => setInviteModal(null)}
+          onGenerateSecureInvite={() => void generateInviteLink(inviteModalRoom)}
           onCopy={() => void copyInviteLink(inviteModalRoom)}
+          onCopyLocalPreview={() => void copyLocalPreviewLink(inviteModalRoom)}
+          onPublicUrlDraftChange={setPublicInviteUrlDraft}
+          onConfigurePublicUrl={() => void configureInvitePublicUrl()}
+          onHostTokenDraftChange={setHostTokenDraft}
+          onSaveHostToken={() => void saveHostTokenFromDraft()}
+          onStartTunnel={() => void startInviteTunnel()}
+          onStopTunnel={() => void stopInviteTunnel()}
           onCopyRemoteClientPacket={() => void copyRemoteClientPacket()}
           onInviteFriend={(friend) => void inviteFriendToRoom(friend)}
         />
@@ -1434,12 +1851,49 @@ export default function App() {
                 </button>
               )}
             </div>
+            <div className="dc-mobile-channel-tools" aria-label="모바일 채널 도구">
+              <label className="dc-mobile-channel-search">
+                <span className="sr-only">채널 검색</span>
+                <Search size={18} />
+                <input
+                  type="search"
+                  value={channelSearchQuery}
+                  onChange={(event) => setChannelSearchQuery(event.currentTarget.value)}
+                  placeholder="검색하기"
+                />
+              </label>
+              {!guestLocked && (
+                <button
+                  type="button"
+                  className="dc-mobile-channel-tool"
+                  onClick={() => inviteRoom(activeRoom.id)}
+                  aria-label="멤버 초대하기"
+                  title="멤버 초대하기"
+                >
+                  <UserPlus size={18} />
+                </button>
+              )}
+              <button
+                type="button"
+                className="dc-mobile-channel-tool"
+                onClick={() => markChannelRead(channel)}
+                aria-label="현재 채널 읽음으로 표시"
+                title="현재 채널 읽음으로 표시"
+              >
+                <CalendarDays size={18} />
+              </button>
+            </div>
           </header>
 
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3 chat-scroll" aria-label="채널">
           {CHANNEL_SECTIONS.map((section) => {
             const channels = section.channels
               .map((id) => visibleChannels.find((item) => item.id === id))
+              .filter((item) => {
+                if (!item || !channelSearchNeedle) return Boolean(item);
+                const display = channelForActiveRoom(item, activeRoom, scopedMafiaGame);
+                return display.label.toLowerCase().includes(channelSearchNeedle);
+              })
               .filter(Boolean) as ChannelConfig[];
             if (!channels.length) return null;
             const sectionCollapsed = Boolean(collapsedChannelSections[section.id]);
@@ -1511,10 +1965,32 @@ export default function App() {
             onlineCount={scopedOnlineCount}
             agentCount={scopedAgents.length || 0}
             hasBackendError={Boolean(flowError)}
+            guestProfile={guestPanelProfile}
           />
         </footer>
+        <nav className="dc-mobile-bottom-nav" aria-label="모바일 하단 탐색">
+          <button type="button" onClick={() => goToChannel("friends")}>
+            <Home size={19} />
+            <span>홈</span>
+          </button>
+          <button type="button" onClick={() => markChannelRead(channel)}>
+            <Bell size={19} />
+            <span>알림</span>
+          </button>
+          <button type="button" onClick={openMobileProfileFromPanel}>
+            <UserRound size={19} />
+            <span>나</span>
+          </button>
+        </nav>
       </aside>
       )}
+      <button
+        type="button"
+        className="dc-mobile-scrim"
+        aria-label="사이드패널 닫기"
+        tabIndex={mobileSidebarOpen ? 0 : -1}
+        onClick={closeMobileSidebar}
+      />
       <div
         className="dc-sidebar-resizer"
         role="separator"
@@ -1572,6 +2048,8 @@ export default function App() {
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
             headerActions={channelHeaderActions("lobby")}
+            onOpenMobileSidebar={openMobileSidebar}
+            onOpenMobileInfo={openMobileRoomInfo}
             appearance={activeAppearance}
             onOpenSideThread={openSideChatThread}
             onGuestSessionExpired={expireGuestSession}
@@ -1589,6 +2067,8 @@ export default function App() {
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
             headerActions={channelHeaderActions("live")}
+            onOpenMobileSidebar={openMobileSidebar}
+            onOpenMobileInfo={openMobileRoomInfo}
           />
         ) : channel === "board" ? (
           <BoardView
@@ -1600,11 +2080,32 @@ export default function App() {
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
             headerActions={channelHeaderActions("board")}
+            onOpenMobileSidebar={openMobileSidebar}
+            onOpenMobileInfo={openMobileRoomInfo}
           />
         ) : (
-          <RecordsView headerActions={channelHeaderActions("records")} />
+          <RecordsView
+            headerActions={channelHeaderActions("records")}
+            onOpenMobileSidebar={openMobileSidebar}
+            onOpenMobileInfo={openMobileRoomInfo}
+          />
         )}
       </main>
+
+      {mobileRoomInfoOpen && (
+        <MobileRoomInfoPanel
+          room={activeRoom}
+          appearance={activeAppearance}
+          channelLabel={activeChannelDisplay.label}
+          agents={scopedAgents}
+          members={activeRoomMembers}
+          roleOverrides={activeMemberRoles}
+          guestLocked={guestLocked}
+          onClose={closeMobileRoomInfo}
+          onInvite={guestLocked ? undefined : () => inviteRoom(activeRoom.id)}
+          onOpenSettings={guestLocked ? undefined : () => openRoomSettings(activeRoom.id)}
+        />
+      )}
 
       {/* Right panel */}
       {showMembers && membersOpen && (
@@ -1660,7 +2161,7 @@ export default function App() {
                 onCreateCompanionAiPacket={() => void createCompanionAiPacket()}
                 onCopyGuestAiPacket={() => void copyGuestAiPacket()}
                 channelNotifications={activeChannelSettings}
-                sessionGroup={activeProcessGroup}
+                processGroups={activeProcessGroups}
                 onSessionActionComplete={refreshSessionSurfaces}
                 quotaViewer={quotaViewer}
               />

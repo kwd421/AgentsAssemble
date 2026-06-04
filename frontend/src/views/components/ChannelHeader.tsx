@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
-import { Bell, Pin, Search, Users, PanelRight } from "lucide-react";
+import { ArrowLeft, Bell, ChevronRight, Pin, Search, Users, PanelRight } from "lucide-react";
 
 type HeaderPanel = "notifications" | "pins" | "search";
 
@@ -24,6 +24,8 @@ export default function ChannelHeader({
   headerActions,
   membersOpen,
   onToggleMembers,
+  onOpenMobileSidebar,
+  onOpenMobileInfo,
 }: {
   icon: ReactNode;
   title: string;
@@ -32,6 +34,8 @@ export default function ChannelHeader({
   headerActions?: ChannelHeaderActions;
   membersOpen?: boolean;
   onToggleMembers?: () => void;
+  onOpenMobileSidebar?: () => void;
+  onOpenMobileInfo?: () => void;
 }) {
   const [activePanel, setActivePanel] = useState<HeaderPanel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -52,8 +56,33 @@ export default function ChannelHeader({
 
   return (
     <header className="dc-chat-head flex h-12 shrink-0 items-center gap-2 px-3 lg:px-4">
-      <span className="shrink-0 text-text-muted">{icon}</span>
-      <h1 className="shrink-0 text-[15px] font-bold text-text-primary preserve-words">{title}</h1>
+      {onOpenMobileSidebar && (
+        <button
+          type="button"
+          className="dc-mobile-head-back"
+          onClick={onOpenMobileSidebar}
+          aria-label="채널 목록 열기"
+        >
+          <ArrowLeft size={25} />
+        </button>
+      )}
+      <button
+        type="button"
+        className="dc-mobile-head-title"
+        onClick={onOpenMobileInfo}
+        disabled={!onOpenMobileInfo}
+        aria-label={`${title} 채널 정보 열기`}
+      >
+        <span className="dc-mobile-head-channel-icon" aria-hidden>
+          {icon}
+        </span>
+        <span className="truncate preserve-words">{title}</span>
+        <ChevronRight size={16} aria-hidden />
+      </button>
+      <span className="dc-desktop-head-channel-icon shrink-0 text-text-muted">{icon}</span>
+      <h1 className="dc-desktop-head-title shrink-0 text-[15px] font-bold text-text-primary preserve-words">
+        {title}
+      </h1>
       {subtitle && (
         <>
           <span className="hidden h-4 w-px bg-line sm:block" aria-hidden />
@@ -63,7 +92,16 @@ export default function ChannelHeader({
         </>
       )}
       <div className="dc-head-actions ml-auto flex shrink-0 items-center gap-1.5">
-        {children}
+          {children}
+        <button
+          type="button"
+          className="dc-head-icon dc-mobile-search-trigger"
+          aria-label="채널 검색"
+          aria-pressed={activePanel === "search"}
+          onClick={() => togglePanel("search")}
+        >
+          <Search size={20} />
+        </button>
         <button
           type="button"
           className="dc-head-icon"

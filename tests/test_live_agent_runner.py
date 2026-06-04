@@ -4014,6 +4014,43 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertNotIn("--cd", calls[1]["command"])
         self.assertEqual(calls[1]["kwargs"]["input"], "second prompt")
 
+    def test_codex_resident_command_runner_passes_configured_model_to_exec_and_resume(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            calls = []
+
+            class Completed:
+                returncode = 0
+                stdout = "session id: 019e3038-39cc-76a2-a746-5ba8c0f3b408\n"
+                stderr = ""
+
+            def command_runner(command, **kwargs):
+                calls.append({"command": command, "kwargs": kwargs})
+                output_path = Path(command[command.index("--output-last-message") + 1])
+                output_path.write_text(f"reply {len(calls)}", encoding="utf-8")
+                return Completed()
+
+            runner = CodexResidentCommandRunner(
+                config(
+                    provider_kind="codex_live_session",
+                    connection_kind="live_session",
+                    command=["codex"],
+                    model_id="gpt-5.4-mini",
+                ),
+                command_runner=command_runner,
+                cwd=Path(temp_dir),
+            )
+            try:
+                runner([], "first prompt", timeout_seconds=45)
+                runner([], "second prompt", timeout_seconds=45)
+            finally:
+                runner.close()
+
+        for call in calls:
+            command = call["command"]
+            self.assertEqual(command[command.index("--model") + 1], "gpt-5.4-mini")
+            self.assertLess(command.index("--model"), command.index("--output-last-message"))
+        self.assertLess(calls[1]["command"].index("--model"), calls[1]["command"].index("resume"))
+
     def test_codex_resident_command_runner_uses_only_configured_executable_token(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             calls = []

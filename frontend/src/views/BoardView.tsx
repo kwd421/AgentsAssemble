@@ -30,6 +30,8 @@ export default function BoardView({
   membersOpen,
   onToggleMembers,
   headerActions,
+  onOpenMobileSidebar,
+  onOpenMobileInfo,
 }: {
   flow: FlowState;
   agents: LiveAgent[];
@@ -39,6 +41,8 @@ export default function BoardView({
   membersOpen?: boolean;
   onToggleMembers?: () => void;
   headerActions?: ChannelHeaderActions;
+  onOpenMobileSidebar?: () => void;
+  onOpenMobileInfo?: () => void;
 }) {
   const summary = summarizeBoardLifecycle(lifecycle);
 
@@ -51,6 +55,8 @@ export default function BoardView({
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}
         headerActions={headerActions}
+        onOpenMobileSidebar={onOpenMobileSidebar}
+        onOpenMobileInfo={onOpenMobileInfo}
       >
         <span className="rounded border border-line px-2 py-0.5 text-[11px] font-bold text-text-muted">
           보기 전용

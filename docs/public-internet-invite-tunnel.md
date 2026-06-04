@@ -14,14 +14,15 @@ access.
 
 ## Requirements
 
-1. Configure a host token. In the React GUI, use **호스트 토큰 생성** before
-   exposing the room. Operators can still pre-set `AGENTSASSEMBLE_HOST_TOKEN`
-   when they want the token to come from the shell/environment.
+1. Configure a host token. Operators can pass `--host-token` to the GUI command,
+   pre-set `AGENTSASSEMBLE_HOST_TOKEN`, or let the local operator UI create a
+   server-lifetime runtime token before public exposure. The status endpoint
+   never returns an existing host token.
 
-2. Configure a public URL. In the GUI, use **공개 링크 열기** to start a
-   Cloudflare quick tunnel when `cloudflared` is installed, or paste an existing
-   public URL manually. Operators can still pre-set `AGENTSASSEMBLE_PUBLIC_URL`
-   for fixed tunnel deployments.
+2. Configure a public URL. Operators can pass `--public-url`, pre-set
+   `AGENTSASSEMBLE_PUBLIC_URL`, paste an existing public URL into the invite
+   modal, or start a Cloudflare quick tunnel from the modal when `cloudflared`
+   is installed.
 
 ## Cloudflare Tunnel (Recommended)
 
@@ -38,22 +39,58 @@ Cloudflared will print a public URL like `https://random-words.trycloudflare.com
 Set that as your public URL:
 
 ```bash
-export AGENTSASSEMBLE_PUBLIC_URL="https://random-words.trycloudflare.com"
-export AGENTSASSEMBLE_HOST_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-
-python3 -m agentsassemble.cli gui --host 127.0.0.1 --port 8765
+python3 -m agentsassemble.cli gui \
+  --host 127.0.0.1 \
+  --port 8765 \
+  --public-url "https://random-words.trycloudflare.com" \
+  --host-token "$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 ```
 
 GUI-only path:
 
 1. Start the GUI on loopback: `python3 -m agentsassemble.cli gui --host 127.0.0.1 --port 8765`
 2. Open the React lobby invite panel.
-3. Click **호스트 토큰 생성**.
-4. Click **공개 링크 열기**. If `cloudflared` is missing, install it or paste a
-   tunnel URL into **공개 주소 직접 입력**.
-5. Click **초대 링크 생성** and send the generated `/join?token=...` link.
-   If the GUI shows only the local/dev preview URL, the public URL is not
-   configured yet and that preview URL is not a secure external invite.
+3. In **친구에게 보낼 보안 초대 링크**, either paste a public URL and click
+   **설정**, or click **터널 시작**. If `cloudflared` is missing, install it or
+   paste a tunnel URL manually.
+4. Click **링크 생성** and send only the generated `/join?token=...` link.
+   The main secure invite field stays empty until a non-local public URL exists.
+   `127.0.0.1`, `localhost`, and `0.0.0.0` are shown only inside the collapsed
+   **로컬/dev 미리보기** section, which is labeled **친구에게 보내지 마세요**.
+
+You can also ask the GUI to start a Cloudflare quick tunnel immediately:
+
+```bash
+python3 -m agentsassemble.cli gui \
+  --host 127.0.0.1 \
+  --port 8765 \
+  --start-public-tunnel
+```
+
+If `--public-url` or `--start-public-tunnel` is used without a host token, the
+server creates a runtime token and prints it only to the local console.
+
+## Terminal-Free Launcher
+
+The local **Open AgentsAssemble Room.app** launcher starts the same loopback GUI
+on port `8765` without requiring a terminal. By default it also prepares a
+local host token and starts a Cloudflare quick tunnel when `cloudflared` is
+installed, then opens the room only after `/api/public-invite/status` reports a
+running public URL. This keeps the no-terminal path from accidentally starting a
+plain local-only server that cannot generate friend-shareable `/join?token=...`
+links.
+
+Launcher notes:
+
+- The host token is stored locally in `.agentsassemble/host-token` with
+  user-only file permissions.
+- If a GUI server is already running on `127.0.0.1:8765`, the launcher asks that
+  server to start its public tunnel instead of starting another server.
+- Set `AGENTSASSEMBLE_PUBLIC_TUNNEL=0` before launching only when you
+  intentionally want local-only development mode.
+- The launcher still opens the local operator URL
+  `http://127.0.0.1:8765/`; friend links must be generated from the invite modal
+  as public `/join?token=...` URLs.
 
 ## ngrok
 
@@ -76,12 +113,12 @@ tailscale funnel 8765
 
 ## Security Notes
 
-- **AGENTSASSEMBLE_HOST_TOKEN is required** for public exposure. Without it,
-  host-gated endpoints (create invite, list sessions, revoke) reject all
-  requests when `AGENTSASSEMBLE_PUBLIC_URL` is set. Host token may be omitted
-  only for local/LAN dev mode where no public URL is configured. The GUI can
-  bootstrap a server-lifetime host token before a public URL is configured; it
-  does not reveal an existing environment token.
+- **A host token is required** for public invite creation and public tunnel
+  management. The local operator UI may bootstrap a server-lifetime token only
+  from a trusted loopback request; public guests cannot generate one.
+- External human invites require a configured public URL. `/api/room-invite/create`
+  returns an error instead of producing a local `127.0.0.1` join URL when a
+  public URL is missing.
 - Invite tokens are single-use, time-limited (default 10 minutes), and revocable.
 - Session tokens expire after 1 hour.
 - Invite/session state is stored locally under
@@ -89,8 +126,8 @@ tailscale funnel 8765
   keeps invite secret material plus token/nonce fingerprints so single-use,
   revocation, and active guest sessions survive a server restart without
   writing raw session tokens or host tokens.
-- Externally shared invites should use the generated `/join?token=...` URL. The
-  legacy `?guest=1&room=...` URL is a local/dev preview surface; it does not
+- Externally shared invites must use the generated public `/join?token=...` URL.
+  The legacy `?guest=1&room=...` URL is a local/dev preview surface; it does not
   issue an authenticated guest session and is treated as read-only.
 - Read-only invite scope is enforced by the server session policy. A read-only
   guest can read the room, but `/api/room/say` and companion AI invite creation
@@ -117,9 +154,8 @@ python3 -m agentsassemble.cli gui --host 127.0.0.1 --port 8765
 
 # In the React UI:
 # 1. Go to the invite panel
-# 2. Generate or enter the host token
-# 3. Start a Cloudflare tunnel or paste a public tunnel URL
-# 4. Create an invite — a public join link is generated
+# 2. Start a Cloudflare tunnel or paste a public tunnel URL
+# 3. Create an invite — a public /join?token=... link is generated
 # 5. Friend opens the link, enters a display name, and joins
 ```
 

@@ -695,6 +695,209 @@ def stop_live_agent_session(
     }
 
 
+def resume_live_agent_session_agent(
+    output_root: Path,
+    process_supervisor: object,
+    *,
+    server: str,
+    live_agent_config_path: Path | None,
+    meeting_id: str,
+    group_id: str = "",
+    agent_id: str,
+    connect_timeout_seconds: float = 5.0,
+    auto_restart: bool = False,
+    max_restarts: int = 0,
+    restart_backoff_seconds: float = 5.0,
+    stale_restart_after_seconds: float = 0.0,
+    preflight_checker: Callable[..., dict[str, object]] | None = None,
+) -> dict[str, object]:
+    clean_meeting_id = _clean_existing_meeting_id(meeting_id)
+    clean_agent_id = _clean_existing_agent_id(agent_id)
+    meeting_dir = _existing_meeting_dir(output_root, clean_meeting_id)
+    meeting = _read_existing_meeting(meeting_dir)
+    expected_agents = _expected_agents_from_meeting(meeting)
+    expected_agent = _expected_agent_for_id(expected_agents, clean_agent_id)
+    _validate_expected_agent_bindings([expected_agent], action="resume")
+    requested_group_id = clean_live_agent_group_id(group_id.strip()) if group_id.strip() else ""
+    requested_group = _find_process_group(process_supervisor, requested_group_id) if requested_group_id else {}
+    if requested_group:
+        _validate_process_group_owner(requested_group, requested_group_id, clean_meeting_id, action="resume")
+        manifest_agent_ids = _process_agent_ids(requested_group.get("agents"))
+        if clean_agent_id in manifest_agent_ids and str(requested_group.get("status") or "") == "running":
+            if len(manifest_agent_ids) == 1:
+                return _running_agent_resume_payload(
+                    output_root,
+                    meeting_id=clean_meeting_id,
+                    agent_id=clean_agent_id,
+                    expected_agent=expected_agent,
+                    meeting=meeting,
+                    group=requested_group,
+                )
+            raise ValueError(
+                f"Live agent {clean_agent_id} is running inside multi-agent group {requested_group_id}; "
+                "individual resume cannot duplicate a running grouped process."
+            )
+    running_group = _find_running_agent_process_group(
+        process_supervisor,
+        meeting_id=clean_meeting_id,
+        agent_id=clean_agent_id,
+    )
+    if running_group:
+        running_group_id = str(running_group.get("group_id") or "")
+        running_agent_ids = _process_agent_ids(running_group.get("agents"))
+        if running_agent_ids == [clean_agent_id]:
+            return _running_agent_resume_payload(
+                output_root,
+                meeting_id=clean_meeting_id,
+                agent_id=clean_agent_id,
+                expected_agent=expected_agent,
+                meeting=meeting,
+                group=running_group,
+            )
+        raise ValueError(
+            f"Live agent {clean_agent_id} is running inside multi-agent group {running_group_id}; "
+            "individual resume cannot duplicate a running grouped process."
+        )
+    source_config_path = _agent_resume_source_config_path(live_agent_config_path, requested_group)
+    per_agent_config_path = _write_agent_only_live_agent_config(
+        output_root,
+        source_config_path,
+        meeting_id=clean_meeting_id,
+        group_id=requested_group_id or source_config_path.stem,
+        agent_id=clean_agent_id,
+    )
+    preflight = (preflight_checker or preflight_live_agent_config)(
+        per_agent_config_path,
+        server_override=server,
+    )
+    if preflight.get("status") != "ok":
+        raise ValueError(_preflight_failure_message(preflight))
+    resident_configs = load_group_configs(per_agent_config_path, server_override=server)
+    _validate_resident_config_meeting_ids(resident_configs, meeting_id=clean_meeting_id)
+    _validate_resident_manifest(resident_configs, [expected_agent])
+    target_group_id = _agent_control_group_id(requested_group, requested_group_id, clean_agent_id)
+    _validate_existing_process_group_owner(
+        process_supervisor,
+        target_group_id,
+        clean_meeting_id,
+        action="resume",
+    )
+    _ensure_bound_agent_roster(
+        output_root,
+        meeting,
+        resident_configs,
+        meeting_id=clean_meeting_id,
+        expected_agent_ids=[clean_agent_id],
+    )
+    group = _resume_process_group(
+        process_supervisor,
+        live_agent_config_path=per_agent_config_path,
+        server=server,
+        group_id=target_group_id,
+        meeting_id=clean_meeting_id,
+        auto_restart=auto_restart,
+        max_restarts=max_restarts,
+        restart_backoff_seconds=restart_backoff_seconds,
+        stale_restart_after_seconds=stale_restart_after_seconds,
+    )
+    process = _process_snapshot(group, expected_agent_ids=[clean_agent_id], meeting_id=clean_meeting_id)
+    connection = _wait_for_connections(
+        output_root,
+        meeting_id=clean_meeting_id,
+        expected_agent_ids=[clean_agent_id],
+        expected_agents=[expected_agent],
+        process_group=group,
+        timeout_seconds=connect_timeout_seconds,
+    )
+    status = "ready" if process["ready"] and connection["connected"] == connection["expected"] else "starting"
+    return {
+        "status": status,
+        "meeting_id": clean_meeting_id,
+        "group_id": str(group.get("group_id") if isinstance(group, dict) else target_group_id),
+        "agent_id": clean_agent_id,
+        "source_group_id": requested_group_id,
+        "meeting": _safe_meeting_summary(meeting),
+        "group": _safe_group_summary(group),
+        "process": process,
+        "connection": connection,
+    }
+
+
+def stop_live_agent_session_agent(
+    output_root: Path,
+    process_supervisor: object,
+    *,
+    meeting_id: str,
+    group_id: str = "",
+    agent_id: str,
+) -> dict[str, object]:
+    clean_meeting_id = _clean_existing_meeting_id(meeting_id)
+    clean_agent_id = _clean_existing_agent_id(agent_id)
+    meeting_dir = _existing_meeting_dir(output_root, clean_meeting_id)
+    meeting = _read_existing_meeting(meeting_dir)
+    expected_agents = _expected_agents_from_meeting(meeting)
+    expected_agent = _expected_agent_for_id(expected_agents, clean_agent_id)
+    clean_group_id = clean_live_agent_group_id(group_id.strip()) if group_id.strip() else ""
+    group = _find_agent_process_group(
+        process_supervisor,
+        meeting_id=clean_meeting_id,
+        agent_id=clean_agent_id,
+        requested_group_id=clean_group_id,
+    )
+    if not group:
+        raise ValueError(f"Live agent {clean_agent_id} has no process group to stop.")
+    selected_group_id = str(group.get("group_id") or clean_group_id)
+    _validate_process_group_owner(group, selected_group_id, clean_meeting_id, action="stop")
+    manifest_agent_ids = _process_agent_ids(group.get("agents"))
+    if manifest_agent_ids != [clean_agent_id]:
+        raise ValueError(
+            f"Live agent {clean_agent_id} is in multi-agent group {selected_group_id}; "
+            "individual STOP(KILL) requires an agent-owned process."
+        )
+    try:
+        stopped_group = _stop_agent_owned_process_group(
+            process_supervisor,
+            group_id=selected_group_id,
+            meeting_id=clean_meeting_id,
+            agent_id=clean_agent_id,
+        )
+    except Exception as error:
+        raise LiveAgentSessionStopError(
+            _stop_group_failure_message(error, group_id=selected_group_id),
+            meeting_id=clean_meeting_id,
+        ) from error
+    offline = _mark_bound_agents_offline(
+        output_root,
+        meeting,
+        meeting_id=clean_meeting_id,
+        expected_agent_ids=[clean_agent_id],
+    )
+    process = _stop_process_snapshot(stopped_group, expected_agent_ids=[clean_agent_id], meeting_id=clean_meeting_id)
+    group_status = str(stopped_group.get("status") if isinstance(stopped_group, dict) else "unknown") or "unknown"
+    status = (
+        "stopped"
+        if group_status in {"stopped", "error"} and int(offline.get("offline") or 0) == 1
+        else "stopping"
+    )
+    return {
+        "status": status,
+        "meeting_id": clean_meeting_id,
+        "group_id": str(stopped_group.get("group_id") if isinstance(stopped_group, dict) else selected_group_id),
+        "agent_id": clean_agent_id,
+        "meeting": _safe_meeting_summary(meeting),
+        "group": _safe_group_summary(stopped_group),
+        "process": process,
+        "offline": offline,
+        "connection": _connection_snapshot(
+            output_root,
+            meeting_id=clean_meeting_id,
+            expected_agent_ids=[clean_agent_id],
+            expected_agents=[expected_agent],
+            process_group=stopped_group,
+        ),
+    }
+
+
 def _expected_meeting_agents(
     *,
     council_config_path: Path | None,
@@ -733,6 +936,20 @@ def _expected_agents_from_meeting(meeting: dict[str, object]) -> list[dict[str, 
     if not agents:
         raise ValueError("Meeting has no bound live agents to resume.")
     return agents
+
+
+def _clean_existing_agent_id(agent_id: str) -> str:
+    clean_agent_id = clean_lobby_text(agent_id, limit=128)
+    if not clean_agent_id:
+        raise ValueError("Live agent id is required.")
+    return clean_agent_id
+
+
+def _expected_agent_for_id(expected_agents: list[dict[str, str]], agent_id: str) -> dict[str, str]:
+    for agent in expected_agents:
+        if agent.get("agent_id") == agent_id:
+            return agent
+    raise ValueError(f"Meeting has no bound live agent {agent_id}.")
 
 
 def _validate_resident_manifest(configs: object, expected_agents: list[dict[str, str]]) -> None:
@@ -1141,6 +1358,162 @@ def _resume_process_group(
     )
 
 
+def _running_agent_resume_payload(
+    output_root: Path,
+    *,
+    meeting_id: str,
+    agent_id: str,
+    expected_agent: dict[str, str],
+    meeting: dict[str, object],
+    group: dict[str, object],
+) -> dict[str, object]:
+    process = _process_snapshot(group, expected_agent_ids=[agent_id], meeting_id=meeting_id)
+    connection = _connection_snapshot(
+        output_root,
+        meeting_id=meeting_id,
+        expected_agent_ids=[agent_id],
+        expected_agents=[expected_agent],
+        process_group=group,
+    )
+    status = "ready" if process["ready"] and connection["connected"] == connection["expected"] else "starting"
+    return {
+        "status": status,
+        "meeting_id": meeting_id,
+        "group_id": str(group.get("group_id") or ""),
+        "agent_id": agent_id,
+        "meeting": _safe_meeting_summary(meeting),
+        "group": _safe_group_summary(group),
+        "process": process,
+        "connection": connection,
+    }
+
+
+def _agent_resume_source_config_path(live_agent_config_path: Path | None, group: dict[str, object]) -> Path:
+    if live_agent_config_path is not None:
+        return live_agent_config_path
+    config_path = str(group.get("config_path") or "").strip() if isinstance(group, dict) else ""
+    if config_path:
+        return Path(config_path)
+    raise ValueError("Live agent config path is required.")
+
+
+def _agent_control_group_id(group: dict[str, object], requested_group_id: str, agent_id: str) -> str:
+    if group and _process_agent_ids(group.get("agents")) == [agent_id]:
+        return clean_live_agent_group_id(str(group.get("group_id") or requested_group_id))
+    base = clean_live_agent_group_id(requested_group_id or "live-agents")
+    agent_part = clean_live_agent_group_id(agent_id)
+    return clean_live_agent_group_id(f"{base}--{agent_part}")
+
+
+def _find_agent_process_group(
+    process_supervisor: object,
+    *,
+    meeting_id: str,
+    agent_id: str,
+    requested_group_id: str = "",
+) -> dict[str, object]:
+    groups = _snapshot_process_groups(process_supervisor)
+    requested_group = _find_group_in_list(groups, requested_group_id) if requested_group_id else {}
+    requested_agent_ids = _process_agent_ids(requested_group.get("agents"))
+    if requested_agent_ids == [agent_id]:
+        return requested_group
+    matching_groups = [
+        group
+        for group in groups
+        if _safe_optional_meeting_id(group.get("meeting_id")) == meeting_id
+        and agent_id in _process_agent_ids(group.get("agents"))
+    ]
+    preferred_group = _prefer_single_agent_group(matching_groups, agent_id)
+    if preferred_group:
+        return preferred_group
+    if requested_group and agent_id in requested_agent_ids:
+        return requested_group
+    return {}
+
+
+def _prefer_single_agent_group(groups: list[dict[str, object]], agent_id: str) -> dict[str, object]:
+    for group in groups:
+        if _process_agent_ids(group.get("agents")) == [agent_id]:
+            return group
+    return groups[0] if groups else {}
+
+
+def _find_running_agent_process_group(
+    process_supervisor: object,
+    *,
+    meeting_id: str,
+    agent_id: str,
+) -> dict[str, object]:
+    matching_groups = [
+        group
+        for group in _current_process_groups(process_supervisor)
+        if _safe_optional_meeting_id(group.get("meeting_id")) == meeting_id
+        and str(group.get("status") or "") == "running"
+        and agent_id in _process_agent_ids(group.get("agents"))
+    ]
+    for group in matching_groups:
+        if len(_process_agent_ids(group.get("agents"))) > 1:
+            return group
+    return _prefer_single_agent_group(matching_groups, agent_id)
+
+
+def _stop_agent_owned_process_group(
+    process_supervisor: object,
+    *,
+    group_id: str,
+    meeting_id: str,
+    agent_id: str,
+) -> dict[str, object]:
+    if hasattr(process_supervisor, "stop_group_if_owned"):
+        return process_supervisor.stop_group_if_owned(
+            group_id,
+            meeting_id=meeting_id,
+            agent_ids=[agent_id],
+        )
+    stopped_group = process_supervisor.stop_group(group_id)
+    _validate_process_group_owner(stopped_group, group_id, meeting_id, action="stop")
+    if _process_agent_ids(stopped_group.get("agents")) != [agent_id]:
+        raise ValueError(f"Live agent group {group_id} is not an agent-owned process.")
+    return stopped_group
+
+
+def _write_agent_only_live_agent_config(
+    output_root: Path,
+    source_config_path: Path,
+    *,
+    meeting_id: str,
+    group_id: str,
+    agent_id: str,
+) -> Path:
+    data = json.loads(source_config_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Live agent group config must be a JSON object.")
+    agents = data.get("agents")
+    if not isinstance(agents, list) or not agents:
+        raise ValueError("Live agent group config requires a non-empty agents list.")
+    matching_agents = []
+    for agent in agents:
+        if isinstance(agent, dict) and str(agent.get("agent_id") or "") == agent_id:
+            matching_agents.append(dict(agent))
+    if not matching_agents:
+        raise ValueError(f"Live agent config does not include {agent_id}.")
+    if len(matching_agents) > 1:
+        raise ValueError(f"Live agent config includes duplicate entries for {agent_id}.")
+    selected_agent = matching_agents[0]
+    per_agent_config = dict(data)
+    per_agent_config["agents"] = [selected_agent]
+    config_dir = output_root / "live-agent-runs" / "per-agent-configs"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    file_name = (
+        f"{clean_live_agent_group_id(meeting_id)}--"
+        f"{clean_live_agent_group_id(group_id or source_config_path.stem)}--"
+        f"{clean_live_agent_group_id(agent_id)}.json"
+    )
+    target_path = config_dir / file_name
+    target_path.write_text(json.dumps(per_agent_config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return target_path
+
+
 def _find_process_group(process_supervisor: object, group_id: str) -> dict[str, object]:
     if not hasattr(process_supervisor, "list_groups"):
         return {}
@@ -1153,9 +1526,22 @@ def _snapshot_process_group(process_supervisor: object, group_id: str) -> dict[s
 
 
 def _snapshot_process_groups(process_supervisor: object) -> list[dict[str, object]]:
-    if not hasattr(process_supervisor, "snapshot_groups"):
-        return []
-    groups = process_supervisor.snapshot_groups()
+    if hasattr(process_supervisor, "snapshot_groups"):
+        groups = process_supervisor.snapshot_groups()
+    elif hasattr(process_supervisor, "list_groups"):
+        groups = process_supervisor.list_groups()
+    else:
+        groups = []
+    return _process_group_list(groups)
+
+
+def _current_process_groups(process_supervisor: object) -> list[dict[str, object]]:
+    if hasattr(process_supervisor, "list_groups"):
+        groups = process_supervisor.list_groups()
+    elif hasattr(process_supervisor, "snapshot_groups"):
+        groups = process_supervisor.snapshot_groups()
+    else:
+        groups = []
     return _process_group_list(groups)
 
 

@@ -280,6 +280,7 @@ export default function LobbyComposer({
             pendingAttachments.length >= MAX_ATTACHMENTS_PER_EVENT
           }
           className="dc-composer-button"
+          data-role="attachment"
           aria-label="첨부 추가"
           title={`첨부 ${pendingAttachments.length}/${MAX_ATTACHMENTS_PER_EVENT}`}
         >
@@ -294,6 +295,7 @@ export default function LobbyComposer({
               onClick={() => handleAccessoryClick(accessory)}
               disabled={busy || disabled}
               className="dc-composer-button"
+              data-accessory={accessory.id}
               aria-label={`채팅 ${accessory.label}`}
               title={accessory.title}
             >
@@ -306,6 +308,7 @@ export default function LobbyComposer({
           onClick={() => insertText("@")}
           disabled={busy || disabled}
           className="dc-composer-button"
+          data-role="mention"
           aria-label="멘션 삽입"
           title="@멘션"
         >
@@ -316,6 +319,7 @@ export default function LobbyComposer({
           onClick={() => insertText("🙂")}
           disabled={busy || disabled}
           className="dc-composer-button"
+          data-role="emoji"
           aria-label="이모지 삽입"
           title="이모지"
         >
@@ -326,6 +330,7 @@ export default function LobbyComposer({
           onClick={handleSubmit}
           disabled={!canSubmit}
           className="dc-composer-button send"
+          data-role="send"
           aria-label="채팅 메시지 보내기"
         >
           <Send size={17} />

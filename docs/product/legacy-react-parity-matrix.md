@@ -131,8 +131,10 @@ surface rather than silently counted as React parity.
 | `/api/live-agent-sessions/recover` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-sessions/restart` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-sessions/resume` | POST | exact | `resumeLiveAgentSession()` | yes | React member detail panel can request resume for an existing provider session group; it does not create a new provider session. |
+| `/api/live-agent-sessions/resume-agent` | POST | exact | `resumeLiveAgentSessionAgent()` | yes | React member detail panel can request resume for one stopped agent-owned process group when the supervisor can prove single-agent ownership. |
 | `/api/live-agent-sessions/start` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-sessions/stop` | POST | exact | `stopLiveAgentSession()` | yes | React member detail panel can stop an existing provider session group. |
+| `/api/live-agent-sessions/stop-agent` | POST | exact | `stopLiveAgentSessionAgent()` | yes | React member detail panel can stop one running agent-owned process group when the supervisor can prove single-agent ownership; multi-agent groups stay grouped. |
 | `/api/live-agent-smoke` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agents` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agents` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
@@ -170,18 +172,18 @@ surface rather than silently counted as React parity.
 | `/api/play/mafia/vote` | POST | exact | `castMafiaVote()` | yes | React Mafia vote action. |
 | `/api/provider-health` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/providers` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
-| `/api/public-invite/status` | GET | exact | `-` | no | Host public tunnel status endpoint; current Discord shell does not wrap public tunnel controls. |
-| `/api/public-invite/host-token` | POST | exact | `-` | no | Host public tunnel token endpoint; current Discord shell does not wrap public tunnel controls. |
-| `/api/public-invite/public-url` | POST | exact | `-` | no | Host public tunnel URL endpoint; current Discord shell does not wrap public tunnel controls. |
-| `/api/public-invite/tunnel/start` | POST | exact | `-` | no | Host public tunnel control endpoint; current Discord shell does not start tunnels. |
-| `/api/public-invite/tunnel/stop` | POST | exact | `-` | no | Host public tunnel control endpoint; current Discord shell does not stop tunnels. |
+| `/api/public-invite/status` | GET | exact | `fetchPublicInviteStatus()` | yes | React invite modal reads safe public invite state without exposing the host token. |
+| `/api/public-invite/host-token` | POST | exact | `generatePublicInviteHostToken()` | yes | React invite modal can bootstrap a host token only from the trusted local operator UI. |
+| `/api/public-invite/public-url` | POST | exact | `configurePublicInvitePublicUrl()` | yes | React invite modal can set a validated non-local public URL for secure external `/join?token=...` links. |
+| `/api/public-invite/tunnel/start` | POST | exact | `startPublicInviteTunnel()` | yes | React invite modal can start a Cloudflare quick tunnel and poll status until a public URL is ready. |
+| `/api/public-invite/tunnel/stop` | POST | exact | `stopPublicInviteTunnel()` | yes | React invite modal can stop the current public tunnel through the host-token-gated endpoint. |
 | `/api/release-health` | GET | exact | `fetchReleaseHealth()` | yes | React read-only release health catalog. |
 | `/api/release-health/queue` | GET | exact | `fetchReleaseHealthQueue()` | yes | React read-only release-health latest status projection. |
 | `/api/room-friends` | GET | exact | `fetchRoomFriends(), deleteRoomFriend()` | yes | React home/friends screen reads persisted friends and active-session suggestions; the same query-shaped route is used by the saved-friend delete wrapper. |
 | `/api/room-friends` | POST | exact | `addRoomFriend()` | yes | React home/friends screen persists people, subscription AI, API, Local, remote, and unknown participants. |
 | `/api/room-friends/dm` | GET | exact | `fetchRoomFriendDm()` | yes | React profile panel reads the direct DM log and delivery state for a saved friend id only. |
 | `/api/room-friends/dm` | POST | exact | `postRoomFriendDm()` | yes | React profile panel queues a direct AI DM for saved AI friends mapped to a live-agent id, optionally resuming only an existing host-approved session group; it does not send Discord messages, write lobby events, or create room membership. |
-| `/api/live-agents/<agent_id>/dm-reply` | POST | exact | resident runner, CLI, MCP participant | yes | A resident agent replies to one queued direct DM event; the reply is stored only in the friend DM log and advances the agent's DM cursor. |
+| `/api/live-agents/{agent_id}/dm-reply` | POST | prefix | `-` | no | Resident runners, CLI, and MCP participants reply to one queued direct DM event; the reply is stored only in the friend DM log and advances the agent's DM cursor. |
 | `/api/room-settings` | GET | exact | `fetchRoomSettings()` | yes | React reads persisted room label/topic/appearance/member-role/channel settings for the Discord shell. |
 | `/api/room-settings` | POST | exact | `saveRoomSettings()` | yes | React stores room label/topic/appearance/member-role/channel settings from the Discord shell. |
 | `/api/user-profile` | GET | exact | `fetchUserProfile()` | yes | React bottom user panel reads the persisted local Discord-style identity. |

@@ -357,7 +357,15 @@ function ArchiveDetail({ detail }: { detail: MeetingDetailResponse | null }) {
   );
 }
 
-export default function RecordsView({ headerActions }: { headerActions?: ChannelHeaderActions }) {
+export default function RecordsView({
+  headerActions,
+  onOpenMobileSidebar,
+  onOpenMobileInfo,
+}: {
+  headerActions?: ChannelHeaderActions;
+  onOpenMobileSidebar?: () => void;
+  onOpenMobileInfo?: () => void;
+}) {
   const meetingsFetcher = useCallback(() => fetchMeetings(), []);
   const [data, loading] = usePoll<{ meetings: MeetingSummary[] }>(meetingsFetcher, 10000);
   const [selectedId, setSelectedId] = useState<string | undefined>();
@@ -400,6 +408,8 @@ export default function RecordsView({ headerActions }: { headerActions?: Channel
         title="records"
         subtitle="완료된 세션의 transcript · decision · shared memory"
         headerActions={headerActions}
+        onOpenMobileSidebar={onOpenMobileSidebar}
+        onOpenMobileInfo={onOpenMobileInfo}
       />
       <div className="flex min-h-0 flex-1">
         <div className="flex w-60 shrink-0 flex-col border-r border-line bg-sidebar/40">

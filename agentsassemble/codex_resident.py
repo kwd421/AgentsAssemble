@@ -73,9 +73,11 @@ class CodexResidentCommandRunner:
         configured_command = list(self.config.command or ["codex"])
         base_command = [configured_command[0]]
         exec_prefix = codex_exec_prefix(base_command)
+        model_args = _codex_model_args(self.config.model_id)
         if self.session_id:
             return [
                 *exec_prefix,
+                *model_args,
                 "resume",
                 "--skip-git-repo-check",
                 "--output-last-message",
@@ -85,6 +87,7 @@ class CodexResidentCommandRunner:
             ]
         return [
             *exec_prefix,
+            *model_args,
             "--skip-git-repo-check",
             "--cd",
             str(self.cwd),
@@ -98,6 +101,13 @@ def default_codex_resident_command(provider_kind: str, connection_kind: str, com
     if provider_kind == "codex_live_session" and connection_kind == "live_session" and not command:
         return ["codex"]
     return command
+
+
+def _codex_model_args(model_id: str) -> list[str]:
+    clean_model_id = str(model_id or "").strip()
+    if not clean_model_id:
+        return []
+    return ["--model", clean_model_id]
 
 
 def codex_provider_connection_check(provider_kind: str, connection_kind: str) -> dict[str, str] | None:

@@ -18,6 +18,17 @@ class FrontendRoomGuestSessionTests(unittest.TestCase):
         self.assertIn('url.searchParams.set("preview", "local-dev")', source)
         self.assertIn("localPreviewInviteUrlForRoom", source)
 
+    def test_room_invite_modal_separates_secure_invite_from_local_preview(self):
+        source = (ROOT / "frontend/src/views/components/RoomInviteModal.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("친구에게 보낼 보안 초대 링크", source)
+        self.assertIn("공개 URL을 먼저 설정하면 /join?token=... 링크가 여기에 표시됩니다", source)
+        self.assertIn("로컬/dev 미리보기", source)
+        self.assertIn("친구에게 보내지 마세요", source)
+        self.assertIn("로컬 미리보기 복사", source)
+        self.assertNotIn("value={localPreviewUrl}", source.split("친구에게 보낼 보안 초대 링크", 1)[1].split("로컬/dev 미리보기", 1)[0])
+        self.assertNotIn("보안 링크 복사", source)
+
     def test_join_token_url_and_join_response_become_guest_session(self):
         script = textwrap.dedent(
             """
@@ -153,13 +164,23 @@ class FrontendRoomGuestSessionTests(unittest.TestCase):
         app_source = (ROOT / "frontend/src/App.tsx").read_text(encoding="utf-8")
         lobby_source = (ROOT / "frontend/src/views/LobbyView.tsx").read_text(encoding="utf-8")
         composer_source = (ROOT / "frontend/src/views/components/LobbyComposer.tsx").read_text(encoding="utf-8")
+        user_panel_source = (ROOT / "frontend/src/views/components/UserPanel.tsx").read_text(encoding="utf-8")
 
         self.assertIn("GUEST_SESSION_EXPIRED_MESSAGE", app_source)
         self.assertIn("isUnauthorizedApiError(flowError)", app_source)
+        self.assertIn("const guestJoinPending = Boolean(guestJoinToken && guestSession?.inviteToken !== guestJoinToken)", app_source)
+        self.assertIn("if (guestExpired || guestJoinPending)", app_source)
         self.assertIn("const expireGuestSession = useCallback", app_source)
         self.assertIn("persistRoomGuestSession(null)", app_source)
         self.assertIn("setGuestExpired(true)", app_source)
         self.assertIn("const guestLocked = Boolean(guestInvite || guestSession || guestJoinToken || guestExpired)", app_source)
+        self.assertIn("guestSession?.sessionToken && isUnauthorizedApiError(flowError)", app_source)
+        self.assertIn("const restoredSession = loadRoomGuestSession();", app_source)
+        self.assertIn("restoredSession?.inviteToken === guestJoinToken", app_source)
+        self.assertIn("guestProfile={guestPanelProfile}", app_source)
+        self.assertIn("guestProfile?:", user_panel_source)
+        self.assertIn("if (guestProfile) return;", user_panel_source)
+        self.assertIn('aria-label="게스트 프로필"', user_panel_source)
         self.assertIn("onGuestSessionExpired={expireGuestSession}", app_source)
         self.assertIn("onGuestSessionExpired", lobby_source)
         self.assertIn("isUnauthorizedApiError(error)", lobby_source)

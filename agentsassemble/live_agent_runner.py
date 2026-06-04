@@ -74,6 +74,7 @@ class ResidentAgentConfig:
     heartbeat_interval: float
     cooldown: float
     max_chain_depth: int
+    model_id: str = ""
     max_ticks: int = 0
     flow_fairness_recent_window: int = DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW
     flow_fairness_min_gap: int = DEFAULT_FLOW_FAIRNESS_MIN_GAP
@@ -1448,6 +1449,7 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         meeting_id=str(getattr(args, "meeting_id")),
         engagement_mode=str(getattr(args, "engagement_mode")),
         command=command,
+        model_id=str(getattr(args, "model_id", "") or ""),
         timeout_seconds=int(getattr(args, "timeout")),
         poll_interval=float(getattr(args, "poll_interval")),
         heartbeat_interval=float(getattr(args, "heartbeat_interval")),
@@ -1514,6 +1516,7 @@ def _config_from_mapping(
         meeting_id=str(data.get("meeting_id") or ""),
         engagement_mode=str(data.get("engagement_mode") or "mentioned"),
         command=command_parts,
+        model_id=str(data.get("model_id") or ""),
         timeout_seconds=int(data.get("timeout_seconds") or data.get("timeout") or 120),
         official_turn_timeout_seconds=live_agent_nonnegative_int(
             official_turn_timeout_value,

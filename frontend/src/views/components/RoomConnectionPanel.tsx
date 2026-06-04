@@ -32,7 +32,7 @@ type RoomConnectionPanelProps = {
   onCreateCompanionAiPacket?: () => void;
   onCopyGuestAiPacket?: () => void;
   channelNotifications?: Record<string, { notifications: ChannelNotificationSetting; lastReadAt?: string }>;
-  sessionGroup?: LiveAgentProcessGroup;
+  processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
   quotaViewer?: AgentQuotaVisibilityViewer;
 };
@@ -80,7 +80,7 @@ export default function RoomConnectionPanel({
   onCreateCompanionAiPacket,
   onCopyGuestAiPacket,
   channelNotifications,
-  sessionGroup,
+  processGroups = [],
   onSessionActionComplete,
   quotaViewer,
 }: RoomConnectionPanelProps) {
@@ -177,7 +177,7 @@ export default function RoomConnectionPanel({
         roleOverrides={roleOverrides}
         onRoleChange={onRoleChange}
         canEditRoles={!guestLocked}
-        sessionGroup={sessionGroup}
+        processGroups={processGroups}
         onSessionActionComplete={onSessionActionComplete}
         quotaViewer={quotaViewer}
       />

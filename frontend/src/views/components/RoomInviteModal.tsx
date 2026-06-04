@@ -4,7 +4,7 @@ import type { RoomFriend, RoomMember } from "../../api";
 import { roomFriendMatchesSearch } from "../../lib/friendSearch";
 import { participantTypeMeta } from "../../lib/participantTypes";
 import { isActivePresence, presenceStatusLabel } from "../../lib/presenceStatus";
-import { inviteFriendButtonLabel } from "../../lib/roomInviteCopy";
+import { inviteFriendButtonLabel, isExternalInviteUrl } from "../../lib/roomInviteCopy";
 import type { RoomAppearance } from "../../lib/roomAppearance";
 
 function participantIdForFriend(friend: RoomFriend): string {
@@ -36,7 +36,13 @@ function inviteFriendSubtitle(friend: RoomFriend, typeLabel: string): string {
 
 export default function RoomInviteModal({
   roomLabel,
+  secureInviteUrl,
   localPreviewUrl,
+  publicUrl,
+  publicUrlDraft,
+  hostTokenDraft,
+  hostTokenRequired = false,
+  tunnelStatus,
   inviteScope = "room",
   friends,
   members = [],
@@ -45,12 +51,32 @@ export default function RoomInviteModal({
   remoteClientPacketPreview,
   remoteClientPacketFriendName,
   onClose,
+  onGenerateSecureInvite,
   onCopy,
+  onCopyLocalPreview,
+  onPublicUrlDraftChange,
+  onConfigurePublicUrl,
+  onHostTokenDraftChange,
+  onSaveHostToken,
+  onStartTunnel,
+  onStopTunnel,
   onCopyRemoteClientPacket,
   onInviteFriend,
 }: {
   roomLabel: string;
+  secureInviteUrl: string;
   localPreviewUrl: string;
+  publicUrl?: string;
+  publicUrlDraft?: string;
+  hostTokenDraft?: string;
+  hostTokenRequired?: boolean;
+  tunnelStatus?: {
+    phase?: string;
+    running?: boolean;
+    public_url?: string;
+    local_url?: string;
+    last_error?: string;
+  };
   inviteScope?: RoomAppearance["inviteScope"];
   friends: RoomFriend[];
   members?: RoomMember[];
@@ -59,7 +85,15 @@ export default function RoomInviteModal({
   remoteClientPacketPreview?: string;
   remoteClientPacketFriendName?: string;
   onClose: () => void;
+  onGenerateSecureInvite: () => void;
   onCopy: () => void;
+  onCopyLocalPreview: () => void;
+  onPublicUrlDraftChange: (value: string) => void;
+  onConfigurePublicUrl: () => void;
+  onHostTokenDraftChange: (value: string) => void;
+  onSaveHostToken: () => void;
+  onStartTunnel: () => void;
+  onStopTunnel: () => void;
   onCopyRemoteClientPacket?: () => void;
   onInviteFriend: (friend: RoomFriend) => void;
 }) {
@@ -67,6 +101,7 @@ export default function RoomInviteModal({
   const searchQuery = query.trim();
   const searchNeedle = searchQuery.toLowerCase();
   const readOnlyInvite = inviteScope === "read_only";
+  const secureInviteReady = isExternalInviteUrl(secureInviteUrl);
   const visibleFriends = useMemo(() => {
     if (!searchNeedle) return friends;
     return friends.filter((friend) => roomFriendMatchesSearch(friend, searchNeedle));
@@ -171,20 +206,85 @@ export default function RoomInviteModal({
         </div>
 
         <label className="dc-invite-link-label">
-          로컬/dev 미리보기 링크
+          친구에게 보낼 보안 초대 링크
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px_112px]">
+            <input
+              className="dc-invite-link-input"
+              value={secureInviteReady ? secureInviteUrl : ""}
+              placeholder="공개 URL을 먼저 설정하면 /join?token=... 링크가 여기에 표시됩니다"
+              readOnly
+              onFocus={(event) => event.currentTarget.select()}
+            />
+            <button type="button" className="dc-invite-copy-button" onClick={onGenerateSecureInvite}>
+              링크 생성
+            </button>
+            <button type="button" className="dc-invite-copy-button" disabled={!secureInviteReady} onClick={onCopy}>
+              <Copy size={15} />
+              복사
+            </button>
+          </div>
+        </label>
+        <div className="dc-invite-link-label">
+          <span>공개 URL</span>
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px]">
+            <input
+              className="dc-invite-link-input"
+              value={publicUrlDraft || publicUrl || ""}
+              placeholder="https://random-words.trycloudflare.com"
+              onChange={(event) => onPublicUrlDraftChange(event.currentTarget.value)}
+            />
+            <button type="button" className="dc-invite-copy-button" onClick={onConfigurePublicUrl}>
+              설정
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2 text-[12px] font-bold text-text-muted">
+            <button type="button" className="dc-invite-copy-button" onClick={onStartTunnel}>
+              터널 시작
+            </button>
+            <button type="button" className="dc-invite-copy-button" onClick={onStopTunnel}>
+              터널 중지
+            </button>
+            <span className="self-center preserve-words">
+              {publicUrl || tunnelStatus?.public_url || "Paste public URL / Start tunnel first"}
+              {tunnelStatus?.phase ? ` · ${tunnelStatus.phase}` : ""}
+              {tunnelStatus?.last_error ? ` · ${tunnelStatus.last_error}` : ""}
+            </span>
+          </div>
+        </div>
+        {hostTokenRequired && (
+          <label className="dc-invite-link-label">
+            Host token required
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px]">
+              <input
+                className="dc-invite-link-input"
+                value={hostTokenDraft || ""}
+                placeholder="Host token"
+                onChange={(event) => onHostTokenDraftChange(event.currentTarget.value)}
+              />
+              <button type="button" className="dc-invite-copy-button" onClick={onSaveHostToken}>
+                저장
+              </button>
+            </div>
+          </label>
+        )}
+        <details className="dc-invite-link-label">
+          <summary>로컬/dev 미리보기</summary>
+          <span className="text-[12px] font-bold text-text-muted preserve-words">
+            이 링크는 이 컴퓨터에서만 확인하는 개발용입니다. 친구에게 보내지 마세요.
+          </span>
+          <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_132px]">
             <input
               className="dc-invite-link-input"
               value={localPreviewUrl}
               readOnly
               onFocus={(event) => event.currentTarget.select()}
             />
-            <button type="button" className="dc-invite-copy-button" onClick={onCopy}>
+            <button type="button" className="dc-invite-copy-button" onClick={onCopyLocalPreview}>
               <Copy size={15} />
-              보안 링크 복사
+              로컬 미리보기 복사
             </button>
           </div>
-        </label>
+        </details>
         {remoteClientPacketPreview && (
           <label className="dc-invite-link-label">
             AI 세션용 입장 패킷

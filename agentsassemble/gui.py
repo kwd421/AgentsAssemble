@@ -71,9 +71,11 @@ from agentsassemble.live_agent_sessions import (
     live_agent_session_readiness_summary,
     recover_live_agent_session,
     restart_live_agent_session,
+    resume_live_agent_session_agent,
     resume_live_agent_session,
     session_ensure_action,
     start_live_agent_session,
+    stop_live_agent_session_agent,
     stop_live_agent_session,
 )
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
@@ -141,9 +143,11 @@ from agentsassemble.room_invite import (
     get_public_url,
     host_gate_required,
     join_room_with_invite,
+    normalize_public_room_url,
     pending_invites_summary,
     revoke_invite,
     revoke_session,
+    set_runtime_host_token,
     set_runtime_public_url,
     verify_host_token,
     verify_session_token,
@@ -1136,6 +1140,9 @@ def serve_gui(
     port: int = 8765,
     output_root: Path | None = None,
     *,
+    public_url: str = "",
+    host_token: str = "",
+    start_public_tunnel: bool = False,
     live_agent_config: Path | None = None,
     live_agent_group_id: str = "",
     live_agent_auto_restart: bool = False,
@@ -1171,6 +1178,13 @@ def serve_gui(
             "plane is unauthenticated and can launch local processes. Expose it only on trusted networks."
         )
     try:
+        if host_token:
+            set_runtime_host_token(host_token)
+        if public_url:
+            set_runtime_public_url(public_url)
+        if (public_url or start_public_tunnel) and not get_host_token():
+            generated_token = generate_runtime_host_token()
+            print(f"AgentsAssemble host token: {generated_token}")
         process_supervisor.start_monitor()
         server_url = _local_server_url(server.server_address)
         public_tunnel_manager.set_local_url(server_url)
@@ -1188,6 +1202,8 @@ def serve_gui(
                 stale_restart_after_seconds=live_agent_stale_restart_after_seconds,
             )
         session_run_monitor.start()
+        if start_public_tunnel:
+            public_tunnel_manager.start()
         _print_gui_startup_banner(server_url, frontend_dist_root=frontend_dist_root)
         server.serve_forever()
     except KeyboardInterrupt:
@@ -2046,6 +2062,31 @@ def live_agent_session_resume_payload(
     return _attach_session_auto_rounds_if_requested(output_root, session, payload)
 
 
+def live_agent_session_resume_agent_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+    *,
+    default_server: str,
+) -> dict[str, object]:
+    live_agent_config_path = str(payload.get("live_agent_config_path") or payload.get("live_agent_config") or "").strip()
+    session = resume_live_agent_session_agent(
+        output_root,
+        process_supervisor,
+        server=str(payload.get("server") or default_server),
+        live_agent_config_path=Path(live_agent_config_path) if live_agent_config_path else None,
+        meeting_id=str(payload.get("meeting_id") or ""),
+        group_id=str(payload.get("group_id") or ""),
+        agent_id=str(payload.get("agent_id") or ""),
+        connect_timeout_seconds=_payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
+        auto_restart=_payload_bool(payload.get("auto_restart")),
+        max_restarts=_payload_nonnegative_int(payload.get("max_restarts"), 0),
+        restart_backoff_seconds=_payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
+        stale_restart_after_seconds=_payload_nonnegative_float(payload.get("stale_restart_after_seconds"), 0.0),
+    )
+    return _attach_session_auto_rounds_if_requested(output_root, session, payload)
+
+
 def live_agent_session_ensure_payload(
     output_root: Path,
     process_supervisor: LiveAgentProcessSupervisor,
@@ -2518,6 +2559,20 @@ def live_agent_session_stop_payload(
         process_supervisor,
         meeting_id=str(payload.get("meeting_id") or ""),
         group_id=group_id,
+    )
+
+
+def live_agent_session_stop_agent_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    return stop_live_agent_session_agent(
+        output_root,
+        process_supervisor,
+        meeting_id=str(payload.get("meeting_id") or ""),
+        group_id=str(payload.get("group_id") or ""),
+        agent_id=str(payload.get("agent_id") or ""),
     )
 
 
@@ -7600,6 +7655,8 @@ def _print_gui_startup_banner(server_url: str, *, frontend_dist_root: Path | Non
 
 
 _LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
+_PUBLIC_INVITE_CORS_METHODS = "GET, POST, OPTIONS"
+_PUBLIC_INVITE_CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID"
 
 
 def _is_loopback_host(host: object) -> bool:
@@ -7644,7 +7701,13 @@ def _origin_matches_public_url(origin: str) -> bool:
     return bool(public_url) and hostname == (urlparse(public_url).hostname or "").lower()
 
 
+def _origin_is_loopback_or_empty(origin: object) -> bool:
+    origin_text = str(origin or "").strip()
+    return not origin_text or _origin_is_trusted(origin_text)
+
+
 def _public_invite_route_allowed(path: str, method: str) -> bool:
+    method = method.upper()
     if method == "GET":
         return (
             path in {"/join", "/join/", "/api/room/events", "/api/room/lobby", "/api/live-agent-flow"}
@@ -7657,6 +7720,8 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             "/api/room-invite/companion",
             "/api/room/say",
         }
+    if method == "OPTIONS":
+        return _public_invite_route_allowed(path, "GET") or _public_invite_route_allowed(path, "POST")
     return False
 
 
@@ -7687,6 +7752,8 @@ def _request_trusted(
         return True
     if host_is_loopback:
         return _origin_is_trusted(origin_text)
+    if origin_text == "null":
+        return True
     return _origin_matches_public_url(origin_text)
 
 
@@ -7716,6 +7783,35 @@ def _make_handler(
                 path=path,
                 method=method,
             )
+
+        def _public_invite_cors_origin(self, *, requested_method: str = "") -> str:
+            origin = str(self.headers.get("Origin") or "").strip()
+            if not origin:
+                return ""
+            host_name, _ = _split_authority_host_port(str(self.headers.get("Host") or ""))
+            if host_name in _LOOPBACK_HOSTNAMES or not _host_header_is_trusted(self.headers.get("Host")):
+                return ""
+            path = urlparse(self.path).path
+            method = (requested_method or self.command or "").upper()
+            if method == "OPTIONS":
+                method = str(self.headers.get("Access-Control-Request-Method") or "").upper()
+            if not method or not _public_invite_route_allowed(path, method):
+                return ""
+            if origin == "null":
+                return "null"
+            if _origin_matches_public_url(origin):
+                return origin
+            return ""
+
+        def _send_public_invite_cors_headers(self, *, origin: str = "") -> None:
+            allow_origin = origin or self._public_invite_cors_origin()
+            if not allow_origin:
+                return
+            self.send_header("Access-Control-Allow-Origin", allow_origin)
+            self.send_header("Access-Control-Allow-Methods", _PUBLIC_INVITE_CORS_METHODS)
+            self.send_header("Access-Control-Allow-Headers", _PUBLIC_INVITE_CORS_HEADERS)
+            self.send_header("Access-Control-Max-Age", "600")
+            self.send_header("Vary", "Origin")
 
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
@@ -8104,6 +8200,24 @@ def _make_handler(
                 self._send_json(build_meeting_payload(meeting_dir, output_root=output_root))
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")
+
+        def do_OPTIONS(self) -> None:
+            parsed = urlparse(self.path)
+            requested_method = str(self.headers.get("Access-Control-Request-Method") or "").upper()
+            if requested_method and not _public_invite_route_allowed(parsed.path, requested_method):
+                self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
+                return
+            if not self._request_is_trusted(path=parsed.path, method="OPTIONS"):
+                self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
+                return
+            allow_origin = self._public_invite_cors_origin(requested_method=requested_method)
+            if not allow_origin:
+                self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
+                return
+            self.send_response(HTTPStatus.NO_CONTENT)
+            self._send_public_invite_cors_headers(origin=allow_origin)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
@@ -8731,6 +8845,41 @@ def _make_handler(
                 )
                 self._send_json(session)
                 return
+            if parsed.path == "/api/live-agent-sessions/resume-agent":
+                payload = self._operation_json_payload(operation="session.resume_agent")
+                if payload is None:
+                    return
+                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
+                try:
+                    session = live_agent_session_resume_agent_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        payload,
+                        default_server=self._request_server_url(),
+                    )
+                except (OSError, ValueError) as error:
+                    safe_error = _session_resume_error_message(error)
+                    safe_details = _session_start_error_details(payload, error)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session.resume_agent",
+                        status="failed",
+                        target_id=agent_id or str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
+                        error=safe_error,
+                        details={**safe_details, "agent_id": agent_id},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details={**safe_details, "agent_id": agent_id})
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="session.resume_agent",
+                    status=_session_start_operation_status(session),
+                    target_id=str(session.get("agent_id") or agent_id or session.get("meeting_id") or ""),
+                    summary=_session_resume_operation_summary(session),
+                    details={**_session_start_operation_details(session), "agent_id": str(session.get("agent_id") or agent_id)},
+                )
+                self._send_json(session)
+                return
             if parsed.path == "/api/live-agent-sessions/check":
                 payload = self._operation_json_payload(operation="session.check")
                 if payload is None:
@@ -8870,6 +9019,47 @@ def _make_handler(
                 )
                 self._send_json(session)
                 return
+            if parsed.path == "/api/live-agent-sessions/stop-agent":
+                payload = self._operation_json_payload(operation="session.stop_agent")
+                if payload is None:
+                    return
+                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
+                try:
+                    session = live_agent_session_stop_agent_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        payload,
+                    )
+                except (OSError, ValueError) as error:
+                    safe_error = _session_stop_error_message(error)
+                    safe_details = _session_start_error_details(payload, error)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session.stop_agent",
+                        status="failed",
+                        target_id=agent_id or str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
+                        error=safe_error,
+                        details={**safe_details, "agent_id": agent_id},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details={**safe_details, "agent_id": agent_id})
+                    return
+                stopped_runs = live_agent_session_run_controller.mark_matching_stopped(
+                    meeting_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
+                    group_id=str(session.get("group_id") or payload.get("group_id") or ""),
+                    reason="session.stop_agent",
+                )
+                if stopped_runs:
+                    session["session_runs"] = stopped_runs
+                record_live_agent_operation(
+                    output_root,
+                    operation="session.stop_agent",
+                    status=_session_stop_operation_status(session),
+                    target_id=str(session.get("agent_id") or agent_id or session.get("meeting_id") or ""),
+                    summary=_session_stop_operation_summary(session),
+                    details={**_session_stop_operation_details(session), "agent_id": str(session.get("agent_id") or agent_id)},
+                )
+                self._send_json(session)
+                return
             if parsed.path == "/api/live-agent-meetings/start":
                 payload = self._operation_json_payload(operation="meeting.start")
                 if payload is None:
@@ -8990,9 +9180,13 @@ def _make_handler(
                 if not isinstance(payload, dict):
                     self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
                     return
+                allow_local_dev_invite = payload.get("local_dev_preview") is True or payload.get("allow_local_dev") is True
+                if not get_public_url() and not allow_local_dev_invite:
+                    self._send_error(HTTPStatus.CONFLICT, "public URL is required before creating an external guest invite")
+                    return
                 try:
                     invite = create_room_invite(
-                        room_url=str(payload.get("room_url") or self._local_server_url()),
+                        room_url=self._local_server_url(),
                         meeting_id=str(payload.get("meeting_id") or ""),
                         agent_id=str(payload.get("agent_id") or ""),
                         display_name=str(payload.get("display_name") or ""),
@@ -9134,6 +9328,9 @@ def _make_handler(
                         return
                     self._send_json({"status": "already_configured", "host_token_configured": True})
                     return
+                if not self._request_is_local_operator():
+                    self._send_error(HTTPStatus.FORBIDDEN, "host token can only be generated from the local operator UI")
+                    return
                 if get_public_url():
                     self._send_error(HTTPStatus.FORBIDDEN, "host token must be configured before public URL mode")
                     return
@@ -9161,7 +9358,7 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
                     return
                 try:
-                    public_url = set_runtime_public_url(str(payload.get("public_url") or ""))
+                    public_url = set_runtime_public_url(normalize_public_room_url(str(payload.get("public_url") or "")))
                 except ValueError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
@@ -10435,6 +10632,13 @@ def _make_handler(
             host_name, _ = _split_authority_host_port(str(self.headers.get("Host") or ""))
             return host_name in _LOOPBACK_HOSTNAMES
 
+        def _request_is_local_operator(self) -> bool:
+            return (
+                _is_loopback_host(self.server.server_address[0])
+                and self._request_uses_loopback_host()
+                and _origin_is_loopback_or_empty(self.headers.get("Origin"))
+            )
+
         def _public_invite_status(self, tunnel_status: dict[str, object] | None = None) -> dict[str, object]:
             tunnel = tunnel_status or invite_tunnel_manager.status()
             return {
@@ -10561,6 +10765,7 @@ def _make_handler(
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
+            self._send_public_invite_cors_headers()
             self.end_headers()
             self.wfile.write(data)
 
@@ -10570,6 +10775,7 @@ def _make_handler(
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
             self.send_header("Cache-Control", "no-cache")
             self.send_header("Connection", "close")
+            self._send_public_invite_cors_headers()
             self.end_headers()
             self.wfile.write(data)
 
@@ -10585,6 +10791,7 @@ def _make_handler(
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
             self.send_header("Cache-Control", "no-cache")
             self.send_header("Connection", "close")
+            self._send_public_invite_cors_headers()
             self.end_headers()
             current_last_event_id = last_event_id
             current_payload_signature: str | None = None
@@ -10680,6 +10887,7 @@ def _make_handler(
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
+            self._send_public_invite_cors_headers()
             self.end_headers()
             self.wfile.write(data)
 

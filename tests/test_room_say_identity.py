@@ -47,6 +47,7 @@ class TestRoomSayIdentity(unittest.TestCase):
             "meeting_id": "test-m",
             "agent_id": "review-guest",
             "display_name": "Review Guest",
+            "local_dev_preview": True,
         })
         self.assertIn("invite_token", invite)
         packet = invite["remote_client_packet"]
@@ -104,6 +105,7 @@ class TestRoomSayIdentity(unittest.TestCase):
             "meeting_id": "friend-room",
             "agent_id": "friend-human",
             "display_name": "Friend Human",
+            "local_dev_preview": True,
         })
         friend_join = self._post("/api/room-invite/join", {
             "invite_token": invite["invite_token"],

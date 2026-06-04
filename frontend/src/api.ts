@@ -1,6 +1,15 @@
 // API client for the AgentsAssemble GUI backend.
 import type { RoomAppearance } from "./lib/roomAppearance";
-import { ApiError } from "./lib/apiErrors";
+
+class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 export interface LobbyAttachmentRef {
   id: string;
@@ -83,6 +92,32 @@ export interface RoomInviteJoinResponse {
   invite_scope: RoomAppearance["inviteScope"];
   connection_kind: string;
   expires_at: string;
+}
+
+export interface PublicInviteStatus {
+  public_url: string;
+  host_token_configured: boolean;
+  host_gate_required: boolean;
+  can_generate_host_token: boolean;
+  tunnel?: {
+    available?: boolean;
+    running?: boolean;
+    phase?: "stopped" | "starting" | "running" | string;
+    public_url?: string;
+    local_url?: string;
+    last_error?: string;
+    recent_log?: string[];
+  };
+}
+
+export interface PublicInviteStatusResponse extends PublicInviteStatus {}
+
+export interface PublicInviteActionResponse {
+  status: string;
+  host_token?: string;
+  host_token_configured?: boolean;
+  public_url?: string;
+  public_invite?: PublicInviteStatus;
 }
 
 export interface RoomFriendDmEvent {
@@ -671,6 +706,48 @@ async function postJson<T>(url: string, body: object): Promise<T> {
   return res.json();
 }
 
+const HOST_TOKEN_STORAGE_KEY = "agentsassemble.hostToken.v1";
+
+export function loadHostToken(): string {
+  try {
+    return String(sessionStorage.getItem(HOST_TOKEN_STORAGE_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+export function saveHostToken(token: string) {
+  const cleanToken = String(token || "").trim();
+  try {
+    if (cleanToken) {
+      sessionStorage.setItem(HOST_TOKEN_STORAGE_KEY, cleanToken);
+    } else {
+      sessionStorage.removeItem(HOST_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // Session storage can be unavailable in restricted browser contexts.
+  }
+}
+
+export function clearHostToken() {
+  saveHostToken("");
+}
+
+export async function postJsonHost<T>(url: string, body: object): Promise<T> {
+  const hostToken = loadHostToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (hostToken) headers["X-Host-Token"] = hostToken;
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw await responseError(res);
+  }
+  return res.json();
+}
+
 async function fetchJsonWithToken<T>(url: string, sessionToken: string): Promise<T> {
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${sessionToken}` },
@@ -897,6 +974,25 @@ export function resumeLiveAgentSession({
   });
 }
 
+export function resumeLiveAgentSessionAgent({
+  meetingId,
+  groupId,
+  agentId,
+  liveAgentConfigPath,
+}: {
+  meetingId: string;
+  groupId: string;
+  agentId: string;
+  liveAgentConfigPath?: string;
+}) {
+  return postJson<LiveAgentSessionActionResponse>("/api/live-agent-sessions/resume-agent", {
+    meeting_id: meetingId,
+    group_id: groupId,
+    agent_id: agentId,
+    live_agent_config_path: liveAgentConfigPath || "",
+  });
+}
+
 export function stopLiveAgentSession({
   meetingId,
   groupId,
@@ -907,6 +1003,22 @@ export function stopLiveAgentSession({
   return postJson<LiveAgentSessionActionResponse>("/api/live-agent-sessions/stop", {
     meeting_id: meetingId,
     group_id: groupId,
+  });
+}
+
+export function stopLiveAgentSessionAgent({
+  meetingId,
+  groupId,
+  agentId,
+}: {
+  meetingId: string;
+  groupId: string;
+  agentId: string;
+}) {
+  return postJson<LiveAgentSessionActionResponse>("/api/live-agent-sessions/stop-agent", {
+    meeting_id: meetingId,
+    group_id: groupId,
+    agent_id: agentId,
   });
 }
 
@@ -933,13 +1045,35 @@ export function createRoomInvite({
   inviteScope?: RoomAppearance["inviteScope"];
   ttlSeconds?: number;
 }) {
-  return postJson<RoomInviteCreateResponse>("/api/room-invite/create", {
+  return postJsonHost<RoomInviteCreateResponse>("/api/room-invite/create", {
     meeting_id: meetingId,
     agent_id: agentId,
     display_name: displayName,
     invite_scope: inviteScope,
     ttl_seconds: ttlSeconds,
   });
+}
+
+export function fetchPublicInviteStatus() {
+  return fetchJson<PublicInviteStatusResponse>("/api/public-invite/status");
+}
+
+export function generatePublicInviteHostToken() {
+  return postJsonHost<PublicInviteActionResponse>("/api/public-invite/host-token", {});
+}
+
+export function configurePublicInvitePublicUrl(publicUrl: string) {
+  return postJsonHost<PublicInviteActionResponse>("/api/public-invite/public-url", {
+    public_url: publicUrl,
+  });
+}
+
+export function startPublicInviteTunnel() {
+  return postJsonHost<PublicInviteActionResponse>("/api/public-invite/tunnel/start", {});
+}
+
+export function stopPublicInviteTunnel() {
+  return postJsonHost<PublicInviteActionResponse>("/api/public-invite/tunnel/stop", {});
 }
 
 export function joinRoomInvite({ inviteToken }: { inviteToken: string }) {

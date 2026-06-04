@@ -358,6 +358,32 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(kwargs["live_agent_restart_backoff_seconds"], 1.5)
         self.assertEqual(kwargs["live_agent_stale_restart_after_seconds"], 120.0)
 
+    def test_gui_accepts_public_invite_options(self):
+        with patch("agentsassemble.cli.serve_gui") as serve_gui:
+            exit_code = main(
+                [
+                    "gui",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    "0",
+                    "--output-root",
+                    "out",
+                    "--public-url",
+                    "https://shared-room.example.com",
+                    "--host-token",
+                    "host-secret",
+                    "--start-public-tunnel",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        serve_gui.assert_called_once()
+        kwargs = serve_gui.call_args.kwargs
+        self.assertEqual(kwargs["public_url"], "https://shared-room.example.com")
+        self.assertEqual(kwargs["host_token"], "host-secret")
+        self.assertTrue(kwargs["start_public_tunnel"])
+
     def test_sessions_list_outputs_codex_session_index_as_json(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             codex_home = Path(temp_dir) / ".codex"

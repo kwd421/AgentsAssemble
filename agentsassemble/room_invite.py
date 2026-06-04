@@ -61,6 +61,7 @@ INVITE_SCOPES = {ROOM_INVITE_SCOPE, READ_ONLY_INVITE_SCOPE}
 
 HOST_TOKEN_ENV = "AGENTSASSEMBLE_HOST_TOKEN"
 PUBLIC_URL_ENV = "AGENTSASSEMBLE_PUBLIC_URL"
+PUBLIC_URL_BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
 
 def get_host_token() -> str:
@@ -147,6 +148,8 @@ def normalize_public_room_url(room_url: str) -> str:
         raise ValueError("public invite URL must be an HTTP(S) URL with a valid host and port.") from None
     if not hostname:
         raise ValueError("public invite URL must be an HTTP(S) URL with a valid host and port.")
+    if hostname.lower().strip("[]") in PUBLIC_URL_BLOCKED_HOSTS:
+        raise ValueError("public invite URL must not use a local or loopback host.")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError("public invite URL must be HTTP(S) without userinfo, query, or fragment.")
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))

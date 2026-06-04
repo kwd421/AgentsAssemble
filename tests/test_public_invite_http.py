@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.public_tunnel import PublicTunnelManager
-from agentsassemble.room_invite import reset_state
+from agentsassemble.room_invite import get_public_url, reset_state, set_runtime_host_token, set_runtime_public_url
 
 
 def _json_request(url: str, payload: dict[str, object], headers: dict[str, str] | None = None) -> Request:
@@ -40,6 +40,120 @@ class PublicInviteHttpTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         return server
+
+    def test_external_invite_requires_public_url_and_never_returns_local_join_url(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            set_runtime_host_token("host-secret")
+            server = self._start_server(root)
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with self.assertRaises(HTTPError) as error_context:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/room-invite/create",
+                            {"meeting_id": "friend-room", "display_name": "Friend"},
+                            {"X-Host-Token": "host-secret"},
+                        ),
+                        timeout=4,
+                    )
+                error_payload = json.loads(error_context.exception.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(error_context.exception.code, 409)
+        self.assertIn("public URL is required before creating an external guest invite", error_payload["error"])
+
+    def test_room_invite_create_uses_public_url_with_host_token(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            set_runtime_host_token("host-secret")
+            set_runtime_public_url("https://shared-room.example.com")
+            server = self._start_server(root)
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/create",
+                        {"meeting_id": "friend-room", "display_name": "Friend"},
+                        {"X-Host-Token": "host-secret"},
+                    ),
+                    timeout=4,
+                ) as response:
+                    invite = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertTrue(invite["join_url"].startswith("https://shared-room.example.com/join?token="))
+        self.assertEqual(invite["remote_client_packet"]["env"]["AGENTSASSEMBLE_ROOM_URL"], "https://shared-room.example.com")
+
+    def test_host_token_bootstrap_rejects_untrusted_public_request(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            server = self._start_server(root)
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with self.assertRaises(HTTPError) as error_context:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/public-invite/host-token",
+                            {},
+                            {
+                                "Host": "evil.example.com",
+                                "Origin": "https://evil.example.com",
+                            },
+                        ),
+                        timeout=4,
+                    )
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(error_context.exception.code, 403)
+
+    def test_public_url_endpoint_rejects_loopback_urls(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            set_runtime_host_token("host-secret")
+            server = self._start_server(root)
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with self.assertRaises(HTTPError) as error_context:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/public-invite/public-url",
+                            {"public_url": "http://127.0.0.1:8765"},
+                            {"X-Host-Token": "host-secret"},
+                        ),
+                        timeout=4,
+                    )
+                error_payload = json.loads(error_context.exception.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(error_context.exception.code, 400)
+        self.assertIn("public invite URL must not use a local or loopback host", error_payload["error"])
+
+    def test_serve_gui_startup_public_url_sets_runtime_public_url(self):
+        from agentsassemble.gui import serve_gui
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            def stop_after_bind() -> None:
+                raise KeyboardInterrupt()
+
+            with patch("agentsassemble.gui.ThreadingHTTPServer.serve_forever", side_effect=stop_after_bind):
+                serve_gui(
+                    host="127.0.0.1",
+                    port=0,
+                    output_root=Path(temp_dir),
+                    public_url="https://shared-room.example.com",
+                    host_token="host-secret",
+                )
+
+        self.assertEqual(get_public_url(), "https://shared-room.example.com")
 
     def test_gui_can_bootstrap_host_token_public_url_and_join_link(self):
         with patch.dict(os.environ, {}, clear=False):
@@ -250,6 +364,87 @@ class PublicInviteHttpTests(unittest.TestCase):
                     server.shutdown()
                     server.server_close()
 
+    def test_public_guest_invite_allows_null_origin_only_on_guest_routes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            set_runtime_host_token("host-secret")
+            set_runtime_public_url("https://shared-room.example.com")
+            server = self._start_server(root)
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/create",
+                        {"meeting_id": "friend-room", "display_name": "Friend"},
+                        {"X-Host-Token": "host-secret"},
+                    ),
+                    timeout=4,
+                ) as response:
+                    invite = json.loads(response.read().decode("utf-8"))
+
+                null_origin_headers = {
+                    "Host": "shared-room.example.com",
+                    "Origin": "null",
+                }
+                preflight = Request(
+                    f"{base}/api/room-invite/join",
+                    headers={
+                        **null_origin_headers,
+                        "Access-Control-Request-Method": "POST",
+                        "Access-Control-Request-Headers": "content-type",
+                    },
+                    method="OPTIONS",
+                )
+                with urlopen(preflight, timeout=4) as response:
+                    self.assertEqual(response.status, 204)
+                    self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "null")
+                    self.assertIn("POST", response.headers.get("Access-Control-Allow-Methods", ""))
+
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/join",
+                        {"invite_token": invite["invite_token"]},
+                        null_origin_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    session_payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "null")
+                self.assertEqual(session_payload["status"], "admitted")
+
+                with urlopen(
+                    Request(
+                        f"{base}/api/room/lobby",
+                        headers={
+                            **null_origin_headers,
+                            "Authorization": f"Bearer {session_payload['session_token']}",
+                        },
+                    ),
+                    timeout=4,
+                ) as response:
+                    lobby_payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "null")
+                self.assertIn("events", lobby_payload)
+
+                with self.assertRaises(HTTPError) as blocked_operator_route:
+                    urlopen(Request(f"{base}/api/lobby", headers=null_origin_headers), timeout=4)
+                self.assertEqual(blocked_operator_route.exception.code, 403)
+
+                blocked_preflight = Request(
+                    f"{base}/api/lobby",
+                    headers={
+                        **null_origin_headers,
+                        "Access-Control-Request-Method": "GET",
+                    },
+                    method="OPTIONS",
+                )
+                with self.assertRaises(HTTPError) as blocked_preflight_context:
+                    urlopen(blocked_preflight, timeout=4)
+                self.assertEqual(blocked_preflight_context.exception.code, 403)
+            finally:
+                server.shutdown()
+                server.server_close()
+
     def test_gui_invite_session_store_survives_server_restart_without_raw_session_token(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
@@ -259,7 +454,12 @@ class PublicInviteHttpTests(unittest.TestCase):
                 with urlopen(
                     _json_request(
                         f"{base}/api/room-invite/create",
-                        {"meeting_id": "restart-room", "agent_id": "guest-1", "display_name": "Guest One"},
+                        {
+                            "meeting_id": "restart-room",
+                            "agent_id": "guest-1",
+                            "display_name": "Guest One",
+                            "local_dev_preview": True,
+                        },
                     ),
                     timeout=4,
                 ) as response:
@@ -317,7 +517,12 @@ class PublicInviteHttpTests(unittest.TestCase):
                 with urlopen(
                     _json_request(
                         f"{base}/api/room-invite/create",
-                        {"meeting_id": "friend-room", "agent_id": "friend", "display_name": "Friend"},
+                        {
+                            "meeting_id": "friend-room",
+                            "agent_id": "friend",
+                            "display_name": "Friend",
+                            "local_dev_preview": True,
+                        },
                     ),
                     timeout=4,
                 ) as response:

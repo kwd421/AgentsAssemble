@@ -27,10 +27,17 @@ export default function UserPanel({
   onlineCount,
   agentCount,
   hasBackendError,
+  guestProfile,
 }: {
   onlineCount: number;
   agentCount: number;
   hasBackendError: boolean;
+  guestProfile?: {
+    displayName: string;
+    avatarLabel: string;
+    statusLabel: string;
+    expired?: boolean;
+  };
 }) {
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_USER_PROFILE);
   const [draft, setDraft] = useState<UserProfile>(DEFAULT_USER_PROFILE);
@@ -42,8 +49,14 @@ export default function UserPanel({
   const rootRef = useRef<HTMLDivElement>(null);
   const statusClass = profileStatusClass(profile, hasBackendError);
   const hasAvatarImage = Boolean(profile.avatarImage);
+  const guestDisplayName = String(guestProfile?.displayName || "게스트").trim() || "게스트";
+  const guestAvatarLabel = String(guestProfile?.avatarLabel || guestDisplayName.slice(0, 1) || "G")
+    .trim()
+    .slice(0, 2)
+    .toUpperCase();
 
   useEffect(() => {
+    if (guestProfile) return;
     let ignore = false;
     fetchUserProfile()
       .then((loadedProfile) => {
@@ -59,7 +72,7 @@ export default function UserPanel({
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [guestProfile]);
 
   useEffect(() => {
     if (!profileOpen) return;
@@ -129,6 +142,34 @@ export default function UserPanel({
   async function saveDraft() {
     await persistProfile(draft);
     setSettingsOpen(false);
+  }
+
+  if (guestProfile) {
+    return (
+      <div className="dc-user-panel" ref={rootRef}>
+        <div className="dc-current-user">
+          <div className="dc-user-identity" aria-label="게스트 프로필">
+            <span className="relative shrink-0">
+              <span className="dc-self-avatar" data-has-image={false}>
+                {guestAvatarLabel}
+              </span>
+              <span
+                className={`dc-self-status ${guestProfile.expired ? "offline" : "online"}`}
+                aria-hidden
+              />
+            </span>
+            <span className="min-w-0 flex-1 text-left">
+              <span className="block truncate text-[14px] font-bold leading-5 text-text-primary">
+                {guestDisplayName}
+              </span>
+              <span className="block truncate text-[12px] leading-4 text-text-muted">
+                {guestProfile.statusLabel}
+              </span>
+            </span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
