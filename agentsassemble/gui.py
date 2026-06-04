@@ -48,6 +48,7 @@ from agentsassemble.live_agent_flow import FLOW_TERMINAL_EVENT_TYPES, FlowOption
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
+from agentsassemble.live_agent_quota import LIVE_AGENT_QUOTA_FIELDS, quota_viewer_for_host, quota_viewer_for_session
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
@@ -176,12 +177,22 @@ REAL_SESSION_SMOKE_CONFIG_REQUIRED_MESSAGE = (
 REAL_SESSION_SMOKE_PROBE_REDACTION = "[redacted real session smoke probe]"
 
 
-def _safe_live_agent_flow_agents(output_root: Path) -> list[dict[str, object]]:
+def _safe_live_agent_flow_agents(
+    output_root: Path,
+    *,
+    meeting_id: str = "",
+    quota_viewer: dict[str, object] | None = None,
+) -> list[dict[str, object]]:
     payload = _live_agent_roster_with_admission_evidence(
         output_root,
-        {"agents": read_live_agents(output_root)},
+        {
+            "agents": filter_live_agent_roster(
+                read_live_agents(output_root),
+                meeting_id=meeting_id,
+            )
+        },
     )
-    safe_payload = safe_live_agent_roster_payload(payload)
+    safe_payload = safe_live_agent_roster_payload(payload, quota_viewer=quota_viewer)
     agents = safe_payload.get("agents")
     return agents if isinstance(agents, list) else []
 
@@ -265,23 +276,43 @@ class LiveAgentFlowSupervisor:
             thread.start()
             return self.status(meeting_id=meeting_id)
 
-    def status(self, *, meeting_id: str = "") -> dict[str, object]:
-        events = read_lobby(self.output_root)
+    def status(
+        self,
+        *,
+        meeting_id: str = "",
+        quota_viewer: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+        events = read_lobby(self.output_root, meeting_id=clean_meeting_id)
         with self._lock:
-            run = self._selected_run(meeting_id)
+            run = self._selected_run(clean_meeting_id)
             if run is None:
-                flow = _restored_flow_state(events, meeting_id=meeting_id)
+                flow = _restored_flow_state(events, meeting_id=clean_meeting_id)
+                flow_meeting_id = clean_lobby_text((flow or {}).get("meeting_id"), limit=128) or clean_meeting_id
+                if not clean_meeting_id and flow_meeting_id:
+                    events = read_lobby(self.output_root, meeting_id=flow_meeting_id)
                 return {
                     "flow": flow or {"status": "idle"},
-                    "agents": _safe_live_agent_flow_agents(self.output_root),
+                    "agents": _safe_live_agent_flow_agents(
+                        self.output_root,
+                        meeting_id=flow_meeting_id,
+                        quota_viewer=quota_viewer,
+                    ),
                     "events": events,
                     "flow_events": _flow_events_for_state(events, flow),
                 }
             self._refresh_counts_locked(run)
             flow = self._public_state(run)
+            flow_meeting_id = clean_lobby_text(flow.get("meeting_id"), limit=128)
+            if not clean_meeting_id and flow_meeting_id:
+                events = read_lobby(self.output_root, meeting_id=flow_meeting_id)
             return {
                 "flow": flow,
-                "agents": _safe_live_agent_flow_agents(self.output_root),
+                "agents": _safe_live_agent_flow_agents(
+                    self.output_root,
+                    meeting_id=flow_meeting_id or clean_meeting_id,
+                    quota_viewer=quota_viewer,
+                ),
                 "events": events,
                 "flow_events": _flow_events_for_state(events, flow),
             }
@@ -1764,7 +1795,17 @@ def live_agents_payload(
     }
     if safe:
         return safe_live_agent_roster_payload(_live_agent_roster_with_admission_evidence(output_root, payload))
-    return payload
+    return {
+        "agents": [
+            _live_agent_without_quota_fields(agent)
+            for agent in payload["agents"]
+            if isinstance(agent, dict)
+        ]
+    }
+
+
+def _live_agent_without_quota_fields(agent: dict[str, object]) -> dict[str, object]:
+    return {key: value for key, value in agent.items() if key not in LIVE_AGENT_QUOTA_FIELDS}
 
 
 def _live_agent_roster_with_admission_evidence(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
@@ -7548,7 +7589,7 @@ def _origin_matches_public_url(origin: str) -> bool:
 def _public_invite_route_allowed(path: str, method: str) -> bool:
     if method == "GET":
         return (
-            path in {"/join", "/join/", "/api/room/events", "/api/room/lobby"}
+            path in {"/join", "/join/", "/api/room/events", "/api/room/lobby", "/api/live-agent-flow"}
             or path.startswith("/app/assets/")
         )
     if method == "POST":
@@ -7790,7 +7831,26 @@ def _make_handler(
                 )
                 return
             if path == "/api/live-agent-flow":
-                self._send_json(live_agent_flow_supervisor.status(meeting_id=str(query.get("meeting_id", [""])[0] or "")))
+                session_token = self._extract_session_token()
+                session = verify_session_token(session_token) if session_token else None
+                if session_token and not session:
+                    self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
+                    return
+                if not session and not self._request_uses_loopback_host():
+                    self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+                    return
+                flow_meeting_id = (
+                    str(session.get("meeting_id") or "")
+                    if session
+                    else str(query.get("meeting_id", [""])[0] or "")
+                )
+                quota_viewer = quota_viewer_for_session(session) if session else quota_viewer_for_host()
+                self._send_json(
+                    live_agent_flow_supervisor.status(
+                        meeting_id=flow_meeting_id,
+                        quota_viewer=quota_viewer,
+                    )
+                )
                 return
             if path == "/api/play/mafia":
                 try:
@@ -10280,6 +10340,10 @@ def _make_handler(
                 self._send_error(HTTPStatus.FORBIDDEN, "host token required")
                 return False
             return True
+
+        def _request_uses_loopback_host(self) -> bool:
+            host_name, _ = _split_authority_host_port(str(self.headers.get("Host") or ""))
+            return host_name in _LOOPBACK_HOSTNAMES
 
         def _public_invite_status(self, tunnel_status: dict[str, object] | None = None) -> dict[str, object]:
             tunnel = tunnel_status or invite_tunnel_manager.status()

@@ -27,6 +27,10 @@ import {
   providerExecutionLabel,
   roomContextSummaryBadges,
 } from "../../lib/agentLabels";
+import {
+  canViewAgentQuota,
+  type AgentQuotaVisibilityViewer,
+} from "../../lib/agentQuotaVisibility";
 import { participantTypeMeta } from "../../lib/participantTypes";
 import { isActivePresence, presenceStatusLabel } from "../../lib/presenceStatus";
 import ProviderTruthChips from "./ProviderTruthChips";
@@ -44,6 +48,7 @@ type MemberEntry = {
   role: RoleId;
   owner: boolean;
   active: boolean;
+  canViewQuota: boolean;
   icon: LucideIcon;
 };
 
@@ -172,7 +177,7 @@ function MemberRow({
   canEditRoles: boolean;
 }) {
   const Icon = entry.icon;
-  const quotaChips = entry.agent ? inlineQuotaChips(entry.agent) : [];
+  const quotaChips = entry.agent && entry.canViewQuota ? inlineQuotaChips(entry.agent) : [];
   const roleLabel = ROLE_OPTIONS.find((option) => option.id === entry.role)?.label || "에이전트";
   return (
     <div
@@ -276,8 +281,8 @@ function MemberDetailModal({
   const [sessionActionStatus, setSessionActionStatus] = useState("");
   if (!entry.agent) return null;
   const DetailIcon = entry.icon;
-  const quotaWindows = agentQuotaWindowSignals(entry.agent);
-  const quotaFallback = inlineQuotaChips(entry.agent);
+  const quotaWindows = entry.canViewQuota ? agentQuotaWindowSignals(entry.agent) : [];
+  const quotaFallback = entry.canViewQuota ? inlineQuotaChips(entry.agent) : [];
   const signals = agentMemberSignals(entry.agent).filter((signal) => !/^5h |^1w /.test(signal.label));
   const lastObserved = lastObservedSummary(entry.agent);
   const processOwnsAgent = agentBelongsToProcessGroup(entry.agent, sessionGroup);
@@ -361,7 +366,11 @@ function MemberDetailModal({
         </header>
         <section className="dc-member-detail-section" aria-label={`${entry.displayName} 사용량`}>
           <h3>사용량</h3>
-          {quotaWindows.length > 0 ? (
+          {!entry.canViewQuota ? (
+            <p className="dc-member-detail-note preserve-words">
+              사용량은 이 AI를 소유한 참가자에게만 표시됩니다.
+            </p>
+          ) : quotaWindows.length > 0 ? (
             <div className="dc-member-quota-row">
               {quotaWindows.map((window) => (
                 <span
@@ -454,6 +463,7 @@ export default function MemberList({
   canEditRoles = true,
   sessionGroup,
   onSessionActionComplete,
+  quotaViewer,
 }: {
   agents: LiveAgent[];
   members?: RoomMember[];
@@ -464,6 +474,7 @@ export default function MemberList({
   canEditRoles?: boolean;
   sessionGroup?: LiveAgentProcessGroup;
   onSessionActionComplete?: () => void;
+  quotaViewer?: AgentQuotaVisibilityViewer;
 }) {
   const [localRoleOverrides, setLocalRoleOverrides] = useState<Record<string, RoleId>>({});
   const [query, setQuery] = useState("");
@@ -478,6 +489,7 @@ export default function MemberList({
       role: effectiveRoleOverrides["human:self"] || "human",
       owner: true,
       active: true,
+      canViewQuota: false,
       icon: UserCheck,
     };
     const agentEntries = agents.map((agent) => {
@@ -491,6 +503,7 @@ export default function MemberList({
         role,
         owner: false,
         active: isActive(agent),
+        canViewQuota: canViewAgentQuota(agent, quotaViewer),
         icon: ROLE_OPTIONS.find((option) => option.id === role)?.icon || Bot,
       } satisfies MemberEntry;
     });
@@ -525,11 +538,12 @@ export default function MemberList({
           role,
           owner: false,
           active: memberActive(member),
+          canViewQuota: false,
           icon: ROLE_OPTIONS.find((option) => option.id === role)?.icon || typeMeta.icon,
         } satisfies MemberEntry;
       });
     return [human, ...agentEntries, ...invitedEntries];
-  }, [agents, effectiveRoleOverrides, members]);
+  }, [agents, effectiveRoleOverrides, members, quotaViewer]);
   const visibleEntries = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return entries;

@@ -1078,8 +1078,9 @@ export function createLiveAgentJoinBrief(params: LiveAgentJoinBriefRequest) {
   return postJson<LiveAgentJoinBrief>("/api/live-agent-join-brief", params);
 }
 
-export function fetchLiveAgentFlow(meetingId = "") {
-  return fetchJson<FlowResponse>(`/api/live-agent-flow${queryString({ meeting_id: meetingId })}`);
+export function fetchLiveAgentFlow(meetingId = "", sessionToken = "") {
+  const url = `/api/live-agent-flow${queryString({ meeting_id: meetingId })}`;
+  return sessionToken ? fetchJsonWithToken<FlowResponse>(url, sessionToken) : fetchJson<FlowResponse>(url);
 }
 
 export function fetchMeetings() {

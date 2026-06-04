@@ -6,6 +6,7 @@ import type {
   RoomMember,
 } from "../../api";
 import { isActivePresence } from "../../lib/presenceStatus";
+import type { AgentQuotaVisibilityViewer } from "../../lib/agentQuotaVisibility";
 import type { RoomAppearance } from "../../lib/roomAppearance";
 import MemberList, { type RoleId } from "./MemberList";
 
@@ -33,6 +34,7 @@ type RoomConnectionPanelProps = {
   channelNotifications?: Record<string, { notifications: ChannelNotificationSetting; lastReadAt?: string }>;
   sessionGroup?: LiveAgentProcessGroup;
   onSessionActionComplete?: () => void;
+  quotaViewer?: AgentQuotaVisibilityViewer;
 };
 
 function inviteScopeLabel(scope: RoomAppearance["inviteScope"]): string {
@@ -80,6 +82,7 @@ export default function RoomConnectionPanel({
   channelNotifications,
   sessionGroup,
   onSessionActionComplete,
+  quotaViewer,
 }: RoomConnectionPanelProps) {
   const activeCount = activeAgentCount(agents);
   const memberCount = members.length + agents.length + 1;
@@ -176,6 +179,7 @@ export default function RoomConnectionPanel({
         canEditRoles={!guestLocked}
         sessionGroup={sessionGroup}
         onSessionActionComplete={onSessionActionComplete}
+        quotaViewer={quotaViewer}
       />
     </div>
   );

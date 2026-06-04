@@ -203,6 +203,53 @@ class LiveAgentPresenceTests(unittest.TestCase):
             self.assertEqual(agent["status"], "working")
             self.assertEqual(agent["last_seen_at"], "2026-05-17T12:00:45+00:00")
 
+    def test_connect_and_heartbeat_persist_sanitized_quota_signals(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            connected = connect_live_agent(
+                root,
+                {
+                    "agent_id": "codex-live",
+                    "quota_5h": "12 / 50",
+                    "quota_1w": "90%",
+                    "quota_state": "low",
+                    "quota_windows": [
+                        {
+                            "label": "5-hour Sonnet",
+                            "percent": 72.7,
+                            "resetsAt": "2026-06-04T12:00:00+00:00",
+                            "used": 12,
+                            "limit": 50,
+                            "remaining": 38,
+                            "unit": "messages",
+                        },
+                        {"label": "ignored", "percent": "bad"},
+                    ],
+                },
+            )
+            heartbeat = heartbeat_live_agent(
+                root,
+                "codex-live",
+                metadata={
+                    "quota_5h": "13 / 50",
+                    "quota_state": "ok",
+                    "quota_windows": [{"label": "5-hour", "percent": 26}],
+                },
+            )
+            visible = read_live_agents(root)[0]
+
+        self.assertEqual(connected["quota_5h"], "12 / 50")
+        self.assertEqual(connected["quota_1w"], "90%")
+        self.assertEqual(connected["quota_state"], "low")
+        self.assertEqual(connected["quota_windows"][0]["percent"], 73)
+        self.assertEqual(connected["quota_windows"][0]["unit"], "messages")
+        self.assertEqual(heartbeat["quota_5h"], "13 / 50")
+        self.assertEqual(heartbeat["quota_1w"], "90%")
+        self.assertEqual(heartbeat["quota_state"], "ok")
+        self.assertEqual(heartbeat["quota_windows"], [{"label": "5-hour", "percent": 26}])
+        self.assertEqual(visible["quota_windows"], [{"label": "5-hour", "percent": 26}])
+
     def test_heartbeat_can_preserve_child_reported_active_status_for_liveness_ping(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

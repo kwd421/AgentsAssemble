@@ -10,6 +10,7 @@ from typing import Any
 
 from agentsassemble.live_agent_context import live_agent_context_contract
 from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
+from agentsassemble.live_agent_quota import LIVE_AGENT_QUOTA_FIELDS, clean_live_agent_quota_fields
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.models import ENGAGEMENT_MODES, normalize_engagement_mode
 from agentsassemble.remote_bridge_config import remote_bridge_endpoint_error
@@ -142,6 +143,7 @@ def connect_live_agent(
             "updated_at": timestamp,
             "last_seen_at": timestamp,
         }
+        agent.update(clean_live_agent_quota_fields(payload, existing))
         if operator_engagement_mode:
             agent["engagement_mode_updated_at"] = clean_lobby_text(existing.get("engagement_mode_updated_at"), limit=64)
         _upsert_agent(agents, agent)
@@ -257,6 +259,11 @@ def heartbeat_live_agent(
                     agent[key] = _clean_presence_attention(metadata.get(key))
                 else:
                     agent[key] = clean_lobby_text(metadata.get(key), limit=limit)
+        if any(key in metadata for key in LIVE_AGENT_QUOTA_FIELDS):
+            previous_quota = {key: agent.get(key) for key in LIVE_AGENT_QUOTA_FIELDS if key in agent}
+            for key in LIVE_AGENT_QUOTA_FIELDS:
+                agent.pop(key, None)
+            agent.update(clean_live_agent_quota_fields(metadata, previous_quota))
         if "diagnostic" in metadata:
             agent["diagnostic"] = _bool_value(metadata.get("diagnostic"))
         agent.update(live_agent_context_contract(agent.get("provider_kind"), agent.get("connection_kind")))

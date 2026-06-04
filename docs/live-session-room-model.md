@@ -26,6 +26,18 @@ Events should be append-only records such as:
 
 This keeps a meeting auditable. A later agent should be able to read the room log and understand what happened without trusting hidden orchestration state.
 
+Roster visibility and private operational signals are separate. Room
+participants may see which humans and AI agents are present, their public names,
+roles, connection classes, and room-visible status. Provider or subscription
+quota details such as 5-hour/1-week usage remain owner-visible only; room
+presence lists must not carry raw quota fields, and flow roster APIs must
+project those fields by viewer identity so other participants do not receive
+the exact values unless the owner explicitly shares them through a future room
+policy. Public invite clients read the flow roster with their session token;
+loopback host reads may see local host-owned agent quota, but not remote
+participant-owned quota. LAN or public-host flow reads without a session token
+must not be treated as the host quota viewer.
+
 The local-first room should borrow the useful parts of low-latency event
 systems without pretending to be Kafka, Flink, or a kernel-bypass network
 stack. The first room-event bus foundation is:

@@ -9,6 +9,7 @@ from agentsassemble.live_agent_context import (
     safe_live_agent_sandbox_enforcement,
 )
 from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
+from agentsassemble.live_agent_quota import quota_fields_for_viewer
 from agentsassemble.live_agents import PRESENCE_ERROR_REDACTED, _looks_sensitive_presence_error
 from agentsassemble.meeting_events import clean_lobby_text
 
@@ -90,18 +91,26 @@ def filter_live_agent_roster(
     return filtered
 
 
-def safe_live_agent_roster_payload(payload: dict[str, object]) -> dict[str, object]:
+def safe_live_agent_roster_payload(
+    payload: dict[str, object],
+    *,
+    quota_viewer: dict[str, object] | None = None,
+) -> dict[str, object]:
     agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
     return {
         "agents": [
-            safe_live_agent_roster_agent(item)
+            safe_live_agent_roster_agent(item, quota_viewer=quota_viewer)
             for item in agents
             if isinstance(item, dict)
         ]
     }
 
 
-def safe_live_agent_roster_agent(agent: dict[str, object]) -> dict[str, object]:
+def safe_live_agent_roster_agent(
+    agent: dict[str, object],
+    *,
+    quota_viewer: dict[str, object] | None = None,
+) -> dict[str, object]:
     safe_agent: dict[str, object] = {}
     context_contract = live_agent_context_contract(agent.get("provider_kind"), agent.get("connection_kind"))
     admission_evidence_source = safe_live_agent_admission_evidence_source(agent.get("admission_evidence_source"))
@@ -166,6 +175,7 @@ def safe_live_agent_roster_agent(agent: dict[str, object]) -> dict[str, object]:
         safe_agent["context_durability"] = safe_live_agent_context_durability(context_contract["context_durability"])
     if "sandbox_enforcement" not in safe_agent and ("provider_kind" in agent or "connection_kind" in agent):
         safe_agent["sandbox_enforcement"] = safe_live_agent_sandbox_enforcement(context_contract["sandbox_enforcement"])
+    safe_agent.update(quota_fields_for_viewer(agent, quota_viewer))
     return safe_agent
 
 

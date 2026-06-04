@@ -110,6 +110,7 @@ import {
   type RoomGuestSession,
 } from "./lib/roomGuestSession";
 import { inviteFriendDmMessage, remoteClientPacketPreview } from "./lib/roomInviteCopy";
+import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
 import { isActivePresence } from "./lib/presenceStatus";
 import {
   sideChatEventsForThreadContext,
@@ -332,7 +333,10 @@ export default function App() {
 
   const guestMeetingId = guestSession?.meetingId || guestInvite?.meetingId || "";
   const guestReadOnly = guestInvite?.inviteScope === "read_only";
-  const flowFetcher = useCallback(() => fetchLiveAgentFlow(guestMeetingId), [guestMeetingId]);
+  const flowFetcher = useCallback(
+    () => fetchLiveAgentFlow(guestMeetingId, guestSession?.sessionToken || ""),
+    [guestMeetingId, guestSession?.sessionToken]
+  );
   const [flowData, , flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
   const flow = flowData?.flow ?? { status: "idle" };
   const processFetcher = useCallback((): Promise<LiveAgentProcessesResponse> => {
@@ -373,6 +377,27 @@ export default function App() {
         (group) => group.meeting_id && group.meeting_id === activeRoom.meetingId
       ),
     [activeRoom.meetingId, processData?.groups]
+  );
+  const guestOwnedAgentIds = useMemo(() => {
+    const agentId = guestSession?.agentId || "";
+    return agentId ? [agentId, `${agentId}-ai`] : [];
+  }, [guestSession?.agentId]);
+  const localProcessAgentIds = useMemo(
+    () =>
+      guestLocked
+        ? []
+        : (activeProcessGroup?.agents || [])
+            .map((agent) => agent.agent_id)
+            .filter(Boolean),
+    [activeProcessGroup?.agents, guestLocked]
+  );
+  const quotaViewer = useMemo<AgentQuotaVisibilityViewer>(
+    () => ({
+      ownedAgentIds: guestOwnedAgentIds,
+      localProcessAgentIds,
+      hostCanViewLocalAgentQuotas: !guestLocked,
+    }),
+    [guestLocked, guestOwnedAgentIds, localProcessAgentIds]
   );
   const refreshSessionSurfaces = useCallback(() => {
     refreshProcesses();
@@ -1551,6 +1576,7 @@ export default function App() {
                 channelNotifications={activeChannelSettings}
                 sessionGroup={activeProcessGroup}
                 onSessionActionComplete={refreshSessionSurfaces}
+                quotaViewer={quotaViewer}
               />
             </section>
           ) : (

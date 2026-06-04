@@ -65,6 +65,7 @@ from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 from agentsassemble.live_session_transport import terminal_sessions_supported
+from agentsassemble.room_invite import reset_state as reset_room_invite_state
 
 
 def _read_sse_frame(response, timeout: float = 3.0) -> str:
@@ -8156,6 +8157,8 @@ class GuiServerTests(unittest.TestCase):
                             "join_semantics": "env:SECRET_TOKEN",
                             "context_durability": "/private/provider-context",
                             "sandbox_enforcement": "os_sandboxed",
+                            "quota_5h": "private-5h",
+                            "quota_windows": [{"label": "5-hour", "percent": 50}],
                         }
                     ).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
@@ -8176,6 +8179,10 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["agent"]["agent_id"], "gemini-cli")
             self.assertEqual(listed["agents"][0]["session_id"], "gemini-session")
             self.assertEqual(explicit_raw["agents"][0]["session_id"], "gemini-session")
+            self.assertNotIn("quota_5h", listed["agents"][0])
+            self.assertNotIn("quota_windows", listed["agents"][0])
+            self.assertNotIn("quota_5h", explicit_raw["agents"][0])
+            self.assertNotIn("quota_windows", explicit_raw["agents"][0])
             self.assertIsInstance(listed["agents"][0]["heartbeat_age_seconds"], int)
             self.assertGreaterEqual(listed["agents"][0]["heartbeat_age_seconds"], 0)
             self.assertEqual(listed["agents"][0]["stale_after_seconds"], 180)
@@ -18810,6 +18817,172 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("private-session-a", encoded)
             self.assertNotIn("secret-token", encoded)
             self.assertNotIn("private-config.json", encoded)
+
+    def test_live_agent_flow_redacts_quota_by_viewer_identity(self):
+        reset_room_invite_state()
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                connect_live_agent(
+                    root,
+                    {
+                        "agent_id": "host-codex",
+                        "display_name": "Host Codex",
+                        "provider_kind": "codex",
+                        "connection_kind": "live_session",
+                        "meeting_id": "room-1",
+                        "quota_5h": "host-5h",
+                        "quota_1w": "host-1w",
+                        "quota_state": "low",
+                        "quota_windows": [{"label": "5-hour", "percent": 80}],
+                    },
+                )
+                connect_live_agent(
+                    root,
+                    {
+                        "agent_id": "guest-a",
+                        "display_name": "Guest A",
+                        "provider_kind": "manual",
+                        "connection_kind": "native_remote_room_client",
+                        "meeting_id": "room-1",
+                        "quota_5h": "guest-5h",
+                        "quota_1w": "guest-1w",
+                        "quota_state": "ok",
+                        "quota_windows": [{"label": "5-hour", "percent": 20}],
+                    },
+                )
+                connect_live_agent(
+                    root,
+                    {
+                        "agent_id": "friend-remote",
+                        "display_name": "Friend Remote",
+                        "provider_kind": "claude_code",
+                        "connection_kind": "native_remote_room_client",
+                        "meeting_id": "room-1",
+                        "quota_5h": "friend-5h",
+                        "quota_state": "exhausted",
+                        "quota_windows": [{"label": "5-hour", "percent": 100}],
+                    },
+                )
+                connect_live_agent(
+                    root,
+                    {
+                        "agent_id": "other-room-agent",
+                        "display_name": "Other Room Agent",
+                        "provider_kind": "codex",
+                        "connection_kind": "live_session",
+                        "meeting_id": "room-2",
+                        "quota_5h": "other-room-5h",
+                    },
+                )
+                append_lobby_event(
+                    root,
+                    {
+                        "name": "Room 1",
+                        "side": "other",
+                        "kind": "message",
+                        "message": "visible room one",
+                        "flow_meeting_id": "room-1",
+                    },
+                    allow_flow_metadata=True,
+                )
+                append_lobby_event(
+                    root,
+                    {
+                        "name": "Room 2",
+                        "side": "other",
+                        "kind": "message",
+                        "message": "hidden room two",
+                        "flow_meeting_id": "room-2",
+                    },
+                    allow_flow_metadata=True,
+                )
+                server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    base = f"http://127.0.0.1:{server.server_port}"
+                    invite_request = Request(
+                        f"{base}/api/room-invite/create",
+                        data=json.dumps(
+                            {
+                                "meeting_id": "room-1",
+                                "agent_id": "guest-a",
+                                "display_name": "Guest A",
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(invite_request, timeout=4) as response:
+                        invite = json.loads(response.read().decode("utf-8"))
+                    join_request = Request(
+                        f"{base}/api/room-invite/join",
+                        data=json.dumps({"invite_token": invite["invite_token"]}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(join_request, timeout=4) as response:
+                        session = json.loads(response.read().decode("utf-8"))
+                    with urlopen(f"{base}/api/live-agent-flow?meeting_id=room-1", timeout=4) as response:
+                        host_payload = json.loads(response.read().decode("utf-8"))
+                    guest_request = Request(
+                        f"{base}/api/live-agent-flow?meeting_id=room-1",
+                        headers={"Authorization": f"Bearer {session['session_token']}"},
+                    )
+                    with urlopen(guest_request, timeout=4) as response:
+                        guest_payload = json.loads(response.read().decode("utf-8"))
+                finally:
+                    server.shutdown()
+                    server.server_close()
+
+            host_agents = {agent["agent_id"]: agent for agent in host_payload["agents"]}
+            guest_agents = {agent["agent_id"]: agent for agent in guest_payload["agents"]}
+            self.assertEqual(host_agents["host-codex"]["quota_5h"], "host-5h")
+            self.assertEqual(host_agents["host-codex"]["quota_windows"][0]["percent"], 80)
+            self.assertNotIn("quota_5h", host_agents["guest-a"])
+            self.assertNotIn("quota_windows", host_agents["friend-remote"])
+            self.assertNotIn("other-room-agent", host_agents)
+            self.assertEqual(guest_agents["guest-a"]["quota_5h"], "guest-5h")
+            self.assertEqual(guest_agents["guest-a"]["quota_state"], "ok")
+            self.assertEqual(guest_agents["guest-a"]["quota_windows"][0]["percent"], 20)
+            self.assertNotIn("quota_5h", guest_agents["host-codex"])
+            self.assertNotIn("quota_state", guest_agents["friend-remote"])
+            self.assertNotIn("other-room-agent", guest_agents)
+            self.assertIn("visible room one", json.dumps(guest_payload["events"]))
+            self.assertNotIn("hidden room two", json.dumps(guest_payload["events"]))
+        finally:
+            reset_room_invite_state()
+
+    def test_live_agent_flow_requires_session_token_for_non_loopback_host(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "host-codex",
+                    "display_name": "Host Codex",
+                    "provider_kind": "codex",
+                    "connection_kind": "live_session",
+                    "meeting_id": "room-1",
+                    "quota_5h": "host-5h",
+                },
+            )
+            server = ThreadingHTTPServer(("0.0.0.0", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-flow?meeting_id=room-1",
+                    headers={"Host": f"192.168.0.2:{server.server_port}"},
+                )
+                with self.assertRaises(HTTPError) as error_context:
+                    urlopen(request, timeout=4)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(error_context.exception.code, HTTPStatus.UNAUTHORIZED)
 
     def test_live_agent_flow_status_restores_latest_flow_from_lobby_log(self):
         with tempfile.TemporaryDirectory() as temp_dir:
