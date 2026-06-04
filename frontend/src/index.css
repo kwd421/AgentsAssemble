@@ -90,6 +90,7 @@ textarea {
 /* ---------------------------------------------------------------- shell ---- */
 
 .dc-shell {
+  --dc-sidebar-width: 312px;
   background: var(--color-server-rail);
 }
 
@@ -582,8 +583,41 @@ textarea {
 
 /* Channel sidebar. */
 .dc-sidebar {
-  width: 312px;
+  width: var(--dc-sidebar-width, 312px);
+  min-width: var(--dc-sidebar-width, 312px);
+  max-width: var(--dc-sidebar-width, 312px);
   background: var(--color-sidebar);
+}
+
+.dc-sidebar-resizer {
+  position: relative;
+  z-index: 20;
+  width: 8px;
+  min-width: 8px;
+  margin-left: -4px;
+  margin-right: -4px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.dc-sidebar-resizer::after {
+  position: absolute;
+  inset: 0 3px;
+  content: "";
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+
+.dc-sidebar-resizer:hover::after,
+.dc-sidebar-resizer:focus-visible::after,
+body[data-sidebar-resizing="true"] .dc-sidebar-resizer::after {
+  background: var(--color-accent);
+}
+
+body[data-sidebar-resizing="true"] {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .dc-sidebar-head {
@@ -3059,6 +3093,12 @@ textarea {
 }
 
 @media (max-width: 760px) {
+  .dc-sidebar {
+    width: min(var(--dc-sidebar-width, 312px), 76vw);
+    min-width: min(var(--dc-sidebar-width, 312px), 76vw);
+    max-width: min(var(--dc-sidebar-width, 312px), 76vw);
+  }
+
   .dc-mafia-composer {
     grid-template-columns: minmax(0, 1fr) 44px;
   }

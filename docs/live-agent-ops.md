@@ -57,6 +57,13 @@ flow with running/finished state, remaining time, participant status, and
 flow-scoped events; it should not present Play Mode chatter as transcript or
 decision evidence.
 
+The far-left room rail stays fixed so room switching remains stable. The
+channel/home sidebar beside it can be resized locally with a drag handle or
+keyboard focus on that separator. The browser clamps the width between 220px
+and 420px and persists the preference in local storage; this is not backend
+room state, is not shared with guests or other operators, and does not change
+room admission, provider startup, member roles, or official meeting records.
+
 The Discord home/friends surface is local room state, not an external Discord
 integration. Operators can save people, subscription AI, API, Local, remote, or
 unknown participants as room friends from previous sessions or active resident

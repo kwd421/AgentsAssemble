@@ -1,5 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Archive,
@@ -78,6 +83,14 @@ import {
   type RoomAppearance,
 } from "./lib/roomAppearance";
 import {
+  SIDEBAR_WIDTH_MAX,
+  SIDEBAR_WIDTH_MIN,
+  loadSidebarWidth,
+  normalizeSidebarWidth,
+  persistSidebarWidth,
+  resizedSidebarWidth,
+} from "./lib/sidebarResizeModel";
+import {
   persistRoomDockItems,
 } from "./lib/roomDockPersistence";
 import {
@@ -117,6 +130,12 @@ type ChannelMenuState = {
   x: number;
   y: number;
 } | null;
+
+type SidebarResizeState = {
+  startWidth: number;
+  startX: number;
+  currentWidth: number;
+};
 
 type InviteModalState = {
   roomId: string;
@@ -288,6 +307,8 @@ export default function App() {
   const [collapsedChannelSections, setCollapsedChannelSections] = useState<Record<string, boolean>>(
     {}
   );
+  const [channelSidebarWidth, setChannelSidebarWidth] = useState(loadSidebarWidth);
+  const sidebarResizeRef = useRef<SidebarResizeState | null>(null);
   const [mafiaGameId, setMafiaGameId] = useState(() => {
     try {
       const query = new URLSearchParams(window.location.search);
@@ -894,7 +915,88 @@ export default function App() {
     roomAppearances[activeRoomKey] || roomAppearances[activeRoom.id]
   );
   const activeRoomStyle = useMemo(() => roomAppearanceStyle(activeAppearance), [activeAppearance]);
+  const shellStyle = useMemo(
+    () =>
+      ({
+        ...activeRoomStyle,
+        "--dc-sidebar-width": `${channelSidebarWidth}px`,
+      }) as CSSProperties,
+    [activeRoomStyle, channelSidebarWidth]
+  );
   const activeMemberRoles = roomMemberRoles[activeRoomKey] || {};
+
+  function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const startWidth = normalizeSidebarWidth(channelSidebarWidth);
+    sidebarResizeRef.current = {
+      startWidth,
+      startX: event.clientX,
+      currentWidth: startWidth,
+    };
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Synthetic browser checks may not create a capturable native pointer.
+    }
+    document.body.dataset.sidebarResizing = "true";
+  }
+
+  function adjustSidebarWidthWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (
+      event.key !== "ArrowLeft" &&
+      event.key !== "ArrowRight" &&
+      event.key !== "Home" &&
+      event.key !== "End"
+    ) {
+      return;
+    }
+    event.preventDefault();
+    setChannelSidebarWidth((previous) => {
+      const next =
+        event.key === "Home"
+          ? SIDEBAR_WIDTH_MIN
+          : event.key === "End"
+            ? SIDEBAR_WIDTH_MAX
+            : normalizeSidebarWidth(previous + (event.key === "ArrowLeft" ? -16 : 16));
+      persistSidebarWidth(next);
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      const resize = sidebarResizeRef.current;
+      if (!resize) return;
+      const nextWidth = resizedSidebarWidth({
+        startWidth: resize.startWidth,
+        startX: resize.startX,
+        currentX: event.clientX,
+      });
+      resize.currentWidth = nextWidth;
+      setChannelSidebarWidth(nextWidth);
+    }
+
+    function finishSidebarResize() {
+      const resize = sidebarResizeRef.current;
+      if (!resize) return;
+      sidebarResizeRef.current = null;
+      delete document.body.dataset.sidebarResizing;
+      const finalWidth = normalizeSidebarWidth(resize.currentWidth);
+      persistSidebarWidth(finalWidth);
+      setChannelSidebarWidth(finalWidth);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", finishSidebarResize);
+    window.addEventListener("pointercancel", finishSidebarResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishSidebarResize);
+      window.removeEventListener("pointercancel", finishSidebarResize);
+      delete document.body.dataset.sidebarResizing;
+    };
+  }, []);
 
   useEffect(() => {
     if (!activeRoom.meetingId) return;
@@ -1068,7 +1170,7 @@ export default function App() {
   return (
     <div
       className="dc-shell flex h-screen max-h-screen overflow-hidden text-text-primary"
-      style={activeRoomStyle}
+      style={shellStyle}
       data-banner-preset={activeAppearance.bannerPreset}
     >
       <RoomRail
@@ -1173,60 +1275,60 @@ export default function App() {
           onStartAddFriend={openAddFriendView}
         />
       ) : (
-      <aside className="dc-sidebar flex shrink-0 flex-col" aria-label="채널 목록">
-        <header className="dc-sidebar-head shrink-0" data-tone={activeRoom.tone}>
-          <button
-            type="button"
-            className="dc-server-header-button"
-            onClick={(event) => openRoomMenu(event, activeRoom)}
-            onContextMenu={(event) => openRoomMenu(event, activeRoom)}
-            aria-label={`${activeRoom.label} 서버 메뉴 열기`}
-          >
-            <span className="truncate preserve-words">{activeRoom.label}</span>
-            <ChevronDown size={16} />
-          </button>
-          <div className="dc-sidebar-banner">
-            <span
-              className="dc-sidebar-server-icon"
-              data-has-image={Boolean(activeAppearance.iconImage)}
+        <aside className="dc-sidebar flex shrink-0 flex-col" aria-label="채널 목록">
+          <header className="dc-sidebar-head shrink-0" data-tone={activeRoom.tone}>
+            <button
+              type="button"
+              className="dc-server-header-button"
+              onClick={(event) => openRoomMenu(event, activeRoom)}
+              onContextMenu={(event) => openRoomMenu(event, activeRoom)}
+              aria-label={`${activeRoom.label} 서버 메뉴 열기`}
             >
-              {activeAppearance.iconImage ? "" : activeAppearance.iconLabel || activeRoom.shortLabel}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-black uppercase tracking-wide text-white/70">
-                Room
-              </p>
-              <p className="truncate text-[12px] font-semibold text-text-muted preserve-words">
-                {activeRoom.topic}
-              </p>
-            </div>
-            <span
-              className={`dc-sidebar-status ${
-                activeRoomFlowVisible && flowRunning ? "text-online" : "text-text-muted"
-              }`}
-            >
+              <span className="truncate preserve-words">{activeRoom.label}</span>
+              <ChevronDown size={16} />
+            </button>
+            <div className="dc-sidebar-banner">
               <span
-                className={`h-2 w-2 rounded-full ${statusDotClass(activeRoomFlowVisible ? flow.status : "idle")}`}
-                aria-hidden
-              />
-              {activeRoomFlowVisible ? statusText(flow.status) : "대기"}
-            </span>
-            {!guestLocked && (
-              <button
-                type="button"
-                className="dc-sidebar-invite-button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  inviteRoom(activeRoom.id);
-                }}
-                aria-label="서버에 초대하기"
-                title="서버에 초대하기"
+                className="dc-sidebar-server-icon"
+                data-has-image={Boolean(activeAppearance.iconImage)}
               >
-                <UserPlus size={20} />
-              </button>
-            )}
-          </div>
-        </header>
+                {activeAppearance.iconImage ? "" : activeAppearance.iconLabel || activeRoom.shortLabel}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-black uppercase tracking-wide text-white/70">
+                  Room
+                </p>
+                <p className="truncate text-[12px] font-semibold text-text-muted preserve-words">
+                  {activeRoom.topic}
+                </p>
+              </div>
+              <span
+                className={`dc-sidebar-status ${
+                  activeRoomFlowVisible && flowRunning ? "text-online" : "text-text-muted"
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${statusDotClass(activeRoomFlowVisible ? flow.status : "idle")}`}
+                  aria-hidden
+                />
+                {activeRoomFlowVisible ? statusText(flow.status) : "대기"}
+              </span>
+              {!guestLocked && (
+                <button
+                  type="button"
+                  className="dc-sidebar-invite-button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    inviteRoom(activeRoom.id);
+                  }}
+                  aria-label="서버에 초대하기"
+                  title="서버에 초대하기"
+                >
+                  <UserPlus size={20} />
+                </button>
+              )}
+            </div>
+          </header>
 
         <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3 chat-scroll" aria-label="채널">
           {CHANNEL_SECTIONS.map((section) => {
@@ -1307,6 +1409,18 @@ export default function App() {
         </footer>
       </aside>
       )}
+      <div
+        className="dc-sidebar-resizer"
+        role="separator"
+        tabIndex={0}
+        aria-label="좌측 패널 너비 조절"
+        aria-orientation="vertical"
+        aria-valuemin={SIDEBAR_WIDTH_MIN}
+        aria-valuemax={SIDEBAR_WIDTH_MAX}
+        aria-valuenow={channelSidebarWidth}
+        onPointerDown={startSidebarResize}
+        onKeyDown={adjustSidebarWidthWithKeyboard}
+      />
 
       {/* Central channel column */}
       <main className="dc-chat flex min-w-0 flex-1 flex-col" aria-label="채널 내용">
