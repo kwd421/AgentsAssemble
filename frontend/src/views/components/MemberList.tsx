@@ -28,6 +28,7 @@ import {
   roomContextSummaryBadges,
 } from "../../lib/agentLabels";
 import { participantTypeMeta } from "../../lib/participantTypes";
+import { isActivePresence, presenceStatusLabel } from "../../lib/presenceStatus";
 import ProviderTruthChips from "./ProviderTruthChips";
 
 export type RoleId = "human" | "director" | "implementer" | "reviewer" | "agent";
@@ -39,6 +40,7 @@ type MemberEntry = {
   displayName: string;
   detail: string;
   fullDetail?: string;
+  statusLabel?: string;
   role: RoleId;
   owner: boolean;
   active: boolean;
@@ -54,12 +56,12 @@ const ROLE_OPTIONS: Array<{ id: RoleId; label: string; icon: LucideIcon }> = [
 ];
 
 function isActive(agent: LiveAgent) {
-  return agent.status === "online" || agent.status === "working";
+  return isActivePresence(agent.status);
 }
 
 function statusDotClass(status: string) {
-  if (status === "working") return "bg-online live-pulse";
-  if (status === "online") return "bg-online";
+  if (status === "working" || status === "running") return "bg-online live-pulse";
+  if (status === "online" || status === "ready") return "bg-online";
   if (status === "idle") return "bg-idle";
   if (status === "error") return "bg-danger";
   return "bg-offline";
@@ -100,13 +102,17 @@ function inferAgentRole(agent: LiveAgent): RoleId {
 }
 
 function memberActive(member: RoomMember) {
-  return member.status === "online" || member.status === "working";
+  return isActivePresence(member.status);
 }
 
 function memberRole(member: RoomMember): RoleId {
   return ["human", "director", "implementer", "reviewer", "agent"].includes(member.role)
     ? member.role
     : "agent";
+}
+
+function memberStatusLabel(member: RoomMember) {
+  return presenceStatusLabel(member.status);
 }
 
 function inlineQuotaChips(agent: LiveAgent) {
@@ -221,6 +227,14 @@ function MemberRow({
           <p className="min-w-0 flex-1 truncate preserve-words" title={entry.fullDetail || entry.detail}>
             {entry.detail}
           </p>
+          {entry.member && entry.statusLabel && (
+            <span
+              className="dc-member-status-chip preserve-words"
+              data-state={entry.member.status === "pending" ? "attention" : entry.active ? "active" : "idle"}
+            >
+              {entry.statusLabel}
+            </span>
+          )}
         </div>
         <div className="dc-member-role-row">
           {canEditRoles ? (
@@ -390,7 +404,7 @@ function MemberDetailModal({
               </span>
             ))}
           </div>
-          <ProviderTruthChips badges={agentTruthBadges(entry.agent)} compact limit={8} />
+          <ProviderTruthChips badges={agentTruthBadges(entry.agent)} compact limit={4} />
           {lastObserved && <p className="dc-member-detail-note preserve-words">{lastObserved}</p>}
         </section>
         {hasProcessControls && (
@@ -507,6 +521,7 @@ export default function MemberList({
           displayName: member.display_name || member.participant_id,
           detail,
           fullDetail,
+          statusLabel: memberStatusLabel(member),
           role,
           owner: false,
           active: memberActive(member),

@@ -106,7 +106,7 @@ surface rather than silently counted as React parity.
 | `/api/live-agent-operations` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-preflight` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-process-events` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
-| `/api/live-agent-processes` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-processes` | GET | exact | `fetchLiveAgentProcesses()` | yes | React room connection panel polls visible provider/session process status without starting providers. |
 | `/api/live-agent-processes/start` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-processes/stop-running` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-processes/{group_id}/recover` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
@@ -130,9 +130,9 @@ surface rather than silently counted as React parity.
 | `/api/live-agent-sessions/readiness` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-sessions/recover` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-sessions/restart` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
-| `/api/live-agent-sessions/resume` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-sessions/resume` | POST | exact | `resumeLiveAgentSession()` | yes | React member detail panel can request resume for an existing provider session group; it does not create a new provider session. |
 | `/api/live-agent-sessions/start` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
-| `/api/live-agent-sessions/stop` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-sessions/stop` | POST | exact | `stopLiveAgentSession()` | yes | React member detail panel can stop an existing provider session group. |
 | `/api/live-agent-smoke` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agents` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agents` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
@@ -177,7 +177,7 @@ surface rather than silently counted as React parity.
 | `/api/public-invite/tunnel/stop` | POST | exact | `-` | no | Host public tunnel control endpoint; current Discord shell does not stop tunnels. |
 | `/api/release-health` | GET | exact | `fetchReleaseHealth()` | yes | React read-only release health catalog. |
 | `/api/release-health/queue` | GET | exact | `fetchReleaseHealthQueue()` | yes | React read-only release-health latest status projection. |
-| `/api/room-friends` | GET | exact | `fetchRoomFriends()` | yes | React home/friends screen reads persisted friends and active-session suggestions. |
+| `/api/room-friends` | GET | exact | `fetchRoomFriends(), deleteRoomFriend()` | yes | React home/friends screen reads persisted friends and active-session suggestions; the same query-shaped route is used by the saved-friend delete wrapper. |
 | `/api/room-friends` | POST | exact | `addRoomFriend()` | yes | React home/friends screen persists people, subscription AI, API, Local, remote, and unknown participants. |
 | `/api/room-friends/dm` | GET | exact | `fetchRoomFriendDm()` | yes | React profile panel reads a local DM log for a saved friend id only. |
 | `/api/room-friends/dm` | POST | exact | `postRoomFriendDm()` | yes | React profile panel stores local DM messages for saved friends; this does not send Discord messages, call providers, or create room membership. |
@@ -189,15 +189,16 @@ surface rather than silently counted as React parity.
 | `/api/room-members` | POST | exact | `upsertRoomMember()` | yes | React writes saved-friend invitations into selected-room member state; this does not start providers or send external Discord invites. |
 | `/api/side-chat` | GET | exact | `fetchSideChat()` | yes | React side-chat read/write. |
 | `/api/side-chat` | POST | exact | `postSideChatMessage()` | yes | React side-chat read/write. |
-| `/api/room-invite/create` | POST | exact | `-` | no | Host creates invite token for remote client; current Discord shell uses scoped browser guest URLs. |
-| `/api/room-invite/join` | POST | exact | `-` | no | Remote client joins room with invite token; current Discord shell uses scoped browser guest URLs. |
-| `/api/room-invite/leave` | POST | exact | `-` | no | Remote client leaves room and revokes session; current Discord shell uses scoped browser guest URLs. |
+| `/api/room-invite/create` | POST | exact | `createRoomInvite()` | yes | React invite modal creates scoped browser/remote-client invite links and AI entry packets without starting providers. |
+| `/api/room-invite/join` | POST | exact | `joinRoomInvite()` | yes | React `/join?token=` route exchanges an invite token for a single-room guest session. |
+| `/api/room-invite/leave` | POST | exact | `leaveRoomInvite()` | yes | React guest leave clears local guest state and best-effort revokes the room session. |
+| `/api/room-invite/companion` | POST | exact | `createCompanionRoomInvite()` | yes | React guest connection panel creates a same-room AI entry packet for an already-running AI controlled by the invite recipient. |
 | `/api/room-invite/sessions` | GET | exact | `-` | no | Host views active remote sessions; current Discord shell does not wrap token sessions. |
 | `/api/room-invite/invites` | GET | exact | `-` | no | Host views pending invites; current Discord shell does not wrap token sessions. |
 | `/api/room-invite/revoke` | POST | exact | `-` | no | Host revokes pending invite tokens; current Discord shell does not wrap token sessions. |
 | `/api/room/events` | GET | exact | `-` | no | Authenticated remote-client SSE stream; current Discord shell reads normal lobby/meeting streams. |
-| `/api/room/lobby` | GET | exact | `-` | no | Authenticated remote-client lobby read; current Discord shell reads normal lobby streams. |
-| `/api/room/say` | POST | exact | `-` | no | Authenticated remote-client lobby write; current Discord shell posts through the normal lobby composer. |
+| `/api/room/lobby` | GET | exact | `fetchRoomLobby()` | yes | React guest room view reads the admitted single-room lobby through the session token. |
+| `/api/room/say` | POST | exact | `postRoomSay()` | yes | React guest composer writes lobby messages using the admitted session identity. |
 | `/api/play/mafia/action` | POST | exact | `-` | no | Mafia night action endpoint. |
 
 ## Room-Event Contract Signals

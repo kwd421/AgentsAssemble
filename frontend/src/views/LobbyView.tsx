@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bot, Hash, MessageCircle, MoreHorizontal, Square, Zap } from "lucide-react";
 import {
   fetchLobby,
+  fetchRoomLobby,
   mergeLobbyEvents,
   startMafiaGame,
   startFlow,
@@ -12,6 +13,7 @@ import {
   type LobbyEvent,
   type MafiaGame,
 } from "../api";
+import { isActivePresence } from "../lib/presenceStatus";
 import type { RoomDockItem } from "../lib/roomDockModel";
 import LobbyAttachments from "./components/LobbyAttachments";
 import LobbyComposer from "./components/LobbyComposer";
@@ -19,6 +21,7 @@ import ChannelHeader from "./components/ChannelHeader";
 import type { ChannelHeaderActions } from "./components/ChannelHeader";
 import DiscordText from "./components/DiscordText";
 import type { RoomAppearance } from "../lib/roomAppearance";
+import type { LobbyThreadSummary } from "../lib/sideChatThreadModel";
 
 const ROOM_MODES = [
   { id: "council", label: "Council · 의사결정" },
@@ -50,9 +53,10 @@ function mafiaPlayersFromAgents(agents: LiveAgent[]) {
   }));
 }
 
-function MessageRow({ event, onOpenSideThread }: {
+function MessageRow({ event, onOpenSideThread, threadSummary }: {
   event: LobbyEvent;
   onOpenSideThread?: (event: LobbyEvent) => void;
+  threadSummary?: LobbyThreadSummary;
 }) {
   const systemLike = event.kind === "system" || event.kind === "flow_event";
   return (
@@ -92,6 +96,20 @@ function MessageRow({ event, onOpenSideThread }: {
           <DiscordText text={event.message || ""} />
         </p>
         <LobbyAttachments attachments={event.attachments} />
+        {threadSummary && onOpenSideThread && (
+          <button
+            type="button"
+            className="dc-message-thread-chip"
+            onClick={() => onOpenSideThread(event)}
+            aria-label={`스레드 보기, 답장 ${threadSummary.replyCount}개`}
+          >
+            <MessageCircle size={14} />
+            <span>답장 {threadSummary.replyCount}개</span>
+            <span className="dc-message-thread-last preserve-words">
+              {threadSummary.lastReplyName || "사이드"} · {timeLabel(threadSummary.lastReplyAt)}
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -112,6 +130,8 @@ export default function LobbyView({
   headerActions,
   appearance,
   onOpenSideThread,
+  threadSummaries = {},
+  roomSessionToken = "",
 }: {
   activeRoom: RoomDockItem;
   flow: FlowState;
@@ -127,6 +147,8 @@ export default function LobbyView({
   headerActions?: ChannelHeaderActions;
   appearance?: RoomAppearance;
   onOpenSideThread?: (event: LobbyEvent) => void;
+  threadSummaries?: Record<string, LobbyThreadSummary>;
+  roomSessionToken?: string;
 }) {
   const [events, setEvents] = useState<LobbyEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -137,9 +159,7 @@ export default function LobbyView({
   const [busy, setBusy] = useState(false);
 
   const isRunning = flow.status === "running";
-  const readyAgents = agents.filter(
-    (agent) => agent.status === "online" || agent.status === "working"
-  );
+  const readyAgents = agents.filter((agent) => isActivePresence(agent.status));
   const mentionables = useMemo(
     () =>
       roomMentionables?.length
@@ -173,7 +193,8 @@ export default function LobbyView({
     setEvents([]);
     setLoaded(false);
     function refreshLobby() {
-      fetchLobby(activeRoom.meetingId)
+      const lobbyRequest = roomSessionToken ? fetchRoomLobby(roomSessionToken) : fetchLobby(activeRoom.meetingId);
+      lobbyRequest
         .then((data) => {
           if (cancelled) return;
           const nextEvents = Array.isArray(data.events) ? data.events : [];
@@ -190,7 +211,7 @@ export default function LobbyView({
       cancelled = true;
       window.clearInterval(refreshId);
     };
-  }, [activeRoom.meetingId]);
+  }, [activeRoom.meetingId, roomSessionToken]);
 
   const handleSSE = useCallback((incoming: LobbyEvent[]) => {
     setEvents((previous) => {
@@ -203,7 +224,10 @@ export default function LobbyView({
     });
   }, []);
 
-  useEffect(() => subscribeLobby(handleSSE, undefined, activeRoom.meetingId), [activeRoom.meetingId, handleSSE]);
+  useEffect(() => {
+    if (roomSessionToken) return undefined;
+    return subscribeLobby(handleSSE, undefined, activeRoom.meetingId);
+  }, [activeRoom.meetingId, handleSSE, roomSessionToken]);
 
   const handleLobbyPosted = useCallback((postedEvents: LobbyEvent[]) => {
     setEvents((previous) => mergeLobbyEvents(previous, postedEvents));
@@ -391,7 +415,14 @@ export default function LobbyView({
             아직 채팅 메시지가 없습니다. 첫 메시지를 남겨 보세요.
           </p>
         ) : (
-          visibleEvents.map((event) => <MessageRow key={event.id} event={event} onOpenSideThread={onOpenSideThread} />)
+          visibleEvents.map((event) => (
+            <MessageRow
+              key={event.id}
+              event={event}
+              onOpenSideThread={onOpenSideThread}
+              threadSummary={threadSummaries[event.id]}
+            />
+          ))
         )}
       </div>
 
@@ -401,6 +432,7 @@ export default function LobbyView({
           meetingId={activeRoom.meetingId}
           onPosted={handleLobbyPosted}
           mentionables={mentionables}
+          roomSessionToken={roomSessionToken}
           disabledReason={!canPostMessages ? "읽기 전용 초대입니다. 이 방은 보기만 가능합니다." : undefined}
         />
       </div>

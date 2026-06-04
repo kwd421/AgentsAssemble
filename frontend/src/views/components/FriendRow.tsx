@@ -3,15 +3,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { MessageCircle, MoreVertical, Trash2, UserPlus } from "lucide-react";
 import type { RoomFriend } from "../../api";
 import { participantTypeMeta } from "../../lib/participantTypes";
-
-function statusLabel(status: string) {
-  if (status === "online") return "온라인";
-  if (status === "working") return "작업 중";
-  if (status === "idle") return "자리 비움";
-  if (status === "error") return "오류";
-  if (status === "offline") return "오프라인";
-  return "상태 미정";
-}
+import { presenceStatusLabel } from "../../lib/presenceStatus";
 
 export default function FriendRow({
   friend,
@@ -60,7 +52,7 @@ export default function FriendRow({
           {detail}
         </span>
       </span>
-      <span className="dc-friend-status">{statusLabel(friend.status)}</span>
+      <span className="dc-friend-status">{presenceStatusLabel(friend.status)}</span>
     </>
   );
 
@@ -74,11 +66,16 @@ export default function FriendRow({
     function closeOnViewportChange() {
       setMenuOpen(false);
     }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
     window.addEventListener("mousedown", closeOnOutside);
+    window.addEventListener("keydown", closeOnEscape);
     window.addEventListener("resize", closeOnViewportChange);
     window.addEventListener("scroll", closeOnViewportChange, true);
     return () => {
       window.removeEventListener("mousedown", closeOnOutside);
+      window.removeEventListener("keydown", closeOnEscape);
       window.removeEventListener("resize", closeOnViewportChange);
       window.removeEventListener("scroll", closeOnViewportChange, true);
     };

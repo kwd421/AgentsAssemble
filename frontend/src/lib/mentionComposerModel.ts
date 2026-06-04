@@ -13,11 +13,11 @@ function cleanMentionName(name: string) {
 export function mentionQueryAtCursor(message: string, cursor = message.length): MentionQuery | null {
   const safeCursor = Math.max(0, Math.min(cursor, message.length));
   const beforeCursor = message.slice(0, safeCursor);
-  const match = /(^|\s)@([^\s@#:`*~<>]{0,32})$/u.exec(beforeCursor);
+  const match = /(^|\s)@((?:[^\s@#:`*~<>\r\n][^@#:`*~<>\r\n]{0,47})?)$/u.exec(beforeCursor);
   if (!match) return null;
   return {
     start: beforeCursor.length - match[2].length - 1,
-    query: match[2].toLowerCase(),
+    query: match[2].replace(/\s+/g, " ").trim().toLowerCase(),
   };
 }
 
@@ -55,8 +55,14 @@ export function insertMentionText(
   name: string
 ): { message: string; cursor: number } {
   const safeCursor = Math.max(0, Math.min(cursor, message.length));
+  if (!query) {
+    return {
+      message,
+      cursor: safeCursor,
+    };
+  }
   const token = `${formatMentionToken(name)} `;
-  const start = query ? Math.max(0, Math.min(query.start, safeCursor)) : safeCursor;
+  const start = Math.max(0, Math.min(query.start, safeCursor));
   const nextMessage = `${message.slice(0, start)}${token}${message.slice(safeCursor)}`;
   return {
     message: nextMessage,

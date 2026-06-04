@@ -2,6 +2,11 @@ import type { LucideIcon } from "lucide-react";
 import { Bot, Gamepad2, LayoutDashboard, Radio, Sparkles, Users } from "lucide-react";
 import type { RoomAppearance } from "./roomAppearance";
 import {
+  joinInviteTokenFromUrl,
+  loadRoomGuestSession,
+  type RoomGuestSession,
+} from "./roomGuestSession";
+import {
   loadRoomDockItems,
   type PersistedRoomDockItem,
 } from "./roomDockPersistence";
@@ -20,6 +25,8 @@ export type RoomDockItem = {
 
 export type StartupRoute = {
   guestInvite: RoomDockItem | null;
+  guestSession: RoomGuestSession | null;
+  guestJoinToken: string;
   directRoom: RoomDockItem | null;
   mafiaRoom: RoomDockItem | null;
   startupRooms: RoomDockItem[];
@@ -174,6 +181,36 @@ export function roomFromInviteParams(): RoomDockItem | null {
   }
 }
 
+export function roomFromGuestSession(session: RoomGuestSession): RoomDockItem {
+  const label = session.meetingId || "초대받은 방";
+  return {
+    id: `guest-session-${session.meetingId || session.agentId}`,
+    label,
+    meetingId: session.meetingId,
+    topic: `${session.displayName || session.agentId}로 입장한 방`,
+    shortLabel: label.slice(0, 1).toUpperCase() || "G",
+    inviteScope: "room",
+    icon: Users,
+    createdAt: session.joinedAt,
+    tone: "resident",
+  };
+}
+
+function roomFromPendingJoinToken(token: string): RoomDockItem | null {
+  if (!token) return null;
+  return {
+    id: "guest-join-pending",
+    label: "초대 확인 중",
+    meetingId: "pending-join",
+    topic: "카톡 초대 링크로 방에 입장하는 중",
+    shortLabel: "G",
+    inviteScope: "room",
+    icon: Users,
+    createdAt: "",
+    tone: "resident",
+  };
+}
+
 export function roomFromDirectParams(): RoomDockItem | null {
   try {
     const query = new URLSearchParams(window.location.search);
@@ -235,7 +272,10 @@ function activeRoomIdForStartup(rooms: RoomDockItem[], routeRoom?: RoomDockItem 
 }
 
 export function createStartupRoute(): StartupRoute {
-  const guestInvite = roomFromInviteParams();
+  const guestJoinToken = joinInviteTokenFromUrl(window.location.href);
+  const guestSession = guestJoinToken ? null : loadRoomGuestSession();
+  const guestInvite =
+    roomFromInviteParams() || (guestSession ? roomFromGuestSession(guestSession) : roomFromPendingJoinToken(guestJoinToken));
   const directRoom = guestInvite ? null : roomFromDirectParams();
   const mafiaRoom = guestInvite || directRoom ? null : roomFromMafiaParams();
   const routeRoom = directRoom || mafiaRoom;
@@ -244,6 +284,8 @@ export function createStartupRoute(): StartupRoute {
     guestInvite || directRoom ? "lobby" : mafiaRoom ? "live" : "friends";
   return {
     guestInvite,
+    guestSession,
+    guestJoinToken,
     directRoom: routeRoom,
     mafiaRoom,
     startupRooms,

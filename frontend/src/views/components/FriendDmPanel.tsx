@@ -1,12 +1,19 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Send } from "lucide-react";
+import { Send, UserCircle } from "lucide-react";
 import {
   fetchRoomFriendDm,
   postRoomFriendDm,
   type RoomFriend,
   type RoomFriendDmEvent,
 } from "../../api";
+import {
+  clearFriendDmDraft,
+  friendDmDraftValue,
+  updateFriendDmDraft,
+  type FriendDmDrafts,
+} from "../../lib/friendDmDraftModel";
 import { participantTypeMeta } from "../../lib/participantTypes";
+import DiscordText from "./DiscordText";
 
 function timeLabel(value: string) {
   const date = new Date(value);
@@ -18,13 +25,15 @@ export default function FriendDmPanel({
   friend,
   focusSignal = 0,
   layout = "card",
+  onShowProfile,
 }: {
   friend: RoomFriend | null;
   focusSignal?: number;
   layout?: "card" | "channel";
+  onShowProfile?: (friend: RoomFriend) => void;
 }) {
   const [events, setEvents] = useState<RoomFriendDmEvent[]>([]);
-  const [draft, setDraft] = useState("");
+  const [draftsByFriend, setDraftsByFriend] = useState<FriendDmDrafts>({});
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [posting, setPosting] = useState(false);
@@ -32,6 +41,7 @@ export default function FriendDmPanel({
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const friendId = friend?.friend_id || "";
+  const draft = friendDmDraftValue(draftsByFriend, friendId);
   const meta = friend ? participantTypeMeta(friend.participant_type) : null;
   const Icon = meta?.icon;
   const placeholder = useMemo(
@@ -75,6 +85,10 @@ export default function FriendDmPanel({
     inputRef.current?.focus();
   }, [focusSignal, friendId]);
 
+  function setDraft(nextDraft: string) {
+    setDraftsByFriend((previous) => updateFriendDmDraft(previous, friendId, nextDraft));
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!friend || posting) return;
@@ -90,7 +104,7 @@ export default function FriendDmPanel({
         side: "mine",
       });
       setEvents(payload.events);
-      setDraft("");
+      setDraftsByFriend((previous) => clearFriendDmDraft(previous, friend.friend_id));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "로컬 DM 전송 실패");
     } finally {
@@ -111,7 +125,20 @@ export default function FriendDmPanel({
               : "외부 Discord로 전송되지 않습니다."}
           </p>
         </div>
-        {loading && <span>동기화 중</span>}
+        <div className="dc-friend-dm-head-actions">
+          {loading && <span>동기화 중</span>}
+          {layout === "channel" && onShowProfile && (
+            <button
+              type="button"
+              className="dc-friend-dm-profile-button"
+              onClick={() => onShowProfile(friend)}
+              aria-label={`${friend.display_name} 프로필 보기`}
+              title="프로필 보기"
+            >
+              <UserCircle size={17} />
+            </button>
+          )}
+        </div>
       </header>
       <div ref={scrollRef} className="dc-friend-dm-feed">
         {layout === "channel" && (
@@ -133,7 +160,9 @@ export default function FriendDmPanel({
                 <strong className="preserve-words">{item.name || (item.side === "mine" ? "나" : friend.display_name)}</strong>
                 <time>{timeLabel(item.created_at)}</time>
               </div>
-              <p className="preserve-words">{item.message}</p>
+              <p className="preserve-words">
+                <DiscordText text={item.message || ""} />
+              </p>
             </article>
           ))
         ) : (
@@ -146,6 +175,7 @@ export default function FriendDmPanel({
       <form className="dc-friend-dm-composer" onSubmit={submit}>
         <input
           ref={inputRef}
+          aria-label={`${friend.display_name} 로컬 DM 입력`}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder={placeholder}

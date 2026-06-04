@@ -1,15 +1,7 @@
 import { Bot, MessageCircle, Trash2 } from "lucide-react";
 import type { RoomFriend } from "../../api";
 import { participantTypeMeta } from "../../lib/participantTypes";
-
-function statusLabel(status: string) {
-  if (status === "online") return "온라인";
-  if (status === "working") return "작업 중";
-  if (status === "idle") return "자리 비움";
-  if (status === "error") return "오류";
-  if (status === "offline") return "오프라인";
-  return "상태 미정";
-}
+import { presenceStatusLabel } from "../../lib/presenceStatus";
 
 function friendInitial(friend: RoomFriend) {
   return (friend.display_name || friend.handle || "?").slice(0, 1).toUpperCase();
@@ -37,7 +29,7 @@ export default function FriendProfileCard({
   const Icon = meta.icon || Bot;
   const facts = [
     ["타입", meta.label],
-    ["상태", statusLabel(friend.status)],
+    ["상태", presenceStatusLabel(friend.status)],
     ["Provider", friend.provider_kind || "미지정"],
     ["연결", friend.connection_kind || "미지정"],
     ["최근 방", friend.last_meeting_id || "기록 없음"],

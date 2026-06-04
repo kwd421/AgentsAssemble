@@ -67,6 +67,17 @@ export interface RoomInviteCreateResponse {
   expires_at: string;
   room_url: string;
   join_url?: string;
+  remote_client_packet?: Record<string, unknown>;
+}
+
+export interface RoomInviteJoinResponse {
+  status: string;
+  session_token: string;
+  agent_id: string;
+  display_name: string;
+  meeting_id: string;
+  connection_kind: string;
+  expires_at: string;
 }
 
 export interface RoomFriendDmEvent {
@@ -644,6 +655,29 @@ async function postJson<T>(url: string, body: object): Promise<T> {
   return res.json();
 }
 
+async function fetchJsonWithToken<T>(url: string, sessionToken: string): Promise<T> {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${sessionToken}` },
+  });
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
+  return res.json();
+}
+
+async function postJsonWithToken<T>(url: string, body: object, sessionToken: string): Promise<T> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${sessionToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(await responseErrorMessage(res));
+  }
+  return res.json();
+}
+
 async function deleteJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { method: "DELETE" });
   if (!res.ok) {
@@ -783,6 +817,13 @@ export function fetchLobby(meetingId = "") {
   return fetchJson<{ events: LobbyEvent[] }>(`/api/lobby${queryString({ meeting_id: meetingId })}`);
 }
 
+export function fetchRoomLobby(sessionToken: string) {
+  return fetchJsonWithToken<{ events: LobbyEvent[]; session: { agent_id: string; display_name: string } }>(
+    "/api/room/lobby",
+    sessionToken
+  );
+}
+
 export function fetchRoomSettings(roomId: string): Promise<RoomSettings> {
   return fetchJson<{ room_id: string; settings: ApiRoomSettings }>(
     `/api/room-settings${queryString({ room_id: roomId })}`
@@ -875,6 +916,37 @@ export function createRoomInvite({
   });
 }
 
+export function joinRoomInvite({ inviteToken }: { inviteToken: string }) {
+  return postJson<RoomInviteJoinResponse>("/api/room-invite/join", {
+    invite_token: inviteToken,
+  });
+}
+
+export function createCompanionRoomInvite({
+  sessionToken,
+  agentId,
+  displayName,
+  ttlSeconds = 600,
+}: {
+  sessionToken: string;
+  agentId: string;
+  displayName: string;
+  ttlSeconds?: number;
+}) {
+  return postJsonWithToken<RoomInviteCreateResponse>("/api/room-invite/companion",
+    {
+      agent_id: agentId,
+      display_name: displayName,
+      ttl_seconds: ttlSeconds,
+    },
+    sessionToken
+  );
+}
+
+export function leaveRoomInvite({ sessionToken }: { sessionToken: string }) {
+  return postJsonWithToken<{ status: string }>("/api/room-invite/leave", {}, sessionToken);
+}
+
 export function fetchRoomFriendDm(friendId: string) {
   return fetchJson<RoomFriendDmResponse>(`/api/room-friends/dm${queryString({ friend_id: friendId })}`);
 }
@@ -953,6 +1025,24 @@ export function postLobbyMessage({
     attachments,
     flow_meeting_id: meetingId,
   });
+}
+
+export function postRoomSay({
+  sessionToken,
+  message,
+  attachments = [],
+}: {
+  sessionToken: string;
+  message: string;
+  attachments?: LobbyAttachmentRef[];
+}) {
+  return postJsonWithToken<LobbyPostResponse>("/api/room/say",
+    {
+      message,
+      attachments,
+    },
+    sessionToken
+  );
 }
 
 export function fetchSideChat(meetingId = "") {

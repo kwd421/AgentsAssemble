@@ -43,12 +43,13 @@ export default function MentionInput({
   const targetRef = inputRef || internalRef;
   const mentionListId = useId();
   const [activeOptionIndex, setActiveOptionIndex] = useState(0);
+  const [mentionCursor, setMentionCursor] = useState(value.length);
   const [dismissedMentionKey, setDismissedMentionKey] = useState("");
   const [suppressMentionSuggestions, setSuppressMentionSuggestions] = useState(false);
-  const mentionMatch = useMemo(() => {
-    const selectionStart = targetRef.current?.selectionStart ?? value.length;
-    return mentionQueryAtCursor(value, selectionStart);
-  }, [targetRef, value]);
+  const mentionMatch = useMemo(
+    () => mentionQueryAtCursor(value, mentionCursor),
+    [mentionCursor, value]
+  );
   const mentionQueryKey = mentionMatch ? `${mentionMatch.start}:${mentionMatch.query}` : "";
   const options = useMemo(
     () =>
@@ -65,11 +66,19 @@ export default function MentionInput({
   }, [mentionQueryKey]);
 
   useEffect(() => {
+    setMentionCursor((current) => Math.min(current, value.length));
+  }, [value.length]);
+
+  useEffect(() => {
     setActiveOptionIndex((current) => {
       if (options.length === 0) return 0;
       return Math.min(current, options.length - 1);
     });
   }, [options.length]);
+
+  function syncMentionCursor() {
+    setMentionCursor(targetRef.current?.selectionStart ?? value.length);
+  }
 
   function chooseMention(name: string) {
     const cursor = targetRef.current?.selectionStart ?? value.length;
@@ -77,16 +86,19 @@ export default function MentionInput({
     const next = insertMentionText(value, cursor, query, name);
     setDismissedMentionKey("");
     setSuppressMentionSuggestions(true);
+    setMentionCursor(next.cursor);
     onChange(next.message);
     window.setTimeout(() => {
       targetRef.current?.focus();
       targetRef.current?.setSelectionRange(next.cursor, next.cursor);
+      setMentionCursor(next.cursor);
     }, 0);
   }
 
   function handleInputChange(event: ChangeEvent<HTMLInputElement>) {
     setDismissedMentionKey("");
     setSuppressMentionSuggestions(false);
+    setMentionCursor(event.target.selectionStart ?? event.target.value.length);
     onChange(event.target.value);
   }
 
@@ -108,7 +120,7 @@ export default function MentionInput({
       return;
     }
 
-    if (event.key === "Enter") {
+    if (event.key === "Enter" || event.key === "Tab") {
       event.preventDefault();
       chooseMention(options[activeOptionIndex] || options[0]);
       return;
@@ -154,6 +166,9 @@ export default function MentionInput({
         value={value}
         onChange={handleInputChange}
         onKeyDown={handleMentionKeyDown}
+        onKeyUp={syncMentionCursor}
+        onClick={syncMentionCursor}
+        onSelect={syncMentionCursor}
         className={className}
         placeholder={placeholder}
         disabled={disabled}

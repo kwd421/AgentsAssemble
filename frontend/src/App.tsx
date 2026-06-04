@@ -11,6 +11,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import {
+  createCompanionRoomInvite,
   createRoomInvite,
   fetchLiveAgentFlow,
   fetchLiveAgentProcesses,
@@ -21,6 +22,8 @@ import {
   fetchMeetingLifecycle,
   fetchWorkroomQueueEvidence,
   fetchSideChat,
+  joinRoomInvite,
+  leaveRoomInvite,
   postRoomFriendDm,
   saveRoomSettings,
   upsertRoomMember,
@@ -65,7 +68,7 @@ import RoomInviteModal from "./views/components/RoomInviteModal";
 import RoomRail from "./views/components/RoomRail";
 import type { RoomMenuState } from "./views/components/RoomRail";
 import RoomSettingsModal from "./views/components/RoomSettingsModal";
-import SideChatDock, { type SideChatThreadContext } from "./views/components/SideChatDock";
+import SideChatDock from "./views/components/SideChatDock";
 import UserPanel from "./views/components/UserPanel";
 import {
   completeRoomAppearance,
@@ -83,10 +86,23 @@ import {
   inviteUrlForRoom,
   persistableRoom,
   roomFromFlow,
+  roomFromGuestSession,
   roomHasAgent,
   roomSettingsKey,
   type RoomDockItem,
 } from "./lib/roomDockModel";
+import {
+  persistRoomGuestSession,
+  roomGuestSessionFromJoinPayload,
+  type RoomGuestSession,
+} from "./lib/roomGuestSession";
+import { inviteFriendDmMessage, remoteClientPacketPreview } from "./lib/roomInviteCopy";
+import { isActivePresence } from "./lib/presenceStatus";
+import {
+  sideChatEventsForThreadContext,
+  threadSummariesForSideChat,
+  type SideChatThreadContext,
+} from "./lib/sideChatThreadModel";
 
 type Channel = "friends" | "lobby" | "live" | "board" | "records";
 
@@ -106,11 +122,42 @@ type InviteModalState = {
   roomId: string;
 } | null;
 
+type InviteRemoteClientPacketState = {
+  friendName: string;
+  preview: string;
+};
+
+type RoomSettingsSectionId =
+  | "settings-overview"
+  | "settings-appearance"
+  | "settings-channels"
+  | "settings-notify"
+  | "settings-invite";
+
 type RoomSettingsState = {
   roomId: string;
+  initialSectionId?: RoomSettingsSectionId;
 } | null;
 
 type RightPanelMode = "room-info" | "side-chat";
+
+function appendMentionableName(names: string[], seen: Set<string>, value?: string) {
+  const cleanName = String(value || "").trim();
+  const key = cleanName.toLowerCase();
+  if (!cleanName || seen.has(key)) return;
+  seen.add(key);
+  names.push(cleanName);
+}
+
+function appendAgentMentionables(names: string[], seen: Set<string>, agent: LiveAgent) {
+  appendMentionableName(names, seen, agent.display_name);
+  appendMentionableName(names, seen, agent.agent_id);
+}
+
+function appendMemberMentionables(names: string[], seen: Set<string>, member: RoomMember) {
+  appendMentionableName(names, seen, member.display_name);
+  appendMentionableName(names, seen, member.participant_id);
+}
 
 const CHANNELS: ChannelConfig[] = [
   { id: "lobby", label: "general", icon: Hash },
@@ -118,6 +165,8 @@ const CHANNELS: ChannelConfig[] = [
   { id: "board", label: "work-board", icon: LayoutDashboard },
   { id: "records", label: "records", icon: Archive },
 ];
+const LOBBY_CHANNEL_LABEL =
+  CHANNELS.find((channelConfig) => channelConfig.id === "lobby")?.label || "general";
 
 const CHANNEL_SECTIONS: Array<{ id: string; label: string; channels: Channel[] }> = [
   { id: "conversation", label: "Text Channels", channels: ["lobby"] },
@@ -197,7 +246,11 @@ function channelForActiveRoom(
 export default function App() {
   const [startupRoute] = useState(createStartupRoute);
   const guestInvite = startupRoute.guestInvite;
-  const guestLocked = Boolean(guestInvite);
+  const guestJoinToken = startupRoute.guestJoinToken;
+  const [guestSession, setGuestSession] = useState<RoomGuestSession | null>(
+    () => startupRoute.guestSession
+  );
+  const guestLocked = Boolean(guestInvite || guestSession || guestJoinToken);
   const [channel, setChannel] = useState<Channel>(() => startupRoute.initialChannel);
   const [homeFilter, setHomeFilter] = useState<HomeFilter>("friends");
   const [friendListFilter, setFriendListFilter] = useState<FriendListFilter>("online");
@@ -212,6 +265,11 @@ export default function App() {
   const [settingsModal, setSettingsModal] = useState<RoomSettingsState>(null);
   const [inviteCopyStatus, setInviteCopyStatus] = useState("");
   const [inviteFriendStatuses, setInviteFriendStatuses] = useState<Record<string, string>>({});
+  const [inviteRemoteClientPacket, setInviteRemoteClientPacket] =
+    useState<InviteRemoteClientPacketState>({ friendName: "", preview: "" });
+  const [guestJoinStatus, setGuestJoinStatus] = useState("");
+  const [guestAiPacketPreview, setGuestAiPacketPreview] = useState("");
+  const [guestAiPacketStatus, setGuestAiPacketStatus] = useState("");
   const [roomAppearances, setRoomAppearances] = useState<Record<string, RoomAppearance>>(() =>
     loadRoomAppearances()
   );
@@ -221,6 +279,7 @@ export default function App() {
   });
   const [selectedHomeFriendId, setSelectedHomeFriendId] = useState("");
   const [activeHomeDmFriendId, setActiveHomeDmFriendId] = useState("");
+  const [friendAddDraftName, setFriendAddDraftName] = useState("");
   const [roomMemberRoles, setRoomMemberRoles] = useState<Record<string, Record<string, string>>>({});
   const [roomMembersByRoom, setRoomMembersByRoom] = useState<Record<string, RoomMember[]>>({});
   const [roomChannelSettings, setRoomChannelSettings] = useState<
@@ -250,7 +309,7 @@ export default function App() {
   const [sideChatError, setSideChatError] = useState<Error | null>(null);
   const [sideChatThread, setSideChatThread] = useState<SideChatThreadContext | null>(null);
 
-  const guestMeetingId = guestInvite?.meetingId || "";
+  const guestMeetingId = guestSession?.meetingId || guestInvite?.meetingId || "";
   const guestReadOnly = guestInvite?.inviteScope === "read_only";
   const flowFetcher = useCallback(() => fetchLiveAgentFlow(guestMeetingId), [guestMeetingId]);
   const [flowData, , flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
@@ -298,6 +357,37 @@ export default function App() {
     refreshProcesses();
     refreshFlow();
   }, [refreshFlow, refreshProcesses]);
+
+  useEffect(() => {
+    if (!guestJoinToken || guestSession?.inviteToken === guestJoinToken) return;
+    let cancelled = false;
+    setGuestJoinStatus("초대 링크로 방에 입장 중...");
+    joinRoomInvite({ inviteToken: guestJoinToken })
+      .then((payload) => {
+        if (cancelled) return;
+        const nextSession = roomGuestSessionFromJoinPayload(guestJoinToken, payload);
+        persistRoomGuestSession(nextSession);
+        setGuestSession(nextSession);
+        const joinedRoom = roomFromGuestSession(nextSession);
+        setRooms([joinedRoom]);
+        setActiveRoomId(joinedRoom.id);
+        setChannel("lobby");
+        setGuestJoinStatus("");
+        try {
+          window.history.replaceState({}, "", window.location.pathname || "/join");
+        } catch {
+          // URL cleanup is best-effort; the session is already stored in memory.
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setGuestJoinStatus(error instanceof Error ? error.message : "초대 링크 입장 실패");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [guestJoinToken, guestSession?.inviteToken]);
 
   useEffect(() => {
     if (guestLocked) return;
@@ -412,7 +502,7 @@ export default function App() {
       sourceEventId: event.id,
       sourceName: event.name || "Room",
       sourceMessage: event.message || "",
-      channelLabel: activeRoom.label || activeRoom.meetingId || "채팅",
+      channelLabel: LOBBY_CHANNEL_LABEL,
     });
     setMembersOpen(true);
     setRightPanelMode("side-chat");
@@ -460,29 +550,23 @@ export default function App() {
   const scopedAgents = agents.filter((agent) => roomHasAgent(activeRoom, agent));
   const activeRoomKey = roomSettingsKey(activeRoom);
   const activeRoomMembers = roomMembersByRoom[activeRoomKey] || [];
-  const displayedSideChatEvents = sideChatThread
-    ? sideChatEvents.filter((event) => event.thread_source_event_id === sideChatThread.sourceEventId)
-    : sideChatEvents;
+  const displayedSideChatEvents = sideChatEventsForThreadContext(sideChatEvents, sideChatThread);
+  const sideChatThreadSummaries = useMemo(
+    () => threadSummariesForSideChat(sideChatEvents),
+    [sideChatEvents]
+  );
   const scopedMentionables = useMemo(
     () => {
       const seen = new Set<string>();
-      return [
-        "나",
-        ...scopedAgents.map((agent) => agent.display_name || agent.agent_id),
-        ...activeRoomMembers.map((member) => member.display_name || member.participant_id),
-      ].filter((name) => {
-        const cleanName = String(name || "").trim();
-        const key = cleanName.toLowerCase();
-        if (!cleanName || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+      const names: string[] = [];
+      appendMentionableName(names, seen, "나");
+      scopedAgents.forEach((agent) => appendAgentMentionables(names, seen, agent));
+      activeRoomMembers.forEach((member) => appendMemberMentionables(names, seen, member));
+      return names;
     },
     [activeRoomMembers, scopedAgents]
   );
-  const scopedOnlineCount = scopedAgents.filter(
-    (agent) => agent.status === "online" || agent.status === "working"
-  ).length;
+  const scopedOnlineCount = scopedAgents.filter((agent) => isActivePresence(agent.status)).length;
   const activeChannelSettings = roomChannelSettings[activeRoomKey] || {};
   const menuRoom = roomMenu ? rooms.find((room) => room.id === roomMenu.roomId) : undefined;
   const menuChannel = channelMenu
@@ -526,6 +610,10 @@ export default function App() {
   function changeHomeFilter(filter: HomeFilter) {
     setHomeFilter(filter);
     setActiveHomeDmFriendId("");
+    setFriendListFilter((previous) => {
+      if (previous !== "add") return previous;
+      return filter === "friends" ? "online" : "all";
+    });
   }
 
   function selectHomeFriend(friend: RoomFriend, intent: "profile" | "dm" = "profile") {
@@ -547,12 +635,13 @@ export default function App() {
     else setHomeFilter("friends");
   }
 
-  function openAddFriendView() {
+  function openAddFriendView(draftName = "") {
     setChannel("friends");
     setAdminOpen(false);
     setChannelMenu(null);
     setHomeFilter("friends");
     setActiveHomeDmFriendId("");
+    setFriendAddDraftName(draftName.trim());
     setFriendListFilter("add");
   }
 
@@ -605,22 +694,32 @@ export default function App() {
     setInviteModal({ roomId });
     setInviteCopyStatus("");
     setInviteFriendStatuses({});
+    setInviteRemoteClientPacket({ friendName: "", preview: "" });
     setRoomMenu(null);
     setChannelMenu(null);
   }
 
-  function openRoomSettings(roomId: string) {
+  function openRoomSettings(roomId: string, initialSectionId: RoomSettingsSectionId = "settings-overview") {
     if (guestLocked) return;
     setActiveRoomId(roomId);
     setAdminOpen(false);
-    setSettingsModal({ roomId });
+    setSettingsModal({ roomId, initialSectionId });
     setRoomMenu(null);
     setChannelMenu(null);
   }
 
   function leaveRoom(roomId: string) {
     if (guestLocked) {
+      const sessionToken = guestSession?.sessionToken || "";
+      persistRoomGuestSession(null);
+      setGuestSession(null);
+      if (sessionToken) {
+        void leaveRoomInvite({ sessionToken }).catch(() => {
+          // Local guest exit should not be blocked by a stale or expired server session.
+        });
+      }
       const url = new URL(window.location.href);
+      url.pathname = "/join";
       url.search = "";
       url.hash = "";
       window.location.href = url.toString();
@@ -675,26 +774,67 @@ export default function App() {
     setInviteCopyStatus(copied ? "복사됨" : "복사 실패");
   }
 
+  async function copyRemoteClientPacket() {
+    if (!inviteRemoteClientPacket.preview) return;
+    setInviteCopyStatus("");
+    const copied = await copyText(inviteRemoteClientPacket.preview);
+    setInviteCopyStatus(copied ? "AI 입장 패킷 복사됨" : "패킷 복사 실패");
+  }
+
+  async function createCompanionAiPacket() {
+    if (!guestSession?.sessionToken) return;
+    setGuestAiPacketStatus("AI 입장 패킷 생성 중...");
+    try {
+      const invite = await createCompanionRoomInvite({
+        sessionToken: guestSession.sessionToken,
+        agentId: `${guestSession.agentId || "friend"}-ai`,
+        displayName: `${guestSession.displayName || "Friend"} AI`,
+      });
+      const preview = remoteClientPacketPreview(invite.remote_client_packet);
+      setGuestAiPacketPreview(preview);
+      setGuestAiPacketStatus(preview ? "AI 입장 패킷 생성됨" : "AI 입장 패킷이 비어 있습니다");
+    } catch (error) {
+      setGuestAiPacketStatus(error instanceof Error ? error.message : "AI 입장 패킷 생성 실패");
+    }
+  }
+
+  async function copyGuestAiPacket() {
+    if (!guestAiPacketPreview) return;
+    const copied = await copyText(guestAiPacketPreview);
+    setGuestAiPacketStatus(copied ? "AI 입장 패킷 복사됨" : "AI 입장 패킷 복사 실패");
+  }
+
   async function inviteFriendToRoom(friend: RoomFriend) {
     if (!inviteModalRoom) return;
     const friendId = friend.friend_id;
+    const inviteRoomKey = roomSettingsKey(inviteModalRoom);
     setInviteFriendStatuses((previous) => ({ ...previous, [friendId]: "초대 중" }));
     try {
       let link = inviteUrl;
       const isAiFriend = friend.participant_type !== "human";
-      const isLiveSession = ["online", "working", "ready", "running"].includes(friend.status);
+      const isLiveSession = isActivePresence(friend.status);
+      const readOnlyInvite =
+        (inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room") === "read_only";
       const participantId = friend.source_agent_id || friend.friend_id;
       const memberStatus = isAiFriend ? (isLiveSession ? friend.status : "pending") : "invited";
+      let remotePacketPreview = "";
       try {
         const invite = await createRoomInvite({
           meetingId: inviteModalRoom.meetingId,
           agentId: participantId,
           displayName: friend.display_name,
         });
-        link = invite.join_url || link;
+        if (!readOnlyInvite) {
+          link = invite.join_url || link;
+          remotePacketPreview = isAiFriend ? remoteClientPacketPreview(invite.remote_client_packet) : "";
+        }
       } catch {
         // Public invite token creation can be host-token gated; the friend DM still carries the scoped room link.
       }
+      setInviteRemoteClientPacket({
+        friendName: remotePacketPreview ? friend.display_name : "",
+        preview: remotePacketPreview,
+      });
       const memberPayload = await upsertRoomMember({
         meeting_id: inviteModalRoom.meetingId,
         participant_id: participantId,
@@ -708,17 +848,19 @@ export default function App() {
       });
       setRoomMembersByRoom((previous) => ({
         ...previous,
-        [inviteModalRoom.meetingId]: memberPayload.members || [],
+        [inviteRoomKey]: memberPayload.members || [],
       }));
       await postRoomFriendDm({
         friendId,
         name: "AgentsAssemble",
         side: "mine",
-        message: isAiFriend
-          ? isLiveSession
-            ? `${inviteModalRoom.label} 호출: ${link}`
-            : `${inviteModalRoom.label} 초대 링크가 생성됐지만 이 AI 세션은 현재 실행 중이 아닙니다. provider 세션을 시작하거나 resume해야 참가할 수 있습니다: ${link}`
-          : `${inviteModalRoom.label} 초대: ${link}`,
+        message: inviteFriendDmMessage({
+          roomLabel: inviteModalRoom.label,
+          link,
+          isAiFriend,
+          isLiveSession,
+          readOnlyInvite,
+        }),
       });
       setInviteFriendStatuses((previous) => ({
         ...previous,
@@ -738,12 +880,16 @@ export default function App() {
   const settingsModalRoom = settingsModal
     ? rooms.find((room) => room.id === settingsModal.roomId)
     : undefined;
+  const settingsModalInitialSectionId = settingsModal?.initialSectionId;
   const inviteModalAppearance = inviteModalRoom
     ? completeRoomAppearance(
         roomAppearances[roomSettingsKey(inviteModalRoom)] || roomAppearances[inviteModalRoom.id]
       )
     : undefined;
   const inviteUrl = inviteModalRoom ? inviteUrlForRoom(inviteModalRoom, inviteModalAppearance) : "";
+  const inviteModalMembers = inviteModalRoom
+    ? roomMembersByRoom[roomSettingsKey(inviteModalRoom)] || []
+    : [];
   const activeAppearance = completeRoomAppearance(
     roomAppearances[activeRoomKey] || roomAppearances[activeRoom.id]
   );
@@ -772,15 +918,15 @@ export default function App() {
         }
         setRoomAppearances((previous) => ({
           ...previous,
-          [activeRoom.meetingId]: settings.appearance,
+          [activeRoomKey]: settings.appearance,
         }));
         setRoomMemberRoles((previous) => ({
           ...previous,
-          [activeRoom.meetingId]: settings.memberRoles,
+          [activeRoomKey]: settings.memberRoles,
         }));
         setRoomChannelSettings((previous) => ({
           ...previous,
-          [activeRoom.meetingId]: settings.channelSettings,
+          [activeRoomKey]: settings.channelSettings,
         }));
       })
       .catch(() => {
@@ -789,7 +935,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeRoom.meetingId]);
+  }, [activeRoom.meetingId, activeRoomKey]);
 
   useEffect(() => {
     if (!activeRoom.meetingId) return;
@@ -799,7 +945,7 @@ export default function App() {
         if (cancelled) return;
         setRoomMembersByRoom((previous) => ({
           ...previous,
-          [activeRoom.meetingId]: payload.members || [],
+          [activeRoomKey]: payload.members || [],
         }));
       })
       .catch(() => {
@@ -808,7 +954,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeRoom.meetingId]);
+  }, [activeRoom.meetingId, activeRoomKey]);
 
   function updateRoom(roomId: string, updates: Partial<RoomDockItem>) {
     setRooms((previous) =>
@@ -865,7 +1011,7 @@ export default function App() {
         .then((payload) => {
           setRoomMembersByRoom((previous) => ({
             ...previous,
-            [activeRoom.meetingId]: payload.members || [],
+            [key]: payload.members || [],
           }));
         })
         .catch(() => {
@@ -934,7 +1080,7 @@ export default function App() {
         channelIsFriends={channel === "friends"}
         menuRoom={menuRoom}
         roomMenu={roomMenu}
-        onHomeClick={() => (guestLocked ? goToChannel("lobby") : goToChannel("friends"))}
+        onHomeClick={() => goToChannel("friends")}
         onSelectRoom={selectRoom}
         onAddRoom={addFreshRoom}
         onOpenRoomMenu={openRoomMenu}
@@ -948,11 +1094,16 @@ export default function App() {
         <RoomInviteModal
           roomLabel={inviteModalRoom.label}
           inviteUrl={inviteUrl}
+          inviteScope={inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room"}
           friends={homeFriendsPayload.friends}
+          members={inviteModalMembers}
           friendStatuses={inviteFriendStatuses}
           copyStatus={inviteCopyStatus}
+          remoteClientPacketPreview={inviteRemoteClientPacket.preview}
+          remoteClientPacketFriendName={inviteRemoteClientPacket.friendName}
           onClose={() => setInviteModal(null)}
           onCopy={() => void copyInviteLink(inviteModalRoom, inviteModalAppearance)}
+          onCopyRemoteClientPacket={() => void copyRemoteClientPacket()}
           onInviteFriend={(friend) => void inviteFriendToRoom(friend)}
         />
       )}
@@ -960,6 +1111,7 @@ export default function App() {
       {settingsModalRoom && (
         <RoomSettingsModal
           room={settingsModalRoom}
+          initialSectionId={settingsModalInitialSectionId}
           appearance={completeRoomAppearance(
             roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
           )}
@@ -1016,6 +1168,7 @@ export default function App() {
           hasBackendError={Boolean(flowError)}
           friends={homeFriendsPayload.friends}
           selectedFriendId={selectedHomeFriendId}
+          activeDmFriendId={activeHomeDmFriendId}
           onFriendSelect={selectHomeFriend}
           onStartAddFriend={openAddFriendView}
         />
@@ -1140,7 +1293,7 @@ export default function App() {
               onSetNotifications={(notifications) =>
                 setChannelNotifications(channelMenu.channelId, notifications)
               }
-              onOpenSettings={() => openRoomSettings(activeRoom.id)}
+              onOpenSettings={() => openRoomSettings(activeRoom.id, "settings-channels")}
             />
           )}
         </nav>
@@ -1161,10 +1314,17 @@ export default function App() {
           <FriendsView
             typeFilter={homeFilter === "friends" ? null : homeFilter}
             filter={friendListFilter}
+            initialDisplayName={friendAddDraftName}
             onFilterChange={setFriendListFilter}
             onFriendsChanged={(payload) => {
+              const friendIds = new Set(payload.friends.map((friend) => friend.friend_id));
               setHomeFriendsPayload(payload);
-              setSelectedHomeFriendId((previous) => previous || payload.friends[0]?.friend_id || "");
+              setSelectedHomeFriendId((previous) => {
+                if (previous && friendIds.has(previous)) return previous;
+                if (previous) return "";
+                return payload.friends[0]?.friend_id || "";
+              });
+              setActiveHomeDmFriendId((previous) => (previous && friendIds.has(previous) ? previous : ""));
             }}
             selectedFriendId={selectedHomeFriendId}
             activeDmFriendId={activeHomeDmFriendId}
@@ -1179,16 +1339,18 @@ export default function App() {
             flow={scopedFlow}
             agents={scopedAgents}
             mentionables={scopedMentionables}
+            roomSessionToken={guestSession?.sessionToken || ""}
             refreshFlow={refreshFlow}
             onMafiaStarted={handleMafiaStarted}
             onFlowStarted={handleFlowStarted}
             canManageRoom={!guestLocked}
-            canPostMessages={!guestReadOnly}
+            canPostMessages={!guestReadOnly && (!guestJoinToken || Boolean(guestSession))}
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
             headerActions={channelHeaderActions("lobby")}
             appearance={activeAppearance}
             onOpenSideThread={openSideChatThread}
+            threadSummaries={sideChatThreadSummaries}
           />
         ) : channel === "live" ? (
           <LiveView
@@ -1268,6 +1430,10 @@ export default function App() {
                 onRoleChange={updateMemberRole}
                 flowStatus={activeRoomFlowVisible ? flow.status : "idle"}
                 guestLocked={guestLocked}
+                guestAiPacketPreview={guestAiPacketPreview}
+                guestAiPacketStatus={guestAiPacketStatus || guestJoinStatus}
+                onCreateCompanionAiPacket={() => void createCompanionAiPacket()}
+                onCopyGuestAiPacket={() => void copyGuestAiPacket()}
                 channelNotifications={activeChannelSettings}
                 sessionGroup={activeProcessGroup}
                 onSessionActionComplete={refreshSessionSurfaces}
@@ -1289,6 +1455,7 @@ export default function App() {
                 mentionables={scopedMentionables}
                 threadContext={sideChatThread}
                 onCloseThread={closeSideChatThread}
+                canPostMessages={!guestReadOnly}
               />
             </section>
           )}

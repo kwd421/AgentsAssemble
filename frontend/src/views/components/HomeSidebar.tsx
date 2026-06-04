@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Bot, Cloud, Compass, Cpu, Plus, Search, User, Users, Wifi } from "lucide-react";
 import type { RoomFriend } from "../../api";
+import { roomFriendMatchesSearch } from "../../lib/friendSearch";
 import UserPanel from "./UserPanel";
 
 const HOME_ITEMS = [
@@ -22,6 +23,7 @@ export default function HomeSidebar({
   hasBackendError,
   friends = [],
   selectedFriendId,
+  activeDmFriendId,
   onFriendSelect,
   onStartAddFriend,
 }: {
@@ -32,24 +34,17 @@ export default function HomeSidebar({
   hasBackendError: boolean;
   friends?: RoomFriend[];
   selectedFriendId?: string;
+  activeDmFriendId?: string;
   onFriendSelect?: (friend: RoomFriend, intent?: "profile" | "dm") => void;
-  onStartAddFriend?: () => void;
+  onStartAddFriend?: (draftName?: string) => void;
 }) {
   const [dmQuery, setDmQuery] = useState("");
+  const cleanDmQuery = dmQuery.trim();
   const filteredDirectMessages = useMemo(() => {
-    const needle = dmQuery.trim().toLowerCase();
-    const directMessages = friends.slice(0, 12);
-    if (!needle) return directMessages;
-    return directMessages.filter((friend) =>
-      [
-        friend.display_name,
-        friend.handle,
-        friend.provider_kind,
-        friend.participant_type,
-        friend.last_meeting_id,
-      ].some((value) => String(value || "").toLowerCase().includes(needle))
-    );
-  }, [dmQuery, friends]);
+    const needle = cleanDmQuery.toLowerCase();
+    if (!needle) return friends.slice(0, 12);
+    return friends.filter((friend) => roomFriendMatchesSearch(friend, needle));
+  }, [cleanDmQuery, friends]);
   return (
     <aside className="dc-sidebar dc-home-sidebar flex shrink-0 flex-col" aria-label="친구와 DM">
       <header className="dc-home-search">
@@ -72,7 +67,7 @@ export default function HomeSidebar({
               key={item.id}
               type="button"
               className="dc-home-nav-item"
-              data-active={activeFilter === item.id}
+              data-active={activeFilter === item.id && !activeDmFriendId}
               onClick={() => onFilterChange(item.id)}
             >
               <Icon size={20} />
@@ -97,7 +92,8 @@ export default function HomeSidebar({
                   type="button"
                   className="dc-dm-row"
                   data-status={friend.status || "offline"}
-                  data-active={selectedFriendId === friend.friend_id}
+                  data-profile-selected={selectedFriendId === friend.friend_id}
+                  data-active={activeDmFriendId === friend.friend_id}
                   onClick={() => onFriendSelect?.(friend, "dm")}
                   title={`${friend.display_name} · ${meta?.label || "미분류"}`}
                 >
@@ -114,10 +110,10 @@ export default function HomeSidebar({
                 </button>
               );
             })
-          ) : dmQuery.trim() ? (
-            <button type="button" className="dc-dm-row" onClick={() => onStartAddFriend?.()}>
+          ) : cleanDmQuery ? (
+            <button type="button" className="dc-dm-row" onClick={() => onStartAddFriend?.(cleanDmQuery)}>
               <Compass size={18} />
-              <span className="preserve-words">검색 결과가 없습니다</span>
+              <span className="preserve-words">"{cleanDmQuery}" 친구로 추가</span>
             </button>
           ) : (
             <button type="button" className="dc-dm-row" onClick={() => onStartAddFriend?.()}>

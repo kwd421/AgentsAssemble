@@ -119,10 +119,29 @@ class PublicInviteHttpTests(unittest.TestCase):
                                 "Authorization": f"Bearer {session_payload['session_token']}",
                             },
                         ),
+                            timeout=4,
+                        ) as response:
+                            lobby_payload = json.loads(response.read().decode("utf-8"))
+                    self.assertIn("events", lobby_payload)
+
+                    with urlopen(
+                        _json_request(
+                            f"{base}/api/room-invite/companion",
+                            {"agent_id": "friend-ai", "display_name": "Friend AI"},
+                            {
+                                **public_headers,
+                                "Authorization": f"Bearer {session_payload['session_token']}",
+                            },
+                        ),
                         timeout=4,
                     ) as response:
-                        lobby_payload = json.loads(response.read().decode("utf-8"))
-                    self.assertIn("events", lobby_payload)
+                        companion = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(companion["meeting_id"], "friend-room")
+                    self.assertEqual(companion["agent_id"], "friend-ai")
+                    self.assertEqual(
+                        companion["remote_client_packet"]["env"]["AGENTSASSEMBLE_ROOM_URL"],
+                        "https://shared-room.example.com",
+                    )
                 finally:
                     server.shutdown()
                     server.server_close()

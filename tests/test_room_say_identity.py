@@ -49,10 +49,14 @@ class TestRoomSayIdentity(unittest.TestCase):
             "display_name": "Review Guest",
         })
         self.assertIn("invite_token", invite)
+        packet = invite["remote_client_packet"]
+        self.assertEqual(packet["packet_kind"], "native_remote_room_client_entry_packet")
+        self.assertEqual(packet["env"]["AGENTSASSEMBLE_AGENT_ID"], "review-guest")
+        self.assertEqual(packet["http"]["say"]["url"], f"{self.url}/api/room/say")
 
         # 2. Join
         join = self._post("/api/room-invite/join", {
-            "invite_token": invite["invite_token"],
+            "invite_token": packet["env"]["AGENTSASSEMBLE_INVITE_TOKEN"],
             "meeting_id": "test-m",
         })
         self.assertEqual(join["status"], "admitted")
@@ -94,6 +98,43 @@ class TestRoomSayIdentity(unittest.TestCase):
 
         # Session must be revoked after leave
         self.assertIsNone(verify_session_token(session_token))
+
+    def test_joined_friend_can_create_companion_ai_packet_for_same_room(self):
+        invite = self._post("/api/room-invite/create", {
+            "meeting_id": "friend-room",
+            "agent_id": "friend-human",
+            "display_name": "Friend Human",
+        })
+        friend_join = self._post("/api/room-invite/join", {
+            "invite_token": invite["invite_token"],
+        })
+        friend_session_token = friend_join["session_token"]
+
+        companion = self._post("/api/room-invite/companion", {
+            "agent_id": "friend-ai",
+            "display_name": "Friend AI",
+        }, token=friend_session_token)
+
+        self.assertEqual(companion["meeting_id"], "friend-room")
+        self.assertEqual(companion["agent_id"], "friend-ai")
+        packet = companion["remote_client_packet"]
+        self.assertEqual(packet["packet_kind"], "native_remote_room_client_entry_packet")
+        self.assertEqual(packet["agent"]["meeting_id"], "friend-room")
+        self.assertEqual(packet["agent"]["agent_id"], "friend-ai")
+
+        ai_join = self._post("/api/room-invite/join", {
+            "invite_token": packet["env"]["AGENTSASSEMBLE_INVITE_TOKEN"],
+        })
+        ai_session_token = ai_join["session_token"]
+        event_resp = self._post("/api/room/say", {
+            "message": "friend ai is here",
+        }, token=ai_session_token)
+
+        event = event_resp["event"]
+        self.assertEqual(event["flow_meeting_id"], "friend-room")
+        self.assertEqual(event["actor_id"], "friend-ai")
+        self.assertEqual(event["name"], "Friend AI")
+        self.assertEqual(event["message"], "friend ai is here")
 
 
 if __name__ == "__main__":

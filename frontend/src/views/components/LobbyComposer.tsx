@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import { AtSign, Gift, Paperclip, Send, Smile, Sparkles, Sticker, X } from "lucide-react";
 import {
   postLobbyMessage,
+  postRoomSay,
   uploadLobbyAttachment,
   type LobbyAttachmentRef,
   type LobbyEvent,
@@ -72,11 +73,13 @@ export default function LobbyComposer({
   onPosted,
   mentionables = [],
   disabledReason,
+  roomSessionToken = "",
 }: {
   meetingId: string;
   onPosted: (events: LobbyEvent[]) => void;
   mentionables?: string[];
   disabledReason?: string;
+  roomSessionToken?: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -87,6 +90,7 @@ export default function LobbyComposer({
   const [error, setError] = useState("");
   const [accessoryNotice, setAccessoryNotice] = useState("");
   const disabled = Boolean(disabledReason);
+  const canUploadAttachments = !roomSessionToken;
   const canSubmit = Boolean(message.trim() || pendingAttachments.length) && !busy && !uploading && !disabled;
 
   function insertText(text: string) {
@@ -109,7 +113,7 @@ export default function LobbyComposer({
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    if (disabled) return;
+    if (disabled || !canUploadAttachments) return;
     const selected = Array.from(event.currentTarget.files || []);
     event.currentTarget.value = "";
     if (!selected.length) return;
@@ -157,14 +161,18 @@ export default function LobbyComposer({
     setBusy(true);
     setError("");
     try {
-      const payload = await postLobbyMessage({
+      const payload = await (roomSessionToken ? postRoomSay({
+        sessionToken: roomSessionToken,
+        message: trimmed,
+        attachments: draftAttachments,
+      }) : postLobbyMessage({
         name: currentLobbyName(),
         side: "mine",
         kind: "message",
         message: trimmed,
         attachments: draftAttachments,
         meetingId,
-      });
+      }));
       const cleared = lobbySubmitSuccessDraft<LobbyAttachmentRef>();
       setMessage(cleared.message);
       setPendingAttachments(cleared.pendingAttachments);
@@ -252,7 +260,13 @@ export default function LobbyComposer({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          disabled={disabled || busy || uploading || pendingAttachments.length >= MAX_ATTACHMENTS_PER_EVENT}
+          disabled={
+            disabled ||
+            !canUploadAttachments ||
+            busy ||
+            uploading ||
+            pendingAttachments.length >= MAX_ATTACHMENTS_PER_EVENT
+          }
           className="dc-composer-button"
           aria-label="첨부 추가"
           title={`첨부 ${pendingAttachments.length}/${MAX_ATTACHMENTS_PER_EVENT}`}

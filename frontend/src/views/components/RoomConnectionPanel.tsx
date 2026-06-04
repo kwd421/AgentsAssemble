@@ -1,10 +1,11 @@
-import { Radio, ShieldCheck, UserPlus, Wifi } from "lucide-react";
+import { Bot, Copy, Radio, ShieldCheck, UserPlus, Wifi } from "lucide-react";
 import type {
   ChannelNotificationSetting,
   LiveAgent,
   LiveAgentProcessGroup,
   RoomMember,
 } from "../../api";
+import { isActivePresence } from "../../lib/presenceStatus";
 import type { RoomAppearance } from "../../lib/roomAppearance";
 import MemberList, { type RoleId } from "./MemberList";
 
@@ -25,6 +26,10 @@ type RoomConnectionPanelProps = {
   onRoleChange?: (memberId: string, role: RoleId) => void;
   flowStatus?: string;
   guestLocked?: boolean;
+  guestAiPacketPreview?: string;
+  guestAiPacketStatus?: string;
+  onCreateCompanionAiPacket?: () => void;
+  onCopyGuestAiPacket?: () => void;
   channelNotifications?: Record<string, { notifications: ChannelNotificationSetting; lastReadAt?: string }>;
   sessionGroup?: LiveAgentProcessGroup;
   onSessionActionComplete?: () => void;
@@ -50,7 +55,7 @@ function roomToneLabel(tone: string): string {
 }
 
 function activeAgentCount(agents: LiveAgent[]): number {
-  return agents.filter((agent) => agent.status === "online" || agent.status === "working").length;
+  return agents.filter((agent) => isActivePresence(agent.status)).length;
 }
 
 function mutedChannelCount(
@@ -68,6 +73,10 @@ export default function RoomConnectionPanel({
   onRoleChange,
   flowStatus,
   guestLocked = false,
+  guestAiPacketPreview = "",
+  guestAiPacketStatus = "",
+  onCreateCompanionAiPacket,
+  onCopyGuestAiPacket,
   channelNotifications,
   sessionGroup,
   onSessionActionComplete,
@@ -116,6 +125,47 @@ export default function RoomConnectionPanel({
           {mutedCount > 0 ? ` · muted ${mutedCount}` : ""}
         </p>
       </section>
+      {guestLocked && onCreateCompanionAiPacket && (
+        <section className="dc-room-connection-card" aria-label="게스트 AI 세션 연결">
+          <div className="dc-room-connection-title">
+            <span className="dc-room-connection-icon" aria-hidden>
+              <Bot size={18} />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-black text-text-primary preserve-words">
+                AI 세션 패킷 만들기
+              </p>
+              <p className="truncate text-[11px] text-text-muted preserve-words">
+                이미 실행 중인 내 AI에게 이 방 입장 패킷을 전달합니다.
+              </p>
+            </div>
+          </div>
+          {guestAiPacketPreview && (
+            <textarea
+              className="dc-invite-packet-textarea"
+              value={guestAiPacketPreview}
+              readOnly
+              onFocus={(event) => event.currentTarget.select()}
+              aria-label="게스트 AI 세션 입장 패킷"
+            />
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" className="dc-invite-copy-button" onClick={onCreateCompanionAiPacket}>
+              <Bot size={15} />
+              패킷 생성
+            </button>
+            {guestAiPacketPreview && (
+              <button type="button" className="dc-invite-copy-button" onClick={onCopyGuestAiPacket}>
+                <Copy size={15} />
+                패킷 복사
+              </button>
+            )}
+          </div>
+          <p className="dc-room-connection-note preserve-words">
+            {guestAiPacketStatus || "패킷은 이 방 범위의 join/read/say/leave 요청만 담습니다."}
+          </p>
+        </section>
+      )}
       <MemberList
         agents={agents}
         members={members}

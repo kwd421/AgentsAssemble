@@ -1,58 +1,7 @@
 import type { ReactNode } from "react";
+import { tokenizeDiscordText, type DiscordTextToken } from "../../lib/discordTextTokens";
 
-type TokenKind = "text" | "mention" | "channel" | "code" | "bold" | "italic" | "strike";
-
-type Token = {
-  kind: TokenKind;
-  value: string;
-};
-
-const INLINE_PATTERN =
-  /(<@[^>\r\n]{1,80}>|`[^`]+`|\*\*[^*]+\*\*|~~[^~]+~~|\*[^*]+\*|@[^\s@#:`*~<>]+|#[^\s@#:`*~<>]+)/gu;
-
-function trimWrapper(value: string, wrapper: string) {
-  return value.slice(wrapper.length, value.length - wrapper.length);
-}
-
-function classifyInline(value: string): Token {
-  if (value.startsWith("<@") && value.endsWith(">")) {
-    return { kind: "mention", value: `@${value.slice(2, -1)}` };
-  }
-  if (value.startsWith("@")) return { kind: "mention", value };
-  if (value.startsWith("#")) return { kind: "channel", value };
-  if (value.startsWith("`") && value.endsWith("`")) {
-    return { kind: "code", value: trimWrapper(value, "`") };
-  }
-  if (value.startsWith("**") && value.endsWith("**")) {
-    return { kind: "bold", value: trimWrapper(value, "**") };
-  }
-  if (value.startsWith("~~") && value.endsWith("~~")) {
-    return { kind: "strike", value: trimWrapper(value, "~~") };
-  }
-  if (value.startsWith("*") && value.endsWith("*")) {
-    return { kind: "italic", value: trimWrapper(value, "*") };
-  }
-  return { kind: "text", value };
-}
-
-function tokenizeInline(text: string): Token[] {
-  const tokens: Token[] = [];
-  let cursor = 0;
-  for (const match of text.matchAll(INLINE_PATTERN)) {
-    const index = match.index ?? 0;
-    if (index > cursor) {
-      tokens.push({ kind: "text", value: text.slice(cursor, index) });
-    }
-    tokens.push(classifyInline(match[0]));
-    cursor = index + match[0].length;
-  }
-  if (cursor < text.length) {
-    tokens.push({ kind: "text", value: text.slice(cursor) });
-  }
-  return tokens;
-}
-
-function renderToken(token: Token, key: string): ReactNode {
+function renderToken(token: DiscordTextToken, key: string): ReactNode {
   if (token.kind === "mention") {
     return (
       <span key={key} className="dc-mention">
@@ -65,6 +14,13 @@ function renderToken(token: Token, key: string): ReactNode {
       <span key={key} className="dc-channel-mention">
         {token.value}
       </span>
+    );
+  }
+  if (token.kind === "link") {
+    return (
+      <a key={key} className="dc-chat-link" href={token.value} target="_blank" rel="noreferrer">
+        {token.value}
+      </a>
     );
   }
   if (token.kind === "code") {
@@ -86,7 +42,7 @@ export default function DiscordText({ text }: { text: string }) {
     <>
       {lines.map((line, lineIndex) => (
         <span key={lineIndex}>
-          {tokenizeInline(line).map((token, tokenIndex) =>
+          {tokenizeDiscordText(line).map((token, tokenIndex) =>
             renderToken(token, `${lineIndex}:${tokenIndex}`)
           )}
           {lineIndex < lines.length - 1 && <br />}

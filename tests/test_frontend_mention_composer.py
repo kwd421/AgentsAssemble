@@ -36,12 +36,20 @@ class FrontendMentionComposerTests(unittest.TestCase):
             const query = mentions.mentionQueryAtCursor("hello @Cod", "hello @Cod".length);
             assert.deepEqual(query, { start: 6, query: "cod" });
             assert.equal(mentions.mentionQueryAtCursor("email@codex", "email@codex".length), null);
+            assert.equal(mentions.mentionQueryAtCursor("hello @ ", "hello @ ".length), null);
 
             const options = mentions.mentionOptions(
               ["Codex Spark A", "Kiro Opus 4.8", "codex spark a", "", "나"],
               query
             );
             assert.deepEqual(options, ["Codex Spark A"]);
+
+            const spacedQuery = mentions.mentionQueryAtCursor("hello @QA Local", "hello @QA Local".length);
+            assert.deepEqual(spacedQuery, { start: 6, query: "qa local" });
+            assert.deepEqual(
+              mentions.mentionOptions(["QA Local Llama", "Codex Room QA"], spacedQuery),
+              ["QA Local Llama"]
+            );
 
             assert.equal(mentions.formatMentionToken("Kiro"), "@Kiro");
             assert.equal(mentions.formatMentionToken("Codex Spark A"), "<@Codex Spark A>");
@@ -55,6 +63,17 @@ class FrontendMentionComposerTests(unittest.TestCase):
             assert.deepEqual(inserted, {
               message: "hello <@Codex Spark A> ",
               cursor: "hello <@Codex Spark A> ".length,
+            });
+
+            const staleChoice = mentions.insertMentionText(
+              "hello @Cod later",
+              "hello @Cod later".length,
+              null,
+              "Codex Spark A"
+            );
+            assert.deepEqual(staleChoice, {
+              message: "hello @Cod later",
+              cursor: "hello @Cod later".length,
             });
             """
         )

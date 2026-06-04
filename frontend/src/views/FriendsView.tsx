@@ -8,12 +8,32 @@ import {
   type RoomFriend,
   type RoomFriendsResponse,
 } from "../api";
+import { roomFriendMatchesSearch } from "../lib/friendSearch";
 import { PARTICIPANT_TYPE_OPTIONS } from "../lib/participantTypes";
+import { isActivePresence } from "../lib/presenceStatus";
 import FriendDmPanel from "./components/FriendDmPanel";
 import FriendProfileCard from "./components/FriendProfileCard";
 import FriendRow from "./components/FriendRow";
 
 export type FriendListFilter = "online" | "all" | "add";
+
+function friendMatchesDirectory(
+  friend: RoomFriend,
+  {
+    typeFilter,
+    filter,
+    needle,
+  }: {
+    typeFilter: ParticipantType | null;
+    filter: FriendListFilter;
+    needle: string;
+  }
+): boolean {
+  if (typeFilter && friend.participant_type !== typeFilter) return false;
+  if (filter === "online" && !isActivePresence(friend.status)) return false;
+  if (!needle) return true;
+  return roomFriendMatchesSearch(friend, needle);
+}
 
 export default function FriendsView({
   typeFilter,
@@ -22,11 +42,13 @@ export default function FriendsView({
   onFriendsChanged,
   selectedFriendId,
   activeDmFriendId,
+  initialDisplayName = "",
   onActiveDmFriendChange,
   onSelectFriend,
 }: {
   typeFilter: ParticipantType | null;
   filter: FriendListFilter;
+  initialDisplayName?: string;
   onFilterChange: (filter: FriendListFilter) => void;
   onFriendsChanged?: (payload: RoomFriendsResponse) => void;
   selectedFriendId?: string;
@@ -59,17 +81,14 @@ export default function FriendsView({
   }
 
   useEffect(refresh, []);
+  useEffect(() => {
+    if (filter !== "add") return;
+    setDisplayName(initialDisplayName);
+  }, [filter, initialDisplayName]);
 
   const visibleFriends = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return payload.friends.filter((friend) => {
-      if (typeFilter && friend.participant_type !== typeFilter) return false;
-      if (filter === "online" && !["online", "working"].includes(friend.status)) return false;
-      if (!needle) return true;
-      return [friend.display_name, friend.provider_kind, friend.participant_type, friend.last_meeting_id].some((value) =>
-        String(value || "").toLowerCase().includes(needle)
-      );
-    });
+    return payload.friends.filter((friend) => friendMatchesDirectory(friend, { typeFilter, filter, needle }));
   }, [filter, payload.friends, query, typeFilter]);
 
   const visibleCandidates = useMemo(() => {
@@ -78,19 +97,19 @@ export default function FriendsView({
       ? payload.candidates.filter((friend) => friend.participant_type === typeFilter)
       : payload.candidates;
     if (!needle) return typedCandidates;
-    return typedCandidates.filter((friend) =>
-      [friend.display_name, friend.provider_kind, friend.participant_type, friend.last_meeting_id].some((value) =>
-        String(value || "").toLowerCase().includes(needle)
-      )
-    );
+    return typedCandidates.filter((friend) => roomFriendMatchesSearch(friend, needle));
   }, [payload.candidates, query, typeFilter]);
   const selectedFriend = useMemo(() => {
     if (activeDmFriendId) return null;
-    const explicitSelection = visibleFriends.find((friend) => friend.friend_id === selectedFriendId);
+    const explicitSelection = payload.friends.find((friend) => {
+      if (friend.friend_id !== selectedFriendId) return false;
+      if (typeFilter && friend.participant_type !== typeFilter) return false;
+      return true;
+    });
     if (explicitSelection) return explicitSelection;
     if (filter === "online" || filter === "all") return visibleFriends[0] || null;
     return null;
-  }, [activeDmFriendId, filter, selectedFriendId, visibleFriends]);
+  }, [activeDmFriendId, filter, payload.friends, selectedFriendId, typeFilter, visibleFriends]);
   const activeDmFriend = useMemo(
     () => payload.friends.find((friend) => friend.friend_id === activeDmFriendId) || null,
     [activeDmFriendId, payload.friends]
@@ -108,6 +127,17 @@ export default function FriendsView({
     setDmFocusSignal((value) => value + 1);
   }
 
+  function showAddedFriend(friend: RoomFriend) {
+    onSelectFriend?.(friend);
+    onActiveDmFriendChange?.("");
+    onFilterChange("all");
+  }
+
+  function showFriendProfile(friend: RoomFriend) {
+    onSelectFriend?.(friend);
+    onActiveDmFriendChange?.("");
+  }
+
   async function handleAddCandidate(friend: RoomFriend) {
     setBusyId(friend.friend_id);
     setStatus("");
@@ -119,6 +149,7 @@ export default function FriendsView({
       };
       setPayload(nextPayload);
       onFriendsChanged?.(nextPayload);
+      showAddedFriend(result.friend);
       setStatus(`${friend.display_name} 추가됨`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "친구 추가 실패");
@@ -146,6 +177,7 @@ export default function FriendsView({
       const nextPayload = { ...payload, friends: result.friends };
       setPayload(nextPayload);
       onFriendsChanged?.(nextPayload);
+      showAddedFriend(result.friend);
       setDisplayName("");
       setProviderKind("");
       setStatus(`${name} 추가됨`);
@@ -162,10 +194,19 @@ export default function FriendsView({
     setStatus("");
     try {
       const result = await deleteRoomFriend(friend.friend_id);
+      const nextSelection =
+        result.friends.find((candidate) =>
+          friendMatchesDirectory(candidate, { typeFilter, filter, needle: query.trim().toLowerCase() })
+        ) || null;
+      const shouldMoveSelection =
+        selectedFriendId === friend.friend_id || activeDmFriendId === friend.friend_id;
       setPayload({ friends: result.friends, candidates: result.candidates });
       onFriendsChanged?.(result);
       if (activeDmFriendId === friend.friend_id) {
         onActiveDmFriendChange?.("");
+      }
+      if (shouldMoveSelection && nextSelection) {
+        onSelectFriend?.(nextSelection);
       }
       setStatus(`${friend.display_name} 삭제됨`);
     } catch (error) {
@@ -203,7 +244,12 @@ export default function FriendsView({
       <div className="dc-friends-body">
         <main className="dc-friends-main" data-mode={activeDmFriend ? "dm" : "directory"}>
           {activeDmFriend ? (
-            <FriendDmPanel friend={activeDmFriend} focusSignal={dmFocusSignal} layout="channel" />
+            <FriendDmPanel
+              friend={activeDmFriend}
+              focusSignal={dmFocusSignal}
+              layout="channel"
+              onShowProfile={showFriendProfile}
+            />
           ) : (
           <>
           <label className="dc-friends-search">

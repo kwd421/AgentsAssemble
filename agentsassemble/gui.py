@@ -1556,9 +1556,22 @@ def lobby_payload_with_attachments(output_root: Path, payload: dict[str, object]
     event = dict(payload)
     if "flow_meeting_id" in event:
         event["flow_meeting_id"] = clean_lobby_text(event.get("flow_meeting_id"), limit=128)
+    if not clean_lobby_text(event.get("flow_meeting_id"), limit=128):
+        implicit_meeting_id = _single_lobby_meeting_id(output_root)
+        if implicit_meeting_id:
+            event["flow_meeting_id"] = implicit_meeting_id
     if "attachments" in event:
         event["attachments"] = normalize_attachment_references(output_root, event.get("attachments"))
     return event
+
+
+def _single_lobby_meeting_id(output_root: Path) -> str:
+    meeting_ids = [
+        clean_lobby_text(meeting.get("meeting_id"), limit=128)
+        for meeting in list_meetings(output_root)
+    ]
+    meeting_ids = [meeting_id for meeting_id in meeting_ids if meeting_id]
+    return meeting_ids[0] if len(meeting_ids) == 1 else ""
 
 
 def _public_lobby_allows_room_scope(payload: dict[str, object]) -> bool:
@@ -7539,7 +7552,12 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             or path.startswith("/app/assets/")
         )
     if method == "POST":
-        return path in {"/api/room-invite/join", "/api/room-invite/leave", "/api/room/say"}
+        return path in {
+            "/api/room-invite/join",
+            "/api/room-invite/leave",
+            "/api/room-invite/companion",
+            "/api/room/say",
+        }
     return False
 
 
@@ -8893,6 +8911,37 @@ def _make_handler(
                 except ValueError:
                     pass  # non-fatal: roster update best-effort
                 self._send_json(result)
+                return
+            if parsed.path == "/api/room-invite/companion":
+                session_token = self._extract_session_token()
+                if not session_token:
+                    self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+                    return
+                session = verify_session_token(session_token)
+                if not session:
+                    self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
+                    return
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    invite = create_room_invite(
+                        room_url=str(payload.get("room_url") or self._local_server_url()),
+                        meeting_id=str(session.get("meeting_id") or ""),
+                        agent_id=str(payload.get("agent_id") or ""),
+                        display_name=str(payload.get("display_name") or ""),
+                        ttl_seconds=min(int(payload.get("ttl_seconds") or 600), 3600),
+                    )
+                except (ValueError, TypeError) as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(invite)
                 return
             if parsed.path == "/api/room-invite/leave":
                 length = int(self.headers.get("Content-Length", "0") or "0")

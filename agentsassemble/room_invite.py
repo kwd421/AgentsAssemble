@@ -31,6 +31,7 @@ from agentsassemble.multi_host_invites import (
     resolve_lan_invite_secret_ref,
     verify_lan_invite_token,
 )
+from agentsassemble.remote_room_client_packet import build_remote_room_client_packet
 
 # Session token config
 SESSION_TOKEN_TTL_SECONDS = 3600  # 1 hour
@@ -222,6 +223,15 @@ def create_room_invite(
     }
     if join_url:
         result["join_url"] = join_url
+    result["remote_client_packet"] = build_remote_room_client_packet(
+        room_url=public_url or packet["room_url"],
+        invite_token=invite_token,
+        meeting_id=packet["meeting_id"],
+        agent_id=clean_agent_id,
+        display_name=clean_display_name,
+        expires_at=packet["expires_at"],
+        join_url=join_url,
+    )
     return result
 
 

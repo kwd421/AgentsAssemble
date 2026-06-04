@@ -1,15 +1,9 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AtSign, ChevronLeft, MessageSquare, Send, Smile, X } from "lucide-react";
 import { postSideChatMessage, type SideChatEvent } from "../../api";
+import type { SideChatThreadContext } from "../../lib/sideChatThreadModel";
 import DiscordText from "./DiscordText";
 import MentionInput from "./MentionInput";
-
-export type SideChatThreadContext = {
-  sourceEventId: string;
-  sourceName: string;
-  sourceMessage: string;
-  channelLabel: string;
-};
 
 function formatTime(iso: string): string {
   try {
@@ -20,6 +14,10 @@ function formatTime(iso: string): string {
   } catch {
     return "";
   }
+}
+
+function draftKeyForThread(threadContext: SideChatThreadContext | null): string {
+  return threadContext?.sourceEventId ? `thread:${threadContext.sourceEventId}` : "side-chat";
 }
 
 function SideChatMessage({ event }: { event: SideChatEvent }) {
@@ -46,6 +44,7 @@ export default function SideChatDock({
   mentionables = [],
   threadContext = null,
   onCloseThread,
+  canPostMessages = true,
 }: {
   meetingId: string;
   events: SideChatEvent[];
@@ -54,13 +53,41 @@ export default function SideChatDock({
   mentionables?: string[];
   threadContext?: SideChatThreadContext | null;
   onCloseThread?: () => void;
+  canPostMessages?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [message, setMessage] = useState("");
+  const [draftsByContext, setDraftsByContext] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState("");
+  const draftKey = draftKeyForThread(threadContext);
+  const threadSourceEventId = threadContext?.sourceEventId || "";
+  const message = draftsByContext[draftKey] || "";
+  const readOnlyReason = canPostMessages
+    ? ""
+    : "읽기 전용 초대입니다. 사이드챗도 보기만 가능합니다.";
+  const composerDisabled = Boolean(readOnlyReason);
+  const composerAriaLabel = threadContext ? "비공식 스레드 입력" : "비공식 사이드챗 입력";
+
+  function setMessage(nextMessage: string) {
+    if (composerDisabled) return;
+    setDraftsByContext((previous) => {
+      if ((previous[draftKey] || "") === nextMessage) return previous;
+      return { ...previous, [draftKey]: nextMessage };
+    });
+  }
+
+  useEffect(() => {
+    setSendError("");
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!threadSourceEventId) return undefined;
+    const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => window.clearTimeout(focusTimer);
+  }, [threadSourceEventId]);
 
   function insertText(text: string) {
+    if (composerDisabled || busy) return;
     const input = inputRef.current;
     const start = input?.selectionStart ?? message.length;
     const end = input?.selectionEnd ?? message.length;
@@ -74,7 +101,7 @@ export default function SideChatDock({
 
   async function handleSend() {
     const trimmed = message.trim();
-    if (!trimmed || busy) return;
+    if (!trimmed || busy || composerDisabled) return;
     const previousMessage = message;
     setMessage("");
     setBusy(true);
@@ -101,6 +128,7 @@ export default function SideChatDock({
       className="dc-side-chat-dock"
       aria-label="비공식 사이드챗"
       data-thread-active={threadContext ? "true" : "false"}
+      data-readonly={composerDisabled ? "true" : "false"}
     >
       <header className="dc-side-chat-head">
         <span className="flex min-w-0 items-center gap-2">
@@ -151,7 +179,9 @@ export default function SideChatDock({
       <div className="dc-side-chat-feed chat-scroll">
         {events.length === 0 ? (
           <p className="dc-side-empty preserve-words">
-            {threadContext && events.length === 0
+            {composerDisabled
+              ? "읽기 전용 초대에서는 사이드챗과 스레드를 보기만 할 수 있습니다."
+              : threadContext && events.length === 0
               ? "이 메시지에 대한 비공식 스레드를 시작하세요."
               : "메시지에서 스레드를 열면 여기에 표시됩니다. 필요하면 비공식 메모도 남길 수 있습니다."}
           </p>
@@ -164,8 +194,14 @@ export default function SideChatDock({
           {sendError || "사이드챗 연결 대기 중"}
         </p>
       )}
+      {readOnlyReason && (
+        <p className="dc-side-readonly preserve-words">
+          {readOnlyReason}
+        </p>
+      )}
       <div className="dc-side-composer">
         <MentionInput
+          key={draftKey}
           inputRef={inputRef}
           value={message}
           onChange={setMessage}
@@ -173,14 +209,15 @@ export default function SideChatDock({
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.nativeEvent.isComposing) void handleSend();
           }}
-          placeholder={threadContext ? "스레드에 답장" : "스레드 메모"}
-          ariaLabel="비공식 사이드챗 입력"
+          placeholder={readOnlyReason || (threadContext ? "스레드에 답장" : "스레드 메모")}
+          disabled={busy || composerDisabled}
+          ariaLabel={composerAriaLabel}
           mentionables={mentionables}
         />
         <button
           type="button"
           onClick={() => insertText("@")}
-          disabled={busy}
+          disabled={busy || composerDisabled}
           aria-label="사이드챗 멘션 삽입"
         >
           <AtSign size={15} />
@@ -188,7 +225,7 @@ export default function SideChatDock({
         <button
           type="button"
           onClick={() => insertText("🙂")}
-          disabled={busy}
+          disabled={busy || composerDisabled}
           aria-label="사이드챗 이모지 삽입"
         >
           <Smile size={15} />
@@ -196,7 +233,7 @@ export default function SideChatDock({
         <button
           type="button"
           onClick={handleSend}
-          disabled={busy || !message.trim()}
+          disabled={busy || composerDisabled || !message.trim()}
           aria-label="사이드챗 보내기"
         >
           <Send size={15} />

@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Image as ImageIcon, UserPlus, X } from "lucide-react";
 import { type ChannelNotificationSetting, type ChannelSettings, uploadLobbyAttachment } from "../../api";
 import {
@@ -24,8 +24,16 @@ const CHANNEL_NOTIFICATION_LABELS: Array<{
   { value: "mute", label: "알림 끔" },
 ];
 
+type RoomSettingsSectionId =
+  | "settings-overview"
+  | "settings-appearance"
+  | "settings-channels"
+  | "settings-notify"
+  | "settings-invite";
+
 export default function RoomSettingsModal({
   room,
+  initialSectionId,
   appearance,
   channelSettings,
   canInvite,
@@ -36,6 +44,7 @@ export default function RoomSettingsModal({
   onChannelSettingChange,
 }: {
   room: RoomDockItem;
+  initialSectionId?: RoomSettingsSectionId;
   appearance: RoomAppearance;
   channelSettings: Record<string, ChannelSettings>;
   canInvite: boolean;
@@ -46,6 +55,23 @@ export default function RoomSettingsModal({
   onChannelSettingChange: (channelId: string, updates: Partial<ChannelSettings>) => void;
 }) {
   const [uploadStatus, setUploadStatus] = useState("");
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!initialSectionId) return;
+    const body = bodyRef.current;
+    const target = body?.querySelector<HTMLElement>(`#${initialSectionId}`);
+    if (!body || !target) return;
+    body.scrollTop = Math.max(0, target.offsetTop - body.offsetTop);
+  }, [initialSectionId]);
 
   async function handleBannerFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
@@ -92,7 +118,7 @@ export default function RoomSettingsModal({
           <a href="#settings-notify">알림</a>
           <a href="#settings-invite">초대</a>
         </aside>
-        <div className="dc-settings-body chat-scroll">
+        <div ref={bodyRef} className="dc-settings-body chat-scroll">
           <header className="dc-settings-titlebar">
             <div>
               <h2 id="room-settings-title">서버 설정</h2>

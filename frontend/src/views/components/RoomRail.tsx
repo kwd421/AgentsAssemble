@@ -56,21 +56,25 @@ export default function RoomRail({
       className="dc-rail flex shrink-0 flex-col items-center gap-2 py-3"
       aria-label="룸 레일"
     >
-      <button
-        type="button"
-        onClick={onHomeClick}
-        className="dc-rail-home"
-        data-active={!adminOpen && channelIsFriends}
-        aria-label="친구와 DM"
-        title="친구"
-      >
-        <Users size={20} />
-      </button>
-      <span className="dc-server-divider" aria-hidden />
+      {!guestLocked && (
+        <>
+          <button
+            type="button"
+            onClick={onHomeClick}
+            className="dc-rail-home"
+            data-active={!adminOpen && channelIsFriends}
+            aria-label="친구와 DM"
+            title="친구"
+          >
+            <Users size={20} />
+          </button>
+          <span className="dc-server-divider" aria-hidden />
+        </>
+      )}
       <div className="dc-room-stack min-h-0 flex-1 overflow-y-auto chat-scroll" aria-label="방 목록">
         {rooms.map((room) => {
           const Icon = room.icon;
-          const active = !adminOpen && activeRoom.id === room.id;
+          const active = !adminOpen && !channelIsFriends && activeRoom.id === room.id;
           const roomAppearance = completeRoomAppearance(
             roomAppearances[roomSettingsKey(room)] || roomAppearances[room.id]
           );
