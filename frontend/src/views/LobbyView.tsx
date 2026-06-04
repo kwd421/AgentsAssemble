@@ -22,6 +22,7 @@ import type { ChannelHeaderActions } from "./components/ChannelHeader";
 import DiscordText from "./components/DiscordText";
 import type { RoomAppearance } from "../lib/roomAppearance";
 import type { LobbyThreadSummary } from "../lib/sideChatThreadModel";
+import { isUnauthorizedApiError } from "../lib/apiErrors";
 import type { RoomPostingMode } from "../lib/roomGuestPosting";
 
 const ROOM_MODES = [
@@ -133,6 +134,7 @@ export default function LobbyView({
   headerActions,
   appearance,
   onOpenSideThread,
+  onGuestSessionExpired,
   threadSummaries = {},
   roomSessionToken = "",
 }: {
@@ -152,6 +154,7 @@ export default function LobbyView({
   headerActions?: ChannelHeaderActions;
   appearance?: RoomAppearance;
   onOpenSideThread?: (event: LobbyEvent) => void;
+  onGuestSessionExpired?: () => void;
   threadSummaries?: Record<string, LobbyThreadSummary>;
   roomSessionToken?: string;
 }) {
@@ -206,8 +209,12 @@ export default function LobbyView({
           setEvents((previous) => mergeLobbyEvents(previous, nextEvents));
           setLoaded(true);
         })
-        .catch(() => {
-          if (!cancelled) setLoaded(true);
+        .catch((error) => {
+          if (cancelled) return;
+          if (isUnauthorizedApiError(error)) {
+            onGuestSessionExpired?.();
+          }
+          setLoaded(true);
         });
     }
     refreshLobby();
@@ -216,7 +223,7 @@ export default function LobbyView({
       cancelled = true;
       window.clearInterval(refreshId);
     };
-  }, [activeRoom.meetingId, roomSessionToken]);
+  }, [activeRoom.meetingId, onGuestSessionExpired, roomSessionToken]);
 
   const handleSSE = useCallback((incoming: LobbyEvent[]) => {
     setEvents((previous) => {
@@ -440,6 +447,7 @@ export default function LobbyView({
           roomSessionToken={roomSessionToken}
           postingMode={postingMode}
           disabledReason={!canPostMessages ? composerDisabledReason : undefined}
+          onGuestSessionExpired={onGuestSessionExpired}
         />
       </div>
     </div>

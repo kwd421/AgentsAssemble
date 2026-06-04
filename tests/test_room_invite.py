@@ -2,16 +2,25 @@
 
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from agentsassemble.room_invite import (
+    active_sessions_summary,
+    configure_room_invite_store,
     create_room_invite,
     join_room_with_invite,
+    pending_invites_summary,
+    reload_room_invite_store,
     reset_state,
-    set_runtime_public_url,
+    revoke_invite,
     revoke_session,
+    set_runtime_host_token,
+    set_runtime_public_url,
     verify_session_token,
-    active_sessions_summary,
 )
 
 
@@ -174,6 +183,79 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
         result = join_room_with_invite(invite["invite_token"], meeting_id="meeting-b")
         self.assertEqual(result["status"], "rejected")
         self.assertEqual(result["reason"], "identity_mismatch")
+
+    def test_persistent_store_survives_reload_without_raw_session_or_host_tokens(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store_path = Path(temp_dir) / "room-invite-state.json"
+            configure_room_invite_store(store_path)
+            set_runtime_host_token("host-secret-that-must-not-persist")
+            invite = create_room_invite(
+                room_url="http://192.168.1.10:8765",
+                meeting_id="test-meeting",
+                agent_id="guest-1",
+                display_name="Guest One",
+            )
+            join_result = join_room_with_invite(invite["invite_token"], meeting_id="test-meeting")
+            self.assertEqual(join_result["status"], "admitted")
+            session_token = str(join_result["session_token"])
+
+            persisted_text = store_path.read_text(encoding="utf-8")
+            self.assertNotIn(session_token, persisted_text)
+            self.assertNotIn(str(invite["invite_token"]), persisted_text)
+            self.assertNotIn("host-secret-that-must-not-persist", persisted_text)
+            persisted = json.loads(persisted_text)
+            self.assertIn("invite_secret", persisted)
+            self.assertIn("sessions", persisted)
+            self.assertIn("used_nonce_fingerprints", persisted)
+            self.assertTrue(all(key.startswith("aas1.") is False for key in persisted["sessions"]))
+
+            reload_room_invite_store()
+            session = verify_session_token(session_token)
+            self.assertIsNotNone(session)
+            self.assertEqual(session["agent_id"], "guest-1")
+
+            second_join = join_room_with_invite(invite["invite_token"], meeting_id="test-meeting")
+            self.assertEqual(second_join["status"], "rejected")
+            self.assertEqual(second_join["reason"], "token_already_used")
+
+    def test_revoked_invite_remains_revoked_after_store_reload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store_path = Path(temp_dir) / "room-invite-state.json"
+            configure_room_invite_store(store_path)
+            invite = create_room_invite(
+                room_url="http://192.168.1.10:8765",
+                meeting_id="test-meeting",
+                agent_id="guest-1",
+            )
+            self.assertTrue(revoke_invite(str(invite["invite_id"])))
+            reload_room_invite_store()
+
+            invites = pending_invites_summary()
+            self.assertEqual(invites[0]["invite_id"], invite["invite_id"])
+            self.assertTrue(invites[0]["revoked"])
+            result = join_room_with_invite(invite["invite_token"], meeting_id="test-meeting")
+            self.assertEqual(result["status"], "rejected")
+            self.assertEqual(result["reason"], "invite_revoked")
+
+    def test_expired_persisted_session_is_rejected_and_cleaned_up(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store_path = Path(temp_dir) / "room-invite-state.json"
+            configure_room_invite_store(store_path)
+            invite = create_room_invite(
+                room_url="http://192.168.1.10:8765",
+                meeting_id="test-meeting",
+                agent_id="guest-1",
+            )
+            with patch("agentsassemble.room_invite.SESSION_TOKEN_TTL_SECONDS", -1):
+                join_result = join_room_with_invite(invite["invite_token"], meeting_id="test-meeting")
+            session_token = str(join_result["session_token"])
+            self.assertIsNone(verify_session_token(session_token))
+            self.assertEqual(active_sessions_summary(), [])
+
+            persisted_text = store_path.read_text(encoding="utf-8")
+            self.assertNotIn(session_token, persisted_text)
+            persisted = json.loads(persisted_text)
+            self.assertEqual(persisted["sessions"], {})
 
 
 if __name__ == "__main__":

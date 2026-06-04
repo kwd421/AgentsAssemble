@@ -128,7 +128,9 @@ from agentsassemble.user_profile import read_user_profile, update_user_profile
 from agentsassemble.room_invite import (
     NATIVE_REMOTE_ROOM_CLIENT_KIND,
     active_sessions_summary,
+    configure_room_invite_store,
     create_room_invite,
+    default_room_invite_store_path,
     generate_runtime_host_token,
     get_host_token,
     get_public_url,
@@ -7642,6 +7644,7 @@ def _make_handler(
     frontend_dist_root: Path | None = None,
     public_tunnel_manager: PublicTunnelManager | None = None,
 ) -> type[BaseHTTPRequestHandler]:
+    configure_room_invite_store(default_room_invite_store_path(output_root))
     react_app_root = (frontend_dist_root or default_frontend_dist_root()).resolve()
     live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
     live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
@@ -9003,7 +9006,7 @@ def _make_handler(
                     return
                 try:
                     invite = create_room_invite(
-                        room_url=str(payload.get("room_url") or self._local_server_url()),
+                        room_url=self._local_server_url(),
                         meeting_id=str(session.get("meeting_id") or ""),
                         agent_id=str(payload.get("agent_id") or ""),
                         display_name=str(payload.get("display_name") or ""),

@@ -32,6 +32,15 @@ class PublicInviteHttpTests(unittest.TestCase):
     def tearDown(self):
         reset_state()
 
+    def _start_server(self, root: Path, *, dist: Path | None = None, tunnel: PublicTunnelManager | None = None):
+        server = ThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            _make_handler(root, frontend_dist_root=dist, public_tunnel_manager=tunnel),
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        return server
+
     def test_gui_can_bootstrap_host_token_public_url_and_join_link(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("AGENTSASSEMBLE_HOST_TOKEN", None)
@@ -240,6 +249,128 @@ class PublicInviteHttpTests(unittest.TestCase):
                 finally:
                     server.shutdown()
                     server.server_close()
+
+    def test_gui_invite_session_store_survives_server_restart_without_raw_session_token(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            server = self._start_server(root)
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/create",
+                        {"meeting_id": "restart-room", "agent_id": "guest-1", "display_name": "Guest One"},
+                    ),
+                    timeout=4,
+                ) as response:
+                    invite = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/join",
+                        {"invite_token": invite["invite_token"]},
+                    ),
+                    timeout=4,
+                ) as response:
+                    session_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            store_path = root / ".agentsassemble" / "room-invite-state.json"
+            store_text = store_path.read_text(encoding="utf-8")
+            self.assertNotIn(session_payload["session_token"], store_text)
+            self.assertNotIn(invite["invite_token"], store_text)
+
+            reset_state()
+            restarted = self._start_server(root)
+            try:
+                restarted_base = f"http://127.0.0.1:{restarted.server_port}"
+                with urlopen(
+                    Request(
+                        f"{restarted_base}/api/room/lobby",
+                        headers={"Authorization": f"Bearer {session_payload['session_token']}"},
+                    ),
+                    timeout=4,
+                ) as response:
+                    lobby_payload = json.loads(response.read().decode("utf-8"))
+                self.assertIn("events", lobby_payload)
+
+                with self.assertRaises(HTTPError) as reused_invite:
+                    urlopen(
+                        _json_request(
+                            f"{restarted_base}/api/room-invite/join",
+                            {"invite_token": invite["invite_token"]},
+                        ),
+                        timeout=4,
+                    )
+                self.assertEqual(reused_invite.exception.code, 403)
+            finally:
+                restarted.shutdown()
+                restarted.server_close()
+
+    def test_guest_companion_packet_uses_session_room_and_does_not_reflect_guest_secrets(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            server = self._start_server(root)
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/create",
+                        {"meeting_id": "friend-room", "agent_id": "friend", "display_name": "Friend"},
+                    ),
+                    timeout=4,
+                ) as response:
+                    invite = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/join",
+                        {"invite_token": invite["invite_token"]},
+                    ),
+                    timeout=4,
+                ) as response:
+                    session_payload = json.loads(response.read().decode("utf-8"))
+
+                host_token = "fake-host-token-that-must-not-leak"
+                provider_secret = "fake-provider-secret-that-must-not-leak"
+                filesystem_path = "/tmp/agentsassemble-private/provider-config.json"
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/companion",
+                        {
+                            "meeting_id": "evil-room",
+                            "room_url": f"http://127.0.0.1:{server.server_port}{filesystem_path}",
+                            "agent_id": "friend-ai",
+                            "display_name": "Friend AI",
+                            "session_token": session_payload["session_token"],
+                            "host_token": host_token,
+                            "provider_secret": provider_secret,
+                            "filesystem_path": filesystem_path,
+                        },
+                        {"Authorization": f"Bearer {session_payload['session_token']}"},
+                    ),
+                    timeout=4,
+                ) as response:
+                    companion = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            packet = companion["remote_client_packet"]
+            serialized = json.dumps(companion, ensure_ascii=False)
+            self.assertEqual(companion["meeting_id"], "friend-room")
+            self.assertEqual(packet["agent"]["meeting_id"], "friend-room")
+            self.assertEqual(packet["env"]["AGENTSASSEMBLE_MEETING_ID"], "friend-room")
+            self.assertEqual(packet["env"]["AGENTSASSEMBLE_ROOM_URL"], base)
+            self.assertEqual(packet["execution_contract"]["provider_execution"], "not_started_by_invite")
+            self.assertEqual(packet["admission_contract"]["provider_execution"], "not_started_by_invite")
+            self.assertFalse(packet["safety"]["contains_session_token"])
+            self.assertFalse(packet["safety"]["provider_executed"])
+            self.assertFalse(packet["safety"]["host_filesystem_granted"])
+            self.assertNotIn(session_payload["session_token"], serialized)
+            self.assertNotIn(host_token, serialized)
+            self.assertNotIn(provider_secret, serialized)
+            self.assertNotIn(filesystem_path, serialized)
 
     def test_tunnel_start_reports_missing_cloudflared_without_exposing_token(self):
         with patch.dict(os.environ, {}, clear=False):

@@ -1,5 +1,6 @@
 // API client for the AgentsAssemble GUI backend.
 import type { RoomAppearance } from "./lib/roomAppearance";
+import { ApiError } from "./lib/apiErrors";
 
 export interface LobbyAttachmentRef {
   id: string;
@@ -641,7 +642,7 @@ export interface MafiaGameResponse {
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(await responseErrorMessage(res));
+  if (!res.ok) throw await responseError(res);
   return res.json();
 }
 
@@ -652,7 +653,7 @@ async function postJson<T>(url: string, body: object): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(await responseErrorMessage(res));
+    throw await responseError(res);
   }
   return res.json();
 }
@@ -661,7 +662,7 @@ async function fetchJsonWithToken<T>(url: string, sessionToken: string): Promise
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${sessionToken}` },
   });
-  if (!res.ok) throw new Error(await responseErrorMessage(res));
+  if (!res.ok) throw await responseError(res);
   return res.json();
 }
 
@@ -675,7 +676,7 @@ async function postJsonWithToken<T>(url: string, body: object, sessionToken: str
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(await responseErrorMessage(res));
+    throw await responseError(res);
   }
   return res.json();
 }
@@ -683,9 +684,13 @@ async function postJsonWithToken<T>(url: string, body: object, sessionToken: str
 async function deleteJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { method: "DELETE" });
   if (!res.ok) {
-    throw new Error(await responseErrorMessage(res));
+    throw await responseError(res);
   }
   return res.json();
+}
+
+async function responseError(res: Response): Promise<ApiError> {
+  return new ApiError(res.status, await responseErrorMessage(res));
 }
 
 async function responseErrorMessage(res: Response): Promise<string> {

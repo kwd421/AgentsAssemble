@@ -22,6 +22,7 @@ import os
 import secrets
 import threading
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from agentsassemble.meeting_events import clean_lobby_text
@@ -36,15 +37,17 @@ from agentsassemble.remote_room_client_packet import build_remote_room_client_pa
 # Session token config
 SESSION_TOKEN_TTL_SECONDS = 3600  # 1 hour
 SESSION_TOKEN_PREFIX = "aas1"  # AgentsAssemble Session v1
+ROOM_INVITE_STORE_SCHEMA = "agentsassemble.room_invite_state.v1"
 
 # In-memory state (server-lifetime scoped)
 _state_lock = threading.Lock()
-_active_sessions: dict[str, dict] = {}  # session_token -> session info
-_used_nonces: set[str] = set()  # consumed invite nonces (replay protection)
+_active_sessions: dict[str, dict] = {}  # session token fingerprint -> session info
+_used_nonce_fingerprints: set[str] = set()  # consumed invite nonce fingerprints (replay protection)
 _invite_secret: str = ""  # server-lifetime secret for invite generation
 _pending_invites: dict[str, dict] = {}  # invite_id -> invite metadata (for revocation)
 _runtime_host_token: str = ""
 _runtime_public_url: str = ""
+_store_path: Path | None = None
 
 ROOM_INVITE_SCOPE = "room"
 READ_ONLY_INVITE_SCOPE = "read_only"
@@ -166,9 +169,31 @@ def clear_runtime_public_url(expected_url: str = "") -> None:
 def _get_invite_secret() -> str:
     """Lazily generate a server-lifetime invite secret."""
     global _invite_secret
-    if not _invite_secret:
-        _invite_secret = secrets.token_urlsafe(32)
-    return _invite_secret
+    with _state_lock:
+        if not _invite_secret:
+            _invite_secret = secrets.token_urlsafe(32)
+            _persist_state_locked()
+        return _invite_secret
+
+
+def default_room_invite_store_path(output_root: Path) -> Path:
+    """Return the local-first persistence path for public room invite state."""
+    return output_root / ".agentsassemble" / "room-invite-state.json"
+
+
+def configure_room_invite_store(path: str | os.PathLike[str] | None) -> None:
+    """Enable or disable local persistence for invite/session state."""
+    global _store_path
+    with _state_lock:
+        _store_path = Path(path) if path else None
+        if _store_path:
+            _load_state_locked()
+
+
+def reload_room_invite_store() -> None:
+    """Reload configured persistent state, simulating a server process restart."""
+    with _state_lock:
+        _load_state_locked()
 
 
 def create_room_invite(
@@ -202,7 +227,6 @@ def create_room_invite(
         ttl_seconds=ttl_seconds,
     )
 
-    nonce = str(packet.get("nonce") or "")
     invite_token = packet["token"]
 
     # Track pending invite for revocation (key by token fingerprint)
@@ -218,6 +242,7 @@ def create_room_invite(
             "created_at": datetime.now(UTC).isoformat(),
             "revoked": False,
         }
+        _persist_state_locked()
 
     # Build join_url from public base URL if configured
     public_url = get_public_url()
@@ -290,12 +315,14 @@ def join_room_with_invite(
 
     claims = verification.get("claims", {})
     nonce = str(claims.get("nonce") or "")
+    nonce_fingerprint = _nonce_fingerprint(nonce)
 
     # Single-use check
     with _state_lock:
-        if nonce in _used_nonces:
+        if nonce_fingerprint in _used_nonce_fingerprints:
             return {"status": "rejected", "reason": "token_already_used"}
-        _used_nonces.add(nonce)
+        _used_nonce_fingerprints.add(nonce_fingerprint)
+        _persist_state_locked()
 
     # Extract identity from verified claims
     agent_info = claims.get("agent", {}) if isinstance(claims.get("agent"), dict) else {}
@@ -323,7 +350,7 @@ def join_room_with_invite(
         "meeting_id": resolved_meeting_id,
         "invite_scope": invite_scope,
         "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
-        "expires_at": _active_sessions[session_token]["expires_at"],
+        "expires_at": _active_sessions[_session_fingerprint(session_token)]["expires_at"],
     }
 
 
@@ -331,21 +358,27 @@ def verify_session_token(token: str) -> dict[str, object] | None:
     """Verify a session token. Returns session info or None if invalid/expired."""
     if not token or not token.startswith(SESSION_TOKEN_PREFIX):
         return None
+    token_fingerprint = _session_fingerprint(token)
     with _state_lock:
-        session = _active_sessions.get(token)
+        session = _active_sessions.get(token_fingerprint)
         if session is None:
             return None
         expires = datetime.fromisoformat(session["expires_at"])
         if expires <= datetime.now(UTC):
-            del _active_sessions[token]
+            del _active_sessions[token_fingerprint]
+            _persist_state_locked()
             return None
         return dict(session)
 
 
 def revoke_session(token: str) -> bool:
     """Revoke a session token (e.g., on leave). Returns True if found."""
+    token_fingerprint = _session_fingerprint(token)
     with _state_lock:
-        return _active_sessions.pop(token, None) is not None
+        removed = _active_sessions.pop(token_fingerprint, None) is not None
+        if removed:
+            _persist_state_locked()
+        return removed
 
 
 def active_sessions_summary() -> list[dict[str, object]]:
@@ -369,6 +402,8 @@ def active_sessions_summary() -> list[dict[str, object]]:
             })
         for key in expired_keys:
             del _active_sessions[key]
+        if expired_keys:
+            _persist_state_locked()
         return result
 
 
@@ -379,6 +414,7 @@ def revoke_invite(invite_id: str) -> bool:
         if invite is None:
             return False
         invite["revoked"] = True
+        _persist_state_locked()
         return True
 
 
@@ -425,17 +461,139 @@ def _issue_session_token(
         "expires_at": (now + timedelta(seconds=SESSION_TOKEN_TTL_SECONDS)).isoformat(),
     }
     with _state_lock:
-        _active_sessions[token] = session
+        _active_sessions[_session_fingerprint(token)] = session
+        _persist_state_locked()
     return token
 
 
 def reset_state() -> None:
     """Reset all in-memory state. For testing only."""
-    global _invite_secret, _runtime_host_token, _runtime_public_url
+    global _invite_secret, _runtime_host_token, _runtime_public_url, _store_path
     with _state_lock:
         _active_sessions.clear()
-        _used_nonces.clear()
+        _used_nonce_fingerprints.clear()
         _pending_invites.clear()
         _invite_secret = ""
         _runtime_host_token = ""
         _runtime_public_url = ""
+        _store_path = None
+
+
+def _session_fingerprint(token: str) -> str:
+    return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
+
+
+def _nonce_fingerprint(nonce: str) -> str:
+    return hashlib.sha256(str(nonce or "").encode("utf-8")).hexdigest()
+
+
+def _load_state_locked() -> None:
+    """Replace invite/session state from the configured persistent store."""
+    global _invite_secret
+    _active_sessions.clear()
+    _used_nonce_fingerprints.clear()
+    _pending_invites.clear()
+    _invite_secret = ""
+    if not _store_path:
+        return
+    try:
+        payload = json.loads(_store_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(payload, dict):
+        return
+    _invite_secret = clean_lobby_text(payload.get("invite_secret"), limit=256)
+    sessions = payload.get("sessions")
+    if isinstance(sessions, dict):
+        now = datetime.now(UTC)
+        for raw_key, raw_session in sessions.items():
+            key = clean_lobby_text(raw_key, limit=128)
+            session = _clean_session_record(raw_session)
+            if not key or not session:
+                continue
+            try:
+                expires = datetime.fromisoformat(str(session.get("expires_at") or ""))
+            except ValueError:
+                continue
+            if expires <= now:
+                continue
+            _active_sessions[key] = session
+    pending_invites = payload.get("pending_invites")
+    if isinstance(pending_invites, dict):
+        for raw_invite_id, raw_invite in pending_invites.items():
+            invite_id = clean_lobby_text(raw_invite_id, limit=128)
+            invite = _clean_pending_invite_record(raw_invite, invite_id=invite_id)
+            if invite_id and invite:
+                _pending_invites[invite_id] = invite
+    used_nonce_fingerprints = payload.get("used_nonce_fingerprints")
+    if isinstance(used_nonce_fingerprints, list):
+        _used_nonce_fingerprints.update(
+            clean_lobby_text(item, limit=128)
+            for item in used_nonce_fingerprints
+            if clean_lobby_text(item, limit=128)
+        )
+    _persist_state_locked()
+
+
+def _persist_state_locked() -> None:
+    if not _store_path:
+        return
+    state = {
+        "schema": ROOM_INVITE_STORE_SCHEMA,
+        "invite_secret": _invite_secret,
+        "sessions": dict(sorted(_active_sessions.items())),
+        "used_nonce_fingerprints": sorted(_used_nonce_fingerprints),
+        "pending_invites": dict(sorted(_pending_invites.items())),
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    try:
+        _store_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = _store_path.with_name(f"{_store_path.name}.tmp")
+        temp_path.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        temp_path.replace(_store_path)
+        try:
+            _store_path.chmod(0o600)
+        except OSError:
+            pass
+    except OSError:
+        # Persistence is best-effort local durability; in-memory state remains authoritative.
+        return
+
+
+def _clean_session_record(value: object) -> dict[str, object]:
+    source = value if isinstance(value, dict) else {}
+    session = {
+        "agent_id": clean_lobby_text(source.get("agent_id"), limit=64),
+        "display_name": clean_lobby_text(source.get("display_name"), limit=128),
+        "meeting_id": clean_lobby_text(source.get("meeting_id"), limit=128),
+        "invite_scope": normalize_invite_scope(source.get("invite_scope")),
+        "connection_kind": clean_lobby_text(
+            source.get("connection_kind") or NATIVE_REMOTE_ROOM_CLIENT_KIND,
+            limit=64,
+        ),
+        "joined_at": clean_lobby_text(source.get("joined_at"), limit=64),
+        "expires_at": clean_lobby_text(source.get("expires_at"), limit=64),
+    }
+    if not session["agent_id"] or not session["meeting_id"] or not session["expires_at"]:
+        return {}
+    return session
+
+
+def _clean_pending_invite_record(value: object, *, invite_id: str) -> dict[str, object]:
+    source = value if isinstance(value, dict) else {}
+    record = {
+        "invite_id": clean_lobby_text(source.get("invite_id") or invite_id, limit=128),
+        "agent_id": clean_lobby_text(source.get("agent_id"), limit=64),
+        "display_name": clean_lobby_text(source.get("display_name"), limit=128),
+        "meeting_id": clean_lobby_text(source.get("meeting_id"), limit=128),
+        "invite_scope": normalize_invite_scope(source.get("invite_scope")),
+        "expires_at": clean_lobby_text(source.get("expires_at"), limit=64),
+        "created_at": clean_lobby_text(source.get("created_at"), limit=64),
+        "revoked": bool(source.get("revoked")),
+    }
+    if not record["invite_id"] or not record["meeting_id"] or not record["expires_at"]:
+        return {}
+    return record

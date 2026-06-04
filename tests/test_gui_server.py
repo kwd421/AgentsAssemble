@@ -18854,6 +18854,20 @@ class GuiServerTests(unittest.TestCase):
                 connect_live_agent(
                     root,
                     {
+                        "agent_id": "guest-a-ai",
+                        "display_name": "Guest A AI",
+                        "provider_kind": "claude_code",
+                        "connection_kind": "native_remote_room_client",
+                        "meeting_id": "room-1",
+                        "quota_5h": "guest-ai-5h",
+                        "quota_1w": "guest-ai-1w",
+                        "quota_state": "low",
+                        "quota_windows": [{"label": "5-hour", "percent": 35}],
+                    },
+                )
+                connect_live_agent(
+                    root,
+                    {
                         "agent_id": "friend-remote",
                         "display_name": "Friend Remote",
                         "provider_kind": "claude_code",
@@ -18862,6 +18876,21 @@ class GuiServerTests(unittest.TestCase):
                         "quota_5h": "friend-5h",
                         "quota_state": "exhausted",
                         "quota_windows": [{"label": "5-hour", "percent": 100}],
+                    },
+                )
+                connect_live_agent(
+                    root,
+                    {
+                        "agent_id": "friend-bridge",
+                        "display_name": "Friend Bridge",
+                        "provider_kind": "remote_http_bridge",
+                        "connection_kind": "remote_bridge",
+                        "endpoint": "http://127.0.0.1:9999",
+                        "meeting_id": "room-1",
+                        "quota_5h": "bridge-5h",
+                        "quota_1w": "bridge-1w",
+                        "quota_state": "exhausted",
+                        "quota_windows": [{"label": "5-hour", "percent": 99}],
                     },
                 )
                 connect_live_agent(
@@ -18941,13 +18970,28 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(host_agents["host-codex"]["quota_5h"], "host-5h")
             self.assertEqual(host_agents["host-codex"]["quota_windows"][0]["percent"], 80)
             self.assertNotIn("quota_5h", host_agents["guest-a"])
+            self.assertNotIn("quota_5h", host_agents["guest-a-ai"])
             self.assertNotIn("quota_windows", host_agents["friend-remote"])
+            self.assertNotIn("quota_5h", host_agents["friend-bridge"])
+            self.assertNotIn("quota_1w", host_agents["friend-bridge"])
+            self.assertNotIn("quota_state", host_agents["friend-bridge"])
+            self.assertNotIn("quota_windows", host_agents["friend-bridge"])
             self.assertNotIn("other-room-agent", host_agents)
             self.assertEqual(guest_agents["guest-a"]["quota_5h"], "guest-5h")
             self.assertEqual(guest_agents["guest-a"]["quota_state"], "ok")
             self.assertEqual(guest_agents["guest-a"]["quota_windows"][0]["percent"], 20)
+            self.assertEqual(guest_agents["guest-a-ai"]["quota_5h"], "guest-ai-5h")
+            self.assertEqual(guest_agents["guest-a-ai"]["quota_1w"], "guest-ai-1w")
+            self.assertEqual(guest_agents["guest-a-ai"]["quota_windows"][0]["percent"], 35)
             self.assertNotIn("quota_5h", guest_agents["host-codex"])
+            self.assertNotIn("quota_1w", guest_agents["host-codex"])
+            self.assertNotIn("quota_state", guest_agents["host-codex"])
+            self.assertNotIn("quota_windows", guest_agents["host-codex"])
             self.assertNotIn("quota_state", guest_agents["friend-remote"])
+            self.assertNotIn("quota_5h", guest_agents["friend-bridge"])
+            self.assertNotIn("quota_1w", guest_agents["friend-bridge"])
+            self.assertNotIn("quota_state", guest_agents["friend-bridge"])
+            self.assertNotIn("quota_windows", guest_agents["friend-bridge"])
             self.assertNotIn("other-room-agent", guest_agents)
             self.assertIn("visible room one", json.dumps(guest_payload["events"]))
             self.assertNotIn("hidden room two", json.dumps(guest_payload["events"]))

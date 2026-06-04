@@ -114,6 +114,10 @@ import {
   remoteClientPacketPreview,
   secureInviteCopyTarget,
 } from "./lib/roomInviteCopy";
+import {
+  GUEST_SESSION_EXPIRED_MESSAGE,
+  isUnauthorizedApiError,
+} from "./lib/apiErrors";
 import { roomPostingState } from "./lib/roomGuestPosting";
 import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
 import { isActivePresence } from "./lib/presenceStatus";
@@ -275,7 +279,8 @@ export default function App() {
   const [guestSession, setGuestSession] = useState<RoomGuestSession | null>(
     () => startupRoute.guestSession
   );
-  const guestLocked = Boolean(guestInvite || guestSession || guestJoinToken);
+  const [guestExpired, setGuestExpired] = useState(false);
+  const guestLocked = Boolean(guestInvite || guestSession || guestJoinToken || guestExpired);
   const [channel, setChannel] = useState<Channel>(() => startupRoute.initialChannel);
   const [homeFilter, setHomeFilter] = useState<HomeFilter>("friends");
   const [friendListFilter, setFriendListFilter] = useState<FriendListFilter>("online");
@@ -349,8 +354,18 @@ export default function App() {
     [guestLocked, guestReadOnly, guestSession?.sessionToken]
   );
   const flowFetcher = useCallback(
-    () => fetchLiveAgentFlow(guestMeetingId, guestSession?.sessionToken || ""),
-    [guestMeetingId, guestSession?.sessionToken]
+    () => {
+      if (guestExpired) {
+        return Promise.resolve({
+          flow: { status: "idle" },
+          agents: [],
+          events: [],
+          flow_events: [],
+        } as FlowResponse);
+      }
+      return fetchLiveAgentFlow(guestMeetingId, guestSession?.sessionToken || "");
+    },
+    [guestExpired, guestMeetingId, guestSession?.sessionToken]
   );
   const [flowData, , flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
   const flow = flowData?.flow ?? { status: "idle" };
@@ -419,6 +434,22 @@ export default function App() {
     refreshFlow();
   }, [refreshFlow, refreshProcesses]);
 
+  const expireGuestSession = useCallback(() => {
+    persistRoomGuestSession(null);
+    setGuestSession(null);
+    setGuestExpired(true);
+    setGuestJoinStatus(GUEST_SESSION_EXPIRED_MESSAGE);
+    setGuestAiPacketPreview("");
+    setGuestAiPacketStatus("");
+    setChannel("lobby");
+  }, []);
+
+  useEffect(() => {
+    if (guestLocked && isUnauthorizedApiError(flowError)) {
+      expireGuestSession();
+    }
+  }, [expireGuestSession, flowError, guestLocked]);
+
   useEffect(() => {
     if (!guestJoinToken || guestSession?.inviteToken === guestJoinToken) return;
     let cancelled = false;
@@ -429,6 +460,7 @@ export default function App() {
         const nextSession = roomGuestSessionFromJoinPayload(guestJoinToken, payload);
         persistRoomGuestSession(nextSession);
         setGuestSession(nextSession);
+        setGuestExpired(false);
         const joinedRoom = roomFromGuestSession(nextSession);
         setRooms([joinedRoom]);
         setActiveRoomId(joinedRoom.id);
@@ -1532,12 +1564,13 @@ export default function App() {
             canManageRoom={!guestLocked}
             canPostMessages={lobbyPostingState.canPost}
             postingMode={lobbyPostingState.mode}
-            composerDisabledReason={lobbyPostingState.disabledReason}
+            composerDisabledReason={guestExpired ? GUEST_SESSION_EXPIRED_MESSAGE : lobbyPostingState.disabledReason}
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
             headerActions={channelHeaderActions("lobby")}
             appearance={activeAppearance}
             onOpenSideThread={openSideChatThread}
+            onGuestSessionExpired={expireGuestSession}
             threadSummaries={sideChatThreadSummaries}
           />
         ) : channel === "live" ? (

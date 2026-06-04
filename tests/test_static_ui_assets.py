@@ -1292,7 +1292,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("visibleChannels = guestLocked", app_source)
         self.assertIn("{!guestLocked && (", room_rail_source)
         self.assertIn('aria-label="친구와 DM"', room_rail_source)
-        self.assertIn("composerDisabledReason={lobbyPostingState.disabledReason}", app_source)
+        self.assertIn(
+            "composerDisabledReason={guestExpired ? GUEST_SESSION_EXPIRED_MESSAGE : lobbyPostingState.disabledReason}",
+            app_source,
+        )
         self.assertIn("읽기 전용 초대입니다. 사이드챗도 보기만 가능합니다.", frontend_file("views/components/SideChatDock.tsx"))
         self.assertIn("RoomInviteModal", app_source)
         self.assertIn("보안 초대 링크는 공개 URL이 설정된 뒤 생성됩니다.", invite_modal_source)

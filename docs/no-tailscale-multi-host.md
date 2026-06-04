@@ -139,12 +139,23 @@ Recommended order:
   (env) and `X-Host-Token` header. When `AGENTSASSEMBLE_PUBLIC_URL` is set,
   invite creation returns a full `join_url` guests can open directly.
   Invites are single-use, time-limited, and revocable by the host.
-  Session tokens are in-memory only; there is no durable auth store, no
-  persistent revocation beyond server-memory leave/expiry, no relay/WebRTC/NAT
-  traversal, and no provider CLI start. External shares use `/join?token=...`;
-  the old `?guest=1&room=...` form is only a local/dev preview and is treated
-  as read-only/no-session. `/api/room/say` enforces session identity (name,
-  actor_id, side, kind) from the authenticated session, not from client-supplied
-  fields. Read-only invite sessions are rejected by `/api/room/say` and cannot
-  create companion AI invite packets. See `docs/public-internet-invite-tunnel.md`
-  for tunnel setup instructions.
+  The GUI persists invite/session admission state under
+  `.agentsassemble/room-invite-state.json` in the output root so active sessions,
+  used invite nonces, revocation, and the invite signing secret survive local
+  server restart. That store uses token/nonce fingerprints for sessions and
+  replay checks; it must not contain raw session tokens or host tokens. There is
+  still no account auth, relay/WebRTC/NAT traversal, or provider CLI start.
+  External shares use `/join?token=...`; the old `?guest=1&room=...` form is
+  only a local/dev preview and is treated as read-only/no-session.
+  `/api/room/say` enforces session identity (name, actor_id, side, kind) from
+  the authenticated session, not from client-supplied fields. Read-only invite
+  sessions are rejected by `/api/room/say` and cannot create companion AI invite
+  packets. Companion AI packets are scoped to the authenticated guest session's
+  meeting and current room URL; they do not carry existing session tokens, host
+  tokens, provider secrets, or filesystem paths, and they do not start a
+  provider process. Room rosters can show every visible participant and AI, but
+  quota details are owner-visible only: guests receive quota fields for their
+  admitted `agent_id` and `${agent_id}-ai`, while hosts receive local host-owned
+  quota and not remote participant-owned `native_remote_room_client` or
+  `remote_bridge` quota. See `docs/public-internet-invite-tunnel.md` for tunnel
+  setup instructions.

@@ -15,6 +15,7 @@ import {
   lobbySubmitSuccessDraft,
   selectLobbyAttachmentFiles,
 } from "../../lib/lobbyComposerModel";
+import { isUnauthorizedApiError } from "../../lib/apiErrors";
 import type { RoomPostingMode } from "../../lib/roomGuestPosting";
 import MentionInput from "./MentionInput";
 
@@ -76,6 +77,7 @@ export default function LobbyComposer({
   disabledReason,
   roomSessionToken = "",
   postingMode = "host",
+  onGuestSessionExpired,
 }: {
   meetingId: string;
   onPosted: (events: LobbyEvent[]) => void;
@@ -83,6 +85,7 @@ export default function LobbyComposer({
   disabledReason?: string;
   roomSessionToken?: string;
   postingMode?: RoomPostingMode;
+  onGuestSessionExpired?: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -184,6 +187,9 @@ export default function LobbyComposer({
       setPendingAttachments(cleared.pendingAttachments);
       onPosted(payload.events || (payload.event ? [payload.event] : []));
     } catch (errorValue) {
+      if (isUnauthorizedApiError(errorValue)) {
+        onGuestSessionExpired?.();
+      }
       const restored = lobbySubmitFailureDraft(
         draftMessage,
         draftAttachments,

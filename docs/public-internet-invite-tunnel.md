@@ -84,14 +84,27 @@ tailscale funnel 8765
   does not reveal an existing environment token.
 - Invite tokens are single-use, time-limited (default 10 minutes), and revocable.
 - Session tokens expire after 1 hour.
+- Invite/session state is stored locally under
+  `.agentsassemble/room-invite-state.json` inside the GUI output root. The store
+  keeps invite secret material plus token/nonce fingerprints so single-use,
+  revocation, and active guest sessions survive a server restart without
+  writing raw session tokens or host tokens.
 - Externally shared invites should use the generated `/join?token=...` URL. The
   legacy `?guest=1&room=...` URL is a local/dev preview surface; it does not
   issue an authenticated guest session and is treated as read-only.
 - Read-only invite scope is enforced by the server session policy. A read-only
   guest can read the room, but `/api/room/say` and companion AI invite creation
   are rejected for that session.
+- Room rosters may show all visible people and AI agents, including AI that
+  another participant brought in, but provider/subscription quota fields are
+  viewer-scoped. Guests receive quota fields only for their own admitted
+  `agent_id` and companion `${agent_id}-ai`; hosts see local host-owned agent
+  quota but not remote-owned `native_remote_room_client` or `remote_bridge`
+  quota.
 - The server does NOT start provider CLIs, expose secrets, or grant filesystem
-  access through the invite flow.
+  access through the invite flow. Companion AI packets are generated for the
+  authenticated guest's current meeting only, ignore client-supplied room URLs,
+  and state `provider_execution: not_started_by_invite`.
 - The tunnel exposes the full GUI control plane. Bind to `127.0.0.1` and rely on
   the tunnel for public access rather than binding to `0.0.0.0`.
 - For production use, consider Cloudflare Access or similar zero-trust overlay
@@ -113,7 +126,9 @@ python3 -m agentsassemble.cli gui --host 127.0.0.1 --port 8765
 ## Limitations (v1)
 
 - No relay/WebRTC — requires a working tunnel for connectivity.
-- No persistent auth — server restart invalidates all sessions and invites.
+- No account login or durable user identity — the local store only preserves
+  invite/session admission state for this GUI output root until expiry,
+  revocation, or deletion of the store file.
 - No TLS termination — the tunnel handles TLS; local traffic is plain HTTP.
 - No rate limiting — a determined attacker could brute-force invite tokens
   (mitigated by short TTL and single-use).
