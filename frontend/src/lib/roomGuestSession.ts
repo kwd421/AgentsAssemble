@@ -1,9 +1,12 @@
+import type { RoomAppearance } from "./roomAppearance";
+
 export type RoomGuestSession = {
   inviteToken: string;
   sessionToken: string;
   meetingId: string;
   agentId: string;
   displayName: string;
+  inviteScope: RoomAppearance["inviteScope"];
   expiresAt: string;
   joinedAt: string;
 };
@@ -16,6 +19,10 @@ function cleanText(value: unknown, limit: number): string {
     .trim()
     .slice(0, limit)
     .trim();
+}
+
+function normalizeInviteScope(value: unknown): RoomAppearance["inviteScope"] {
+  return cleanText(value, 32) === "read_only" ? "read_only" : "room";
 }
 
 export function joinInviteTokenFromUrl(url: string): string {
@@ -41,6 +48,7 @@ export function roomGuestSessionFromJoinPayload(
     meetingId: cleanText(record.meeting_id, 128),
     agentId: cleanText(record.agent_id, 128),
     displayName: cleanText(record.display_name, 128),
+    inviteScope: normalizeInviteScope(record.invite_scope),
     expiresAt: cleanText(record.expires_at, 64),
     joinedAt: now.toISOString(),
   };
@@ -54,6 +62,7 @@ export function normalizeRoomGuestSession(value: unknown): RoomGuestSession | nu
     meeting_id: record.meetingId,
     agent_id: record.agentId,
     display_name: record.displayName,
+    invite_scope: record.inviteScope,
     expires_at: record.expiresAt,
   });
   session.joinedAt = cleanText(record.joinedAt, 64) || session.joinedAt;

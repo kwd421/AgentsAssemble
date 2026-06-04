@@ -64,6 +64,7 @@ export interface RoomInviteCreateResponse {
   meeting_id: string;
   agent_id: string;
   display_name: string;
+  invite_scope: RoomAppearance["inviteScope"];
   expires_at: string;
   room_url: string;
   join_url?: string;
@@ -76,6 +77,7 @@ export interface RoomInviteJoinResponse {
   agent_id: string;
   display_name: string;
   meeting_id: string;
+  invite_scope: RoomAppearance["inviteScope"];
   connection_kind: string;
   expires_at: string;
 }
@@ -818,7 +820,10 @@ export function fetchLobby(meetingId = "") {
 }
 
 export function fetchRoomLobby(sessionToken: string) {
-  return fetchJsonWithToken<{ events: LobbyEvent[]; session: { agent_id: string; display_name: string } }>(
+  return fetchJsonWithToken<{
+    events: LobbyEvent[];
+    session: { agent_id: string; display_name: string; invite_scope?: RoomAppearance["inviteScope"] };
+  }>(
     "/api/room/lobby",
     sessionToken
   );
@@ -901,17 +906,20 @@ export function createRoomInvite({
   meetingId,
   agentId,
   displayName,
+  inviteScope = "room",
   ttlSeconds = 604800,
 }: {
   meetingId: string;
   agentId: string;
   displayName: string;
+  inviteScope?: RoomAppearance["inviteScope"];
   ttlSeconds?: number;
 }) {
   return postJson<RoomInviteCreateResponse>("/api/room-invite/create", {
     meeting_id: meetingId,
     agent_id: agentId,
     display_name: displayName,
+    invite_scope: inviteScope,
     ttl_seconds: ttlSeconds,
   });
 }

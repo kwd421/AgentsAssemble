@@ -141,7 +141,10 @@ Recommended order:
   Invites are single-use, time-limited, and revocable by the host.
   Session tokens are in-memory only; there is no durable auth store, no
   persistent revocation beyond server-memory leave/expiry, no relay/WebRTC/NAT
-  traversal, and no provider CLI start. `/api/room/say` enforces session
-  identity (name, actor_id, side, kind) from the authenticated session, not
-  from client-supplied fields. See `docs/public-internet-invite-tunnel.md` for
-  tunnel setup instructions.
+  traversal, and no provider CLI start. External shares use `/join?token=...`;
+  the old `?guest=1&room=...` form is only a local/dev preview and is treated
+  as read-only/no-session. `/api/room/say` enforces session identity (name,
+  actor_id, side, kind) from the authenticated session, not from client-supplied
+  fields. Read-only invite sessions are rejected by `/api/room/say` and cannot
+  create companion AI invite packets. See `docs/public-internet-invite-tunnel.md`
+  for tunnel setup instructions.

@@ -36,7 +36,7 @@ function inviteFriendSubtitle(friend: RoomFriend, typeLabel: string): string {
 
 export default function RoomInviteModal({
   roomLabel,
-  inviteUrl,
+  localPreviewUrl,
   inviteScope = "room",
   friends,
   members = [],
@@ -50,7 +50,7 @@ export default function RoomInviteModal({
   onInviteFriend,
 }: {
   roomLabel: string;
-  inviteUrl: string;
+  localPreviewUrl: string;
   inviteScope?: RoomAppearance["inviteScope"];
   friends: RoomFriend[];
   members?: RoomMember[];
@@ -95,8 +95,8 @@ export default function RoomInviteModal({
             </h2>
             <p className="mt-1 text-[13px] text-text-muted preserve-words">
               {readOnlyInvite
-                ? "수신자는 읽기 전용 초대 링크를 로컬 DM으로 받습니다. 이 링크로 들어온 사람은 이 방만 보고 메시지는 보낼 수 없습니다."
-                : "수신자는 이 방 초대 링크를 로컬 DM으로 받습니다. 이 링크로 들어온 사람은 이 방만 보고 채팅합니다."}
+                ? "보안 초대 링크는 공개 URL이 설정된 뒤 생성됩니다. 로컬/dev 미리보기 링크로 들어온 사람은 인증된 외부 게스트 세션을 받지 않습니다."
+                : "보안 초대 링크는 공개 URL이 설정된 뒤 생성됩니다. 친구에게 보낼 때는 /join?token=... 링크만 외부 초대로 사용합니다."}
             </p>
           </div>
           <button
@@ -171,19 +171,17 @@ export default function RoomInviteModal({
         </div>
 
         <label className="dc-invite-link-label">
-          {readOnlyInvite
-            ? "또는 친구에게 읽기 전용 초대 링크 전송하기"
-            : "또는 친구에게 방 초대 링크 전송하기"}
+          로컬/dev 미리보기 링크
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px]">
             <input
               className="dc-invite-link-input"
-              value={inviteUrl}
+              value={localPreviewUrl}
               readOnly
               onFocus={(event) => event.currentTarget.select()}
             />
             <button type="button" className="dc-invite-copy-button" onClick={onCopy}>
               <Copy size={15} />
-              링크 복사
+              보안 링크 복사
             </button>
           </div>
         </label>
@@ -214,8 +212,8 @@ export default function RoomInviteModal({
         <p className="mt-3 text-[12px] text-text-muted preserve-words">
           {copyStatus ||
             (readOnlyInvite
-              ? "읽기 전용 링크로 들어온 사람은 방을 보기만 합니다. 오프라인 AI는 provider/CLI 세션을 먼저 시작하거나 resume해야 합니다."
-              : "사람은 링크로 입장하고, AI는 살아 있는 세션이면 호출됩니다. 오프라인 AI는 provider/CLI 세션을 먼저 시작하거나 resume해야 합니다.")}
+              ? "이 미리보기 링크는 로컬/dev 확인용입니다. 외부 공유에는 공개 URL 기반 보안 초대 링크가 필요합니다."
+              : "사람은 보안 /join?token=... 링크로 입장합니다. 오프라인 AI는 provider/CLI 세션을 먼저 시작하거나 resume해야 합니다.")}
         </p>
       </section>
     </div>

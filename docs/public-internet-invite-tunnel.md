@@ -52,6 +52,8 @@ GUI-only path:
 4. Click **공개 링크 열기**. If `cloudflared` is missing, install it or paste a
    tunnel URL into **공개 주소 직접 입력**.
 5. Click **초대 링크 생성** and send the generated `/join?token=...` link.
+   If the GUI shows only the local/dev preview URL, the public URL is not
+   configured yet and that preview URL is not a secure external invite.
 
 ## ngrok
 
@@ -82,6 +84,12 @@ tailscale funnel 8765
   does not reveal an existing environment token.
 - Invite tokens are single-use, time-limited (default 10 minutes), and revocable.
 - Session tokens expire after 1 hour.
+- Externally shared invites should use the generated `/join?token=...` URL. The
+  legacy `?guest=1&room=...` URL is a local/dev preview surface; it does not
+  issue an authenticated guest session and is treated as read-only.
+- Read-only invite scope is enforced by the server session policy. A read-only
+  guest can read the room, but `/api/room/say` and companion AI invite creation
+  are rejected for that session.
 - The server does NOT start provider CLIs, expose secrets, or grant filesystem
   access through the invite flow.
 - The tunnel exposes the full GUI control plane. Bind to `127.0.0.1` and rely on

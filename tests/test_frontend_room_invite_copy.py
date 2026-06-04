@@ -88,6 +88,29 @@ class FrontendRoomInviteCopyTests(unittest.TestCase):
               }),
               '{\\n  "packet_kind": "native_remote_room_client_entry_packet",\\n  "env": {\\n    "AGENTSASSEMBLE_AGENT_ID": "friend-ai"\\n  }\\n}'
             );
+
+            assert.deepEqual(
+              copy.secureInviteCopyTarget({
+                joinUrl: "https://shared-room.example.com/join?token=aai1.secret",
+                localPreviewUrl: "http://127.0.0.1:8765/?guest=1&room=friend-room",
+              }),
+              {
+                copyUrl: "https://shared-room.example.com/join?token=aai1.secret",
+                status: "보안 초대 링크 복사됨",
+                previewLabel: "로컬/dev 미리보기 링크",
+                secure: true,
+              }
+            );
+
+            const missingPublicUrl = copy.secureInviteCopyTarget({
+              joinUrl: "",
+              localPreviewUrl: "http://127.0.0.1:8765/?guest=1&room=friend-room",
+            });
+            assert.equal(missingPublicUrl.copyUrl, "");
+            assert.equal(missingPublicUrl.secure, false);
+            assert.equal(missingPublicUrl.previewLabel, "로컬/dev 미리보기 링크");
+            assert.match(missingPublicUrl.status, /공개 URL/);
+            assert.match(missingPublicUrl.status, /보안 초대 링크/);
             """
         )
         completed = subprocess.run(

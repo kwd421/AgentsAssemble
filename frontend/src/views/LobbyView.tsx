@@ -22,6 +22,7 @@ import type { ChannelHeaderActions } from "./components/ChannelHeader";
 import DiscordText from "./components/DiscordText";
 import type { RoomAppearance } from "../lib/roomAppearance";
 import type { LobbyThreadSummary } from "../lib/sideChatThreadModel";
+import type { RoomPostingMode } from "../lib/roomGuestPosting";
 
 const ROOM_MODES = [
   { id: "council", label: "Council · 의사결정" },
@@ -125,6 +126,8 @@ export default function LobbyView({
   onFlowStarted,
   canManageRoom = true,
   canPostMessages = true,
+  postingMode = "host",
+  composerDisabledReason = "",
   membersOpen,
   onToggleMembers,
   headerActions,
@@ -142,6 +145,8 @@ export default function LobbyView({
   onFlowStarted: () => void;
   canManageRoom?: boolean;
   canPostMessages?: boolean;
+  postingMode?: RoomPostingMode;
+  composerDisabledReason?: string;
   membersOpen?: boolean;
   onToggleMembers?: () => void;
   headerActions?: ChannelHeaderActions;
@@ -307,14 +312,14 @@ export default function LobbyView({
           <div className="dc-room-status-chip">
             <span className="flex items-center gap-1.5">
               <span className={`h-2 w-2 rounded-full ${isRunning ? "bg-online live-pulse" : "bg-idle"}`} />
-              {canPostMessages ? "초대받은 방" : "읽기 전용 초대"}
+              {canPostMessages ? "초대받은 방" : composerDisabledReason || "초대 세션 필요"}
             </span>
             <span className="min-w-0 truncate text-text-muted preserve-words">
               {canPostMessages
                 ? isRunning
                   ? flow.topic || flow.meeting_id || "진행 중"
                   : "이 방의 general 채널만 볼 수 있습니다"
-                : "이 링크에서는 메시지를 보낼 수 없습니다"}
+                : composerDisabledReason || "이 링크에서는 메시지를 보낼 수 없습니다"}
             </span>
           </div>
         ) : isRunning ? (
@@ -433,7 +438,8 @@ export default function LobbyView({
           onPosted={handleLobbyPosted}
           mentionables={mentionables}
           roomSessionToken={roomSessionToken}
-          disabledReason={!canPostMessages ? "읽기 전용 초대입니다. 이 방은 보기만 가능합니다." : undefined}
+          postingMode={postingMode}
+          disabledReason={!canPostMessages ? composerDisabledReason : undefined}
         />
       </div>
     </div>

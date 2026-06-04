@@ -21,7 +21,7 @@ def build_remote_room_client_packet(
     normalized_agent_id = clean_lobby_text(agent_id, limit=64)
     normalized_display_name = clean_lobby_text(display_name or agent_id, limit=128)
     normalized_expires_at = clean_lobby_text(expires_at, limit=64)
-    normalized_join_url = clean_lobby_text(join_url, limit=512)
+    normalized_join_url = clean_lobby_text(join_url, limit=4096)
     endpoints = _room_endpoints(normalized_room_url)
     return {
         "status": "generated",
@@ -125,6 +125,7 @@ def build_remote_room_client_packet(
             "Do not treat this packet as permission to start provider CLIs, access files, or promote lobby chat to official records.",
         ],
         "browser_join_url": normalized_join_url,
+        "join_url": normalized_join_url,
         "expires_at": normalized_expires_at,
         "safety": {
             "contains_invite_token": bool(normalized_invite_token),

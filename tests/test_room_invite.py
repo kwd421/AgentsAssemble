@@ -8,6 +8,7 @@ from agentsassemble.room_invite import (
     create_room_invite,
     join_room_with_invite,
     reset_state,
+    set_runtime_public_url,
     revoke_session,
     verify_session_token,
     active_sessions_summary,
@@ -32,6 +33,23 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
         self.assertEqual(invite["meeting_id"], "test-meeting")
         self.assertEqual(invite["agent_id"], "guest-1")
         self.assertTrue(invite["invite_token"].startswith("aai1."))
+
+    def test_create_invite_returns_secure_join_url_when_public_url_configured(self):
+        set_runtime_public_url("https://shared-room.example.com")
+
+        invite = create_room_invite(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="test-meeting",
+            agent_id="guest-1",
+            display_name="Guest One",
+        )
+
+        self.assertTrue(str(invite["join_url"]).startswith("https://shared-room.example.com/join?token="))
+        self.assertEqual(invite["remote_client_packet"]["join_url"], invite["join_url"])
+        self.assertEqual(
+            invite["remote_client_packet"]["env"]["AGENTSASSEMBLE_ROOM_URL"],
+            "https://shared-room.example.com",
+        )
 
     def test_create_invite_returns_remote_client_entry_packet(self):
         invite = create_room_invite(
@@ -69,6 +87,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
         self.assertEqual(result["agent_id"], "guest-1")
         self.assertEqual(result["display_name"], "Guest One")
         self.assertTrue(result["session_token"].startswith("aas1."))
+        self.assertEqual(result["invite_scope"], "room")
 
     def test_join_token_single_use(self):
         invite = create_room_invite(
@@ -96,6 +115,23 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
         session = verify_session_token(join_result["session_token"])
         self.assertIsNotNone(session)
         self.assertEqual(session["agent_id"], "guest-1")
+
+    def test_read_only_invite_scope_survives_join_and_session_verification(self):
+        invite = create_room_invite(
+            room_url="http://192.168.1.10:8765",
+            meeting_id="test-meeting",
+            agent_id="guest-1",
+            invite_scope="read_only",
+        )
+
+        self.assertEqual(invite["invite_scope"], "read_only")
+        join_result = join_room_with_invite(invite["invite_token"])
+        self.assertEqual(join_result["status"], "admitted")
+        self.assertEqual(join_result["invite_scope"], "read_only")
+
+        session = verify_session_token(join_result["session_token"])
+        self.assertIsNotNone(session)
+        self.assertEqual(session["invite_scope"], "read_only")
 
     def test_session_revoke(self):
         invite = create_room_invite(

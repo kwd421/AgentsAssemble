@@ -42,9 +42,13 @@ _state_lock = threading.Lock()
 _active_sessions: dict[str, dict] = {}  # session_token -> session info
 _used_nonces: set[str] = set()  # consumed invite nonces (replay protection)
 _invite_secret: str = ""  # server-lifetime secret for invite generation
-_pending_invites: dict[str, dict] = {}  # nonce -> invite metadata (for revocation)
+_pending_invites: dict[str, dict] = {}  # invite_id -> invite metadata (for revocation)
 _runtime_host_token: str = ""
 _runtime_public_url: str = ""
+
+ROOM_INVITE_SCOPE = "room"
+READ_ONLY_INVITE_SCOPE = "read_only"
+INVITE_SCOPES = {ROOM_INVITE_SCOPE, READ_ONLY_INVITE_SCOPE}
 
 # --- Host token gate ---
 # Set AGENTSASSEMBLE_HOST_TOKEN to require auth for invite creation/management.
@@ -145,6 +149,12 @@ def normalize_public_room_url(room_url: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
 
 
+def normalize_invite_scope(value: object) -> str:
+    """Return the persisted invite scope understood by room session policy."""
+    scope = clean_lobby_text(value, limit=32)
+    return scope if scope in INVITE_SCOPES else ROOM_INVITE_SCOPE
+
+
 def clear_runtime_public_url(expected_url: str = "") -> None:
     """Clear the runtime public URL, optionally only when it matches a value."""
     global _runtime_public_url
@@ -168,6 +178,7 @@ def create_room_invite(
     agent_id: str = "",
     display_name: str = "",
     ttl_seconds: int = 600,
+    invite_scope: str = ROOM_INVITE_SCOPE,
 ) -> dict[str, object]:
     """Create an invite token for a remote client to join the room.
 
@@ -179,6 +190,7 @@ def create_room_invite(
     secret = _get_invite_secret()
     clean_agent_id = clean_lobby_text(agent_id, limit=64) or f"guest-{secrets.token_hex(4)}"
     clean_display_name = clean_lobby_text(display_name, limit=128) or clean_agent_id
+    clean_invite_scope = normalize_invite_scope(invite_scope)
 
     packet = create_lan_invite_packet(
         room_url=room_url,
@@ -201,6 +213,7 @@ def create_room_invite(
             "agent_id": clean_agent_id,
             "display_name": clean_display_name,
             "meeting_id": meeting_id,
+            "invite_scope": clean_invite_scope,
             "expires_at": packet["expires_at"],
             "created_at": datetime.now(UTC).isoformat(),
             "revoked": False,
@@ -218,6 +231,7 @@ def create_room_invite(
         "meeting_id": packet["meeting_id"],
         "agent_id": clean_agent_id,
         "display_name": clean_display_name,
+        "invite_scope": clean_invite_scope,
         "expires_at": packet["expires_at"],
         "room_url": packet["room_url"],
     }
@@ -260,6 +274,7 @@ def join_room_with_invite(
         invite_info = _pending_invites.get(invite_id)
         if invite_info and invite_info.get("revoked"):
             return {"status": "rejected", "reason": "invite_revoked"}
+        invite_scope = normalize_invite_scope(invite_info.get("invite_scope") if invite_info else "")
 
     verification = verify_lan_invite_token(
         token,
@@ -297,6 +312,7 @@ def join_room_with_invite(
         agent_id=agent_id,
         display_name=resolved_display_name,
         meeting_id=resolved_meeting_id,
+        invite_scope=invite_scope,
     )
 
     return {
@@ -305,6 +321,7 @@ def join_room_with_invite(
         "agent_id": agent_id,
         "display_name": resolved_display_name,
         "meeting_id": resolved_meeting_id,
+        "invite_scope": invite_scope,
         "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
         "expires_at": _active_sessions[session_token]["expires_at"],
     }
@@ -346,6 +363,7 @@ def active_sessions_summary() -> list[dict[str, object]]:
                 "agent_id": session["agent_id"],
                 "display_name": session["display_name"],
                 "meeting_id": session["meeting_id"],
+                "invite_scope": session.get("invite_scope", ROOM_INVITE_SCOPE),
                 "joined_at": session["joined_at"],
                 "expires_at": session["expires_at"],
             })
@@ -378,6 +396,7 @@ def pending_invites_summary() -> list[dict[str, object]]:
                 "agent_id": info["agent_id"],
                 "display_name": info["display_name"],
                 "meeting_id": info["meeting_id"],
+                "invite_scope": info.get("invite_scope", ROOM_INVITE_SCOPE),
                 "expires_at": info["expires_at"],
                 "created_at": info["created_at"],
                 "revoked": info["revoked"],
@@ -390,6 +409,7 @@ def _issue_session_token(
     agent_id: str,
     display_name: str,
     meeting_id: str,
+    invite_scope: str = ROOM_INVITE_SCOPE,
 ) -> str:
     """Generate and store a session token."""
     now = datetime.now(UTC)
@@ -399,6 +419,7 @@ def _issue_session_token(
         "agent_id": agent_id,
         "display_name": display_name,
         "meeting_id": meeting_id,
+        "invite_scope": normalize_invite_scope(invite_scope),
         "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
         "joined_at": now.isoformat(),
         "expires_at": (now + timedelta(seconds=SESSION_TOKEN_TTL_SECONDS)).isoformat(),

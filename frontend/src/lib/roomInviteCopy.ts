@@ -40,3 +40,35 @@ export function remoteClientPacketPreview(packet: unknown): string {
   if (!packet) return "";
   return JSON.stringify(packet, null, 2);
 }
+
+export function secureInviteCopyTarget({
+  joinUrl,
+  localPreviewUrl,
+}: {
+  joinUrl?: string;
+  localPreviewUrl?: string;
+}): {
+  copyUrl: string;
+  status: string;
+  previewLabel: string;
+  secure: boolean;
+} {
+  const cleanJoinUrl = String(joinUrl || "").trim();
+  if (cleanJoinUrl) {
+    return {
+      copyUrl: cleanJoinUrl,
+      status: "보안 초대 링크 복사됨",
+      previewLabel: "로컬/dev 미리보기 링크",
+      secure: true,
+    };
+  }
+  const hasLocalPreview = Boolean(String(localPreviewUrl || "").trim());
+  return {
+    copyUrl: "",
+    status: hasLocalPreview
+      ? "공개 URL이 없어 보안 초대 링크를 만들 수 없습니다. 아래 링크는 로컬/dev 미리보기 전용입니다."
+      : "공개 URL이 없어 보안 초대 링크를 만들 수 없습니다.",
+    previewLabel: "로컬/dev 미리보기 링크",
+    secure: false,
+  };
+}

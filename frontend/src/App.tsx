@@ -96,7 +96,7 @@ import {
 import {
   createFreshRoom,
   createStartupRoute,
-  inviteUrlForRoom,
+  localPreviewInviteUrlForRoom,
   persistableRoom,
   roomFromFlow,
   roomFromGuestSession,
@@ -109,7 +109,12 @@ import {
   roomGuestSessionFromJoinPayload,
   type RoomGuestSession,
 } from "./lib/roomGuestSession";
-import { inviteFriendDmMessage, remoteClientPacketPreview } from "./lib/roomInviteCopy";
+import {
+  inviteFriendDmMessage,
+  remoteClientPacketPreview,
+  secureInviteCopyTarget,
+} from "./lib/roomInviteCopy";
+import { roomPostingState } from "./lib/roomGuestPosting";
 import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
 import { isActivePresence } from "./lib/presenceStatus";
 import {
@@ -332,7 +337,17 @@ export default function App() {
   const [sideChatThread, setSideChatThread] = useState<SideChatThreadContext | null>(null);
 
   const guestMeetingId = guestSession?.meetingId || guestInvite?.meetingId || "";
-  const guestReadOnly = guestInvite?.inviteScope === "read_only";
+  const guestReadOnly =
+    guestInvite?.inviteScope === "read_only" || guestSession?.inviteScope === "read_only";
+  const lobbyPostingState = useMemo(
+    () =>
+      roomPostingState({
+        guestLocked,
+        guestReadOnly,
+        sessionToken: guestSession?.sessionToken || "",
+      }),
+    [guestLocked, guestReadOnly, guestSession?.sessionToken]
+  );
   const flowFetcher = useCallback(
     () => fetchLiveAgentFlow(guestMeetingId, guestSession?.sessionToken || ""),
     [guestMeetingId, guestSession?.sessionToken]
@@ -814,10 +829,34 @@ export default function App() {
     setChannelMenu(null);
   }
 
-  async function copyInviteLink(room: RoomDockItem, appearance?: RoomAppearance) {
-    setInviteCopyStatus("");
-    const copied = await copyText(inviteUrlForRoom(room, appearance));
-    setInviteCopyStatus(copied ? "복사됨" : "복사 실패");
+  async function copyInviteLink(room: RoomDockItem) {
+    const localPreviewUrl = localPreviewInviteUrlForRoom(room);
+    const inviteScope =
+      completeRoomAppearance(roomAppearances[roomSettingsKey(room)] || roomAppearances[room.id])
+        .inviteScope ||
+      room.inviteScope ||
+      "room";
+    setInviteCopyStatus("보안 초대 링크 생성 중...");
+    try {
+      const invite = await createRoomInvite({
+        meetingId: room.meetingId,
+        agentId: "guest",
+        displayName: "Guest",
+        inviteScope,
+      });
+      const target = secureInviteCopyTarget({
+        joinUrl: invite.join_url || "",
+        localPreviewUrl,
+      });
+      if (!target.copyUrl) {
+        setInviteCopyStatus(target.status);
+        return;
+      }
+      const copied = await copyText(target.copyUrl);
+      setInviteCopyStatus(copied ? target.status : "보안 초대 링크 복사 실패");
+    } catch {
+      setInviteCopyStatus("보안 초대 링크 생성 실패. 공개 URL과 host 권한 설정을 확인하세요.");
+    }
   }
 
   async function copyRemoteClientPacket() {
@@ -839,8 +878,8 @@ export default function App() {
       const preview = remoteClientPacketPreview(invite.remote_client_packet);
       setGuestAiPacketPreview(preview);
       setGuestAiPacketStatus(preview ? "AI 입장 패킷 생성됨" : "AI 입장 패킷이 비어 있습니다");
-    } catch (error) {
-      setGuestAiPacketStatus(error instanceof Error ? error.message : "AI 입장 패킷 생성 실패");
+    } catch {
+      setGuestAiPacketStatus("AI 입장 패킷 생성 실패. 초대 세션 권한과 공개 URL 설정을 확인하세요.");
     }
   }
 
@@ -856,27 +895,33 @@ export default function App() {
     const inviteRoomKey = roomSettingsKey(inviteModalRoom);
     setInviteFriendStatuses((previous) => ({ ...previous, [friendId]: "초대 중" }));
     try {
-      let link = inviteUrl;
+      let link = "";
       const isAiFriend = friend.participant_type !== "human";
       const isLiveSession = isActivePresence(friend.status);
-      const readOnlyInvite =
-        (inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room") === "read_only";
+      const inviteScope = inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room";
+      const readOnlyInvite = inviteScope === "read_only";
       const participantId = friend.source_agent_id || friend.friend_id;
       const memberStatus = isAiFriend ? (isLiveSession ? friend.status : "pending") : "invited";
       let remotePacketPreview = "";
-      try {
-        const invite = await createRoomInvite({
-          meetingId: inviteModalRoom.meetingId,
-          agentId: participantId,
-          displayName: friend.display_name,
-        });
-        if (!readOnlyInvite) {
-          link = invite.join_url || link;
-          remotePacketPreview = isAiFriend ? remoteClientPacketPreview(invite.remote_client_packet) : "";
-        }
-      } catch {
-        // Public invite token creation can be host-token gated; the friend DM still carries the scoped room link.
+      const invite = await createRoomInvite({
+        meetingId: inviteModalRoom.meetingId,
+        agentId: participantId,
+        displayName: friend.display_name,
+        inviteScope,
+      });
+      const target = secureInviteCopyTarget({
+        joinUrl: invite.join_url || "",
+        localPreviewUrl,
+      });
+      if (!target.copyUrl) {
+        setInviteFriendStatuses((previous) => ({
+          ...previous,
+          [friendId]: target.status,
+        }));
+        return;
       }
+      link = target.copyUrl;
+      remotePacketPreview = isAiFriend ? remoteClientPacketPreview(invite.remote_client_packet) : "";
       setInviteRemoteClientPacket({
         friendName: remotePacketPreview ? friend.display_name : "",
         preview: remotePacketPreview,
@@ -912,10 +957,10 @@ export default function App() {
         ...previous,
         [friendId]: isAiFriend ? (isLiveSession ? "호출됨" : "실행 필요") : "초대됨",
       }));
-    } catch (error) {
+    } catch {
       setInviteFriendStatuses((previous) => ({
         ...previous,
-        [friendId]: error instanceof Error ? error.message : "초대 실패",
+        [friendId]: "초대 실패. 공개 URL과 host 권한 설정을 확인하세요.",
       }));
     }
   }
@@ -932,7 +977,9 @@ export default function App() {
         roomAppearances[roomSettingsKey(inviteModalRoom)] || roomAppearances[inviteModalRoom.id]
       )
     : undefined;
-  const inviteUrl = inviteModalRoom ? inviteUrlForRoom(inviteModalRoom, inviteModalAppearance) : "";
+  const localPreviewUrl = inviteModalRoom
+    ? localPreviewInviteUrlForRoom(inviteModalRoom)
+    : "";
   const inviteModalMembers = inviteModalRoom
     ? roomMembersByRoom[roomSettingsKey(inviteModalRoom)] || []
     : [];
@@ -1220,7 +1267,7 @@ export default function App() {
       {inviteModalRoom && (
         <RoomInviteModal
           roomLabel={inviteModalRoom.label}
-          inviteUrl={inviteUrl}
+          localPreviewUrl={localPreviewUrl}
           inviteScope={inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room"}
           friends={homeFriendsPayload.friends}
           members={inviteModalMembers}
@@ -1229,7 +1276,7 @@ export default function App() {
           remoteClientPacketPreview={inviteRemoteClientPacket.preview}
           remoteClientPacketFriendName={inviteRemoteClientPacket.friendName}
           onClose={() => setInviteModal(null)}
-          onCopy={() => void copyInviteLink(inviteModalRoom, inviteModalAppearance)}
+          onCopy={() => void copyInviteLink(inviteModalRoom)}
           onCopyRemoteClientPacket={() => void copyRemoteClientPacket()}
           onInviteFriend={(friend) => void inviteFriendToRoom(friend)}
         />
@@ -1478,12 +1525,14 @@ export default function App() {
             flow={scopedFlow}
             agents={scopedAgents}
             mentionables={scopedMentionables}
-            roomSessionToken={guestSession?.sessionToken || ""}
+            roomSessionToken={lobbyPostingState.sessionToken}
             refreshFlow={refreshFlow}
             onMafiaStarted={handleMafiaStarted}
             onFlowStarted={handleFlowStarted}
             canManageRoom={!guestLocked}
-            canPostMessages={!guestReadOnly && (!guestJoinToken || Boolean(guestSession))}
+            canPostMessages={lobbyPostingState.canPost}
+            postingMode={lobbyPostingState.mode}
+            composerDisabledReason={lobbyPostingState.disabledReason}
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
             headerActions={channelHeaderActions("lobby")}
@@ -1595,7 +1644,7 @@ export default function App() {
                 mentionables={scopedMentionables}
                 threadContext={sideChatThread}
                 onCloseThread={closeSideChatThread}
-                canPostMessages={!guestReadOnly}
+                canPostMessages={!guestLocked}
               />
             </section>
           )}

@@ -7757,7 +7757,11 @@ def _make_handler(
                 self._send_json(
                     {
                         "events": read_lobby(output_root, meeting_id=str(session.get("meeting_id") or "")),
-                        "session": {"agent_id": session["agent_id"], "display_name": session["display_name"]},
+                        "session": {
+                            "agent_id": session["agent_id"],
+                            "display_name": session["display_name"],
+                            "invite_scope": session.get("invite_scope", "room"),
+                        },
                     }
                 )
                 return
@@ -8133,6 +8137,9 @@ def _make_handler(
                 session = verify_session_token(session_token)
                 if not session:
                     self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
+                    return
+                if session.get("invite_scope") == "read_only":
+                    self._send_error(HTTPStatus.FORBIDDEN, "read-only invite session cannot post")
                     return
                 length = int(self.headers.get("Content-Length", "0") or "0")
                 try:
@@ -8930,6 +8937,7 @@ def _make_handler(
                         agent_id=str(payload.get("agent_id") or ""),
                         display_name=str(payload.get("display_name") or ""),
                         ttl_seconds=int(payload.get("ttl_seconds") or 600),
+                        invite_scope=str(payload.get("invite_scope") or "room"),
                     )
                 except (ValueError, TypeError) as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
@@ -8981,6 +8989,9 @@ def _make_handler(
                 if not session:
                     self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
                     return
+                if session.get("invite_scope") == "read_only":
+                    self._send_error(HTTPStatus.FORBIDDEN, "read-only invite session cannot create companion invites")
+                    return
                 length = int(self.headers.get("Content-Length", "0") or "0")
                 try:
                     payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
@@ -8997,6 +9008,7 @@ def _make_handler(
                         agent_id=str(payload.get("agent_id") or ""),
                         display_name=str(payload.get("display_name") or ""),
                         ttl_seconds=min(int(payload.get("ttl_seconds") or 600), 3600),
+                        invite_scope="room",
                     )
                 except (ValueError, TypeError) as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))

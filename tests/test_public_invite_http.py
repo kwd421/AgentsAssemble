@@ -124,6 +124,101 @@ class PublicInviteHttpTests(unittest.TestCase):
                             lobby_payload = json.loads(response.read().decode("utf-8"))
                     self.assertIn("events", lobby_payload)
 
+                    with self.assertRaises(HTTPError) as unauthenticated_room_say:
+                        urlopen(
+                            _json_request(
+                                f"{base}/api/room/say",
+                                {"message": "no session"},
+                                public_headers,
+                            ),
+                            timeout=4,
+                        )
+                    self.assertEqual(unauthenticated_room_say.exception.code, 401)
+
+                    with self.assertRaises(HTTPError) as blocked_lobby_post:
+                        urlopen(
+                            _json_request(
+                                f"{base}/api/lobby",
+                                {"message": "host path from guest"},
+                                public_headers,
+                            ),
+                            timeout=4,
+                        )
+                    self.assertEqual(blocked_lobby_post.exception.code, 403)
+
+                    with urlopen(
+                        _json_request(
+                            f"{base}/api/room/say",
+                            {"message": "hello from guest"},
+                            {
+                                **public_headers,
+                                "Authorization": f"Bearer {session_payload['session_token']}",
+                            },
+                        ),
+                        timeout=4,
+                    ) as response:
+                        say_payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(say_payload["event"]["message"], "hello from guest")
+                    self.assertEqual(say_payload["event"]["name"], "Friend")
+                    self.assertEqual(say_payload["event"]["side"], "other")
+                    self.assertEqual(say_payload["event"]["flow_meeting_id"], "friend-room")
+                    self.assertNotIn(session_payload["session_token"], json.dumps(say_payload))
+
+                    with urlopen(
+                        _json_request(
+                            f"{base}/api/room-invite/create",
+                            {
+                                "meeting_id": "friend-room",
+                                "display_name": "Read Only Friend",
+                                "invite_scope": "read_only",
+                            },
+                            {"X-Host-Token": host_token},
+                        ),
+                        timeout=4,
+                    ) as response:
+                        read_only_invite = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(read_only_invite["invite_scope"], "read_only")
+
+                    with urlopen(
+                        _json_request(
+                            f"{base}/api/room-invite/join",
+                            {"invite_token": read_only_invite["invite_token"]},
+                            public_headers,
+                        ),
+                        timeout=4,
+                    ) as response:
+                        read_only_session = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(read_only_session["status"], "admitted")
+                    self.assertEqual(read_only_session["invite_scope"], "read_only")
+
+                    with self.assertRaises(HTTPError) as read_only_room_say:
+                        urlopen(
+                            _json_request(
+                                f"{base}/api/room/say",
+                                {"message": "should not post"},
+                                {
+                                    **public_headers,
+                                    "Authorization": f"Bearer {read_only_session['session_token']}",
+                                },
+                            ),
+                            timeout=4,
+                        )
+                    self.assertEqual(read_only_room_say.exception.code, 403)
+
+                    with self.assertRaises(HTTPError) as read_only_companion:
+                        urlopen(
+                            _json_request(
+                                f"{base}/api/room-invite/companion",
+                                {"agent_id": "blocked-ai", "display_name": "Blocked AI"},
+                                {
+                                    **public_headers,
+                                    "Authorization": f"Bearer {read_only_session['session_token']}",
+                                },
+                            ),
+                            timeout=4,
+                        )
+                    self.assertEqual(read_only_companion.exception.code, 403)
+
                     with urlopen(
                         _json_request(
                             f"{base}/api/room-invite/companion",

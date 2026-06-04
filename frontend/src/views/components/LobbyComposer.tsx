@@ -15,6 +15,7 @@ import {
   lobbySubmitSuccessDraft,
   selectLobbyAttachmentFiles,
 } from "../../lib/lobbyComposerModel";
+import type { RoomPostingMode } from "../../lib/roomGuestPosting";
 import MentionInput from "./MentionInput";
 
 type ComposerAccessory = {
@@ -74,12 +75,14 @@ export default function LobbyComposer({
   mentionables = [],
   disabledReason,
   roomSessionToken = "",
+  postingMode = "host",
 }: {
   meetingId: string;
   onPosted: (events: LobbyEvent[]) => void;
   mentionables?: string[];
   disabledReason?: string;
   roomSessionToken?: string;
+  postingMode?: RoomPostingMode;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -90,7 +93,7 @@ export default function LobbyComposer({
   const [error, setError] = useState("");
   const [accessoryNotice, setAccessoryNotice] = useState("");
   const disabled = Boolean(disabledReason);
-  const canUploadAttachments = !roomSessionToken;
+  const canUploadAttachments = postingMode === "host";
   const canSubmit = Boolean(message.trim() || pendingAttachments.length) && !busy && !uploading && !disabled;
 
   function insertText(text: string) {
@@ -161,7 +164,10 @@ export default function LobbyComposer({
     setBusy(true);
     setError("");
     try {
-      const payload = await (roomSessionToken ? postRoomSay({
+      if (postingMode === "guest" && !roomSessionToken) {
+        throw new Error("메시지를 보내려면 유효한 초대 세션이 필요합니다.");
+      }
+      const payload = await (postingMode === "guest" ? postRoomSay({
         sessionToken: roomSessionToken,
         message: trimmed,
         attachments: draftAttachments,

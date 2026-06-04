@@ -164,14 +164,13 @@ export function roomFromInviteParams(): RoomDockItem | null {
     if (!guestMode || !meetingId) return null;
     const label = cleanInviteValue(query.get("roomName") || query.get("name"), meetingId, 80);
     const topic = cleanInviteValue(query.get("topic"), "초대받은 방", 160);
-    const inviteScope = query.get("scope") || query.get("inviteScope") || "room";
     return {
       id: `guest-${meetingId}`,
       label: label || meetingId,
       meetingId,
       topic,
       shortLabel: (label || meetingId).slice(0, 1).toUpperCase() || "G",
-      inviteScope: inviteScope === "read_only" ? "read_only" : "room",
+      inviteScope: "read_only",
       icon: Users,
       createdAt: "",
       tone: "resident",
@@ -189,7 +188,7 @@ export function roomFromGuestSession(session: RoomGuestSession): RoomDockItem {
     meetingId: session.meetingId,
     topic: `${session.displayName || session.agentId}로 입장한 방`,
     shortLabel: label.slice(0, 1).toUpperCase() || "G",
-    inviteScope: "room",
+    inviteScope: session.inviteScope,
     icon: Users,
     createdAt: session.joinedAt,
     tone: "resident",
@@ -316,15 +315,15 @@ export function roomSettingsKey(room: RoomDockItem) {
   return room.meetingId || room.id;
 }
 
-export function inviteUrlForRoom(room: RoomDockItem, appearance?: RoomAppearance) {
+export function localPreviewInviteUrlForRoom(room: RoomDockItem) {
   const url = new URL(window.location.href);
-  const inviteScope = appearance?.inviteScope || room.inviteScope || "room";
   url.search = "";
   url.hash = "";
   url.searchParams.set("guest", "1");
   url.searchParams.set("room", room.meetingId);
   url.searchParams.set("roomName", room.label);
   if (room.topic) url.searchParams.set("topic", room.topic);
-  url.searchParams.set("scope", inviteScope);
+  url.searchParams.set("scope", "read_only");
+  url.searchParams.set("preview", "local-dev");
   return url.toString();
 }
