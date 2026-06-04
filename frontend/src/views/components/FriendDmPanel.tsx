@@ -13,12 +13,19 @@ import {
   type FriendDmDrafts,
 } from "../../lib/friendDmDraftModel";
 import { participantTypeMeta } from "../../lib/participantTypes";
+import { isActivePresence } from "../../lib/presenceStatus";
 import DiscordText from "./DiscordText";
 
 function timeLabel(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+const AI_DM_TYPES = new Set(["subscription_ai", "api", "local", "remote"]);
+
+function canDirectMessage(friend: RoomFriend) {
+  return AI_DM_TYPES.has(friend.participant_type) && Boolean(friend.source_agent_id || friend.agent_id);
 }
 
 export default function FriendDmPanel({
@@ -44,9 +51,15 @@ export default function FriendDmPanel({
   const draft = friendDmDraftValue(draftsByFriend, friendId);
   const meta = friend ? participantTypeMeta(friend.participant_type) : null;
   const Icon = meta?.icon;
+  const directMessageEnabled = friend ? canDirectMessage(friend) : false;
+  const friendIsActive = friend ? isActivePresence(friend.status) : false;
   const placeholder = useMemo(
-    () => (friend ? `${friend.display_name}에게 로컬 메시지` : "저장된 친구를 선택하세요"),
-    [friend]
+    () => {
+      if (!friend) return "저장된 친구를 선택하세요";
+      if (!directMessageEnabled) return "실제 AI 세션이 있는 친구만 DM할 수 있습니다";
+      return `${friend.display_name}에게 DM`;
+    },
+    [directMessageEnabled, friend]
   );
 
   useEffect(() => {
@@ -56,23 +69,30 @@ export default function FriendDmPanel({
       setStatus("");
       return;
     }
-    setLoading(true);
-    fetchRoomFriendDm(friendId)
-      .then((payload) => {
-        if (cancelled) return;
-        setEvents(payload.events);
+    function load(showLoading: boolean) {
+      if (showLoading) {
+        setLoading(true);
         setStatus("");
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setEvents([]);
-        setStatus(error instanceof Error ? error.message : "로컬 DM을 불러오지 못했습니다");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      }
+      fetchRoomFriendDm(friendId)
+        .then((payload) => {
+          if (cancelled) return;
+          setEvents(payload.events);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          if (showLoading) setEvents([]);
+          setStatus(error instanceof Error ? error.message : "DM을 불러오지 못했습니다");
+        })
+        .finally(() => {
+          if (!cancelled && showLoading) setLoading(false);
+        });
+    }
+    load(true);
+    const interval = window.setInterval(() => load(false), 2500);
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
     };
   }, [friendId]);
 
@@ -92,21 +112,27 @@ export default function FriendDmPanel({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!friend || posting) return;
+    if (!directMessageEnabled) {
+      setStatus("실제 AI 세션을 찾을 수 없습니다.");
+      return;
+    }
     const message = draft.trim();
     if (!message) return;
     setPosting(true);
-    setStatus("");
+    setStatus(friendIsActive ? "DM 전달 중..." : "세션 재개 중...");
     try {
       const payload = await postRoomFriendDm({
         friendId: friend.friend_id,
         message,
         name: "SeiNel",
         side: "mine",
+        resumeIfNeeded: true,
       });
       setEvents(payload.events);
       setDraftsByFriend((previous) => clearFriendDmDraft(previous, friend.friend_id));
+      setStatus("");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "로컬 DM 전송 실패");
+      setStatus(error instanceof Error ? error.message : "DM 전송 실패");
     } finally {
       setPosting(false);
     }
@@ -115,14 +141,14 @@ export default function FriendDmPanel({
   if (!friend) return null;
 
   return (
-    <section className="dc-friend-dm-panel" data-layout={layout} aria-label={`${friend.display_name} 로컬 DM`}>
+    <section className="dc-friend-dm-panel" data-layout={layout} aria-label={`${friend.display_name} DM`}>
       <header className="dc-friend-dm-head">
         <div>
-          <h3>{layout === "channel" ? friend.display_name : "로컬 DM"}</h3>
+          <h3>{layout === "channel" ? friend.display_name : "DM"}</h3>
           <p>
             {layout === "channel"
-              ? `${meta?.label || "저장된 친구"} · AgentsAssemble 로컬 DM`
-              : "외부 Discord로 전송되지 않습니다."}
+              ? `${meta?.label || "저장된 친구"} · 1:1 AI DM`
+              : "저장된 AI 세션과 직접 대화합니다."}
           </p>
         </div>
         <div className="dc-friend-dm-head-actions">
@@ -148,8 +174,7 @@ export default function FriendDmPanel({
             </span>
             <h2 className="preserve-words">{friend.display_name}</h2>
             <p className="preserve-words">
-              이 대화는 AgentsAssemble 안에 저장되는 로컬 DM입니다. 외부 Discord로 전송되지 않고,
-              저장된 세션이나 에이전트와 로컬 메모를 남길 때 씁니다.
+              저장된 AI 세션에게 직접 보내는 1:1 DM입니다. 꺼져 있으면 가능한 경우 기존 세션 재개를 먼저 시도합니다.
             </p>
           </div>
         )}
@@ -167,7 +192,7 @@ export default function FriendDmPanel({
           ))
         ) : (
           <p className="dc-friend-dm-empty">
-            아직 로컬 DM이 없습니다. 저장된 세션에게 다시 말을 걸기 위한 메모를 남겨둘 수 있습니다.
+            아직 DM이 없습니다.
           </p>
         )}
       </div>
@@ -175,13 +200,14 @@ export default function FriendDmPanel({
       <form className="dc-friend-dm-composer" onSubmit={submit}>
         <input
           ref={inputRef}
-          aria-label={`${friend.display_name} 로컬 DM 입력`}
+          aria-label={`${friend.display_name} DM 입력`}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder={placeholder}
           maxLength={2000}
+          disabled={!directMessageEnabled}
         />
-        <button type="submit" disabled={posting || !draft.trim()} aria-label="로컬 DM 보내기">
+        <button type="submit" disabled={posting || !directMessageEnabled || !draft.trim()} aria-label="DM 보내기">
           <Send size={16} />
         </button>
       </form>

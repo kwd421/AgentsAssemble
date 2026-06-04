@@ -112,12 +112,17 @@ Room-first / Agent-owned Context:
 - The room is a room, not a hidden moderator or per-model context packer.
 - AgentsAssemble owns room-visible records: event logs, official artifacts,
   shared meeting memory, agent cursors, and cursor/diff reads over the room.
+- AgentsAssemble also owns saved-friend direct AI DM logs. Direct DMs are
+  private 1:1 records between the operator and a saved AI session; they are not
+  lobby messages, official meeting memory, Discord messages, or provider-owned
+  private context.
 - Agents decide what extra context to read before speaking. They may inspect
   the room diff since their cursor, archive artifacts, shared memory, and their
   provider-owned private context, then choose one public room reply.
 - Agent-owned entry is the primary resident direction: join briefs are entry packets,
   and MCP participant or self-service loops are ways for an approved agent to
-  use room tools directly. Play Mode `flow` remains a demo/social helper over
+  use room tools directly, including direct DM reply tools when the operator
+  messages that agent. Play Mode `flow` remains a demo/social helper over
   approved residents, not the default Work Mode authority path.
 - The moderator does not sit between every room event and every agent reply.
   It starts meetings, records official turn boundaries, and may request turns,

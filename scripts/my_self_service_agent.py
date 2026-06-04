@@ -109,6 +109,28 @@ def _handle_event(payload: dict[str, object], *, message: str, default_meeting_i
         _heartbeat("error", last_error="lobby reply failed", last_observed_event_id=source_event_id, command_timeout=command_timeout)
         return False
 
+    if action == "dm":
+        _heartbeat("working", last_observed_dm_event_id=source_event_id, command_timeout=command_timeout)
+        dm_command = _replace_tokens(
+            _command_from_env("AGENTSASSEMBLE_DM_REPLY_COMMAND_TEMPLATE"),
+            {
+                "{source_event_id}": source_event_id,
+                "{message}": message,
+            },
+        )
+        reply = _run_optional(_insert_before_message_separator(dm_command, "--json"), command_timeout)
+        if reply is not None and reply.returncode == 0:
+            _heartbeat(
+                "online",
+                last_error="",
+                last_reply_at=_now(),
+                last_observed_dm_event_id=source_event_id,
+                command_timeout=command_timeout,
+            )
+            return True
+        _heartbeat("error", last_error="dm reply failed", last_observed_dm_event_id=source_event_id, command_timeout=command_timeout)
+        return False
+
     if action == "return_packet":
         read_command = _command_list(payload.get("read_command"))
         if not read_command:
@@ -201,13 +223,15 @@ def _heartbeat_cursor_only_observation(stdout: str, *, command_timeout: float) -
         return False
     lobby_cursor = str(payload.get("last_observed_event_id") or "")
     live_cursor = str(payload.get("last_observed_live_event_id") or "")
-    if not lobby_cursor and not live_cursor:
+    dm_cursor = str(payload.get("last_observed_dm_event_id") or "")
+    if not lobby_cursor and not live_cursor and not dm_cursor:
         return False
     _heartbeat(
         "online",
         last_error="",
         last_observed_event_id=lobby_cursor,
         last_observed_live_event_id=live_cursor,
+        last_observed_dm_event_id=dm_cursor,
         command_timeout=command_timeout,
     )
     return True
@@ -269,6 +293,7 @@ def _heartbeat(
     last_reply_at: str = "",
     last_observed_event_id: str = "",
     last_observed_live_event_id: str = "",
+    last_observed_dm_event_id: str = "",
 ) -> None:
     try:
         command = _replace_tokens(
@@ -280,6 +305,7 @@ def _heartbeat(
                 "{last_reply_at}": last_reply_at,
                 "{last_observed_event_id}": last_observed_event_id,
                 "{last_observed_live_event_id}": last_observed_live_event_id,
+                "{last_observed_dm_event_id}": last_observed_dm_event_id,
             },
         )
         _run(command, command_timeout)

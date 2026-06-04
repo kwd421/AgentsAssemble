@@ -155,6 +155,60 @@ class LiveAgentRunnerTests(unittest.TestCase):
         lobby_calls = [call for call in client.calls if call[0].endswith("/lobby")]
         self.assertEqual(len(lobby_calls), 1)
 
+    def test_runner_answers_direct_dm_without_lobby_post(self):
+        clock = FakeClock()
+        room = {
+            "agent": {
+                "agent_id": "agent-a",
+                "display_name": "Agent A",
+                "last_observed_dm_event_id": "dm-old",
+            },
+            "dm_events": [
+                {
+                    "id": "dm-old",
+                    "friend_id": "friend:agent-a",
+                    "side": "mine",
+                    "target_agent_id": "agent-a",
+                    "message": "old",
+                },
+                {
+                    "id": "dm-next",
+                    "friend_id": "friend:agent-a",
+                    "side": "mine",
+                    "target_agent_id": "agent-a",
+                    "message": "비공개 질문",
+                },
+            ],
+            "lobby_events": [
+                {"id": "evt-next", "name": "나", "message": "공개 로비 질문"},
+            ],
+        }
+        client = FakeRoomClient([room])
+        prompts = []
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            prompts.append(prompt)
+            return "비공개 답장"
+
+        runner = LiveAgentRunner(
+            config(),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        dm_reply_payloads = [payload for url, method, payload in client.calls if url.endswith("/dm-reply")]
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(dm_reply_payloads[0]["source_event_id"], "dm-next")
+        self.assertEqual(dm_reply_payloads[0]["message"], "비공개 답장")
+        self.assertEqual(lobby_payloads, [])
+        self.assertEqual(runner.last_observed_dm_event_id, "dm-next")
+        self.assertIn("1:1 DM", prompts[0])
+        self.assertIn("로비", prompts[0])
+
     def test_runner_restores_observed_cursor_from_registration_before_replying(self):
         clock = FakeClock()
         room = {

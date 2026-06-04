@@ -234,8 +234,10 @@ metadata needed for cursors, cooldown, chain-depth, and audit.
 Local stdio MCP is an adapter over the same room contract, not a replacement
 control plane. `assemble mcp serve --profile participant` exposes
 agent-owned tools for register, heartbeat, wait_next, read_since, say,
-official_reply, read_room, read_return_packet, and leave using the existing GUI
-HTTP endpoints.
+dm_reply, official_reply, read_room, read_return_packet, and leave using the
+existing GUI HTTP endpoints. `dm_reply` writes only to the saved-friend direct
+DM log for the triggering event; it does not write lobby or official meeting
+records.
 The participant identity comes from the server startup command (`--agent-id`,
 `--display-name`, `--provider-kind`, `--connection-kind`, and
 `--engagement-mode`), not from later tool-call arguments.

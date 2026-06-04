@@ -19629,9 +19629,20 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(deleted_suggestions_by_agent["codex-lead"]["participant_type"], "subscription_ai")
             self.assertEqual(deleted_suggestions_by_agent["yanagi-local"]["participant_type"], "local")
 
-    def test_room_friend_dm_api_posts_local_messages_only_for_saved_friends(self):
+    def test_room_friend_dm_api_posts_direct_ai_messages_without_lobby(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "codex-dm",
+                    "display_name": "Codex DM",
+                    "participant_type": "subscription_ai",
+                    "provider_kind": "codex",
+                    "connection_kind": "live_session",
+                    "meeting_id": "resident-m1",
+                },
+            )
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
@@ -19645,6 +19656,8 @@ class GuiServerTests(unittest.TestCase):
                             "display_name": "Codex DM",
                             "participant_type": "subscription_ai",
                             "provider_kind": "codex",
+                            "agent_id": "codex-dm",
+                            "source_agent_id": "codex-dm",
                         }
                     ).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
@@ -19661,9 +19674,7 @@ class GuiServerTests(unittest.TestCase):
                     data=json.dumps(
                         {
                             "friend_id": saved_friend["friend_id"],
-                            "name": "나",
-                            "side": "mine",
-                            "message": "로컬 DM으로 다시 초대할게",
+                            "message": "비공개 질문",
                         }
                     ).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
@@ -19671,6 +19682,23 @@ class GuiServerTests(unittest.TestCase):
                 )
                 with urlopen(dm_request, timeout=4) as response:
                     posted_dm = json.loads(response.read().decode("utf-8"))
+
+                with urlopen(f"{server_url}/api/live-agents/codex-dm/room", timeout=4) as response:
+                    room_payload = json.loads(response.read().decode("utf-8"))
+
+                reply_request = Request(
+                    f"{server_url}/api/live-agents/codex-dm/dm-reply",
+                    data=json.dumps(
+                        {
+                            "source_event_id": posted_dm["event"]["id"],
+                            "message": "비공개 답장",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(reply_request, timeout=4) as response:
+                    replied_dm = json.loads(response.read().decode("utf-8"))
 
                 bad_request = Request(
                     f"{server_url}/api/room-friends/dm",
@@ -19686,9 +19714,66 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(initial_dm["friend"]["display_name"], "Codex DM")
             self.assertEqual(initial_dm["events"], [])
-            self.assertEqual(posted_dm["event"]["message"], "로컬 DM으로 다시 초대할게")
+            self.assertEqual(posted_dm["event"]["message"], "비공개 질문")
+            self.assertEqual(posted_dm["event"]["target_agent_id"], "codex-dm")
+            self.assertEqual(posted_dm["event"]["delivery_status"], "queued")
             self.assertEqual(posted_dm["events"][0]["friend_id"], "friend:codex-dm")
+            self.assertEqual([event["id"] for event in room_payload["dm_events"]], [posted_dm["event"]["id"]])
+            self.assertEqual(replied_dm["event"]["message"], "비공개 답장")
+            self.assertEqual(replied_dm["event"]["reply_to_event_id"], posted_dm["event"]["id"])
+            self.assertEqual(replied_dm["events"][-1]["side"], "other")
+            self.assertEqual(replied_dm["delivery"]["status"], "delivered")
+            self.assertEqual(read_lobby(root), [])
             self.assertEqual(error_context.exception.code, HTTPStatus.BAD_REQUEST)
+            error_context.exception.close()
+
+    def test_room_friend_dm_api_reports_missing_session_for_unresumable_ai_friend(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                friend_request = Request(
+                    f"{server_url}/api/room-friends",
+                    data=json.dumps(
+                        {
+                            "friend_id": "friend:missing-session",
+                            "display_name": "Missing Session AI",
+                            "participant_type": "subscription_ai",
+                            "provider_kind": "codex",
+                            "agent_id": "missing-session",
+                            "source_agent_id": "missing-session",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(friend_request, timeout=4):
+                    pass
+
+                dm_request = Request(
+                    f"{server_url}/api/room-friends/dm",
+                    data=json.dumps(
+                        {
+                            "friend_id": "friend:missing-session",
+                            "message": "이력 없으면 실패해야 함",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as error_context:
+                    urlopen(dm_request, timeout=4)
+                error_payload = json.loads(error_context.exception.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(error_context.exception.code, HTTPStatus.BAD_REQUEST)
+            self.assertIn("세션이 존재하지 않습니다", error_payload["error"])
+            self.assertEqual(read_lobby(root), [])
             error_context.exception.close()
 
     def test_user_profile_api_saves_local_discord_identity(self):

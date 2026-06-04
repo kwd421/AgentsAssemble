@@ -31,12 +31,14 @@ export interface RoomFriend {
   participant_type: ParticipantType;
   provider_kind: string;
   connection_kind: string;
+  agent_id?: string;
   source_agent_id: string;
   last_meeting_id: string;
   status: string;
   source: string;
   created_at: string;
   updated_at: string;
+  last_seen_at?: string;
 }
 
 export interface RoomMember {
@@ -90,12 +92,23 @@ export interface RoomFriendDmEvent {
   name: string;
   side: "mine" | "other";
   message: string;
+  target_agent_id?: string;
+  delivery_status?: "queued" | "delivered" | "failed" | string;
+  error?: string;
+  source_event_id?: string;
+  reply_to_event_id?: string;
 }
 
 export interface RoomFriendDmResponse {
   friend: RoomFriend;
   events: RoomFriendDmEvent[];
   event?: RoomFriendDmEvent;
+  delivery?: {
+    status?: string;
+    error?: string;
+    source_event_id?: string;
+    target_agent_id?: string;
+  };
 }
 
 export interface RoomMembersResponse {
@@ -969,17 +982,20 @@ export function postRoomFriendDm({
   message,
   name = "나",
   side = "mine",
+  resumeIfNeeded = true,
 }: {
   friendId: string;
   message: string;
   name?: string;
   side?: "mine" | "other";
+  resumeIfNeeded?: boolean;
 }) {
   return postJson<RoomFriendDmResponse>("/api/room-friends/dm", {
     friend_id: friendId,
     message,
     name,
     side,
+    resume_if_needed: resumeIfNeeded,
   });
 }
 

@@ -303,7 +303,7 @@ function MemberDetailModal({
   async function handleResumeSession() {
     if (!sessionGroup || !canResumeSession) return;
     setSessionActionBusy(true);
-    setSessionActionStatus("세션 재개 요청 중...");
+    setSessionActionStatus("RESUME 요청 중...");
     try {
       const response = await resumeLiveAgentSession({
         meetingId: sessionGroup.meeting_id,
@@ -311,11 +311,11 @@ function MemberDetailModal({
         liveAgentConfigPath: sessionGroup.config_path,
       });
       setSessionActionStatus(
-        `세션 재개 요청 완료${response.status ? ` · ${processStatusLabel(response.status)}` : ""}`
+        `RESUME 완료${response.status ? ` · ${processStatusLabel(response.status)}` : ""}`
       );
       onSessionActionComplete?.();
     } catch (error) {
-      setSessionActionStatus(error instanceof Error ? error.message : "세션 재개 실패");
+      setSessionActionStatus(error instanceof Error ? error.message : "RESUME 실패");
     } finally {
       setSessionActionBusy(false);
     }
@@ -324,18 +324,18 @@ function MemberDetailModal({
   async function handleStopSession() {
     if (!sessionGroup || !canStopSession) return;
     setSessionActionBusy(true);
-    setSessionActionStatus("세션 중단 요청 중...");
+    setSessionActionStatus("STOP(KILL) 요청 중...");
     try {
       const response = await stopLiveAgentSession({
         meetingId: sessionGroup.meeting_id,
         groupId: sessionGroup.group_id,
       });
       setSessionActionStatus(
-        `세션 중단 요청 완료${response.status ? ` · ${processStatusLabel(response.status)}` : ""}`
+        `STOP(KILL) 완료${response.status ? ` · ${processStatusLabel(response.status)}` : ""}`
       );
       onSessionActionComplete?.();
     } catch (error) {
-      setSessionActionStatus(error instanceof Error ? error.message : "세션 중단 실패");
+      setSessionActionStatus(error instanceof Error ? error.message : "STOP(KILL) 실패");
     } finally {
       setSessionActionBusy(false);
     }
@@ -430,7 +430,7 @@ function MemberDetailModal({
                 onClick={handleResumeSession}
               >
                 <Play size={15} />
-                세션 재개
+                RESUME
               </button>
               <button
                 type="button"
@@ -440,7 +440,7 @@ function MemberDetailModal({
                 onClick={handleStopSession}
               >
                 <Square size={14} />
-                세션 중단
+                STOP(KILL)
               </button>
             </div>
             {sessionActionStatus && (

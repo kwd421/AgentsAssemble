@@ -120,7 +120,12 @@ from agentsassemble.frontend_runtime import (
     frontend_dist_status,
 )
 from agentsassemble.release_health import release_health_catalog_payload, release_health_queue_payload
-from agentsassemble.room_friend_dms import append_room_friend_dm_event, room_friend_dm_payload
+from agentsassemble.room_friend_dms import (
+    append_live_agent_dm_reply,
+    enqueue_room_friend_direct_dm,
+    read_live_agent_dm_events,
+    room_friend_dm_payload,
+)
 from agentsassemble.room_friends import delete_room_friend, room_friends_payload, upsert_room_friend
 from agentsassemble.room_members import room_members_payload, upsert_room_member
 from agentsassemble.room_settings import room_settings_payload, update_room_settings
@@ -2917,9 +2922,46 @@ def live_agent_room_payload(output_root: Path, agent_id: str) -> dict[str, objec
         "meeting_id": meeting_id,
         "shared_memory": shared_memory,
         "live_events": live_events,
+        "dm_events": read_live_agent_dm_events(
+            output_root,
+            str(agent.get("agent_id") or agent_id),
+            after_event_id=clean_lobby_text(agent.get("last_observed_dm_event_id"), limit=128),
+        ),
         "lobby_events": read_lobby(output_root, limit=LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT, meeting_id=meeting_id),
         "side_chat_events": read_side_chat(output_root),
     }
+
+
+def room_friend_direct_dm_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+    *,
+    default_server: str,
+) -> dict[str, object]:
+    def resume_existing_group(group: dict[str, object]) -> object:
+        session_payload = {
+            "live_agent_config_path": str(group.get("config_path") or ""),
+            "group_id": str(group.get("group_id") or ""),
+            "meeting_id": str(group.get("meeting_id") or ""),
+            "server": str(group.get("server") or default_server),
+            "connect_timeout_seconds": _payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
+        }
+        return live_agent_session_ensure_payload(
+            output_root,
+            process_supervisor,
+            session_payload,
+            default_server=default_server,
+        )
+
+    snapshot_groups = process_supervisor.snapshot_groups() if hasattr(process_supervisor, "snapshot_groups") else process_supervisor.list_groups()
+    return enqueue_room_friend_direct_dm(
+        output_root,
+        payload,
+        live_agents=read_live_agents(output_root),
+        process_groups=snapshot_groups,
+        resume_callback=resume_existing_group,
+    )
 
 
 def live_agent_return_packet_payload(
@@ -2980,11 +3022,25 @@ def live_agent_heartbeat_payload(output_root: Path, agent_id: str, payload: dict
 def live_agent_leave_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
     _live_agent_for_id(output_root, agent_id)
     metadata: dict[str, object] = {"last_error": ""}
-    for key in ("last_observed_event_id", "last_observed_live_event_id"):
+    for key in ("last_observed_event_id", "last_observed_live_event_id", "last_observed_dm_event_id"):
         if key in payload:
             metadata[key] = payload.get(key)
     agent = heartbeat_live_agent(output_root, agent_id, status="offline", metadata=metadata)
     return {"agent": agent, "agents": read_live_agents(output_root)}
+
+
+def live_agent_dm_reply_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
+    response = append_live_agent_dm_reply(output_root, agent_id, payload)
+    source_event_id = clean_lobby_text(payload.get("source_event_id"), limit=128)
+    heartbeat_live_agent(
+        output_root,
+        agent_id,
+        status="online",
+        metadata={"last_observed_dm_event_id": source_event_id, "last_error": ""},
+    )
+    response["agent"] = _live_agent_for_id(output_root, agent_id)
+    response["agents"] = read_live_agents(output_root)
+    return response
 
 
 def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
@@ -8211,12 +8267,13 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
                     return
                 try:
-                    event = append_room_friend_dm_event(output_root, payload)
                     self._send_json(
-                        {
-                            "event": event,
-                            **room_friend_dm_payload(output_root, str(event.get("friend_id") or "")),
-                        }
+                        room_friend_direct_dm_payload(
+                            output_root,
+                            live_agent_process_supervisor,
+                            payload,
+                            default_server=self._request_server_url(),
+                        )
                     )
                 except ValueError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
@@ -10202,6 +10259,24 @@ def _make_handler(
                     },
                 )
                 self._send_json(leave)
+                return
+            live_agent_dm_reply_id = _live_agent_action_path(parsed.path, "dm-reply")
+            if live_agent_dm_reply_id is not None:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    reply = live_agent_dm_reply_payload(output_root, live_agent_dm_reply_id, payload)
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(reply)
                 return
             live_agent_lobby_id = _live_agent_action_path(parsed.path, "lobby")
             if live_agent_lobby_id is not None:

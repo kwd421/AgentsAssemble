@@ -1,5 +1,11 @@
-import { Bot, MessageCircle, Trash2 } from "lucide-react";
-import type { RoomFriend } from "../../api";
+import { useState } from "react";
+import { Bot, MessageCircle, Play, Square, Trash2 } from "lucide-react";
+import {
+  resumeLiveAgentSession,
+  stopLiveAgentSession,
+  type LiveAgentProcessGroup,
+  type RoomFriend,
+} from "../../api";
 import { participantTypeMeta } from "../../lib/participantTypes";
 import { presenceStatusLabel } from "../../lib/presenceStatus";
 
@@ -11,11 +17,17 @@ export default function FriendProfileCard({
   friend,
   onStartDm,
   onDelete,
+  processGroups = [],
+  onSessionActionComplete,
 }: {
   friend: RoomFriend | null;
   onStartDm?: (friend: RoomFriend) => void;
   onDelete?: (friend: RoomFriend) => void;
+  processGroups?: LiveAgentProcessGroup[];
+  onSessionActionComplete?: () => void;
 }) {
+  const [sessionActionBusy, setSessionActionBusy] = useState(false);
+  const [sessionActionStatus, setSessionActionStatus] = useState("");
   if (!friend) {
     return (
       <div className="dc-activity-card">
@@ -27,6 +39,13 @@ export default function FriendProfileCard({
 
   const meta = participantTypeMeta(friend.participant_type);
   const Icon = meta.icon || Bot;
+  const sourceAgentId = String(friend.source_agent_id || friend.agent_id || "").trim();
+  const sessionGroup = processGroups.find((group) =>
+    (group.agents || []).some((agent) => agent.agent_id === sourceAgentId || agent.display_name === friend.display_name)
+  );
+  const processRunning = sessionGroup?.status === "running";
+  const canResumeSession = Boolean(sessionGroup?.group_id && sessionGroup?.meeting_id && sessionGroup?.config_path && !processRunning);
+  const canStopSession = Boolean(sessionGroup?.group_id && sessionGroup?.meeting_id && processRunning);
   const facts = [
     ["타입", meta.label],
     ["상태", presenceStatusLabel(friend.status)],
@@ -34,6 +53,43 @@ export default function FriendProfileCard({
     ["연결", friend.connection_kind || "미지정"],
     ["최근 방", friend.last_meeting_id || "기록 없음"],
   ];
+
+  async function handleResumeSession() {
+    if (!sessionGroup || !canResumeSession) return;
+    setSessionActionBusy(true);
+    setSessionActionStatus("RESUME 요청 중...");
+    try {
+      const response = await resumeLiveAgentSession({
+        meetingId: sessionGroup.meeting_id,
+        groupId: sessionGroup.group_id,
+        liveAgentConfigPath: sessionGroup.config_path,
+      });
+      setSessionActionStatus(`RESUME 완료${response.status ? ` · ${response.status}` : ""}`);
+      onSessionActionComplete?.();
+    } catch (error) {
+      setSessionActionStatus(error instanceof Error ? error.message : "RESUME 실패");
+    } finally {
+      setSessionActionBusy(false);
+    }
+  }
+
+  async function handleStopSession() {
+    if (!sessionGroup || !canStopSession) return;
+    setSessionActionBusy(true);
+    setSessionActionStatus("STOP(KILL) 요청 중...");
+    try {
+      const response = await stopLiveAgentSession({
+        meetingId: sessionGroup.meeting_id,
+        groupId: sessionGroup.group_id,
+      });
+      setSessionActionStatus(`STOP(KILL) 완료${response.status ? ` · ${response.status}` : ""}`);
+      onSessionActionComplete?.();
+    } catch (error) {
+      setSessionActionStatus(error instanceof Error ? error.message : "STOP(KILL) 실패");
+    } finally {
+      setSessionActionBusy(false);
+    }
+  }
 
   return (
     <article className="dc-friend-profile-card" data-type={meta.tone}>
@@ -55,8 +111,30 @@ export default function FriendProfileCard({
             onClick={() => onStartDm?.(friend)}
           >
             <MessageCircle size={15} />
-            로컬 DM
+            DM
           </button>
+          {sessionGroup && (
+            <>
+              <button
+                type="button"
+                className="dc-friend-profile-secondary"
+                onClick={handleResumeSession}
+                disabled={!canResumeSession || sessionActionBusy}
+              >
+                <Play size={15} />
+                RESUME
+              </button>
+              <button
+                type="button"
+                className="dc-friend-profile-danger"
+                onClick={handleStopSession}
+                disabled={!canStopSession || sessionActionBusy}
+              >
+                <Square size={15} />
+                STOP(KILL)
+              </button>
+            </>
+          )}
           {onDelete && (
             <button type="button" className="dc-friend-profile-danger" onClick={() => onDelete(friend)}>
               <Trash2 size={15} />
@@ -72,8 +150,9 @@ export default function FriendProfileCard({
             </div>
           ))}
         </dl>
+        {sessionActionStatus && <p className="dc-friend-profile-note preserve-words">{sessionActionStatus}</p>}
         <p className="dc-friend-profile-note preserve-words">
-          저장된 친구는 로컬 AgentsAssemble 디렉터리에만 남습니다.
+          저장된 친구 정보는 AgentsAssemble 안에만 남습니다.
         </p>
       </div>
     </article>

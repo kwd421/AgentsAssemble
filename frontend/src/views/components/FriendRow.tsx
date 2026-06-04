@@ -144,9 +144,9 @@ export default function FriendRow({
                     onStartDm(friend);
                   }}
                 >
-                  <MessageCircle size={14} />
-                  로컬 DM 열기
-                </button>
+	                  <MessageCircle size={14} />
+	                  DM 열기
+	                </button>
               )}
               {onSelect && (
                 <button

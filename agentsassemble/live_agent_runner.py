@@ -107,6 +107,7 @@ class LiveAgentRunner:
         self.stop_event = stop_event or threading.Event()
         self.last_observed_event_id = ""
         self.last_observed_live_event_id = ""
+        self.last_observed_dm_event_id = ""
         self.last_reply_at: datetime | None = None
         self.last_error_at: datetime | None = None
         self.last_error = ""
@@ -141,6 +142,44 @@ class LiveAgentRunner:
             self._heartbeat_due_safely("error", last_error=self.last_error, **self._cursor_metadata())
             return 0
         engagement_mode = _runtime_engagement_mode(self.config, room)
+        dm_candidate = direct_dm_candidate(_dm_events(room), self.config.agent_id, self.last_observed_dm_event_id)
+        if dm_candidate is not None:
+            if self._in_cooldown():
+                self._heartbeat_if_due()
+                return 0
+            if self._in_failure_backoff():
+                self._heartbeat_if_due()
+                return 0
+            generated = self._generate_reply(
+                dm_candidate,
+                direct_dm_prompt(self.config, room, dm_candidate),
+                cursor_field="last_observed_dm_event_id",
+            )
+            if generated is None:
+                return 0
+            source_event_id, reply = generated
+            try:
+                response = self.request_json(
+                    _server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/dm-reply"),
+                    method="POST",
+                    payload={
+                        "source_event_id": source_event_id,
+                        "message": reply,
+                    },
+                )
+            except Exception as error:
+                self._record_reply_post_error(
+                    error,
+                    cursor_field="last_observed_dm_event_id",
+                    observed_event_id=source_event_id,
+                )
+                raise
+            self._record_reply_success(
+                response.get("event"),
+                cursor_field="last_observed_dm_event_id",
+                observed_event_id=source_event_id,
+            )
+            return 1
         if engagement_mode == "moderator_called":
             self._observe_lobby_cursor(_lobby_events(room))
             events = _live_events(room)
@@ -647,6 +686,9 @@ class LiveAgentRunner:
         live_cursor = str(agent.get("last_observed_live_event_id") or "").strip()
         if live_cursor and not self.last_observed_live_event_id:
             self.last_observed_live_event_id = live_cursor
+        dm_cursor = str(agent.get("last_observed_dm_event_id") or "").strip()
+        if dm_cursor and not self.last_observed_dm_event_id:
+            self.last_observed_dm_event_id = dm_cursor
 
     def _restore_command_runner_session_id(self, agent: object) -> None:
         if not isinstance(agent, dict):
@@ -681,20 +723,28 @@ class LiveAgentRunner:
         if cursor_field == "last_observed_live_event_id":
             self.last_observed_live_event_id = event_id
             return
+        if cursor_field == "last_observed_dm_event_id":
+            self.last_observed_dm_event_id = event_id
+            return
         self.last_observed_event_id = event_id
 
     def _cursor_metadata(self, cursor_field: str | None = None, event_id: str | None = None) -> dict[str, object]:
         lobby_cursor = self.last_observed_event_id
         live_cursor = self.last_observed_live_event_id
+        dm_cursor = self.last_observed_dm_event_id
         if cursor_field == "last_observed_event_id" and event_id is not None:
             lobby_cursor = event_id
         if cursor_field == "last_observed_live_event_id" and event_id is not None:
             live_cursor = event_id
+        if cursor_field == "last_observed_dm_event_id" and event_id is not None:
+            dm_cursor = event_id
         metadata: dict[str, object] = {}
         if lobby_cursor:
             metadata["last_observed_event_id"] = lobby_cursor
         if live_cursor:
             metadata["last_observed_live_event_id"] = live_cursor
+        if dm_cursor:
+            metadata["last_observed_dm_event_id"] = dm_cursor
         return metadata
 
     def _in_cooldown(self, cooldown_seconds: float | None = None) -> bool:
@@ -828,6 +878,23 @@ def event_reply_candidate(
         if not str(event.get("message") or "").strip():
             continue
         if not should_reply_to_event(engagement_mode, event, agent_id, display_name):
+            continue
+        return event
+    return None
+
+
+def direct_dm_candidate(
+    events: list[dict[str, object]],
+    agent_id: str,
+    last_observed_dm_event_id: str,
+) -> dict[str, object] | None:
+    clean_agent_id = str(agent_id or "").strip()
+    for event in _events_after(events, last_observed_dm_event_id):
+        if str(event.get("side") or "") != "mine":
+            continue
+        if str(event.get("target_agent_id") or "").strip() != clean_agent_id:
+            continue
+        if not str(event.get("message") or "").strip():
             continue
         return event
     return None
@@ -1045,6 +1112,24 @@ def delegate_prompt(config: ResidentAgentConfig, room: dict[str, object], source
         "",
         "New event to answer:",
         f"- {source_event.get('name') or 'participant'}: {source_event.get('message') or ''}",
+    ]
+    return "\n".join(lines).strip() + "\n"
+
+
+def direct_dm_prompt(config: ResidentAgentConfig, room: dict[str, object], source_event: dict[str, object]) -> str:
+    del room
+    lines = [
+        "You are a live AgentsAssemble participant receiving a private 1:1 DM.",
+        f"Agent id: {config.agent_id}",
+        f"Display name: {config.display_name or config.agent_id}",
+        "Reply to this 1:1 DM only.",
+        "Do not write to the lobby/로비, room chat, official meeting record, or shared memory.",
+        "Return the DM reply text only. Do not include markdown fences or multiple alternatives.",
+        "",
+        "Direct DM to answer:",
+        f"- Source DM id: {_prompt_text(source_event.get('id'), limit=128) or '(none)'}",
+        f"- Sender: {_prompt_text(source_event.get('name'), limit=64) or '나'}",
+        f"- Message: {_prompt_text(source_event.get('message'), limit=360)}",
     ]
     return "\n".join(lines).strip() + "\n"
 
@@ -1557,6 +1642,13 @@ def live_agent_bool(value: object, default: bool) -> bool:
 
 def _lobby_events(room: dict[str, object]) -> list[dict[str, object]]:
     events = room.get("lobby_events")
+    if not isinstance(events, list):
+        return []
+    return [event for event in events if isinstance(event, dict)]
+
+
+def _dm_events(room: dict[str, object]) -> list[dict[str, object]]:
+    events = room.get("dm_events")
     if not isinstance(events, list):
         return []
     return [event for event in events if isinstance(event, dict)]

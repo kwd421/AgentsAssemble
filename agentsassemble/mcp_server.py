@@ -27,6 +27,7 @@ class McpParticipantContext:
     engagement_mode: str = "mentioned"
     last_observed_event_id: str = ""
     last_observed_live_event_id: str = ""
+    last_observed_dm_event_id: str = ""
 
 
 RequestJson = Callable[..., dict[str, object]]
@@ -178,7 +179,7 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
             "connection_kind": context.connection_kind,
             "meeting_id": _clean_meeting_id(context.meeting_id) if context.meeting_id else "",
             "engagement_mode": context.engagement_mode,
-            "capabilities": ["room_chat", "mentions", "official_turns", "return_packets"],
+            "capabilities": ["room_chat", "mentions", "official_turns", "return_packets", "direct_dm"],
         }
         return client.post("/api/live-agents", payload)
 
@@ -188,6 +189,7 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
         last_reply_at: str = "",
         last_observed_event_id: str = "",
         last_observed_live_event_id: str = "",
+        last_observed_dm_event_id: str = "",
     ) -> dict[str, object]:
         clean_status = _clean_text(status, limit=32) or "online"
         if clean_status not in HEARTBEAT_STATUSES:
@@ -197,22 +199,26 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
         _add_optional(payload, "last_reply_at", last_reply_at, limit=128)
         _add_optional(payload, "last_observed_event_id", last_observed_event_id, limit=128)
         _add_optional(payload, "last_observed_live_event_id", last_observed_live_event_id, limit=128)
+        _add_optional(payload, "last_observed_dm_event_id", last_observed_dm_event_id, limit=128)
         if payload.get("last_observed_event_id"):
             context.last_observed_event_id = str(payload["last_observed_event_id"])
         if payload.get("last_observed_live_event_id"):
             context.last_observed_live_event_id = str(payload["last_observed_live_event_id"])
+        if payload.get("last_observed_dm_event_id"):
+            context.last_observed_dm_event_id = str(payload["last_observed_dm_event_id"])
         return client.post(f"/api/live-agents/{_quote(context.agent_id)}/heartbeat", payload)
 
     def read_room() -> dict[str, object]:
         return client.get(f"/api/live-agents/{_quote(context.agent_id)}/room")
 
-    def read_since(after_event_id: str = "", after_live_event_id: str = "") -> dict[str, object]:
+    def read_since(after_event_id: str = "", after_live_event_id: str = "", after_dm_event_id: str = "") -> dict[str, object]:
         room = read_room()
         return _read_since_payload(
             context,
             room,
             after_event_id=after_event_id,
             after_live_event_id=after_live_event_id,
+            after_dm_event_id=after_dm_event_id,
         )
 
     def wait_next(
@@ -225,6 +231,10 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
         while True:
             room = read_room()
             last_room = room
+            dm = _next_dm(context, room)
+            if dm is not None:
+                context.last_observed_dm_event_id = str(dm.get("id") or "")
+                return _dm_payload(context, room, dm)
             official = _next_official_turn(context, room)
             if official is not None:
                 context.last_observed_live_event_id = str(official.get("id") or "")
@@ -265,6 +275,15 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
         context.last_observed_live_event_id = source_id
         return client.post(f"/api/live-agents/{_quote(context.agent_id)}/official-turn", payload)
 
+    def dm_reply(message: str, source_event_id: str) -> dict[str, object]:
+        source_id = _required_text(source_event_id, "source_event_id")
+        payload = {
+            "source_event_id": source_id,
+            "message": _required_text(message, "message"),
+        }
+        context.last_observed_dm_event_id = source_id
+        return client.post(f"/api/live-agents/{_quote(context.agent_id)}/dm-reply", payload)
+
     def read_return_packet(source_event_id: str, meeting_id: str = "") -> dict[str, object]:
         source_id = _required_text(source_event_id, "source_event_id")
         query_values = {}
@@ -281,6 +300,7 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
             "last_error": "",
             "last_observed_event_id": context.last_observed_event_id,
             "last_observed_live_event_id": context.last_observed_live_event_id,
+            "last_observed_dm_event_id": context.last_observed_dm_event_id,
         }
         return client.post(f"/api/live-agents/{_quote(context.agent_id)}/leave", payload)
 
@@ -290,6 +310,7 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
         "wait_next": wait_next,
         "read_since": read_since,
         "say": say,
+        "dm_reply": dm_reply,
         "official_reply": official_reply,
         "read_room": read_room,
         "read_return_packet": read_return_packet,
@@ -340,6 +361,24 @@ def _next_official_turn(context: McpParticipantContext, room: dict[str, object])
     agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
     cursor = context.last_observed_live_event_id or str(agent.get("last_observed_live_event_id") or "")
     return official_turn_request_candidate(events, context.agent_id, cursor)
+
+
+def _next_dm(context: McpParticipantContext, room: dict[str, object]) -> dict[str, object] | None:
+    events = [event for event in room.get("dm_events", []) if isinstance(event, dict)]
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    cursor = context.last_observed_dm_event_id or str(agent.get("last_observed_dm_event_id") or "")
+    for event in _events_after(events, cursor):
+        if str(event.get("side") or "") != "mine":
+            continue
+        if str(event.get("target_agent_id") or "").strip() != context.agent_id:
+            continue
+        event_id = str(event.get("id") or "").strip()
+        if not event_id:
+            continue
+        if not str(event.get("message") or "").strip():
+            continue
+        return event
+    return None
 
 
 def _next_return_packet(context: McpParticipantContext, room: dict[str, object]) -> dict[str, object] | None:
@@ -428,6 +467,22 @@ def _return_packet_payload(
     }
 
 
+def _dm_payload(
+    context: McpParticipantContext,
+    room: dict[str, object],
+    event: dict[str, object],
+) -> dict[str, object]:
+    event_id = str(event.get("id") or "")
+    return {
+        "status": "event",
+        "action": "dm",
+        "agent_id": context.agent_id,
+        "source_event_id": event_id,
+        "event": event,
+        "room": _room_context(room, meeting_id=str(room.get("meeting_id") or context.meeting_id or "")),
+    }
+
+
 def _lobby_payload(
     context: McpParticipantContext,
     room: dict[str, object],
@@ -455,12 +510,14 @@ def _wait_timeout_payload(
 ) -> dict[str, object]:
     context.last_observed_event_id = _latest_event_id(room.get("lobby_events"), context.last_observed_event_id)
     context.last_observed_live_event_id = _latest_event_id(room.get("live_events"), context.last_observed_live_event_id)
+    context.last_observed_dm_event_id = _latest_event_id(room.get("dm_events"), context.last_observed_dm_event_id)
     return {
         "status": "timeout",
         "agent_id": context.agent_id,
         "timeout_seconds": timeout_seconds,
         "last_observed_event_id": context.last_observed_event_id,
         "last_observed_live_event_id": context.last_observed_live_event_id,
+        "last_observed_dm_event_id": context.last_observed_dm_event_id,
     }
 
 
@@ -469,6 +526,7 @@ def _room_context(room: dict[str, object], *, meeting_id: str) -> dict[str, obje
         "meeting_id": meeting_id,
         "lobby_event_count": len(room.get("lobby_events") if isinstance(room.get("lobby_events"), list) else []),
         "live_event_count": len(room.get("live_events") if isinstance(room.get("live_events"), list) else []),
+        "dm_event_count": len(room.get("dm_events") if isinstance(room.get("dm_events"), list) else []),
     }
     if isinstance(room.get("shared_memory"), dict):
         context["shared_memory"] = room["shared_memory"]
@@ -481,6 +539,7 @@ def _read_since_payload(
     *,
     after_event_id: str = "",
     after_live_event_id: str = "",
+    after_dm_event_id: str = "",
 ) -> dict[str, object]:
     agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
     lobby_cursor = (
@@ -493,10 +552,17 @@ def _read_since_payload(
         or str(agent.get("last_observed_live_event_id") or "").strip()
         or context.last_observed_live_event_id
     )
+    dm_cursor = (
+        _clean_text(after_dm_event_id, limit=128)
+        or str(agent.get("last_observed_dm_event_id") or "").strip()
+        or context.last_observed_dm_event_id
+    )
     lobby_events = [event for event in room.get("lobby_events", []) if isinstance(event, dict)]
     live_events = [event for event in room.get("live_events", []) if isinstance(event, dict)]
+    dm_events = [event for event in room.get("dm_events", []) if isinstance(event, dict)]
     lobby_diff = _events_after(lobby_events, lobby_cursor)
     live_diff = _events_after(live_events, live_cursor)
+    dm_diff = _events_after(dm_events, dm_cursor)
     meeting_id = str(room.get("meeting_id") or context.meeting_id or agent.get("meeting_id") or "").strip()
     return {
         "status": "ok",
@@ -504,10 +570,13 @@ def _read_since_payload(
         "meeting_id": meeting_id,
         "last_observed_event_id": lobby_cursor,
         "last_observed_live_event_id": live_cursor,
+        "last_observed_dm_event_id": dm_cursor,
         "next_last_observed_event_id": _latest_event_id(lobby_diff, lobby_cursor),
         "next_last_observed_live_event_id": _latest_event_id(live_diff, live_cursor),
+        "next_last_observed_dm_event_id": _latest_event_id(dm_diff, dm_cursor),
         "lobby_events": lobby_diff,
         "live_events": live_diff,
+        "dm_events": dm_diff,
         "room": _room_context(room, meeting_id=meeting_id),
     }
 

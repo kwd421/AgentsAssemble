@@ -973,18 +973,20 @@ export default function App() {
         ...previous,
         [inviteRoomKey]: memberPayload.members || [],
       }));
-      await postRoomFriendDm({
-        friendId,
-        name: "AgentsAssemble",
-        side: "mine",
-        message: inviteFriendDmMessage({
-          roomLabel: inviteModalRoom.label,
-          link,
-          isAiFriend,
-          isLiveSession,
-          readOnlyInvite,
-        }),
-      });
+      if (isAiFriend) {
+        await postRoomFriendDm({
+          friendId,
+          name: "AgentsAssemble",
+          side: "mine",
+          message: inviteFriendDmMessage({
+            roomLabel: inviteModalRoom.label,
+            link,
+            isAiFriend,
+            isLiveSession,
+            readOnlyInvite,
+          }),
+        });
+      }
       setInviteFriendStatuses((previous) => ({
         ...previous,
         [friendId]: isAiFriend ? (isLiveSession ? "호출됨" : "실행 필요") : "초대됨",
@@ -1548,6 +1550,8 @@ export default function App() {
             activeDmFriendId={activeHomeDmFriendId}
             onActiveDmFriendChange={setActiveHomeDmFriendId}
             onSelectFriend={(friend) => setSelectedHomeFriendId(friend.friend_id)}
+            processGroups={processData?.groups || []}
+            onSessionActionComplete={refreshSessionSurfaces}
           />
         ) : adminOpen ? (
           <AdminPanel onClose={() => setAdminOpen(false)} activeMeetingId={activeRoom.meetingId} />

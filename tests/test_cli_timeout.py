@@ -822,6 +822,7 @@ class CliTimeoutTests(unittest.TestCase):
                 "commands.read_since",
                 "templates.say",
                 "templates.official_reply",
+                "templates.dm_reply",
                 "templates.heartbeat",
                 "commands.leave",
                 "mcp.command",
@@ -830,6 +831,7 @@ class CliTimeoutTests(unittest.TestCase):
         self_service_loop = " ".join(payload["entry_contract"]["self_service_loop"])
         self.assertIn("AGENTSASSEMBLE_WAIT_NEXT_COMMAND", self_service_loop)
         self.assertIn("AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE", self_service_loop)
+        self.assertIn("AGENTSASSEMBLE_DM_REPLY_COMMAND_TEMPLATE", self_service_loop)
         self.assertEqual(
             payload["agent"],
             {
@@ -940,6 +942,9 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["templates"]["official_reply"][-2:], ["--", "{message}"])
         self.assertIn("{meeting_id}", payload["templates"]["official_reply"])
         self.assertIn("{source_event_id}", payload["templates"]["official_reply"])
+        self.assertEqual(payload["templates"]["dm_reply"][-2:], ["--", "{message}"])
+        self.assertIn("{source_event_id}", payload["templates"]["dm_reply"])
+        self.assertIn("--last-observed-dm-event-id={last_observed_dm_event_id}", payload["templates"]["heartbeat"])
         serialized = json.dumps(payload)
         self.assertNotIn("endpoint", serialized)
         self.assertNotIn("auth", serialized)
@@ -11719,6 +11724,103 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["action"], "official_turn")
         self.assertEqual(payload["event"]["id"], "live-next")
         self.assertEqual(payload["reply_command"][4], "official-reply")
+
+    def test_live_agent_wait_next_prefers_dm_over_official_turn_and_lobby_event(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "meeting_id": "meeting-1",
+                "last_observed_event_id": "evt-old",
+                "last_observed_live_event_id": "live-old",
+                "last_observed_dm_event_id": "dm-old",
+            },
+            "dm_events": [
+                {
+                    "id": "dm-old",
+                    "friend_id": "friend:claude-terminal",
+                    "side": "mine",
+                    "target_agent_id": "claude-terminal",
+                    "message": "old",
+                },
+                {
+                    "id": "dm-next",
+                    "friend_id": "friend:claude-terminal",
+                    "side": "mine",
+                    "target_agent_id": "claude-terminal",
+                    "message": "private question",
+                },
+            ],
+            "lobby_events": [
+                {"id": "evt-next", "name": "나", "message": "lobby question"},
+            ],
+            "live_events": [
+                {
+                    "id": "live-next",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "meeting-1",
+                    "target_agent_id": "claude-terminal",
+                    "content": "official question",
+                },
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-next",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["action"], "dm")
+        self.assertEqual(payload["event"]["id"], "dm-next")
+        self.assertEqual(payload["source_event_id"], "dm-next")
+        self.assertEqual(payload["reply_command"][4], "dm-reply")
+        self.assertIn("--source-event-id", payload["reply_command"])
+
+    def test_live_agent_dm_reply_posts_direct_message(self):
+        stdout = StringIO()
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None, **kwargs):
+            del kwargs
+            calls.append({"url": url, "method": method, "payload": payload})
+            return {"event": {"id": "reply-1", "message": payload["message"]}}
+
+        with patch("agentsassemble.cli._request_json", side_effect=request_json):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "dm-reply",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--source-event-id",
+                        "dm-next",
+                        "--json",
+                        "--",
+                        "direct answer",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(calls[0]["url"], "http://room.local/api/live-agents/claude-terminal/dm-reply")
+        self.assertEqual(calls[0]["method"], "POST")
+        self.assertEqual(calls[0]["payload"], {"source_event_id": "dm-next", "message": "direct answer"})
+        self.assertEqual(json.loads(stdout.getvalue())["event"]["id"], "reply-1")
 
     def test_live_agent_wait_next_reports_persona_blocked_official_turn_for_active_persona_agent(self):
         stdout = StringIO()

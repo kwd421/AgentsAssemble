@@ -10,6 +10,7 @@ from agentsassemble.meeting_events import clean_lobby_text
 
 ROOM_FRIENDS_FILE = "room_friends.json"
 ROOM_FRIEND_TYPES = {"human", "subscription_ai", "api", "local", "remote", "unknown"}
+ROOM_FRIEND_ACTIVE_AGENT_STATUSES = {"online", "working", "ready", "running"}
 _REMOTE_AGENT_MARKERS = ("remote_http_bridge", "native_remote_room_client", "remote_bridge")
 _LOCAL_MODEL_MARKERS = ("local_cli", "lmstudio", "llama", "ollama", "local_model")
 _API_AGENT_MARKERS = ("api", "deepseek", "openai", "anthropic")
@@ -149,14 +150,15 @@ def room_friend_suggestions_from_agents(
                     "status": agent.get("status") or "unknown",
                     "source": "live_agent",
                     "last_seen_at": agent.get("last_seen_at"),
-                }
+                },
+                trust_agent_status=True,
             )
         )
     return suggestions
 
 
 def room_friends_payload(output_root: Path, agents: list[dict[str, object]]) -> dict[str, object]:
-    friends = read_room_friends(output_root)
+    friends = room_friends_with_live_agent_status(read_room_friends(output_root), agents)
     suggestions = room_friend_suggestions_from_agents(agents, friends)
     return {
         "friends": friends,
@@ -166,7 +168,50 @@ def room_friends_payload(output_root: Path, agents: list[dict[str, object]]) -> 
     }
 
 
-def _normalize_friend_record(payload: dict[str, Any]) -> dict[str, object]:
+def room_friends_with_live_agent_status(
+    friends: list[dict[str, object]],
+    agents: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    agents_by_id = {
+        clean_lobby_text(agent.get("agent_id"), limit=128): agent
+        for agent in agents
+        if clean_lobby_text(agent.get("agent_id"), limit=128)
+    }
+    overlaid: list[dict[str, object]] = []
+    for friend in friends:
+        participant_type = normalize_room_friend_type(friend.get("participant_type"))
+        source_agent_id = clean_lobby_text(friend.get("source_agent_id") or friend.get("agent_id"), limit=128)
+        agent = agents_by_id.get(source_agent_id)
+        if not agent or participant_type == "human":
+            next_friend = dict(friend)
+            if participant_type != "human" and _stored_status_is_active(next_friend.get("status")):
+                next_friend["status"] = "pending"
+            overlaid.append(next_friend)
+            continue
+        next_friend = dict(friend)
+        next_friend["status"] = _runtime_friend_status(agent.get("status"))
+        next_friend["last_seen_at"] = clean_lobby_text(agent.get("last_seen_at") or next_friend.get("last_seen_at"), limit=64)
+        next_friend["last_meeting_id"] = clean_lobby_text(
+            agent.get("meeting_id") or next_friend.get("last_meeting_id"),
+            limit=128,
+        )
+        next_friend["provider_kind"] = clean_lobby_text(
+            agent.get("provider_kind") or next_friend.get("provider_kind"),
+            limit=64,
+        )
+        next_friend["connection_kind"] = clean_lobby_text(
+            agent.get("connection_kind") or next_friend.get("connection_kind"),
+            limit=64,
+        )
+        next_friend["display_name"] = clean_lobby_text(
+            agent.get("display_name") or next_friend.get("display_name"),
+            limit=64,
+        ) or str(next_friend.get("display_name") or "Friend")
+        overlaid.append(next_friend)
+    return overlaid
+
+
+def _normalize_friend_record(payload: dict[str, Any], *, trust_agent_status: bool = False) -> dict[str, object]:
     display_name = clean_lobby_text(payload.get("display_name") or payload.get("name"), limit=64)
     agent_id = clean_lobby_text(payload.get("agent_id") or payload.get("source_agent_id"), limit=128)
     handle = clean_lobby_text(payload.get("handle") or agent_id, limit=128)
@@ -174,6 +219,7 @@ def _normalize_friend_record(payload: dict[str, Any]) -> dict[str, object]:
     inferred_type = room_friend_type_for_agent(payload)
     if participant_type in {"human", "unknown"} and inferred_type not in {"human", "unknown"}:
         participant_type = inferred_type
+    source_agent_id = clean_lobby_text(payload.get("source_agent_id") or agent_id, limit=128)
     return {
         "friend_id": clean_lobby_text(payload.get("friend_id"), limit=96),
         "display_name": display_name or handle or "Friend",
@@ -182,14 +228,47 @@ def _normalize_friend_record(payload: dict[str, Any]) -> dict[str, object]:
         "provider_kind": clean_lobby_text(payload.get("provider_kind"), limit=64),
         "connection_kind": clean_lobby_text(payload.get("connection_kind"), limit=64),
         "agent_id": agent_id,
-        "source_agent_id": clean_lobby_text(payload.get("source_agent_id") or agent_id, limit=128),
+        "source_agent_id": source_agent_id,
         "last_meeting_id": clean_lobby_text(payload.get("last_meeting_id") or payload.get("meeting_id"), limit=128),
-        "status": clean_lobby_text(payload.get("status") or "unknown", limit=32),
+        "status": _normalize_friend_status(
+            payload,
+            participant_type=participant_type,
+            source_agent_id=source_agent_id,
+            trust_agent_status=trust_agent_status,
+        ),
         "source": clean_lobby_text(payload.get("source") or "manual", limit=32),
         "created_at": clean_lobby_text(payload.get("created_at"), limit=64),
         "updated_at": clean_lobby_text(payload.get("updated_at"), limit=64),
         "last_seen_at": clean_lobby_text(payload.get("last_seen_at"), limit=64),
     }
+
+
+def _normalize_friend_status(
+    payload: dict[str, Any],
+    *,
+    participant_type: str,
+    source_agent_id: str,
+    trust_agent_status: bool = False,
+) -> str:
+    status = clean_lobby_text(payload.get("status") or "unknown", limit=32)
+    if participant_type == "human" or status not in ROOM_FRIEND_ACTIVE_AGENT_STATUSES:
+        return status
+    if trust_agent_status and (source_agent_id or clean_lobby_text(payload.get("last_seen_at"), limit=64)):
+        return status
+    return "pending"
+
+
+def _stored_status_is_active(value: object) -> bool:
+    return clean_lobby_text(value, limit=32) in ROOM_FRIEND_ACTIVE_AGENT_STATUSES
+
+
+def _runtime_friend_status(value: object) -> str:
+    status = clean_lobby_text(value or "unknown", limit=32)
+    if status in ROOM_FRIEND_ACTIVE_AGENT_STATUSES:
+        return status
+    if status in {"offline", "stale", "error", "pending", "unknown"}:
+        return "pending" if status in {"stale", "unknown"} else status
+    return status or "pending"
 
 
 def _friend_id_from_payload(payload: dict[str, object]) -> str:

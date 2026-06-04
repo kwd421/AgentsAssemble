@@ -496,12 +496,14 @@ def build_parser() -> argparse.ArgumentParser:
     live_heartbeat.add_argument("--last-reply-at", default=None)
     live_heartbeat.add_argument("--last-observed-event-id", default=None)
     live_heartbeat.add_argument("--last-observed-live-event-id", default=None)
+    live_heartbeat.add_argument("--last-observed-dm-event-id", default=None)
     live_heartbeat.add_argument("--json", action="store_true", dest="as_json", help="Print the raw heartbeat response.")
 
     live_leave = live_agent_subparsers.add_parser("leave", parents=[live_server], help="Mark an external live agent offline before exiting.")
     live_leave.add_argument("--agent-id", required=True)
     live_leave.add_argument("--last-observed-event-id", default=None)
     live_leave.add_argument("--last-observed-live-event-id", default=None)
+    live_leave.add_argument("--last-observed-dm-event-id", default=None)
     live_leave.add_argument("--json", action="store_true", dest="as_json", help="Print the safe leave heartbeat response.")
 
     live_return_packet = live_agent_subparsers.add_parser(
@@ -840,6 +842,12 @@ def build_parser() -> argparse.ArgumentParser:
     live_say.add_argument("--json", action="store_true", dest="as_json", help="Print the raw lobby post response.")
     live_say.add_argument("message", nargs="+")
 
+    live_dm_reply = live_agent_subparsers.add_parser("dm-reply", parents=[live_server], help="Post a private DM reply as a live agent.")
+    live_dm_reply.add_argument("--agent-id", required=True)
+    live_dm_reply.add_argument("--source-event-id", required=True)
+    live_dm_reply.add_argument("--json", action="store_true", dest="as_json", help="Print the raw direct DM reply response.")
+    live_dm_reply.add_argument("message", nargs="+")
+
     live_answer_turn = live_agent_subparsers.add_parser(
         "official-reply",
         aliases=["answer-turn"],
@@ -863,6 +871,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_read_since.add_argument("--agent-id", required=True)
     live_read_since.add_argument("--after-event-id", default="")
     live_read_since.add_argument("--after-live-event-id", default="")
+    live_read_since.add_argument("--after-dm-event-id", default="")
     live_read_since.add_argument("--json", action="store_true", dest="as_json", help="Print the raw room diff payload.")
 
     live_wait_room_event = live_agent_subparsers.add_parser(
@@ -897,6 +906,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_wait_next.add_argument("--agent-id", required=True)
     live_wait_next.add_argument("--after-event-id", default="")
     live_wait_next.add_argument("--after-live-event-id", default="")
+    live_wait_next.add_argument("--after-dm-event-id", default="")
     live_wait_next.add_argument("--max-chain-depth", type=parse_nonnegative_int, default=1)
     live_wait_next.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
     live_wait_next.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
@@ -2037,6 +2047,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             else:
                 print(f"Posted {event.get('id') or 'lobby message'}")
             return 0
+        if args.live_agent_command == "dm-reply":
+            return _run_live_agent_dm_reply(args)
         if args.live_agent_command in {"official-reply", "answer-turn"}:
             return _run_live_agent_answer_turn(args)
         if args.live_agent_command == "room":
@@ -2106,6 +2118,7 @@ def _heartbeat_payload(args: argparse.Namespace) -> dict[str, object]:
         "last_reply_at": getattr(args, "last_reply_at", None),
         "last_observed_event_id": getattr(args, "last_observed_event_id", None),
         "last_observed_live_event_id": getattr(args, "last_observed_live_event_id", None),
+        "last_observed_dm_event_id": getattr(args, "last_observed_dm_event_id", None),
     }
     for key, value in optional_fields.items():
         if value is None or _is_unreplaced_template_placeholder(value):
@@ -2169,6 +2182,7 @@ def _leave_payload(args: argparse.Namespace) -> dict[str, object]:
     for key, arg_name in (
         ("last_observed_event_id", "last_observed_event_id"),
         ("last_observed_live_event_id", "last_observed_live_event_id"),
+        ("last_observed_dm_event_id", "last_observed_dm_event_id"),
     ):
         value = getattr(args, arg_name, None)
         if value is not None:
@@ -6277,12 +6291,15 @@ def _run_live_agent_read_since(args: argparse.Namespace) -> int:
     else:
         lobby_cursor = payload.get("last_observed_event_id") or "(start)"
         live_cursor = payload.get("last_observed_live_event_id") or "(start)"
+        dm_cursor = payload.get("last_observed_dm_event_id") or "(start)"
         print(
             "read-since "
             f"lobby {len(payload.get('lobby_events') if isinstance(payload.get('lobby_events'), list) else [])} "
             f"after {lobby_cursor}; "
             f"official {len(payload.get('live_events') if isinstance(payload.get('live_events'), list) else [])} "
-            f"after {live_cursor}"
+            f"after {live_cursor}; "
+            f"dm {len(payload.get('dm_events') if isinstance(payload.get('dm_events'), list) else [])} "
+            f"after {dm_cursor}"
         )
     return 0
 
@@ -6291,10 +6308,13 @@ def _live_agent_read_since_payload(args: argparse.Namespace, room: dict[str, obj
     agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
     lobby_cursor = str(args.after_event_id or agent.get("last_observed_event_id") or "").strip()
     live_cursor = str(args.after_live_event_id or agent.get("last_observed_live_event_id") or "").strip()
+    dm_cursor = str(args.after_dm_event_id or agent.get("last_observed_dm_event_id") or "").strip()
     lobby_events = [event for event in _events_after_id(_room_event_list(room, "lobby_events"), lobby_cursor) if isinstance(event, dict)]
     live_events = [event for event in _events_after_id(_room_event_list(room, "live_events"), live_cursor) if isinstance(event, dict)]
+    dm_events = [event for event in _events_after_id(_room_event_list(room, "dm_events"), dm_cursor) if isinstance(event, dict)]
     next_lobby_cursor = _latest_observed_event_id(lobby_events, lobby_cursor)
     next_live_cursor = _latest_observed_event_id(live_events, live_cursor)
+    next_dm_cursor = _latest_observed_event_id(dm_events, dm_cursor)
     meeting_id = str(room.get("meeting_id") or agent.get("meeting_id") or "").strip()
     return {
         "status": "ok",
@@ -6302,11 +6322,14 @@ def _live_agent_read_since_payload(args: argparse.Namespace, room: dict[str, obj
         "meeting_id": meeting_id,
         "last_observed_event_id": lobby_cursor,
         "last_observed_live_event_id": live_cursor,
+        "last_observed_dm_event_id": dm_cursor,
         "next_last_observed_event_id": next_lobby_cursor,
         "next_last_observed_live_event_id": next_live_cursor,
+        "next_last_observed_dm_event_id": next_dm_cursor,
         "lobby_events": lobby_events,
         "live_events": live_events,
-        "ack_command": _live_agent_read_since_ack_command(args, next_lobby_cursor, next_live_cursor),
+        "dm_events": dm_events,
+        "ack_command": _live_agent_read_since_ack_command(args, next_lobby_cursor, next_live_cursor, next_dm_cursor),
         "room": _wait_room_context(room, meeting_id=meeting_id),
     }
 
@@ -6316,7 +6339,7 @@ def _room_event_list(room: dict[str, object], key: str) -> list[object]:
     return events if isinstance(events, list) else []
 
 
-def _live_agent_read_since_ack_command(args: argparse.Namespace, lobby_cursor: str, live_cursor: str) -> list[str]:
+def _live_agent_read_since_ack_command(args: argparse.Namespace, lobby_cursor: str, live_cursor: str, dm_cursor: str) -> list[str]:
     return [
         "python3",
         "-m",
@@ -6332,6 +6355,7 @@ def _live_agent_read_since_ack_command(args: argparse.Namespace, lobby_cursor: s
         "--last-error=",
         f"--last-observed-event-id={lobby_cursor}",
         f"--last-observed-live-event-id={live_cursor}",
+        f"--last-observed-dm-event-id={dm_cursor}",
         "--json",
     ]
 
@@ -6406,6 +6430,24 @@ def _format_wait_room_event(payload: dict[str, object]) -> str:
     name = str(event.get("name") or event.get("actor_id") or "participant")
     message = str(event.get("message") or "").strip()
     return f"{event_id} {name}: {message}"
+
+
+def _run_live_agent_dm_reply(args: argparse.Namespace) -> int:
+    agent_id = urllib.parse.quote(args.agent_id, safe="")
+    response = _request_json(
+        _server_url(args.server, f"/api/live-agents/{agent_id}/dm-reply"),
+        method="POST",
+        payload={
+            "source_event_id": args.source_event_id,
+            "message": " ".join(args.message),
+        },
+    )
+    event = response.get("event", {}) if isinstance(response.get("event"), dict) else {}
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(f"Answered DM {event.get('id') or args.source_event_id}")
+    return 0
 
 
 def _run_live_agent_answer_turn(args: argparse.Namespace) -> int:
@@ -6567,6 +6609,7 @@ def _wait_room_context(room: dict[str, object], *, meeting_id: str) -> dict[str,
         "meeting_id": meeting_id,
         "lobby_event_count": len(room.get("lobby_events") if isinstance(room.get("lobby_events"), list) else []),
         "live_event_count": len(room.get("live_events") if isinstance(room.get("live_events"), list) else []),
+        "dm_event_count": len(room.get("dm_events") if isinstance(room.get("dm_events"), list) else []),
     }
     shared_memory = _wait_shared_memory(room)
     if shared_memory:
@@ -6608,6 +6651,74 @@ def _format_wait_turn_request(payload: dict[str, object]) -> str:
     return f"{event_id} {role_id}: {content}"
 
 
+def _wait_dm_candidate(args: argparse.Namespace, room: dict[str, object]) -> dict[str, object] | None:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    events = room.get("dm_events") if isinstance(room.get("dm_events"), list) else []
+    cursor = str(args.after_dm_event_id or agent.get("last_observed_dm_event_id") or "").strip()
+    for event in _events_after_id(events, cursor):
+        if not isinstance(event, dict):
+            continue
+        if str(event.get("side") or "") != "mine":
+            continue
+        if str(event.get("target_agent_id") or "").strip() != str(args.agent_id):
+            continue
+        if not str(event.get("id") or "").strip():
+            continue
+        if not str(event.get("message") or "").strip():
+            continue
+        return event
+    return None
+
+
+def _wait_dm_payload(args: argparse.Namespace, room: dict[str, object], event: dict[str, object]) -> dict[str, object]:
+    event_id = str(event.get("id") or "")
+    return {
+        "status": "event",
+        "agent_id": args.agent_id,
+        "source_event_id": event_id,
+        "event": event,
+        "reply_command": [
+            "python3",
+            "-m",
+            "agentsassemble.cli",
+            "live-agent",
+            "dm-reply",
+            "--server",
+            str(args.server),
+            "--agent-id",
+            str(args.agent_id),
+            "--source-event-id",
+            event_id,
+            "--",
+            "<reply>",
+        ],
+        "ack_command": [
+            "python3",
+            "-m",
+            "agentsassemble.cli",
+            "live-agent",
+            "heartbeat",
+            "--server",
+            str(args.server),
+            "--agent-id",
+            str(args.agent_id),
+            "--status",
+            "online",
+            "--last-error=",
+            f"--last-observed-dm-event-id={event_id}",
+            "--json",
+        ],
+        "room": _wait_room_context(room, meeting_id=str(room.get("meeting_id") or "")),
+    }
+
+
+def _format_wait_dm(payload: dict[str, object]) -> str:
+    event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+    event_id = str(event.get("id") or "dm")
+    message = str(event.get("message") or "").strip()
+    return f"{event_id}: {message}"
+
+
 def _run_live_agent_wait_next(args: argparse.Namespace) -> int:
     deadline = time.monotonic() + float(args.timeout)
     last_room: dict[str, object] = {}
@@ -6615,6 +6726,15 @@ def _run_live_agent_wait_next(args: argparse.Namespace) -> int:
         agent_id = urllib.parse.quote(args.agent_id, safe="")
         room = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/room"))
         last_room = room
+        dm_candidate = _wait_dm_candidate(args, room)
+        if dm_candidate is not None:
+            payload = _wait_dm_payload(args, room, dm_candidate)
+            payload["action"] = "dm"
+            if args.as_json:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            else:
+                print(f"dm {_format_wait_dm(payload)}")
+            return 0
         official_candidate = _wait_turn_request_candidate(args, room)
         if official_candidate is not None:
             if _wait_agent_persona_blocks_official_turn(room):
@@ -6662,7 +6782,8 @@ def _run_live_agent_wait_next(args: argparse.Namespace) -> int:
             else:
                 lobby_cursor = payload.get("last_observed_event_id") or "(none)"
                 live_cursor = payload.get("last_observed_live_event_id") or "(none)"
-                print(f"no next action after lobby {lobby_cursor}, official {live_cursor}")
+                dm_cursor = payload.get("last_observed_dm_event_id") or "(none)"
+                print(f"no next action after dm {dm_cursor}, lobby {lobby_cursor}, official {live_cursor}")
             return 1
         sleep_interval = max(float(args.poll_interval), 0.05)
         time.sleep(min(sleep_interval, remaining))
@@ -6672,12 +6793,14 @@ def _wait_next_timeout_payload(args: argparse.Namespace, room: dict[str, object]
     agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
     lobby_cursor = str(args.after_event_id or agent.get("last_observed_event_id") or "").strip()
     live_cursor = str(args.after_live_event_id or agent.get("last_observed_live_event_id") or "").strip()
+    dm_cursor = str(args.after_dm_event_id or agent.get("last_observed_dm_event_id") or "").strip()
     return {
         "status": "timeout",
         "agent_id": args.agent_id,
         "timeout_seconds": float(args.timeout),
         "last_observed_event_id": _latest_observed_event_id(room.get("lobby_events"), lobby_cursor),
         "last_observed_live_event_id": _latest_observed_event_id(room.get("live_events"), live_cursor),
+        "last_observed_dm_event_id": _latest_observed_event_id(room.get("dm_events"), dm_cursor),
     }
 
 
@@ -7172,6 +7295,17 @@ def _self_service_room_command_env(config: ResidentAgentConfig) -> dict[str, str
                 "{message}",
             ]
         ),
+        "AGENTSASSEMBLE_DM_REPLY_COMMAND_TEMPLATE": shlex.join(
+            [
+                *base,
+                "dm-reply",
+                *identity,
+                "--source-event-id",
+                "{source_event_id}",
+                "--",
+                "{message}",
+            ]
+        ),
         "AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE": shlex.join(
             [
                 *base,
@@ -7184,6 +7318,7 @@ def _self_service_room_command_env(config: ResidentAgentConfig) -> dict[str, str
                 "--last-reply-at={last_reply_at}",
                 "--last-observed-event-id={last_observed_event_id}",
                 "--last-observed-live-event-id={last_observed_live_event_id}",
+                "--last-observed-dm-event-id={last_observed_dm_event_id}",
                 "--json",
             ]
         ),

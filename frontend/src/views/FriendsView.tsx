@@ -4,6 +4,7 @@ import {
   addRoomFriend,
   deleteRoomFriend,
   fetchRoomFriends,
+  type LiveAgentProcessGroup,
   type ParticipantType,
   type RoomFriend,
   type RoomFriendsResponse,
@@ -45,6 +46,8 @@ export default function FriendsView({
   initialDisplayName = "",
   onActiveDmFriendChange,
   onSelectFriend,
+  processGroups = [],
+  onSessionActionComplete,
 }: {
   typeFilter: ParticipantType | null;
   filter: FriendListFilter;
@@ -55,6 +58,8 @@ export default function FriendsView({
   activeDmFriendId?: string;
   onActiveDmFriendChange?: (friendId: string) => void;
   onSelectFriend?: (friend: RoomFriend) => void;
+  processGroups?: LiveAgentProcessGroup[];
+  onSessionActionComplete?: () => void;
 }) {
   const [payload, setPayload] = useState<RoomFriendsResponse>({ friends: [], candidates: [] });
   const [query, setQuery] = useState("");
@@ -352,6 +357,11 @@ export default function FriendsView({
             friend={profileFriend}
             onStartDm={openFriendDm}
             onDelete={profileFriend ? handleDeleteFriend : undefined}
+            processGroups={processGroups}
+            onSessionActionComplete={() => {
+              onSessionActionComplete?.();
+              refresh();
+            }}
           />
         </aside>
       </div>

@@ -60,6 +60,7 @@ def build_live_agent_join_brief(
     templates = {
         "say": _join_say_template(server=normalized_server, agent_id=normalized_agent_id),
         "official_reply": _join_official_reply_template(server=normalized_server, agent_id=normalized_agent_id),
+        "dm_reply": _join_dm_reply_template(server=normalized_server, agent_id=normalized_agent_id),
         "heartbeat": _join_heartbeat_template(server=normalized_server, agent_id=normalized_agent_id),
     }
     mcp = {
@@ -109,6 +110,7 @@ def build_live_agent_join_brief(
             "Treat admission_contract as the boundary: this packet is not host admission or identity proof by itself.",
             "For lobby actions, replace templates.say placeholders and run it once.",
             "For observe_lobby actions, run the returned ack_command and do not post a reply.",
+            "For dm actions, replace templates.dm_reply placeholders and run it once.",
             "For official_turn actions, replace templates.official_reply placeholders and run it once.",
             "For return_packet actions, run the returned read_command before the ack_command and do not post a reply.",
             "Use templates.heartbeat to report online, working, error, or cursor-only observation.",
@@ -148,6 +150,7 @@ def _entry_contract() -> dict[str, object]:
             "commands.read_since",
             "templates.say",
             "templates.official_reply",
+            "templates.dm_reply",
             "templates.heartbeat",
             "commands.leave",
             "mcp.command",
@@ -156,7 +159,7 @@ def _entry_contract() -> dict[str, object]:
             "Start from a host-approved self_service resident config.",
             "Use AGENTSASSEMBLE_WAIT_NEXT_COMMAND to observe the next room action.",
             "Use AGENTSASSEMBLE_ROOM_COMMAND or AGENTSASSEMBLE_READ_SINCE-style CLI commands when extra room context is needed.",
-            "Use AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE or AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE for exactly one visible reply.",
+            "Use AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE, AGENTSASSEMBLE_DM_REPLY_COMMAND_TEMPLATE, or AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE for exactly one reply.",
             "Use AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE to preserve cursors and status.",
             "Use AGENTSASSEMBLE_LEAVE_COMMAND before intentional exit.",
         ],
@@ -291,6 +294,22 @@ def _join_official_reply_template(*, server: str, agent_id: str) -> list[str]:
     )
 
 
+def _join_dm_reply_template(*, server: str, agent_id: str) -> list[str]:
+    return _module_cli_command(
+        "live-agent",
+        "dm-reply",
+        "--server",
+        server,
+        "--agent-id",
+        agent_id,
+        "--source-event-id",
+        "{source_event_id}",
+        "--json",
+        "--",
+        "{message}",
+    )
+
+
 def _join_heartbeat_template(*, server: str, agent_id: str) -> list[str]:
     return _module_cli_command(
         "live-agent",
@@ -305,6 +324,7 @@ def _join_heartbeat_template(*, server: str, agent_id: str) -> list[str]:
         "--last-reply-at={last_reply_at}",
         "--last-observed-event-id={last_observed_event_id}",
         "--last-observed-live-event-id={last_observed_live_event_id}",
+        "--last-observed-dm-event-id={last_observed_dm_event_id}",
         "--json",
     )
 

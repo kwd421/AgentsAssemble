@@ -77,6 +77,7 @@ class RecordingRoom:
             "meeting_id": "m1",
             "lobby_events": [],
             "live_events": [],
+            "dm_events": [],
         }
         self.meeting_payload = {
             "meeting": {
@@ -142,6 +143,7 @@ class McpParticipantToolsTests(unittest.TestCase):
                 "wait_next",
                 "read_since",
                 "say",
+                "dm_reply",
                 "official_reply",
                 "read_room",
                 "read_return_packet",
@@ -223,6 +225,51 @@ class McpParticipantToolsTests(unittest.TestCase):
         self.assertEqual(room.requests[2]["payload"]["source_event_id"], "turn-1")
         self.assertEqual(room.requests[4]["payload"]["source_event_id"], "lobby-1")
 
+    def test_wait_next_prefers_dm_and_dm_reply_posts_direct_message(self):
+        room = RecordingRoom()
+        client = McpRoomClient("http://room.local", request_json=room.request_json)
+        tools = build_tool_registry(
+            "participant",
+            client,
+            McpParticipantContext(agent_id="agent-a", display_name="Agent A", meeting_id="m1", engagement_mode="always"),
+        )
+        room.room["agent"]["last_observed_dm_event_id"] = "dm-old"
+        room.room["dm_events"] = [
+            {
+                "id": "dm-old",
+                "friend_id": "friend:agent-a",
+                "side": "mine",
+                "target_agent_id": "agent-a",
+                "message": "old",
+            },
+            {
+                "id": "dm-next",
+                "friend_id": "friend:agent-a",
+                "side": "mine",
+                "target_agent_id": "agent-a",
+                "message": "private question",
+            },
+        ]
+        room.room["lobby_events"] = [{"id": "lobby-1", "name": "Human", "message": "hello"}]
+        room.room["live_events"] = [
+            {
+                "id": "turn-1",
+                "kind": "live_agent_turn_request",
+                "target_agent_id": "agent-a",
+                "meeting_id": "m1",
+                "content": "official turn",
+            }
+        ]
+
+        wait_result = tools["wait_next"](timeout_seconds=0, poll_interval=0, max_chain_depth=1)
+        reply = tools["dm_reply"](message="direct answer", source_event_id=wait_result["source_event_id"])
+
+        self.assertEqual(wait_result["action"], "dm")
+        self.assertEqual(wait_result["source_event_id"], "dm-next")
+        self.assertEqual(reply["event"]["id"], "posted-1")
+        self.assertEqual(room.requests[-1]["path"], "/api/live-agents/agent-a/dm-reply")
+        self.assertEqual(room.requests[-1]["payload"], {"source_event_id": "dm-next", "message": "direct answer"})
+
     def test_read_since_returns_room_diff_without_mutating_presence(self):
         room = RecordingRoom()
         room.room["agent"] = {
@@ -230,6 +277,7 @@ class McpParticipantToolsTests(unittest.TestCase):
             "display_name": "Agent A",
             "last_observed_event_id": "lobby-1",
             "last_observed_live_event_id": "live-1",
+            "last_observed_dm_event_id": "dm-1",
         }
         room.room["lobby_events"] = [
             {"id": "lobby-1", "name": "Human", "message": "old lobby"},
@@ -238,6 +286,10 @@ class McpParticipantToolsTests(unittest.TestCase):
         room.room["live_events"] = [
             {"id": "live-1", "kind": "message", "content": "old official"},
             {"id": "live-2", "kind": "message", "content": "new official"},
+        ]
+        room.room["dm_events"] = [
+            {"id": "dm-1", "side": "mine", "target_agent_id": "agent-a", "message": "old dm"},
+            {"id": "dm-2", "side": "mine", "target_agent_id": "agent-a", "message": "new dm"},
         ]
         tools = build_tool_registry(
             "participant",
@@ -250,11 +302,15 @@ class McpParticipantToolsTests(unittest.TestCase):
 
         self.assertEqual([event["id"] for event in diff["lobby_events"]], ["lobby-2"])
         self.assertEqual([event["id"] for event in diff["live_events"]], ["live-2"])
+        self.assertEqual([event["id"] for event in diff["dm_events"]], ["dm-2"])
         self.assertEqual(diff["last_observed_event_id"], "lobby-1")
         self.assertEqual(diff["last_observed_live_event_id"], "live-1")
+        self.assertEqual(diff["last_observed_dm_event_id"], "dm-1")
         self.assertEqual(diff["next_last_observed_event_id"], "lobby-2")
         self.assertEqual(diff["next_last_observed_live_event_id"], "live-2")
+        self.assertEqual(diff["next_last_observed_dm_event_id"], "dm-2")
         self.assertEqual(diff["room"]["lobby_event_count"], 2)
+        self.assertEqual(diff["room"]["dm_event_count"], 2)
         self.assertEqual(
             [(request["method"], request["path"]) for request in room.requests],
             [
@@ -264,6 +320,7 @@ class McpParticipantToolsTests(unittest.TestCase):
         )
         self.assertEqual(room.requests[-1]["payload"]["last_observed_event_id"], "")
         self.assertEqual(room.requests[-1]["payload"]["last_observed_live_event_id"], "")
+        self.assertEqual(room.requests[-1]["payload"]["last_observed_dm_event_id"], "")
 
     def test_read_since_accepts_explicit_cursors(self):
         room = RecordingRoom()
@@ -378,6 +435,8 @@ class McpJoinBriefTests(unittest.TestCase):
         self.assertEqual(payload["entry_contract"]["primary_entry_paths"], ["mcp.command", "self_service", "cli.commands"])
         self.assertEqual(payload["entry_contract"]["provider_context"], "provider_owned")
         self.assertIn("commands.wait_next", payload["entry_contract"]["tool_order"])
+        self.assertIn("templates.dm_reply", payload["entry_contract"]["tool_order"])
+        self.assertIn("dm_reply", payload["templates"])
         self.assertEqual(
             payload["mcp"]["command"],
             [

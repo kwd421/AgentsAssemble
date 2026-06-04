@@ -60,7 +60,8 @@ The release candidate should have current evidence for these surfaces:
 - `git diff --check` passes for the intended diff.
 
 The local MCP participant profile exposes only register, heartbeat, wait_next,
-say, official_reply, read_room, read_return_packet, and leave. Participant
+read_since, say, dm_reply, official_reply, read_room, read_return_packet, and
+leave. Participant
 identity is fixed by the MCP server startup args, not by tool-call input. The
 archive profile exposes only read_transcript, read_decision, read_shared_memory,
 list_meetings, and read_meeting_summary, with path-like meeting ids rejected and

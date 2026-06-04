@@ -6,6 +6,7 @@ from pathlib import Path
 from agentsassemble.room_friends import (
     delete_room_friend,
     read_room_friends,
+    room_friends_payload,
     room_friend_suggestions_from_agents,
     room_friend_type_for_agent,
     upsert_room_friend,
@@ -161,6 +162,89 @@ class RoomFriendsTests(unittest.TestCase):
         by_id = {str(friend["friend_id"]): friend for friend in friends}
         self.assertEqual(by_id["agent:gpt-54-mini-smoke"]["participant_type"], "subscription_ai")
         self.assertEqual(by_id["friend:seinel"]["participant_type"], "human")
+
+    def test_read_room_friends_does_not_mark_agentless_ai_records_online(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "room_friends.json").write_text(
+                json.dumps(
+                    {
+                        "friends": [
+                            {
+                                "friend_id": "friend:dm-draft-beta",
+                                "display_name": "DM Draft Beta",
+                                "participant_type": "subscription_ai",
+                                "provider_kind": "claude",
+                                "connection_kind": "claude_code",
+                                "status": "online",
+                                "source": "browser-check",
+                            },
+                            {
+                                "friend_id": "friend:seinel",
+                                "display_name": "SeiNel",
+                                "participant_type": "human",
+                                "status": "online",
+                            },
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            friends = read_room_friends(root)
+
+        by_id = {str(friend["friend_id"]): friend for friend in friends}
+        self.assertEqual(by_id["friend:dm-draft-beta"]["status"], "pending")
+        self.assertEqual(by_id["friend:seinel"]["status"], "online")
+
+    def test_room_friends_payload_uses_live_heartbeat_overlay_for_saved_ai_status(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "room_friends.json").write_text(
+                json.dumps(
+                    {
+                        "friends": [
+                            {
+                                "friend_id": "friend:codex-dm",
+                                "display_name": "Codex DM",
+                                "participant_type": "subscription_ai",
+                                "provider_kind": "codex",
+                                "connection_kind": "live_session",
+                                "agent_id": "codex-dm",
+                                "source_agent_id": "codex-dm",
+                                "status": "online",
+                                "last_seen_at": "2026-06-01T00:00:00+00:00",
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            offline_payload = room_friends_payload(root, [])
+            online_payload = room_friends_payload(
+                root,
+                [
+                    {
+                        "agent_id": "codex-dm",
+                        "display_name": "Codex DM Live",
+                        "provider_kind": "codex",
+                        "connection_kind": "live_session",
+                        "meeting_id": "resident-m1",
+                        "status": "online",
+                        "last_seen_at": "2026-06-04T00:00:00+00:00",
+                    }
+                ],
+            )
+
+        offline_friend = offline_payload["friends"][0]
+        online_friend = online_payload["friends"][0]
+        self.assertEqual(offline_friend["status"], "pending")
+        self.assertEqual(online_friend["status"], "online")
+        self.assertEqual(online_friend["last_seen_at"], "2026-06-04T00:00:00+00:00")
+        self.assertEqual(online_friend["last_meeting_id"], "resident-m1")
 
     def test_room_friend_dm_persists_only_for_saved_friend(self):
         with tempfile.TemporaryDirectory() as temp_dir:
