@@ -12,11 +12,12 @@ class CodexLiveSessionAdapterTests(unittest.TestCase):
     def assert_codex_exec_safety_flags(self, command):
         exec_index = command.index("exec")
         self.assertEqual(
-            command[exec_index : exec_index + 4],
-            ["exec", "--sandbox", "read-only", "--ignore-rules"],
+            command[exec_index : exec_index + 5],
+            ["exec", "--sandbox", "read-only", "--ignore-user-config", "--ignore-rules"],
         )
         self.assertEqual(command.count("--sandbox"), 1)
         self.assertEqual(command.count("read-only"), 1)
+        self.assertEqual(command.count("--ignore-user-config"), 1)
         self.assertEqual(command.count("--ignore-rules"), 1)
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
 

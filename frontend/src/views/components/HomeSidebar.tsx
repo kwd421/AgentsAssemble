@@ -26,6 +26,7 @@ export default function HomeSidebar({
   activeDmFriendId,
   onFriendSelect,
   onStartAddFriend,
+  onStartAddAgent,
 }: {
   activeFilter: HomeFilter;
   onFilterChange: (filter: HomeFilter) => void;
@@ -37,6 +38,7 @@ export default function HomeSidebar({
   activeDmFriendId?: string;
   onFriendSelect?: (friend: RoomFriend, intent?: "profile" | "dm") => void;
   onStartAddFriend?: (draftName?: string) => void;
+  onStartAddAgent?: () => void;
 }) {
   const [dmQuery, setDmQuery] = useState("");
   const cleanDmQuery = dmQuery.trim();
@@ -60,6 +62,12 @@ export default function HomeSidebar({
         </label>
       </header>
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3 chat-scroll" aria-label="친구 분류">
+        {onStartAddAgent && (
+          <button type="button" className="dc-home-agent-add" onClick={onStartAddAgent}>
+            <Bot size={18} />
+            <span>에이전트 추가</span>
+          </button>
+        )}
         {HOME_ITEMS.map((item) => {
           const Icon = item.icon;
           return (

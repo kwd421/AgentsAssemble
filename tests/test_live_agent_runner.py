@@ -88,6 +88,51 @@ def config(**overrides):
 
 
 class LiveAgentRunnerTests(unittest.TestCase):
+    def test_zero_poll_interval_uses_immediate_safe_sleep_between_idle_ticks(self):
+        clock = FakeClock()
+        sleep_calls: list[float] = []
+        client = FakeRoomClient([{"lobby_events": []}, {"lobby_events": []}, {"lobby_events": []}])
+
+        def sleep(seconds):
+            sleep_calls.append(seconds)
+            clock.sleep(seconds)
+
+        runner = LiveAgentRunner(
+            config(max_ticks=3, poll_interval=0, heartbeat_interval=0),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "unused",
+            sleep_fn=sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+        self.assertEqual(sleep_calls, [0.01, 0.01])
+
+    def test_runner_uses_runtime_poll_interval_from_room_agent_snapshot(self):
+        clock = FakeClock()
+        sleep_calls: list[float] = []
+        client = FakeRoomClient(
+            [
+                {"agent": {"agent_id": "agent-a", "poll_interval": 0}, "lobby_events": []},
+                {"agent": {"agent_id": "agent-a", "poll_interval": 0}, "lobby_events": []},
+            ]
+        )
+
+        def sleep(seconds):
+            sleep_calls.append(seconds)
+            clock.sleep(seconds)
+
+        runner = LiveAgentRunner(
+            config(max_ticks=2, poll_interval=2.0, heartbeat_interval=0),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "unused",
+            sleep_fn=sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+        self.assertEqual(sleep_calls, [0.01])
+
     def test_always_runner_replies_to_new_non_self_event_and_records_chain_metadata(self):
         clock = FakeClock()
         room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "상태 어때?", "auto_chain_depth": 0}]}
@@ -484,6 +529,265 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
         self.assertEqual(runner.run(), 0)
         self.assertFalse([call for call in client.calls if call[0].endswith("/lobby")])
+
+    def test_quiet_flow_policy_ignores_general_human_messages(self):
+        clock = FakeClock()
+        room = {
+            "meeting_id": "m1",
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow", "meeting_id": "m1"},
+            "agents": [
+                {"agent_id": "agent-a", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+                {"agent_id": "agent-b", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+            ],
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "조용한 호출 모드 시작",
+                    "flow_id": "flow-quiet",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                    "flow_policy": "quiet",
+                },
+                {
+                    "id": "human-general",
+                    "name": "나",
+                    "side": "mine",
+                    "message": "이건 방 전체에 던진 말이야.",
+                    "flow_meeting_id": "m1",
+                },
+            ],
+        }
+        client = FakeRoomClient([room])
+        provider_calls: list[str] = []
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            provider_calls.append(prompt)
+            return '{"action":"speak","message":"quiet policy should not call this"}'
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="flow", meeting_id="m1"),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+        self.assertEqual(provider_calls, [])
+        self.assertFalse([call for call in client.calls if call[0].endswith("/lobby")])
+
+    def test_quiet_flow_policy_answers_explicit_direct_mention(self):
+        clock = FakeClock()
+        room = {
+            "meeting_id": "m1",
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow", "meeting_id": "m1"},
+            "agents": [
+                {"agent_id": "agent-a", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+                {"agent_id": "agent-b", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+            ],
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "조용한 호출 모드 시작",
+                    "flow_id": "flow-quiet",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                    "flow_policy": "quiet",
+                },
+                {
+                    "id": "human-mention",
+                    "name": "나",
+                    "side": "mine",
+                    "message": "@Agent A 이건 네가 답해줘.",
+                    "flow_meeting_id": "m1",
+                },
+            ],
+        }
+        client = FakeRoomClient([room])
+        runner = LiveAgentRunner(
+            config(engagement_mode="flow", meeting_id="m1"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: '{"action":"speak","message":"나 지목받았어."}',
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["message"], "나 지목받았어.")
+
+    def test_natural_flow_policy_allows_direct_mention_to_break_turn_balance(self):
+        clock = FakeClock()
+        room = {
+            "meeting_id": "m1",
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow", "meeting_id": "m1"},
+            "agents": [
+                {"agent_id": "agent-a", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+                {"agent_id": "agent-b", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+            ],
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "자연 대화 시작",
+                    "flow_id": "flow-natural",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                    "flow_policy": "natural",
+                },
+                {
+                    "id": "agent-a-1",
+                    "actor_id": "agent-a",
+                    "name": "Agent A",
+                    "message": "이미 말함",
+                    "flow_id": "flow-natural",
+                    "flow_meeting_id": "m1",
+                    "flow_action": "speak",
+                },
+                {
+                    "id": "human-mention",
+                    "actor_id": "host",
+                    "name": "나",
+                    "side": "mine",
+                    "message": "@Agent A 이 부분은 네가 바로 답해줘.",
+                    "flow_meeting_id": "m1",
+                },
+            ],
+        }
+        client = FakeRoomClient([room])
+        runner = LiveAgentRunner(
+            config(engagement_mode="flow", meeting_id="m1"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: '{"action":"speak","message":"지목받았으니 바로 답할게."}',
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+        runner.last_observed_event_id = "agent-a-1"
+
+        self.assertEqual(runner.run(), 1)
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["message"], "지목받았으니 바로 답할게.")
+
+    def test_natural_flow_policy_plain_name_does_not_break_turn_balance(self):
+        clock = FakeClock()
+        room = {
+            "meeting_id": "m1",
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow", "meeting_id": "m1"},
+            "agents": [
+                {"agent_id": "agent-a", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+                {"agent_id": "agent-b", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+            ],
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "자연 대화 시작",
+                    "flow_id": "flow-natural",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                    "flow_policy": "natural",
+                },
+                {
+                    "id": "agent-a-1",
+                    "actor_id": "agent-a",
+                    "name": "Agent A",
+                    "message": "이미 말함",
+                    "flow_id": "flow-natural",
+                    "flow_meeting_id": "m1",
+                    "flow_action": "speak",
+                },
+                {
+                    "id": "human-plain-name",
+                    "name": "나",
+                    "side": "mine",
+                    "message": "Agent A가 아까 말한 내용은 잠깐 보류하자.",
+                    "flow_meeting_id": "m1",
+                },
+            ],
+        }
+        client = FakeRoomClient([room])
+        provider_calls: list[str] = []
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            provider_calls.append(prompt)
+            return '{"action":"speak","message":"plain name should not bypass fairness"}'
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="flow", meeting_id="m1"),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+        runner.last_observed_event_id = "agent-a-1"
+
+        self.assertEqual(runner.run(), 0)
+        self.assertEqual(provider_calls, [])
+        self.assertFalse([call for call in client.calls if call[0].endswith("/lobby")])
+
+    def test_free_interval_flow_policy_does_not_enforce_turn_balance(self):
+        clock = FakeClock()
+        room = {
+            "meeting_id": "m1",
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow", "meeting_id": "m1"},
+            "agents": [
+                {"agent_id": "agent-a", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+                {"agent_id": "agent-b", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+            ],
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "자유 interval 시작",
+                    "flow_id": "flow-free",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                    "flow_policy": "free_interval",
+                },
+                {
+                    "id": "agent-a-1",
+                    "actor_id": "agent-a",
+                    "name": "Agent A",
+                    "message": "이미 말함",
+                    "flow_id": "flow-free",
+                    "flow_meeting_id": "m1",
+                    "flow_action": "speak",
+                },
+                {
+                    "id": "agent-b-1",
+                    "actor_id": "agent-b",
+                    "name": "Agent B",
+                    "message": "응답",
+                    "flow_id": "flow-free",
+                    "flow_meeting_id": "m1",
+                    "flow_action": "speak",
+                },
+                {
+                    "id": "agent-a-2",
+                    "actor_id": "agent-a",
+                    "name": "Agent A",
+                    "message": "다시 말함",
+                    "flow_id": "flow-free",
+                    "flow_meeting_id": "m1",
+                    "flow_action": "speak",
+                },
+            ],
+        }
+        client = FakeRoomClient([room])
+        runner = LiveAgentRunner(
+            config(engagement_mode="flow", meeting_id="m1"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: '{"action":"speak","message":"자유 interval에서는 내가 이어갈 수 있어."}',
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+        runner.last_observed_event_id = "agent-b-1"
+
+        self.assertEqual(runner.run(), 1)
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["message"], "자유 interval에서는 내가 이어갈 수 있어.")
 
     def test_flow_runner_yields_when_ahead_of_active_participants(self):
         clock = FakeClock()
@@ -4003,18 +4307,24 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(first_reply, "reply 1")
         self.assertEqual(second_reply, "reply 2")
         self.assertEqual(runner.session_id, "019e3038-39cc-76a2-a746-5ba8c0f3b408")
-        self.assertEqual(calls[0]["command"][:6], ["codex", "exec", "--sandbox", "read-only", "--ignore-rules", "--skip-git-repo-check"])
+        self.assertEqual(
+            calls[0]["command"][:7],
+            ["codex", "exec", "--sandbox", "read-only", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check"],
+        )
         self.assertIn("--cd", calls[0]["command"])
         self.assertEqual(calls[0]["command"][-1], "-")
         self.assertEqual(calls[0]["kwargs"]["input"], "first prompt")
         self.assertEqual(calls[0]["kwargs"]["cwd"], str(Path(temp_dir)))
-        self.assertEqual(calls[1]["command"][:6], ["codex", "exec", "--sandbox", "read-only", "--ignore-rules", "resume"])
+        self.assertEqual(
+            calls[1]["command"][:7],
+            ["codex", "exec", "--sandbox", "read-only", "--ignore-user-config", "--ignore-rules", "resume"],
+        )
         self.assertIn("--skip-git-repo-check", calls[1]["command"])
         self.assertIn("019e3038-39cc-76a2-a746-5ba8c0f3b408", calls[1]["command"])
         self.assertNotIn("--cd", calls[1]["command"])
         self.assertEqual(calls[1]["kwargs"]["input"], "second prompt")
 
-    def test_codex_resident_command_runner_passes_configured_model_to_exec_and_resume(self):
+    def test_codex_resident_command_runner_passes_configured_model_and_effort_to_exec_and_resume(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             calls = []
 
@@ -4035,6 +4345,7 @@ class LiveAgentRunnerTests(unittest.TestCase):
                     connection_kind="live_session",
                     command=["codex"],
                     model_id="gpt-5.4-mini",
+                    effort="high",
                 ),
                 command_runner=command_runner,
                 cwd=Path(temp_dir),
@@ -4048,6 +4359,7 @@ class LiveAgentRunnerTests(unittest.TestCase):
         for call in calls:
             command = call["command"]
             self.assertEqual(command[command.index("--model") + 1], "gpt-5.4-mini")
+            self.assertIn("model_reasoning_effort=\"high\"", command)
             self.assertLess(command.index("--model"), command.index("--output-last-message"))
         self.assertLess(calls[1]["command"].index("--model"), calls[1]["command"].index("resume"))
 
@@ -4075,7 +4387,10 @@ class LiveAgentRunnerTests(unittest.TestCase):
             finally:
                 runner.close()
 
-        self.assertEqual(calls[0]["command"][:5], ["codex", "exec", "--sandbox", "read-only", "--ignore-rules"])
+        self.assertEqual(
+            calls[0]["command"][:6],
+            ["codex", "exec", "--sandbox", "read-only", "--ignore-user-config", "--ignore-rules"],
+        )
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", calls[0]["command"])
 
     def test_remote_bridge_resident_command_runner_sanitizes_auth_failures(self):
@@ -4468,7 +4783,10 @@ class LiveAgentRunnerTests(unittest.TestCase):
                 codex_runner.close()
 
         self.assertEqual(replies, 1)
-        self.assertEqual(calls[0]["command"][:6], ["codex", "exec", "--sandbox", "read-only", "--ignore-rules", "resume"])
+        self.assertEqual(
+            calls[0]["command"][:7],
+            ["codex", "exec", "--sandbox", "read-only", "--ignore-user-config", "--ignore-rules", "resume"],
+        )
         self.assertIn("--skip-git-repo-check", calls[0]["command"])
         self.assertIn("019e3038-39cc-76a2-a746-5ba8c0f3b408", calls[0]["command"])
         self.assertNotIn("--cd", calls[0]["command"])

@@ -76,9 +76,9 @@ function FlowMessage({ event }: { event: LobbyEvent }) {
           )}
         </p>
         {event.message && (
-          <p className="text-[14px] leading-relaxed text-text-secondary preserve-words">
+          <div className="text-[14px] leading-relaxed text-text-secondary preserve-words">
             <DiscordText text={event.message} />
-          </p>
+          </div>
         )}
         <LobbyAttachments attachments={event.attachments} />
       </div>

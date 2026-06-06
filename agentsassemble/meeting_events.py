@@ -64,6 +64,7 @@ class LobbyEvent:
     flow_event_type: str = ""
     flow_status: str = ""
     flow_topic: str = ""
+    flow_policy: str = ""
     flow_action: str = ""
     flow_reason: str = ""
     flow_duration_seconds: int = 0
@@ -110,6 +111,7 @@ class LobbyEvent:
             flow_event_type=clean_lobby_text(payload.get("flow_event_type", ""), limit=64),
             flow_status=clean_lobby_text(payload.get("flow_status", ""), limit=64),
             flow_topic=clean_lobby_text(payload.get("flow_topic", ""), limit=ROOM_TOPIC_LIMIT),
+            flow_policy=clean_lobby_text(payload.get("flow_policy", ""), limit=64),
             flow_action=clean_lobby_text(payload.get("flow_action", ""), limit=64),
             flow_reason=clean_lobby_text(payload.get("flow_reason", ""), limit=400),
             flow_duration_seconds=normalize_flow_int(payload.get("flow_duration_seconds")),
@@ -154,6 +156,7 @@ class LobbyEvent:
             flow_event_type=clean_lobby_text(payload.get("flow_event_type", ""), limit=64),
             flow_status=clean_lobby_text(payload.get("flow_status", ""), limit=64),
             flow_topic=clean_lobby_text(payload.get("flow_topic", ""), limit=ROOM_TOPIC_LIMIT),
+            flow_policy=clean_lobby_text(payload.get("flow_policy", ""), limit=64),
             flow_action=clean_lobby_text(payload.get("flow_action", ""), limit=64),
             flow_reason=clean_lobby_text(payload.get("flow_reason", ""), limit=400),
             flow_duration_seconds=normalize_flow_int(payload.get("flow_duration_seconds")),
@@ -193,6 +196,7 @@ class LobbyEvent:
             "flow_event_type",
             "flow_status",
             "flow_topic",
+            "flow_policy",
             "flow_action",
             "flow_reason",
             "flow_started_at",
@@ -276,6 +280,7 @@ FLOW_METADATA_KEYS: set[str] = {
     "flow_event_type",
     "flow_status",
     "flow_topic",
+    "flow_policy",
     "flow_action",
     "flow_reason",
     "flow_duration_seconds",

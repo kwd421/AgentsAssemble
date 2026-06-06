@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 from agentsassemble.live_agent_context import live_agent_context_contract
+from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.meeting_events import clean_lobby_text
 
 
@@ -16,7 +17,7 @@ def build_live_agent_join_brief(
     meeting_id: object = "",
     engagement_mode: object = "mentioned",
     timeout: object = 30.0,
-    poll_interval: object = 2.0,
+    poll_interval: object = DEFAULT_LIVE_AGENT_POLL_INTERVAL,
     max_chain_depth: object = 1,
 ) -> dict[str, object]:
     normalized_server = _clean_scalar_text(server, limit=256, field_name="server") or "http://127.0.0.1:8765"

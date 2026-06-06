@@ -5,6 +5,15 @@ export type AgentProcessIdentity = {
   display_name?: string;
 };
 
+export type RegisteredAgentProcess = AgentProcessIdentity & {
+  meeting_id?: string;
+  provider_kind?: string;
+  connection_kind?: string;
+  status?: string;
+  process_group_id?: string;
+  live_agent_config_path?: string;
+};
+
 function cleanIdentityValue(value: unknown): string {
   return String(value || "").trim();
 }
@@ -46,6 +55,32 @@ export function findProcessGroupForAgent(
     matchingGroups.find((group) => processGroupAgentCount(group) === 1) ||
     matchingGroups[0]
   );
+}
+
+export function registeredAgentProcessGroupForAgent(
+  agent: RegisteredAgentProcess
+): LiveAgentProcessGroup | undefined {
+  const agentId = cleanIdentityValue(agent.agent_id);
+  const meetingId = cleanIdentityValue(agent.meeting_id);
+  const groupId = cleanIdentityValue(agent.process_group_id);
+  const configPath = cleanIdentityValue(agent.live_agent_config_path);
+  const status = cleanIdentityValue(agent.status);
+  if (!agentId || !meetingId || !groupId || !configPath) return undefined;
+  if (status === "online" || status === "working" || status === "running") return undefined;
+  return {
+    group_id: groupId,
+    status: "stopped",
+    meeting_id: meetingId,
+    config_path: configPath,
+    agents: [
+      {
+        agent_id: agentId,
+        display_name: cleanIdentityValue(agent.display_name) || agentId,
+        provider_kind: cleanIdentityValue(agent.provider_kind),
+        connection_kind: cleanIdentityValue(agent.connection_kind),
+      },
+    ],
+  };
 }
 
 export function processGroupCanControlSingleAgent(

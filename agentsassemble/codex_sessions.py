@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
+
 
 DEFAULT_INVITE_CONFIG_PATH = Path(".agentsassemble") / "codex-live-session.local.json"
 DEFAULT_LIVE_AGENT_CONFIG_PATH = Path(".agentsassemble") / "live-agents.codex-session.local.json"
@@ -181,7 +183,7 @@ def build_codex_live_agent_config(
         raise ValueError("No Codex live bindings found.")
     return {
         "server": server,
-        "poll_interval": 2,
+        "poll_interval": DEFAULT_LIVE_AGENT_POLL_INTERVAL,
         "heartbeat_interval": 30,
         "cooldown": 5,
         "max_chain_depth": 1,

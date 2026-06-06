@@ -4,10 +4,13 @@ import json
 import math
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
 import threading
+import time
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Callable
@@ -25,6 +28,7 @@ DEFAULT_PROCESS_EVENT_SCAN_LIMIT = 1000
 MAX_PROCESS_EVENT_SCAN_LIMIT = 5000
 JSONL_TAIL_BLOCK_BYTES = 8192
 STALE_WATCHDOG_RETURNCODE = -98
+ORPHAN_RUN_GROUP_GRACE_SECONDS = 0.5
 SAFE_LIFECYCLE_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 SAFE_LIFECYCLE_TIMESTAMP_PATTERN = re.compile(r"^[0-9T:+.\-Z]{1,64}$")
 SAFE_WATCHDOG_REASON_PATTERN = re.compile(
@@ -49,6 +53,7 @@ SENSITIVE_LOG_TAIL_MARKERS = (
     ".env",
     ".toml",
 )
+LAUNCH_MANIFEST_SCHEMA = "agentsassemble.live_agent_run_group_manifest.v1"
 
 
 class LiveAgentProcessSupervisor:
@@ -61,6 +66,10 @@ class LiveAgentProcessSupervisor:
         python_executable: str | None = None,
         log_tail_bytes: int = 4000,
         preflight_checker: Callable[..., dict[str, object]] | None = None,
+        orphan_process_lister: Callable[[], list[dict[str, object]]] | None = None,
+        orphan_signal_sender: Callable[[int, int], None] | None = None,
+        orphan_pid_alive_checker: Callable[[int], bool] | None = None,
+        orphan_sleep: Callable[[float], None] | None = None,
     ) -> None:
         self.output_root = output_root
         self.command_factory = command_factory or subprocess.Popen
@@ -68,6 +77,10 @@ class LiveAgentProcessSupervisor:
         self.python_executable = python_executable or sys.executable
         self.log_tail_bytes = log_tail_bytes
         self.preflight_checker = preflight_checker or preflight_live_agent_config
+        self.orphan_process_lister = orphan_process_lister or _list_live_agent_run_group_processes
+        self.orphan_signal_sender = orphan_signal_sender or os.kill
+        self.orphan_pid_alive_checker = orphan_pid_alive_checker or _pid_exists
+        self.orphan_sleep = orphan_sleep or time.sleep
         self._records: dict[str, dict[str, object]] = self._read_records()
         self._processes: dict[str, object] = {}
         self._logs: dict[str, object] = {}
@@ -141,6 +154,36 @@ class LiveAgentProcessSupervisor:
             if _manifest_agent_ids(record.get("agents")) != expected_agent_ids:
                 raise ValueError(f"Live agent group {clean_group_id} is not an agent-owned process.")
             return self._stop_group_unlocked(clean_group_id, timeout_seconds=timeout_seconds)
+
+    def delete_group_record_if_owned(
+        self,
+        group_id: str,
+        *,
+        meeting_id: str,
+        agent_ids: list[str],
+        timeout_seconds: float = 5.0,
+    ) -> dict[str, object]:
+        with self._lock:
+            clean_group_id = _clean_group_id(group_id)
+            clean_meeting_id = _clean_meeting_id(meeting_id)
+            expected_agent_ids = [str(agent_id or "").strip() for agent_id in agent_ids if str(agent_id or "").strip()]
+            record = self._records.get(clean_group_id)
+            if record is None:
+                return {"group_id": clean_group_id, "status": "not_found"}
+            if str(record.get("meeting_id") or "") != clean_meeting_id:
+                raise ValueError(f"Live agent group {clean_group_id} does not belong to meeting {clean_meeting_id}.")
+            if _manifest_agent_ids(record.get("agents")) != expected_agent_ids:
+                raise ValueError(f"Live agent group {clean_group_id} is not an agent-owned process.")
+            if str(record.get("status") or "") in {"running", "restarting"}:
+                self._stop_group_unlocked(clean_group_id, timeout_seconds=timeout_seconds)
+                record = self._records.get(clean_group_id, record)
+            self._processes.pop(clean_group_id, None)
+            self._close_log(clean_group_id)
+            deleted_record = dict(record)
+            self._records.pop(clean_group_id, None)
+            self._write_records()
+            self._append_lifecycle_event(deleted_record, "deleted")
+            return {"group_id": clean_group_id, "status": "deleted"}
 
     def stop_running_groups(self, *, timeout_seconds: float = 5.0) -> dict[str, object]:
         with self._lock:
@@ -355,6 +398,13 @@ class LiveAgentProcessSupervisor:
         group_configs = load_group_configs(config_path, server_override=server)
         _validate_stale_watchdog_config(stale_restart_after, group_configs)
         agent_manifest = _safe_agent_manifest(group_configs)
+        launch_manifest_path = self._new_launch_manifest_path(clean_group_id)
+        self._write_launch_manifest(
+            launch_manifest_path,
+            group_id=clean_group_id,
+            meeting_id=clean_meeting_id,
+            agent_manifest=agent_manifest,
+        )
 
         log_path = self._log_path(clean_group_id)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -369,6 +419,8 @@ class LiveAgentProcessSupervisor:
             str(config_path),
             "--server",
             server,
+            "--agent-manifest",
+            str(launch_manifest_path),
         ]
         start_new_session = _supports_process_groups()
         try:
@@ -583,17 +635,31 @@ class LiveAgentProcessSupervisor:
             raise ValueError(f"Live agent group {clean_group_id} was not found.")
         process = self._processes.get(clean_group_id)
         if process is None:
+            orphan_stop = self._stop_orphan_run_groups_for_record(record, timeout_seconds=timeout_seconds)
             if record.get("status") == "restarting":
-                return self._mark_pending_restart_stopped(clean_group_id)
+                return self._mark_pending_restart_stopped(clean_group_id, orphan_stop=orphan_stop)
+            if _orphan_stop_had_matches(orphan_stop):
+                return self._mark_record_stopped_after_orphan_sweep(clean_group_id, orphan_stop=orphan_stop)
             return self._record_for_output(record)
+        supervised_pid = _safe_process_pid(getattr(process, "pid", None))
+        orphan_stop = self._stop_orphan_run_groups_for_record(
+            record,
+            timeout_seconds=timeout_seconds,
+            exclude_pids={supervised_pid} if supervised_pid is not None else None,
+        )
         existing_returncode = _poll_process(process)
         if existing_returncode is not None:
-            return self._mark_stopped(clean_group_id, returncode=existing_returncode)
+            return self._mark_stopped(clean_group_id, returncode=existing_returncode, orphan_stop=orphan_stop)
 
         returncode = _stop_supervised_process(process, timeout_seconds=timeout_seconds)
-        return self._mark_stopped(clean_group_id, returncode=returncode)
+        return self._mark_stopped(clean_group_id, returncode=returncode, orphan_stop=orphan_stop)
 
-    def _mark_pending_restart_stopped(self, group_id: str) -> dict[str, object]:
+    def _mark_pending_restart_stopped(
+        self,
+        group_id: str,
+        *,
+        orphan_stop: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         record = self._records[group_id]
         record["status"] = "stopped"
         record["pid"] = None
@@ -607,7 +673,30 @@ class LiveAgentProcessSupervisor:
             timestamp=_parse_datetime(record.get("stopped_at")),
             offline=offline,
         )
-        return self._record_for_output(record, offline=offline)
+        return self._record_for_output(record, offline=offline, orphan_stop=orphan_stop)
+
+    def _mark_record_stopped_after_orphan_sweep(
+        self,
+        group_id: str,
+        *,
+        orphan_stop: dict[str, object],
+    ) -> dict[str, object]:
+        record = self._records[group_id]
+        record["status"] = "stopped"
+        record["pid"] = None
+        record["stopped_at"] = self.now_fn().isoformat()
+        record["next_restart_at"] = ""
+        if _safe_process_returncode(record.get("returncode")) is None:
+            record["returncode"] = None
+        offline = self._mark_manifest_agents_offline(record)
+        self._write_records()
+        self._append_lifecycle_event(
+            record,
+            "stopped",
+            timestamp=_parse_datetime(record.get("stopped_at")),
+            offline=offline,
+        )
+        return self._record_for_output(record, offline=offline, orphan_stop=orphan_stop)
 
     def _mark_auto_restart_failed(
         self,
@@ -648,6 +737,7 @@ class LiveAgentProcessSupervisor:
         *,
         returncode: object,
         include_recent_events: bool = True,
+        orphan_stop: dict[str, object] | None = None,
     ) -> dict[str, object]:
         record = self._records[group_id]
         record["status"] = "stopped" if returncode in (0, None) else "error"
@@ -666,8 +756,11 @@ class LiveAgentProcessSupervisor:
             offline=offline,
         )
         if include_recent_events:
-            return self._record_for_output(record, offline=offline)
-        return {**dict(record), "offline": offline}
+            return self._record_for_output(record, offline=offline, orphan_stop=orphan_stop)
+        output = {**dict(record), "offline": offline}
+        if _orphan_stop_had_matches(orphan_stop):
+            output["orphan_processes"] = _safe_orphan_stop_summary(orphan_stop)
+        return output
 
     def _close_log(self, group_id: str) -> None:
         log_file = self._logs.pop(group_id, None)
@@ -676,6 +769,30 @@ class LiveAgentProcessSupervisor:
 
     def _log_path(self, group_id: str) -> Path:
         return self.output_root / "live-agent-runs" / f"{group_id}.log"
+
+    def _new_launch_manifest_path(self, group_id: str) -> Path:
+        launch_id = uuid.uuid4().hex
+        return self.output_root / "live-agent-runs" / "manifests" / f"{_clean_group_id(group_id)}--{launch_id}.json"
+
+    def _write_launch_manifest(
+        self,
+        path: Path,
+        *,
+        group_id: str,
+        meeting_id: str,
+        agent_manifest: list[dict[str, str]],
+    ) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schema": LAUNCH_MANIFEST_SCHEMA,
+            "group_id": _clean_group_id(group_id),
+            "meeting_id": _clean_meeting_id(meeting_id),
+            "launch_id": path.stem.rsplit("--", 1)[-1],
+            "agent_ids": _manifest_agent_ids(agent_manifest),
+        }
+        temp_path = path.with_suffix(".json.tmp")
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        temp_path.replace(path)
 
     def _state_path(self) -> Path:
         return self.output_root / "live-agent-runs" / "processes.json"
@@ -742,6 +859,7 @@ class LiveAgentProcessSupervisor:
         *,
         recent_events: list[dict[str, object]] | None = None,
         offline: dict[str, object] | None = None,
+        orphan_stop: dict[str, object] | None = None,
     ) -> dict[str, object]:
         visible = dict(record)
         visible["last_error"] = _safe_process_last_error(record.get("last_error"))
@@ -757,6 +875,8 @@ class LiveAgentProcessSupervisor:
         visible["recent_events"] = recent_events
         if offline is not None:
             visible["offline"] = offline
+        if _orphan_stop_had_matches(orphan_stop):
+            visible["orphan_processes"] = _safe_orphan_stop_summary(orphan_stop)
         return visible
 
     def _mark_manifest_agents_offline(
@@ -812,6 +932,45 @@ class LiveAgentProcessSupervisor:
         if report.get("status") != "ok":
             raise ValueError(_preflight_failure_message(report))
         return report
+
+    def _stop_orphan_run_groups_for_record(
+        self,
+        record: dict[str, object],
+        *,
+        timeout_seconds: float,
+        exclude_pids: set[int] | None = None,
+    ) -> dict[str, object]:
+        summaries: list[dict[str, object]] = []
+        raw_config_path = str(record.get("config_path") or "").strip()
+        if raw_config_path:
+            summaries.append(
+                _stop_orphan_run_group_processes_for_config(
+                    Path(raw_config_path),
+                    timeout_seconds=timeout_seconds,
+                    process_lister=self.orphan_process_lister,
+                    signal_sender=self.orphan_signal_sender,
+                    pid_alive_checker=self.orphan_pid_alive_checker,
+                    sleep_fn=self.orphan_sleep,
+                    exclude_pids=exclude_pids,
+                )
+            )
+
+        manifest_agent_ids = _manifest_agent_ids(record.get("agents"))
+        meeting_id = _clean_meeting_id(record.get("meeting_id"))
+        if manifest_agent_ids and meeting_id:
+            summaries.append(
+                _stop_orphan_run_group_processes_for_manifest(
+                    meeting_id=meeting_id,
+                    agent_ids=manifest_agent_ids,
+                    timeout_seconds=timeout_seconds,
+                    process_lister=self.orphan_process_lister,
+                    signal_sender=self.orphan_signal_sender,
+                    pid_alive_checker=self.orphan_pid_alive_checker,
+                    sleep_fn=self.orphan_sleep,
+                    exclude_pids=set(exclude_pids or set()).union(_orphan_summary_pids(summaries)),
+                )
+            )
+        return _merge_orphan_stop_summaries(summaries)
 
     def _append_lifecycle_event(
         self,
@@ -1015,6 +1174,344 @@ def _supports_process_groups() -> bool:
 def _stop_signal(name: str) -> int | None:
     value = getattr(signal, name, None)
     return value if isinstance(value, int) else None
+
+
+def _list_live_agent_run_group_processes() -> list[dict[str, object]]:
+    try:
+        completed = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return _parse_ps_live_agent_run_group_processes(completed.stdout)
+
+
+def _parse_ps_live_agent_run_group_processes(output: str) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for line in str(output or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        pid_text, _, command = stripped.partition(" ")
+        try:
+            pid = int(pid_text)
+        except ValueError:
+            continue
+        if pid <= 0:
+            continue
+        command = command.strip()
+        if _live_agent_run_group_command_config_path(command) is None:
+            continue
+        rows.append({"pid": pid, "command": command})
+    return rows
+
+
+def _live_agent_run_group_command_config_path(command: object) -> Path | None:
+    try:
+        parts = shlex.split(str(command or ""))
+    except ValueError:
+        return None
+    if not _looks_like_live_agent_run_group_command(parts):
+        return None
+    for index, part in enumerate(parts):
+        if part == "--config" and index + 1 < len(parts):
+            return Path(parts[index + 1])
+        if part.startswith("--config="):
+            return Path(part.split("=", 1)[1])
+    return None
+
+
+def _live_agent_run_group_command_agent_manifest_path(command: object) -> Path | None:
+    try:
+        parts = shlex.split(str(command or ""))
+    except ValueError:
+        return None
+    if not _looks_like_live_agent_run_group_command(parts):
+        return None
+    for index, part in enumerate(parts):
+        if part == "--agent-manifest" and index + 1 < len(parts):
+            return Path(parts[index + 1])
+        if part.startswith("--agent-manifest="):
+            return Path(part.split("=", 1)[1])
+    return None
+
+
+def _looks_like_live_agent_run_group_command(parts: list[str]) -> bool:
+    for index, part in enumerate(parts):
+        if part != "agentsassemble.cli":
+            continue
+        if index >= 2 and parts[index - 1] == "-m":
+            tail = parts[index + 1 : index + 3]
+            if tail == ["live-agent", "run-group"]:
+                return True
+    return False
+
+
+def _stop_orphan_run_group_processes_for_config(
+    config_path: Path,
+    *,
+    timeout_seconds: float,
+    process_lister: Callable[[], list[dict[str, object]]],
+    signal_sender: Callable[[int, int], None],
+    pid_alive_checker: Callable[[int], bool],
+    sleep_fn: Callable[[float], None],
+    exclude_pids: set[int] | None = None,
+) -> dict[str, object]:
+    target_config = _resolved_process_path(config_path)
+    if not str(target_config):
+        return _empty_orphan_stop_summary()
+    current_pid = os.getpid()
+    excluded = {pid for pid in (exclude_pids or set()) if isinstance(pid, int) and pid > 0}
+    candidates = []
+    for row in process_lister():
+        pid = _safe_process_pid(row.get("pid") if isinstance(row, dict) else None)
+        command = row.get("command") if isinstance(row, dict) else ""
+        if pid is None or pid == current_pid or pid in excluded:
+            continue
+        row_config = _live_agent_run_group_command_config_path(command)
+        if row_config is None or _resolved_process_path(row_config) != target_config:
+            continue
+        candidates.append(pid)
+    return _stop_orphan_process_pids(
+        candidates,
+        timeout_seconds=timeout_seconds,
+        signal_sender=signal_sender,
+        pid_alive_checker=pid_alive_checker,
+        sleep_fn=sleep_fn,
+    )
+
+
+def _stop_orphan_run_group_processes_for_manifest(
+    *,
+    meeting_id: str,
+    agent_ids: list[str],
+    timeout_seconds: float,
+    process_lister: Callable[[], list[dict[str, object]]],
+    signal_sender: Callable[[int, int], None],
+    pid_alive_checker: Callable[[int], bool],
+    sleep_fn: Callable[[float], None],
+    exclude_pids: set[int] | None = None,
+) -> dict[str, object]:
+    expected_agent_ids = [agent_id for agent_id in agent_ids if str(agent_id or "").strip()]
+    clean_meeting_id = _clean_meeting_id(meeting_id)
+    if not expected_agent_ids or not clean_meeting_id:
+        return _empty_orphan_stop_summary()
+    current_pid = os.getpid()
+    excluded = {pid for pid in (exclude_pids or set()) if isinstance(pid, int) and pid > 0}
+    candidates = []
+    for row in process_lister():
+        pid = _safe_process_pid(row.get("pid") if isinstance(row, dict) else None)
+        command = row.get("command") if isinstance(row, dict) else ""
+        if pid is None or pid == current_pid or pid in excluded:
+            continue
+        manifest_path = _live_agent_run_group_command_agent_manifest_path(command)
+        if manifest_path is None:
+            continue
+        if not _launch_manifest_matches(manifest_path, meeting_id=clean_meeting_id, agent_ids=expected_agent_ids):
+            continue
+        candidates.append(pid)
+    return _stop_orphan_process_pids(
+        candidates,
+        timeout_seconds=timeout_seconds,
+        signal_sender=signal_sender,
+        pid_alive_checker=pid_alive_checker,
+        sleep_fn=sleep_fn,
+    )
+
+
+def _launch_manifest_matches(manifest_path: Path, *, meeting_id: str, agent_ids: list[str]) -> bool:
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    if str(payload.get("schema") or "") != LAUNCH_MANIFEST_SCHEMA:
+        return False
+    expected_agent_ids = [str(agent_id or "").strip() for agent_id in agent_ids if str(agent_id or "").strip()]
+    if not expected_agent_ids:
+        return False
+    manifest_agent_ids = payload.get("agent_ids")
+    if not isinstance(manifest_agent_ids, list):
+        return False
+    actual_agent_ids = [str(agent_id or "").strip() for agent_id in manifest_agent_ids if str(agent_id or "").strip()]
+    if sorted(actual_agent_ids) != sorted(expected_agent_ids):
+        return False
+    return _clean_meeting_id(payload.get("meeting_id")) == _clean_meeting_id(meeting_id)
+
+
+def _stop_orphan_process_pids(
+    candidates: list[int],
+    *,
+    timeout_seconds: float,
+    signal_sender: Callable[[int, int], None],
+    pid_alive_checker: Callable[[int], bool],
+    sleep_fn: Callable[[float], None],
+) -> dict[str, object]:
+    candidates = _unique_positive_pids(candidates)
+    if not candidates:
+        return _empty_orphan_stop_summary()
+
+    terminated: list[int] = []
+    killed: list[int] = []
+    errors: list[int] = []
+    sigterm = _stop_signal("SIGTERM")
+    sigkill = _stop_signal("SIGKILL")
+    if sigterm is not None:
+        for pid in candidates:
+            try:
+                signal_sender(pid, sigterm)
+                terminated.append(pid)
+            except ProcessLookupError:
+                terminated.append(pid)
+            except OSError:
+                errors.append(pid)
+    _wait_for_orphan_exit(
+        candidates,
+        timeout_seconds=min(max(0.0, timeout_seconds), ORPHAN_RUN_GROUP_GRACE_SECONDS),
+        pid_alive_checker=pid_alive_checker,
+        sleep_fn=sleep_fn,
+    )
+    if sigkill is not None:
+        for pid in candidates:
+            if not pid_alive_checker(pid):
+                continue
+            try:
+                signal_sender(pid, sigkill)
+                killed.append(pid)
+            except ProcessLookupError:
+                continue
+            except OSError:
+                if pid not in errors:
+                    errors.append(pid)
+    _wait_for_orphan_exit(
+        candidates,
+        timeout_seconds=min(max(0.0, timeout_seconds), ORPHAN_RUN_GROUP_GRACE_SECONDS),
+        pid_alive_checker=pid_alive_checker,
+        sleep_fn=sleep_fn,
+    )
+    still_running = [pid for pid in candidates if pid_alive_checker(pid)]
+    return {
+        "matched": len(candidates),
+        "terminated_pids": terminated,
+        "killed_pids": killed,
+        "still_running_pids": still_running,
+        "error_pids": errors,
+    }
+
+
+def _unique_positive_pids(values: list[int]) -> list[int]:
+    pids: list[int] = []
+    seen = set()
+    for value in values:
+        pid = _safe_process_pid(value)
+        if pid is None or pid in seen:
+            continue
+        pids.append(pid)
+        seen.add(pid)
+    return pids
+
+
+def _wait_for_orphan_exit(
+    pids: list[int],
+    *,
+    timeout_seconds: float,
+    pid_alive_checker: Callable[[int], bool],
+    sleep_fn: Callable[[float], None],
+) -> None:
+    if timeout_seconds <= 0:
+        return
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if all(not pid_alive_checker(pid) for pid in pids):
+            return
+        sleep_fn(min(0.02, max(0.0, deadline - time.monotonic())))
+
+
+def _resolved_process_path(path: Path) -> str:
+    try:
+        return str(path.expanduser().resolve(strict=False))
+    except OSError:
+        return str(path.expanduser().absolute())
+
+
+def _pid_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _empty_orphan_stop_summary() -> dict[str, object]:
+    return {
+        "matched": 0,
+        "terminated_pids": [],
+        "killed_pids": [],
+        "still_running_pids": [],
+        "error_pids": [],
+    }
+
+
+def _merge_orphan_stop_summaries(summaries: list[dict[str, object]]) -> dict[str, object]:
+    merged = _empty_orphan_stop_summary()
+    for summary in summaries:
+        safe = _safe_orphan_stop_summary(summary)
+        merged["matched"] = int(merged["matched"]) + int(safe["matched"])
+        for key in ("terminated_pids", "killed_pids", "still_running_pids", "error_pids"):
+            merged[key] = _merge_pid_lists(merged.get(key), safe.get(key))
+    return merged
+
+
+def _orphan_summary_pids(summaries: list[dict[str, object]]) -> set[int]:
+    pids: set[int] = set()
+    for summary in summaries:
+        safe = _safe_orphan_stop_summary(summary)
+        for key in ("terminated_pids", "killed_pids", "still_running_pids", "error_pids"):
+            pids.update(_safe_pid_list(safe.get(key)))
+    return pids
+
+
+def _orphan_stop_had_matches(summary: dict[str, object] | None) -> bool:
+    if not isinstance(summary, dict):
+        return False
+    return _nonnegative_int(summary.get("matched"), 0) > 0
+
+
+def _safe_orphan_stop_summary(summary: dict[str, object] | None) -> dict[str, object]:
+    if not isinstance(summary, dict):
+        return _empty_orphan_stop_summary()
+    return {
+        "matched": _nonnegative_int(summary.get("matched"), 0),
+        "terminated_pids": _safe_pid_list(summary.get("terminated_pids")),
+        "killed_pids": _safe_pid_list(summary.get("killed_pids")),
+        "still_running_pids": _safe_pid_list(summary.get("still_running_pids")),
+        "error_pids": _safe_pid_list(summary.get("error_pids")),
+    }
+
+
+def _safe_pid_list(value: object) -> list[int]:
+    if not isinstance(value, list):
+        return []
+    pids: list[int] = []
+    seen = set()
+    for item in value[:50]:
+        pid = _safe_process_pid(item)
+        if pid is None or pid in seen:
+            continue
+        pids.append(pid)
+        seen.add(pid)
+    return pids
+
+
+def _merge_pid_lists(left: object, right: object) -> list[int]:
+    return _safe_pid_list([*_safe_pid_list(left), *_safe_pid_list(right)])
 
 
 def _process_record(payload: dict[str, object]) -> dict[str, object]:

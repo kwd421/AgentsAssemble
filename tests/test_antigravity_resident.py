@@ -9,6 +9,7 @@ from agentsassemble.antigravity_resident import (
     ANTIGRAVITY_MISSING_CONVERSATION_ID,
     ANTIGRAVITY_SUBPROCESS_NONZERO,
     AntigravityResidentCommandRunner,
+    antigravity_auth_check,
     antigravity_command_check,
     antigravity_error_category,
     antigravity_provider_connection_check,
@@ -344,6 +345,39 @@ class AntigravityResidentTests(unittest.TestCase):
         self.assertEqual(antigravity_command_check(["agy", "--continue"])["status"], "failed")
         self.assertEqual(antigravity_command_check(["hermes"])["status"], "failed")
         self.assertEqual(clean_antigravity_conversation_id("unsafe id"), "")
+
+    def test_auth_check_reports_login_required_instead_of_generic_failure(self):
+        calls = []
+
+        def login_required(command, **kwargs):
+            calls.append({"command": command, "kwargs": kwargs})
+            log_path = Path(command[command.index("--log-file") + 1])
+            log_path.write_text("UNAUTHENTICATED: please sign in before using Antigravity.\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="not authenticated")
+
+        check = antigravity_auth_check(["agy"], command_runner=login_required, timeout_seconds=3)
+
+        self.assertEqual(check["id"], "antigravity_auth")
+        self.assertEqual(check["status"], "failed")
+        self.assertIn("Antigravity 로그인이 필요합니다", check["message"])
+        self.assertEqual(calls[0]["command"][0], "agy")
+        self.assertIn("--print", calls[0]["command"])
+
+    def test_auth_check_accepts_silent_auth_success_after_initial_not_logged_in_log(self):
+        def silent_auth_success(command, **kwargs):
+            log_path = Path(command[command.index("--log-file") + 1])
+            log_path.write_text(
+                "Print mode: not authenticated, trying silent auth\n"
+                "OAuth: authenticated successfully as user@example.test\n"
+                "Print mode: silent auth succeeded\n",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, 0, stdout="READY\n", stderr="")
+
+        check = antigravity_auth_check(["agy"], command_runner=silent_auth_success, timeout_seconds=3)
+
+        self.assertEqual(check["id"], "antigravity_auth")
+        self.assertEqual(check["status"], "ok")
 
 
 if __name__ == "__main__":

@@ -1,18 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
-  Gift,
   Headphones,
   Mic,
   MicOff,
+  Pencil,
   Settings,
-  ShoppingBag,
-  Sparkles,
   UserPen,
   X,
 } from "lucide-react";
 
-import { fetchUserProfile, saveUserProfile, type UserProfile } from "../../api";
+import { fetchUserProfile, saveUserProfile, uploadLobbyAttachment, type UserProfile } from "../../api";
 import {
   DEFAULT_USER_PROFILE,
   PROFILE_STATUS_OPTIONS,
@@ -21,6 +19,7 @@ import {
   profileStatusLabel,
   saveDisplayNameForComposers,
 } from "../../lib/userProfileModel";
+import ImageCropper from "./ImageCropper";
 import UserSettingsPanel, { type UserSettingsSection } from "./UserSettingsPanel";
 
 export default function UserPanel({
@@ -35,6 +34,7 @@ export default function UserPanel({
   guestProfile?: {
     displayName: string;
     avatarLabel: string;
+    avatarImage?: string;
     statusLabel: string;
     expired?: boolean;
   };
@@ -44,6 +44,10 @@ export default function UserPanel({
   const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<UserSettingsSection>("account");
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const [avatarCropFile, setAvatarCropFile] = useState<File | null>(null);
+  const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
+  const [avatarStatus, setAvatarStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const [profileError, setProfileError] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
@@ -54,6 +58,7 @@ export default function UserPanel({
     .trim()
     .slice(0, 2)
     .toUpperCase();
+  const guestHasAvatarImage = Boolean(guestProfile?.avatarImage);
 
   useEffect(() => {
     if (guestProfile) return;
@@ -75,17 +80,21 @@ export default function UserPanel({
   }, [guestProfile]);
 
   useEffect(() => {
-    if (!profileOpen) return;
+    if (!profileOpen && !settingsOpen && !avatarEditorOpen) return;
     function closeOnOutside(event: MouseEvent) {
       if (!rootRef.current?.contains(event.target as Node)) {
         setProfileOpen(false);
         setSettingsOpen(false);
+        setStatusMenuOpen(false);
+        setAvatarEditorOpen(false);
       }
     }
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setProfileOpen(false);
         setSettingsOpen(false);
+        setStatusMenuOpen(false);
+        setAvatarEditorOpen(false);
       }
     }
     window.addEventListener("mousedown", closeOnOutside);
@@ -94,23 +103,20 @@ export default function UserPanel({
       window.removeEventListener("mousedown", closeOnOutside);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [profileOpen]);
+  }, [avatarEditorOpen, profileOpen, settingsOpen]);
 
   function openProfile() {
     setDraft(profile);
     setProfileOpen((value) => !value);
     setSettingsOpen(false);
+    setStatusMenuOpen(false);
   }
 
   function openSettings(section: UserSettingsSection = "account") {
     setDraft(profile);
-    setProfileOpen(true);
+    setProfileOpen(false);
     setSettingsOpen(true);
     setSettingsSection(section);
-  }
-
-  function reportLocalOnlyAction(message: string) {
-    setProfileError(message);
   }
 
   async function persistProfile(nextProfile: UserProfile) {
@@ -137,11 +143,25 @@ export default function UserPanel({
 
   function setProfileStatus(status: UserProfile["status"]) {
     void persistProfile({ ...profile, status });
+    setStatusMenuOpen(false);
   }
 
   async function saveDraft() {
     await persistProfile(draft);
     setSettingsOpen(false);
+  }
+
+  async function handleAvatarCropped(file: File) {
+    setAvatarStatus("프로필 사진 저장 중...");
+    try {
+      const attachment = await uploadLobbyAttachment(file);
+      await persistProfile({ ...profile, avatarImage: attachment.url });
+      setAvatarCropFile(null);
+      setAvatarEditorOpen(false);
+      setAvatarStatus("");
+    } catch (error) {
+      setAvatarStatus(error instanceof Error ? error.message : "프로필 사진 저장 실패");
+    }
   }
 
   if (guestProfile) {
@@ -150,8 +170,16 @@ export default function UserPanel({
         <div className="dc-current-user">
           <div className="dc-user-identity" aria-label="게스트 프로필">
             <span className="relative shrink-0">
-              <span className="dc-self-avatar" data-has-image={false}>
-                {guestAvatarLabel}
+              <span
+                className="dc-self-avatar"
+                data-has-image={guestHasAvatarImage}
+                style={
+                  guestHasAvatarImage
+                    ? { backgroundImage: `url(${guestProfile?.avatarImage})` }
+                    : undefined
+                }
+              >
+                {guestHasAvatarImage ? null : guestAvatarLabel}
               </span>
               <span
                 className={`dc-self-status ${guestProfile.expired ? "offline" : "online"}`}
@@ -177,7 +205,6 @@ export default function UserPanel({
       {profileOpen && (
         <section
           className="dc-profile-card"
-          data-settings={settingsOpen}
           aria-label="내 프로필 카드"
         >
           <div
@@ -196,12 +223,23 @@ export default function UserPanel({
           >
             <X size={16} />
           </button>
-          <span className="dc-profile-avatar-wrap">
+          <button
+            type="button"
+            className="dc-profile-avatar-wrap"
+            onClick={() => {
+              setAvatarEditorOpen(true);
+              setAvatarStatus("");
+            }}
+            aria-label="프로필 사진 편집"
+          >
             <span className="dc-profile-avatar" data-has-image={hasAvatarImage}>
               {hasAvatarImage ? null : profile.avatarLabel}
+              <span className="dc-profile-avatar-edit" aria-hidden>
+                <Pencil size={22} />
+              </span>
             </span>
             <span className={`dc-profile-status ${statusClass}`} aria-hidden />
-          </span>
+          </button>
           <div className="dc-profile-body">
             <div className="dc-profile-card-title">
               <div>
@@ -210,7 +248,7 @@ export default function UserPanel({
             </div>
             <p>{profile.handle}</p>
             <div className="dc-profile-badges">
-              <span>{profile.customStatus}</span>
+              {profile.customStatus && <span>{profile.customStatus}</span>}
               <span>#room-client</span>
             </div>
             <button
@@ -224,31 +262,6 @@ export default function UserPanel({
                 <small>{profile.customStatus || "방금 플레이를 마쳤어요..."}</small>
               </span>
             </button>
-            <div className="dc-profile-boost-card">
-              <div className="dc-profile-boost-copy">
-                <Sparkles size={18} />
-                <span>
-                  <strong>프로필 강화하기</strong>
-                  <small>로컬 룸 클라이언트의 배너, 색상, 상태를 저장합니다.</small>
-                </span>
-              </div>
-              <div className="dc-profile-boost-actions">
-                <button
-                  type="button"
-                  onClick={() => reportLocalOnlyAction("Nitro 구독은 외부 Discord로 연결하지 않습니다.")}
-                >
-                  <Gift size={15} />
-                  Nitro 구독하기
-                </button>
-                <button
-                  type="button"
-                  onClick={() => reportLocalOnlyAction("상점은 로컬 프로필 설정으로만 대체됩니다.")}
-                >
-                  <ShoppingBag size={15} />
-                  상점
-                </button>
-              </div>
-            </div>
             <div className="dc-profile-card-actions">
               <button type="button" onClick={() => openSettings("profile")}>
                 <UserPen size={15} />
@@ -265,19 +278,7 @@ export default function UserPanel({
                 닫기
               </button>
             </div>
-            {settingsOpen && (
-              <UserSettingsPanel
-                draft={draft}
-                saving={saving}
-                profileError={profileError}
-                settingsSection={settingsSection}
-                onSectionChange={setSettingsSection}
-                onDraftChange={setDraft}
-                onReset={() => setDraft(profile)}
-                onSave={() => void saveDraft()}
-              />
-            )}
-            {profileError && !settingsOpen && (
+            {profileError && (
               <p className="dc-profile-notice" role="status">
                 {profileError}
               </p>
@@ -288,62 +289,107 @@ export default function UserPanel({
               <small>{agentCount}명 참가자/에이전트 표시 중</small>
             </div>
             <div className="dc-profile-menu">
-              <button type="button" onClick={() => openSettings("account")}>
+              <button
+                type="button"
+                aria-expanded={statusMenuOpen}
+                onClick={() => setStatusMenuOpen((value) => !value)}
+              >
                 <span className={`dc-profile-menu-dot ${statusClass}`} aria-hidden />
                 내 상태: {profileStatusLabel(profile.status)}
                 <ChevronDown size={16} />
               </button>
-              <div className="dc-profile-status-options" aria-label="빠른 상태 변경">
-                {PROFILE_STATUS_OPTIONS.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    className="dc-profile-status-option"
-                    data-status={option.id}
-                    aria-pressed={profile.status === option.id}
-                    onClick={() => setProfileStatus(option.id)}
-                  >
-                    <span className={`dc-profile-menu-dot ${option.id}`} aria-hidden />
-                    <span>
-                      <strong>{option.label}</strong>
-                      <small>{option.helper}</small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={() => reportLocalOnlyAction("계정 바꾸기는 로컬 프로필만 지원합니다.")}
-              >
-                <UserPen size={17} />
-                계정 바꾸기
-                <ChevronDown size={16} />
-              </button>
-              <button
-                type="button"
-                onClick={() => reportLocalOnlyAction("더 많은 옵션은 외부 Discord에 연결하지 않습니다.")}
-              >
-                <Settings size={17} />
-                더 많은 옵션
-                <ChevronDown size={16} />
-              </button>
-              <button type="button" onClick={() => updateProfileFlag("micMuted", !profile.micMuted)}>
-                {profile.micMuted ? <MicOff size={17} /> : <Mic size={17} />}
-                {profile.micMuted ? "마이크 음소거 해제" : "마이크 음소거"}
-                <ChevronDown size={16} />
-              </button>
-              <button type="button" onClick={() => updateProfileFlag("deafened", !profile.deafened)}>
-                <Headphones size={17} />
-                {profile.deafened ? "헤드셋 켜기" : "헤드셋 끄기"}
-                <ChevronDown size={16} />
-              </button>
-              <button type="button" onClick={() => openSettings("account")}>
-                <Settings size={17} />
-                사용자 설정
-                <ChevronDown size={16} />
-              </button>
+              {statusMenuOpen && (
+                <div className="dc-profile-status-options" aria-label="빠른 상태 변경">
+                  {PROFILE_STATUS_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className="dc-profile-status-option"
+                      data-status={option.id}
+                      aria-pressed={profile.status === option.id}
+                      onClick={() => setProfileStatus(option.id)}
+                    >
+                      <span className={`dc-profile-menu-dot ${option.id}`} aria-hidden />
+                      <span>
+                        <strong>{option.label}</strong>
+                        <small>{option.helper}</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
+        </section>
+      )}
+
+      {avatarEditorOpen && (
+        <section
+          className="dc-profile-avatar-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="프로필 사진 수정"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <header>
+            <h2>프로필 사진 수정</h2>
+            <button
+              type="button"
+              className="dc-modal-close"
+              onClick={() => {
+                setAvatarEditorOpen(false);
+                setAvatarCropFile(null);
+              }}
+              aria-label="프로필 사진 수정 닫기"
+            >
+              <X size={18} />
+            </button>
+          </header>
+          <label className="dc-profile-avatar-upload">
+            이미지 선택
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0] || null;
+                if (file) setAvatarCropFile(file);
+                event.currentTarget.value = "";
+              }}
+            />
+          </label>
+          {avatarCropFile ? (
+            <ImageCropper
+              file={avatarCropFile}
+              onCancel={() => setAvatarCropFile(null)}
+              onCropped={(file) => void handleAvatarCropped(file)}
+            />
+          ) : (
+            <p className="dc-profile-notice">얼굴이 중앙에 오도록 이미지를 선택한 뒤 확대/위치를 조정하세요.</p>
+          )}
+          {avatarStatus && <p className="dc-profile-notice">{avatarStatus}</p>}
+        </section>
+      )}
+
+      {settingsOpen && (
+        <section className="dc-profile-settings-modal" role="dialog" aria-modal="true" aria-label="프로필 편집">
+          <button
+            type="button"
+            className="dc-profile-close"
+            onClick={() => setSettingsOpen(false)}
+            aria-label="프로필 편집 닫기"
+          >
+            <X size={16} />
+          </button>
+          <UserSettingsPanel
+            draft={draft}
+            saving={saving}
+            profileError={profileError}
+            settingsSection={settingsSection}
+            onSectionChange={setSettingsSection}
+            onDraftChange={setDraft}
+            onReset={() => setDraft(profile)}
+            onSave={() => void saveDraft()}
+          />
         </section>
       )}
 

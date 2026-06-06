@@ -20,6 +20,8 @@ FLOW_ACTIONS: set[str] = {
 }
 FLOW_SPEAKING_ACTIONS = FLOW_ACTIONS - {"wait"}
 FLOW_TERMINAL_EVENT_TYPES = {"finished", "stopped"}
+FLOW_POLICIES: set[str] = {"natural", "round_robin", "free_interval", "quiet"}
+DEFAULT_FLOW_POLICY = "natural"
 DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW = 24
 DEFAULT_FLOW_FAIRNESS_MIN_GAP = 1
 DEFAULT_FLOW_FAIRNESS_MAX_LEAD = 0
@@ -42,6 +44,7 @@ class FlowOptions:
     max_agent_turns: int = 0
     max_total_turns: int = 0
     max_silence_seconds: float = 20.0
+    flow_policy: str = DEFAULT_FLOW_POLICY
 
     def to_payload(self) -> dict[str, object]:
         return {
@@ -51,6 +54,7 @@ class FlowOptions:
             "max_agent_turns": self.max_agent_turns,
             "max_total_turns": self.max_total_turns,
             "max_silence_seconds": self.max_silence_seconds,
+            "flow_policy": self.flow_policy,
         }
 
     @classmethod
@@ -62,6 +66,7 @@ class FlowOptions:
             max_agent_turns=_nonnegative_int(payload.get("max_agent_turns"), cls.max_agent_turns),
             max_total_turns=_nonnegative_int(payload.get("max_total_turns"), cls.max_total_turns),
             max_silence_seconds=_nonnegative_float(payload.get("max_silence_seconds"), cls.max_silence_seconds),
+            flow_policy=normalize_flow_policy(payload.get("flow_policy") or payload.get("policy")),
         )
 
 
@@ -161,8 +166,14 @@ def flow_context_options(flow_context: dict[str, object] | None) -> FlowOptions:
             "max_agent_turns": flow_context.get("flow_max_agent_turns"),
             "max_total_turns": flow_context.get("flow_max_total_turns"),
             "max_silence_seconds": flow_context.get("flow_max_silence_seconds"),
+            "flow_policy": flow_context.get("flow_policy"),
         }
     )
+
+
+def normalize_flow_policy(value: object) -> str:
+    policy = str(value or "").strip().lower().replace("-", "_")
+    return policy if policy in FLOW_POLICIES else DEFAULT_FLOW_POLICY
 
 
 def flow_turn_count(events: list[dict[str, object]], *, flow_id: str, agent_id: str = "") -> int:

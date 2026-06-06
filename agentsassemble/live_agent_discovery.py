@@ -5,6 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.live_session_transport import terminal_sessions_supported
 
 
@@ -137,7 +138,7 @@ def build_discovered_live_agent_config(
             agents.append(_agent_entry(spec, command=command, meeting_id=meeting_id, engagement_mode=engagement_mode))
     config = {
         "server": server,
-        "poll_interval": 2,
+        "poll_interval": DEFAULT_LIVE_AGENT_POLL_INTERVAL,
         "heartbeat_interval": 30,
         "cooldown": 5,
         "max_chain_depth": 1,

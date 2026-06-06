@@ -79,3 +79,19 @@ class FrontendRosterTruthTests(unittest.TestCase):
         for unsafe in ("session_id", "argv", "command", "provider_output", "last_error", "source_path"):
             with self.subTest(unsafe=unsafe):
                 self.assertNotIn(unsafe, component)
+
+    def test_room_roster_merges_live_agents_outside_current_flow(self):
+        app = frontend_file("App.tsx")
+        api = frontend_file("api.ts")
+
+        self.assertIn("export interface LiveAgentsResponse", api)
+        self.assertIn('return fetchJson<LiveAgentsResponse>("/api/live-agents");', api)
+        self.assertIn("fetchLiveAgents,", app)
+        self.assertIn("type LiveAgentsResponse,", app)
+        self.assertIn("function mergeLiveAgentRosters", app)
+        self.assertIn("const [liveAgentsData, , , refreshLiveAgents] = usePoll<LiveAgentsResponse>", app)
+        self.assertIn("if (guestLocked) return Promise.resolve({ agents: [] });", app)
+        self.assertIn("return fetchLiveAgents();", app)
+        self.assertIn("const agents: LiveAgent[] = mergeLiveAgentRosters(flowData?.agents, liveAgentsData?.agents);", app)
+        self.assertIn("refreshLiveAgents();", app)
+        self.assertIn("[refreshFlow, refreshLiveAgents, refreshProcesses]", app)

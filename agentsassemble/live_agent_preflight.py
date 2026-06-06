@@ -12,16 +12,19 @@ from subprocess import TimeoutExpired
 from typing import Any
 
 from agentsassemble.antigravity_resident import (
+    antigravity_auth_check,
     antigravity_command_check,
     antigravity_provider_connection_check,
     default_antigravity_resident_command,
 )
 from agentsassemble.codex_resident import (
+    codex_auth_check,
     codex_exec_prefix,
     codex_provider_connection_check,
     default_codex_resident_command,
 )
 from agentsassemble.cursor_resident import (
+    cursor_auth_check,
     cursor_command_check,
     cursor_generic_resident_guard_error,
     cursor_provider_connection_check,
@@ -31,6 +34,7 @@ from agentsassemble.cursor_resident import (
 )
 from agentsassemble.grok_resident import (
     default_grok_resident_command,
+    grok_auth_check,
     grok_command_check,
     grok_provider_connection_check,
 )
@@ -53,6 +57,7 @@ from agentsassemble.live_agent_runner import (
     live_agent_nonnegative_int,
     resident_connection_kind_error,
 )
+from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.remote_bridge_config import remote_bridge_auth_ref_available, remote_bridge_endpoint_error
 from agentsassemble.sandbox_launcher import sandbox_launcher_for
 
@@ -62,13 +67,21 @@ def preflight_live_agent_config(
     *,
     server_override: str | None = None,
     command_resolver: Callable[[str], str | None] | None = None,
+    codex_auth_checker: Callable[[list[str]], dict[str, str]] | None = None,
     codex_capability_checker: Callable[[list[str]], dict[str, str]] | None = None,
     codex_command_runner: Callable[..., Any] | None = None,
+    cursor_auth_checker: Callable[[list[str]], dict[str, str]] | None = None,
+    grok_auth_checker: Callable[[list[str]], dict[str, str]] | None = None,
+    antigravity_auth_checker: Callable[[list[str]], dict[str, str]] | None = None,
 ) -> dict[str, object]:
     resolver = command_resolver or _resolve_command_path
+    codex_auth = codex_auth_checker or codex_auth_check
     codex_checker = codex_capability_checker or (
         lambda command: _codex_exec_safety_flags_check(command, command_runner=codex_command_runner)
     )
+    cursor_auth = cursor_auth_checker or cursor_auth_check
+    grok_auth = grok_auth_checker or grok_auth_check
+    antigravity_checker = antigravity_auth_checker or antigravity_auth_check
     try:
         configs = _load_preflight_configs(config_path, server_override=server_override)
     except Exception as error:
@@ -77,7 +90,19 @@ def preflight_live_agent_config(
         return _failed_config_report(config_path, "Live agent group config did not contain any valid agent objects.")
     top_checks = [_duplicate_agent_id_check(configs)]
     command_base_dir = Path.cwd()
-    agents = [_preflight_agent(config, resolver, codex_checker, command_base_dir=command_base_dir) for config in configs]
+    agents = [
+        _preflight_agent(
+            config,
+            resolver,
+            codex_auth,
+            codex_checker,
+            cursor_auth,
+            grok_auth,
+            antigravity_checker,
+            command_base_dir=command_base_dir,
+        )
+        for config in configs
+    ]
     checks_failed = _failed_check_count(top_checks) + sum(_failed_check_count(agent["checks"]) for agent in agents)
     failed_agents = sum(1 for agent in agents if agent["status"] == "failed")
     status = "failed" if checks_failed else "ok"
@@ -124,13 +149,18 @@ def _duplicate_agent_id_check(configs: list[ResidentAgentConfig]) -> dict[str, s
 def _preflight_agent(
     config: ResidentAgentConfig,
     command_resolver: Callable[[str], str | None],
+    codex_auth_checker: Callable[[list[str]], dict[str, str]],
     codex_capability_checker: Callable[[list[str]], dict[str, str]],
+    cursor_auth_checker: Callable[[list[str]], dict[str, str]],
+    grok_auth_checker: Callable[[list[str]], dict[str, str]],
+    antigravity_auth_checker: Callable[[list[str]], dict[str, str]],
     *,
     command_base_dir: Path,
 ) -> dict[str, object]:
     checks = [
         _agent_id_check(config.agent_id),
         _connection_kind_check(config.connection_kind),
+        _workspace_path_check(config.workspace_path),
     ]
     provider_connection_check = codex_provider_connection_check(config.provider_kind, config.connection_kind)
     if provider_connection_check is not None:
@@ -181,7 +211,11 @@ def _preflight_agent(
             codex_command_check = _codex_command_check(config.command)
             checks.append(codex_command_check)
             if codex_command_check["status"] == "ok":
-                checks.append(codex_capability_checker(_resolved_command(config.command, command_check.get("path", ""))))
+                resolved_command = _resolved_command(config.command, command_check.get("path", ""))
+                codex_auth_result = codex_auth_checker(resolved_command)
+                checks.append(codex_auth_result)
+                if codex_auth_result["status"] == "ok":
+                    checks.append(codex_capability_checker(resolved_command))
         if (
             config.provider_kind == "kiro_live_session"
             and config.connection_kind == "live_session"
@@ -193,19 +227,28 @@ def _preflight_agent(
             and config.connection_kind == "live_session"
             and command_check["status"] == "ok"
         ):
-            checks.append(cursor_command_check(config.command))
+            cursor_check = cursor_command_check(config.command)
+            checks.append(cursor_check)
+            if cursor_check["status"] == "ok":
+                checks.append(cursor_auth_checker(_resolved_command(config.command, command_check.get("path", ""))))
         if (
             config.provider_kind == "grok_live_session"
             and config.connection_kind == "live_session"
             and command_check["status"] == "ok"
         ):
-            checks.append(grok_command_check(config.command))
+            grok_check = grok_command_check(config.command)
+            checks.append(grok_check)
+            if grok_check["status"] == "ok":
+                checks.append(grok_auth_checker(_resolved_command(config.command, command_check.get("path", ""))))
         if (
             config.provider_kind == "antigravity_live_session"
             and config.connection_kind == "live_session"
             and command_check["status"] == "ok"
         ):
-            checks.append(antigravity_command_check(config.command))
+            antigravity_check = antigravity_command_check(config.command)
+            checks.append(antigravity_check)
+            if antigravity_check["status"] == "ok":
+                checks.append(antigravity_auth_checker(_resolved_command(config.command, command_check.get("path", ""))))
         if (
             config.provider_kind == "hermes_live_session"
             and config.connection_kind == "live_session"
@@ -230,17 +273,48 @@ def _preflight_agent(
     }
 
 
+def _workspace_path_check(value: object) -> dict[str, str]:
+    workspace_path = str(value or "").strip()
+    if not workspace_path:
+        return {
+            "id": "workspace_path",
+            "status": "ok",
+            "message": "No workspace folder configured; resident will use the launcher working directory.",
+        }
+    path = Path(workspace_path).expanduser()
+    if path.exists() and path.is_dir():
+        return {
+            "id": "workspace_path",
+            "status": "ok",
+            "message": "Workspace folder exists.",
+            "path": str(path),
+        }
+    return {
+        "id": "workspace_path",
+        "status": "failed",
+        "message": "Workspace folder was not found.",
+    }
+
+
 def resident_config_setup_error(
     config: ResidentAgentConfig,
     *,
     command_resolver: Callable[[str], str | None] | None = None,
+    codex_auth_checker: Callable[[list[str]], dict[str, str]] | None = None,
     codex_capability_checker: Callable[[list[str]], dict[str, str]] | None = None,
     codex_command_runner: Callable[..., Any] | None = None,
+    cursor_auth_checker: Callable[[list[str]], dict[str, str]] | None = None,
+    grok_auth_checker: Callable[[list[str]], dict[str, str]] | None = None,
+    antigravity_auth_checker: Callable[[list[str]], dict[str, str]] | None = None,
 ) -> str:
     resolver = command_resolver or _resolve_command_path
+    codex_auth = codex_auth_checker or codex_auth_check
     codex_checker = codex_capability_checker or (
         lambda command: _codex_exec_safety_flags_check(command, command_runner=codex_command_runner)
     )
+    cursor_auth = cursor_auth_checker or cursor_auth_check
+    grok_auth = grok_auth_checker or grok_auth_check
+    antigravity_auth = antigravity_auth_checker or antigravity_auth_check
     if config.connection_kind == "remote_bridge":
         return ""
     cursor_superseded_error = cursor_terminal_session_superseded_error(
@@ -253,6 +327,9 @@ def resident_config_setup_error(
     cursor_generic_error = cursor_generic_resident_guard_error(config.provider_kind, config.connection_kind)
     if cursor_generic_error:
         return cursor_generic_error
+    workspace_check = _workspace_path_check(config.workspace_path)
+    if workspace_check["status"] != "ok":
+        return str(workspace_check.get("message") or "Workspace folder is not available.")
     command_check = _command_check(config.command, resolver)
     if command_check["status"] != "ok":
         return str(command_check.get("message") or "Command is not executable.")
@@ -264,7 +341,11 @@ def resident_config_setup_error(
         codex_command_check = _codex_command_check(config.command)
         if codex_command_check["status"] != "ok":
             return str(codex_command_check.get("message") or "Codex command is not valid.")
-        capability_check = codex_checker(_resolved_command(config.command, command_check.get("path", "")))
+        resolved_command = _resolved_command(config.command, command_check.get("path", ""))
+        auth_check = codex_auth(resolved_command)
+        if auth_check["status"] != "ok":
+            return str(auth_check.get("message") or "Codex login is required.")
+        capability_check = codex_checker(resolved_command)
         if capability_check["status"] != "ok":
             return str(capability_check.get("message") or "Codex command is not ready.")
     if config.provider_kind == "kiro_live_session" and config.connection_kind == "live_session":
@@ -275,14 +356,23 @@ def resident_config_setup_error(
         cursor_check = cursor_command_check(config.command)
         if cursor_check["status"] != "ok":
             return str(cursor_check.get("message") or "Cursor command is not valid.")
+        auth_check = cursor_auth(_resolved_command(config.command, command_check.get("path", "")))
+        if auth_check["status"] != "ok":
+            return str(auth_check.get("message") or "Cursor login is required.")
     if config.provider_kind == "grok_live_session" and config.connection_kind == "live_session":
         grok_check = grok_command_check(config.command)
         if grok_check["status"] != "ok":
             return str(grok_check.get("message") or "Grok command is not valid.")
+        auth_check = grok_auth(_resolved_command(config.command, command_check.get("path", "")))
+        if auth_check["status"] != "ok":
+            return str(auth_check.get("message") or "Grok login is required.")
     if config.provider_kind == "antigravity_live_session" and config.connection_kind == "live_session":
         antigravity_check = antigravity_command_check(config.command)
         if antigravity_check["status"] != "ok":
             return str(antigravity_check.get("message") or "Antigravity command is not valid.")
+        auth_check = antigravity_auth(_resolved_command(config.command, command_check.get("path", "")))
+        if auth_check["status"] != "ok":
+            return str(auth_check.get("message") or "Antigravity login is required.")
     if config.provider_kind == "hermes_live_session" and config.connection_kind == "live_session":
         hermes_check = hermes_command_check(config.command)
         if hermes_check["status"] != "ok":
@@ -298,7 +388,11 @@ def _load_preflight_configs(path: Path, *, server_override: str | None = None) -
         raise ValueError("Live agent group config must be a JSON object.")
     server = str(server_override or data.get("server") or "http://127.0.0.1:8765")
     defaults = {
-        "poll_interval": live_agent_nonnegative_float(data.get("poll_interval"), 2.0, "poll_interval"),
+        "poll_interval": live_agent_nonnegative_float(
+            data.get("poll_interval"),
+            DEFAULT_LIVE_AGENT_POLL_INTERVAL,
+            "poll_interval",
+        ),
         "heartbeat_interval": live_agent_nonnegative_float(data.get("heartbeat_interval"), 30.0, "heartbeat_interval"),
         "cooldown": live_agent_nonnegative_float(data.get("cooldown"), 5.0, "cooldown"),
         "max_chain_depth": live_agent_nonnegative_int(data.get("max_chain_depth"), 1, "max_chain_depth"),
@@ -346,6 +440,7 @@ def _preflight_config_from_mapping(
         meeting_id=str(data.get("meeting_id") or ""),
         engagement_mode=str(data.get("engagement_mode") or "mentioned"),
         command=command_parts,
+        workspace_path=str(data.get("workspace_path") or ""),
         timeout_seconds=int(data.get("timeout_seconds") or data.get("timeout") or 120),
         poll_interval=live_agent_nonnegative_float(data.get("poll_interval"), defaults["poll_interval"], "poll_interval"),
         heartbeat_interval=live_agent_nonnegative_float(

@@ -10,6 +10,7 @@ import urllib.request
 from typing import Callable
 
 from agentsassemble.live_agent_runner import official_turn_request_candidate, should_reply_to_event
+from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL, live_agent_poll_sleep_seconds
 from agentsassemble.meeting_events import clean_lobby_text
 
 
@@ -223,7 +224,7 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
 
     def wait_next(
         timeout_seconds: float = 30.0,
-        poll_interval: float = 2.0,
+        poll_interval: float = DEFAULT_LIVE_AGENT_POLL_INTERVAL,
         max_chain_depth: int = 1,
     ) -> dict[str, object]:
         deadline = time.monotonic() + max(0.0, float(timeout_seconds))
@@ -251,7 +252,7 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return _wait_timeout_payload(context, last_room, timeout_seconds=float(timeout_seconds))
-            time.sleep(min(max(float(poll_interval), 0.05), remaining))
+            time.sleep(min(live_agent_poll_sleep_seconds(poll_interval), remaining))
 
     def say(message: str, source_event_id: str, auto_chain_depth: int = 1) -> dict[str, object]:
         source_id = _required_text(source_event_id, "source_event_id")

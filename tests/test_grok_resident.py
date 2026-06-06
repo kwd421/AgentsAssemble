@@ -13,6 +13,7 @@ from agentsassemble.grok_resident import (
     GrokResidentCommandRunner,
     clean_grok_session_id,
     default_grok_resident_command,
+    grok_auth_check,
     grok_command_check,
     grok_error_category,
     grok_provider_connection_check,
@@ -93,6 +94,31 @@ class GrokResidentTests(unittest.TestCase):
         self.assertIn(session_id, calls[1]["command"])
         self.assertEqual(calls[0]["kwargs"]["cwd"], str(Path(temp_dir)))
 
+    def test_runner_passes_configured_model_and_effort(self):
+        calls = []
+
+        def command_runner(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"sessionId": "grok-session-abc123", "text": "READY"}),
+                stderr="",
+            )
+
+        runner = GrokResidentCommandRunner(
+            config(model_id="grok-4", effort="high"),
+            command_runner=command_runner,
+            cwd=Path.cwd(),
+        )
+        try:
+            self.assertEqual(runner([], "prompt", timeout_seconds=45), "READY")
+        finally:
+            runner.close()
+
+        self.assertEqual(calls[0][calls[0].index("--model") + 1], "grok-4")
+        self.assertEqual(calls[0][calls[0].index("--effort") + 1], "high")
+
     def test_runner_rejects_invalid_json_without_leaking_output(self):
         def command_runner(command, **kwargs):
             return subprocess.CompletedProcess(command, 0, stdout="not json SECRET-CODE", stderr="SECRET-CODE")
@@ -151,6 +177,21 @@ class GrokResidentTests(unittest.TestCase):
         finally:
             runner.close()
         self.assertEqual(grok_error_category(caught.exception), GROK_EMPTY_TEXT)
+
+    def test_auth_check_reports_login_required_and_accepts_models_output(self):
+        def authenticated(command, **kwargs):
+            return subprocess.CompletedProcess(command, 0, stdout="You are logged in with grok.com.\n", stderr="")
+
+        self.assertEqual(grok_auth_check(["grok"], command_runner=authenticated)["status"], "ok")
+
+        def unauthenticated(command, **kwargs):
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="not authenticated")
+
+        check = grok_auth_check(["grok"], command_runner=unauthenticated)
+
+        self.assertEqual(check["id"], "grok_auth")
+        self.assertEqual(check["status"], "failed")
+        self.assertIn("Grok 로그인이 필요합니다", check["message"])
 
     def test_provider_checks_and_defaults_are_narrow(self):
         self.assertEqual(default_grok_resident_command("grok_live_session", "live_session", []), ["grok"])

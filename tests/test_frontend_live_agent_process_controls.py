@@ -87,6 +87,30 @@ class FrontendLiveAgentProcessControlTests(unittest.TestCase):
             assert.equal(controls.processGroupCanControlSingleAgent(legacyWithoutManifest, codex), false);
             assert.equal(controls.findProcessGroupForAgent([multi, single], codex), single);
             assert.equal(controls.findProcessGroupForAgent([stoppedSingle, multi], codex), multi);
+
+            const registered = controls.registeredAgentProcessGroupForAgent({
+              agent_id: "codex-pending",
+              display_name: "Codex Pending",
+              provider_kind: "codex_live_session",
+              connection_kind: "live_session",
+              meeting_id: "resident-m1",
+              status: "offline",
+              process_group_id: "agent-codex-pending",
+              live_agent_config_path: "/tmp/codex-pending.json",
+            });
+            assert.equal(registered.group_id, "agent-codex-pending");
+            assert.equal(registered.status, "stopped");
+            assert.equal(controls.processGroupCanControlSingleAgent(registered, { agent_id: "codex-pending" }), true);
+            assert.equal(
+              controls.registeredAgentProcessGroupForAgent({
+                agent_id: "codex-live",
+                meeting_id: "resident-m1",
+                status: "online",
+                process_group_id: "agent-codex-live",
+                live_agent_config_path: "/tmp/codex-live.json",
+              }),
+              undefined
+            );
             """
         )
         subprocess.run(
@@ -105,6 +129,11 @@ class FrontendLiveAgentProcessControlTests(unittest.TestCase):
         self.assertIn("processGroupCanControlSingleAgent", member_source)
         self.assertIn("processGroupIndividualControlReason", member_source)
         self.assertIn("findProcessGroupForAgent(processGroups", member_source)
+        self.assertIn("registeredAgentProcessGroupForAgent(agent)", member_source)
+        self.assertIn("START", member_source)
+        self.assertIn("추방", member_source)
+        self.assertIn("세션 삭제", member_source)
+        self.assertIn("저장된 세션 설정도 삭제됩니다", member_source)
         self.assertIn("processGroupCanControlSingleAgent", profile_source)
         self.assertIn("processGroupIndividualControlReason", profile_source)
         self.assertIn("findProcessGroupForAgent(processGroups", profile_source)
@@ -118,8 +147,18 @@ class FrontendLiveAgentProcessControlTests(unittest.TestCase):
         self.assertIn("stopLiveAgentSessionAgent", profile_source)
         self.assertIn("resumeLiveAgentSessionAgent", member_source)
         self.assertIn("stopLiveAgentSessionAgent", member_source)
+        self.assertIn("updateLiveAgentSessionAgentTiming", member_source)
+        self.assertIn("expelLiveAgentFromRoom", member_source)
+        self.assertIn("deleteLiveAgentSession", member_source)
+        self.assertIn("호출 간격", member_source)
+        self.assertIn("초 단위", member_source)
+        self.assertNotIn("즉시", member_source)
+        self.assertNotIn("pollIntervalMode", member_source)
         self.assertIn('"/api/live-agent-sessions/resume-agent"', api_source)
         self.assertIn('"/api/live-agent-sessions/stop-agent"', api_source)
+        self.assertIn('"/api/live-agent-sessions/agent-timing"', api_source)
+        self.assertIn('"/api/live-agent-room/expel"', api_source)
+        self.assertIn('"/api/live-agent-room/delete-session"', api_source)
 
     def test_agent_session_api_posts_selected_agent_id(self):
         script = textwrap.dedent(
@@ -169,6 +208,23 @@ class FrontendLiveAgentProcessControlTests(unittest.TestCase):
               groupId: "resident-main--agent-a",
               agentId: "agent-a",
             });
+            await api.updateLiveAgentSessionAgentTiming({
+              meetingId: "resident-m1",
+              groupId: "resident-main--agent-a",
+              agentId: "agent-a",
+              liveAgentConfigPath: "/tmp/live-agent.json",
+              pollInterval: 0.25,
+            });
+            await api.expelLiveAgentFromRoom({
+              meetingId: "resident-m1",
+              groupId: "resident-main--agent-a",
+              agentId: "agent-a",
+            });
+            await api.deleteLiveAgentSession({
+              meetingId: "resident-m1",
+              groupId: "resident-main--agent-a",
+              agentId: "agent-a",
+            });
 
             assert.equal(calls[0].url, "/api/live-agent-sessions/resume-agent");
             assert.equal(calls[0].options.method, "POST");
@@ -180,6 +236,21 @@ class FrontendLiveAgentProcessControlTests(unittest.TestCase):
             assert.equal(calls[1].body.meeting_id, "resident-m1");
             assert.equal(calls[1].body.group_id, "resident-main--agent-a");
             assert.equal(calls[1].body.agent_id, "agent-a");
+            assert.equal(calls[2].url, "/api/live-agent-sessions/agent-timing");
+            assert.equal(calls[2].options.method, "POST");
+            assert.equal(calls[2].body.meeting_id, "resident-m1");
+            assert.equal(calls[2].body.group_id, "resident-main--agent-a");
+            assert.equal(calls[2].body.agent_id, "agent-a");
+            assert.equal(calls[2].body.live_agent_config_path, "/tmp/live-agent.json");
+            assert.equal(calls[2].body.poll_interval, 0.25);
+            assert.equal(calls[3].url, "/api/live-agent-room/expel");
+            assert.equal(calls[3].body.meeting_id, "resident-m1");
+            assert.equal(calls[3].body.group_id, "resident-main--agent-a");
+            assert.equal(calls[3].body.agent_id, "agent-a");
+            assert.equal(calls[4].url, "/api/live-agent-room/delete-session");
+            assert.equal(calls[4].body.meeting_id, "resident-m1");
+            assert.equal(calls[4].body.group_id, "resident-main--agent-a");
+            assert.equal(calls[4].body.agent_id, "agent-a");
             """
         )
         subprocess.run(

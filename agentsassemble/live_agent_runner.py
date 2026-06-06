@@ -22,6 +22,7 @@ from agentsassemble.live_agent_turns import (
     is_official_turn_reply_event,
     is_review_checkpoint_reply_event,
 )
+from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL, live_agent_poll_sleep_seconds
 from agentsassemble.live_agent_flow import (
     DEFAULT_FLOW_FAIRNESS_MAX_LEAD,
     DEFAULT_FLOW_FAIRNESS_MIN_GAP,
@@ -75,6 +76,9 @@ class ResidentAgentConfig:
     cooldown: float
     max_chain_depth: int
     model_id: str = ""
+    effort: str = ""
+    speed: str = ""
+    workspace_path: str = ""
     max_ticks: int = 0
     flow_fairness_recent_window: int = DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW
     flow_fairness_min_gap: int = DEFAULT_FLOW_FAIRNESS_MIN_GAP
@@ -115,6 +119,7 @@ class LiveAgentRunner:
         self.last_heartbeat_at: datetime | None = None
         self.seen_room_snapshot = False
         self.transient_room_error_active = False
+        self.active_poll_interval = config.poll_interval
 
     def run(self) -> int:
         self._register()
@@ -127,7 +132,7 @@ class LiveAgentRunner:
                 replies += self.tick()
                 if self.config.max_ticks and ticks >= self.config.max_ticks:
                     break
-                self.sleep_fn(self.config.poll_interval)
+                self.sleep_fn(live_agent_poll_sleep_seconds(self.active_poll_interval))
         finally:
             self._heartbeat_final_offline()
         return replies
@@ -142,6 +147,7 @@ class LiveAgentRunner:
             self.transient_room_error_active = True
             self._heartbeat_due_safely("error", last_error=self.last_error, **self._cursor_metadata())
             return 0
+        self.active_poll_interval = _runtime_poll_interval(self.config, room)
         engagement_mode = _runtime_engagement_mode(self.config, room)
         dm_candidate = direct_dm_candidate(_dm_events(room), self.config.agent_id, self.last_observed_dm_event_id)
         if dm_candidate is not None:
@@ -374,18 +380,25 @@ class LiveAgentRunner:
             self._heartbeat_if_due()
             return 0
         flow_id = str(flow_context.get("flow_id") or "")
-        if flow_should_yield_for_fairness(
-            events,
-            flow_id=flow_id,
-            agent_id=self.config.agent_id,
-            participant_agent_ids=_active_flow_participant_agent_ids(room, self.config.agent_id, meeting_id),
-            max_lead=self.config.flow_fairness_max_lead,
-            recent_window=self.config.flow_fairness_recent_window,
-            min_gap=self.config.flow_fairness_min_gap,
-            start_order=self.config.flow_fairness_start_order,
+        fairness = _flow_policy_fairness(flow_options.flow_policy, self.config)
+        if fairness is not None and not _flow_candidate_bypasses_fairness(
+            flow_options.flow_policy,
+            candidate,
+            self.config.agent_id,
+            self.config.display_name,
         ):
-            self._heartbeat_if_due()
-            return 0
+            if flow_should_yield_for_fairness(
+                events,
+                flow_id=flow_id,
+                agent_id=self.config.agent_id,
+                participant_agent_ids=_active_flow_participant_agent_ids(room, self.config.agent_id, meeting_id),
+                max_lead=fairness["max_lead"],
+                recent_window=fairness["recent_window"],
+                min_gap=fairness["min_gap"],
+                start_order=fairness["start_order"],
+            ):
+                self._heartbeat_if_due()
+                return 0
 
         generated = self._generate_flow_decision(
             candidate,
@@ -925,6 +938,7 @@ def flow_event_candidate(
     if not flow_id:
         return None
     options = flow_context_options(flow_context)
+    policy = options.flow_policy
     if options.max_agent_turns and flow_turn_count(events, flow_id=flow_id, agent_id=agent_id) >= options.max_agent_turns:
         return None
     if options.max_total_turns and flow_turn_count(events, flow_id=flow_id) >= options.max_total_turns:
@@ -952,15 +966,27 @@ def flow_event_candidate(
         event_meeting_id = str(event.get("flow_meeting_id") or "").strip()
         if meeting_id and event_flow_id and event_meeting_id and event_meeting_id != meeting_id:
             continue
+        is_direct_mention = _message_directly_mentions_agent(
+            str(event.get("message") or ""),
+            agent_id,
+            display_name,
+        )
+        is_direct_trigger = _is_human_lobby_event(event) or is_direct_mention
+        if policy == "quiet":
+            if is_direct_mention:
+                return event
+            continue
         if event_flow_id == flow_id and str(event.get("flow_event_type") or "") in {"started", "nudge"}:
             return event
         if event_flow_id == flow_id and str(event.get("flow_action") or "") in FLOW_SPEAKING_ACTIONS:
             return event
-        if _is_human_lobby_event(event) or _message_mentions_agent(str(event.get("message") or ""), agent_id, display_name):
+        if is_direct_trigger:
             return event
         if _chain_depth(event) > 0:
             return event
         continue
+    if policy == "quiet":
+        return None
     return _flow_idle_tick_candidate(
         events,
         agent_id,
@@ -1006,6 +1032,35 @@ def _flow_idle_tick_candidate(
         candidate["message"] = "방 전체 맥락을 보고 지금 말할지 기다릴지 판단하세요."
         return candidate
     return None
+
+
+def _flow_policy_fairness(policy: str, config: ResidentAgentConfig) -> dict[str, object] | None:
+    if policy == "free_interval" or policy == "quiet":
+        return None
+    if policy == "round_robin":
+        return {
+            "max_lead": 0,
+            "recent_window": None,
+            "min_gap": 1,
+            "start_order": True,
+        }
+    return {
+        "max_lead": config.flow_fairness_max_lead,
+        "recent_window": config.flow_fairness_recent_window,
+        "min_gap": config.flow_fairness_min_gap,
+        "start_order": config.flow_fairness_start_order,
+    }
+
+
+def _flow_candidate_bypasses_fairness(
+    policy: str,
+    candidate: dict[str, object],
+    agent_id: str,
+    display_name: str,
+) -> bool:
+    if policy != "natural":
+        return False
+    return _message_directly_mentions_agent(str(candidate.get("message") or ""), agent_id, display_name)
 
 
 def official_turn_request_candidate(
@@ -1057,6 +1112,24 @@ def _runtime_engagement_mode(config: ResidentAgentConfig, room: dict[str, object
         return config.engagement_mode
     mode = str(agent.get("engagement_mode") or "").strip()
     return mode if mode in ENGAGEMENT_MODES else config.engagement_mode
+
+
+def _runtime_poll_interval(config: ResidentAgentConfig, room: dict[str, object]) -> float:
+    agent = room.get("agent")
+    if not isinstance(agent, dict):
+        return config.poll_interval
+    if str(agent.get("agent_id") or "") != config.agent_id:
+        return config.poll_interval
+    value = agent.get("poll_interval")
+    if isinstance(value, bool):
+        return config.poll_interval
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return config.poll_interval
+    if not math.isfinite(parsed) or parsed < 0:
+        return config.poll_interval
+    return parsed
 
 
 def _active_flow_participant_agent_ids(room: dict[str, object], agent_id: str, meeting_id: str) -> list[str]:
@@ -1395,7 +1468,11 @@ def load_group_configs(
         raise ValueError("Live agent group config must be a JSON object.")
     server = str(server_override or data.get("server") or "http://127.0.0.1:8765")
     defaults = {
-        "poll_interval": live_agent_nonnegative_float(data.get("poll_interval"), 2.0, "poll_interval"),
+        "poll_interval": live_agent_nonnegative_float(
+            data.get("poll_interval"),
+            DEFAULT_LIVE_AGENT_POLL_INTERVAL,
+            "poll_interval",
+        ),
         "heartbeat_interval": live_agent_nonnegative_float(data.get("heartbeat_interval"), 30.0, "heartbeat_interval"),
         "cooldown": live_agent_nonnegative_float(data.get("cooldown"), 5.0, "cooldown"),
         "max_chain_depth": live_agent_nonnegative_int(data.get("max_chain_depth"), 1, "max_chain_depth"),
@@ -1450,6 +1527,9 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         engagement_mode=str(getattr(args, "engagement_mode")),
         command=command,
         model_id=str(getattr(args, "model_id", "") or ""),
+        effort=str(getattr(args, "effort", "") or ""),
+        speed=str(getattr(args, "speed", "") or ""),
+        workspace_path=str(getattr(args, "workspace_path", "") or ""),
         timeout_seconds=int(getattr(args, "timeout")),
         poll_interval=float(getattr(args, "poll_interval")),
         heartbeat_interval=float(getattr(args, "heartbeat_interval")),
@@ -1517,6 +1597,9 @@ def _config_from_mapping(
         engagement_mode=str(data.get("engagement_mode") or "mentioned"),
         command=command_parts,
         model_id=str(data.get("model_id") or ""),
+        effort=str(data.get("effort") or ""),
+        speed=str(data.get("speed") or ""),
+        workspace_path=_resident_workspace_path(data.get("workspace_path"), base_dir=config_dir),
         timeout_seconds=int(data.get("timeout_seconds") or data.get("timeout") or 120),
         official_turn_timeout_seconds=live_agent_nonnegative_int(
             official_turn_timeout_value,
@@ -1572,6 +1655,15 @@ def _config_from_mapping(
 
 
 def _resident_persona_path(value: object, *, base_dir: Path) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = base_dir / path
+    return str(path)
+
+
+def _resident_workspace_path(value: object, *, base_dir: Path) -> str:
     if not isinstance(value, str) or not value.strip():
         return ""
     path = Path(value).expanduser()
@@ -1728,12 +1820,30 @@ def _message_mentions_agent(message: str, agent_id: str, display_name: str) -> b
     return any(_contains_mention_token(normalized_message, str(mention or "").casefold()) for mention in mentions)
 
 
+def _message_directly_mentions_agent(message: str, agent_id: str, display_name: str) -> bool:
+    normalized_message = message.casefold()
+    mentions = [agent_id, display_name]
+    return any(
+        _contains_direct_mention_token(normalized_message, str(mention or "").casefold()) for mention in mentions
+    )
+
+
 def _contains_mention_token(normalized_message: str, normalized_mention: str) -> bool:
     mention = normalized_mention.strip()
     if not mention:
         return False
     pattern = rf"(?<![\w-]){re.escape(mention)}(?![\w-])"
     return re.search(pattern, normalized_message) is not None
+
+
+def _contains_direct_mention_token(normalized_message: str, normalized_mention: str) -> bool:
+    mention = normalized_mention.strip()
+    if not mention:
+        return False
+    token = re.escape(mention)
+    at_pattern = rf"(?<![\w-])@{token}(?![\w-])"
+    angle_pattern = rf"<@\s*{token}\s*>"
+    return re.search(at_pattern, normalized_message) is not None or re.search(angle_pattern, normalized_message) is not None
 
 
 def _chain_depth(event: dict[str, object]) -> int:

@@ -45,13 +45,31 @@ from agentsassemble.live_agent_discovery import (
 )
 from agentsassemble.live_agent_context import live_agent_context_contract
 from agentsassemble.live_agent_flow import FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
+from agentsassemble.live_agent_frontend_create import (
+    frontend_live_agent_check_payload,
+    frontend_live_agent_create_payload,
+    frontend_live_agent_login_payload,
+    frontend_live_agent_options_payload,
+)
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
+from agentsassemble.live_agent_room_admin import (
+    delete_live_agent_session_payload,
+    expel_live_agent_from_room_payload,
+)
+from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_quota import LIVE_AGENT_QUOTA_FIELDS, quota_viewer_for_host, quota_viewer_for_session
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
-from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
+from agentsassemble.live_agent_settings import update_live_agent_config_poll_interval
+from agentsassemble.live_agents import (
+    connect_live_agent,
+    heartbeat_live_agent,
+    read_live_agents,
+    update_live_agent_engagement,
+    update_live_agent_poll_interval,
+)
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operation_history
 from agentsassemble.lobby_promotion import LOBBY_PROMOTION_OPERATION, promote_lobby_events_to_official
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
@@ -252,6 +270,7 @@ class LiveAgentFlowSupervisor:
                 "max_agent_turns": options.max_agent_turns,
                 "max_total_turns": options.max_total_turns,
                 "max_silence_seconds": options.max_silence_seconds,
+                "policy": options.flow_policy,
                 "agent_count": agent_count,
                 "total_turns": 0,
                 "last_activity_at": now.isoformat(),
@@ -490,6 +509,7 @@ class LiveAgentFlowSupervisor:
             "flow_event_type": event_type,
             "flow_status": state.get("status") or "",
             "flow_topic": state.get("topic") or "",
+            "flow_policy": state.get("policy") or "",
             "flow_duration_seconds": int(float(state.get("duration_seconds") or 0)),
             "flow_tick_interval": int(float(state.get("tick_interval") or 0)),
             "flow_cooldown": int(float(state.get("cooldown") or 0)),
@@ -540,6 +560,7 @@ def _restored_flow_state(events: list[dict[str, object]], *, meeting_id: str = "
         "flow_id": flow_id,
         "meeting_id": clean_lobby_text(context.get("flow_meeting_id"), limit=128),
         "topic": clean_lobby_text(context.get("flow_topic"), limit=ROOM_TOPIC_LIMIT),
+        "policy": clean_lobby_text(context.get("flow_policy"), limit=64) or "natural",
         "status": status,
         "started_at": clean_lobby_text(context.get("flow_started_at"), limit=64),
         "deadline_at": clean_lobby_text(context.get("flow_deadline_at"), limit=64),
@@ -2576,6 +2597,34 @@ def live_agent_session_stop_agent_payload(
     )
 
 
+def live_agent_session_agent_timing_payload(
+    output_root: Path,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    agent_id = clean_lobby_text(payload.get("agent_id"), limit=64)
+    if not agent_id:
+        raise ValueError("Agent id is required.")
+    if not any(str(agent.get("agent_id") or "") == agent_id for agent in read_live_agents(output_root)):
+        raise ValueError(f"Live agent {agent_id} was not found.")
+
+    live_agent_config_path = str(payload.get("live_agent_config_path") or payload.get("live_agent_config") or "").strip()
+    config_result: dict[str, object] = {}
+    if live_agent_config_path:
+        config_result = update_live_agent_config_poll_interval(
+            Path(live_agent_config_path),
+            agent_id,
+            payload.get("poll_interval"),
+        )
+    agent = update_live_agent_poll_interval(output_root, agent_id, payload.get("poll_interval"))
+    return {
+        "status": "updated",
+        "agent_id": agent_id,
+        "poll_interval": agent.get("poll_interval"),
+        "config_path": str(config_result.get("config_path") or live_agent_config_path),
+        "agent": agent,
+    }
+
+
 def _session_auto_rounds_options(payload: dict[str, object]) -> dict[str, object]:
     return {
         "timeout_seconds": _payload_nonnegative_float(
@@ -2941,7 +2990,7 @@ def live_agent_join_brief_payload(payload: dict[str, object], *, default_server:
         meeting_id=payload.get("meeting_id") or "",
         engagement_mode=payload.get("engagement_mode") or "mentioned",
         timeout=payload.get("timeout", 30.0),
-        poll_interval=payload.get("poll_interval", 2.0),
+        poll_interval=payload.get("poll_interval", DEFAULT_LIVE_AGENT_POLL_INTERVAL),
         max_chain_depth=payload.get("max_chain_depth", 1),
     )
 
@@ -7766,6 +7815,8 @@ def _make_handler(
     flow_supervisor: LiveAgentFlowSupervisor | None = None,
     frontend_dist_root: Path | None = None,
     public_tunnel_manager: PublicTunnelManager | None = None,
+    live_agent_login_launcher: object | None = None,
+    live_agent_login_command_resolver: object | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     configure_room_invite_store(default_room_invite_store_path(output_root))
     react_app_root = (frontend_dist_root or default_frontend_dist_root()).resolve()
@@ -8060,6 +8111,9 @@ def _make_handler(
                 return
             if path == "/api/live-agent-processes":
                 self._send_json(live_agent_processes_payload(live_agent_process_supervisor, output_root=output_root))
+                return
+            if path == "/api/live-agent-create/options":
+                self._send_json(frontend_live_agent_options_payload(default_workspace=Path.cwd()))
                 return
             if path == "/api/live-agent-process-events":
                 self._send_json(
@@ -8743,6 +8797,108 @@ def _make_handler(
                 )
                 self._send_json(session)
                 return
+            if parsed.path == "/api/live-agent-create/check":
+                payload = self._operation_json_payload(operation="frontend_agent.check")
+                if payload is None:
+                    return
+                try:
+                    checked = frontend_live_agent_check_payload(
+                        output_root,
+                        payload,
+                        default_server=self._request_server_url(),
+                    )
+                except (OSError, ValueError) as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="frontend_agent.check",
+                        status="failed",
+                        target_id=clean_lobby_text(payload.get("meeting_id"), limit=128),
+                        error=str(error),
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="frontend_agent.check",
+                    status=_operation_success_for_result(_operation_result_status(checked.get("status")), success_values={"ok"}),
+                    target_id=clean_lobby_text(payload.get("meeting_id"), limit=128),
+                    summary="checked frontend-created live agent",
+                    details={
+                        "provider_id": clean_lobby_text(payload.get("provider_id"), limit=64),
+                        "result_status": _operation_result_status(checked.get("status")),
+                    },
+                )
+                self._send_json(checked)
+                return
+            if parsed.path == "/api/live-agent-create/login":
+                if not self._request_is_local_operator():
+                    self._send_error(HTTPStatus.FORBIDDEN, "provider login can only be started from the local operator UI")
+                    return
+                payload = self._operation_json_payload(operation="frontend_agent.login")
+                if payload is None:
+                    return
+                try:
+                    login = frontend_live_agent_login_payload(
+                        payload,
+                        command_launcher=live_agent_login_launcher,
+                        command_resolver=live_agent_login_command_resolver,
+                    )
+                except (OSError, ValueError) as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="frontend_agent.login",
+                        status="failed",
+                        target_id=clean_lobby_text(payload.get("provider_id"), limit=64),
+                        error=str(error),
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="frontend_agent.login",
+                    status="success",
+                    target_id=clean_lobby_text(payload.get("provider_id"), limit=64),
+                    summary="started provider login from frontend agent modal",
+                    details={"provider_id": clean_lobby_text(payload.get("provider_id"), limit=64)},
+                )
+                self._send_json(login)
+                return
+            if parsed.path == "/api/live-agent-create":
+                payload = self._operation_json_payload(operation="frontend_agent.create")
+                if payload is None:
+                    return
+                try:
+                    created = frontend_live_agent_create_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        payload,
+                        default_server=self._request_server_url(),
+                    )
+                except (OSError, ValueError) as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="frontend_agent.create",
+                        status="failed",
+                        target_id=clean_lobby_text(payload.get("meeting_id"), limit=128),
+                        error=str(error),
+                        details={"provider_id": clean_lobby_text(payload.get("provider_id"), limit=64)},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="frontend_agent.create",
+                    status="success" if str(created.get("status") or "") in {"created", "starting"} else "degraded",
+                    target_id=str((created.get("agent") or {}).get("agent_id") if isinstance(created.get("agent"), dict) else ""),
+                    summary="created frontend live agent",
+                    details={
+                        "meeting_id": clean_lobby_text(created.get("meeting_id"), limit=128),
+                        "provider_id": clean_lobby_text(payload.get("provider_id"), limit=64),
+                        "status": clean_lobby_text(created.get("status"), limit=64),
+                    },
+                )
+                self._send_json(created)
+                return
             if parsed.path == "/api/live-agent-sessions/start":
                 payload = self._operation_json_payload(operation="session.start")
                 if payload is None:
@@ -8877,6 +9033,40 @@ def _make_handler(
                     target_id=str(session.get("agent_id") or agent_id or session.get("meeting_id") or ""),
                     summary=_session_resume_operation_summary(session),
                     details={**_session_start_operation_details(session), "agent_id": str(session.get("agent_id") or agent_id)},
+                )
+                self._send_json(session)
+                return
+            if parsed.path == "/api/live-agent-sessions/agent-timing":
+                payload = self._operation_json_payload(operation="session.agent_timing")
+                if payload is None:
+                    return
+                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
+                try:
+                    session = live_agent_session_agent_timing_payload(output_root, payload)
+                except (OSError, ValueError) as error:
+                    safe_error = str(error)
+                    safe_details = _session_start_error_details(payload, error)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session.agent_timing",
+                        status="failed",
+                        target_id=agent_id or str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
+                        error=safe_error,
+                        details={**safe_details, "agent_id": agent_id},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details={**safe_details, "agent_id": agent_id})
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="session.agent_timing",
+                    status="updated",
+                    target_id=str(session.get("agent_id") or agent_id),
+                    summary=f"poll_interval={session.get('poll_interval')}",
+                    details={
+                        "agent_id": str(session.get("agent_id") or agent_id),
+                        "poll_interval": session.get("poll_interval"),
+                        "config_path": str(session.get("config_path") or ""),
+                    },
                 )
                 self._send_json(session)
                 return
@@ -9059,6 +9249,70 @@ def _make_handler(
                     details={**_session_stop_operation_details(session), "agent_id": str(session.get("agent_id") or agent_id)},
                 )
                 self._send_json(session)
+                return
+            if parsed.path == "/api/live-agent-room/expel":
+                payload = self._operation_json_payload(operation="frontend_agent.expel")
+                if payload is None:
+                    return
+                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
+                try:
+                    result = expel_live_agent_from_room_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        payload,
+                    )
+                except (OSError, ValueError) as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="frontend_agent.expel",
+                        status="failed",
+                        target_id=agent_id,
+                        error=str(error),
+                        details={"meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128)},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error), details={"agent_id": agent_id})
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="frontend_agent.expel",
+                    status="success",
+                    target_id=str(result.get("agent_id") or agent_id),
+                    summary="expelled frontend live agent from room",
+                    details={"meeting_id": str(result.get("meeting_id") or payload.get("meeting_id") or "")},
+                )
+                self._send_json(result)
+                return
+            if parsed.path == "/api/live-agent-room/delete-session":
+                payload = self._operation_json_payload(operation="frontend_agent.delete_session")
+                if payload is None:
+                    return
+                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
+                try:
+                    result = delete_live_agent_session_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        payload,
+                    )
+                except (OSError, ValueError) as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="frontend_agent.delete_session",
+                        status="failed",
+                        target_id=agent_id,
+                        error=str(error),
+                        details={"meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128)},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error), details={"agent_id": agent_id})
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="frontend_agent.delete_session",
+                    status="success",
+                    target_id=str(result.get("agent_id") or agent_id),
+                    summary="deleted frontend live agent session",
+                    details={"meeting_id": str(result.get("meeting_id") or payload.get("meeting_id") or "")},
+                )
+                self._send_json(result)
                 return
             if parsed.path == "/api/live-agent-meetings/start":
                 payload = self._operation_json_payload(operation="meeting.start")
@@ -10959,7 +11213,7 @@ def _react_app_content_type(path: Path) -> str:
 
 
 def _react_app_cache_control(path: Path) -> str:
-    return "no-cache" if path.name == "index.html" else "public, max-age=31536000, immutable"
+    return "no-cache"
 
 
 def _rewrite_react_app_index(html: str) -> str:

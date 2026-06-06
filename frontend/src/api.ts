@@ -54,6 +54,7 @@ export interface RoomMember {
   meeting_id: string;
   participant_id: string;
   display_name: string;
+  avatar_image_url?: string;
   role: "human" | "director" | "implementer" | "reviewer" | "agent";
   participant_type: ParticipantType;
   provider_kind: string;
@@ -88,6 +89,7 @@ export interface RoomInviteJoinResponse {
   session_token: string;
   agent_id: string;
   display_name: string;
+  avatar_image_url?: string;
   meeting_id: string;
   invite_scope: RoomAppearance["inviteScope"];
   connection_kind: string;
@@ -278,16 +280,24 @@ export interface MeetingLiveEvent {
 export interface LiveAgent {
   agent_id: string;
   display_name: string;
+  avatar_image_url?: string;
+  owner_display_name?: string;
+  owner_participant_id?: string;
+  owner_session_id?: string;
   status: string;
   provider_kind: string;
   connection_kind?: string;
   engagement_mode: string;
   meeting_id: string;
   session_id?: string;
+  process_group_id?: string;
+  live_agent_config_path?: string;
   last_seen_at: string;
   last_reply_at: string;
   last_observed_event_id?: string;
   last_observed_live_event_id?: string;
+  poll_interval?: number;
+  poll_interval_updated_at?: string;
   quota_5h?: string;
   quota_1w?: string;
   quota_state?: "ok" | "low" | "exhausted" | "unknown" | "";
@@ -340,10 +350,82 @@ export interface LiveAgentProcessesResponse {
 export interface LiveAgentSessionActionResponse {
   meeting_id?: string;
   group_id?: string;
+  agent_id?: string;
   status?: string;
   config_path?: string;
+  poll_interval?: number;
+  agent?: LiveAgent;
   last_error?: string;
   summary?: string;
+}
+
+export interface LiveAgentCreateOption {
+  id: string;
+  label: string;
+}
+
+export interface LiveAgentCreateProvider {
+  id: "codex" | "claude" | "cursor" | "grok" | "antigravity" | "local" | string;
+  label: string;
+  provider_kind: string;
+  connection_kind: string;
+  participant_type: ParticipantType;
+  startable: boolean;
+  verification_note?: string;
+  login_available?: boolean;
+  login_label?: string;
+  model_options: LiveAgentCreateOption[];
+  effort_options: LiveAgentCreateOption[];
+  speed_options: LiveAgentCreateOption[];
+}
+
+export interface LiveAgentCreateOptionsResponse {
+  default_workspace: string;
+  providers: LiveAgentCreateProvider[];
+}
+
+export interface FrontendLiveAgentCreateRequest {
+  meetingId: string;
+  providerId: string;
+  displayName: string;
+  workspacePath: string;
+  engagementMode?: string;
+  modelId?: string;
+  effort?: string;
+  speed?: string;
+  startNow?: boolean;
+}
+
+export interface FrontendLiveAgentCreateResponse {
+  status: string;
+  meeting_id: string;
+  agent: LiveAgent;
+  agents: LiveAgent[];
+  provider?: LiveAgentCreateProvider;
+  live_agent_config_path?: string;
+  group_id?: string;
+  group?: LiveAgentProcessGroup;
+  preflight?: Record<string, unknown>;
+  message?: string;
+}
+
+export interface FrontendLiveAgentCheckResponse {
+  status: string;
+  provider?: LiveAgentCreateProvider;
+  workspace_path?: string;
+  preflight?: Record<string, unknown>;
+  message?: string;
+  auth_action?: {
+    provider_id: string;
+    label: string;
+  };
+}
+
+export interface FrontendLiveAgentLoginResponse {
+  status: string;
+  provider_id: string;
+  label?: string;
+  message?: string;
 }
 
 export interface LiveAgentJoinBriefRequest {
@@ -388,6 +470,7 @@ export interface FlowState {
   flow_id?: string;
   meeting_id?: string;
   topic?: string;
+  policy?: string;
   remaining_seconds?: number;
   agent_count?: number;
   total_turns?: number;
@@ -399,6 +482,10 @@ export interface FlowResponse {
   agents: LiveAgent[];
   events: LobbyEvent[];
   flow_events: LobbyEvent[];
+}
+
+export interface LiveAgentsResponse {
+  agents: LiveAgent[];
 }
 
 export interface LifecycleRoleHint {
@@ -958,6 +1045,44 @@ export function fetchLiveAgentProcesses() {
   return fetchJson<LiveAgentProcessesResponse>("/api/live-agent-processes");
 }
 
+export function fetchLiveAgentCreateOptions() {
+  return fetchJson<LiveAgentCreateOptionsResponse>("/api/live-agent-create/options");
+}
+
+function frontendLiveAgentCreatePayload(request: FrontendLiveAgentCreateRequest) {
+  return {
+    meeting_id: request.meetingId,
+    provider_id: request.providerId,
+    display_name: request.displayName,
+    workspace_path: request.workspacePath,
+    engagement_mode: request.engagementMode || "mentioned",
+    model_id: request.modelId || "",
+    effort: request.effort || "",
+    speed: request.speed || "",
+    start_now: Boolean(request.startNow),
+  };
+}
+
+export function checkFrontendLiveAgent(request: FrontendLiveAgentCreateRequest) {
+  return postJson<FrontendLiveAgentCheckResponse>(
+    "/api/live-agent-create/check",
+    frontendLiveAgentCreatePayload(request)
+  );
+}
+
+export function createFrontendLiveAgent(request: FrontendLiveAgentCreateRequest) {
+  return postJson<FrontendLiveAgentCreateResponse>(
+    "/api/live-agent-create",
+    frontendLiveAgentCreatePayload(request)
+  );
+}
+
+export function startFrontendLiveAgentLogin(providerId: string) {
+  return postJson<FrontendLiveAgentLoginResponse>("/api/live-agent-create/login", {
+    provider_id: providerId,
+  });
+}
+
 export function resumeLiveAgentSession({
   meetingId,
   groupId,
@@ -1022,6 +1147,60 @@ export function stopLiveAgentSessionAgent({
   });
 }
 
+export function updateLiveAgentSessionAgentTiming({
+  meetingId,
+  groupId,
+  agentId,
+  liveAgentConfigPath,
+  pollInterval,
+}: {
+  meetingId: string;
+  groupId: string;
+  agentId: string;
+  liveAgentConfigPath?: string;
+  pollInterval: number;
+}) {
+  return postJson<LiveAgentSessionActionResponse>("/api/live-agent-sessions/agent-timing", {
+    meeting_id: meetingId,
+    group_id: groupId,
+    agent_id: agentId,
+    live_agent_config_path: liveAgentConfigPath || "",
+    poll_interval: pollInterval,
+  });
+}
+
+export function expelLiveAgentFromRoom({
+  meetingId,
+  groupId,
+  agentId,
+}: {
+  meetingId: string;
+  groupId?: string;
+  agentId: string;
+}) {
+  return postJson<LiveAgentSessionActionResponse>("/api/live-agent-room/expel", {
+    meeting_id: meetingId,
+    group_id: groupId || "",
+    agent_id: agentId,
+  });
+}
+
+export function deleteLiveAgentSession({
+  meetingId,
+  groupId,
+  agentId,
+}: {
+  meetingId: string;
+  groupId?: string;
+  agentId: string;
+}) {
+  return postJson<LiveAgentSessionActionResponse>("/api/live-agent-room/delete-session", {
+    meeting_id: meetingId,
+    group_id: groupId || "",
+    agent_id: agentId,
+  });
+}
+
 export function addRoomFriend(friend: Partial<RoomFriend>) {
   return postJson<{ friend: RoomFriend; friends: RoomFriend[] }>("/api/room-friends", friend);
 }
@@ -1076,9 +1255,19 @@ export function stopPublicInviteTunnel() {
   return postJsonHost<PublicInviteActionResponse>("/api/public-invite/tunnel/stop", {});
 }
 
-export function joinRoomInvite({ inviteToken }: { inviteToken: string }) {
+export function joinRoomInvite({
+  inviteToken,
+  displayName,
+  avatarImage,
+}: {
+  inviteToken: string;
+  displayName?: string;
+  avatarImage?: string;
+}) {
   return postJson<RoomInviteJoinResponse>("/api/room-invite/join", {
     invite_token: inviteToken,
+    display_name: displayName,
+    avatar_image_url: avatarImage,
   });
 }
 
@@ -1244,6 +1433,10 @@ export function createLiveAgentJoinBrief(params: LiveAgentJoinBriefRequest) {
 export function fetchLiveAgentFlow(meetingId = "", sessionToken = "") {
   const url = `/api/live-agent-flow${queryString({ meeting_id: meetingId })}`;
   return sessionToken ? fetchJsonWithToken<FlowResponse>(url, sessionToken) : fetchJson<FlowResponse>(url);
+}
+
+export function fetchLiveAgents() {
+  return fetchJson<LiveAgentsResponse>("/api/live-agents");
 }
 
 export function fetchMeetings() {
@@ -1562,6 +1755,7 @@ export function resolveMafiaPhase(gameId: string, viewerAgentId = "") {
 export function startFlow(params: {
   meeting_id: string;
   topic?: string;
+  flow_policy?: string;
   duration_seconds?: number;
   max_agent_turns?: number;
   max_total_turns?: number;

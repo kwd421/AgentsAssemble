@@ -185,9 +185,9 @@ export default function FriendDmPanel({
                 <strong className="preserve-words">{item.name || (item.side === "mine" ? "나" : friend.display_name)}</strong>
                 <time>{timeLabel(item.created_at)}</time>
               </div>
-              <p className="preserve-words">
+              <div className="preserve-words">
                 <DiscordText text={item.message || ""} />
-              </p>
+              </div>
             </article>
           ))
         ) : (

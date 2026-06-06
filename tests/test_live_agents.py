@@ -35,7 +35,7 @@ class LiveAgentPresenceTests(unittest.TestCase):
         self.assertEqual(sandbox_launcher_for("codex", "codex_resume").enforcement, "codex_readonly")
         self.assertEqual(
             sandbox_launcher_for("codex_live_session", "live_session").command(["codex"]),
-            ["codex", "exec", "--sandbox", "read-only", "--ignore-rules"],
+            ["codex", "exec", "--sandbox", "read-only", "--ignore-user-config", "--ignore-rules"],
         )
         self.assertEqual(sandbox_launcher_for("claude_code", "terminal_session").enforcement, "advisory")
         self.assertNotEqual(sandbox_launcher_for("claude_code", "terminal_session").enforcement, "os_sandboxed")
@@ -342,6 +342,33 @@ class LiveAgentPresenceTests(unittest.TestCase):
             self.assertEqual(selfer["status"], "online")
             self.assertEqual(selfer["last_error"], "")
 
+    def test_live_session_online_heartbeat_clears_previous_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            started = datetime(2026, 5, 17, 12, 0, tzinfo=UTC)
+
+            connect_live_agent(
+                root,
+                {"agent_id": "codex-live", "provider_kind": "codex_live_session", "connection_kind": "live_session"},
+                now=started,
+            )
+            heartbeat_live_agent(
+                root,
+                "codex-live",
+                status="error",
+                metadata={"last_error": "command failed"},
+                now=started + timedelta(seconds=5),
+            )
+            agent = heartbeat_live_agent(
+                root,
+                "codex-live",
+                status="online",
+                now=started + timedelta(seconds=10),
+            )
+
+            self.assertEqual(agent["status"], "online")
+            self.assertEqual(agent["last_error"], "")
+
     def test_heartbeat_can_refresh_session_id_from_runner_metadata(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -557,6 +584,37 @@ class LiveAgentPresenceTests(unittest.TestCase):
                 update_live_agent_engagement(root, "agent-a", "shout_forever")
             with self.assertRaisesRegex(ValueError, "Live agent missing-agent was not found"):
                 update_live_agent_engagement(root, "missing-agent", "watch")
+
+    def test_update_live_agent_poll_interval_preserves_presence_and_heartbeat(self):
+        from agentsassemble.live_agents import update_live_agent_poll_interval
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            started = datetime(2026, 5, 17, 12, 0, tzinfo=UTC)
+            changed = started + timedelta(seconds=5)
+            pinged = started + timedelta(seconds=7)
+            connect_live_agent(root, {"agent_id": "agent-a", "engagement_mode": "always"}, now=started)
+
+            updated = update_live_agent_poll_interval(root, "agent-a", 0, now=changed)
+            heartbeat = heartbeat_live_agent(root, "agent-a", status="online", now=pinged)
+
+        self.assertEqual(updated["poll_interval"], 0)
+        self.assertEqual(updated["poll_interval_updated_at"], changed.isoformat())
+        self.assertEqual(updated["last_seen_at"], started.isoformat())
+        self.assertEqual(heartbeat["poll_interval"], 0)
+        self.assertEqual(heartbeat["last_seen_at"], pinged.isoformat())
+
+    def test_update_live_agent_poll_interval_rejects_invalid_or_missing_agent(self):
+        from agentsassemble.live_agents import update_live_agent_poll_interval
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(root, {"agent_id": "agent-a"})
+
+            with self.assertRaisesRegex(ValueError, "finite non-negative"):
+                update_live_agent_poll_interval(root, "agent-a", -1)
+            with self.assertRaisesRegex(ValueError, "Live agent missing-agent was not found"):
+                update_live_agent_poll_interval(root, "missing-agent", 0.25)
 
     def test_connect_live_agent_rejects_blank_agent_id(self):
         with tempfile.TemporaryDirectory() as temp_dir:

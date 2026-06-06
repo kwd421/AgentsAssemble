@@ -1,14 +1,34 @@
-import { Bot, Copy, Radio, ShieldCheck, UserPlus, Wifi } from "lucide-react";
-import type {
-  ChannelNotificationSetting,
-  LiveAgent,
-  LiveAgentProcessGroup,
-  RoomMember,
+import { useState } from "react";
+import { Bot, Copy, Gamepad2, Plus, Square, Zap } from "lucide-react";
+import {
+  startFlow,
+  startMafiaGame,
+  stopFlow,
+  type ChannelNotificationSetting,
+  type FlowState,
+  type LiveAgent,
+  type LiveAgentProcessGroup,
+  type MafiaGame,
+  type RoomMember,
 } from "../../api";
-import { isActivePresence } from "../../lib/presenceStatus";
 import type { AgentQuotaVisibilityViewer } from "../../lib/agentQuotaVisibility";
 import type { RoomAppearance } from "../../lib/roomAppearance";
+import { isActivePresence } from "../../lib/presenceStatus";
 import MemberList, { type RoleId } from "./MemberList";
+
+const ROOM_FLOW_MODES = [
+  { id: "natural", label: "Natural Floor" },
+  { id: "round_robin", label: "Round Robin" },
+  { id: "free_interval", label: "Free Interval" },
+  { id: "quiet", label: "Quiet Call" },
+];
+
+const PLAY_ACTIVITIES = [
+  { id: "conversation", label: "일반 대화", icon: Zap },
+  { id: "mafia", label: "Mafia Night", icon: Gamepad2 },
+] as const;
+
+type PlayActivityId = (typeof PLAY_ACTIVITIES)[number]["id"];
 
 type RoomSummary = {
   id: string;
@@ -25,7 +45,10 @@ type RoomConnectionPanelProps = {
   members: RoomMember[];
   roleOverrides?: Record<string, string>;
   onRoleChange?: (memberId: string, role: RoleId) => void;
-  flowStatus?: string;
+  flow?: FlowState;
+  refreshFlow?: () => void;
+  onMafiaStarted?: (game: MafiaGame) => void;
+  onFlowStarted?: () => void;
   guestLocked?: boolean;
   guestAiPacketPreview?: string;
   guestAiPacketStatus?: string;
@@ -35,30 +58,10 @@ type RoomConnectionPanelProps = {
   processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
   quotaViewer?: AgentQuotaVisibilityViewer;
+  onStartAddAgent?: () => void;
+  memberSearchQuery?: string;
+  onMemberSearchQueryChange?: (query: string) => void;
 };
-
-function inviteScopeLabel(scope: RoomAppearance["inviteScope"]): string {
-  if (scope === "read_only") return "읽기 전용 초대";
-  return "방 단위 초대";
-}
-
-function flowStatusLabel(status?: string): string {
-  if (status === "running") return "라이브";
-  if (status === "finished") return "종료";
-  if (status === "stopped") return "중지";
-  return "대기";
-}
-
-function roomToneLabel(tone: string): string {
-  if (tone === "mafia") return "Play";
-  if (tone === "work") return "Work";
-  if (tone === "resident") return "Resident";
-  return "Fresh";
-}
-
-function activeAgentCount(agents: LiveAgent[]): number {
-  return agents.filter((agent) => isActivePresence(agent.status)).length;
-}
 
 function mutedChannelCount(
   channelNotifications?: RoomConnectionPanelProps["channelNotifications"]
@@ -66,14 +69,49 @@ function mutedChannelCount(
   return Object.values(channelNotifications || {}).filter((setting) => setting.notifications === "mute").length;
 }
 
+function flowPolicyLabel(policy?: string): string {
+  if (policy === "round_robin") return "Round Robin";
+  if (policy === "free_interval") return "Free Interval";
+  if (policy === "quiet") return "Quiet Call";
+  return "Natural Floor";
+}
+
+function playErrorMessage(errorValue: unknown, fallback: string): string {
+  const message = errorValue instanceof Error ? errorValue.message : String(errorValue || "");
+  if (/^Meeting .+ was not found\.?$/.test(message)) {
+    return "이 방은 아직 실행 가능한 회의 세션이 없습니다. 에이전트를 추가하거나 기존 세션 방에서 시작하세요.";
+  }
+  if (message.includes("Mafia game was not found")) {
+    return "Mafia Night 세션이 없습니다. 게임을 다시 시작하세요.";
+  }
+  return message || fallback;
+}
+
+function mafiaPlayersFromAgents(agents: LiveAgent[]) {
+  const candidates = agents.length
+    ? agents
+    : [
+        { agent_id: "codex-spark-a", display_name: "Codex Spark A" } as LiveAgent,
+        { agent_id: "codex-spark-b", display_name: "Codex Spark B" } as LiveAgent,
+        { agent_id: "codex-spark-c", display_name: "Codex Spark C" } as LiveAgent,
+        { agent_id: "codex-spark-d", display_name: "Codex Spark D" } as LiveAgent,
+      ];
+  return candidates.slice(0, 8).map((agent) => ({
+    agent_id: agent.agent_id,
+    display_name: agent.display_name || agent.agent_id,
+  }));
+}
+
 export default function RoomConnectionPanel({
   room,
-  appearance,
   agents,
   members,
   roleOverrides,
   onRoleChange,
-  flowStatus,
+  flow = { status: "idle" } as FlowState,
+  refreshFlow,
+  onMafiaStarted,
+  onFlowStarted,
   guestLocked = false,
   guestAiPacketPreview = "",
   guestAiPacketStatus = "",
@@ -83,51 +121,178 @@ export default function RoomConnectionPanel({
   processGroups = [],
   onSessionActionComplete,
   quotaViewer,
+  onStartAddAgent,
+  memberSearchQuery,
+  onMemberSearchQueryChange,
 }: RoomConnectionPanelProps) {
-  const activeCount = activeAgentCount(agents);
-  const memberCount = members.length + agents.length + 1;
   const mutedCount = mutedChannelCount(channelNotifications);
-  const inviteScope = inviteScopeLabel(appearance.inviteScope);
+  const [selectedMode, setSelectedMode] = useState("natural");
+  const [selectedActivityId, setSelectedActivityId] = useState<PlayActivityId>("conversation");
+  const [busy, setBusy] = useState(false);
+  const [playError, setPlayError] = useState("");
+  const isFlowRunning = flow.status === "running";
+  const readyAgents = agents.filter((agent) => isActivePresence(agent.status));
+  const selectedActivity =
+    PLAY_ACTIVITIES.find((activity) => activity.id === selectedActivityId) || PLAY_ACTIVITIES[0];
+
+  async function handleStartConversation() {
+    if (!room.meetingId.trim()) {
+      setPlayError("회의 ID가 없습니다.");
+      return;
+    }
+    setBusy(true);
+    setPlayError("");
+    try {
+      await startFlow({
+        meeting_id: room.meetingId.trim(),
+        topic: room.topic.trim() || undefined,
+        flow_policy: selectedMode,
+        duration_seconds: 180,
+        max_agent_turns: 0,
+        max_total_turns: 0,
+      });
+      onFlowStarted?.();
+      refreshFlow?.();
+    } catch (errorValue) {
+      setPlayError(playErrorMessage(errorValue, "대화 시작 실패"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleStartMafia() {
+    if (!room.meetingId.trim()) {
+      setPlayError("회의 ID가 없습니다.");
+      return;
+    }
+    setBusy(true);
+    setPlayError("");
+    try {
+      const payload = await startMafiaGame({
+        game_id: room.meetingId.trim(),
+        players: mafiaPlayersFromAgents(readyAgents.length >= 3 ? readyAgents : agents),
+        mafia_count: 1,
+      });
+      if (payload.game) onMafiaStarted?.(payload.game);
+    } catch (errorValue) {
+      setPlayError(playErrorMessage(errorValue, "Mafia Night 시작 실패"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleStartSelectedActivity() {
+    if (selectedActivityId === "mafia") {
+      await handleStartMafia();
+      return;
+    }
+    await handleStartConversation();
+  }
+
+  async function handleStopFlow() {
+    const meetingId = flow.meeting_id || room.meetingId;
+    if (!meetingId.trim()) {
+      setPlayError("중지할 회의 ID가 없습니다.");
+      return;
+    }
+    setBusy(true);
+    setPlayError("");
+    try {
+      await stopFlow(meetingId.trim());
+      refreshFlow?.();
+    } catch (errorValue) {
+      setPlayError(playErrorMessage(errorValue, "중지 실패"));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="dc-room-connection-panel">
-      <section className="dc-room-connection-card" aria-label="방 연결 정보">
-        <div className="dc-room-connection-title">
-          <span className="dc-room-connection-icon" aria-hidden>
-            {appearance.iconLabel || room.label.slice(0, 1).toUpperCase() || "A"}
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-[13px] font-black text-text-primary preserve-words">
-              {room.label}
-            </p>
-            <p className="truncate text-[11px] text-text-muted preserve-words">
-              {room.topic || room.meetingId}
-            </p>
+      {!guestLocked && onStartAddAgent && (
+        <div className="dc-room-agent-add-row">
+          <button type="button" className="dc-agent-add-entry" onClick={onStartAddAgent}>
+            <Plus size={16} />
+            에이전트 추가
+          </button>
+          {mutedCount > 0 && <span className="dc-room-muted-count">{mutedCount} muted</span>}
+        </div>
+      )}
+      {!guestLocked && (
+        <section className="dc-room-play-panel" aria-label="플레이 모드">
+          <div className="dc-room-play-header">
+            <span className="dc-room-play-title">플레이 모드</span>
+            <span className={`dc-room-play-state ${isFlowRunning ? "running" : ""}`}>
+              {isFlowRunning ? "진행 중" : "대기"}
+            </span>
           </div>
-        </div>
-        <div className="dc-room-connection-grid">
-          <span>
-            <Radio size={14} />
-            {flowStatusLabel(flowStatus)}
-          </span>
-          <span>
-            <Wifi size={14} />
-            Local-first
-          </span>
-          <span>
-            <UserPlus size={14} />
-            {guestLocked ? "게스트 범위" : inviteScope}
-          </span>
-          <span>
-            <ShieldCheck size={14} />
-            {activeCount}/{memberCount} online
-          </span>
-        </div>
-        <p className="dc-room-connection-note preserve-words">
-          {roomToneLabel(room.tone)} room · {room.meetingId}
-          {mutedCount > 0 ? ` · muted ${mutedCount}` : ""}
-        </p>
-      </section>
+          {playError && <p className="dc-room-play-error preserve-words">{playError}</p>}
+          {isFlowRunning ? (
+            <div className="dc-room-play-running">
+              <span className="min-w-0 truncate text-text-secondary preserve-words">
+                {flowPolicyLabel(flow.policy)} · {flow.topic || flow.meeting_id || room.label}
+              </span>
+              <button type="button" onClick={handleStopFlow} disabled={busy} className="dc-room-play-stop">
+                <Square size={14} />
+                중지
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="dc-room-play-activity-list" role="listbox" aria-label="활동 선택">
+                {PLAY_ACTIVITIES.map((activity) => {
+                  const Icon = activity.icon;
+                  const selected = activity.id === selectedActivityId;
+                  return (
+                    <button
+                      key={activity.id}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      data-active={selected}
+                      className="dc-room-play-activity"
+                      onClick={() => setSelectedActivityId(activity.id)}
+                    >
+                      <Icon size={15} />
+                      <span className="truncate">{activity.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedActivityId === "conversation" && (
+                <>
+                  <label className="dc-room-play-label" htmlFor="room-flow-mode">
+                    대화 방식
+                  </label>
+                  <select
+                    id="room-flow-mode"
+                    value={selectedMode}
+                    onChange={(event) => setSelectedMode(event.target.value)}
+                    className="dc-room-play-select"
+                    aria-label="대화 방식"
+                  >
+                    {ROOM_FLOW_MODES.map((mode) => (
+                      <option key={mode.id} value={mode.id}>
+                        {mode.label}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={handleStartSelectedActivity}
+                disabled={busy}
+                className="dc-room-play-primary"
+                aria-label={`${selectedActivity.label} 시작`}
+              >
+                {selectedActivityId === "mafia" ? <Gamepad2 size={15} /> : <Zap size={15} />}
+                시작
+              </button>
+            </>
+          )}
+        </section>
+      )}
       {guestLocked && onCreateCompanionAiPacket && (
         <section className="dc-room-connection-card" aria-label="게스트 AI 세션 연결">
           <div className="dc-room-connection-title">
@@ -180,6 +345,9 @@ export default function RoomConnectionPanel({
         processGroups={processGroups}
         onSessionActionComplete={onSessionActionComplete}
         quotaViewer={quotaViewer}
+        searchQuery={memberSearchQuery}
+        onSearchQueryChange={onMemberSearchQueryChange}
+        hideSearch={memberSearchQuery !== undefined}
       />
     </div>
   );

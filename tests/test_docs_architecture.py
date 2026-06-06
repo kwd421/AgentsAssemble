@@ -431,7 +431,10 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("does not send prompts, start resident sessions, call remote bridges, or execute model turns", doc)
         self.assertIn("resolvable command executable named `codex`", doc)
         self.assertIn("no extra pre-`exec` arguments", doc)
-        self.assertIn("codex exec --sandbox read-only --ignore-rules resume --skip-git-repo-check --help", doc)
+        self.assertIn(
+            "codex exec --sandbox read-only --ignore-user-config --ignore-rules resume --skip-git-repo-check --help",
+            doc,
+        )
         self.assertIn("resolved Codex CLI accepts the resident safety flags", doc)
         self.assertIn("before any supervised process, resident registration, or worker thread is launched", doc)
         self.assertIn("configs/live-agents.codex-session.example.json", doc)

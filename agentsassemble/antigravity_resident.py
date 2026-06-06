@@ -8,6 +8,8 @@ from pathlib import Path
 from subprocess import TimeoutExpired
 from typing import TYPE_CHECKING, Any
 
+from agentsassemble.provider_auth import provider_auth_error_message, provider_login_required_message
+
 if TYPE_CHECKING:
     from agentsassemble.live_agent_runner import ResidentAgentConfig
 
@@ -21,6 +23,8 @@ ANTIGRAVITY_SUBPROCESS_NONZERO = "antigravity_subprocess_nonzero"
 ANTIGRAVITY_EMPTY_REPLY = "antigravity_empty_reply"
 ANTIGRAVITY_MISSING_CONVERSATION_ID = "antigravity_missing_conversation_id"
 ANTIGRAVITY_BACKEND_ERROR = "antigravity_backend_error"
+ANTIGRAVITY_AUTH_REQUIRED = "antigravity_auth_required"
+ANTIGRAVITY_LOGIN_REQUIRED_MESSAGE = provider_login_required_message("Antigravity", "agy")
 
 
 class AntigravityResidentRuntimeError(RuntimeError):
@@ -118,6 +122,14 @@ class AntigravityResidentCommandRunner:
             ) from error
         returncode = int(getattr(completed, "returncode", 0) or 0)
         if returncode != 0:
+            login_message = _antigravity_login_required_message(
+                f"{_text(getattr(completed, 'stdout', ''))}\n{_text(getattr(completed, 'stderr', ''))}"
+            )
+            if login_message:
+                raise AntigravityResidentRuntimeError(
+                    login_message,
+                    category=ANTIGRAVITY_AUTH_REQUIRED,
+                )
             raise AntigravityResidentRuntimeError(
                 f"Antigravity live session command failed with return code {returncode}.",
                 category=ANTIGRAVITY_SUBPROCESS_NONZERO,
@@ -191,6 +203,71 @@ def antigravity_command_check(command: list[str]) -> dict[str, str]:
     }
 
 
+def antigravity_auth_check(
+    command: list[str],
+    *,
+    command_runner: Any | None = None,
+    timeout_seconds: int = 20,
+) -> dict[str, str]:
+    executable = _antigravity_executable(command)
+    runner = command_runner or subprocess.run
+    with tempfile.TemporaryDirectory(prefix="agentsassemble-antigravity-auth-") as temp_dir:
+        work_dir = Path(temp_dir)
+        log_path = work_dir / "auth-check.log"
+        probe_command = [
+            executable,
+            "--log-file",
+            str(log_path),
+            "--print-timeout",
+            "8s",
+            "--print",
+            "Reply with READY only.",
+        ]
+        try:
+            completed = runner(
+                probe_command,
+                text=True,
+                capture_output=True,
+                timeout=timeout_seconds,
+                check=False,
+                cwd=str(work_dir),
+            )
+        except TimeoutExpired:
+            return {
+                "id": "antigravity_auth",
+                "status": "failed",
+                "message": (
+                    f"Antigravity 로그인 상태를 확인하지 못했습니다. agy가 {timeout_seconds}초 안에 "
+                    "응답하지 않았습니다. 터미널에서 agy 로그인 상태를 확인한 뒤 다시 연결 확인을 누르세요."
+                ),
+            }
+        except OSError as error:
+            return {
+                "id": "antigravity_auth",
+                "status": "failed",
+                "message": f"Antigravity 로그인 상태를 확인하지 못했습니다. agy 실행 실패: {error.__class__.__name__}.",
+            }
+        returncode = int(getattr(completed, "returncode", 0) or 0)
+        if returncode == 0:
+            return {
+                "id": "antigravity_auth",
+                "status": "ok",
+                "message": "Antigravity 로그인 상태를 확인했습니다.",
+            }
+        combined_output = _combined_antigravity_probe_output(completed, log_path)
+        login_message = _antigravity_login_required_message(combined_output)
+        if login_message:
+            return {"id": "antigravity_auth", "status": "failed", "message": login_message}
+        return {
+            "id": "antigravity_auth",
+            "status": "failed",
+            "message": (
+                f"Antigravity 로그인 상태를 확인하지 못했습니다. agy가 종료 코드 {returncode}로 실패했습니다. "
+                "터미널에서 agy 로그인 상태를 확인한 뒤 다시 연결 확인을 누르세요."
+            ),
+        }
+
+
 def clean_antigravity_conversation_id(value: object) -> str:
     text = _text(value).strip()
     if ".." in text:
@@ -252,3 +329,16 @@ def _looks_like_antigravity_status(text: str) -> bool:
 def _latest_nonempty_line(text: str) -> str:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     return lines[-1] if lines else ""
+
+
+def _combined_antigravity_probe_output(completed: Any, log_path: Path) -> str:
+    parts = [_text(getattr(completed, "stdout", "")), _text(getattr(completed, "stderr", ""))]
+    try:
+        parts.append(log_path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        pass
+    return "\n".join(part for part in parts if part)
+
+
+def _antigravity_login_required_message(text: str) -> str:
+    return provider_auth_error_message(text, provider_label="Antigravity", login_command="agy")

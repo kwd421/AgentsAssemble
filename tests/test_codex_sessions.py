@@ -144,7 +144,7 @@ class CodexSessionTests(unittest.TestCase):
         )
 
         self.assertEqual(resident_config["server"], "http://room.local")
-        self.assertEqual(resident_config["poll_interval"], 2)
+        self.assertEqual(resident_config["poll_interval"], 0.25)
         self.assertEqual(resident_config["heartbeat_interval"], 30)
         self.assertEqual(resident_config["cooldown"], 5)
         self.assertEqual(resident_config["max_chain_depth"], 1)

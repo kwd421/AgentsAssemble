@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import re
+import json
 import subprocess
 import tempfile
 from pathlib import Path
 from subprocess import TimeoutExpired
 from typing import TYPE_CHECKING, Any
+
+from agentsassemble.provider_auth import provider_auth_error_message, provider_login_required_message
 
 if TYPE_CHECKING:
     from agentsassemble.live_agent_runner import ResidentAgentConfig
@@ -17,6 +20,8 @@ CURSOR_SUBPROCESS_TIMEOUT = "cursor_subprocess_timeout"
 CURSOR_SUBPROCESS_NONZERO = "cursor_subprocess_nonzero"
 CURSOR_EMPTY_TEXT = "cursor_empty_text"
 CURSOR_INVALID_CHAT_ID = "cursor_invalid_chat_id"
+CURSOR_AUTH_REQUIRED = "cursor_auth_required"
+CURSOR_LOGIN_REQUIRED_MESSAGE = provider_login_required_message("Cursor", "cursor-agent login")
 CURSOR_TERMINAL_SESSION_SUPERSEDED_MESSAGE = (
     "cursor-agent terminal_session residents are superseded by cursor-agent-live-session; "
     "use provider_kind cursor_live_session with live_session connection_kind."
@@ -63,10 +68,20 @@ class CursorResidentCommandRunner:
         self.command_runner = command_runner or subprocess.run
         self.cwd = Path(cwd or Path.cwd())
         self.session_id = clean_cursor_chat_id(config.session_id)
-        self._workspace_dir = tempfile.TemporaryDirectory(prefix="agentsassemble-cursor-resident-workspace-")
+        self._workspace_dir: tempfile.TemporaryDirectory[str] | None = None
+        self._workspace_path: Path | None = None
+        configured_workspace = str(getattr(config, "workspace_path", "") or "").strip()
+        if configured_workspace:
+            self._workspace_path = Path(configured_workspace).expanduser()
+        else:
+            self._workspace_dir = tempfile.TemporaryDirectory(prefix="agentsassemble-cursor-resident-workspace-")
 
     @property
     def workspace_dir(self) -> Path:
+        if self._workspace_path is not None:
+            return self._workspace_path
+        if self._workspace_dir is None:
+            raise RuntimeError("Cursor live session workspace is not available.")
         return Path(self._workspace_dir.name)
 
     def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
@@ -84,7 +99,8 @@ class CursorResidentCommandRunner:
         return reply
 
     def close(self) -> None:
-        self._workspace_dir.cleanup()
+        if self._workspace_dir is not None:
+            self._workspace_dir.cleanup()
 
     def _create_chat(self, *, timeout_seconds: int) -> str:
         create_command = [self._cursor_executable(), "create-chat"]
@@ -98,7 +114,7 @@ class CursorResidentCommandRunner:
         return chat_id
 
     def _build_resume_command(self) -> list[str]:
-        return [
+        command = [
             self._cursor_executable(),
             "--resume",
             self.session_id,
@@ -111,6 +127,10 @@ class CursorResidentCommandRunner:
             "--workspace",
             str(self.workspace_dir),
         ]
+        model_id = str(self.config.model_id or "").strip()
+        if model_id:
+            command[3:3] = ["--model", model_id]
+        return command
 
     def _cursor_executable(self) -> str:
         configured_command = list(self.config.command or ["cursor-agent"])
@@ -134,6 +154,14 @@ class CursorResidentCommandRunner:
             ) from error
         returncode = int(getattr(completed, "returncode", 0) or 0)
         if returncode != 0:
+            login_message = cursor_login_required_message(
+                f"{_text(getattr(completed, 'stdout', ''))}\n{_text(getattr(completed, 'stderr', ''))}"
+            )
+            if login_message:
+                raise CursorResidentRuntimeError(
+                    login_message,
+                    category=CURSOR_AUTH_REQUIRED,
+                )
             raise CursorResidentRuntimeError(
                 f"Cursor live session command failed with return code {returncode}.",
                 category=CURSOR_SUBPROCESS_NONZERO,
@@ -204,6 +232,53 @@ def cursor_command_check(command: list[str]) -> dict[str, str]:
     }
 
 
+def cursor_auth_check(
+    command: list[str],
+    *,
+    command_runner: Any | None = None,
+    timeout_seconds: int = 10,
+) -> dict[str, str]:
+    if not command:
+        return {"id": "cursor_auth", "status": "failed", "message": "Cursor command is empty."}
+    probe_command = [command[0], "status", "--format", "json"]
+    runner = command_runner or subprocess.run
+    try:
+        completed = runner(
+            probe_command,
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except TimeoutExpired:
+        return {
+            "id": "cursor_auth",
+            "status": "failed",
+            "message": "Cursor 로그인 상태를 확인하지 못했습니다. cursor-agent login 상태를 확인한 뒤 다시 연결 확인을 누르세요.",
+        }
+    except OSError as error:
+        return {
+            "id": "cursor_auth",
+            "status": "failed",
+            "message": f"Cursor 로그인 상태를 확인하지 못했습니다. cursor-agent 실행 실패: {error.__class__.__name__}.",
+        }
+    output = f"{_text(getattr(completed, 'stdout', ''))}\n{_text(getattr(completed, 'stderr', ''))}"
+    if int(getattr(completed, "returncode", 1) or 0) == 0 and _cursor_status_is_authenticated(output):
+        return {"id": "cursor_auth", "status": "ok", "message": "Cursor 로그인 상태를 확인했습니다."}
+    login_message = cursor_login_required_message(output)
+    if login_message:
+        return {"id": "cursor_auth", "status": "failed", "message": login_message}
+    return {
+        "id": "cursor_auth",
+        "status": "failed",
+        "message": "Cursor 로그인이 필요합니다. 터미널에서 cursor-agent login을 실행해 로그인한 뒤 다시 연결 확인을 누르세요.",
+    }
+
+
+def cursor_login_required_message(text: str) -> str:
+    return provider_auth_error_message(text, provider_label="Cursor", login_command="cursor-agent login")
+
+
 def cursor_terminal_session_superseded_check(
     provider_kind: str,
     connection_kind: str,
@@ -243,6 +318,16 @@ def clean_cursor_chat_id(value: object) -> str:
     if ".." in text:
         return ""
     return text if _SAFE_CHAT_ID_RE.fullmatch(text) else ""
+
+
+def _cursor_status_is_authenticated(text: str) -> bool:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return "authenticated" in text.casefold()
+    if not isinstance(payload, dict):
+        return False
+    return bool(payload.get("isAuthenticated")) or str(payload.get("status") or "").casefold() == "authenticated"
 
 
 def _first_nonempty_line(value: object) -> str:

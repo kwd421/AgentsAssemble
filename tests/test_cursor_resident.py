@@ -10,6 +10,7 @@ from agentsassemble.cursor_resident import (
     CURSOR_SUBPROCESS_TIMEOUT,
     CursorResidentCommandRunner,
     clean_cursor_chat_id,
+    cursor_auth_check,
     cursor_command_check,
     cursor_error_category,
     cursor_provider_connection_check,
@@ -117,6 +118,26 @@ class CursorResidentTests(unittest.TestCase):
         self.assertIn("--resume", calls[0])
         self.assertIn("existing-chat-123", calls[0])
 
+    def test_runner_passes_configured_model_to_resume(self):
+        calls = []
+
+        def command_runner(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, stdout="OK\n", stderr="")
+
+        runner = CursorResidentCommandRunner(
+            config(session_id="existing-chat-123", model_id="gpt-5"),
+            command_runner=command_runner,
+            cwd=Path.cwd(),
+        )
+        try:
+            self.assertEqual(runner([], "hello", timeout_seconds=45), "OK")
+        finally:
+            runner.close()
+
+        self.assertEqual(calls[0][calls[0].index("--model") + 1], "gpt-5")
+        self.assertLess(calls[0].index("--model"), calls[0].index("--print"))
+
     def test_runner_rejects_invalid_chat_id_without_leaking_output(self):
         def command_runner(command, **kwargs):
             return subprocess.CompletedProcess(command, 0, stdout="unsafe id with spaces SECRET-CODE", stderr="SECRET-CODE")
@@ -166,6 +187,31 @@ class CursorResidentTests(unittest.TestCase):
         finally:
             timed_out.close()
         self.assertEqual(cursor_error_category(timeout_error.exception), CURSOR_SUBPROCESS_TIMEOUT)
+
+    def test_auth_check_reports_login_required_and_accepts_authenticated_json(self):
+        def authenticated(command, **kwargs):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout='{"status":"authenticated","isAuthenticated":true}',
+                stderr="",
+            )
+
+        self.assertEqual(cursor_auth_check(["cursor-agent"], command_runner=authenticated)["status"], "ok")
+
+        def unauthenticated(command, **kwargs):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout='{"status":"not_authenticated","isAuthenticated":false}',
+                stderr="",
+            )
+
+        check = cursor_auth_check(["cursor-agent"], command_runner=unauthenticated)
+
+        self.assertEqual(check["id"], "cursor_auth")
+        self.assertEqual(check["status"], "failed")
+        self.assertIn("Cursor 로그인이 필요합니다", check["message"])
 
     def test_provider_checks_defaults_and_safe_chat_ids_are_narrow(self):
         self.assertEqual(default_cursor_resident_command("cursor_live_session", "live_session", []), ["cursor-agent"])

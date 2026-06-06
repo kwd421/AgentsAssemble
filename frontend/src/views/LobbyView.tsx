@@ -1,19 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bot, Hash, MessageCircle, MoreHorizontal, Square, Zap } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from "react";
+import { Bot, Hash, MessageCircle, MoreHorizontal, Zap } from "lucide-react";
 import {
   fetchLobby,
   fetchRoomLobby,
   mergeLobbyEvents,
-  startMafiaGame,
-  startFlow,
-  stopFlow,
   subscribeLobby,
-  type FlowState,
   type LiveAgent,
   type LobbyEvent,
-  type MafiaGame,
 } from "../api";
-import { isActivePresence } from "../lib/presenceStatus";
 import type { RoomDockItem } from "../lib/roomDockModel";
 import LobbyAttachments from "./components/LobbyAttachments";
 import LobbyComposer from "./components/LobbyComposer";
@@ -25,13 +19,6 @@ import type { LobbyThreadSummary } from "../lib/sideChatThreadModel";
 import { isUnauthorizedApiError } from "../lib/apiErrors";
 import type { RoomPostingMode } from "../lib/roomGuestPosting";
 
-const ROOM_MODES = [
-  { id: "council", label: "Council · 의사결정" },
-  { id: "mafia", label: "Mafia Night · 추론 게임" },
-  { id: "brainstorm", label: "Brainstorm · 발산" },
-  { id: "war", label: "War Room · 전략" },
-];
-
 function timeLabel(iso: string): string {
   try {
     return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
@@ -40,19 +27,9 @@ function timeLabel(iso: string): string {
   }
 }
 
-function mafiaPlayersFromAgents(agents: LiveAgent[]) {
-  const candidates = agents.length
-    ? agents
-    : [
-        { agent_id: "codex-spark-a", display_name: "Codex Spark A" } as LiveAgent,
-        { agent_id: "codex-spark-b", display_name: "Codex Spark B" } as LiveAgent,
-        { agent_id: "codex-spark-c", display_name: "Codex Spark C" } as LiveAgent,
-        { agent_id: "codex-spark-d", display_name: "Codex Spark D" } as LiveAgent,
-      ];
-  return candidates.slice(0, 8).map((agent) => ({
-    agent_id: agent.agent_id,
-    display_name: agent.display_name || agent.agent_id,
-  }));
+function lobbyFeedIsNearBottom(element: HTMLDivElement) {
+  const { scrollHeight, scrollTop, clientHeight } = element;
+  return scrollHeight - scrollTop - clientHeight <= 64;
 }
 
 function MessageRow({ event, onOpenSideThread, threadSummary }: {
@@ -94,9 +71,9 @@ function MessageRow({ event, onOpenSideThread, threadSummary }: {
           </span>
           <span className="shrink-0 text-[11px] text-text-muted">{timeLabel(event.created_at)}</span>
         </p>
-        <p className="text-[14px] leading-relaxed text-text-secondary preserve-words">
+        <div className="text-[14px] leading-relaxed text-text-secondary preserve-words">
           <DiscordText text={event.message || ""} />
-        </p>
+        </div>
         <LobbyAttachments attachments={event.attachments} />
         {threadSummary && onOpenSideThread && (
           <button
@@ -119,12 +96,8 @@ function MessageRow({ event, onOpenSideThread, threadSummary }: {
 
 export default function LobbyView({
   activeRoom,
-  flow,
   agents,
   mentionables: roomMentionables,
-  refreshFlow,
-  onMafiaStarted,
-  onFlowStarted,
   canManageRoom = true,
   canPostMessages = true,
   postingMode = "host",
@@ -141,12 +114,8 @@ export default function LobbyView({
   roomSessionToken = "",
 }: {
   activeRoom: RoomDockItem;
-  flow: FlowState;
   agents: LiveAgent[];
   mentionables?: string[];
-  refreshFlow: () => void;
-  onMafiaStarted: (game: MafiaGame) => void;
-  onFlowStarted: () => void;
   canManageRoom?: boolean;
   canPostMessages?: boolean;
   postingMode?: RoomPostingMode;
@@ -162,16 +131,12 @@ export default function LobbyView({
   threadSummaries?: Record<string, LobbyThreadSummary>;
   roomSessionToken?: string;
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pinnedToLatestRef = useRef(true);
   const [events, setEvents] = useState<LobbyEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [meetingId, setMeetingId] = useState(activeRoom.meetingId);
-  const [topic, setTopic] = useState(activeRoom.topic || "");
-  const [selectedMode, setSelectedMode] = useState("council");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [pinnedToLatest, setPinnedToLatest] = useState(true);
 
-  const isRunning = flow.status === "running";
-  const readyAgents = agents.filter((agent) => isActivePresence(agent.status));
   const mentionables = useMemo(
     () =>
       roomMentionables?.length
@@ -195,10 +160,34 @@ export default function LobbyView({
     });
   }, [activeRoom.createdAt, activeRoom.meetingId, events]);
 
+  const updatePinnedToLatest = useCallback((nextPinned: boolean) => {
+    pinnedToLatestRef.current = nextPinned;
+    setPinnedToLatest(nextPinned);
+  }, []);
+
+  const scrollToLatest = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    element.scrollTop = element.scrollHeight;
+    updatePinnedToLatest(true);
+  }, [updatePinnedToLatest]);
+
+  const handleLobbyScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      updatePinnedToLatest(lobbyFeedIsNearBottom(event.currentTarget));
+    },
+    [updatePinnedToLatest]
+  );
+
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (!element || !pinnedToLatestRef.current) return;
+    element.scrollTop = element.scrollHeight;
+  }, [visibleEvents]);
+
   useEffect(() => {
-    setMeetingId(activeRoom.meetingId);
-    setTopic(activeRoom.topic || "");
-  }, [activeRoom.id, activeRoom.meetingId, activeRoom.topic]);
+    updatePinnedToLatest(true);
+  }, [activeRoom.id, updatePinnedToLatest]);
 
   useEffect(() => {
     let cancelled = false;
@@ -249,59 +238,6 @@ export default function LobbyView({
     setEvents((previous) => mergeLobbyEvents(previous, postedEvents));
   }, []);
 
-  async function handleStart() {
-    if (!meetingId.trim()) {
-      setError("회의 ID를 입력하세요");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      if (selectedMode === "mafia") {
-        const payload = await startMafiaGame({
-          game_id: meetingId.trim(),
-          players: mafiaPlayersFromAgents(readyAgents.length >= 3 ? readyAgents : agents),
-          mafia_count: 1,
-        });
-        if (payload.game) onMafiaStarted(payload.game);
-      } else {
-        await startFlow({
-          meeting_id: meetingId.trim(),
-          topic: topic.trim() || undefined,
-          duration_seconds: 180,
-          max_agent_turns: 0,
-          max_total_turns: 0,
-        });
-        onFlowStarted();
-      }
-    } catch (errorValue) {
-      setError(errorValue instanceof Error ? errorValue.message : "시작 실패");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleStop() {
-    const id =
-      (isRunning
-        ? flow.meeting_id || meetingId.trim()
-        : meetingId.trim() || flow.meeting_id) || "";
-    if (!id) {
-      setError("중지할 회의 ID가 없습니다");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      await stopFlow(id);
-      refreshFlow();
-    } catch (errorValue) {
-      setError(errorValue instanceof Error ? errorValue.message : "중지 실패");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ChannelHeader
@@ -315,103 +251,37 @@ export default function LobbyView({
         onOpenMobileInfo={onOpenMobileInfo}
       />
 
-      <div className="dc-room-status-line">
-        {error && (
-          <p className="dc-room-error preserve-words">
-            {error}
-          </p>
-        )}
-        {!canManageRoom ? (
+      {!canManageRoom && (
+        <div className="dc-room-status-line">
           <div className="dc-room-status-chip">
             <span className="flex items-center gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${isRunning ? "bg-online live-pulse" : "bg-idle"}`} />
+              <span className="h-2 w-2 rounded-full bg-idle" />
               {canPostMessages ? "초대받은 방" : composerDisabledReason || "초대 세션 필요"}
             </span>
             <span className="min-w-0 truncate text-text-muted preserve-words">
               {canPostMessages
-                ? isRunning
-                  ? flow.topic || flow.meeting_id || "진행 중"
-                  : "이 방의 general 채널만 볼 수 있습니다"
+                ? "이 방의 general 채널만 볼 수 있습니다"
                 : composerDisabledReason || "이 링크에서는 메시지를 보낼 수 없습니다"}
             </span>
           </div>
-        ) : isRunning ? (
-          <div className="dc-room-status-chip">
-            <span className="flex items-center gap-1.5 font-bold text-online">
-              <span className="h-2 w-2 rounded-full bg-online live-pulse" />
-              진행 중
-            </span>
-            <span className="min-w-0 truncate text-text-secondary preserve-words">
-              {flow.topic || flow.meeting_id || "Play Mode"}
-            </span>
-            {flow.remaining_seconds != null && (
-              <span className="text-text-muted">{Math.ceil(flow.remaining_seconds)}초</span>
-            )}
-            <button
-              type="button"
-              onClick={handleStop}
-              disabled={busy}
-              className="dc-room-mini-button ml-auto"
-            >
-              <Square size={14} />
-              중지
-            </button>
-          </div>
-        ) : (
-          <details className="dc-room-controls">
-            <summary>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-idle" />
-                방 설정
-              </span>
-              <span className="truncate text-text-muted preserve-words">
-                {activeRoom.topic || "준비 중"}
-              </span>
-            </summary>
-            <div className="dc-room-controls-body">
-              <input
-                type="text"
-                value={meetingId}
-                onChange={(event) => setMeetingId(event.target.value)}
-                className="ops-input dc-room-control-input short"
-                placeholder="회의 ID"
-                aria-label="회의 ID"
-              />
-              <input
-                type="text"
-                value={topic}
-                onChange={(event) => setTopic(event.target.value)}
-                className="ops-input dc-room-control-input"
-                placeholder="주제 (선택)"
-                aria-label="주제"
-              />
-              <select
-                value={selectedMode}
-                onChange={(event) => setSelectedMode(event.target.value)}
-                className="ops-input dc-room-control-select"
-                aria-label="모드 선택"
-              >
-                {ROOM_MODES.map((mode) => (
-                  <option key={mode.id} value={mode.id}>
-                    {mode.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={handleStart}
-                disabled={busy}
-                className="ops-cta dc-room-start-button"
-              >
-                <Zap size={15} />
-                {selectedMode === "mafia" ? "마피아 시작" : "회의 시작"}
-              </button>
-            </div>
-          </details>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto py-4 chat-scroll">
+      <div
+        ref={scrollRef}
+        onScroll={handleLobbyScroll}
+        className="relative min-h-0 flex-1 overflow-y-auto py-4 chat-scroll"
+      >
+        {!pinnedToLatest && visibleEvents.length > 0 && (
+          <button
+            type="button"
+            onClick={scrollToLatest}
+            aria-label="최신 메시지로 이동"
+            className="ops-button sticky top-2 z-[1] mr-3 ml-auto block rounded-full px-3 py-1.5 text-[12px] font-bold text-accent shadow-lg lg:mr-4"
+          >
+            최신으로
+          </button>
+        )}
         <section className="dc-channel-intro px-4 pb-5 pt-2">
           <span className="dc-channel-intro-icon" data-has-image={Boolean(appearance?.iconImage)}>
             {appearance?.iconImage ? "" : <Hash size={26} />}

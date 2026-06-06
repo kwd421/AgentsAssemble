@@ -59,7 +59,7 @@ class TestCodexReadonlyLauncherCommand(unittest.TestCase):
     def test_command_shape(self):
         launcher = CodexReadonlyLauncher()
         result = launcher.command(["codex"])
-        self.assertEqual(result, ["codex", "exec", "--sandbox", "read-only", "--ignore-rules"])
+        self.assertEqual(result, ["codex", "exec", "--sandbox", "read-only", "--ignore-user-config", "--ignore-rules"])
 
     def test_command_preserves_base(self):
         launcher = CodexReadonlyLauncher()
@@ -68,6 +68,7 @@ class TestCodexReadonlyLauncherCommand(unittest.TestCase):
         self.assertIn("exec", result)
         self.assertIn("--sandbox", result)
         self.assertIn("read-only", result)
+        self.assertIn("--ignore-user-config", result)
         self.assertIn("--ignore-rules", result)
 
 
@@ -114,7 +115,7 @@ class TestConstants(unittest.TestCase):
 
     def test_codex_exec_safety_flags_tuple(self):
         self.assertIsInstance(CODEX_EXEC_SAFETY_FLAGS, tuple)
-        self.assertEqual(CODEX_EXEC_SAFETY_FLAGS, ("--sandbox", "read-only", "--ignore-rules"))
+        self.assertEqual(CODEX_EXEC_SAFETY_FLAGS, ("--sandbox", "read-only", "--ignore-user-config", "--ignore-rules"))
 
 
 if __name__ == "__main__":

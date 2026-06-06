@@ -29,9 +29,9 @@ function SideChatMessage({ event }: { event: SideChatEvent }) {
         </span>
         <span className="shrink-0 text-[10px] text-text-muted">{formatTime(event.created_at)}</span>
       </p>
-      <p className="text-[12px] leading-relaxed text-text-secondary preserve-words">
+      <div className="text-[12px] leading-relaxed text-text-secondary preserve-words">
         <DiscordText text={event.message || ""} />
-      </p>
+      </div>
     </article>
   );
 }
@@ -171,9 +171,9 @@ export default function SideChatDock({
           <p className="truncate text-[11px] font-black text-text-secondary preserve-words">
             #{threadContext.channelLabel} · {threadContext.sourceName}
           </p>
-          <p className="mt-1 line-clamp-3 text-[12px] leading-relaxed text-text-muted preserve-words">
+          <div className="mt-1 line-clamp-3 text-[12px] leading-relaxed text-text-muted preserve-words">
             <DiscordText text={threadContext.sourceMessage || "메시지 본문 없음"} />
-          </p>
+          </div>
         </article>
       )}
       <div className="dc-side-chat-feed chat-scroll">

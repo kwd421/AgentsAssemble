@@ -83,6 +83,7 @@ from agentsassemble.live_agent_runner import (
     resident_connection_kind_error,
     should_reply_to_event,
 )
+from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL, live_agent_poll_sleep_seconds
 from agentsassemble.live_agent_smoke import (
     MAX_SESSION_SMOKE_LOBBY_PROBES,
     MAX_SESSION_SMOKE_SOAK_CYCLES,
@@ -433,7 +434,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_join_brief.add_argument("--meeting-id", default="")
     live_join_brief.add_argument("--engagement-mode", choices=ENGAGEMENT_MODE_CHOICES, default="mentioned")
     live_join_brief.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
-    live_join_brief.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
+    live_join_brief.add_argument("--poll-interval", type=parse_nonnegative_float, default=DEFAULT_LIVE_AGENT_POLL_INTERVAL)
     live_join_brief.add_argument("--max-chain-depth", type=parse_nonnegative_int, default=1)
     live_join_brief.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable join brief.")
 
@@ -892,7 +893,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_wait_room_event.add_argument("--after-event-id", default="")
     live_wait_room_event.add_argument("--max-chain-depth", type=parse_nonnegative_int, default=1)
     live_wait_room_event.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
-    live_wait_room_event.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
+    live_wait_room_event.add_argument("--poll-interval", type=parse_nonnegative_float, default=DEFAULT_LIVE_AGENT_POLL_INTERVAL)
     live_wait_room_event.add_argument("--json", action="store_true", dest="as_json", help="Print the raw wait result.")
 
     live_wait_turn_request = live_agent_subparsers.add_parser(
@@ -904,7 +905,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_wait_turn_request.add_argument("--agent-id", required=True)
     live_wait_turn_request.add_argument("--after-event-id", default="")
     live_wait_turn_request.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
-    live_wait_turn_request.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
+    live_wait_turn_request.add_argument("--poll-interval", type=parse_nonnegative_float, default=DEFAULT_LIVE_AGENT_POLL_INTERVAL)
     live_wait_turn_request.add_argument("--json", action="store_true", dest="as_json", help="Print the raw wait result.")
 
     live_wait_next = live_agent_subparsers.add_parser(
@@ -918,7 +919,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_wait_next.add_argument("--after-dm-event-id", default="")
     live_wait_next.add_argument("--max-chain-depth", type=parse_nonnegative_int, default=1)
     live_wait_next.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
-    live_wait_next.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
+    live_wait_next.add_argument("--poll-interval", type=parse_nonnegative_float, default=DEFAULT_LIVE_AGENT_POLL_INTERVAL)
     live_wait_next.add_argument("--json", action="store_true", dest="as_json", help="Print the raw wait result.")
 
     live_health = live_agent_subparsers.add_parser("health", parents=[live_server], help="Read live-agent room health.")
@@ -1259,7 +1260,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="Optional provider command timeout for official turns only; 0 reuses --timeout.",
     )
-    live_run.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
+    live_run.add_argument("--poll-interval", type=parse_nonnegative_float, default=DEFAULT_LIVE_AGENT_POLL_INTERVAL)
     live_run.add_argument("--heartbeat-interval", type=parse_nonnegative_float, default=30.0)
     live_run.add_argument("--cooldown", type=parse_nonnegative_float, default=5.0)
     live_run.add_argument("--max-chain-depth", type=parse_nonnegative_int, default=1)
@@ -1276,6 +1277,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_group.add_argument("--config", required=True)
     live_group.add_argument("--server", default=None)
     live_group.add_argument("--max-ticks", type=parse_nonnegative_int, default=None)
+    live_group.add_argument("--agent-manifest", default="", help=argparse.SUPPRESS)
 
     persona = subparsers.add_parser("persona", help="Inspect and import Play Mode persona cards.")
     persona_subparsers = persona.add_subparsers(dest="persona_command", required=True)
@@ -6261,7 +6263,7 @@ def _run_live_agent_wait_room_event(args: argparse.Namespace) -> int:
                 cursor = payload.get("last_observed_event_id") or "(none)"
                 print(f"no new room event after {cursor}")
             return 1
-        sleep_interval = max(float(args.poll_interval), 0.05)
+        sleep_interval = live_agent_poll_sleep_seconds(args.poll_interval)
         time.sleep(min(sleep_interval, remaining))
 
 
@@ -6509,7 +6511,7 @@ def _run_live_agent_wait_turn_request(args: argparse.Namespace) -> int:
                 cursor = payload.get("last_observed_live_event_id") or "(none)"
                 print(f"no new official turn request after {cursor}")
             return 1
-        sleep_interval = max(float(args.poll_interval), 0.05)
+        sleep_interval = live_agent_poll_sleep_seconds(args.poll_interval)
         time.sleep(min(sleep_interval, remaining))
 
 
@@ -6797,7 +6799,7 @@ def _run_live_agent_wait_next(args: argparse.Namespace) -> int:
                 dm_cursor = payload.get("last_observed_dm_event_id") or "(none)"
                 print(f"no next action after dm {dm_cursor}, lobby {lobby_cursor}, official {live_cursor}")
             return 1
-        sleep_interval = max(float(args.poll_interval), 0.05)
+        sleep_interval = live_agent_poll_sleep_seconds(args.poll_interval)
         time.sleep(min(sleep_interval, remaining))
 
 
@@ -7453,18 +7455,19 @@ def _validate_resident_config(config: ResidentAgentConfig) -> None:
 def _command_runner_for_config(config: ResidentAgentConfig):
     if config.connection_kind == "self_service":
         raise ValueError("self_service residents are supervised directly and do not use prompt-injection command runners.")
+    cwd = _resident_workspace_cwd(config)
     if config.provider_kind == "codex_live_session" and config.connection_kind == "live_session":
-        return CodexResidentCommandRunner(config)
+        return CodexResidentCommandRunner(config, cwd=cwd)
     if config.provider_kind == "kiro_live_session" and config.connection_kind == "live_session":
-        return KiroResidentCommandRunner(config)
+        return KiroResidentCommandRunner(config, cwd=cwd)
     if config.provider_kind == "cursor_live_session" and config.connection_kind == "live_session":
-        return CursorResidentCommandRunner(config)
+        return CursorResidentCommandRunner(config, cwd=cwd)
     if config.provider_kind == "grok_live_session" and config.connection_kind == "live_session":
-        return GrokResidentCommandRunner(config)
+        return GrokResidentCommandRunner(config, cwd=cwd)
     if config.provider_kind == "antigravity_live_session" and config.connection_kind == "live_session":
-        return AntigravityResidentCommandRunner(config)
+        return AntigravityResidentCommandRunner(config, cwd=cwd)
     if config.provider_kind == "hermes_live_session" and config.connection_kind == "live_session":
-        return HermesResidentCommandRunner(config)
+        return HermesResidentCommandRunner(config, cwd=cwd)
     if config.connection_kind == "live_session":
         return _JsonlLiveSessionCommandRunner()
     if config.connection_kind == "terminal_session":
@@ -7472,6 +7475,16 @@ def _command_runner_for_config(config: ResidentAgentConfig):
     if config.connection_kind == "remote_bridge":
         return RemoteBridgeResidentCommandRunner(config)
     return _LocalCliCommandRunner()
+
+
+def _resident_workspace_cwd(config: ResidentAgentConfig) -> Path:
+    workspace_path = str(getattr(config, "workspace_path", "") or "").strip()
+    if not workspace_path:
+        return Path.cwd()
+    path = Path(workspace_path).expanduser()
+    if not path.exists() or not path.is_dir():
+        raise ValueError("Workspace folder was not found.")
+    return path
 
 
 def _close_command_runner(command_runner) -> None:

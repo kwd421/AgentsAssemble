@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FileDown, X } from "lucide-react";
 import type { LobbyAttachmentRef } from "../../api";
 
@@ -66,7 +67,7 @@ export default function LobbyAttachments({
 
   return (
     <>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="dc-attachment-list">
         {visibleAttachments.map((attachment) => {
           const sizeLabel = formatAttachmentSize(attachment.size);
           if (attachment.is_image && attachment.url) {
@@ -75,18 +76,15 @@ export default function LobbyAttachments({
                 key={attachment.id}
                 type="button"
                 onClick={() => openImagePreview(attachment)}
-                className="ops-inner group max-w-[180px] overflow-hidden rounded-lg border-accent/20 bg-black/20 text-left transition hover:border-accent/45"
+                className="dc-image-attachment"
                 aria-label={`${attachment.filename} 크게 보기`}
               >
                 <img
                   src={attachment.url}
                   alt={attachment.filename}
                   loading="lazy"
-                  className="h-24 w-full object-cover"
+                  className="dc-image-attachment-preview"
                 />
-                <span className="block truncate px-2 py-1.5 text-[11px] font-bold text-text-secondary preserve-words">
-                  {attachment.filename}
-                </span>
               </button>
             );
           }
@@ -96,7 +94,7 @@ export default function LobbyAttachments({
               key={attachment.id}
               href={attachment.download_url || attachment.url}
               download={attachment.filename}
-              className="ops-inner flex max-w-full items-center gap-2 rounded-lg px-3 py-2 text-[12px] font-bold text-text-secondary transition hover:border-accent/45 hover:text-accent"
+              className="dc-file-attachment"
             >
               <FileDown size={15} className="shrink-0 text-accent" />
               <span className="min-w-0 truncate preserve-words">{attachment.filename}</span>
@@ -106,12 +104,12 @@ export default function LobbyAttachments({
         })}
       </div>
 
-      {selectedImage && (
+      {selectedImage && createPortal(
         <div
           role="dialog"
           aria-modal="true"
           aria-label={`${selectedImage.filename} 이미지 미리보기`}
-          className="fixed inset-0 z-50 grid place-items-center bg-black/78 p-4 backdrop-blur-sm"
+          className="dc-image-preview-overlay"
           onClick={closeImagePreview}
         >
           <div
@@ -151,7 +149,8 @@ export default function LobbyAttachments({
               />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

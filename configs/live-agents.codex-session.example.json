@@ -1,6 +1,6 @@
 {
   "server": "http://127.0.0.1:8765",
-  "poll_interval": 2,
+  "poll_interval": 0.25,
   "heartbeat_interval": 30,
   "cooldown": 5,
   "max_chain_depth": 1,

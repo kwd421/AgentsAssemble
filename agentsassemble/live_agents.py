@@ -4,7 +4,7 @@ import json
 import re
 import threading
 from datetime import UTC, datetime
-from math import ceil
+from math import ceil, isfinite
 from pathlib import Path
 from typing import Any
 
@@ -68,7 +68,10 @@ def read_live_agents(
     state = _read_state(output_root)
     current_time = now or datetime.now(UTC)
     return [
-        _with_inferred_status(agent, now=current_time, stale_after_seconds=stale_after_seconds)
+        _with_frontend_session_registration(
+            output_root,
+            _with_inferred_status(agent, now=current_time, stale_after_seconds=stale_after_seconds),
+        )
         for agent in _agent_entries(state)
     ]
 
@@ -126,6 +129,10 @@ def connect_live_agent(
             or clean_lobby_text(existing.get("meeting_id"), limit=128),
             "session_id": clean_lobby_text(payload.get("session_id"), limit=128)
             or clean_lobby_text(existing.get("session_id"), limit=128),
+            "process_group_id": clean_lobby_text(payload.get("process_group_id"), limit=128)
+            or clean_lobby_text(existing.get("process_group_id"), limit=128),
+            "live_agent_config_path": clean_lobby_text(payload.get("live_agent_config_path"), limit=2048)
+            or clean_lobby_text(existing.get("live_agent_config_path"), limit=2048),
             "endpoint": endpoint,
             "capabilities": _clean_capabilities(payload.get("capabilities") or existing.get("capabilities")),
             "last_error": _clean_presence_last_error(payload.get("last_error"))
@@ -140,6 +147,7 @@ def connect_live_agent(
             or clean_lobby_text(existing.get("last_observed_live_event_id"), limit=128),
             "last_observed_dm_event_id": clean_lobby_text(payload.get("last_observed_dm_event_id"), limit=128)
             or clean_lobby_text(existing.get("last_observed_dm_event_id"), limit=128),
+            **_live_agent_poll_interval_fields(payload, existing),
             "diagnostic": _bool_value(payload.get("diagnostic") if "diagnostic" in payload else existing.get("diagnostic")),
             "created_at": clean_lobby_text(existing.get("created_at"), limit=64) or timestamp,
             "updated_at": timestamp,
@@ -184,6 +192,87 @@ def update_live_agent_engagement(
             _write_state(output_root, {"agents": agents})
             return agent
     raise ValueError(f"Live agent {clean_agent_id} was not found.")
+
+
+def update_live_agent_poll_interval(
+    output_root: Path,
+    agent_id: str,
+    poll_interval: object,
+    *,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    current_time = now or datetime.now(UTC)
+    timestamp = current_time.isoformat()
+    clean_agent_id = clean_lobby_text(agent_id, limit=64)
+    if not clean_agent_id:
+        raise ValueError("Agent id is required.")
+    parsed_poll_interval = _clean_live_agent_poll_interval(poll_interval)
+
+    with LIVE_AGENT_STATE_LOCK:
+        state = _read_state(output_root)
+        agents = _agent_entries(state)
+        for index, existing in enumerate(agents):
+            if existing.get("agent_id") != clean_agent_id:
+                continue
+            agent = _without_output_only_freshness(existing)
+            agent["poll_interval"] = parsed_poll_interval
+            agent["poll_interval_updated_at"] = timestamp
+            agent["updated_at"] = timestamp
+            agents[index] = agent
+            _write_state(output_root, {"agents": agents})
+            return agent
+    raise ValueError(f"Live agent {clean_agent_id} was not found.")
+
+
+def detach_live_agent_from_meeting(
+    output_root: Path,
+    agent_id: str,
+    meeting_id: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    current_time = now or datetime.now(UTC)
+    timestamp = current_time.isoformat()
+    clean_agent_id = clean_lobby_text(agent_id, limit=64)
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    if not clean_agent_id:
+        raise ValueError("Agent id is required.")
+
+    with LIVE_AGENT_STATE_LOCK:
+        state = _read_state(output_root)
+        agents = _agent_entries(state)
+        for index, existing in enumerate(agents):
+            if existing.get("agent_id") != clean_agent_id:
+                continue
+            agent = _without_output_only_freshness(existing)
+            if clean_meeting_id and clean_lobby_text(agent.get("meeting_id"), limit=128) not in {"", clean_meeting_id}:
+                raise ValueError(f"Live agent {clean_agent_id} is not attached to meeting {clean_meeting_id}.")
+            agent["meeting_id"] = ""
+            agent["status"] = "offline"
+            agent["updated_at"] = timestamp
+            agents[index] = agent
+            _write_state(output_root, {"agents": agents})
+            return agent
+    raise ValueError(f"Live agent {clean_agent_id} was not found.")
+
+
+def delete_live_agent(
+    output_root: Path,
+    agent_id: str,
+) -> dict[str, object]:
+    clean_agent_id = clean_lobby_text(agent_id, limit=64)
+    if not clean_agent_id:
+        raise ValueError("Agent id is required.")
+
+    with LIVE_AGENT_STATE_LOCK:
+        state = _read_state(output_root)
+        agents = _agent_entries(state)
+        kept = [agent for agent in agents if agent.get("agent_id") != clean_agent_id]
+        if len(kept) == len(agents):
+            raise ValueError(f"Live agent {clean_agent_id} was not found.")
+        removed = next(dict(agent) for agent in agents if agent.get("agent_id") == clean_agent_id)
+        _write_state(output_root, {"agents": kept})
+        return _without_output_only_freshness(removed)
 
 
 def _connection_endpoint(
@@ -270,6 +359,12 @@ def heartbeat_live_agent(
             agent.update(clean_live_agent_quota_fields(metadata, previous_quota))
         if "diagnostic" in metadata:
             agent["diagnostic"] = _bool_value(metadata.get("diagnostic"))
+        if (
+            agent.get("status") == "online"
+            and normalized_status == "online"
+            and "last_error" not in metadata
+        ):
+            agent["last_error"] = ""
         agent.update(live_agent_context_contract(agent.get("provider_kind"), agent.get("connection_kind")))
         _upsert_agent(agents, agent)
         _write_state(output_root, {"agents": agents})
@@ -330,6 +425,36 @@ def _operator_engagement_mode(agent: dict[str, object]) -> str:
     return ""
 
 
+def _live_agent_poll_interval_fields(
+    payload: dict[str, object],
+    existing: dict[str, object],
+) -> dict[str, object]:
+    if "poll_interval" in payload:
+        return {
+            "poll_interval": _clean_live_agent_poll_interval(payload.get("poll_interval")),
+            "poll_interval_updated_at": clean_lobby_text(existing.get("poll_interval_updated_at"), limit=64),
+        }
+    if "poll_interval" in existing:
+        fields = {"poll_interval": _clean_live_agent_poll_interval(existing.get("poll_interval"))}
+        updated_at = clean_lobby_text(existing.get("poll_interval_updated_at"), limit=64)
+        if updated_at:
+            fields["poll_interval_updated_at"] = updated_at
+        return fields
+    return {}
+
+
+def _clean_live_agent_poll_interval(value: object) -> float:
+    if isinstance(value, bool):
+        raise ValueError("Live agent poll_interval must be a finite non-negative number.")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Live agent poll_interval must be a finite non-negative number.") from error
+    if not isfinite(parsed) or parsed < 0:
+        raise ValueError("Live agent poll_interval must be a finite non-negative number.")
+    return parsed
+
+
 def _upsert_agent(agents: list[dict[str, object]], agent: dict[str, object]) -> None:
     for index, existing in enumerate(agents):
         if existing.get("agent_id") == agent.get("agent_id"):
@@ -372,6 +497,38 @@ def _without_output_only_freshness(agent: dict[str, object]) -> dict[str, object
     if "last_attention" in clean_agent:
         clean_agent["last_attention"] = _clean_presence_attention(clean_agent.get("last_attention"))
     return clean_agent
+
+
+def _with_frontend_session_registration(output_root: Path, agent: dict[str, object]) -> dict[str, object]:
+    if agent.get("process_group_id") and agent.get("live_agent_config_path"):
+        return agent
+    agent_id = clean_lobby_text(agent.get("agent_id"), limit=64)
+    if not agent_id:
+        return agent
+    config_path = output_root / "live-agent-created" / f"{_safe_live_agent_filename(agent_id)}.json"
+    if not config_path.exists() or not _config_file_owned_by_agent(config_path, agent_id):
+        return agent
+    updated = dict(agent)
+    if not updated.get("process_group_id"):
+        updated["process_group_id"] = f"agent-{agent_id}"
+    if not updated.get("live_agent_config_path"):
+        updated["live_agent_config_path"] = str(config_path)
+    return updated
+
+
+def _safe_live_agent_filename(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip(".-") or "live-agent"
+
+
+def _config_file_owned_by_agent(path: Path, agent_id: str) -> bool:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    agents = data.get("agents") if isinstance(data, dict) else None
+    if not isinstance(agents, list) or len(agents) != 1 or not isinstance(agents[0], dict):
+        return False
+    return str(agents[0].get("agent_id") or "") == agent_id
 
 
 def _parse_timestamp(value: object) -> datetime | None:

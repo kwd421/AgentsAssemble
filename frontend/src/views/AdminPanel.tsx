@@ -215,7 +215,7 @@ export default function AdminPanel({
         meeting_id: joinBriefMeetingId.trim() || "resident-m1",
         engagement_mode: "mentioned",
         timeout: 30,
-        poll_interval: 2,
+        poll_interval: 0.25,
         max_chain_depth: 1,
       });
       setJoinBrief(packet);

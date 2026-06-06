@@ -2,31 +2,35 @@
 
 ## Goal
 
-Build a neon operations console for AgentsAssemble. The app should feel like a
-local-first agent room preparing, running, reviewing, and archiving live
-sessions. It should look special without making backend behavior look more
-powerful than it is.
+Build a Discord-informed local-first room client for AgentsAssemble. The app
+should feel dense, legible, and directly operable like a modern chat room while
+staying honest about AgentsAssemble's own backend state and provider limits.
 
 ## Accepted Direction
 
-The reference direction is a sci-fi operations room:
+The reference direction is a Discord-style room client adapted for agents:
 
-- dark navy/black shell.
-- cyan glass panel borders with angular corners.
-- gold quick-start and next-step actions.
-- compact left/center/right command-console layout.
-- four first-class tabs: `로비`, `실황`, `작전판`, `아카이브`.
-- visible participant readiness and room status.
+- dark Discord-like shell with clear panel seams and compact spacing.
+- room rail, channel sidebar, central chat, right room/member panel, and DM home
+  patterns that behave like familiar chat surfaces.
+- clickable surfaces must look clickable: pointer cursor, hover state,
+  focus-visible state, and enough hit area.
+- collapsible groups must show a visible expand/collapse affordance.
+- chat attachments and links should render in the message stream like chat
+  content, not like an operations table.
 - visible provider execution, context durability, sandbox, and admission truth
   without raw underscore-heavy contract strings.
 - Play Mode remains informal and separate from official records.
 
-This is not a Discord clone anymore. Borrow only the useful density and
-real-time readability; the visual language is now "neon mission control."
+This is not a Discord clone. Borrow the interaction feel, density, panel
+structure, profile-card shape, media display, and link preview conventions.
+Remove product features AgentsAssemble does not have or should not pretend to
+have, such as Nitro, stores, gifts, Discord network messages, or real Discord
+invites.
 
-This document remains the aspirational React/Vite direction. The current
-checked-in app may advance in smaller launch-clarity slices before every visual
-surface is fully aligned with this design.
+This document remains the aspirational React/Vite direction. The checked-in app
+may advance in smaller Discord-informed slices before every visual surface is
+fully aligned with this design.
 
 ## Product Boundaries
 
@@ -43,17 +47,18 @@ surface is fully aligned with this design.
 
 ## Visual System
 
-Theme: "local-first holographic operations console."
+Theme: "Discord-informed local-first agent room."
 
-- Shell background: near-black blue with subtle grid/radar glow.
-- Panels: translucent midnight blue, 1px cyan border, clipped corners.
-- Primary accent: electric cyan.
-- Action accent: amber/gold.
+- Shell background: Discord dark surfaces with visible panel separators.
+- Panels: flat, dense dark surfaces; cards only where Discord uses cards,
+  popovers, modals, repeated rows, or previews.
+- Primary accent: blurple for selected navigation and primary commands.
+- Action accent: green or amber only where the product state needs it.
 - Status accents: green ready, blue online, amber syncing, red offline, violet
   analysis.
 - Typography: system UI stack, dense UI chrome, readable Korean body copy.
-- Icons: lucide icons plus simple CSS hex badges; no external image dependency.
-- Motion: small pulse/scan effects only, disabled for reduced motion.
+- Icons: lucide icons where they map to common commands.
+- Motion: small state transitions only, disabled for reduced motion.
 
 ## Layout
 
@@ -100,6 +105,31 @@ Archive:
 - Shows meeting list/search-style navigation, selected meeting details,
   artifacts, participants, tags, export affordances, and highlights.
 
+## Interaction Rules
+
+- Use real buttons or links for clickable surfaces whenever practical.
+- Any enabled clickable surface must provide `cursor: pointer`.
+- Disabled controls must not use pointer and must visibly read as disabled.
+- Hover and focus-visible states are required for buttons, tabs, collapsible
+  headings, profile/avatar controls, member rows, agent rows, and icon actions.
+- Collapsible groups need a visible arrow or equivalent state marker that
+  changes between expanded and collapsed states.
+- UI completion claims require a browser visual check for the changed surface.
+  Code checks can prove structure, but layout, hover affordance, modal
+  placement, and click feel must be checked in the rendered app.
+
+## Chat Media
+
+- Image attachments render in the message stream at a Discord-like preview
+  width with the whole image visible by default. Do not show the filename as a
+  caption under ordinary image messages.
+- Image click opens a larger preview dialog with download/close controls.
+- Non-image attachments may show filename and size because the filename is the
+  usable object.
+- Links render as normal blue chat links and, when possible, also get a compact
+  Discord-like preview card under the message. The card must be a preview of the
+  URL, not a fake external fetch result.
+
 ## Acceptance Checks
 
 - At 1280px desktop, the top command bar and three-panel views fit without
@@ -113,4 +143,6 @@ Archive:
   ellipses.
 - `npm run build` passes.
 - `git diff --check` passes.
-- Browser screenshots are inspected for desktop and mobile.
+- Browser screenshots are inspected for desktop and mobile when UI changes.
+- Changed clickable surfaces are clicked or hovered in the rendered app before
+  reporting completion.

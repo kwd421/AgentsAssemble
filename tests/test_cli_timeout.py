@@ -13363,7 +13363,7 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(args.live_agent_command, "run")
         self.assertEqual(args.engagement_mode, "always")
-        self.assertEqual(args.poll_interval, 2.0)
+        self.assertEqual(args.poll_interval, 0.25)
         self.assertEqual(args.heartbeat_interval, 30.0)
         self.assertEqual(args.cooldown, 5.0)
         self.assertEqual(args.max_chain_depth, 1)

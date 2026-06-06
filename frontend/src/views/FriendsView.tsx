@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, UserPlus, Users } from "lucide-react";
+import { Bot, Search, UserPlus, Users } from "lucide-react";
 import {
   addRoomFriend,
   deleteRoomFriend,
@@ -48,6 +48,7 @@ export default function FriendsView({
   onSelectFriend,
   processGroups = [],
   onSessionActionComplete,
+  onStartAddAgent,
 }: {
   typeFilter: ParticipantType | null;
   filter: FriendListFilter;
@@ -60,6 +61,7 @@ export default function FriendsView({
   onSelectFriend?: (friend: RoomFriend) => void;
   processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
+  onStartAddAgent?: () => void;
 }) {
   const [payload, setPayload] = useState<RoomFriendsResponse>({ friends: [], candidates: [] });
   const [query, setQuery] = useState("");
@@ -266,6 +268,13 @@ export default function FriendsView({
               placeholder="검색하기"
             />
           </label>
+
+          {filter === "add" && (
+            <button type="button" className="dc-agent-add-entry" onClick={onStartAddAgent}>
+              <Bot size={16} />
+              에이전트 추가
+            </button>
+          )}
 
           {filter === "add" && (
           <section className="dc-friend-add-panel">

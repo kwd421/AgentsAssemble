@@ -12,7 +12,7 @@ SANDBOX_ENFORCEMENT_LEVELS = {
     "os_sandboxed",
     "unknown",
 }
-CODEX_EXEC_SAFETY_FLAGS = ("--sandbox", "read-only", "--ignore-rules")
+CODEX_EXEC_SAFETY_FLAGS = ("--sandbox", "read-only", "--ignore-user-config", "--ignore-rules")
 
 
 class SandboxLauncher(Protocol):

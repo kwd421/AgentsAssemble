@@ -12083,7 +12083,9 @@ class GuiServerTests(unittest.TestCase):
                     "019e0000-0000-7000-a000-000000000003",
                 },
             )
-            self.assertTrue(all(entry["sandbox_flags"] == ["--sandbox", "read-only", "--ignore-rules"] for entry in run_invocations))
+            self.assertTrue(
+                all(entry["sandbox_flags"] == ["--sandbox", "read-only", "--ignore-user-config", "--ignore-rules"] for entry in run_invocations)
+            )
 
             agents = {agent["agent_id"]: agent for agent in read_live_agents(root) if agent.get("meeting_id") == meeting_id}
             self.assertEqual(
@@ -18617,6 +18619,7 @@ class GuiServerTests(unittest.TestCase):
                             "topic": long_topic,
                             "duration_seconds": 30,
                             "tick_interval": 0.01,
+                            "flow_policy": "round_robin",
                         }
                     ).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
@@ -18639,10 +18642,12 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["flow"]["status"], "running")
             self.assertEqual(payload["flow"]["meeting_id"], "m1")
             self.assertEqual(payload["flow"]["topic"], long_topic)
+            self.assertEqual(payload["flow"]["policy"], "round_robin")
             self.assertEqual(payload["flow"]["agent_count"], 1)
             start_event = next(event for event in read_lobby(root) if event.get("flow_event_type") == "started")
             stop_event = next(event for event in read_lobby(root) if event.get("flow_event_type") == "stopped")
             self.assertEqual(start_event["flow_topic"], long_topic)
+            self.assertEqual(start_event["flow_policy"], "round_robin")
             self.assertEqual(stop_event["flow_status"], "stopped")
             self.assertEqual(stop_payload["flow"]["status"], "stopped")
             persisted_agent = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]
@@ -20927,7 +20932,7 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(root_response.headers.get("Content-Type"), "text/html; charset=utf-8")
         self.assertEqual(root_response.headers.get("Cache-Control"), "no-cache")
         self.assertIn("javascript", asset_response.headers.get("Content-Type", ""))
-        self.assertEqual(asset_response.headers.get("Cache-Control"), "public, max-age=31536000, immutable")
+        self.assertEqual(asset_response.headers.get("Cache-Control"), "no-cache")
         self.assertEqual(asset_body, "console.log('react preview');")
         try:
             self.assertEqual(legacy_raised.exception.code, 404)
@@ -21678,7 +21683,7 @@ def sandbox_flags(args):
     if "exec" not in args:
         return []
     index = args.index("exec")
-    return args[index + 1:index + 4]
+    return args[index + 1:index + 5]
 
 
 def record(payload):
@@ -21690,6 +21695,11 @@ def record(payload):
 
 
 args = sys.argv[1:]
+if args == ["login", "status"]:
+    record({"mode": "login_status"})
+    print("Logged in using ChatGPT")
+    raise SystemExit(0)
+
 if "--help" in args:
     record({"mode": "help", "sandbox_flags": sandbox_flags(args)})
     print("Usage: codex exec [OPTIONS] resume --help")

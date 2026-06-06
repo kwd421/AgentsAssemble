@@ -24,6 +24,7 @@ import {
   createCompanionRoomInvite,
   createRoomInvite,
   configurePublicInvitePublicUrl,
+  fetchLiveAgents,
   fetchLiveAgentFlow,
   fetchLiveAgentProcesses,
   fetchPublicInviteStatus,
@@ -52,6 +53,7 @@ import {
   subscribeMeetingEvents,
   subscribeSideChat,
   type FlowResponse,
+  type LiveAgentsResponse,
   type MeetingStreamState,
   type MeetingLifecycleResponse,
   type LiveAgent,
@@ -78,6 +80,8 @@ import LobbyView from "./views/LobbyView";
 import RecordsView from "./views/RecordsView";
 import ChannelContextMenu from "./views/components/ChannelContextMenu";
 import type { ChannelHeaderActions } from "./views/components/ChannelHeader";
+import AgentCreateModal from "./views/components/AgentCreateModal";
+import GuestJoinProfilePanel from "./views/components/GuestJoinProfilePanel";
 import HomeSidebar from "./views/components/HomeSidebar";
 import type { HomeFilter } from "./views/components/HomeSidebar";
 import type { RoleId } from "./views/components/MemberList";
@@ -233,6 +237,36 @@ const CHANNEL_NOTIFICATION_LABELS: Record<ChannelNotificationSetting, string> = 
 
 const MOBILE_SWIPE_THRESHOLD = 42;
 const MOBILE_SWIPE_VERTICAL_TOLERANCE = 80;
+const STORED_MAFIA_GAME_ID_KEY = "agentsassemble.mafiaGameId";
+
+function loadStoredMafiaGameId(): string {
+  try {
+    return localStorage.getItem(STORED_MAFIA_GAME_ID_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveStoredMafiaGameId(gameId: string) {
+  try {
+    localStorage.setItem(STORED_MAFIA_GAME_ID_KEY, gameId);
+  } catch {
+    // Browser storage can be unavailable in restricted contexts; in-memory state still works.
+  }
+}
+
+function clearStoredMafiaGameId() {
+  try {
+    localStorage.removeItem(STORED_MAFIA_GAME_ID_KEY);
+  } catch {
+    // Clearing is best-effort when browser storage is restricted.
+  }
+}
+
+function isMafiaGameMissingError(errorValue: unknown): boolean {
+  const message = errorValue instanceof Error ? errorValue.message : String(errorValue || "");
+  return message.includes("Mafia game was not found") || message.includes("404");
+}
 
 function channelNotificationSummary(setting?: ChannelSettings): string {
   return `현재 알림: ${CHANNEL_NOTIFICATION_LABELS[setting?.notifications || "default"]}`;
@@ -296,6 +330,17 @@ function channelForActiveRoom(
   return channelConfig;
 }
 
+function mergeLiveAgentRosters(...rosters: Array<LiveAgent[] | undefined>): LiveAgent[] {
+  const byId = new Map<string, LiveAgent>();
+  rosters.forEach((roster) => {
+    (roster || []).forEach((agent) => {
+      if (!agent.agent_id) return;
+      byId.set(agent.agent_id, agent);
+    });
+  });
+  return Array.from(byId.values());
+}
+
 function mobileViewportMatches() {
   return (
     typeof window !== "undefined" &&
@@ -311,6 +356,9 @@ export default function App() {
     () => startupRoute.guestSession
   );
   const [guestExpired, setGuestExpired] = useState(false);
+  const [guestJoinRequested, setGuestJoinRequested] = useState(false);
+  const [pendingGuestDisplayName, setPendingGuestDisplayName] = useState("Guest");
+  const [pendingGuestAvatarImage, setPendingGuestAvatarImage] = useState("");
   const guestLocked = Boolean(guestInvite || guestSession || guestJoinToken || guestExpired);
   const [channel, setChannel] = useState<Channel>(() => {
     if (
@@ -332,6 +380,7 @@ export default function App() {
   const [channelMenu, setChannelMenu] = useState<ChannelMenuState>(null);
   const [inviteModal, setInviteModal] = useState<InviteModalState>(null);
   const [settingsModal, setSettingsModal] = useState<RoomSettingsState>(null);
+  const [agentCreateOpen, setAgentCreateOpen] = useState(false);
   const [inviteCopyStatus, setInviteCopyStatus] = useState("");
   const [secureInviteUrl, setSecureInviteUrl] = useState("");
   const [publicInviteStatus, setPublicInviteStatus] = useState<PublicInviteStatus | null>(null);
@@ -362,6 +411,7 @@ export default function App() {
     {}
   );
   const [channelSearchQuery, setChannelSearchQuery] = useState("");
+  const [rightPanelSearchQuery, setRightPanelSearchQuery] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(mobileViewportMatches);
   const [mobileRoomInfoOpen, setMobileRoomInfoOpen] = useState(false);
   const [channelSidebarWidth, setChannelSidebarWidth] = useState(loadSidebarWidth);
@@ -372,10 +422,10 @@ export default function App() {
       const query = new URLSearchParams(window.location.search);
       const queryGameId = query.get("mafia") || query.get("mafiaGameId") || "";
       if (queryGameId) {
-        localStorage.setItem("agentsassemble.mafiaGameId", queryGameId);
+        saveStoredMafiaGameId(queryGameId);
         return queryGameId;
       }
-      return localStorage.getItem("agentsassemble.mafiaGameId") || "";
+      return loadStoredMafiaGameId();
     } catch {
       return "";
     }
@@ -399,6 +449,7 @@ export default function App() {
           (guestJoinPending ? "입장 확인 중" : guestExpired ? "게스트 세션 만료" : "게스트"),
         avatarLabel:
           (guestSession?.displayName || guestSession?.agentId || "G").slice(0, 1).toUpperCase() || "G",
+        avatarImage: guestSession?.avatarImage,
         statusLabel: guestExpired
           ? "세션 만료"
           : guestJoinPending
@@ -434,6 +485,14 @@ export default function App() {
   );
   const [flowData, , flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
   const flow = flowData?.flow ?? { status: "idle" };
+  const liveAgentsFetcher = useCallback((): Promise<LiveAgentsResponse> => {
+    if (guestLocked) return Promise.resolve({ agents: [] });
+    return fetchLiveAgents();
+  }, [guestLocked]);
+  const [liveAgentsData, , , refreshLiveAgents] = usePoll<LiveAgentsResponse>(
+    liveAgentsFetcher,
+    5000
+  );
   const processFetcher = useCallback((): Promise<LiveAgentProcessesResponse> => {
     if (guestLocked) return Promise.resolve({ groups: [] });
     return fetchLiveAgentProcesses();
@@ -455,17 +514,23 @@ export default function App() {
     workroomQueueFetcher,
     8000
   );
-  const mafiaFetcher = useCallback((): Promise<MafiaGameResponse> => {
-    if (!mafiaGameId) return Promise.resolve({ game: null });
-    return fetchMafiaGame(mafiaGameId, "host");
-  }, [mafiaGameId]);
-  const [mafiaData, , , refreshMafia] = usePoll<MafiaGameResponse>(mafiaFetcher, 3500);
-
-  const agents: LiveAgent[] = Array.isArray(flowData?.agents)
-    ? flowData.agents
-    : [];
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? createFreshRoom();
   const activeSideChatMeetingId = activeRoom.meetingId || "";
+  const activeMafiaGameId = mafiaGameId === activeRoom.meetingId ? mafiaGameId : "";
+  const mafiaFetcher = useCallback((): Promise<MafiaGameResponse> => {
+    if (!activeMafiaGameId) return Promise.resolve({ game: null });
+    return fetchMafiaGame(activeMafiaGameId, "host").catch((errorValue) => {
+      if (isMafiaGameMissingError(errorValue)) {
+        clearStoredMafiaGameId();
+        setMafiaGameId("");
+        return { game: null };
+      }
+      throw errorValue;
+    });
+  }, [activeMafiaGameId]);
+  const [mafiaData, , , refreshMafia] = usePoll<MafiaGameResponse>(mafiaFetcher, 3500);
+
+  const agents: LiveAgent[] = mergeLiveAgentRosters(flowData?.agents, liveAgentsData?.agents);
   const activeProcessGroups = useMemo(
     () =>
       (processData?.groups || []).filter(
@@ -498,7 +563,8 @@ export default function App() {
   const refreshSessionSurfaces = useCallback(() => {
     refreshProcesses();
     refreshFlow();
-  }, [refreshFlow, refreshProcesses]);
+    refreshLiveAgents();
+  }, [refreshFlow, refreshLiveAgents, refreshProcesses]);
 
   const expireGuestSession = useCallback(() => {
     persistRoomGuestSession(null);
@@ -518,15 +584,24 @@ export default function App() {
 
   useEffect(() => {
     if (!guestJoinToken || guestSession?.inviteToken === guestJoinToken) return;
+    if (!guestJoinRequested) return;
     let cancelled = false;
     setGuestJoinStatus("초대 링크로 방에 입장 중...");
-    joinRoomInvite({ inviteToken: guestJoinToken })
+    joinRoomInvite({
+      inviteToken: guestJoinToken,
+      displayName: pendingGuestDisplayName,
+      avatarImage: pendingGuestAvatarImage,
+    })
       .then((payload) => {
         if (cancelled) return;
-        const nextSession = roomGuestSessionFromJoinPayload(guestJoinToken, payload);
+        const nextSession = roomGuestSessionFromJoinPayload(guestJoinToken, {
+          ...payload,
+          avatar_image_url: payload.avatar_image_url || pendingGuestAvatarImage,
+        });
         persistRoomGuestSession(nextSession);
         setGuestSession(nextSession);
         setGuestExpired(false);
+        setGuestJoinRequested(false);
         const joinedRoom = roomFromGuestSession(nextSession);
         setRooms([joinedRoom]);
         setActiveRoomId(joinedRoom.id);
@@ -557,12 +632,19 @@ export default function App() {
             return;
           }
           setGuestJoinStatus(error instanceof Error ? error.message : "초대 링크 입장 실패");
+          setGuestJoinRequested(false);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [guestJoinToken, guestSession?.inviteToken]);
+  }, [
+    guestJoinRequested,
+    guestJoinToken,
+    guestSession?.inviteToken,
+    pendingGuestAvatarImage,
+    pendingGuestDisplayName,
+  ]);
 
   useEffect(() => {
     if (guestLocked) return;
@@ -854,6 +936,18 @@ export default function App() {
     setMobileRoomInfoOpen(false);
   }
 
+  function activateRightPanelMode(mode: RightPanelMode) {
+    setRightPanelMode(mode);
+  }
+
+  function activateRightPanelModeFromPointer(
+    mode: RightPanelMode,
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    activateRightPanelMode(mode);
+  }
+
   function mobileGestureCanStart(target: HTMLElement | null, sidebarOpen: boolean) {
     const blockedSelector = sidebarOpen
       ? "input, textarea, select, a, [role='dialog']"
@@ -1024,6 +1118,13 @@ export default function App() {
     setChannelMenu(null);
   }
 
+  function openAgentCreate() {
+    setAgentCreateOpen(true);
+    closeMobileOverlays();
+    setRoomMenu(null);
+    setChannelMenu(null);
+  }
+
   useEffect(() => {
     if (!inviteModal) return;
     let cancelled = false;
@@ -1085,11 +1186,7 @@ export default function App() {
   }
 
   function handleMafiaStarted(game: MafiaGame) {
-    try {
-      localStorage.setItem("agentsassemble.mafiaGameId", game.game_id);
-    } catch {
-      // Browser storage can be unavailable in restricted contexts; polling still works for this session.
-    }
+    saveStoredMafiaGameId(game.game_id);
     setMafiaGameId(game.game_id);
     setChannel("live");
     setAdminOpen(false);
@@ -1098,11 +1195,7 @@ export default function App() {
   }
 
   function handleFlowStarted() {
-    try {
-      localStorage.removeItem("agentsassemble.mafiaGameId");
-    } catch {
-      // Browser storage can be unavailable in restricted contexts; clearing is best-effort.
-    }
+    clearStoredMafiaGameId();
     setMafiaGameId("");
     refreshFlow();
     setChannel("live");
@@ -1142,8 +1235,46 @@ export default function App() {
     throw new Error("Host token required");
   }
 
+  async function waitForPublicInviteTunnelReady() {
+    for (let attempt = 0; attempt < 18; attempt += 1) {
+      const nextStatus = await refreshPublicInviteState();
+      if (nextStatus.public_url && nextStatus.tunnel?.phase === "running") {
+        return nextStatus;
+      }
+      if (nextStatus.tunnel?.phase === "stopped" || nextStatus.tunnel?.last_error) {
+        return nextStatus;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    }
+    return refreshPublicInviteState();
+  }
+
+  async function preparePublicInviteForSecureLink() {
+    let status = await refreshPublicInviteState();
+    await ensureHostTokenForInvite(status);
+    if (status.public_url) return status;
+    if (!status.tunnel?.available) {
+      throw new Error("공개 URL을 만들 수 없습니다. cloudflared를 설치하거나 공개 URL을 입력하세요.");
+    }
+    setInviteCopyStatus("공개 터널 준비 중...");
+    const started = await startPublicInviteTunnel();
+    if (started.public_invite) {
+      setPublicInviteStatus(started.public_invite);
+      status = started.public_invite;
+    }
+    if (status.public_url && status.tunnel?.phase === "running") return status;
+    const readyStatus = await waitForPublicInviteTunnelReady();
+    if (readyStatus.public_url && readyStatus.tunnel?.phase === "running") {
+      return readyStatus;
+    }
+    throw new Error(
+      readyStatus.tunnel?.last_error ||
+        "공개 터널이 아직 초대 URL을 보고하지 않았습니다. 잠시 후 다시 눌러 주세요."
+    );
+  }
+
   async function requirePublicInviteReady() {
-    const status = publicInviteStatus || (await refreshPublicInviteState());
+    const status = await preparePublicInviteForSecureLink();
     if (!status.public_url) {
       throw new Error("공개 URL을 먼저 설정하세요. Paste public URL / Start tunnel first.");
     }
@@ -1228,16 +1359,7 @@ export default function App() {
       await ensureHostTokenForInvite(status);
       const started = await startPublicInviteTunnel();
       if (started.public_invite) setPublicInviteStatus(started.public_invite);
-      for (let attempt = 0; attempt < 12; attempt += 1) {
-        const nextStatus = await refreshPublicInviteState();
-        if (nextStatus.public_url && nextStatus.tunnel?.phase === "running") {
-          setInviteCopyStatus("터널 공개 URL 준비됨");
-          return;
-        }
-        if (nextStatus.tunnel?.phase === "stopped" || nextStatus.tunnel?.last_error) break;
-        await new Promise((resolve) => window.setTimeout(resolve, 1000));
-      }
-      const latest = await refreshPublicInviteState();
+      const latest = await waitForPublicInviteTunnelReady();
       setInviteCopyStatus(
         latest.public_url
           ? "터널 공개 URL 준비됨"
@@ -1783,6 +1905,29 @@ export default function App() {
         />
       )}
 
+      <AgentCreateModal
+        open={agentCreateOpen && !guestLocked}
+        meetingId={activeRoom.meetingId}
+        roomLabel={activeRoom.label}
+        onClose={() => setAgentCreateOpen(false)}
+        onCreated={() => refreshSessionSurfaces()}
+      />
+
+      {guestJoinToken && !guestSession && !guestExpired && (
+        <GuestJoinProfilePanel
+          displayName={pendingGuestDisplayName}
+          avatarImage={pendingGuestAvatarImage || undefined}
+          status={guestJoinStatus}
+          busy={guestJoinRequested}
+          onDisplayNameChange={setPendingGuestDisplayName}
+          onAvatarImageChange={setPendingGuestAvatarImage}
+          onJoin={() => {
+            setGuestJoinStatus("");
+            setGuestJoinRequested(true);
+          }}
+        />
+      )}
+
       {/* Channel sidebar */}
       {channel === "friends" && !guestLocked ? (
         <HomeSidebar
@@ -1796,6 +1941,7 @@ export default function App() {
           activeDmFriendId={activeHomeDmFriendId}
           onFriendSelect={selectHomeFriend}
           onStartAddFriend={openAddFriendView}
+          onStartAddAgent={openAgentCreate}
         />
       ) : (
         <aside className="dc-sidebar flex shrink-0 flex-col" aria-label="채널 목록">
@@ -2028,19 +2174,16 @@ export default function App() {
             onSelectFriend={(friend) => setSelectedHomeFriendId(friend.friend_id)}
             processGroups={processData?.groups || []}
             onSessionActionComplete={refreshSessionSurfaces}
+            onStartAddAgent={openAgentCreate}
           />
         ) : adminOpen ? (
           <AdminPanel onClose={() => setAdminOpen(false)} activeMeetingId={activeRoom.meetingId} />
         ) : channel === "lobby" ? (
           <LobbyView
             activeRoom={activeRoom}
-            flow={scopedFlow}
             agents={scopedAgents}
             mentionables={scopedMentionables}
             roomSessionToken={lobbyPostingState.sessionToken}
-            refreshFlow={refreshFlow}
-            onMafiaStarted={handleMafiaStarted}
-            onFlowStarted={handleFlowStarted}
             canManageRoom={!guestLocked}
             canPostMessages={lobbyPostingState.canPost}
             postingMode={lobbyPostingState.mode}
@@ -2115,6 +2258,18 @@ export default function App() {
           data-testid="room-right-panel"
           data-panel-mode={rightPanelMode}
         >
+          <div className="dc-right-panel-search">
+            <label className="dc-member-search-box">
+              <span className="sr-only">{activeRoom.label} 검색</span>
+              <input
+                type="search"
+                value={rightPanelSearchQuery}
+                onChange={(event) => setRightPanelSearchQuery(event.currentTarget.value)}
+                placeholder={`${activeRoom.label} 검색`}
+              />
+              <Search size={15} aria-hidden />
+            </label>
+          </div>
           <div className="dc-right-panel-tabs" role="tablist" aria-label="우측 패널">
             <button
               type="button"
@@ -2123,7 +2278,8 @@ export default function App() {
               data-active={rightPanelMode === "room-info"}
               aria-selected={rightPanelMode === "room-info"}
               aria-controls="room-info-panel"
-              onClick={() => setRightPanelMode("room-info")}
+              onPointerUp={(event) => activateRightPanelModeFromPointer("room-info", event)}
+              onClick={() => activateRightPanelMode("room-info")}
             >
               방 연결 정보
             </button>
@@ -2134,7 +2290,8 @@ export default function App() {
               data-active={rightPanelMode === "side-chat"}
               aria-selected={rightPanelMode === "side-chat"}
               aria-controls="side-chat-panel"
-              onClick={() => setRightPanelMode("side-chat")}
+              onPointerUp={(event) => activateRightPanelModeFromPointer("side-chat", event)}
+              onClick={() => activateRightPanelMode("side-chat")}
             >
               사이드챗
             </button>
@@ -2154,7 +2311,10 @@ export default function App() {
                 members={activeRoomMembers}
                 roleOverrides={activeMemberRoles}
                 onRoleChange={updateMemberRole}
-                flowStatus={activeRoomFlowVisible ? flow.status : "idle"}
+                flow={scopedFlow}
+                refreshFlow={refreshFlow}
+                onMafiaStarted={handleMafiaStarted}
+                onFlowStarted={handleFlowStarted}
                 guestLocked={guestLocked}
                 guestAiPacketPreview={guestAiPacketPreview}
                 guestAiPacketStatus={guestAiPacketStatus || guestJoinStatus}
@@ -2164,6 +2324,9 @@ export default function App() {
                 processGroups={activeProcessGroups}
                 onSessionActionComplete={refreshSessionSurfaces}
                 quotaViewer={quotaViewer}
+                onStartAddAgent={openAgentCreate}
+                memberSearchQuery={rightPanelSearchQuery}
+                onMemberSearchQueryChange={setRightPanelSearchQuery}
               />
             </section>
           ) : (

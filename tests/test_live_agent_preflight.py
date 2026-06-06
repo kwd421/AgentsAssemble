@@ -47,6 +47,11 @@ class LiveAgentPreflightTests(unittest.TestCase):
         error = resident_config_setup_error(
             self.resident_config(),
             command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+            codex_auth_checker=lambda command: {
+                "id": "codex_auth",
+                "status": "ok",
+                "message": "Codex 로그인 상태를 확인했습니다.",
+            },
             codex_capability_checker=lambda command: errors.append(command) or {
                 "id": "codex_exec_safety_flags",
                 "status": "failed",
@@ -104,6 +109,11 @@ class LiveAgentPreflightTests(unittest.TestCase):
         report = preflight_live_agent_config(
             config_path,
             command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+            codex_auth_checker=lambda command: {
+                "id": "codex_auth",
+                "status": "ok",
+                "message": "Codex 로그인 상태를 확인했습니다.",
+            },
             codex_capability_checker=lambda command: {
                 "id": "codex_exec_safety_flags",
                 "status": "ok",
@@ -189,7 +199,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
             self.assertEqual(report["status"], "ok")
             self.assertEqual(calls, ["antigravity"])
             checks = report["agents"][0]["checks"]
-            self.assertEqual([check["id"] for check in checks], ["agent_id", "connection_kind", "command"])
+            self.assertEqual([check["id"] for check in checks], ["agent_id", "connection_kind", "workspace_path", "command"])
             self.assertEqual(report["agents"][0]["connection_kind"], "self_service")
 
     def test_preflight_rejects_missing_python_script_argument_relative_to_launch_cwd(self):
@@ -722,6 +732,11 @@ class LiveAgentPreflightTests(unittest.TestCase):
             report = preflight_live_agent_config(
                 config_path,
                 command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+                codex_auth_checker=lambda command: {
+                    "id": "codex_auth",
+                    "status": "ok",
+                    "message": "Codex 로그인 상태를 확인했습니다.",
+                },
                 codex_capability_checker=lambda command: {
                     "id": "codex_exec_safety_flags",
                     "status": "ok",
@@ -776,6 +791,11 @@ class LiveAgentPreflightTests(unittest.TestCase):
             report = preflight_live_agent_config(
                 config_path,
                 command_resolver=lambda command: "/usr/local/bin/grok" if command == "grok" else None,
+                grok_auth_checker=lambda command: {
+                    "id": "grok_auth",
+                    "status": "ok",
+                    "message": "Grok 로그인 상태를 확인했습니다.",
+                },
             )
 
             self.assertEqual(report["status"], "ok")
@@ -825,6 +845,11 @@ class LiveAgentPreflightTests(unittest.TestCase):
             report = preflight_live_agent_config(
                 config_path,
                 command_resolver=lambda command: "/usr/local/bin/cursor-agent" if command == "cursor-agent" else None,
+                cursor_auth_checker=lambda command: {
+                    "id": "cursor_auth",
+                    "status": "ok",
+                    "message": "Cursor 로그인 상태를 확인했습니다.",
+                },
             )
 
             self.assertEqual(report["status"], "ok")
@@ -848,6 +873,54 @@ class LiveAgentPreflightTests(unittest.TestCase):
                     "id": "cursor_command",
                     "status": "ok",
                     "message": "cursor_live_session command executable is cursor-agent.",
+                },
+                agent["checks"],
+            )
+
+    def test_preflight_reports_antigravity_login_required(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "antigravity-live",
+                                "provider_kind": "antigravity_live_session",
+                                "connection_kind": "live_session",
+                                "session_id": "antigravity-session-abc123",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/agy" if command == "agy" else None,
+                antigravity_auth_checker=lambda command: {
+                    "id": "antigravity_auth",
+                    "status": "failed",
+                    "message": (
+                        "Antigravity 로그인이 필요합니다. "
+                        "터미널에서 agy를 실행해 로그인한 뒤 다시 연결 확인을 누르세요."
+                    ),
+                },
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 1})
+            agent = report["agents"][0]
+            self.assertEqual(agent["provider_kind"], "antigravity_live_session")
+            self.assertIn(
+                {
+                    "id": "antigravity_auth",
+                    "status": "failed",
+                    "message": (
+                        "Antigravity 로그인이 필요합니다. "
+                        "터미널에서 agy를 실행해 로그인한 뒤 다시 연결 확인을 누르세요."
+                    ),
                 },
                 agent["checks"],
             )
@@ -1135,6 +1208,11 @@ class LiveAgentPreflightTests(unittest.TestCase):
             report = preflight_live_agent_config(
                 config_path,
                 command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+                codex_auth_checker=lambda command: {
+                    "id": "codex_auth",
+                    "status": "ok",
+                    "message": "Codex 로그인 상태를 확인했습니다.",
+                },
                 codex_capability_checker=capability_checker,
             )
 
@@ -1148,6 +1226,111 @@ class LiveAgentPreflightTests(unittest.TestCase):
                     "message": "Codex command does not accept required live-session safety flags.",
                 },
                 report["agents"][0]["checks"],
+            )
+
+    def test_preflight_reports_codex_login_required_before_capability_probe(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "codex-live",
+                                "provider_kind": "codex_live_session",
+                                "connection_kind": "live_session",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            capability_calls = []
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+                codex_auth_checker=lambda command: {
+                    "id": "codex_auth",
+                    "status": "failed",
+                    "message": "Codex 로그인이 필요합니다. 터미널에서 codex login을 실행해 로그인한 뒤 다시 연결 확인을 누르세요.",
+                },
+                codex_capability_checker=lambda command: capability_calls.append(command) or {
+                    "id": "codex_exec_safety_flags",
+                    "status": "ok",
+                    "message": "Codex exec read-only safety flags are available.",
+                },
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(capability_calls, [])
+            self.assertIn(
+                {
+                    "id": "codex_auth",
+                    "status": "failed",
+                    "message": "Codex 로그인이 필요합니다. 터미널에서 codex login을 실행해 로그인한 뒤 다시 연결 확인을 누르세요.",
+                },
+                report["agents"][0]["checks"],
+            )
+
+    def test_preflight_reports_cursor_and_grok_login_required(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "cursor-live",
+                                "provider_kind": "cursor_live_session",
+                                "connection_kind": "live_session",
+                            },
+                            {
+                                "agent_id": "grok-live",
+                                "provider_kind": "grok_live_session",
+                                "connection_kind": "live_session",
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: {
+                    "cursor-agent": "/usr/local/bin/cursor-agent",
+                    "grok": "/usr/local/bin/grok",
+                }.get(command),
+                cursor_auth_checker=lambda command: {
+                    "id": "cursor_auth",
+                    "status": "failed",
+                    "message": "Cursor 로그인이 필요합니다. 터미널에서 cursor-agent login을 실행해 로그인한 뒤 다시 연결 확인을 누르세요.",
+                },
+                grok_auth_checker=lambda command: {
+                    "id": "grok_auth",
+                    "status": "failed",
+                    "message": "Grok 로그인이 필요합니다. 터미널에서 grok login을 실행해 로그인한 뒤 다시 연결 확인을 누르세요.",
+                },
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 2, "failed_agents": 2, "checks_failed": 2})
+            self.assertIn(
+                {
+                    "id": "cursor_auth",
+                    "status": "failed",
+                    "message": "Cursor 로그인이 필요합니다. 터미널에서 cursor-agent login을 실행해 로그인한 뒤 다시 연결 확인을 누르세요.",
+                },
+                report["agents"][0]["checks"],
+            )
+            self.assertIn(
+                {
+                    "id": "grok_auth",
+                    "status": "failed",
+                    "message": "Grok 로그인이 필요합니다. 터미널에서 grok login을 실행해 로그인한 뒤 다시 연결 확인을 누르세요.",
+                },
+                report["agents"][1]["checks"],
             )
 
     def test_default_codex_capability_probe_uses_exec_level_safety_flags_before_resume(self):
@@ -1182,11 +1365,19 @@ class LiveAgentPreflightTests(unittest.TestCase):
             report = preflight_live_agent_config(
                 config_path,
                 command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+                codex_auth_checker=lambda command: {
+                    "id": "codex_auth",
+                    "status": "ok",
+                    "message": "Codex 로그인 상태를 확인했습니다.",
+                },
                 codex_command_runner=fake_run,
             )
 
             self.assertEqual(report["status"], "ok")
-            self.assertEqual(calls[0]["command"][:6], ["/usr/local/bin/codex", "exec", "--sandbox", "read-only", "--ignore-rules", "resume"])
+            self.assertEqual(
+                calls[0]["command"][:7],
+                ["/usr/local/bin/codex", "exec", "--sandbox", "read-only", "--ignore-user-config", "--ignore-rules", "resume"],
+            )
             self.assertLess(calls[0]["command"].index("--sandbox"), calls[0]["command"].index("resume"))
             self.assertIn("--skip-git-repo-check", calls[0]["command"])
             self.assertIn("--help", calls[0]["command"])
@@ -1220,6 +1411,11 @@ class LiveAgentPreflightTests(unittest.TestCase):
             report = preflight_live_agent_config(
                 config_path,
                 command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+                codex_auth_checker=lambda command: {
+                    "id": "codex_auth",
+                    "status": "ok",
+                    "message": "Codex 로그인 상태를 확인했습니다.",
+                },
                 codex_command_runner=lambda command, **kwargs: Completed(),
             )
 
@@ -1229,7 +1425,10 @@ class LiveAgentPreflightTests(unittest.TestCase):
             )
             self.assertEqual(failed_check["status"], "failed")
             self.assertIn("exit 2", failed_check["message"])
-            self.assertIn("codex exec --sandbox read-only --ignore-rules resume --skip-git-repo-check --help", failed_check["message"])
+            self.assertIn(
+                "codex exec --sandbox read-only --ignore-user-config --ignore-rules resume --skip-git-repo-check --help",
+                failed_check["message"],
+            )
 
     def test_preflight_rejects_codex_live_session_with_non_codex_executable_before_probe(self):
         with tempfile.TemporaryDirectory() as temp_dir:

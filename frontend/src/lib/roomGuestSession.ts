@@ -6,6 +6,7 @@ export type RoomGuestSession = {
   meetingId: string;
   agentId: string;
   displayName: string;
+  avatarImage?: string;
   inviteScope: RoomAppearance["inviteScope"];
   expiresAt: string;
   joinedAt: string;
@@ -48,6 +49,7 @@ export function roomGuestSessionFromJoinPayload(
     meetingId: cleanText(record.meeting_id, 128),
     agentId: cleanText(record.agent_id, 128),
     displayName: cleanText(record.display_name, 128),
+    avatarImage: cleanText(record.avatar_image_url || record.avatarImage, 4096) || undefined,
     inviteScope: normalizeInviteScope(record.invite_scope),
     expiresAt: cleanText(record.expires_at, 64),
     joinedAt: now.toISOString(),
@@ -62,6 +64,7 @@ export function normalizeRoomGuestSession(value: unknown): RoomGuestSession | nu
     meeting_id: record.meetingId,
     agent_id: record.agentId,
     display_name: record.displayName,
+    avatar_image_url: record.avatarImage,
     invite_scope: record.inviteScope,
     expires_at: record.expiresAt,
   });

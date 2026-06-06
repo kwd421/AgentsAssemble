@@ -45,6 +45,58 @@ The GUI's `세션시작` button pairs that resident config with `configs/demo-co
 
 The live-agent roster and supervised process panel auto-refresh in the GUI every 5 seconds. This keeps stale presence, process crashes, pending auto-restart state, and recovered groups visible during long sessions without relying only on the manual refresh buttons. Background refreshes ignore volatile heartbeat age and monitor tick timestamps when deciding whether to re-render the lobby, so the room stays live without visually resetting every poll. Play Mode flow status polling patches the compact status line in place while the visible control shape is unchanged, so a running timer does not reset lobby scroll or input drafts on every poll. The GUI server also starts a backend supervisor monitor, so owned process crash detection and due auto-restarts continue without an open browser or `/api/live-agent-processes` polling client. The manual refresh buttons remain useful when you want an immediate read after changing files or process state from another terminal.
 
+Resident agent call latency is controlled by `poll_interval` on the resident
+config or join brief. New resident defaults use `0.25` seconds instead of the
+old 2-second wait. The operator UI exposes this as a positive seconds value per
+agent and no longer presents an "instant" preset. Legacy configs may still
+contain `0`; runners and wait-next tools treat that as the shortest allowed
+safety floor between empty polls, not as a promise that provider execution is
+webhook-immediate.
+
+In the Discord-style room UI, open `방 연결 정보`, click an agent row, and use
+the agent detail modal's `호출 간격` controls to change only that selected
+agent. The GUI posts `/api/live-agent-sessions/agent-timing` with `agent_id`,
+updates the matching agent entry in the resident config when a config path is
+known, and stores the runtime value on that same live-agent presence row.
+Running parent-managed resident agents read the presence value from their next
+room snapshot before sleeping again, so a changed interval applies without
+restarting the whole group.
+
+Individual `STOP(KILL)` is agent-owned. It is allowed only when the selected
+process group manifest contains that single agent for the selected meeting.
+Stopping marks that bound agent offline and stops both the supervised process
+and any matching orphan `live-agent run-group` process. Orphan matching first
+uses the recorded config path, then falls back only to the process command's
+launch-time `--agent-manifest` file when it has the same meeting id and exact
+manifest agent set. It does not trust the current contents of a mutable config
+file for this fallback. This prevents the bad state where the process panel says
+`stopped` while an older same-agent runner is still alive and reading room
+events without making STOP(KILL) target unrelated processes whose configs were
+edited after launch.
+
+Play Mode room flow has four non-game speaking policies:
+
+- `Natural Floor · 자연 대화`: default hybrid free-speaking mode. Agents avoid
+  immediate repeat turns, keep rough rolling turn balance, and may answer a
+  direct mention even when they would otherwise yield for fairness.
+- `Round Robin · 순서 발화`: strictest fairness mode. Agents wait their turn and
+  do not use the rolling lead allowance from Natural Floor.
+- `Free Interval · 자유 간격`: interval-based free speaking. Cooldown still
+  applies, but turn-balance fairness does not force a yield.
+- `Quiet Call · 지목/멘션만`: agents stay silent unless an explicit `@Name` or
+  `<@Name>` direct mention calls them; idle flow ticks and general room messages
+  do not create unsolicited turns.
+
+`Mafia Night · 추론 게임` remains the separate game flow and should not be used
+as the default room conversation policy.
+In the React room client, Play Mode controls live in the right-side
+`방 연결 정보` panel, not above the `#general` chat feed. The panel uses a
+small Play Mode launcher: choose an activity such as `일반 대화` or
+`Mafia Night`, then press the single `시작` action. Conversation activities show
+the `대화 방식` select for Natural Floor, Round Robin, Free Interval, or Quiet
+Call. Game activities such as Mafia Night stay separate from those conversation
+policies and open their dedicated game surface.
+
 The current frontend is the Discord-style React room client. Natural-language
 room text should keep human-readable tokens intact
 (`Kiro Opus 4.7`, `0.5`, `80kg`, ellipses, and similar prose tokens), while
@@ -347,7 +399,7 @@ presence error text, or spoofed stored admission fields.
 
 The same health snapshot includes a `sandbox_enforcement` summary derived from
 the safe roster projection. It counts `codex_readonly` for Codex
-`codex exec --sandbox read-only --ignore-rules`, `advisory` for generic local
+`codex exec --sandbox read-only --ignore-user-config --ignore-rules`, `advisory` for generic local
 CLI, JSONL live-session, PTY terminal, self-service, manual, and remote bridge
 room loops, `unknown` for unsupported contracts, and `os_sandboxed` only for a
 future provider actually launched through a verified hard sandbox.
@@ -679,7 +731,7 @@ through the real GUI session API, runs one official round, restarts the
 supervised resident group, proves session id continuity through restart by
 resuming the captured session ids for the remaining round, finalizes the
 meeting, and stops the group offline. It verifies Codex resident plumbing and
-`codex exec --sandbox read-only --ignore-rules` command shape without proving
+`codex exec --sandbox read-only --ignore-user-config --ignore-rules` command shape without proving
 real Codex login, model availability, subscription state, or generation quality.
 
 Check the resident config without starting Codex:
@@ -1630,7 +1682,7 @@ python3 -m agentsassemble.cli live-agent preflight \
   --config configs/live-agents.example.json
 ```
 
-The GUI "상주 실행" panel exposes the same check as the `예비점검` button through `POST /api/live-agent-preflight`. Preflight is credential-free and does not send prompts, start resident sessions, call remote bridges, or execute model turns. It checks that the config can be read, agent ids are unique, resident connection kinds are supported, local command executables are present for `local_cli`, `live_session`, `terminal_session`, and `self_service`, that PTY support is available for `terminal_session`, `codex_live_session` residents use the `live_session` connection kind with a resolvable command executable named `codex` and no extra pre-`exec` arguments, that the resolved Codex command parses the required `codex exec --sandbox read-only --ignore-rules resume --skip-git-repo-check --help` safety-flag probe, that `kiro_live_session` residents use the `live_session` connection kind with a resolvable executable named `kiro`, `kiro-cli`, or `kiro-cli-chat`, that `cursor_live_session` residents use the `live_session` connection kind with a resolvable executable named `cursor-agent` and no extra command arguments, that generic `cursor` residents using `terminal_session` or generic JSONL `live_session` fail closed with a message pointing to `cursor-agent-live-session`, that `grok_live_session` residents use the `live_session` connection kind with a resolvable executable named `grok` and no extra command arguments, and remote bridge agents have an endpoint plus an available `auth_ref`. Each agent row includes the derived `sandbox_enforcement` value from the shared `SandboxLauncher` mapping. The CLI exits `0` for `status: ok`, exits `1` for failed checks, and `--json` prints the same machine-readable report shape returned by the GUI endpoint except that browser-visible GUI/API config-load failures redact the local `config_path` and raw loader detail. It cannot prove Claude, Antigravity, legacy Gemini CLI, account login, billing, subscription, model availability, network access, bridge command execution, Codex login/model execution, Kiro login/model execution, Cursor login/model execution, Grok login/model execution, or provider-specific terminal readiness.
+The GUI "상주 실행" panel exposes the same check as the `예비점검` button through `POST /api/live-agent-preflight`. Preflight is credential-free and does not send prompts, start resident sessions, call remote bridges, or execute model turns. It checks that the config can be read, agent ids are unique, resident connection kinds are supported, local command executables are present for `local_cli`, `live_session`, `terminal_session`, and `self_service`, that PTY support is available for `terminal_session`, `codex_live_session` residents use the `live_session` connection kind with a resolvable command executable named `codex` and no extra pre-`exec` arguments, that the resolved Codex command parses the required `codex exec --sandbox read-only --ignore-user-config --ignore-rules resume --skip-git-repo-check --help` safety-flag probe, that `kiro_live_session` residents use the `live_session` connection kind with a resolvable executable named `kiro`, `kiro-cli`, or `kiro-cli-chat`, that `cursor_live_session` residents use the `live_session` connection kind with a resolvable executable named `cursor-agent` and no extra command arguments, that generic `cursor` residents using `terminal_session` or generic JSONL `live_session` fail closed with a message pointing to `cursor-agent-live-session`, that `grok_live_session` residents use the `live_session` connection kind with a resolvable executable named `grok` and no extra command arguments, and remote bridge agents have an endpoint plus an available `auth_ref`. Each agent row includes the derived `sandbox_enforcement` value from the shared `SandboxLauncher` mapping. The CLI exits `0` for `status: ok`, exits `1` for failed checks, and `--json` prints the same machine-readable report shape returned by the GUI endpoint except that browser-visible GUI/API config-load failures redact the local `config_path` and raw loader detail. It cannot prove Claude, Antigravity, legacy Gemini CLI, account login, billing, subscription, model availability, network access, bridge command execution, Codex login/model execution, Kiro login/model execution, Cursor login/model execution, Grok login/model execution, or provider-specific terminal readiness.
 
 Resident runners support only `local_cli`, `live_session`, `terminal_session`, `remote_bridge`, and `self_service`. Registration-only kinds such as `manual` and `codex_resume` can appear in the roster, but `live-agent run`, `live-agent run-group`, supervised start, and preflight reject them as resident process configs instead of silently treating them like a local CLI command.
 
@@ -1896,7 +1948,7 @@ Use `--connection-kind live_session` when the resident agent command speaks the 
 
 This connection kind is for `live-agent run` and `live-agent run-group`. The one-shot `live-agent delegate` command keeps plain local CLI semantics and does not use the JSONL session envelope. When `delegate` posts its one reply, it links the lobby message to the latest unobserved non-self lobby event from the room snapshot with `source_event_id` and increments `auto_chain_depth`, so the reply still has the same traceable event lineage as resident runner replies. If only self-authored or already-observed events remain, the one-shot reply is still posted but no stale source event is attached. If the delegate command fails, times out, or returns an empty reply after the working heartbeat, the CLI makes a best-effort `error` heartbeat with a compact `last_error` instead of leaving the roster stuck at `working`. That heartbeat does not copy command stdout/stderr, and OS launch failures store the error category without the failing path.
 
-`provider_kind: "codex_live_session"` is a provider-specific resident behind the same `live_session` compatibility gate, but it does not speak the JSONL protocol below. The runner calls Codex CLI directly with `codex exec --sandbox read-only --ignore-rules --output-last-message ... -` for a fresh session and `codex exec --sandbox read-only --ignore-rules resume --output-last-message ... <session_id> -` after a session id is known. The meeting adapter uses the same `codex exec` safety flags for official turns. The resident runner preserves the configured or extracted session id so later lobby events continue the same Codex CLI history. The explicit `--sandbox read-only` flag is the safety input, `--ignore-rules` keeps repository `.rules` files from participating in the launch, and Codex CLI still owns the actual enforcement. AgentsAssemble reports this path as `sandbox_enforcement: "codex_readonly"`. This is not native Codex/Claude channel injection, a PTY attachment, OS-level sandboxing, or a general sandbox for arbitrary local CLI and remote bridge residents.
+`provider_kind: "codex_live_session"` is a provider-specific resident behind the same `live_session` compatibility gate, but it does not speak the JSONL protocol below. The runner calls Codex CLI directly with `codex exec --sandbox read-only --ignore-user-config --ignore-rules --output-last-message ... -` for a fresh session and `codex exec --sandbox read-only --ignore-user-config --ignore-rules resume --output-last-message ... <session_id> -` after a session id is known. The meeting adapter uses the same `codex exec` safety flags for official turns. The resident runner preserves the configured or extracted session id so later lobby events continue the same Codex CLI history. The explicit `--sandbox read-only` flag is the safety input, `--ignore-user-config` keeps resident execution from dying on unrelated local `config.toml` parse errors while preserving Codex auth, `--ignore-rules` keeps repository `.rules` files from participating in the launch, and Codex CLI still owns the actual enforcement. AgentsAssemble reports this path as `sandbox_enforcement: "codex_readonly"`. This is not native Codex/Claude channel injection, a PTY attachment, OS-level sandboxing, or a general sandbox for arbitrary local CLI and remote bridge residents.
 
 `provider_kind: "kiro_live_session"` is also provider-specific behind the
 `live_session` compatibility gate and does not speak the JSONL protocol below.

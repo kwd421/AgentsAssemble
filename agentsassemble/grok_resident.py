@@ -8,6 +8,8 @@ from pathlib import Path
 from subprocess import TimeoutExpired
 from typing import TYPE_CHECKING, Any
 
+from agentsassemble.provider_auth import provider_auth_error_message, provider_login_required_message
+
 if TYPE_CHECKING:
     from agentsassemble.live_agent_runner import ResidentAgentConfig
 
@@ -19,6 +21,8 @@ GROK_SUBPROCESS_NONZERO = "grok_subprocess_nonzero"
 GROK_JSON_PARSE_FAILURE = "grok_json_parse_failure"
 GROK_EMPTY_TEXT = "grok_empty_text"
 GROK_MISSING_SESSION_ID = "grok_missing_session_id"
+GROK_AUTH_REQUIRED = "grok_auth_required"
+GROK_LOGIN_REQUIRED_MESSAGE = provider_login_required_message("Grok", "grok login")
 
 
 class GrokResidentRuntimeError(RuntimeError):
@@ -82,6 +86,14 @@ class GrokResidentCommandRunner:
             ) from error
         returncode = int(getattr(completed, "returncode", 0) or 0)
         if returncode != 0:
+            login_message = grok_login_required_message(
+                f"{_text(getattr(completed, 'stdout', ''))}\n{_text(getattr(completed, 'stderr', ''))}"
+            )
+            if login_message:
+                raise GrokResidentRuntimeError(
+                    login_message,
+                    category=GROK_AUTH_REQUIRED,
+                )
             raise GrokResidentRuntimeError(
                 f"Grok live session command failed with return code {returncode}.",
                 category=GROK_SUBPROCESS_NONZERO,
@@ -119,6 +131,12 @@ class GrokResidentCommandRunner:
             "--no-subagents",
             "--verbatim",
         ]
+        model_id = str(self.config.model_id or "").strip()
+        if model_id:
+            command.extend(["--model", model_id])
+        effort = str(self.config.effort or "").strip()
+        if effort:
+            command.extend(["--effort", effort])
         if self.session_id:
             command.extend(["--resume", self.session_id])
         return command
@@ -165,6 +183,53 @@ def grok_command_check(command: list[str]) -> dict[str, str]:
         "status": "failed",
         "message": "grok_live_session command executable must be named grok.",
     }
+
+
+def grok_auth_check(
+    command: list[str],
+    *,
+    command_runner: Any | None = None,
+    timeout_seconds: int = 15,
+) -> dict[str, str]:
+    if not command:
+        return {"id": "grok_auth", "status": "failed", "message": "Grok command is empty."}
+    probe_command = [command[0], "models"]
+    runner = command_runner or subprocess.run
+    try:
+        completed = runner(
+            probe_command,
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except TimeoutExpired:
+        return {
+            "id": "grok_auth",
+            "status": "failed",
+            "message": "Grok 로그인 상태를 확인하지 못했습니다. grok login 상태를 확인한 뒤 다시 연결 확인을 누르세요.",
+        }
+    except OSError as error:
+        return {
+            "id": "grok_auth",
+            "status": "failed",
+            "message": f"Grok 로그인 상태를 확인하지 못했습니다. grok 실행 실패: {error.__class__.__name__}.",
+        }
+    output = f"{_text(getattr(completed, 'stdout', ''))}\n{_text(getattr(completed, 'stderr', ''))}"
+    if int(getattr(completed, "returncode", 1) or 0) == 0:
+        return {"id": "grok_auth", "status": "ok", "message": "Grok 로그인 상태를 확인했습니다."}
+    login_message = grok_login_required_message(output)
+    if login_message:
+        return {"id": "grok_auth", "status": "failed", "message": login_message}
+    return {
+        "id": "grok_auth",
+        "status": "failed",
+        "message": "Grok 로그인 상태를 확인하지 못했습니다. grok login 상태를 확인한 뒤 다시 연결 확인을 누르세요.",
+    }
+
+
+def grok_login_required_message(text: str) -> str:
+    return provider_auth_error_message(text, provider_label="Grok", login_command="grok login")
 
 
 def clean_grok_session_id(value: object) -> str:

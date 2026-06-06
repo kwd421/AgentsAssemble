@@ -122,6 +122,11 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             self.assertIn("run-group", command)
             self.assertIn("--server", command)
             self.assertIn("http://127.0.0.1:8765", command)
+            self.assertIn("--agent-manifest", command)
+            manifest_path = Path(command[command.index("--agent-manifest") + 1])
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["meeting_id"], "")
+            self.assertEqual(manifest["agent_ids"], ["a"])
             self.assertIs(kwargs["stderr"], kwargs["stdout"])
 
     def test_start_group_persists_diagnostic_flag(self):
@@ -141,6 +146,46 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             self.assertTrue(record["diagnostic"])
             persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
             self.assertTrue(persisted["groups"][0]["diagnostic"])
+
+    def test_start_group_uses_unique_launch_manifest_per_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            launched = []
+
+            def command_factory(command, **kwargs):
+                launched.append(command)
+                return FakeProcess(pid=4000 + len(launched))
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                meeting_id="meeting-1",
+            )
+            first_manifest_path = Path(launched[0][launched[0].index("--agent-manifest") + 1])
+            first_manifest_before_restart = json.loads(first_manifest_path.read_text(encoding="utf-8"))
+
+            supervisor.stop_group("crew")
+            config_path.write_text('{"agents": [{"agent_id": "agent-b", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                meeting_id="meeting-2",
+            )
+            second_manifest_path = Path(launched[1][launched[1].index("--agent-manifest") + 1])
+            second_manifest = json.loads(second_manifest_path.read_text(encoding="utf-8"))
+            first_manifest_after_restart = json.loads(first_manifest_path.read_text(encoding="utf-8"))
+
+            self.assertNotEqual(first_manifest_path, second_manifest_path)
+            self.assertEqual(first_manifest_before_restart["meeting_id"], "meeting-1")
+            self.assertEqual(first_manifest_before_restart["agent_ids"], ["agent-a"])
+            self.assertEqual(first_manifest_after_restart, first_manifest_before_restart)
+            self.assertEqual(second_manifest["meeting_id"], "meeting-2")
+            self.assertEqual(second_manifest["agent_ids"], ["agent-b"])
 
     def test_start_group_persists_meeting_identity_and_restart_preserves_it(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -853,6 +898,413 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(stopped["offline"]["skipped"], 0)
         self.assertEqual(stopped["offline"]["offline_agent_ids"], ["agent-a", "agent-b"])
         self.assertEqual(stopped["offline"]["attention"], [])
+
+    def test_stop_group_kills_matching_orphan_run_group_when_record_is_already_stopped(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "command": ["fake"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            state_path = root / "live-agent-runs" / "processes.json"
+            state_path.parent.mkdir(parents=True)
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "stopped",
+                                "pid": None,
+                                "meeting_id": "meeting-1",
+                                "config_path": str(config_path),
+                                "server": "http://room.local",
+                                "agents": [
+                                    {
+                                        "agent_id": "agent-a",
+                                        "display_name": "Agent A",
+                                        "provider_kind": "codex",
+                                        "connection_kind": "live_session",
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            alive = {3333: True, 4444: True}
+            sent_signals = []
+
+            def process_lister():
+                return [
+                    {
+                        "pid": 3333,
+                        "command": (
+                            f"{sys.executable} -m agentsassemble.cli live-agent run-group "
+                            f"--config {config_path} --server http://room.local"
+                        ),
+                    },
+                    {
+                        "pid": 4444,
+                        "command": (
+                            f"{sys.executable} -m agentsassemble.cli live-agent run-group "
+                            f"--config {root / 'other.json'} --server http://room.local"
+                        ),
+                    },
+                ]
+
+            def signal_sender(pid, signum):
+                sent_signals.append((pid, signum))
+                if signum == signal.SIGTERM:
+                    alive[pid] = False
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                now_fn=lambda: datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+                orphan_process_lister=process_lister,
+                orphan_signal_sender=signal_sender,
+                orphan_pid_alive_checker=lambda pid: alive.get(pid, False),
+                orphan_sleep=lambda _seconds: None,
+            )
+            connect_live_agent(
+                root,
+                {"agent_id": "agent-a", "meeting_id": "meeting-1", "status": "online"},
+                now=datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+            )
+
+            stopped = supervisor.stop_group("crew")
+            agents = {
+                str(agent["agent_id"]): agent
+                for agent in read_live_agents(root, now=datetime(2026, 5, 17, 12, 0, tzinfo=UTC))
+            }
+
+        self.assertEqual(stopped["status"], "stopped")
+        self.assertEqual(stopped["offline"]["offline_agent_ids"], ["agent-a"])
+        self.assertEqual(stopped["orphan_processes"]["matched"], 1)
+        self.assertEqual(stopped["orphan_processes"]["terminated_pids"], [3333])
+        self.assertEqual(stopped["orphan_processes"]["still_running_pids"], [])
+        self.assertEqual(sent_signals, [(3333, signal.SIGTERM)])
+        self.assertEqual(agents["agent-a"]["status"], "offline")
+
+    def test_stop_group_kills_same_agent_orphan_when_record_config_was_rewritten(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            original_config_path = root / "live-agents.original.json"
+            original_config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "meeting_id": "meeting-1",
+                                "command": ["fake"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            rewritten_config_path = root / "live-agent-runs" / "per-agent-configs" / "meeting-1--crew--agent-a.json"
+            rewritten_config_path.parent.mkdir(parents=True)
+            rewritten_config_path.write_text(original_config_path.read_text(encoding="utf-8"), encoding="utf-8")
+            launch_manifest_path = root / "live-agent-runs" / "manifests" / "crew.json"
+            launch_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            launch_manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schema": "agentsassemble.live_agent_run_group_manifest.v1",
+                        "group_id": "crew",
+                        "meeting_id": "meeting-1",
+                        "agent_ids": ["agent-a"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            state_path = root / "live-agent-runs" / "processes.json"
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "stopped",
+                                "pid": None,
+                                "meeting_id": "meeting-1",
+                                "config_path": str(rewritten_config_path),
+                                "server": "http://room.local",
+                                "agents": [
+                                    {
+                                        "agent_id": "agent-a",
+                                        "display_name": "Agent A",
+                                        "provider_kind": "codex",
+                                        "connection_kind": "live_session",
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            alive = {3333: True}
+            sent_signals = []
+
+            def process_lister():
+                return [
+                    {
+                        "pid": 3333,
+                        "command": (
+                            f"{sys.executable} -m agentsassemble.cli live-agent run-group "
+                            f"--config {original_config_path} --server http://room.local "
+                            f"--agent-manifest {launch_manifest_path}"
+                        ),
+                    }
+                ]
+
+            def signal_sender(pid, signum):
+                sent_signals.append((pid, signum))
+                if signum == signal.SIGTERM:
+                    alive[pid] = False
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                now_fn=lambda: datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+                orphan_process_lister=process_lister,
+                orphan_signal_sender=signal_sender,
+                orphan_pid_alive_checker=lambda pid: alive.get(pid, False),
+                orphan_sleep=lambda _seconds: None,
+            )
+            connect_live_agent(
+                root,
+                {"agent_id": "agent-a", "meeting_id": "meeting-1", "status": "online"},
+                now=datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+            )
+
+            stopped = supervisor.stop_group_if_owned("crew", meeting_id="meeting-1", agent_ids=["agent-a"])
+            agents = {
+                str(agent["agent_id"]): agent
+                for agent in read_live_agents(root, now=datetime(2026, 5, 17, 12, 0, tzinfo=UTC))
+            }
+
+        self.assertEqual(stopped["status"], "stopped")
+        self.assertEqual(stopped["offline"]["offline_agent_ids"], ["agent-a"])
+        self.assertEqual(stopped["orphan_processes"]["matched"], 1)
+        self.assertEqual(stopped["orphan_processes"]["terminated_pids"], [3333])
+        self.assertEqual(stopped["orphan_processes"]["still_running_pids"], [])
+        self.assertEqual(sent_signals, [(3333, signal.SIGTERM)])
+        self.assertEqual(agents["agent-a"]["status"], "offline")
+
+    def test_stop_group_does_not_trust_rewritten_orphan_config_without_launch_manifest(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            original_config_path = root / "live-agents.original.json"
+            original_config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "meeting_id": "meeting-1",
+                                "command": ["fake"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            rewritten_config_path = root / "live-agent-runs" / "per-agent-configs" / "meeting-1--crew--agent-a.json"
+            rewritten_config_path.parent.mkdir(parents=True)
+            rewritten_config_path.write_text(original_config_path.read_text(encoding="utf-8"), encoding="utf-8")
+            state_path = root / "live-agent-runs" / "processes.json"
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "stopped",
+                                "pid": None,
+                                "meeting_id": "meeting-1",
+                                "config_path": str(rewritten_config_path),
+                                "server": "http://room.local",
+                                "agents": [
+                                    {
+                                        "agent_id": "agent-a",
+                                        "display_name": "Agent A",
+                                        "provider_kind": "codex",
+                                        "connection_kind": "live_session",
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            sent_signals = []
+
+            def process_lister():
+                return [
+                    {
+                        "pid": 3333,
+                        "command": (
+                            f"{sys.executable} -m agentsassemble.cli live-agent run-group "
+                            f"--config {original_config_path} --server http://room.local"
+                        ),
+                    }
+                ]
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                now_fn=lambda: datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+                orphan_process_lister=process_lister,
+                orphan_signal_sender=lambda pid, signum: sent_signals.append((pid, signum)),
+                orphan_pid_alive_checker=lambda pid: True,
+                orphan_sleep=lambda _seconds: None,
+            )
+            connect_live_agent(
+                root,
+                {"agent_id": "agent-a", "meeting_id": "meeting-1", "status": "online"},
+                now=datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+            )
+
+            stopped = supervisor.stop_group_if_owned("crew", meeting_id="meeting-1", agent_ids=["agent-a"])
+            agents = {
+                str(agent["agent_id"]): agent
+                for agent in read_live_agents(root, now=datetime(2026, 5, 17, 12, 0, tzinfo=UTC))
+            }
+
+        self.assertEqual(stopped["status"], "stopped")
+        self.assertNotIn("orphan_processes", stopped)
+        self.assertEqual(sent_signals, [])
+        self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_stop_group_does_not_match_orphan_from_previous_launch_manifest(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            old_config_path = root / "old-live-agents.json"
+            old_config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "meeting_id": "meeting-1",
+                                "command": ["fake"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            new_config_path = root / "new-live-agents.json"
+            new_config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-b",
+                                "display_name": "Agent B",
+                                "meeting_id": "meeting-2",
+                                "command": ["fake"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stale_manifest_path = root / "live-agent-runs" / "manifests" / "crew--old-launch.json"
+            stale_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            stale_manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schema": "agentsassemble.live_agent_run_group_manifest.v1",
+                        "group_id": "crew",
+                        "meeting_id": "meeting-1",
+                        "agent_ids": ["agent-a"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            state_path = root / "live-agent-runs" / "processes.json"
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "stopped",
+                                "pid": None,
+                                "meeting_id": "meeting-2",
+                                "config_path": str(new_config_path),
+                                "server": "http://room.local",
+                                "agents": [
+                                    {
+                                        "agent_id": "agent-b",
+                                        "display_name": "Agent B",
+                                        "provider_kind": "codex",
+                                        "connection_kind": "live_session",
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            sent_signals = []
+
+            def process_lister():
+                return [
+                    {
+                        "pid": 3333,
+                        "command": (
+                            f"{sys.executable} -m agentsassemble.cli live-agent run-group "
+                            f"--config {old_config_path} --server http://room.local "
+                            f"--agent-manifest {stale_manifest_path}"
+                        ),
+                    }
+                ]
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                now_fn=lambda: datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+                orphan_process_lister=process_lister,
+                orphan_signal_sender=lambda pid, signum: sent_signals.append((pid, signum)),
+                orphan_pid_alive_checker=lambda pid: True,
+                orphan_sleep=lambda _seconds: None,
+            )
+            connect_live_agent(
+                root,
+                {"agent_id": "agent-b", "meeting_id": "meeting-2", "status": "online"},
+                now=datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+            )
+
+            stopped = supervisor.stop_group_if_owned("crew", meeting_id="meeting-2", agent_ids=["agent-b"])
+            agents = {
+                str(agent["agent_id"]): agent
+                for agent in read_live_agents(root, now=datetime(2026, 5, 17, 12, 0, tzinfo=UTC))
+            }
+
+        self.assertEqual(stopped["status"], "stopped")
+        self.assertNotIn("orphan_processes", stopped)
+        self.assertEqual(sent_signals, [])
+        self.assertEqual(agents["agent-b"]["status"], "online")
 
     def test_process_error_preserves_matching_agent_error_presence(self):
         with tempfile.TemporaryDirectory() as temp_dir:
