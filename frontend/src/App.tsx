@@ -40,6 +40,7 @@ import {
   leaveRoomInvite,
   loadHostToken,
   postRoomFriendDm,
+  clearHostToken,
   saveHostToken,
   saveRoomSettings,
   startPublicInviteTunnel,
@@ -147,6 +148,7 @@ import {
 } from "./lib/sideChatThreadModel";
 
 type Channel = "friends" | "lobby" | "live" | "board" | "records";
+type MobileRoomInfoInitialMode = "info" | "side-chat";
 
 type ChannelConfig = {
   id: Channel;
@@ -298,9 +300,13 @@ async function copyText(value: string) {
   textarea.value = value;
   textarea.setAttribute("readonly", "");
   textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
   textarea.style.opacity = "0";
   document.body.appendChild(textarea);
+  textarea.focus({ preventScroll: true });
   textarea.select();
+  textarea.setSelectionRange(0, value.length);
   const copied = document.execCommand("copy");
   textarea.remove();
   return copied;
@@ -414,6 +420,8 @@ export default function App() {
   const [rightPanelSearchQuery, setRightPanelSearchQuery] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(mobileViewportMatches);
   const [mobileRoomInfoOpen, setMobileRoomInfoOpen] = useState(false);
+  const [mobileRoomInfoInitialMode, setMobileRoomInfoInitialMode] =
+    useState<MobileRoomInfoInitialMode>("info");
   const [channelSidebarWidth, setChannelSidebarWidth] = useState(loadSidebarWidth);
   const sidebarResizeRef = useRef<SidebarResizeState | null>(null);
   const mobilePanelDragRef = useRef<MobilePanelDragState | null>(null);
@@ -823,8 +831,14 @@ export default function App() {
       sourceMessage: event.message || "",
       channelLabel: LOBBY_CHANNEL_LABEL,
     });
-    setMembersOpen(true);
-    setRightPanelMode("side-chat");
+    if (mobileViewportIsActive()) {
+      setMobileSidebarOpen(false);
+      setMobileRoomInfoInitialMode("side-chat");
+      setMobileRoomInfoOpen(true);
+    } else {
+      setMembersOpen(true);
+      setRightPanelMode("side-chat");
+    }
   }
 
   function closeSideChatThread() {
@@ -920,11 +934,13 @@ export default function App() {
   function openMobileRoomInfo() {
     if (channel === "friends") return;
     setMobileSidebarOpen(false);
+    setMobileRoomInfoInitialMode("info");
     setMobileRoomInfoOpen(true);
   }
 
   function closeMobileRoomInfo() {
     setMobileRoomInfoOpen(false);
+    setMobileRoomInfoInitialMode("info");
   }
 
   function openMobileProfileFromPanel() {
@@ -1223,7 +1239,7 @@ export default function App() {
   async function ensureHostTokenForInvite(status: PublicInviteStatus | null) {
     const existingToken = loadHostToken();
     if (existingToken) return existingToken;
-    if (status && !status.host_token_configured && status.can_generate_host_token) {
+    if (status && (!status.host_token_configured || status.can_generate_host_token)) {
       const payload = await generatePublicInviteHostToken();
       if (payload.host_token) {
         saveHostToken(payload.host_token);
@@ -1232,7 +1248,32 @@ export default function App() {
       if (payload.public_invite) setPublicInviteStatus(payload.public_invite);
       return payload.host_token || "";
     }
+    try {
+      const payload = await generatePublicInviteHostToken();
+      if (payload.host_token) {
+        saveHostToken(payload.host_token);
+        setHostTokenDraft(payload.host_token);
+        if (payload.public_invite) setPublicInviteStatus(payload.public_invite);
+        return payload.host_token;
+      }
+    } catch {
+      // Existing operator-provided host tokens still require manual entry.
+    }
     throw new Error("Host token required");
+  }
+
+  function inviteErrorLooksLikeHostToken(error: unknown) {
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+    return message.includes("host token") || message.includes("forbidden");
+  }
+
+  async function regenerateHostTokenForInvite() {
+    clearHostToken();
+    setHostTokenDraft("");
+    const status = await refreshPublicInviteState();
+    const token = await ensureHostTokenForInvite(status);
+    if (!token) throw new Error("Host token required");
+    return token;
   }
 
   async function waitForPublicInviteTunnelReady() {
@@ -1257,7 +1298,14 @@ export default function App() {
       throw new Error("공개 URL을 만들 수 없습니다. cloudflared를 설치하거나 공개 URL을 입력하세요.");
     }
     setInviteCopyStatus("공개 터널 준비 중...");
-    const started = await startPublicInviteTunnel();
+    let started;
+    try {
+      started = await startPublicInviteTunnel();
+    } catch (error) {
+      if (!inviteErrorLooksLikeHostToken(error)) throw error;
+      await regenerateHostTokenForInvite();
+      started = await startPublicInviteTunnel();
+    }
     if (started.public_invite) {
       setPublicInviteStatus(started.public_invite);
       status = started.public_invite;
@@ -1298,12 +1346,24 @@ export default function App() {
   }) {
     await requirePublicInviteReady();
     const localPreviewUrl = localPreviewInviteUrlForRoom(room);
-    const invite = await createRoomInvite({
-      meetingId: room.meetingId,
-      agentId,
-      displayName,
-      inviteScope,
-    });
+    let invite;
+    try {
+      invite = await createRoomInvite({
+        meetingId: room.meetingId,
+        agentId,
+        displayName,
+        inviteScope,
+      });
+    } catch (error) {
+      if (!inviteErrorLooksLikeHostToken(error)) throw error;
+      await regenerateHostTokenForInvite();
+      invite = await createRoomInvite({
+        meetingId: room.meetingId,
+        agentId,
+        displayName,
+        inviteScope,
+      });
+    }
     const target = secureInviteCopyTarget({
       joinUrl: invite.join_url || "",
       localPreviewUrl,
@@ -1325,7 +1385,14 @@ export default function App() {
     try {
       const status = publicInviteStatus || (await refreshPublicInviteState());
       await ensureHostTokenForInvite(status);
-      const payload = await configurePublicInvitePublicUrl(publicUrl);
+      let payload;
+      try {
+        payload = await configurePublicInvitePublicUrl(publicUrl);
+      } catch (error) {
+        if (!inviteErrorLooksLikeHostToken(error)) throw error;
+        await regenerateHostTokenForInvite();
+        payload = await configurePublicInvitePublicUrl(publicUrl);
+      }
       if (payload.public_invite) {
         setPublicInviteStatus(payload.public_invite);
       } else {
@@ -1357,7 +1424,18 @@ export default function App() {
     try {
       const status = publicInviteStatus || (await refreshPublicInviteState());
       await ensureHostTokenForInvite(status);
-      const started = await startPublicInviteTunnel();
+      let started;
+      try {
+        started = await startPublicInviteTunnel();
+      } catch (error) {
+        if (!inviteErrorLooksLikeHostToken(error)) throw error;
+        await regenerateHostTokenForInvite();
+        started = await startPublicInviteTunnel();
+      }
+      if (started.host_token) {
+        saveHostToken(started.host_token);
+        setHostTokenDraft(started.host_token);
+      }
       if (started.public_invite) setPublicInviteStatus(started.public_invite);
       const latest = await waitForPublicInviteTunnelReady();
       setInviteCopyStatus(
@@ -2244,9 +2322,22 @@ export default function App() {
           members={activeRoomMembers}
           roleOverrides={activeMemberRoles}
           guestLocked={guestLocked}
+          initialMode={mobileRoomInfoInitialMode}
           onClose={closeMobileRoomInfo}
           onInvite={guestLocked ? undefined : () => inviteRoom(activeRoom.id)}
           onOpenSettings={guestLocked ? undefined : () => openRoomSettings(activeRoom.id)}
+          sideChatContent={
+            <SideChatDock
+              meetingId={activeSideChatMeetingId}
+              events={displayedSideChatEvents}
+              error={sideChatError}
+              onPosted={handleSideChatPosted}
+              mentionables={scopedMentionables}
+              threadContext={sideChatThread}
+              onCloseThread={closeSideChatThread}
+              canPostMessages={!guestLocked}
+            />
+          }
         />
       )}
 

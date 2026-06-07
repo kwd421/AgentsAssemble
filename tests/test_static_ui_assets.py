@@ -81,6 +81,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("function mobileViewportMatches()", app_source)
         self.assertIn("const [mobileSidebarOpen, setMobileSidebarOpen] = useState(mobileViewportMatches);", app_source)
         self.assertIn("const [mobileRoomInfoOpen, setMobileRoomInfoOpen] = useState(false);", app_source)
+        self.assertIn("const [mobileRoomInfoInitialMode, setMobileRoomInfoInitialMode] =", app_source)
         self.assertIn("handleMobileShellPointerDown", app_source)
         self.assertIn("handleMobileShellPointerEnd", app_source)
         self.assertIn("MOBILE_SWIPE_THRESHOLD = 42", app_source)
@@ -94,6 +95,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('className="dc-mobile-channel-search"', app_source)
         self.assertIn("setChannelSearchQuery(event.currentTarget.value)", app_source)
         self.assertIn("<MobileRoomInfoPanel", app_source)
+        self.assertIn('setMobileRoomInfoInitialMode("side-chat");', app_source)
+        self.assertIn('initialMode={mobileRoomInfoInitialMode}', app_source)
         self.assertIn("onOpenMobileSidebar={openMobileSidebar}", app_source)
         self.assertIn("onOpenMobileInfo={openMobileRoomInfo}", app_source)
 
@@ -109,6 +112,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("data-role=\"send\"", composer_source)
 
         self.assertIn("export default function MobileRoomInfoPanel", mobile_info_source)
+        self.assertIn('initialMode = "info"', mobile_info_source)
+        self.assertIn('setPanelMode(sideChatContent ? initialMode : "info");', mobile_info_source)
+        self.assertIn("}, [initialMode]);", mobile_info_source)
+        self.assertIn('if (!sideChatContent) setPanelMode("info");', mobile_info_source)
         self.assertIn("MOBILE_INFO_TABS", mobile_info_source)
         self.assertIn("buildMobileMembers", mobile_info_source)
         self.assertIn("providerExecutionLabel(agent)", mobile_info_source)
@@ -122,6 +129,17 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn(".dc-mobile-bottom-nav", css)
         self.assertIn(".dc-mobile-info-panel", css)
         self.assertIn(".dc-composer-button[data-accessory=\"gif\"]", css)
+
+    def test_public_invite_ui_recovers_from_stale_runtime_host_token(self):
+        app_source = frontend_file("App.tsx")
+
+        self.assertIn("clearHostToken", app_source)
+        self.assertIn("function inviteErrorLooksLikeHostToken", app_source)
+        self.assertIn("async function regenerateHostTokenForInvite()", app_source)
+        self.assertIn("await regenerateHostTokenForInvite();", app_source)
+        self.assertIn("payload = await configurePublicInvitePublicUrl(publicUrl);", app_source)
+        self.assertIn("started = await startPublicInviteTunnel();", app_source)
+        self.assertIn("invite = await createRoomInvite({", app_source)
 
     def test_react_lobby_preserves_agent_owned_room_evidence(self):
         source = frontend_source()

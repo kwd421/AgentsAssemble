@@ -160,6 +160,7 @@ from agentsassemble.room_invite import (
     generate_runtime_host_token,
     get_host_token,
     get_public_url,
+    has_runtime_host_token,
     host_gate_required,
     join_room_with_invite,
     normalize_public_room_url,
@@ -9624,7 +9625,22 @@ def _make_handler(
                 return
             if parsed.path == "/api/public-invite/host-token":
                 if get_host_token():
-                    if not self._verify_host_token():
+                    provided_host_token = (self.headers.get("X-Host-Token") or "").strip()
+                    if not provided_host_token:
+                        auth_header = self.headers.get("Authorization") or ""
+                        if auth_header.startswith("Bearer "):
+                            provided_host_token = auth_header.removeprefix("Bearer ").strip()
+                    if not verify_host_token(provided_host_token):
+                        if has_runtime_host_token() and self._request_is_local_operator():
+                            token = generate_runtime_host_token()
+                            self._send_json({
+                                "status": "regenerated",
+                                "host_token": token,
+                                "host_token_configured": True,
+                                "public_invite": self._public_invite_status(),
+                            })
+                            return
+                        self._send_error(HTTPStatus.FORBIDDEN, "host token required")
                         return
                     self._send_json({"status": "already_configured", "host_token_configured": True})
                     return
@@ -9665,13 +9681,19 @@ def _make_handler(
                 self._send_json({"status": "configured", "public_url": public_url, "public_invite": self._public_invite_status()})
                 return
             if parsed.path == "/api/public-invite/tunnel/start":
+                generated_host_token = ""
                 if not get_host_token():
-                    self._send_error(HTTPStatus.FORBIDDEN, "host token must be configured before starting a public tunnel")
-                    return
-                if not self._verify_host_token():
+                    if not self._request_is_local_operator():
+                        self._send_error(HTTPStatus.FORBIDDEN, "host token must be configured before starting a public tunnel")
+                        return
+                    generated_host_token = generate_runtime_host_token()
+                if not generated_host_token and not self._verify_host_token():
                     return
                 invite_tunnel_manager.set_local_url(self._local_server_url())
-                self._send_json({"status": "ok", "public_invite": self._public_invite_status(invite_tunnel_manager.start())})
+                payload = {"status": "ok", "public_invite": self._public_invite_status(invite_tunnel_manager.start())}
+                if generated_host_token:
+                    payload["host_token"] = generated_host_token
+                self._send_json(payload)
                 return
             if parsed.path == "/api/public-invite/tunnel/stop":
                 if not self._verify_host_token():
@@ -10941,12 +10963,16 @@ def _make_handler(
 
         def _public_invite_status(self, tunnel_status: dict[str, object] | None = None) -> dict[str, object]:
             tunnel = tunnel_status or invite_tunnel_manager.status()
+            token_configured = bool(get_host_token())
             return {
-                "host_token_configured": bool(get_host_token()),
+                "host_token_configured": token_configured,
                 "host_gate_required": host_gate_required(),
                 "public_url": get_public_url(),
                 "tunnel": tunnel,
-                "can_generate_host_token": not bool(get_host_token()) and not bool(get_public_url()),
+                "can_generate_host_token": (
+                    (not token_configured and not bool(get_public_url()))
+                    or (has_runtime_host_token() and self._request_is_local_operator())
+                ),
             }
 
         def _local_server_url(self) -> str:

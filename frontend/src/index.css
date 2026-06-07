@@ -5313,6 +5313,48 @@ body[data-sidebar-resizing="true"] {
     outline: none;
   }
 
+  .dc-mobile-info-mode-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 4px 16px 12px;
+  }
+
+  .dc-mobile-info-mode-tabs button {
+    min-height: 44px;
+    border-radius: 10px;
+    background: #202127;
+    color: #aeb2bb;
+    font-size: 14px;
+    font-weight: 950;
+  }
+
+  .dc-mobile-info-mode-tabs button:hover,
+  .dc-mobile-info-mode-tabs button:focus-visible {
+    background: #2b2d35;
+    outline: none;
+  }
+
+  .dc-mobile-info-mode-tabs button[data-active="true"] {
+    background: #3b3d47;
+    color: #f2f3f5;
+  }
+
+  .dc-mobile-side-chat-shell {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    padding: 0 12px 0;
+  }
+
+  .dc-mobile-side-chat-shell .dc-side-chat-dock {
+    min-height: 0;
+    flex: 1;
+    overflow: hidden;
+    border-radius: 14px;
+    background: #1e1f26;
+  }
+
   .dc-mobile-info-hero {
     display: flex;
     align-items: center;

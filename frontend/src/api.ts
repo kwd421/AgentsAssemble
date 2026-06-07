@@ -803,17 +803,19 @@ async function postJson<T>(url: string, body: object): Promise<T> {
 }
 
 const HOST_TOKEN_STORAGE_KEY = "agentsassemble.hostToken.v1";
+let inMemoryHostToken = "";
 
 export function loadHostToken(): string {
   try {
-    return String(sessionStorage.getItem(HOST_TOKEN_STORAGE_KEY) || "").trim();
+    return String(sessionStorage.getItem(HOST_TOKEN_STORAGE_KEY) || inMemoryHostToken || "").trim();
   } catch {
-    return "";
+    return inMemoryHostToken;
   }
 }
 
 export function saveHostToken(token: string) {
   const cleanToken = String(token || "").trim();
+  inMemoryHostToken = cleanToken;
   try {
     if (cleanToken) {
       sessionStorage.setItem(HOST_TOKEN_STORAGE_KEY, cleanToken);

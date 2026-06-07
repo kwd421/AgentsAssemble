@@ -113,6 +113,50 @@ class PublicInviteHttpTests(unittest.TestCase):
 
         self.assertEqual(error_context.exception.code, 403)
 
+    def test_tunnel_start_bootstraps_runtime_host_token_for_local_operator(self):
+        class FakeTunnel:
+            def __init__(self) -> None:
+                self.local_url = ""
+
+            def set_local_url(self, local_url: str) -> None:
+                self.local_url = local_url
+
+            def status(self) -> dict[str, object]:
+                return {
+                    "available": True,
+                    "running": False,
+                    "phase": "stopped",
+                    "public_url": "",
+                    "local_url": self.local_url,
+                    "last_error": "",
+                }
+
+            def start(self) -> dict[str, object]:
+                return {
+                    "available": True,
+                    "running": True,
+                    "phase": "starting",
+                    "public_url": "",
+                    "local_url": self.local_url,
+                    "last_error": "",
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            server = self._start_server(root, tunnel=FakeTunnel())  # type: ignore[arg-type]
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with urlopen(_json_request(f"{base}/api/public-invite/tunnel/start", {}), timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertTrue(payload["host_token"])
+        self.assertTrue(payload["public_invite"]["host_token_configured"])
+        self.assertEqual(payload["public_invite"]["tunnel"]["phase"], "starting")
+
     def test_public_url_endpoint_rejects_loopback_urls(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
@@ -642,6 +686,28 @@ class PublicInviteHttpTests(unittest.TestCase):
                         payload = json.loads(response.read().decode("utf-8"))
                     self.assertEqual(payload["status"], "already_configured")
                     self.assertNotIn("host_token", payload)
+                finally:
+                    server.shutdown()
+                    server.server_close()
+
+    def test_runtime_host_token_can_be_regenerated_from_local_operator_ui(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("AGENTSASSEMBLE_HOST_TOKEN", None)
+            os.environ.pop("AGENTSASSEMBLE_PUBLIC_URL", None)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                set_runtime_host_token("lost-runtime-token")
+                server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    base = f"http://127.0.0.1:{server.server_port}"
+                    with urlopen(_json_request(f"{base}/api/public-invite/host-token", {}), timeout=4) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(payload["status"], "regenerated")
+                    self.assertTrue(payload["host_token"])
+                    self.assertNotEqual(payload["host_token"], "lost-runtime-token")
+                    self.assertTrue(payload["public_invite"]["host_token_configured"])
                 finally:
                     server.shutdown()
                     server.server_close()

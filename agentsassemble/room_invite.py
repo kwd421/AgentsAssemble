@@ -69,6 +69,11 @@ def get_host_token() -> str:
     return _runtime_host_token or os.environ.get(HOST_TOKEN_ENV, "")
 
 
+def has_runtime_host_token() -> bool:
+    """Return True when the active host token was generated for this server run."""
+    return bool(_runtime_host_token)
+
+
 def set_runtime_host_token(token: str) -> str:
     """Set the server-lifetime host token used by GUI bootstrap flows."""
     global _runtime_host_token
