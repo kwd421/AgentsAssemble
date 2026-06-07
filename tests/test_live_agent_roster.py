@@ -5,6 +5,39 @@ from agentsassemble.live_agent_roster import safe_live_agent_roster_payload
 
 
 class LiveAgentRosterPayloadTests(unittest.TestCase):
+    def test_safe_roster_preserves_runtime_comparison_join_semantics_override(self):
+        safe = safe_live_agent_roster_payload(
+            {
+                "agents": [
+                    {
+                        "agent_id": "codex-runtime",
+                        "display_name": "Codex Runtime",
+                        "provider_kind": "codex",
+                        "connection_kind": "live_session",
+                        "join_semantics": "runtime_managed_room_turn",
+                    },
+                    {
+                        "agent_id": "codex-tool-loop",
+                        "display_name": "Codex Tool Loop",
+                        "provider_kind": "codex",
+                        "connection_kind": "live_session",
+                        "join_semantics": "mcp_tool_loop",
+                    },
+                ]
+            }
+        )
+
+        agents = {agent["agent_id"]: agent for agent in safe["agents"]}
+        self.assertEqual(agents["codex-runtime"]["join_semantics"], "runtime_managed_room_turn")
+        self.assertEqual(agents["codex-runtime"]["execution_mode"], "runtime_managed_room_turn")
+        self.assertEqual(agents["codex-runtime"]["runner_residency"], "resident_room_runtime")
+        self.assertEqual(agents["codex-runtime"]["provider_residency"], "per_turn_exec_resume")
+        self.assertFalse(agents["codex-runtime"]["provider_persistent"])
+        self.assertEqual(agents["codex-tool-loop"]["join_semantics"], "mcp_tool_loop")
+        self.assertEqual(agents["codex-tool-loop"]["execution_mode"], "provider_tool_loop")
+        self.assertEqual(agents["codex-tool-loop"]["runner_residency"], "provider_owned_tool_loop")
+        self.assertTrue(agents["codex-tool-loop"]["provider_persistent"])
+
     def test_safe_roster_payload_limits_guest_quota_to_session_owner_and_companion(self):
         payload = {
             "agents": [

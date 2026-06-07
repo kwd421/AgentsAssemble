@@ -15,6 +15,63 @@ from agentsassemble.meeting_events import (
 
 
 class MeetingEventsTests(unittest.TestCase):
+    def test_flow_lobby_event_preserves_runtime_latency_metadata(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            lobby_path = root / "lobby.jsonl"
+
+            event = append_lobby_event_to_file(
+                lobby_path,
+                {
+                    "name": "Codex 5.3 Spark",
+                    "side": "other-agent",
+                    "kind": "message",
+                    "message": "비 오는 날 얘기를 이어가자.",
+                    "flow_id": "flow-rain",
+                    "flow_action": "speak",
+                    "flow_runtime_mode": "runtime_managed_room_turn",
+                    "flow_turn_delivery_ms": 12,
+                    "flow_provider_invocation_ms": 4321,
+                    "flow_reply_post_ms": 7,
+                },
+                live_agent_endpoint=True,
+                allow_flow_metadata=True,
+            )
+            read_back = read_lobby_events(lobby_path, limit=None)
+
+        self.assertEqual(event["flow_runtime_mode"], "runtime_managed_room_turn")
+        self.assertEqual(event["flow_turn_delivery_ms"], 12)
+        self.assertEqual(event["flow_provider_invocation_ms"], 4321)
+        self.assertEqual(event["flow_reply_post_ms"], 7)
+        self.assertEqual(read_back[0]["flow_runtime_mode"], "runtime_managed_room_turn")
+
+    def test_flow_lobby_event_preserves_zero_latency_metadata(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            lobby_path = root / "lobby.jsonl"
+
+            append_lobby_event_to_file(
+                lobby_path,
+                {
+                    "name": "Fast Agent",
+                    "side": "other-agent",
+                    "kind": "message",
+                    "message": "바로 답.",
+                    "flow_id": "flow-fast",
+                    "flow_runtime_mode": "provider_tool_loop",
+                    "flow_turn_delivery_ms": 0,
+                    "flow_provider_invocation_ms": 0,
+                    "flow_reply_post_ms": 0,
+                },
+                live_agent_endpoint=True,
+                allow_flow_metadata=True,
+            )
+            read_back = read_lobby_events(lobby_path, limit=None)
+
+        self.assertEqual(read_back[0]["flow_turn_delivery_ms"], 0)
+        self.assertEqual(read_back[0]["flow_provider_invocation_ms"], 0)
+        self.assertEqual(read_back[0]["flow_reply_post_ms"], 0)
+
     def test_live_agent_lobby_messages_preserve_long_visible_replies(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

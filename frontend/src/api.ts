@@ -316,7 +316,7 @@ export interface LiveAgent {
   character_mode?: string;
   join_semantics?: string;
   context_durability?: string;
-  execution_mode?: "call" | "call_resume" | "persistent" | "provider_persistent" | "manual" | "unknown" | string;
+  execution_mode?: "baseline_call_resume" | "runtime_managed_room_turn" | "provider_tool_loop" | "call" | "call_resume" | "persistent" | "provider_persistent" | "manual" | "unknown" | string;
   runner_residency?: string;
   provider_residency?: string;
   provider_persistent?: boolean;

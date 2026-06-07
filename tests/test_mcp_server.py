@@ -270,6 +270,104 @@ class McpParticipantToolsTests(unittest.TestCase):
         self.assertEqual(room.requests[-1]["path"], "/api/live-agents/agent-a/dm-reply")
         self.assertEqual(room.requests[-1]["payload"], {"source_event_id": "dm-next", "message": "direct answer"})
 
+    def test_tool_loop_lobby_say_preserves_flow_metadata_from_wait_next_event(self):
+        room = RecordingRoom()
+        client = McpRoomClient("http://room.local", request_json=room.request_json)
+        tools = build_tool_registry(
+            "participant",
+            client,
+            McpParticipantContext(agent_id="agent-a", display_name="Agent A", meeting_id="m1", engagement_mode="always"),
+        )
+        room.room["lobby_events"] = [
+            {
+                "id": "flow-start",
+                "name": "Play Mode",
+                "actor_id": "flow",
+                "message": "시간제 자유토론 시작",
+                "flow_id": "flow-1",
+                "flow_meeting_id": "m1",
+                "flow_event_type": "started",
+            }
+        ]
+
+        wait_result = tools["wait_next"](timeout_seconds=0, poll_interval=0, max_chain_depth=1)
+        tools["say"](message="tool-loop answer", source_event_id=wait_result["source_event_id"], auto_chain_depth=1)
+
+        payload = room.requests[-1]["payload"]
+        self.assertEqual(payload["source_event_id"], "flow-start")
+        self.assertEqual(payload["flow_id"], "flow-1")
+        self.assertEqual(payload["flow_meeting_id"], "m1")
+        self.assertEqual(payload["flow_action"], "speak")
+        self.assertEqual(payload["flow_runtime_mode"], "provider_tool_loop")
+
+    def test_tool_loop_lobby_say_accepts_explicit_flow_metadata_from_read_since_event(self):
+        room = RecordingRoom()
+        client = McpRoomClient("http://room.local", request_json=room.request_json)
+        tools = build_tool_registry(
+            "participant",
+            client,
+            McpParticipantContext(agent_id="agent-a", display_name="Agent A", meeting_id="m1", engagement_mode="always"),
+        )
+        room.room["agent"]["last_observed_event_id"] = "old"
+        room.room["lobby_events"] = [
+            {"id": "old", "name": "Human", "message": "old"},
+            {
+                "id": "flow-next",
+                "name": "Human",
+                "message": "비 올 때 뭘 할까?",
+                "flow_id": "flow-rain",
+                "flow_meeting_id": "m1",
+            },
+        ]
+
+        diff = tools["read_since"]()
+        event = diff["lobby_events"][0]
+        tools["say"](
+            message="책 한 권과 따뜻한 음료가 좋겠어요.",
+            source_event_id=event["id"],
+            auto_chain_depth=1,
+            flow_id=event["flow_id"],
+            flow_meeting_id=event["flow_meeting_id"],
+        )
+
+        payload = room.requests[-1]["payload"]
+        self.assertEqual(payload["source_event_id"], "flow-next")
+        self.assertEqual(payload["flow_id"], "flow-rain")
+        self.assertEqual(payload["flow_meeting_id"], "m1")
+        self.assertEqual(payload["flow_runtime_mode"], "provider_tool_loop")
+
+    def test_wait_next_clears_stale_flow_metadata_before_non_lobby_events(self):
+        room = RecordingRoom()
+        client = McpRoomClient("http://room.local", request_json=room.request_json)
+        tools = build_tool_registry(
+            "participant",
+            client,
+            McpParticipantContext(agent_id="agent-a", display_name="Agent A", meeting_id="m1", engagement_mode="always"),
+        )
+        room.room["lobby_events"] = [
+            {
+                "id": "flow-start",
+                "name": "Play Mode",
+                "message": "시작",
+                "flow_id": "flow-1",
+                "flow_meeting_id": "m1",
+            }
+        ]
+        tools["wait_next"](timeout_seconds=0, poll_interval=0, max_chain_depth=1)
+        room.room["agent"]["last_observed_dm_event_id"] = "dm-old"
+        room.room["dm_events"] = [
+            {"id": "dm-old", "side": "mine", "target_agent_id": "agent-a", "message": "old"},
+            {"id": "dm-next", "side": "mine", "target_agent_id": "agent-a", "message": "private"},
+        ]
+
+        dm = tools["wait_next"](timeout_seconds=0, poll_interval=0, max_chain_depth=1)
+        tools["say"](message="plain lobby reply", source_event_id=dm["source_event_id"], auto_chain_depth=1)
+
+        payload = room.requests[-1]["payload"]
+        self.assertEqual(payload["source_event_id"], "dm-next")
+        self.assertNotIn("flow_id", payload)
+        self.assertNotIn("flow_runtime_mode", payload)
+
     def test_read_since_returns_room_diff_without_mutating_presence(self):
         room = RecordingRoom()
         room.room["agent"] = {

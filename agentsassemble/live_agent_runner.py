@@ -5,6 +5,7 @@ import math
 import re
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,7 +23,11 @@ from agentsassemble.live_agent_turns import (
     is_official_turn_reply_event,
     is_review_checkpoint_reply_event,
 )
-from agentsassemble.live_session_adapter import InvokeLiveSessionAdapter
+from agentsassemble.live_session_adapter import (
+    RUNTIME_MANAGED_ROOM_TURN_JOIN_SEMANTICS,
+    InvokeLiveSessionAdapter,
+    RuntimeManagedRoomTurnAdapter,
+)
 from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL, live_agent_poll_sleep_seconds
 from agentsassemble.live_agent_flow import (
     DEFAULT_FLOW_FAIRNESS_MAX_LEAD,
@@ -89,6 +94,7 @@ class ResidentAgentConfig:
     effort: str = ""
     speed: str = ""
     workspace_path: str = ""
+    join_semantics: str = ""
     max_ticks: int = 0
     flow_fairness_recent_window: int = DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW
     flow_fairness_min_gap: int = DEFAULT_FLOW_FAIRNESS_MIN_GAP
@@ -369,6 +375,7 @@ class LiveAgentRunner:
             return 1
         self._advance_live_cursor(live_events)
 
+        turn_delivery_started = time.perf_counter()
         events = _lobby_events(room)
         meeting_id = _flow_room_meeting_id(self.config, room)
         candidate = flow_event_candidate(
@@ -412,10 +419,12 @@ class LiveAgentRunner:
                 self._heartbeat_if_due()
                 return 0
 
+        provider_invocation_started = time.perf_counter()
         generated = self._generate_flow_decision(
             candidate,
             flow_decision_prompt(self.config, room, candidate),
         )
+        provider_invocation_ms = _elapsed_ms(provider_invocation_started)
         if generated is None:
             return 0
         source_event_id, decision = generated
@@ -427,6 +436,7 @@ class LiveAgentRunner:
             return 0
 
         source_depth = _chain_depth(candidate)
+        reply_post_started = time.perf_counter()
         try:
             response = self.request_json(
                 _server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/lobby"),
@@ -442,6 +452,10 @@ class LiveAgentRunner:
                     "flow_action": decision.action,
                     "flow_reason": decision.reason,
                     "target_agent_id": decision.target_agent_id,
+                    "flow_runtime_mode": _room_agent_runtime_mode(room),
+                    "flow_turn_delivery_ms": _elapsed_ms(turn_delivery_started),
+                    "flow_provider_invocation_ms": provider_invocation_ms,
+                    "flow_reply_post_ms": _elapsed_ms(reply_post_started),
                 },
             )
         except Exception as error:
@@ -633,6 +647,7 @@ class LiveAgentRunner:
                 "endpoint": self.config.endpoint,
                 "meeting_id": self.config.meeting_id,
                 "engagement_mode": self.config.engagement_mode,
+                "join_semantics": self.config.join_semantics,
                 "persona_card_id": persona_card_id,
                 "character_mode": normalize_character_mode(
                     self.config.character_mode,
@@ -801,7 +816,12 @@ class LiveAgentRunner:
         heartbeat_stop = threading.Event()
         heartbeat_thread = self._start_working_heartbeat_loop(source_event_id, heartbeat_stop, cursor_field=cursor_field)
         try:
-            adapter = InvokeLiveSessionAdapter(command_runner=self.command_runner)
+            adapter_cls = (
+                RuntimeManagedRoomTurnAdapter
+                if self.config.join_semantics in RUNTIME_MANAGED_ROOM_TURN_JOIN_SEMANTICS
+                else InvokeLiveSessionAdapter
+            )
+            adapter = adapter_cls(command_runner=self.command_runner)
             return adapter.invoke(command, prompt, timeout_seconds=timeout_seconds).message
         finally:
             heartbeat_stop.set()
@@ -1603,6 +1623,7 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         effort=str(getattr(args, "effort", "") or ""),
         speed=str(getattr(args, "speed", "") or ""),
         workspace_path=str(getattr(args, "workspace_path", "") or ""),
+        join_semantics=str(getattr(args, "join_semantics", "") or ""),
         timeout_seconds=int(getattr(args, "timeout")),
         poll_interval=float(getattr(args, "poll_interval")),
         heartbeat_interval=float(getattr(args, "heartbeat_interval")),
@@ -1673,6 +1694,7 @@ def _config_from_mapping(
         effort=str(data.get("effort") or ""),
         speed=str(data.get("speed") or ""),
         workspace_path=_resident_workspace_path(data.get("workspace_path"), base_dir=config_dir),
+        join_semantics=str(data.get("join_semantics") or ""),
         timeout_seconds=int(data.get("timeout_seconds") or data.get("timeout") or 120),
         official_turn_timeout_seconds=live_agent_nonnegative_int(
             official_turn_timeout_value,
@@ -1848,6 +1870,16 @@ def _optional_int(value: object) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return max(0, int(round((time.perf_counter() - started_at) * 1000)))
+
+
+def _room_agent_runtime_mode(room: dict[str, object]) -> str:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    mode = str(agent.get("execution_mode") or "").strip() if isinstance(agent, dict) else ""
+    return mode or "baseline_call_resume"
 
 
 def _events_after(events: list[dict[str, object]], last_observed_event_id: str) -> list[dict[str, object]]:

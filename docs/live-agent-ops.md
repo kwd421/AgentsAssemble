@@ -115,8 +115,19 @@ Cursor, Grok, Antigravity, and similar resume-backed CLIs. It creates a common
 room-turn packet and scheduler boundary, but the provider answer is still
 invoked per turn through exec/resume unless the specific provider has a
 separate persistent process, PTY, stream, or room-loop proof. In the agent
-detail modal this appears as `LiveSessionAdapter 턴제`, while `빠른 provider
-상주형` remains disabled until that persistent proof exists.
+detail modal this appears as `baseline 호출형`, while `runtime-managed`,
+`provider tool-loop`, and `빠른 provider 상주형` remain separate execution
+classes. Runtime-managed means the AgentsAssemble runner reads the room API,
+decides a turn, calls the provider, and posts the reply. Provider tool-loop
+means the provider-owned process uses `wait-next`, `read-since`, `say`,
+`heartbeat`, and `leave` itself; MCP is preferred, and the CLI commands are the
+fallback shape. Fast provider-persistent mode remains disabled until a
+persistent bridge PoC proves that provider can stay attached without
+exec/resume per turn. Flow reply events now preserve `flow_runtime_mode`,
+`flow_turn_delivery_ms`, `flow_provider_invocation_ms`, and
+`flow_reply_post_ms` when that path supplies the data.
+The comparison procedure and current evidence table live in
+`docs/live-session-runtime-comparison.md`.
 
 The current frontend is the Discord-style React room client. Natural-language
 room text should keep human-readable tokens intact

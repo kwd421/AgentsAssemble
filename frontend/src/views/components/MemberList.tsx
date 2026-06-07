@@ -232,12 +232,29 @@ function cooldownLabel(cooldown: number | null) {
   return cooldown <= 0 ? "없음" : `${cooldown}s`;
 }
 
-function agentExecutionMode(agent?: LiveAgent): "call" | "persistent" | "manual" | "unknown" {
+function agentExecutionMode(
+  agent?: LiveAgent
+): "baseline" | "runtime" | "tool_loop" | "persistent" | "manual" | "unknown" {
   const mode = String(agent?.execution_mode || "").trim();
-  if (mode === "call" || mode === "call_resume") return "call";
+  if (mode === "baseline_call_resume" || mode === "call" || mode === "call_resume") return "baseline";
+  if (mode === "runtime_managed_room_turn") return "runtime";
+  if (mode === "provider_tool_loop") return "tool_loop";
   if (mode === "persistent" || mode === "provider_persistent") return "persistent";
   if (mode === "manual") return mode;
   const join = String(agent?.join_semantics || "").trim();
+  if (join === "runtime_managed_room_turn") return "runtime";
+  if (
+    [
+      "mcp_tool_loop",
+      "cli_tool_loop",
+      "provider_tool_loop",
+      "self_service_room_loop",
+      "remote_bridge_room_loop",
+      "native_remote_room_loop",
+    ].includes(join)
+  ) {
+    return "tool_loop";
+  }
   if (
     [
       "codex_exec_resume",
@@ -249,13 +266,11 @@ function agentExecutionMode(agent?: LiveAgent): "call" | "persistent" | "manual"
       "stateless_prompt_call",
     ].includes(join)
   ) {
-    return "call";
+    return "baseline";
   }
   if (
     [
       "terminal_pty_prompt_bridge",
-      "self_service_room_loop",
-      "remote_bridge_room_loop",
       "jsonl_live_session",
     ].includes(join)
   ) {
@@ -271,13 +286,19 @@ function persistentModeAvailable(agent?: LiveAgent) {
 
 function callModeAvailable(agent?: LiveAgent) {
   const mode = agentExecutionMode(agent);
-  return mode === "call" || mode === "persistent";
+  return mode === "baseline" || mode === "runtime" || mode === "tool_loop" || mode === "persistent";
 }
 
 function executionModeSummary(agent?: LiveAgent) {
   const mode = agentExecutionMode(agent);
-  if (mode === "call") {
-    return "현재 이 AI는 LiveSessionAdapter 턴제 호출형입니다. 방 runner와 턴 스케줄러는 살아 있지만 provider 답변은 매번 exec/resume으로 호출합니다.";
+  if (mode === "baseline") {
+    return "현재 이 AI는 baseline 호출형입니다. 방 runner는 살아 있지만 provider 답변은 매번 exec/resume으로 호출합니다.";
+  }
+  if (mode === "runtime") {
+    return "현재 이 AI는 runtime-managed입니다. runtime이 방 API에서 턴을 받아 provider를 호출하고 답장을 방에 게시합니다.";
+  }
+  if (mode === "tool_loop") {
+    return "현재 이 AI는 provider tool-loop입니다. provider가 wait-next/read-since/say 도구로 방에 직접 참여하는 구조입니다.";
   }
   if (mode === "persistent") {
     return "현재 이 AI는 상주형입니다. provider 프로세스/PTY/스트림/room loop가 실행 중인 동안 계속 붙어 있습니다.";
@@ -814,19 +835,41 @@ function MemberDetailModal({
             <div className="dc-member-execution-mode" aria-label={`${entry.displayName} 실행 방식`}>
               <div className="dc-member-execution-mode-head">
                 <span>실행 방식</span>
-                <span>{executionMode === "persistent" ? "빠른 provider 상주형" : executionMode === "call" ? "LiveSessionAdapter 턴제" : "미확인"}</span>
+                <span>{providerExecutionLabel(agent)}</span>
               </div>
               <div className="dc-member-execution-options" role="radiogroup" aria-label="에이전트 실행 방식">
                 <button
                   type="button"
                   className="dc-member-execution-option"
                   role="radio"
-                  aria-checked={executionMode === "call"}
-                  data-active={executionMode === "call"}
+                  aria-checked={executionMode === "baseline"}
+                  data-active={executionMode === "baseline"}
                   disabled={!canUseCallMode}
                   title="방 runner와 턴 스케줄러는 살아 있지만 provider는 매 답변마다 exec/resume으로 호출합니다."
                 >
-                  LiveSessionAdapter 턴제
+                  baseline 호출형
+                </button>
+                <button
+                  type="button"
+                  className="dc-member-execution-option"
+                  role="radio"
+                  aria-checked={executionMode === "runtime"}
+                  data-active={executionMode === "runtime"}
+                  disabled
+                  title="1번 비교 구조입니다. runtime이 방 API에서 턴을 받아 provider를 호출합니다."
+                >
+                  runtime-managed
+                </button>
+                <button
+                  type="button"
+                  className="dc-member-execution-option"
+                  role="radio"
+                  aria-checked={executionMode === "tool_loop"}
+                  data-active={executionMode === "tool_loop"}
+                  disabled
+                  title="3번 비교 구조입니다. provider가 wait-next/read-since/say 도구로 방에 참여합니다."
+                >
+                  provider tool-loop
                 </button>
                 <button
                   type="button"
@@ -848,12 +891,12 @@ function MemberDetailModal({
                 {executionSummary}
               </p>
               <p className="dc-member-detail-note preserve-words">
-                LiveSessionAdapter 턴제 호출형은 유휴 자원이 적지만 느릴 수 있습니다. Codex 5.3 Spark 실측은 4-6초였고,
+                baseline 호출형은 유휴 자원이 적지만 느릴 수 있습니다. Codex 5.3 Spark 실측은 4-6초였고,
                 원인은 polling/cooldown이 아니라 Codex exec/resume 호출 비용입니다.
               </p>
               <p className="dc-member-detail-note preserve-words">
-                상주형은 더 빠른 응답을 목표로 하지만 provider 프로세스/PTY/스트림을 계속 붙잡아 자원을 더 씁니다.
-                PoC가 통과한 provider에서만 활성화합니다.
+                runtime-managed는 1번 비교 구조이고, provider tool-loop는 3번 비교 구조입니다. 둘 다 실검증 결과를 문서에 남겨야 선택할 수 있습니다.
+                빠른 provider 상주형은 persistent bridge PoC가 통과한 provider에서만 활성화합니다.
               </p>
               <p className="dc-member-session-status preserve-words">
                 runner: {agent.runner_residency || "unknown"} · provider: {agent.provider_residency || "unknown"}

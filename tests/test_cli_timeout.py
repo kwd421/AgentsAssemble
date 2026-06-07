@@ -1370,6 +1370,31 @@ class CliTimeoutTests(unittest.TestCase):
             payload={"message": "Gemini 접속 확인", "kind": "message"},
         )
 
+    def test_live_agent_register_can_send_join_semantics_override(self):
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value={"agent": {"agent_id": "agent-a"}}) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "register",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "agent-a",
+                        "--provider-kind",
+                        "codex_live_session",
+                        "--connection-kind",
+                        "live_session",
+                        "--join-semantics",
+                        "runtime_managed_room_turn",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        payload = request_json.call_args.kwargs["payload"]
+        self.assertEqual(payload["join_semantics"], "runtime_managed_room_turn")
+
     def test_live_agent_say_posts_source_metadata_and_json_acknowledgement(self):
         stdout = StringIO()
         response = {
@@ -1413,6 +1438,45 @@ class CliTimeoutTests(unittest.TestCase):
             },
         )
         self.assertEqual(json.loads(stdout.getvalue()), response)
+
+    def test_live_agent_say_can_preserve_tool_loop_flow_metadata(self):
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value={"event": {"id": "reply-1"}}) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "say",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "gemini-cli",
+                        "--source-event-id",
+                        "flow-start",
+                        "--flow-id",
+                        "flow-1",
+                        "--flow-meeting-id",
+                        "m1",
+                        "Tool",
+                        "loop",
+                        "reply",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agents/gemini-cli/lobby",
+            method="POST",
+            payload={
+                "message": "Tool loop reply",
+                "kind": "message",
+                "source_event_id": "flow-start",
+                "flow_id": "flow-1",
+                "flow_action": "speak",
+                "flow_runtime_mode": "provider_tool_loop",
+                "flow_meeting_id": "m1",
+            },
+        )
 
     def test_live_agent_heartbeat_posts_error_status_and_metadata(self):
         stdout = StringIO()
@@ -12163,6 +12227,53 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["action"], "lobby")
         self.assertEqual(payload["source_event_id"], "evt-reply")
         self.assertIn("reply_command", payload)
+
+    def test_live_agent_wait_next_reply_command_preserves_flow_metadata_for_cli_tool_loop(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "display_name": "Claude Terminal",
+                "engagement_mode": "always",
+                "last_observed_event_id": "",
+            },
+            "meeting_id": "m1",
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "flow started",
+                    "flow_id": "flow-1",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                }
+            ],
+            "live_events": [],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-next",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["action"], "lobby")
+        self.assertIn("--flow-id", payload["reply_command"])
+        self.assertIn("flow-1", payload["reply_command"])
+        self.assertIn("--flow-meeting-id", payload["reply_command"])
+        self.assertIn("m1", payload["reply_command"])
 
     def test_live_agent_wait_next_returns_targeted_return_packet_before_lobby(self):
         stdout = StringIO()

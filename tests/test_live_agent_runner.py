@@ -26,6 +26,7 @@ from agentsassemble.live_agent_runner import (
 from agentsassemble.live_session_adapter import (
     InvokeLiveSessionAdapter,
     RuntimeCapabilities,
+    RuntimeManagedRoomTurnAdapter,
     live_session_runtime_contract,
 )
 from agentsassemble.live_session_transport import JsonlLiveSession
@@ -94,6 +95,27 @@ def config(**overrides):
 
 
 class LiveAgentRunnerTests(unittest.TestCase):
+    def test_runner_registers_join_semantics_override(self):
+        clock = FakeClock()
+        client = FakeRoomClient([{"lobby_events": []}])
+
+        runner = LiveAgentRunner(
+            config(join_semantics="runtime_managed_room_turn"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "unused",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        register_payloads = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/live-agents") and method == "POST"
+        ]
+        self.assertEqual(register_payloads[0]["join_semantics"], "runtime_managed_room_turn")
+
     def test_zero_poll_interval_uses_immediate_safe_sleep_between_idle_ticks(self):
         clock = FakeClock()
         sleep_calls: list[float] = []
@@ -292,10 +314,29 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(result.message, "reply")
         self.assertEqual(calls, [(["cmd"], "prompt", 12)])
         capabilities = RuntimeCapabilities.from_join_semantics("codex_exec_resume")
-        self.assertEqual(capabilities.runtime_mode, "call_resume")
+        self.assertEqual(capabilities.runtime_mode, "baseline_call_resume")
         self.assertEqual(capabilities.provider_residency, "per_turn_exec_resume")
         self.assertFalse(capabilities.provider_persistent)
         self.assertEqual(live_session_runtime_contract("jsonl_live_session")["runtime_mode"], "provider_persistent")
+
+    def test_live_session_adapter_names_baseline_runtime_and_tool_loop_modes(self):
+        baseline = RuntimeCapabilities.from_join_semantics("codex_exec_resume")
+        runtime = RuntimeCapabilities.from_join_semantics("runtime_managed_room_turn")
+        tool_loop = RuntimeCapabilities.from_join_semantics("mcp_tool_loop")
+
+        self.assertEqual(baseline.runtime_mode, "baseline_call_resume")
+        self.assertEqual(runtime.runtime_mode, "runtime_managed_room_turn")
+        self.assertEqual(tool_loop.runtime_mode, "provider_tool_loop")
+        self.assertEqual(runtime.provider_residency, "per_turn_exec_resume")
+        self.assertEqual(tool_loop.provider_residency, "provider_owned_tool_loop")
+
+    def test_runtime_managed_room_turn_adapter_reports_distinct_runtime_mode(self):
+        adapter = RuntimeManagedRoomTurnAdapter(command_runner=lambda command, prompt, *, timeout_seconds: "reply")
+
+        result = adapter.invoke(["cmd"], "prompt", timeout_seconds=12)
+
+        self.assertEqual(result.message, "reply")
+        self.assertEqual(result.runtime_mode, "runtime_managed_room_turn")
 
     def test_always_runner_preserves_configured_room_scope_when_replying(self):
         clock = FakeClock()
@@ -638,6 +679,10 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(lobby_payloads[0]["flow_action"], "challenge")
         self.assertEqual(lobby_payloads[0]["flow_reason"], "반례 부족")
         self.assertEqual(lobby_payloads[0]["target_agent_id"], "agent-b")
+        self.assertEqual(lobby_payloads[0]["flow_runtime_mode"], "baseline_call_resume")
+        self.assertIsInstance(lobby_payloads[0]["flow_turn_delivery_ms"], int)
+        self.assertIsInstance(lobby_payloads[0]["flow_provider_invocation_ms"], int)
+        self.assertIsInstance(lobby_payloads[0]["flow_reply_post_ms"], int)
 
     def test_flow_runner_uses_flow_cooldown_option(self):
         clock = FakeClock()
@@ -4224,6 +4269,30 @@ class LiveAgentRunnerTests(unittest.TestCase):
             loaded = load_group_configs(path)
 
         self.assertEqual(loaded[0].connection_kind, "live_session")
+
+    def test_group_config_preserves_join_semantics_override(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-runtime",
+                                "connection_kind": "live_session",
+                                "join_semantics": "runtime_managed_room_turn",
+                                "command": ["python3", "-u", "session.py"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path)
+
+        self.assertEqual(loaded[0].join_semantics, "runtime_managed_room_turn")
+
 
     def test_group_config_preserves_terminal_session_connection_kind(self):
         with tempfile.TemporaryDirectory() as temp_dir:

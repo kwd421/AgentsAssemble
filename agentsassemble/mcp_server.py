@@ -29,6 +29,9 @@ class McpParticipantContext:
     last_observed_event_id: str = ""
     last_observed_live_event_id: str = ""
     last_observed_dm_event_id: str = ""
+    pending_flow_id: str = ""
+    pending_flow_meeting_id: str = ""
+    pending_flow_source_event_id: str = ""
 
 
 RequestJson = Callable[..., dict[str, object]]
@@ -234,14 +237,17 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
             last_room = room
             dm = _next_dm(context, room)
             if dm is not None:
+                _clear_pending_flow(context)
                 context.last_observed_dm_event_id = str(dm.get("id") or "")
                 return _dm_payload(context, room, dm)
             official = _next_official_turn(context, room)
             if official is not None:
+                _clear_pending_flow(context)
                 context.last_observed_live_event_id = str(official.get("id") or "")
                 return _official_turn_payload(context, room, official)
             packet = _next_return_packet(context, room)
             if packet is not None:
+                _clear_pending_flow(context)
                 context.last_observed_live_event_id = str(packet.get("id") or "")
                 return _return_packet_payload(context, room, packet)
             lobby_action = _next_lobby_action(context, room, max_chain_depth=max_chain_depth)
@@ -254,15 +260,33 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
                 return _wait_timeout_payload(context, last_room, timeout_seconds=float(timeout_seconds))
             time.sleep(min(live_agent_poll_sleep_seconds(poll_interval), remaining))
 
-    def say(message: str, source_event_id: str, auto_chain_depth: int = 1) -> dict[str, object]:
+    def say(
+        message: str,
+        source_event_id: str,
+        auto_chain_depth: int = 1,
+        flow_id: str = "",
+        flow_meeting_id: str = "",
+    ) -> dict[str, object]:
         source_id = _required_text(source_event_id, "source_event_id")
+        clean_flow_id = _clean_text(flow_id, limit=128)
+        clean_flow_meeting_id = _clean_text(flow_meeting_id, limit=128)
+        if not clean_flow_id and context.pending_flow_source_event_id == source_id:
+            clean_flow_id = context.pending_flow_id
+            clean_flow_meeting_id = context.pending_flow_meeting_id
         payload = {
             "message": _required_text(message, "message"),
             "kind": "message",
             "source_event_id": source_id,
             "auto_chain_depth": max(0, int(auto_chain_depth)),
         }
+        if clean_flow_id:
+            payload["flow_id"] = clean_flow_id
+            payload["flow_action"] = "speak"
+            payload["flow_runtime_mode"] = "provider_tool_loop"
+        if clean_flow_meeting_id:
+            payload["flow_meeting_id"] = clean_flow_meeting_id
         context.last_observed_event_id = source_id
+        _clear_pending_flow(context)
         return client.post(f"/api/live-agents/{_quote(context.agent_id)}/lobby", payload)
 
     def official_reply(message: str, meeting_id: str, source_event_id: str) -> dict[str, object]:
@@ -492,6 +516,9 @@ def _lobby_payload(
     action: str,
 ) -> dict[str, object]:
     event_id = str(event.get("id") or "")
+    context.pending_flow_id = str(event.get("flow_id") or "")
+    context.pending_flow_meeting_id = str(event.get("flow_meeting_id") or room.get("meeting_id") or context.meeting_id or "")
+    context.pending_flow_source_event_id = event_id
     return {
         "status": "event",
         "action": action,
@@ -509,6 +536,7 @@ def _wait_timeout_payload(
     *,
     timeout_seconds: float,
 ) -> dict[str, object]:
+    _clear_pending_flow(context)
     context.last_observed_event_id = _latest_event_id(room.get("lobby_events"), context.last_observed_event_id)
     context.last_observed_live_event_id = _latest_event_id(room.get("live_events"), context.last_observed_live_event_id)
     context.last_observed_dm_event_id = _latest_event_id(room.get("dm_events"), context.last_observed_dm_event_id)
@@ -520,6 +548,12 @@ def _wait_timeout_payload(
         "last_observed_live_event_id": context.last_observed_live_event_id,
         "last_observed_dm_event_id": context.last_observed_dm_event_id,
     }
+
+
+def _clear_pending_flow(context: McpParticipantContext) -> None:
+    context.pending_flow_id = ""
+    context.pending_flow_meeting_id = ""
+    context.pending_flow_source_event_id = ""
 
 
 def _room_context(room: dict[str, object], *, meeting_id: str) -> dict[str, object]:

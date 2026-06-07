@@ -8,7 +8,7 @@ from math import ceil, isfinite
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.live_agent_context import live_agent_context_contract
+from agentsassemble.live_agent_context import live_agent_context_contract, live_agent_context_contract_with_join_semantics
 from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
 from agentsassemble.live_agent_quota import LIVE_AGENT_QUOTA_FIELDS, clean_live_agent_quota_fields
 from agentsassemble.meeting_events import clean_lobby_text
@@ -103,7 +103,12 @@ def connect_live_agent(
             or clean_lobby_text(existing.get("provider_kind"), limit=64)
             or "manual"
         )
-        context_contract = live_agent_context_contract(provider_kind, connection_kind)
+        requested_join_semantics = payload.get("join_semantics") or existing.get("join_semantics")
+        context_contract = live_agent_context_contract_with_join_semantics(
+            provider_kind,
+            connection_kind,
+            requested_join_semantics,
+        )
         requested_engagement_mode = normalize_engagement_mode(payload.get("engagement_mode"), default="mentioned")
         operator_engagement_mode = _operator_engagement_mode(existing)
         effective_engagement_mode = operator_engagement_mode or requested_engagement_mode
@@ -400,7 +405,13 @@ def heartbeat_live_agent(
             and "last_error" not in metadata
         ):
             agent["last_error"] = ""
-        agent.update(live_agent_context_contract(agent.get("provider_kind"), agent.get("connection_kind")))
+        agent.update(
+            live_agent_context_contract_with_join_semantics(
+                agent.get("provider_kind"),
+                agent.get("connection_kind"),
+                agent.get("join_semantics"),
+            )
+        )
         _upsert_agent(agents, agent)
         _write_state(output_root, {"agents": agents})
         return agent
@@ -509,7 +520,13 @@ def _with_inferred_status(
     stale_after_seconds: int,
 ) -> dict[str, object]:
     visible = _without_output_only_freshness(agent)
-    visible.update(live_agent_context_contract(visible.get("provider_kind"), visible.get("connection_kind")))
+    visible.update(
+        live_agent_context_contract_with_join_semantics(
+            visible.get("provider_kind"),
+            visible.get("connection_kind"),
+            visible.get("join_semantics"),
+        )
+    )
     stale_after = max(0, int(stale_after_seconds))
     visible["stale_after_seconds"] = stale_after
     last_seen = _parse_timestamp(visible.get("last_seen_at"))

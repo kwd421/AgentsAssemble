@@ -43,7 +43,7 @@ from agentsassemble.live_agent_discovery import (
     fill_discovery_next_command_output,
     validate_distinct_session_bundle_paths,
 )
-from agentsassemble.live_agent_context import live_agent_context_contract
+from agentsassemble.live_agent_context import live_agent_context_contract, live_agent_context_contract_with_join_semantics
 from agentsassemble.live_agent_flow import FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
 from agentsassemble.live_agent_frontend_create import (
     frontend_live_agent_check_payload,
@@ -3227,6 +3227,10 @@ def _live_agent_lobby_flow_metadata(payload: dict[str, object]) -> dict[str, obj
         "flow_meeting_id",
         "flow_action",
         "flow_reason",
+        "flow_runtime_mode",
+        "flow_turn_delivery_ms",
+        "flow_provider_invocation_ms",
+        "flow_reply_post_ms",
     ):
         if key in payload:
             metadata[key] = payload.get(key)
@@ -5480,7 +5484,11 @@ def _live_agent_register_operation_details(
     clean_agent_id: str,
     previous_agent: dict[str, object],
 ) -> dict[str, object]:
-    context_contract = live_agent_context_contract(agent.get("provider_kind"), agent.get("connection_kind"))
+    context_contract = live_agent_context_contract_with_join_semantics(
+        agent.get("provider_kind"),
+        agent.get("connection_kind"),
+        agent.get("join_semantics"),
+    )
     details = {
         "agent_id": clean_lobby_text(agent.get("agent_id") or clean_agent_id, limit=64),
         "meeting_id": clean_lobby_text(agent.get("meeting_id"), limit=128),

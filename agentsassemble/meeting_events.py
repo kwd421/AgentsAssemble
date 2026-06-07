@@ -67,6 +67,7 @@ class LobbyEvent:
     flow_policy: str = ""
     flow_action: str = ""
     flow_reason: str = ""
+    flow_runtime_mode: str = ""
     flow_duration_seconds: int = 0
     flow_tick_interval: int = 0
     flow_cooldown: int = 0
@@ -75,6 +76,9 @@ class LobbyEvent:
     flow_max_silence_seconds: int = 0
     flow_total_turns: int = 0
     flow_agent_count: int = 0
+    flow_turn_delivery_ms: int = 0
+    flow_provider_invocation_ms: int = 0
+    flow_reply_post_ms: int = 0
     flow_started_at: str = ""
     flow_deadline_at: str = ""
     attachments: list[dict[str, object]] = field(default_factory=list)
@@ -114,6 +118,7 @@ class LobbyEvent:
             flow_policy=clean_lobby_text(payload.get("flow_policy", ""), limit=64),
             flow_action=clean_lobby_text(payload.get("flow_action", ""), limit=64),
             flow_reason=clean_lobby_text(payload.get("flow_reason", ""), limit=400),
+            flow_runtime_mode=clean_lobby_text(payload.get("flow_runtime_mode", ""), limit=64),
             flow_duration_seconds=normalize_flow_int(payload.get("flow_duration_seconds")),
             flow_tick_interval=normalize_flow_int(payload.get("flow_tick_interval")),
             flow_cooldown=normalize_flow_int(payload.get("flow_cooldown")),
@@ -122,6 +127,9 @@ class LobbyEvent:
             flow_max_silence_seconds=normalize_flow_int(payload.get("flow_max_silence_seconds")),
             flow_total_turns=normalize_flow_int(payload.get("flow_total_turns")),
             flow_agent_count=normalize_flow_int(payload.get("flow_agent_count")),
+            flow_turn_delivery_ms=normalize_flow_int(payload.get("flow_turn_delivery_ms")),
+            flow_provider_invocation_ms=normalize_flow_int(payload.get("flow_provider_invocation_ms")),
+            flow_reply_post_ms=normalize_flow_int(payload.get("flow_reply_post_ms")),
             flow_started_at=clean_lobby_text(payload.get("flow_started_at", ""), limit=64),
             flow_deadline_at=clean_lobby_text(payload.get("flow_deadline_at", ""), limit=64),
             attachments=clean_lobby_attachments(payload.get("attachments")),
@@ -159,6 +167,7 @@ class LobbyEvent:
             flow_policy=clean_lobby_text(payload.get("flow_policy", ""), limit=64),
             flow_action=clean_lobby_text(payload.get("flow_action", ""), limit=64),
             flow_reason=clean_lobby_text(payload.get("flow_reason", ""), limit=400),
+            flow_runtime_mode=clean_lobby_text(payload.get("flow_runtime_mode", ""), limit=64),
             flow_duration_seconds=normalize_flow_int(payload.get("flow_duration_seconds")),
             flow_tick_interval=normalize_flow_int(payload.get("flow_tick_interval")),
             flow_cooldown=normalize_flow_int(payload.get("flow_cooldown")),
@@ -167,6 +176,9 @@ class LobbyEvent:
             flow_max_silence_seconds=normalize_flow_int(payload.get("flow_max_silence_seconds")),
             flow_total_turns=normalize_flow_int(payload.get("flow_total_turns")),
             flow_agent_count=normalize_flow_int(payload.get("flow_agent_count")),
+            flow_turn_delivery_ms=normalize_flow_int(payload.get("flow_turn_delivery_ms")),
+            flow_provider_invocation_ms=normalize_flow_int(payload.get("flow_provider_invocation_ms")),
+            flow_reply_post_ms=normalize_flow_int(payload.get("flow_reply_post_ms")),
             flow_started_at=clean_lobby_text(payload.get("flow_started_at", ""), limit=64),
             flow_deadline_at=clean_lobby_text(payload.get("flow_deadline_at", ""), limit=64),
             attachments=clean_lobby_attachments(payload.get("attachments")),
@@ -199,12 +211,29 @@ class LobbyEvent:
             "flow_policy",
             "flow_action",
             "flow_reason",
+            "flow_runtime_mode",
             "flow_started_at",
             "flow_deadline_at",
         ):
             value = getattr(self, key)
             if value:
                 payload[key] = value
+        has_flow_metadata = any(
+            getattr(self, key)
+            for key in (
+                "flow_id",
+                "flow_meeting_id",
+                "flow_event_type",
+                "flow_status",
+                "flow_topic",
+                "flow_policy",
+                "flow_action",
+                "flow_reason",
+                "flow_runtime_mode",
+                "flow_started_at",
+                "flow_deadline_at",
+            )
+        )
         for key in (
             "flow_duration_seconds",
             "flow_tick_interval",
@@ -214,9 +243,12 @@ class LobbyEvent:
             "flow_max_silence_seconds",
             "flow_total_turns",
             "flow_agent_count",
+            "flow_turn_delivery_ms",
+            "flow_provider_invocation_ms",
+            "flow_reply_post_ms",
         ):
             value = getattr(self, key)
-            if value:
+            if value or has_flow_metadata:
                 payload[key] = value
         if self.attachments:
             payload["attachments"] = self.attachments
@@ -283,6 +315,7 @@ FLOW_METADATA_KEYS: set[str] = {
     "flow_policy",
     "flow_action",
     "flow_reason",
+    "flow_runtime_mode",
     "flow_duration_seconds",
     "flow_tick_interval",
     "flow_cooldown",
@@ -291,6 +324,9 @@ FLOW_METADATA_KEYS: set[str] = {
     "flow_max_silence_seconds",
     "flow_total_turns",
     "flow_agent_count",
+    "flow_turn_delivery_ms",
+    "flow_provider_invocation_ms",
+    "flow_reply_post_ms",
     "flow_started_at",
     "flow_deadline_at",
 }

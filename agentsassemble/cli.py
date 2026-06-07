@@ -418,6 +418,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_register.add_argument("--endpoint", default="")
     live_register.add_argument("--meeting-id", default="")
     live_register.add_argument("--engagement-mode", default="mentioned")
+    live_register.add_argument("--join-semantics", default="", help="Override execution structure for comparison runs.")
     live_register.add_argument("--persona-card-id", default="")
     live_register.add_argument("--character-mode", choices=["off", "on", "work_speech_only"], default="")
     live_register.add_argument("--json", action="store_true", dest="as_json", help="Print the raw registration response.")
@@ -849,6 +850,8 @@ def build_parser() -> argparse.ArgumentParser:
     live_say.add_argument("--agent-id", required=True)
     live_say.add_argument("--source-event-id", default="")
     live_say.add_argument("--auto-chain-depth", type=parse_nonnegative_int, default=None)
+    live_say.add_argument("--flow-id", default="", help="Flow id from a wait-next/read-since event when replying from a tool loop.")
+    live_say.add_argument("--flow-meeting-id", default="", help="Flow meeting id from a wait-next/read-since event when replying from a tool loop.")
     live_say.add_argument("--json", action="store_true", dest="as_json", help="Print the raw lobby post response.")
     live_say.add_argument("message", nargs="+")
 
@@ -1253,6 +1256,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_run.add_argument("--auth-ref", default="")
     live_run.add_argument("--meeting-id", default="")
     live_run.add_argument("--engagement-mode", default="always")
+    live_run.add_argument("--join-semantics", default="", help="Override execution structure for comparison runs.")
     live_run.add_argument("--timeout", type=int, default=120)
     live_run.add_argument(
         "--official-turn-timeout",
@@ -1968,6 +1972,7 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
                 "endpoint": args.endpoint,
                 "meeting_id": args.meeting_id,
                 "engagement_mode": args.engagement_mode,
+                "join_semantics": args.join_semantics,
                 "capabilities": ["room_chat", "mentions"],
             }
             persona_card_id = clean_persona_card_id(args.persona_card_id)
@@ -2050,6 +2055,12 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
                 payload["source_event_id"] = args.source_event_id
             if args.auto_chain_depth is not None:
                 payload["auto_chain_depth"] = args.auto_chain_depth
+            if args.flow_id:
+                payload["flow_id"] = args.flow_id
+                payload["flow_action"] = "speak"
+                payload["flow_runtime_mode"] = "provider_tool_loop"
+            if args.flow_meeting_id:
+                payload["flow_meeting_id"] = args.flow_meeting_id
             response = _request_json(
                 _server_url(args.server, f"/api/live-agents/{agent_id}/lobby"),
                 method="POST",
@@ -6400,29 +6411,35 @@ def _wait_room_event_payload(
 ) -> dict[str, object]:
     event_id = str(event.get("id") or "")
     auto_chain_depth = _delegate_chain_depth(event) + 1
+    flow_id = str(event.get("flow_id") or "").strip()
+    flow_meeting_id = str(event.get("flow_meeting_id") or room.get("meeting_id") or "").strip()
+    reply_command = [
+        "python3",
+        "-m",
+        "agentsassemble.cli",
+        "live-agent",
+        "say",
+        "--server",
+        str(args.server),
+        "--agent-id",
+        str(args.agent_id),
+        "--source-event-id",
+        event_id,
+        "--auto-chain-depth",
+        str(auto_chain_depth),
+    ]
+    if flow_id:
+        reply_command.extend(["--flow-id", flow_id])
+    if flow_meeting_id:
+        reply_command.extend(["--flow-meeting-id", flow_meeting_id])
+    reply_command.extend(["--", "<reply>"])
     return {
         "status": "event",
         "agent_id": args.agent_id,
         "source_event_id": event_id,
         "auto_chain_depth": auto_chain_depth,
         "event": event,
-        "reply_command": [
-            "python3",
-            "-m",
-            "agentsassemble.cli",
-            "live-agent",
-            "say",
-            "--server",
-            str(args.server),
-            "--agent-id",
-            str(args.agent_id),
-            "--source-event-id",
-            event_id,
-            "--auto-chain-depth",
-            str(auto_chain_depth),
-            "--",
-            "<reply>",
-        ],
+        "reply_command": reply_command,
         "room": _wait_room_context(room, meeting_id=str(room.get("meeting_id") or "")),
     }
 

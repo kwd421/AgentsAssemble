@@ -5,6 +5,8 @@ from agentsassemble.sandbox_launcher import sandbox_launcher_for, safe_sandbox_e
 from agentsassemble.live_session_adapter import (
     CALL_RESUME_JOIN_SEMANTICS,
     PROVIDER_PERSISTENT_JOIN_SEMANTICS,
+    PROVIDER_TOOL_LOOP_JOIN_SEMANTICS,
+    RUNTIME_MANAGED_ROOM_TURN_JOIN_SEMANTICS,
     live_session_runtime_contract,
 )
 
@@ -16,6 +18,11 @@ LIVE_AGENT_JOIN_SEMANTICS = {
     "terminal_pty_prompt_bridge",
     "remote_bridge_room_loop",
     "self_service_room_loop",
+    "native_remote_room_loop",
+    "runtime_managed_room_turn",
+    "mcp_tool_loop",
+    "cli_tool_loop",
+    "provider_tool_loop",
     "codex_exec_resume",
     "kiro_chat_resume",
     "antigravity_conversation_resume",
@@ -37,6 +44,8 @@ LIVE_AGENT_CONTEXT_DURABILITY = {
 }
 CALL_EXECUTION_JOIN_SEMANTICS = CALL_RESUME_JOIN_SEMANTICS
 PERSISTENT_EXECUTION_JOIN_SEMANTICS = PROVIDER_PERSISTENT_JOIN_SEMANTICS
+TOOL_LOOP_EXECUTION_JOIN_SEMANTICS = PROVIDER_TOOL_LOOP_JOIN_SEMANTICS
+RUNTIME_MANAGED_EXECUTION_JOIN_SEMANTICS = RUNTIME_MANAGED_ROOM_TURN_JOIN_SEMANTICS
 
 
 def live_agent_context_contract(provider_kind: object, connection_kind: object) -> dict[str, str]:
@@ -144,7 +153,7 @@ def live_agent_execution_contract(join_semantics: object) -> dict[str, object]:
     runtime = live_session_runtime_contract(clean_lobby_text(join_semantics, limit=64))
     runtime_mode = str(runtime.get("runtime_mode") or "unknown")
     return {
-        "execution_mode": "persistent" if runtime_mode == "provider_persistent" else runtime_mode.replace("_resume", ""),
+        "execution_mode": "persistent" if runtime_mode == "provider_persistent" else runtime_mode,
         "runner_residency": str(runtime.get("runner_residency") or "unknown"),
         "provider_residency": str(runtime.get("provider_residency") or "unknown"),
         "provider_persistent": bool(runtime.get("provider_persistent")),
@@ -154,6 +163,20 @@ def live_agent_execution_contract(join_semantics: object) -> dict[str, object]:
 
 def _with_execution_contract(contract: dict[str, str]) -> dict[str, str]:
     return {**contract, **live_agent_execution_contract(contract.get("join_semantics"))}
+
+
+def live_agent_context_contract_with_join_semantics(
+    provider_kind: object,
+    connection_kind: object,
+    join_semantics: object,
+) -> dict[str, object]:
+    contract: dict[str, object] = dict(live_agent_context_contract(provider_kind, connection_kind))
+    safe_join = safe_live_agent_join_semantics(join_semantics)
+    if not safe_join:
+        return contract
+    contract["join_semantics"] = safe_join
+    contract.update(live_agent_execution_contract(safe_join))
+    return contract
 
 
 def safe_live_agent_join_semantics(value: object) -> str:

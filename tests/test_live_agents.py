@@ -31,7 +31,7 @@ class LiveAgentPresenceTests(unittest.TestCase):
 
     def test_context_contract_separates_runner_residency_from_provider_residency(self):
         codex = live_agent_context_contract("codex_live_session", "live_session")
-        self.assertEqual(codex["execution_mode"], "call")
+        self.assertEqual(codex["execution_mode"], "baseline_call_resume")
         self.assertEqual(codex["runner_residency"], "resident_polling_runner")
         self.assertEqual(codex["provider_residency"], "per_turn_exec_resume")
         self.assertIn("exec/resume", codex["execution_summary"])
@@ -40,6 +40,28 @@ class LiveAgentPresenceTests(unittest.TestCase):
         self.assertEqual(terminal["execution_mode"], "persistent")
         self.assertEqual(terminal["runner_residency"], "resident_process")
         self.assertEqual(terminal["provider_residency"], "persistent_provider_channel")
+
+    def test_connect_live_agent_can_override_join_semantics_for_runtime_comparison(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            agent = connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "codex_live_session",
+                    "connection_kind": "live_session",
+                    "join_semantics": "runtime_managed_room_turn",
+                },
+                now=datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+            )
+            visible = read_live_agents(root, now=datetime(2026, 5, 17, 12, 0, tzinfo=UTC))[0]
+
+        self.assertEqual(agent["join_semantics"], "runtime_managed_room_turn")
+        self.assertEqual(agent["execution_mode"], "runtime_managed_room_turn")
+        self.assertEqual(visible["join_semantics"], "runtime_managed_room_turn")
+        self.assertEqual(visible["execution_mode"], "runtime_managed_room_turn")
 
     def test_sandbox_launcher_declares_current_enforcement_without_claiming_os_sandbox(self):
         self.assertEqual(NoSandboxLauncher().enforcement, "advisory")

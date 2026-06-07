@@ -144,8 +144,30 @@ export function characterModeKind(value?: string): "on" | "work_speech" | "off" 
 }
 
 export function providerExecutionLabel(
-  agent: Pick<LiveAgent, "provider_kind" | "connection_kind" | "engagement_mode" | "join_semantics">
+  agent: Pick<LiveAgent, "provider_kind" | "connection_kind" | "engagement_mode" | "join_semantics" | "execution_mode">
 ): string {
+  const executionMode = String(agent.execution_mode || "").trim();
+  if (["baseline_call_resume", "call", "call_resume"].includes(executionMode)) return "baseline 호출형";
+  if (executionMode === "runtime_managed_room_turn") return "runtime-managed";
+  if (executionMode === "provider_tool_loop") return "provider tool-loop";
+  if (executionMode === "persistent" || executionMode === "provider_persistent") return "상주형";
+  if (executionMode === "manual") return "수동";
+
+  const join = String(agent.join_semantics || "").trim();
+  if (join === "runtime_managed_room_turn") return "runtime-managed";
+  if (
+    [
+      "mcp_tool_loop",
+      "cli_tool_loop",
+      "provider_tool_loop",
+      "self_service_room_loop",
+      "remote_bridge_room_loop",
+      "native_remote_room_loop",
+    ].includes(join)
+  ) {
+    return "provider tool-loop";
+  }
+
   const provider = String(agent.provider_kind || "").trim();
   const connection = String(agent.connection_kind || "").trim();
   const pair = `${provider}/${connection}`;
