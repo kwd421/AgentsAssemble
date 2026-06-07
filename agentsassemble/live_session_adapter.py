@@ -19,6 +19,8 @@ RUNTIME_MANAGED_ROOM_TURN_JOIN_SEMANTICS = {
 PROVIDER_TOOL_LOOP_JOIN_SEMANTICS = {
     "mcp_tool_loop",
     "cli_tool_loop",
+}
+UNVERIFIED_TOOL_LOOP_JOIN_SEMANTICS = {
     "provider_tool_loop",
     "self_service_room_loop",
     "remote_bridge_room_loop",
@@ -37,6 +39,7 @@ class RuntimeCapabilities:
     provider_residency: str
     provider_persistent: bool
     summary: str
+    unverified_reason: str = ""
 
     @classmethod
     def from_join_semantics(cls, join_semantics: object) -> RuntimeCapabilities:
@@ -64,6 +67,15 @@ class RuntimeCapabilities:
                 provider_residency="provider_owned_tool_loop",
                 provider_persistent=True,
                 summary="Provider tool-loop: the provider participates through wait-next/read-since/say room tools.",
+            )
+        if join in UNVERIFIED_TOOL_LOOP_JOIN_SEMANTICS:
+            return cls(
+                runtime_mode="tool_loop_unverified",
+                runner_residency="unverified_tool_loop",
+                provider_residency="unverified_tool_loop",
+                provider_persistent=False,
+                summary="Tool-loop requested, but this provider transport has not been verified through MCP or CLI fallback.",
+                unverified_reason="provider tool-loop transport has not been verified for this agent",
             )
         if join in PROVIDER_PERSISTENT_JOIN_SEMANTICS:
             return cls(
@@ -96,6 +108,7 @@ class RuntimeCapabilities:
             "provider_residency": self.provider_residency,
             "provider_persistent": self.provider_persistent,
             "runtime_summary": self.summary,
+            "tool_loop_unverified_reason": self.unverified_reason,
         }
 
 

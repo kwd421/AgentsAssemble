@@ -24,7 +24,8 @@ SAFE_LIVE_AGENT_ROSTER_FIELDS = (
     "runner_residency",
     "provider_residency",
     "provider_persistent",
-    "runtime_summary",
+    "execution_summary",
+    "tool_loop_unverified_reason",
     "context_durability",
     "sandbox_enforcement",
     "status",
@@ -149,7 +150,13 @@ def safe_live_agent_roster_agent(
             safe_agent[field] = safe_live_agent_join_semantics(context_contract["join_semantics"])
         elif field == "provider_persistent":
             safe_agent[field] = value is True
-        elif field in {"execution_mode", "runner_residency", "provider_residency", "runtime_summary"}:
+        elif field in {
+            "execution_mode",
+            "runner_residency",
+            "provider_residency",
+            "execution_summary",
+            "tool_loop_unverified_reason",
+        }:
             safe_agent[field] = safe_live_agent_roster_text(value, limit=256)
         elif field == "context_durability":
             safe_agent[field] = safe_live_agent_context_durability(context_contract["context_durability"])
@@ -188,7 +195,13 @@ def safe_live_agent_roster_agent(
         safe_agent["context_durability"] = safe_live_agent_context_durability(context_contract["context_durability"])
     if "sandbox_enforcement" not in safe_agent and ("provider_kind" in agent or "connection_kind" in agent):
         safe_agent["sandbox_enforcement"] = safe_live_agent_sandbox_enforcement(context_contract["sandbox_enforcement"])
-    for runtime_field in ("execution_mode", "runner_residency", "provider_residency", "runtime_summary"):
+    for runtime_field in (
+        "execution_mode",
+        "runner_residency",
+        "provider_residency",
+        "execution_summary",
+        "tool_loop_unverified_reason",
+    ):
         if runtime_field not in safe_agent and runtime_field in context_contract:
             safe_agent[runtime_field] = safe_live_agent_roster_text(context_contract[runtime_field], limit=256)
     if "provider_persistent" not in safe_agent and "provider_persistent" in context_contract:

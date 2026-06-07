@@ -23,6 +23,13 @@ class LiveAgentRosterPayloadTests(unittest.TestCase):
                         "connection_kind": "live_session",
                         "join_semantics": "mcp_tool_loop",
                     },
+                    {
+                        "agent_id": "codex-unverified-loop",
+                        "display_name": "Codex Unverified Loop",
+                        "provider_kind": "codex",
+                        "connection_kind": "live_session",
+                        "join_semantics": "provider_tool_loop",
+                    },
                 ]
             }
         )
@@ -37,6 +44,9 @@ class LiveAgentRosterPayloadTests(unittest.TestCase):
         self.assertEqual(agents["codex-tool-loop"]["execution_mode"], "provider_tool_loop")
         self.assertEqual(agents["codex-tool-loop"]["runner_residency"], "provider_owned_tool_loop")
         self.assertTrue(agents["codex-tool-loop"]["provider_persistent"])
+        self.assertEqual(agents["codex-unverified-loop"]["execution_mode"], "tool_loop_unverified")
+        self.assertFalse(agents["codex-unverified-loop"]["provider_persistent"])
+        self.assertIn("not been verified", agents["codex-unverified-loop"]["tool_loop_unverified_reason"])
 
     def test_safe_roster_payload_limits_guest_quota_to_session_owner_and_companion(self):
         payload = {

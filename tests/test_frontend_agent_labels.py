@@ -192,7 +192,7 @@ class FrontendAgentLabelTests(unittest.TestCase):
         self.assertEqual(payload["statelessContextBadge"]["tone"], "idle")
         self.assertEqual(payload["statelessExecutionDiffersFromJoin"], True)
         self.assertEqual(payload["statelessAdmission"], "승인 대기 · 충돌 2")
-        self.assertEqual(payload["bridgeExecution"], "Remote")
+        self.assertEqual(payload["bridgeExecution"], "미검증")
         self.assertEqual(payload["bridgeJoin"], "Remote bridge")
         self.assertEqual(payload["bridgeExecutionDiffersFromJoin"], True)
         self.assertEqual(payload["manualExecution"], "Guest")

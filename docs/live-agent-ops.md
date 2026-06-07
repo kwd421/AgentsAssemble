@@ -121,7 +121,10 @@ classes. Runtime-managed means the AgentsAssemble runner reads the room API,
 decides a turn, calls the provider, and posts the reply. Provider tool-loop
 means the provider-owned process uses `wait-next`, `read-since`, `say`,
 `heartbeat`, and `leave` itself; MCP is preferred, and the CLI commands are the
-fallback shape. Fast provider-persistent mode remains disabled until a
+fallback shape. Only explicit MCP/CLI tool-loop transports are shown as
+`provider_tool_loop`; generic, remote, native, or self-service loop claims are
+shown as `tool_loop_unverified`/`미검증` until a provider-specific verification
+reason is recorded. Fast provider-persistent mode remains disabled until a
 persistent bridge PoC proves that provider can stay attached without
 exec/resume per turn. Flow reply events now preserve `flow_runtime_mode`,
 `flow_turn_delivery_ms`, `flow_provider_invocation_ms`, and
@@ -1058,11 +1061,14 @@ human lobby message to the Spark reply while the runner was already online with
 `exec/resume` invocation cost, not room polling or cooldown. The UI should
 present this as 호출형, not 진짜 상주형.
 
-`terminal_pty_prompt_bridge`, `self_service_room_loop`, `remote_bridge_room_loop`,
-and `jsonl_live_session` are the current persistent-style categories because a
-provider-facing process, bridge, or loop remains attached for its lifetime.
-They can be faster and more natural, but they consume resources while running
-and need provider-specific proof before being offered as a selectable mode.
+`terminal_pty_prompt_bridge` and `jsonl_live_session` are the current
+persistent-style categories because a provider-facing process, PTY, stream, or
+JSONL session remains attached for its lifetime. `self_service_room_loop`,
+`remote_bridge_room_loop`, and `native_remote_room_loop` are projected as
+`tool_loop_unverified` until that provider is proven through explicit MCP or
+CLI tool-loop verification. They may become faster and more natural after that
+proof, but until then the UI should show them as `미검증`, not as selectable
+provider-persistent modes.
 
 ## Self-Service Resident Processes
 

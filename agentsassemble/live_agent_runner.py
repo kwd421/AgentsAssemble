@@ -419,15 +419,14 @@ class LiveAgentRunner:
                 self._heartbeat_if_due()
                 return 0
 
-        provider_invocation_started = time.perf_counter()
+        turn_delivery_ms = _elapsed_ms(turn_delivery_started)
         generated = self._generate_flow_decision(
             candidate,
             flow_decision_prompt(self.config, room, candidate),
         )
-        provider_invocation_ms = _elapsed_ms(provider_invocation_started)
         if generated is None:
             return 0
-        source_event_id, decision = generated
+        source_event_id, decision, provider_invocation_ms = generated
         if flow_id and not self._flow_still_active(flow_id, meeting_id):
             self._record_flow_wait_success(source_event_id)
             return 0
@@ -436,7 +435,7 @@ class LiveAgentRunner:
             return 0
 
         source_depth = _chain_depth(candidate)
-        reply_post_started = time.perf_counter()
+        reply_post_started_at = datetime.now(UTC).isoformat()
         try:
             response = self.request_json(
                 _server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/lobby"),
@@ -453,9 +452,9 @@ class LiveAgentRunner:
                     "flow_reason": decision.reason,
                     "target_agent_id": decision.target_agent_id,
                     "flow_runtime_mode": _room_agent_runtime_mode(room),
-                    "flow_turn_delivery_ms": _elapsed_ms(turn_delivery_started),
+                    "flow_turn_delivery_ms": turn_delivery_ms,
                     "flow_provider_invocation_ms": provider_invocation_ms,
-                    "flow_reply_post_ms": _elapsed_ms(reply_post_started),
+                    "flow_reply_post_started_at": reply_post_started_at,
                 },
             )
         except Exception as error:
@@ -483,13 +482,14 @@ class LiveAgentRunner:
         self._set_cursor(cursor_field, source_event_id)
         self._heartbeat_due_safely("working", **self._cursor_metadata(cursor_field, source_event_id))
         try:
-            reply = self._run_command_with_working_heartbeats(
+            raw_reply, _provider_invocation_ms = self._run_command_with_working_heartbeats(
                 self.config.command,
                 prompt,
                 source_event_id=source_event_id,
                 cursor_field=cursor_field,
                 timeout_seconds=self._reply_timeout_seconds(cursor_field),
-            ).strip()
+            )
+            reply = raw_reply.strip()
             if not reply:
                 raise ValueError("Delegate command returned an empty reply.")
             if visible_reply_contains_control_meta(reply):
@@ -515,12 +515,12 @@ class LiveAgentRunner:
         self,
         candidate: dict[str, object],
         prompt: str,
-    ) -> tuple[str, FlowDecision] | None:
+    ) -> tuple[str, FlowDecision, int] | None:
         source_event_id = str(candidate.get("id") or "")
         self._set_cursor("last_observed_event_id", source_event_id)
         self._heartbeat_due_safely("working", **self._cursor_metadata("last_observed_event_id", source_event_id))
         try:
-            raw_output = self._run_command_with_working_heartbeats(
+            raw_output, provider_invocation_ms = self._run_command_with_working_heartbeats(
                 self.config.command,
                 prompt,
                 source_event_id=source_event_id,
@@ -540,7 +540,7 @@ class LiveAgentRunner:
             )
             return None
         decision = parse_flow_decision(raw_output)
-        return source_event_id, decision
+        return source_event_id, decision, provider_invocation_ms
 
     def _reply_timeout_seconds(self, cursor_field: str) -> int:
         if cursor_field == "last_observed_live_event_id" and self.config.official_turn_timeout_seconds > 0:
@@ -812,7 +812,7 @@ class LiveAgentRunner:
         source_event_id: str,
         cursor_field: str,
         timeout_seconds: int,
-    ) -> str:
+    ) -> tuple[str, int]:
         heartbeat_stop = threading.Event()
         heartbeat_thread = self._start_working_heartbeat_loop(source_event_id, heartbeat_stop, cursor_field=cursor_field)
         try:
@@ -822,7 +822,9 @@ class LiveAgentRunner:
                 else InvokeLiveSessionAdapter
             )
             adapter = adapter_cls(command_runner=self.command_runner)
-            return adapter.invoke(command, prompt, timeout_seconds=timeout_seconds).message
+            provider_started = time.perf_counter()
+            result = adapter.invoke(command, prompt, timeout_seconds=timeout_seconds).message
+            return result, _elapsed_ms(provider_started)
         finally:
             heartbeat_stop.set()
             if heartbeat_thread is not None:

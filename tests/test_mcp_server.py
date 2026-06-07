@@ -175,6 +175,7 @@ class McpParticipantToolsTests(unittest.TestCase):
         self.assertEqual(payload["display_name"], "Agent A")
         self.assertEqual(payload["provider_kind"], "kiro")
         self.assertEqual(payload["connection_kind"], "terminal_session")
+        self.assertEqual(payload["join_semantics"], "mcp_tool_loop")
         self.assertEqual(payload["engagement_mode"], "mentioned")
         with self.assertRaises(TypeError):
             tools["register"](display_name="Spoof", provider_kind="other")

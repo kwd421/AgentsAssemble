@@ -128,8 +128,9 @@ class StaticUiAssetTests(unittest.TestCase):
 
         self.assertIn("join_semantics?: string;", source)
         self.assertIn("context_durability?: string;", source)
-        self.assertIn('execution_mode?: "baseline_call_resume" | "runtime_managed_room_turn" | "provider_tool_loop" | "call" | "call_resume" | "persistent" | "provider_persistent" | "manual" | "unknown" | string;', source)
+        self.assertIn('execution_mode?: "baseline_call_resume" | "runtime_managed_room_turn" | "provider_tool_loop" | "tool_loop_unverified" | "call" | "call_resume" | "persistent" | "provider_persistent" | "manual" | "unknown" | string;', source)
         self.assertIn("provider_persistent?: boolean;", source)
+        self.assertIn("tool_loop_unverified_reason?: string;", source)
         self.assertIn("runner_residency?: string;", source)
         self.assertIn("provider_residency?: string;", source)
         self.assertIn("last_observed_event_id?: string;", source)

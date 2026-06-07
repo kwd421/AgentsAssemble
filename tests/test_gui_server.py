@@ -39,6 +39,7 @@ from agentsassemble.gui import (
     live_agent_turn_round_payload,
     live_agent_turn_rounds_payload,
     _live_agent_turn_rounds_payload_locked,
+    _live_agent_lobby_flow_metadata,
     _run_session_bound_agent_probe,
     _redact_real_session_smoke_lobby_events,
     _readiness_health_operation_details,
@@ -85,6 +86,22 @@ def _read_sse_frame(response, timeout: float = 3.0) -> str:
 
 
 class GuiServerTests(unittest.TestCase):
+    def test_live_agent_lobby_flow_metadata_computes_reply_post_latency_from_start_time(self):
+        started_at = (datetime.now(UTC) - timedelta(milliseconds=25)).isoformat()
+
+        metadata = _live_agent_lobby_flow_metadata(
+            {
+                "flow_id": "flow-rain",
+                "flow_runtime_mode": "runtime_managed_room_turn",
+                "flow_reply_post_started_at": started_at,
+            }
+        )
+
+        self.assertEqual(metadata["flow_id"], "flow-rain")
+        self.assertEqual(metadata["flow_runtime_mode"], "runtime_managed_room_turn")
+        self.assertIsInstance(metadata["flow_reply_post_ms"], int)
+        self.assertGreaterEqual(metadata["flow_reply_post_ms"], 0)
+
     def test_attachment_upload_sanitizes_and_downloads_image(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

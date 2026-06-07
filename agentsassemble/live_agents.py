@@ -127,6 +127,7 @@ def connect_live_agent(
             "provider_residency": context_contract["provider_residency"],
             "provider_persistent": bool(context_contract.get("provider_persistent")),
             "execution_summary": context_contract["execution_summary"],
+            "tool_loop_unverified_reason": context_contract.get("tool_loop_unverified_reason", ""),
             "sandbox_enforcement": context_contract["sandbox_enforcement"],
             "status": _normalize_persisted_status(payload.get("status") or existing.get("status") or "online"),
             "engagement_mode": effective_engagement_mode,

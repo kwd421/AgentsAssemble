@@ -41,6 +41,11 @@ class LiveAgentPresenceTests(unittest.TestCase):
         self.assertEqual(terminal["runner_residency"], "resident_process")
         self.assertEqual(terminal["provider_residency"], "persistent_provider_channel")
 
+        remote = live_agent_context_contract("remote_http_bridge", "remote_bridge")
+        self.assertEqual(remote["execution_mode"], "tool_loop_unverified")
+        self.assertFalse(remote["provider_persistent"])
+        self.assertIn("not been verified", remote["tool_loop_unverified_reason"])
+
     def test_connect_live_agent_can_override_join_semantics_for_runtime_comparison(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

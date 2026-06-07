@@ -3234,7 +3234,22 @@ def _live_agent_lobby_flow_metadata(payload: dict[str, object]) -> dict[str, obj
     ):
         if key in payload:
             metadata[key] = payload.get(key)
+    if "flow_reply_post_ms" not in metadata and payload.get("flow_reply_post_started_at"):
+        metadata["flow_reply_post_ms"] = _flow_reply_post_elapsed_ms(payload.get("flow_reply_post_started_at"))
     return metadata
+
+
+def _flow_reply_post_elapsed_ms(value: object) -> int:
+    text = clean_lobby_text(value, limit=128)
+    if not text:
+        return 0
+    try:
+        started_at = datetime.fromisoformat(text)
+    except ValueError:
+        return 0
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=UTC)
+    return max(0, int(round((datetime.now(UTC) - started_at.astimezone(UTC)).total_seconds() * 1000)))
 
 
 def _existing_live_agent_lobby_reply(output_root: Path, *, actor_id: str, source_event_id: str) -> dict[str, object] | None:

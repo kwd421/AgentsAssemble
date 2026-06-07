@@ -181,6 +181,7 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
             "display_name": context.display_name,
             "provider_kind": context.provider_kind,
             "connection_kind": context.connection_kind,
+            "join_semantics": "mcp_tool_loop",
             "meeting_id": _clean_meeting_id(context.meeting_id) if context.meeting_id else "",
             "engagement_mode": context.engagement_mode,
             "capabilities": ["room_chat", "mentions", "official_turns", "return_packets", "direct_dm"],

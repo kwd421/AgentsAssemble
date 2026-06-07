@@ -70,6 +70,13 @@ class FinalOfflineFailureClient(FakeRoomClient):
         return super().__call__(url, method=method, payload=payload)
 
 
+class SlowHeartbeatRoomClient(FakeRoomClient):
+    def __call__(self, url, *, method="GET", payload=None):
+        if url.endswith("/heartbeat"):
+            time.sleep(0.15)
+        return super().__call__(url, method=method, payload=payload)
+
+
 def config(**overrides):
     values = {
         "server": "http://room.local",
@@ -323,10 +330,14 @@ class LiveAgentRunnerTests(unittest.TestCase):
         baseline = RuntimeCapabilities.from_join_semantics("codex_exec_resume")
         runtime = RuntimeCapabilities.from_join_semantics("runtime_managed_room_turn")
         tool_loop = RuntimeCapabilities.from_join_semantics("mcp_tool_loop")
+        unverified_tool_loop = RuntimeCapabilities.from_join_semantics("provider_tool_loop")
 
         self.assertEqual(baseline.runtime_mode, "baseline_call_resume")
         self.assertEqual(runtime.runtime_mode, "runtime_managed_room_turn")
         self.assertEqual(tool_loop.runtime_mode, "provider_tool_loop")
+        self.assertEqual(unverified_tool_loop.runtime_mode, "tool_loop_unverified")
+        self.assertFalse(unverified_tool_loop.provider_persistent)
+        self.assertIn("not been verified", unverified_tool_loop.unverified_reason)
         self.assertEqual(runtime.provider_residency, "per_turn_exec_resume")
         self.assertEqual(tool_loop.provider_residency, "provider_owned_tool_loop")
 
@@ -682,7 +693,38 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(lobby_payloads[0]["flow_runtime_mode"], "baseline_call_resume")
         self.assertIsInstance(lobby_payloads[0]["flow_turn_delivery_ms"], int)
         self.assertIsInstance(lobby_payloads[0]["flow_provider_invocation_ms"], int)
-        self.assertIsInstance(lobby_payloads[0]["flow_reply_post_ms"], int)
+        self.assertRegex(lobby_payloads[0]["flow_reply_post_started_at"], r"\d{4}-\d{2}-\d{2}T")
+        self.assertNotIn("flow_reply_post_ms", lobby_payloads[0])
+
+    def test_flow_provider_invocation_latency_excludes_pre_command_heartbeat_overhead(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow"},
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "자유토론 시작",
+                    "flow_id": "flow-1",
+                    "flow_event_type": "started",
+                    "flow_topic": "비올때 뭘 해야하는가",
+                }
+            ],
+        }
+        client = SlowHeartbeatRoomClient([room])
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="flow"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: '{"action":"speak","reason":"짧게","message":"실내에서 차분히 정리하면 좋겠어요."}',
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertLess(lobby_payloads[0]["flow_provider_invocation_ms"], 100)
 
     def test_flow_runner_uses_flow_cooldown_option(self):
         clock = FakeClock()

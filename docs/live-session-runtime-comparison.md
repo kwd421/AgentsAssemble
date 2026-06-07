@@ -9,7 +9,8 @@ does not call exec/resume "fast resident" again.
 | --- | --- | --- | --- | --- |
 | Baseline 호출형 | `baseline_call_resume` | `per_turn_exec_resume` | AgentsAssemble runner reads `/room`, chooses a turn, calls provider by exec/resume, then posts to `/lobby`. | Implemented and previously smoke-tested with real providers. |
 | Runtime-managed | `runtime_managed_room_turn` | `per_turn_exec_resume` | AgentsAssemble uses the runtime-managed room-turn adapter branch: the room runtime delivers a candidate, calls the provider, and records delivery/provider/post latency. Provider startup cost remains exec/resume. | Adapter branch, classification, and telemetry fields implemented; full real-provider comparison still required. |
-| Provider tool-loop | `provider_tool_loop` | `provider_owned_tool_loop` | Provider-owned process/tool loop calls `wait-next`, `read-since`, `say`, `heartbeat`, and `leave`; MCP is preferred, CLI fallback is available. | MCP/CLI payload path implemented; provider-specific real attachment remains provider-by-provider verification. |
+| Provider tool-loop | `provider_tool_loop` | `provider_owned_tool_loop` | Provider-owned process/tool loop calls `wait-next`, `read-since`, `say`, `heartbeat`, and `leave`; MCP is preferred, CLI fallback is available. | Only explicit `mcp_tool_loop` and `cli_tool_loop` transports are classified as provider tool-loop. Generic or remote/native requests are `tool_loop_unverified` until verified with a reason. |
+| Tool-loop unverified | `tool_loop_unverified` | `unverified_tool_loop` | A tool-loop-like join was requested, but the provider was not proven through MCP or CLI fallback. | Display this as `미검증`; do not count it as provider-owned tool-loop evidence. |
 | Fast provider-persistent | `provider_persistent` | `provider_persistent` | Provider process, PTY, stream, or SDK session stays attached and receives room input without a new exec/resume per turn. | Not enabled until a persistent bridge PoC passes for that provider. |
 
 ## Event Evidence Fields
@@ -67,6 +68,8 @@ event belongs to a flow. Direct `live-agent say` can also pass those flags.
 MCP `say` accepts the same `flow_id` and `flow_meeting_id` fields, so a provider
 that chooses a flow event from `read_since` can still post a reply with the
 correct source event and flow metadata instead of relying on stale pending state.
+The MCP participant `register` tool sends `join_semantics: "mcp_tool_loop"` so
+the room does not infer a weaker manual/baseline execution mode.
 
 ## Existing Baseline Real Evidence
 

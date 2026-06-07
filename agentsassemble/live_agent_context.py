@@ -7,6 +7,7 @@ from agentsassemble.live_session_adapter import (
     PROVIDER_PERSISTENT_JOIN_SEMANTICS,
     PROVIDER_TOOL_LOOP_JOIN_SEMANTICS,
     RUNTIME_MANAGED_ROOM_TURN_JOIN_SEMANTICS,
+    UNVERIFIED_TOOL_LOOP_JOIN_SEMANTICS,
     live_session_runtime_contract,
 )
 
@@ -45,6 +46,7 @@ LIVE_AGENT_CONTEXT_DURABILITY = {
 CALL_EXECUTION_JOIN_SEMANTICS = CALL_RESUME_JOIN_SEMANTICS
 PERSISTENT_EXECUTION_JOIN_SEMANTICS = PROVIDER_PERSISTENT_JOIN_SEMANTICS
 TOOL_LOOP_EXECUTION_JOIN_SEMANTICS = PROVIDER_TOOL_LOOP_JOIN_SEMANTICS
+UNVERIFIED_TOOL_LOOP_EXECUTION_JOIN_SEMANTICS = UNVERIFIED_TOOL_LOOP_JOIN_SEMANTICS
 RUNTIME_MANAGED_EXECUTION_JOIN_SEMANTICS = RUNTIME_MANAGED_ROOM_TURN_JOIN_SEMANTICS
 
 
@@ -158,6 +160,7 @@ def live_agent_execution_contract(join_semantics: object) -> dict[str, object]:
         "provider_residency": str(runtime.get("provider_residency") or "unknown"),
         "provider_persistent": bool(runtime.get("provider_persistent")),
         "execution_summary": str(runtime.get("runtime_summary") or "Execution style is not proven."),
+        "tool_loop_unverified_reason": str(runtime.get("tool_loop_unverified_reason") or ""),
     }
 
 

@@ -150,6 +150,7 @@ export function providerExecutionLabel(
   if (["baseline_call_resume", "call", "call_resume"].includes(executionMode)) return "baseline 호출형";
   if (executionMode === "runtime_managed_room_turn") return "runtime-managed";
   if (executionMode === "provider_tool_loop") return "provider tool-loop";
+  if (executionMode === "tool_loop_unverified") return "미검증";
   if (executionMode === "persistent" || executionMode === "provider_persistent") return "상주형";
   if (executionMode === "manual") return "수동";
 
@@ -159,13 +160,19 @@ export function providerExecutionLabel(
     [
       "mcp_tool_loop",
       "cli_tool_loop",
+    ].includes(join)
+  ) {
+    return "provider tool-loop";
+  }
+  if (
+    [
       "provider_tool_loop",
       "self_service_room_loop",
       "remote_bridge_room_loop",
       "native_remote_room_loop",
     ].includes(join)
   ) {
-    return "provider tool-loop";
+    return "미검증";
   }
 
   const provider = String(agent.provider_kind || "").trim();

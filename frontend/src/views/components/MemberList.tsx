@@ -234,11 +234,12 @@ function cooldownLabel(cooldown: number | null) {
 
 function agentExecutionMode(
   agent?: LiveAgent
-): "baseline" | "runtime" | "tool_loop" | "persistent" | "manual" | "unknown" {
+): "baseline" | "runtime" | "tool_loop" | "tool_loop_unverified" | "persistent" | "manual" | "unknown" {
   const mode = String(agent?.execution_mode || "").trim();
   if (mode === "baseline_call_resume" || mode === "call" || mode === "call_resume") return "baseline";
   if (mode === "runtime_managed_room_turn") return "runtime";
   if (mode === "provider_tool_loop") return "tool_loop";
+  if (mode === "tool_loop_unverified") return "tool_loop_unverified";
   if (mode === "persistent" || mode === "provider_persistent") return "persistent";
   if (mode === "manual") return mode;
   const join = String(agent?.join_semantics || "").trim();
@@ -247,13 +248,19 @@ function agentExecutionMode(
     [
       "mcp_tool_loop",
       "cli_tool_loop",
+    ].includes(join)
+  ) {
+    return "tool_loop";
+  }
+  if (
+    [
       "provider_tool_loop",
       "self_service_room_loop",
       "remote_bridge_room_loop",
       "native_remote_room_loop",
     ].includes(join)
   ) {
-    return "tool_loop";
+    return "tool_loop_unverified";
   }
   if (
     [
@@ -299,6 +306,9 @@ function executionModeSummary(agent?: LiveAgent) {
   }
   if (mode === "tool_loop") {
     return "현재 이 AI는 provider tool-loop입니다. provider가 wait-next/read-since/say 도구로 방에 직접 참여하는 구조입니다.";
+  }
+  if (mode === "tool_loop_unverified") {
+    return agent?.tool_loop_unverified_reason || "tool-loop가 요청됐지만 이 provider의 MCP/CLI 참여 경로가 아직 검증되지 않았습니다.";
   }
   if (mode === "persistent") {
     return "현재 이 AI는 상주형입니다. provider 프로세스/PTY/스트림/room loop가 실행 중인 동안 계속 붙어 있습니다.";
@@ -875,6 +885,17 @@ function MemberDetailModal({
                   type="button"
                   className="dc-member-execution-option"
                   role="radio"
+                  aria-checked={executionMode === "tool_loop_unverified"}
+                  data-active={executionMode === "tool_loop_unverified"}
+                  disabled
+                  title="tool-loop가 요청됐지만 이 provider의 MCP/CLI 참여 경로가 아직 검증되지 않았습니다."
+                >
+                  미검증
+                </button>
+                <button
+                  type="button"
+                  className="dc-member-execution-option"
+                  role="radio"
                   aria-checked={executionMode === "persistent"}
                   data-active={executionMode === "persistent"}
                   disabled={!canUsePersistentMode}
@@ -896,7 +917,7 @@ function MemberDetailModal({
               </p>
               <p className="dc-member-detail-note preserve-words">
                 runtime-managed는 1번 비교 구조이고, provider tool-loop는 3번 비교 구조입니다. 둘 다 실검증 결과를 문서에 남겨야 선택할 수 있습니다.
-                빠른 provider 상주형은 persistent bridge PoC가 통과한 provider에서만 활성화합니다.
+                미검증은 MCP/CLI tool-loop 확인이 아직 없는 상태입니다. 빠른 provider 상주형은 persistent bridge PoC가 통과한 provider에서만 활성화합니다.
               </p>
               <p className="dc-member-session-status preserve-words">
                 runner: {agent.runner_residency || "unknown"} · provider: {agent.provider_residency || "unknown"}
