@@ -197,19 +197,93 @@ function pollIntervalFromAgent(agent?: LiveAgent) {
     : DEFAULT_AGENT_POLL_INTERVAL_SECONDS;
 }
 
+function cooldownFromAgent(agent?: LiveAgent) {
+  const value = agent?.cooldown;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
 function pollIntervalSecondsText(interval: number) {
   return String(interval > 0 ? interval : DEFAULT_AGENT_POLL_INTERVAL_SECONDS);
 }
 
-function parsePollInterval(secondsText: string): number | null {
+function secondsText(value: number) {
+  return String(Number.isFinite(value) && value >= 0 ? value : 0);
+}
+
+function parsePositiveSeconds(secondsText: string): number | null {
   const parsed = Number(secondsText);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+function parseNonnegativeSeconds(secondsText: string): number | null {
+  const parsed = Number(secondsText);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
   return parsed;
 }
 
 function pollIntervalLabel(interval: number | null) {
   if (interval === null) return "확인 필요";
   return `${interval}s`;
+}
+
+function cooldownLabel(cooldown: number | null) {
+  if (cooldown === null) return "확인 필요";
+  return cooldown <= 0 ? "없음" : `${cooldown}s`;
+}
+
+function agentExecutionMode(agent?: LiveAgent): "call" | "persistent" | "manual" | "unknown" {
+  const mode = String(agent?.execution_mode || "").trim();
+  if (mode === "call" || mode === "persistent" || mode === "manual") return mode;
+  const join = String(agent?.join_semantics || "").trim();
+  if (
+    [
+      "codex_exec_resume",
+      "kiro_chat_resume",
+      "antigravity_conversation_resume",
+      "cursor_chat_resume",
+      "grok_session_resume",
+      "hermes_chat_resume",
+      "stateless_prompt_call",
+    ].includes(join)
+  ) {
+    return "call";
+  }
+  if (
+    [
+      "terminal_pty_prompt_bridge",
+      "self_service_room_loop",
+      "remote_bridge_room_loop",
+      "jsonl_live_session",
+    ].includes(join)
+  ) {
+    return "persistent";
+  }
+  if (join === "manual_room_loop") return "manual";
+  return "unknown";
+}
+
+function persistentModeAvailable(agent?: LiveAgent) {
+  return agentExecutionMode(agent) === "persistent";
+}
+
+function callModeAvailable(agent?: LiveAgent) {
+  const mode = agentExecutionMode(agent);
+  return mode === "call" || mode === "persistent";
+}
+
+function executionModeSummary(agent?: LiveAgent) {
+  const mode = agentExecutionMode(agent);
+  if (mode === "call") {
+    return "현재 이 AI는 호출형입니다. 방 runner는 살아 있지만 provider 답변은 매번 exec/resume으로 호출합니다.";
+  }
+  if (mode === "persistent") {
+    return "현재 이 AI는 상주형입니다. provider 프로세스/PTY/스트림/room loop가 실행 중인 동안 계속 붙어 있습니다.";
+  }
+  if (mode === "manual") {
+    return "수동 참가자입니다. AgentsAssemble이 provider 실행을 제어하지 않습니다.";
+  }
+  return "실행 방식이 아직 증명되지 않았습니다.";
 }
 
 function MemberRow({
@@ -369,6 +443,8 @@ function MemberDetailModal({
   const [pollIntervalSeconds, setPollIntervalSeconds] = useState(
     pollIntervalSecondsText(initialPollInterval)
   );
+  const initialCooldown = cooldownFromAgent(entry.agent);
+  const [cooldownSeconds, setCooldownSeconds] = useState(secondsText(initialCooldown));
   const [pollIntervalBusy, setPollIntervalBusy] = useState(false);
   const [pollIntervalStatus, setPollIntervalStatus] = useState("");
   const [agentNameDraft, setAgentNameDraft] = useState(entry.agentProfile?.displayName || entry.agentDisplayName || "");
@@ -379,8 +455,9 @@ function MemberDetailModal({
   useEffect(() => {
     const nextPollInterval = pollIntervalFromAgent(entry.agent);
     setPollIntervalSeconds(pollIntervalSecondsText(nextPollInterval));
+    setCooldownSeconds(secondsText(cooldownFromAgent(entry.agent)));
     setPollIntervalStatus("");
-  }, [entry.agent?.agent_id, entry.agent?.poll_interval]);
+  }, [entry.agent?.agent_id, entry.agent?.poll_interval, entry.agent?.cooldown]);
 
   useEffect(() => {
     setAgentNameDraft(entry.agentProfile?.displayName || entry.agentDisplayName || "");
@@ -437,7 +514,8 @@ function MemberDetailModal({
       sessionGroup.config_path
   );
   const hasRoomAdminControl = Boolean(agent.agent_id && agent.meeting_id);
-  const pollIntervalValue = parsePollInterval(pollIntervalSeconds);
+  const pollIntervalValue = parsePositiveSeconds(pollIntervalSeconds);
+  const cooldownValue = parseNonnegativeSeconds(cooldownSeconds);
   const canResumeSession = Boolean(
     hasResumeControl
   );
@@ -445,6 +523,10 @@ function MemberDetailModal({
     hasStopControl
   );
   const canEditAgentProfile = entry.ownedByViewer;
+  const executionMode = agentExecutionMode(agent);
+  const canUseCallMode = callModeAvailable(agent);
+  const canUsePersistentMode = persistentModeAvailable(agent);
+  const executionSummary = executionModeSummary(agent);
 
   async function handleAgentAvatarCropped(file: File) {
     setAgentProfileStatus("프로필 사진 저장 중...");
@@ -557,9 +639,9 @@ function MemberDetailModal({
     }
   }
 
-  async function handleUpdatePollInterval() {
-    if (!sessionGroup || !hasTimingControl || pollIntervalValue === null) {
-      setPollIntervalStatus("호출 간격은 0 이상의 숫자로 입력하세요");
+  async function handleUpdateTiming() {
+    if (!sessionGroup || !hasTimingControl || pollIntervalValue === null || cooldownValue === null) {
+      setPollIntervalStatus("호출 간격은 0보다 크고, 쿨다운은 0 이상의 숫자로 입력하세요");
       return;
     }
     setPollIntervalBusy(true);
@@ -571,12 +653,19 @@ function MemberDetailModal({
         agentId: agent.agent_id,
         liveAgentConfigPath: sessionGroup.config_path,
         pollInterval: pollIntervalValue,
+        cooldown: cooldownValue,
       });
       const applied =
         typeof response.poll_interval === "number" && Number.isFinite(response.poll_interval)
           ? response.poll_interval
           : pollIntervalValue;
-      setPollIntervalStatus(`저장됨 · ${pollIntervalLabel(applied)}`);
+      const appliedCooldown =
+        typeof response.cooldown === "number" && Number.isFinite(response.cooldown)
+          ? response.cooldown
+          : cooldownValue;
+      setPollIntervalStatus(
+        `저장됨 · 호출 ${pollIntervalLabel(applied)} · 쿨다운 ${cooldownLabel(appliedCooldown)}`
+      );
       onSessionActionComplete?.();
     } catch (error) {
       setPollIntervalStatus(error instanceof Error ? error.message : "호출 간격 저장 실패");
@@ -720,6 +809,54 @@ function MemberDetailModal({
             <p className="dc-member-session-summary preserve-words">
               {sessionGroup?.group_id} · {processStatusLabel(sessionGroup?.status)}
             </p>
+            <div className="dc-member-execution-mode" aria-label={`${entry.displayName} 실행 방식`}>
+              <div className="dc-member-execution-mode-head">
+                <span>실행 방식</span>
+                <span>{executionMode === "persistent" ? "상주형" : executionMode === "call" ? "호출형" : "미확인"}</span>
+              </div>
+              <div className="dc-member-execution-options" role="radiogroup" aria-label="에이전트 실행 방식">
+                <button
+                  type="button"
+                  className="dc-member-execution-option"
+                  role="radio"
+                  aria-checked={executionMode === "call"}
+                  data-active={executionMode === "call"}
+                  disabled={!canUseCallMode}
+                  title="방 runner는 살아 있지만 provider는 매 답변마다 exec/resume으로 호출합니다."
+                >
+                  호출형
+                </button>
+                <button
+                  type="button"
+                  className="dc-member-execution-option"
+                  role="radio"
+                  aria-checked={executionMode === "persistent"}
+                  data-active={executionMode === "persistent"}
+                  disabled={!canUsePersistentMode}
+                  title={
+                    canUsePersistentMode
+                      ? "provider 프로세스/PTY/스트림이 계속 붙어 있는 진짜 상주형입니다."
+                      : "이 provider는 아직 persistent bridge PoC가 통과하지 않아 선택할 수 없습니다."
+                  }
+                >
+                  상주형
+                </button>
+              </div>
+              <p className="dc-member-detail-note preserve-words">
+                {executionSummary}
+              </p>
+              <p className="dc-member-detail-note preserve-words">
+                호출형은 유휴 자원이 적지만 느릴 수 있습니다. Codex 5.3 Spark 실측은 4-6초였고,
+                원인은 polling/cooldown이 아니라 Codex exec/resume 호출 비용입니다.
+              </p>
+              <p className="dc-member-detail-note preserve-words">
+                상주형은 더 빠른 응답을 목표로 하지만 provider 프로세스/PTY/스트림을 계속 붙잡아 자원을 더 씁니다.
+                PoC가 통과한 provider에서만 활성화합니다.
+              </p>
+              <p className="dc-member-session-status preserve-words">
+                runner: {agent.runner_residency || "unknown"} · provider: {agent.provider_residency || "unknown"}
+              </p>
+            </div>
             {hasResumeControl || hasStopControl ? (
               <div className="dc-member-session-actions">
                 {hasResumeControl && (
@@ -755,11 +892,11 @@ function MemberDetailModal({
           </section>
         )}
         {hasTimingControl && (
-          <section className="dc-member-detail-section" aria-label={`${entry.displayName} 호출 간격`}>
-            <h3>호출 간격</h3>
+          <section className="dc-member-detail-section" aria-label={`${entry.displayName} 응답 타이밍`}>
+            <h3>응답 타이밍</h3>
             <div className="dc-member-session-actions">
               <label className="min-w-0 flex-1 text-[11px] font-bold text-text-muted">
-                초 단위
+                확인 주기
                 <input
                   className="mt-1 w-full rounded border border-line bg-black/20 px-2 py-2 text-[12px] text-text-primary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:opacity-45"
                   type="number"
@@ -771,17 +908,30 @@ function MemberDetailModal({
                   onChange={(event) => setPollIntervalSeconds(event.target.value)}
                 />
               </label>
+              <label className="min-w-0 flex-1 text-[11px] font-bold text-text-muted">
+                쿨다운
+                <input
+                  className="mt-1 w-full rounded border border-line bg-black/20 px-2 py-2 text-[12px] text-text-primary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:opacity-45"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  inputMode="decimal"
+                  disabled={pollIntervalBusy}
+                  value={cooldownSeconds}
+                  onChange={(event) => setCooldownSeconds(event.target.value)}
+                />
+              </label>
               <button
                 type="button"
                 className="dc-member-session-button"
-                disabled={pollIntervalBusy || pollIntervalValue === null}
-                onClick={handleUpdatePollInterval}
+                disabled={pollIntervalBusy || pollIntervalValue === null || cooldownValue === null}
+                onClick={handleUpdateTiming}
               >
                 적용
               </button>
             </div>
             <p className="dc-member-session-status preserve-words">
-              현재 {pollIntervalLabel(pollIntervalValue)}
+              현재 호출 {pollIntervalLabel(pollIntervalValue)} · 쿨다운 {cooldownLabel(cooldownValue)}
             </p>
             {pollIntervalStatus && (
               <p className="dc-member-session-status preserve-words">{pollIntervalStatus}</p>

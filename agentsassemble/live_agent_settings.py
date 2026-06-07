@@ -12,11 +12,13 @@ def update_live_agent_config_poll_interval(
     config_path: Path,
     agent_id: str,
     poll_interval: object,
+    cooldown: object | None = None,
 ) -> dict[str, object]:
     clean_agent_id = clean_lobby_text(agent_id, limit=64)
     if not clean_agent_id:
         raise ValueError("Agent id is required.")
     parsed_poll_interval = _nonnegative_poll_interval(poll_interval)
+    parsed_cooldown = None if cooldown is None else _nonnegative_number(cooldown, "cooldown")
 
     data = _read_config(config_path)
     agents = data.get("agents")
@@ -30,6 +32,8 @@ def update_live_agent_config_poll_interval(
         if clean_lobby_text(agent.get("agent_id"), limit=64) != clean_agent_id:
             continue
         agent["poll_interval"] = parsed_poll_interval
+        if parsed_cooldown is not None:
+            agent["cooldown"] = parsed_cooldown
         updated = True
 
     if not updated:
@@ -40,6 +44,7 @@ def update_live_agent_config_poll_interval(
         "config_path": str(config_path),
         "agent_id": clean_agent_id,
         "poll_interval": parsed_poll_interval,
+        **({"cooldown": parsed_cooldown} if parsed_cooldown is not None else {}),
     }
 
 
@@ -64,12 +69,16 @@ def _write_config(config_path: Path, data: dict[str, Any]) -> None:
 
 
 def _nonnegative_poll_interval(value: object) -> float:
+    return _nonnegative_number(value, "poll_interval")
+
+
+def _nonnegative_number(value: object, field_name: str) -> float:
     if isinstance(value, bool):
-        raise ValueError("Live agent poll_interval must be a finite non-negative number.")
+        raise ValueError(f"Live agent {field_name} must be a finite non-negative number.")
     try:
         parsed = float(value)
     except (TypeError, ValueError) as error:
-        raise ValueError("Live agent poll_interval must be a finite non-negative number.") from error
+        raise ValueError(f"Live agent {field_name} must be a finite non-negative number.") from error
     if not math.isfinite(parsed) or parsed < 0:
-        raise ValueError("Live agent poll_interval must be a finite non-negative number.")
+        raise ValueError(f"Live agent {field_name} must be a finite non-negative number.")
     return parsed

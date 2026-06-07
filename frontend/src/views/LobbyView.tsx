@@ -39,7 +39,7 @@ function MessageRow({ event, onOpenSideThread, threadSummary }: {
 }) {
   const systemLike = event.kind === "system" || event.kind === "flow_event";
   return (
-    <div className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-1.5">
+    <div className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-1.5" tabIndex={0}>
       <span className={`dc-message-avatar mt-0.5 ${systemLike ? "system" : "agent"}`}>
         {systemLike ? <Zap size={16} /> : <Bot size={16} />}
       </span>

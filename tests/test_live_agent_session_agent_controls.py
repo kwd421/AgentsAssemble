@@ -150,6 +150,55 @@ class AgentControlSupervisor:
 
 
 class LiveAgentSessionAgentControlTests(unittest.TestCase):
+    def test_agent_timing_endpoint_updates_poll_interval_and_cooldown(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _, _, live_agent_config = _write_two_agent_session_configs(root)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "meeting_id": "resident-m1",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/agent-timing",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident-main",
+                            "agent_id": "agent-a",
+                            "live_agent_config_path": str(live_agent_config),
+                            "poll_interval": 0.25,
+                            "cooldown": 0.5,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["poll_interval"], 0.25)
+            self.assertEqual(payload["cooldown"], 0.5)
+            agent = read_live_agents(root)[0]
+            self.assertEqual(agent["poll_interval"], 0.25)
+            self.assertEqual(agent["cooldown"], 0.5)
+            config_payload = json.loads(live_agent_config.read_text(encoding="utf-8"))
+            config_agent = next(agent for agent in config_payload["agents"] if agent["agent_id"] == "agent-a")
+            self.assertEqual(config_agent["poll_interval"], 0.25)
+            self.assertEqual(config_agent["cooldown"], 0.5)
+
     def test_resume_agent_from_stopped_bundle_starts_agent_owned_process(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -9,6 +9,7 @@ import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.request import Request, urlopen
+from urllib.parse import urlencode
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import reset_state, verify_session_token
@@ -41,6 +42,11 @@ class TestRoomSayIdentity(unittest.TestCase):
         with urlopen(req, timeout=4) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
+    def _get_json(self, path: str, query: dict[str, str] | None = None) -> dict:
+        suffix = f"?{urlencode(query)}" if query else ""
+        with urlopen(f"{self.url}{path}{suffix}", timeout=4) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
     def test_say_uses_session_identity_not_client_fields(self):
         # 1. Create invite
         invite = self._post("/api/room-invite/create", {
@@ -64,6 +70,12 @@ class TestRoomSayIdentity(unittest.TestCase):
         session_token = join["session_token"]
         self.assertEqual(join["display_name"], "Review Guest")
         self.assertEqual(join["agent_id"], "review-guest")
+        self.assertEqual(join["participant_type"], "human")
+
+        members = self._get_json("/api/room-members", {"meeting_id": "test-m"})["members"]
+        review_guest = next(member for member in members if member["participant_id"] == "review-guest")
+        self.assertEqual(review_guest["role"], "human")
+        self.assertEqual(review_guest["participant_type"], "human")
 
         # 3. Say — client tries to spoof identity
         event_resp = self._post("/api/room/say", {
@@ -127,7 +139,17 @@ class TestRoomSayIdentity(unittest.TestCase):
         ai_join = self._post("/api/room-invite/join", {
             "invite_token": packet["env"]["AGENTSASSEMBLE_INVITE_TOKEN"],
         })
+        self.assertEqual(ai_join["participant_type"], "remote")
         ai_session_token = ai_join["session_token"]
+
+        members = self._get_json("/api/room-members", {"meeting_id": "friend-room"})["members"]
+        human = next(member for member in members if member["participant_id"] == "friend-human")
+        ai = next(member for member in members if member["participant_id"] == "friend-ai")
+        self.assertEqual(human["role"], "human")
+        self.assertEqual(human["participant_type"], "human")
+        self.assertEqual(ai["role"], "agent")
+        self.assertEqual(ai["participant_type"], "remote")
+
         event_resp = self._post("/api/room/say", {
             "message": "friend ai is here",
         }, token=ai_session_token)

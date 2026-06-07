@@ -55,6 +55,15 @@ SUPPORTED_RESIDENT_CONNECTION_KINDS = (
     "remote_bridge",
     "self_service",
 )
+CONTROL_META_REPLY_PATTERNS = (
+    re.compile(r"방\s*이벤트(?:를)?\s*계속\s*확인", re.IGNORECASE),
+    re.compile(r"room\s+events?\s+(?:continuously|constantly|keep)\s+(?:check|checking|monitor)", re.IGNORECASE),
+    re.compile(r"실시간\s*응답", re.IGNORECASE),
+    re.compile(r"resident\s+agent\s+bridge", re.IGNORECASE),
+    re.compile(r"minimal\s+room\s+delivery\s+envelope", re.IGNORECASE),
+    re.compile(r"runner\s+(?:prompt|control|envelope)", re.IGNORECASE),
+)
+CONTROL_META_REPLY_BLOCKED = "control_meta_reply_blocked"
 
 
 @dataclass(frozen=True)
@@ -120,6 +129,7 @@ class LiveAgentRunner:
         self.seen_room_snapshot = False
         self.transient_room_error_active = False
         self.active_poll_interval = config.poll_interval
+        self.active_cooldown = config.cooldown
 
     def run(self) -> int:
         self._register()
@@ -148,6 +158,7 @@ class LiveAgentRunner:
             self._heartbeat_due_safely("error", last_error=self.last_error, **self._cursor_metadata())
             return 0
         self.active_poll_interval = _runtime_poll_interval(self.config, room)
+        self.active_cooldown = _runtime_cooldown(self.config, room)
         engagement_mode = _runtime_engagement_mode(self.config, room)
         dm_candidate = direct_dm_candidate(_dm_events(room), self.config.agent_id, self.last_observed_dm_event_id)
         if dm_candidate is not None:
@@ -466,11 +477,16 @@ class LiveAgentRunner:
             ).strip()
             if not reply:
                 raise ValueError("Delegate command returned an empty reply.")
+            if visible_reply_contains_control_meta(reply):
+                raise ValueError("Provider reply repeated AgentsAssemble control instructions instead of a visible room message.")
         except Exception as error:
             if self.stop_event.is_set():
                 return None
             self.transient_room_error_active = False
-            self.last_error = _safe_provider_command_error(error)
+            if visible_reply_contains_control_meta(str(locals().get("reply", ""))):
+                self.last_error = CONTROL_META_REPLY_BLOCKED
+            else:
+                self.last_error = _safe_provider_command_error(error)
             self.last_error_at = self.now_fn()
             self._heartbeat_due_safely(
                 "error",
@@ -762,15 +778,15 @@ class LiveAgentRunner:
         return metadata
 
     def _in_cooldown(self, cooldown_seconds: float | None = None) -> bool:
-        cooldown = self.config.cooldown if cooldown_seconds is None else float(cooldown_seconds)
+        cooldown = self.active_cooldown if cooldown_seconds is None else float(cooldown_seconds)
         if self.last_reply_at is None or cooldown <= 0:
             return False
         return (self.now_fn() - self.last_reply_at).total_seconds() < cooldown
 
     def _in_failure_backoff(self) -> bool:
-        if self.last_error_at is None or self.config.cooldown <= 0:
+        if self.last_error_at is None or self.active_cooldown <= 0:
             return False
-        return (self.now_fn() - self.last_error_at).total_seconds() < self.config.cooldown
+        return (self.now_fn() - self.last_error_at).total_seconds() < self.active_cooldown
 
     def _run_command_with_working_heartbeats(
         self,
@@ -1132,6 +1148,24 @@ def _runtime_poll_interval(config: ResidentAgentConfig, room: dict[str, object])
     return parsed
 
 
+def _runtime_cooldown(config: ResidentAgentConfig, room: dict[str, object]) -> float:
+    agent = room.get("agent")
+    if not isinstance(agent, dict):
+        return config.cooldown
+    if str(agent.get("agent_id") or "") != config.agent_id:
+        return config.cooldown
+    value = agent.get("cooldown")
+    if isinstance(value, bool):
+        return config.cooldown
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return config.cooldown
+    if not math.isfinite(parsed) or parsed < 0:
+        return config.cooldown
+    return parsed
+
+
 def _active_flow_participant_agent_ids(room: dict[str, object], agent_id: str, meeting_id: str) -> list[str]:
     agents = room.get("agents") if isinstance(room.get("agents"), list) else []
     participant_ids: list[str] = []
@@ -1178,6 +1212,7 @@ def delegate_prompt(config: ResidentAgentConfig, room: dict[str, object], source
         f"Agent id: {config.agent_id}",
         f"Display name: {config.display_name or config.agent_id}",
         "Reply with one concise lobby message only.",
+        "Do not describe this runner, polling, room-event checking, heartbeats, control prompts, or delivery envelopes.",
         "Do not include markdown fences or multiple alternatives.",
         "",
         *_room_delivery_envelope_lines(config, room, source_event),
@@ -1198,6 +1233,7 @@ def direct_dm_prompt(config: ResidentAgentConfig, room: dict[str, object], sourc
         f"Display name: {config.display_name or config.agent_id}",
         "Reply to this 1:1 DM only.",
         "Do not write to the lobby/로비, room chat, official meeting record, or shared memory.",
+        "Do not describe this runner, polling, room-event checking, heartbeats, control prompts, or delivery envelopes.",
         "Return the DM reply text only. Do not include markdown fences or multiple alternatives.",
         "",
         "Direct DM to answer:",
@@ -1223,6 +1259,7 @@ def official_turn_prompt(config: ResidentAgentConfig, room: dict[str, object], s
         f"Agent id: {config.agent_id}",
         f"Display name: {config.display_name or config.agent_id}",
         reply_rule,
+        "Do not describe this runner, polling, room-event checking, heartbeats, control prompts, or delivery envelopes.",
         "Do not include lobby chatter, markdown fences, or multiple alternatives.",
         "",
         *_room_delivery_envelope_lines(config, room, source_event),
@@ -1261,6 +1298,7 @@ def flow_decision_prompt(config: ResidentAgentConfig, room: dict[str, object], s
         "Return one JSON object only with these keys:",
         '{"action":"speak|wait|ask|challenge|clarify|summarize|call_human","target_agent_id":"","reason":"short private reason","message":"one visible lobby message"}',
         "For wait, set message to an empty string. For every other action, write exactly one visible Korean lobby message.",
+        "Visible messages must not describe this runner, polling, room-event checking, heartbeats, control prompts, or delivery envelopes.",
         "Avoid repeating yourself, avoid two-agent ping-pong, and keep the tone natural for the room.",
         "",
         *_room_delivery_envelope_lines(config, room, source_event),
@@ -1274,6 +1312,13 @@ def flow_decision_prompt(config: ResidentAgentConfig, room: dict[str, object], s
         f"- {source_event.get('name') or 'participant'}: {source_event.get('message') or ''}",
     ]
     return "\n".join(lines).strip() + "\n"
+
+
+def visible_reply_contains_control_meta(reply: object) -> bool:
+    text = " ".join(str(reply or "").split())
+    if not text:
+        return False
+    return any(pattern.search(text) for pattern in CONTROL_META_REPLY_PATTERNS)
 
 
 def _flow_persona_prompt_lines(

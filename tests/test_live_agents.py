@@ -29,6 +29,18 @@ class LiveAgentPresenceTests(unittest.TestCase):
                 self.assertEqual(contract["context_durability"], context_durability)
                 self.assertEqual(contract["sandbox_enforcement"], sandbox_enforcement)
 
+    def test_context_contract_separates_runner_residency_from_provider_residency(self):
+        codex = live_agent_context_contract("codex_live_session", "live_session")
+        self.assertEqual(codex["execution_mode"], "call")
+        self.assertEqual(codex["runner_residency"], "resident_polling_runner")
+        self.assertEqual(codex["provider_residency"], "per_turn_exec_resume")
+        self.assertIn("exec/resume", codex["execution_summary"])
+
+        terminal = live_agent_context_contract("claude_code", "terminal_session")
+        self.assertEqual(terminal["execution_mode"], "persistent")
+        self.assertEqual(terminal["runner_residency"], "resident_process")
+        self.assertEqual(terminal["provider_residency"], "persistent_provider_channel")
+
     def test_sandbox_launcher_declares_current_enforcement_without_claiming_os_sandbox(self):
         self.assertEqual(NoSandboxLauncher().enforcement, "advisory")
         self.assertEqual(sandbox_launcher_for("codex_live_session", "live_session").enforcement, "codex_readonly")

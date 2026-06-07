@@ -117,6 +117,10 @@ def connect_live_agent(
             "connection_kind": connection_kind,
             "join_semantics": context_contract["join_semantics"],
             "context_durability": context_contract["context_durability"],
+            "execution_mode": context_contract["execution_mode"],
+            "runner_residency": context_contract["runner_residency"],
+            "provider_residency": context_contract["provider_residency"],
+            "execution_summary": context_contract["execution_summary"],
             "sandbox_enforcement": context_contract["sandbox_enforcement"],
             "status": _normalize_persisted_status(payload.get("status") or existing.get("status") or "online"),
             "engagement_mode": effective_engagement_mode,
@@ -217,6 +221,36 @@ def update_live_agent_poll_interval(
             agent = _without_output_only_freshness(existing)
             agent["poll_interval"] = parsed_poll_interval
             agent["poll_interval_updated_at"] = timestamp
+            agent["updated_at"] = timestamp
+            agents[index] = agent
+            _write_state(output_root, {"agents": agents})
+            return agent
+    raise ValueError(f"Live agent {clean_agent_id} was not found.")
+
+
+def update_live_agent_cooldown(
+    output_root: Path,
+    agent_id: str,
+    cooldown: object,
+    *,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    current_time = now or datetime.now(UTC)
+    timestamp = current_time.isoformat()
+    clean_agent_id = clean_lobby_text(agent_id, limit=64)
+    if not clean_agent_id:
+        raise ValueError("Agent id is required.")
+    parsed_cooldown = _clean_live_agent_nonnegative_number(cooldown, "cooldown")
+
+    with LIVE_AGENT_STATE_LOCK:
+        state = _read_state(output_root)
+        agents = _agent_entries(state)
+        for index, existing in enumerate(agents):
+            if existing.get("agent_id") != clean_agent_id:
+                continue
+            agent = _without_output_only_freshness(existing)
+            agent["cooldown"] = parsed_cooldown
+            agent["cooldown_updated_at"] = timestamp
             agent["updated_at"] = timestamp
             agents[index] = agent
             _write_state(output_root, {"agents": agents})
@@ -444,14 +478,18 @@ def _live_agent_poll_interval_fields(
 
 
 def _clean_live_agent_poll_interval(value: object) -> float:
+    return _clean_live_agent_nonnegative_number(value, "poll_interval")
+
+
+def _clean_live_agent_nonnegative_number(value: object, field_name: str) -> float:
     if isinstance(value, bool):
-        raise ValueError("Live agent poll_interval must be a finite non-negative number.")
+        raise ValueError(f"Live agent {field_name} must be a finite non-negative number.")
     try:
         parsed = float(value)
     except (TypeError, ValueError) as error:
-        raise ValueError("Live agent poll_interval must be a finite non-negative number.") from error
+        raise ValueError(f"Live agent {field_name} must be a finite non-negative number.") from error
     if not isfinite(parsed) or parsed < 0:
-        raise ValueError("Live agent poll_interval must be a finite non-negative number.")
+        raise ValueError(f"Live agent {field_name} must be a finite non-negative number.")
     return parsed
 
 

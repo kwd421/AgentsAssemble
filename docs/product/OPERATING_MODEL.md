@@ -82,6 +82,12 @@ report.
 - Provider execution style must be named honestly: native/session-managed,
   Codex exec/resume, Kiro chat resume, PTY terminal bridge, self-service room
   loop, remote bridge, or stateless prompt call.
+- A resident polling runner is not the same thing as a resident provider
+  process. Codex `exec/resume`, Kiro chat resume, Cursor chat resume, Grok
+  session resume, Antigravity conversation resume, Hermes chat resume, and
+  stateless prompt calls are call-style provider execution unless a separate
+  persistent process/PTY/stream proof exists. Do not describe them as fast
+  provider-resident sessions in UI, docs, prompts, or chat reports.
 - frontend polish is deferred until the backend state and data contracts are
   stable enough for another AI or human designer to refine.
 - The React/Vite operator console is now the default GUI surface at `/`, served

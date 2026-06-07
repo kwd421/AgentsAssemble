@@ -1002,6 +1002,36 @@ new transcript evidence.
 
 This is closer to direct room participation than the PTY prompt-injection path: the model running inside the terminal can pull the room snapshot, wait for a fresh lobby event or official turn request, and publish its own linked reply. It is still a bounded CLI polling surface, not Claude Code Channels, Antigravity native sessions, a tmux subscription protocol, or OS-level sandbox enforcement.
 
+## Execution Mode Truthfulness
+
+AgentsAssemble now separates two different layers that were easy to confuse:
+
+- Runner residency: an AgentsAssemble process can stay alive, poll the room,
+  heartbeat, and decide when to call a provider.
+- Provider residency: the provider process, PTY, stream, socket, or self-service
+  room loop can stay attached and accept room events without a new per-turn
+  exec/resume call.
+
+`codex_exec_resume`, `kiro_chat_resume`, `cursor_chat_resume`,
+`grok_session_resume`, `antigravity_conversation_resume`,
+`hermes_chat_resume`, and `stateless_prompt_call` are call-style provider
+execution. They can preserve provider-owned context through a resume key, but
+they still pay the per-turn command startup/resume cost. Do not call these
+"fast resident provider" sessions unless a later persistent process/PTY/stream
+proof is checked in.
+
+The 2026-06-06 Codex 5.3 Spark room check measured roughly 4-6 seconds from a
+human lobby message to the Spark reply while the runner was already online with
+`poll_interval=0.25` and `cooldown=0`. That evidence points to Codex
+`exec/resume` invocation cost, not room polling or cooldown. The UI should
+present this as 호출형, not 진짜 상주형.
+
+`terminal_pty_prompt_bridge`, `self_service_room_loop`, `remote_bridge_room_loop`,
+and `jsonl_live_session` are the current persistent-style categories because a
+provider-facing process, bridge, or loop remains attached for its lifetime.
+They can be faster and more natural, but they consume resources while running
+and need provider-specific proof before being offered as a selectable mode.
+
 ## Self-Service Resident Processes
 
 Use `--connection-kind self_service` when the provider process should stay resident and call `wait-next`, `say`, `official-reply`, and heartbeat acknowledgements by itself. In this mode AgentsAssemble registers the agent, starts the configured command with `stdin` closed, exports the live-agent environment variables, sends parent liveness heartbeats, and stops the process on resident shutdown. A direct `live-agent run` resident treats `SIGTERM` through the same clean shutdown path as `KeyboardInterrupt`: it closes the self-service child or active command runner, restores the temporary signal handler, prints the normal stopped summary, and exits `0` instead of leaking a traceback. If the self-service child exits with a non-zero status outside shutdown, the parent records `status: "error"` with a safe `last_error` and does not overwrite that evidence with a final offline heartbeat. When the GUI supervisor later reconciles a failed process group, it preserves matching agent rows that are already `error` and reports them as `preserved_error` in the lifecycle offline attention instead of converting the provider failure into an ordinary offline shutdown. It does not read room events, build `delegate_prompt` or `official_turn_prompt`, or write event prompts into the child process.

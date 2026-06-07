@@ -298,6 +298,8 @@ export interface LiveAgent {
   last_observed_live_event_id?: string;
   poll_interval?: number;
   poll_interval_updated_at?: string;
+  cooldown?: number;
+  cooldown_updated_at?: string;
   quota_5h?: string;
   quota_1w?: string;
   quota_state?: "ok" | "low" | "exhausted" | "unknown" | "";
@@ -314,6 +316,10 @@ export interface LiveAgent {
   character_mode?: string;
   join_semantics?: string;
   context_durability?: string;
+  execution_mode?: "call" | "persistent" | "manual" | "unknown" | string;
+  runner_residency?: string;
+  provider_residency?: string;
+  execution_summary?: string;
   sandbox_enforcement: string;
   admission_status?: string;
   host_approved_binding?: boolean;
@@ -354,6 +360,7 @@ export interface LiveAgentSessionActionResponse {
   status?: string;
   config_path?: string;
   poll_interval?: number;
+  cooldown?: number;
   agent?: LiveAgent;
   last_error?: string;
   summary?: string;
@@ -1153,12 +1160,14 @@ export function updateLiveAgentSessionAgentTiming({
   agentId,
   liveAgentConfigPath,
   pollInterval,
+  cooldown,
 }: {
   meetingId: string;
   groupId: string;
   agentId: string;
   liveAgentConfigPath?: string;
   pollInterval: number;
+  cooldown?: number;
 }) {
   return postJson<LiveAgentSessionActionResponse>("/api/live-agent-sessions/agent-timing", {
     meeting_id: meetingId,
@@ -1166,6 +1175,7 @@ export function updateLiveAgentSessionAgentTiming({
     agent_id: agentId,
     live_agent_config_path: liveAgentConfigPath || "",
     poll_interval: pollInterval,
+    ...(typeof cooldown === "number" ? { cooldown } : {}),
   });
 }
 

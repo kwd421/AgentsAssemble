@@ -3113,6 +3113,52 @@ body[data-sidebar-resizing="true"] {
   font-weight: 800;
 }
 
+.dc-member-execution-mode {
+  display: grid;
+  gap: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.14);
+  padding: 10px;
+}
+
+.dc-member-execution-mode-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dc-member-execution-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.dc-member-execution-option {
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(148, 155, 164, 0.12);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.dc-member-execution-option[data-active="true"] {
+  border-color: rgba(88, 101, 242, 0.8);
+  background: rgba(88, 101, 242, 0.22);
+  color: var(--color-text-primary);
+}
+
+.dc-member-execution-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 /* Message row hover, like a chat client. */
 .dc-message {
   position: relative;
@@ -3121,6 +3167,11 @@ body[data-sidebar-resizing="true"] {
 
 .dc-message:hover {
   background: var(--color-chat-hover);
+}
+
+.dc-message:focus-visible {
+  background: var(--color-chat-hover);
+  outline: none;
 }
 
 .dc-message-actions {
@@ -3134,15 +3185,20 @@ body[data-sidebar-resizing="true"] {
   border-radius: 4px;
   background: #1e1f22;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
-  opacity: 0.12;
-  transition: opacity 80ms ease, transform 80ms ease;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 80ms ease, transform 80ms ease, visibility 80ms ease;
   transform: translateY(2px);
+  visibility: hidden;
 }
 
 .dc-message:hover .dc-message-actions,
-.dc-message:focus-within .dc-message-actions {
+.dc-message:focus-within .dc-message-actions,
+.dc-message:focus-visible .dc-message-actions {
   opacity: 1;
+  pointer-events: auto;
   transform: translateY(0);
+  visibility: visible;
 }
 
 .dc-message-action-button {

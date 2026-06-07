@@ -132,10 +132,21 @@ def room_members_payload(
     agents: list[dict[str, object]],
     *,
     meeting_id: str = "",
+    sessions: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     room_id = clean_lobby_text(meeting_id, limit=128)
     saved_members = read_room_members(output_root, meeting_id=room_id)
     by_key = {_member_key(member): member for member in saved_members}
+
+    for session in sessions or []:
+        session_member = _member_from_session(session, meeting_id=room_id)
+        if not session_member:
+            continue
+        key = _member_key(session_member)
+        by_key[key] = {
+            **by_key.get(key, {}),
+            **session_member,
+        }
 
     for agent in agents:
         agent_member = _member_from_agent(agent, meeting_id=room_id)
@@ -163,6 +174,30 @@ def room_members_payload(
         "members": members,
         "roles": ROOM_MEMBER_ROLE_OPTIONS,
     }
+
+
+def _member_from_session(session: dict[str, object], *, meeting_id: str) -> dict[str, object] | None:
+    participant_id = clean_lobby_text(session.get("agent_id"), limit=128)
+    if not participant_id:
+        return None
+    session_meeting_id = clean_lobby_text(session.get("meeting_id"), limit=128)
+    if meeting_id and session_meeting_id != meeting_id:
+        return None
+    participant_type = clean_lobby_text(session.get("participant_type") or "human", limit=32).lower()
+    role = "human" if participant_type == "human" else "agent"
+    return _normalize_member_record(
+        {
+            "meeting_id": meeting_id or session_meeting_id,
+            "participant_id": participant_id,
+            "display_name": session.get("display_name") or participant_id,
+            "role": role,
+            "participant_type": participant_type,
+            "connection_kind": session.get("connection_kind") or "native_remote_room_client",
+            "status": "online",
+            "source": "room_invite_session",
+            "last_seen_at": session.get("joined_at"),
+        }
+    )
 
 
 def _member_from_agent(agent: dict[str, object], *, meeting_id: str) -> dict[str, object] | None:

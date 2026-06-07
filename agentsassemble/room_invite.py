@@ -207,6 +207,7 @@ def create_room_invite(
     display_name: str = "",
     ttl_seconds: int = 600,
     invite_scope: str = ROOM_INVITE_SCOPE,
+    participant_type: str = "human",
 ) -> dict[str, object]:
     """Create an invite token for a remote client to join the room.
 
@@ -219,6 +220,7 @@ def create_room_invite(
     clean_agent_id = clean_lobby_text(agent_id, limit=64) or f"guest-{secrets.token_hex(4)}"
     clean_display_name = clean_lobby_text(display_name, limit=128) or clean_agent_id
     clean_invite_scope = normalize_invite_scope(invite_scope)
+    clean_participant_type = _normalize_invite_participant_type(participant_type)
 
     packet = create_lan_invite_packet(
         room_url=room_url,
@@ -241,6 +243,7 @@ def create_room_invite(
             "display_name": clean_display_name,
             "meeting_id": meeting_id,
             "invite_scope": clean_invite_scope,
+            "participant_type": clean_participant_type,
             "expires_at": packet["expires_at"],
             "created_at": datetime.now(UTC).isoformat(),
             "revoked": False,
@@ -260,6 +263,7 @@ def create_room_invite(
         "agent_id": clean_agent_id,
         "display_name": clean_display_name,
         "invite_scope": clean_invite_scope,
+        "participant_type": clean_participant_type,
         "expires_at": packet["expires_at"],
         "room_url": packet["room_url"],
     }
@@ -303,6 +307,9 @@ def join_room_with_invite(
         if invite_info and invite_info.get("revoked"):
             return {"status": "rejected", "reason": "invite_revoked"}
         invite_scope = normalize_invite_scope(invite_info.get("invite_scope") if invite_info else "")
+        participant_type = _normalize_invite_participant_type(
+            invite_info.get("participant_type") if invite_info else "human"
+        )
 
     verification = verify_lan_invite_token(
         token,
@@ -343,6 +350,7 @@ def join_room_with_invite(
         display_name=resolved_display_name,
         meeting_id=resolved_meeting_id,
         invite_scope=invite_scope,
+        participant_type=participant_type,
     )
 
     return {
@@ -352,6 +360,7 @@ def join_room_with_invite(
         "display_name": resolved_display_name,
         "meeting_id": resolved_meeting_id,
         "invite_scope": invite_scope,
+        "participant_type": participant_type,
         "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
         "expires_at": _active_sessions[_session_fingerprint(session_token)]["expires_at"],
     }
@@ -400,6 +409,7 @@ def active_sessions_summary() -> list[dict[str, object]]:
                 "display_name": session["display_name"],
                 "meeting_id": session["meeting_id"],
                 "invite_scope": session.get("invite_scope", ROOM_INVITE_SCOPE),
+                "participant_type": _normalize_invite_participant_type(session.get("participant_type")),
                 "joined_at": session["joined_at"],
                 "expires_at": session["expires_at"],
             })
@@ -436,6 +446,7 @@ def pending_invites_summary() -> list[dict[str, object]]:
                 "display_name": info["display_name"],
                 "meeting_id": info["meeting_id"],
                 "invite_scope": info.get("invite_scope", ROOM_INVITE_SCOPE),
+                "participant_type": _normalize_invite_participant_type(info.get("participant_type")),
                 "expires_at": info["expires_at"],
                 "created_at": info["created_at"],
                 "revoked": info["revoked"],
@@ -449,6 +460,7 @@ def _issue_session_token(
     display_name: str,
     meeting_id: str,
     invite_scope: str = ROOM_INVITE_SCOPE,
+    participant_type: str = "human",
 ) -> str:
     """Generate and store a session token."""
     now = datetime.now(UTC)
@@ -459,6 +471,7 @@ def _issue_session_token(
         "display_name": display_name,
         "meeting_id": meeting_id,
         "invite_scope": normalize_invite_scope(invite_scope),
+        "participant_type": _normalize_invite_participant_type(participant_type),
         "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
         "joined_at": now.isoformat(),
         "expires_at": (now + timedelta(seconds=SESSION_TOKEN_TTL_SECONDS)).isoformat(),
@@ -573,6 +586,7 @@ def _clean_session_record(value: object) -> dict[str, object]:
         "display_name": clean_lobby_text(source.get("display_name"), limit=128),
         "meeting_id": clean_lobby_text(source.get("meeting_id"), limit=128),
         "invite_scope": normalize_invite_scope(source.get("invite_scope")),
+        "participant_type": _normalize_invite_participant_type(source.get("participant_type")),
         "connection_kind": clean_lobby_text(
             source.get("connection_kind") or NATIVE_REMOTE_ROOM_CLIENT_KIND,
             limit=64,
@@ -593,6 +607,7 @@ def _clean_pending_invite_record(value: object, *, invite_id: str) -> dict[str, 
         "display_name": clean_lobby_text(source.get("display_name"), limit=128),
         "meeting_id": clean_lobby_text(source.get("meeting_id"), limit=128),
         "invite_scope": normalize_invite_scope(source.get("invite_scope")),
+        "participant_type": _normalize_invite_participant_type(source.get("participant_type")),
         "expires_at": clean_lobby_text(source.get("expires_at"), limit=64),
         "created_at": clean_lobby_text(source.get("created_at"), limit=64),
         "revoked": bool(source.get("revoked")),
@@ -600,3 +615,14 @@ def _clean_pending_invite_record(value: object, *, invite_id: str) -> dict[str, 
     if not record["invite_id"] or not record["meeting_id"] or not record["expires_at"]:
         return {}
     return record
+
+
+def _normalize_invite_participant_type(value: object) -> str:
+    normalized = clean_lobby_text(value, limit=32).lower().replace("-", "_")
+    if normalized in {"", "human", "person", "people", "user", "browser"}:
+        return "human"
+    if normalized in {"agent", "ai", "companion", "remote", NATIVE_REMOTE_ROOM_CLIENT_KIND}:
+        return "remote"
+    if normalized in {"subscription_ai", "api", "local", "unknown"}:
+        return normalized
+    return "human"

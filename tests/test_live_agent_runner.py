@@ -21,6 +21,7 @@ from agentsassemble.live_agent_runner import (
     load_group_configs,
     official_turn_prompt,
     official_turn_request_candidate,
+    visible_reply_contains_control_meta,
 )
 from agentsassemble.live_session_transport import JsonlLiveSession
 
@@ -133,6 +134,42 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(runner.run(), 0)
         self.assertEqual(sleep_calls, [0.01])
 
+    def test_runner_uses_runtime_cooldown_from_room_agent_snapshot(self):
+        clock = FakeClock()
+        command_calls: list[str] = []
+        client = FakeRoomClient(
+            [
+                {
+                    "agent": {"agent_id": "agent-a", "cooldown": 60},
+                    "lobby_events": [
+                        {"id": "evt-1", "actor_id": "human", "side": "mine", "message": "first"}
+                    ],
+                },
+                {
+                    "agent": {"agent_id": "agent-a", "cooldown": 60},
+                    "lobby_events": [
+                        {"id": "evt-1", "actor_id": "human", "side": "mine", "message": "first"},
+                        {"id": "evt-2", "actor_id": "human", "side": "mine", "message": "second"},
+                    ],
+                },
+            ]
+        )
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            command_calls.append(prompt)
+            return "reply"
+
+        runner = LiveAgentRunner(
+            config(max_ticks=2, cooldown=0, poll_interval=0.01, heartbeat_interval=0),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+        self.assertEqual(len(command_calls), 1)
+
     def test_always_runner_replies_to_new_non_self_event_and_records_chain_metadata(self):
         clock = FakeClock()
         room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "상태 어때?", "auto_chain_depth": 0}]}
@@ -154,6 +191,30 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(lobby_payloads[0]["auto_chain_depth"], 1)
         self.assertIn("AgentsAssemble", prompts[0][1])
         self.assertIn("상태 어때?", prompts[0][1])
+
+    def test_runner_blocks_control_meta_reply_before_lobby_post(self):
+        clock = FakeClock()
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "지금 뭐해?", "auto_chain_depth": 0}]}
+        client = FakeRoomClient([room])
+
+        runner = LiveAgentRunner(
+            config(heartbeat_interval=0),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "방 이벤트를 계속 확인해서 실시간 응답하겠습니다.",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+        self.assertTrue(visible_reply_contains_control_meta("minimal room delivery envelope를 확인했습니다."))
+        self.assertFalse(visible_reply_contains_control_meta("좋아, 지금 바로 답할게."))
+        lobby_calls = [call for call in client.calls if call[0].endswith("/lobby")]
+        self.assertEqual(lobby_calls, [])
+        error_heartbeats = [
+            payload for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and (payload or {}).get("status") == "error"
+        ]
+        self.assertEqual(error_heartbeats[-1]["last_error"], "control_meta_reply_blocked")
 
     def test_always_runner_preserves_configured_room_scope_when_replying(self):
         clock = FakeClock()

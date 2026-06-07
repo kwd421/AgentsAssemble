@@ -67,6 +67,7 @@ from agentsassemble.live_agents import (
     connect_live_agent,
     heartbeat_live_agent,
     read_live_agents,
+    update_live_agent_cooldown,
     update_live_agent_engagement,
     update_live_agent_poll_interval,
 )
@@ -2614,12 +2615,16 @@ def live_agent_session_agent_timing_payload(
             Path(live_agent_config_path),
             agent_id,
             payload.get("poll_interval"),
+            payload.get("cooldown") if "cooldown" in payload else None,
         )
     agent = update_live_agent_poll_interval(output_root, agent_id, payload.get("poll_interval"))
+    if "cooldown" in payload:
+        agent = update_live_agent_cooldown(output_root, agent_id, payload.get("cooldown"))
     return {
         "status": "updated",
         "agent_id": agent_id,
         "poll_interval": agent.get("poll_interval"),
+        "cooldown": agent.get("cooldown"),
         "config_path": str(config_result.get("config_path") or live_agent_config_path),
         "agent": agent,
     }
@@ -8026,6 +8031,7 @@ def _make_handler(
                         output_root,
                         read_live_agents(output_root),
                         meeting_id=str(query.get("meeting_id", [""])[0] or ""),
+                        sessions=active_sessions_summary(),
                     )
                 )
                 return
@@ -8498,6 +8504,7 @@ def _make_handler(
                             output_root,
                             read_live_agents(output_root),
                             meeting_id=str(member.get("meeting_id") or ""),
+                            sessions=active_sessions_summary(),
                         ),
                     }
                 )
@@ -9474,18 +9481,33 @@ def _make_handler(
                 if result.get("status") != "admitted":
                     self._send_error(HTTPStatus.FORBIDDEN, str(result.get("reason", "rejected")))
                     return
-                # Register the admitted agent in the live-agent roster
-                try:
-                    connect_live_agent(output_root, {
-                        "agent_id": result["agent_id"],
-                        "display_name": result["display_name"],
-                        "provider_kind": "manual",
-                        "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
-                        "meeting_id": result["meeting_id"],
-                        "status": "online",
-                    })
-                except ValueError:
-                    pass  # non-fatal: roster update best-effort
+                participant_type = str(result.get("participant_type") or "human")
+                if participant_type == "human":
+                    try:
+                        upsert_room_member(output_root, {
+                            "participant_id": result["agent_id"],
+                            "display_name": result["display_name"],
+                            "meeting_id": result["meeting_id"],
+                            "role": "human",
+                            "participant_type": "human",
+                            "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
+                            "status": "online",
+                            "source": "room_invite",
+                        })
+                    except ValueError:
+                        pass  # non-fatal: room access is still governed by the session token
+                else:
+                    try:
+                        connect_live_agent(output_root, {
+                            "agent_id": result["agent_id"],
+                            "display_name": result["display_name"],
+                            "provider_kind": "manual",
+                            "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
+                            "meeting_id": result["meeting_id"],
+                            "status": "online",
+                        })
+                    except ValueError:
+                        pass  # non-fatal: roster update best-effort
                 self._send_json(result)
                 return
             if parsed.path == "/api/room-invite/companion":
@@ -9517,6 +9539,7 @@ def _make_handler(
                         display_name=str(payload.get("display_name") or ""),
                         ttl_seconds=min(int(payload.get("ttl_seconds") or 600), 3600),
                         invite_scope="room",
+                        participant_type="remote",
                     )
                 except (ValueError, TypeError) as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
