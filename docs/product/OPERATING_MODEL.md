@@ -88,6 +88,13 @@ report.
   stateless prompt calls are call-style provider execution unless a separate
   persistent process/PTY/stream proof exists. Do not describe them as fast
   provider-resident sessions in UI, docs, prompts, or chat reports.
+- LiveSessionAdapter is a scheduler and room-turn interface first. When it wraps
+  Codex, Cursor, Grok, Antigravity, or another resume-backed CLI without a
+  persistent provider proof, the honest product label is still
+  `LiveSessionAdapter turn-based call/resume`, not fast provider residency.
+  Codex 5.3 Spark was measured at roughly 4-6 seconds in this mode; that delay
+  is provider exec/resume invocation cost, not a polling interval or cooldown
+  promise.
 - frontend polish is deferred until the backend state and data contracts are
   stable enough for another AI or human designer to refine.
 - The React/Vite operator console is now the default GUI surface at `/`, served

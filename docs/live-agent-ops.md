@@ -76,16 +76,29 @@ edited after launch.
 
 Play Mode room flow has four non-game speaking policies:
 
-- `Natural Floor · 자연 대화`: default hybrid free-speaking mode. Agents avoid
+- `Turn-Based Floor · 턴제 발화`: default hybrid free-speaking mode. Agents avoid
   immediate repeat turns, keep rough rolling turn balance, and may answer a
   direct mention even when they would otherwise yield for fairness.
 - `Round Robin · 순서 발화`: strictest fairness mode. Agents wait their turn and
-  do not use the rolling lead allowance from Natural Floor.
+  do not use the rolling lead allowance from Turn-Based Floor.
 - `Free Interval · 자유 간격`: interval-based free speaking. Cooldown still
   applies, but turn-balance fairness does not force a yield.
 - `Quiet Call · 지목/멘션만`: agents stay silent unless an explicit `@Name` or
   `<@Name>` direct mention calls them; idle flow ticks and general room messages
   do not create unsolicited turns.
+
+Legacy room records may still contain the older `natural` policy id. Treat it
+as the same scheduler family as `turn_based_floor`; new UI starts should use
+`turn_based_floor` so the operator sees that this is a turn scheduler, not a
+promise of human-like spontaneous provider residency.
+
+Flow prompts now ask providers to follow an explicitly requested language from
+the topic or newest event, but this is still a provider-output instruction, not
+a guaranteed product invariant. The 2026-06-07 Codex 5.3 Spark check showed
+that a call/resume Codex session could still answer Korean to an `English only`
+probe while Cursor, Grok, and Antigravity followed English. If a room needs a
+hard language boundary, add a separate language-lock option and validation
+path; do not infer it from the topic string alone.
 
 `Mafia Night · 추론 게임` remains the separate game flow and should not be used
 as the default room conversation policy.
@@ -93,9 +106,17 @@ In the React room client, Play Mode controls live in the right-side
 `방 연결 정보` panel, not above the `#general` chat feed. The panel uses a
 small Play Mode launcher: choose an activity such as `일반 대화` or
 `Mafia Night`, then press the single `시작` action. Conversation activities show
-the `대화 방식` select for Natural Floor, Round Robin, Free Interval, or Quiet
+the `대화 방식` select for Turn-Based Floor, Round Robin, Free Interval, or Quiet
 Call. Game activities such as Mafia Night stay separate from those conversation
 policies and open their dedicated game surface.
+
+The first LiveSessionAdapter slice is still provider-call-style for Codex,
+Cursor, Grok, Antigravity, and similar resume-backed CLIs. It creates a common
+room-turn packet and scheduler boundary, but the provider answer is still
+invoked per turn through exec/resume unless the specific provider has a
+separate persistent process, PTY, stream, or room-loop proof. In the agent
+detail modal this appears as `LiveSessionAdapter 턴제`, while `빠른 provider
+상주형` remains disabled until that persistent proof exists.
 
 The current frontend is the Discord-style React room client. Natural-language
 room text should keep human-readable tokens intact

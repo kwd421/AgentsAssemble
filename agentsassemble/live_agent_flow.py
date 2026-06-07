@@ -20,8 +20,8 @@ FLOW_ACTIONS: set[str] = {
 }
 FLOW_SPEAKING_ACTIONS = FLOW_ACTIONS - {"wait"}
 FLOW_TERMINAL_EVENT_TYPES = {"finished", "stopped"}
-FLOW_POLICIES: set[str] = {"natural", "round_robin", "free_interval", "quiet"}
-DEFAULT_FLOW_POLICY = "natural"
+FLOW_POLICIES: set[str] = {"turn_based_floor", "natural", "round_robin", "free_interval", "quiet"}
+DEFAULT_FLOW_POLICY = "turn_based_floor"
 DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW = 24
 DEFAULT_FLOW_FAIRNESS_MIN_GAP = 1
 DEFAULT_FLOW_FAIRNESS_MAX_LEAD = 0

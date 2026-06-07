@@ -23,6 +23,11 @@ from agentsassemble.live_agent_runner import (
     official_turn_request_candidate,
     visible_reply_contains_control_meta,
 )
+from agentsassemble.live_session_adapter import (
+    InvokeLiveSessionAdapter,
+    RuntimeCapabilities,
+    live_session_runtime_contract,
+)
 from agentsassemble.live_session_transport import JsonlLiveSession
 
 
@@ -215,6 +220,82 @@ class LiveAgentRunnerTests(unittest.TestCase):
             if url.endswith("/heartbeat") and (payload or {}).get("status") == "error"
         ]
         self.assertEqual(error_heartbeats[-1]["last_error"], "control_meta_reply_blocked")
+
+    def test_flow_prompt_does_not_force_language_length_or_natural_style_by_default(self):
+        room = {
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "flow_id": "flow-a",
+                    "flow_event_type": "started",
+                    "flow_topic": "비올때 뭘 해야하는가",
+                    "flow_meeting_id": "room-a",
+                    "message": "시간제 자유토론 시작: 비올때 뭘 해야하는가",
+                },
+                {"id": "human-1", "name": "SeiNel", "actor_id": "human", "message": "시작해보자", "flow_meeting_id": "room-a"},
+            ],
+        }
+
+        prompt = flow_decision_prompt(config(meeting_id="room-a"), room, room["lobby_events"][-1])
+
+        self.assertIn("Topic: 비올때 뭘 해야하는가", prompt)
+        self.assertNotIn("Korean", prompt)
+        self.assertNotIn("concise", prompt.lower())
+        self.assertNotIn("keep the tone natural", prompt)
+        self.assertNotIn("one visible Korean lobby message", prompt)
+        self.assertIn("If the topic or newest event explicitly requests a language", prompt)
+
+    def test_flow_idle_tick_ignores_only_self_history_to_avoid_self_loop(self):
+        events = [
+            {
+                "id": "flow-start",
+                "flow_id": "flow-a",
+                "flow_event_type": "started",
+                "flow_topic": "비올때 뭘 해야하는가",
+                "flow_meeting_id": "room-a",
+                "name": "Play Mode",
+                "actor_id": "flow",
+                "message": "시간제 자유토론 시작: 비올때 뭘 해야하는가",
+            },
+            {
+                "id": "agent-self",
+                "flow_id": "flow-a",
+                "flow_action": "speak",
+                "flow_meeting_id": "room-a",
+                "name": "Agent A",
+                "actor_id": "agent-a",
+                "message": "방금 내가 한 말",
+            },
+        ]
+
+        candidate = flow_event_candidate(
+            events,
+            "agent-a",
+            "Agent A",
+            "agent-self",
+            max_chain_depth=1,
+            meeting_id="room-a",
+        )
+
+        self.assertIsNone(candidate)
+
+    def test_live_session_adapter_reports_call_resume_without_claiming_provider_residency(self):
+        calls: list[tuple[list[str], str, int]] = []
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            calls.append((command, prompt, timeout_seconds))
+            return "reply"
+
+        adapter = InvokeLiveSessionAdapter(command_runner=command_runner)
+        result = adapter.invoke(["cmd"], "prompt", timeout_seconds=12)
+
+        self.assertEqual(result.message, "reply")
+        self.assertEqual(calls, [(["cmd"], "prompt", 12)])
+        capabilities = RuntimeCapabilities.from_join_semantics("codex_exec_resume")
+        self.assertEqual(capabilities.runtime_mode, "call_resume")
+        self.assertEqual(capabilities.provider_residency, "per_turn_exec_resume")
+        self.assertFalse(capabilities.provider_persistent)
+        self.assertEqual(live_session_runtime_contract("jsonl_live_session")["runtime_mode"], "provider_persistent")
 
     def test_always_runner_preserves_configured_room_scope_when_replying(self):
         clock = FakeClock()
@@ -826,13 +907,12 @@ class LiveAgentRunnerTests(unittest.TestCase):
                     "flow_action": "speak",
                 },
                 {
-                    "id": "agent-a-2",
-                    "actor_id": "agent-a",
-                    "name": "Agent A",
-                    "message": "다시 말함",
+                    "id": "human-1",
+                    "actor_id": "human",
+                    "name": "SeiNel",
+                    "message": "자유롭게 이어가도 돼",
                     "flow_id": "flow-free",
                     "flow_meeting_id": "m1",
-                    "flow_action": "speak",
                 },
             ],
         }
@@ -3597,7 +3677,7 @@ class LiveAgentRunnerTests(unittest.TestCase):
         prompt = official_turn_prompt(config(agent_id="agent-a", display_name="Agent A"), room, room["live_events"][0])
 
         self.assertIn("review checkpoint checkpoint-1", prompt)
-        self.assertIn("Reply with one concise review message only.", prompt)
+        self.assertIn("Reply with one review message only.", prompt)
         self.assertNotIn("official meeting record", prompt)
         self.assertIn("검토 기준", prompt)
         self.assertIn("Source event id: checkpoint-request", prompt)

@@ -17,7 +17,7 @@ import { isActivePresence } from "../../lib/presenceStatus";
 import MemberList, { type RoleId } from "./MemberList";
 
 const ROOM_FLOW_MODES = [
-  { id: "natural", label: "Natural Floor" },
+  { id: "turn_based_floor", label: "Turn-Based Floor" },
   { id: "round_robin", label: "Round Robin" },
   { id: "free_interval", label: "Free Interval" },
   { id: "quiet", label: "Quiet Call" },
@@ -70,10 +70,11 @@ function mutedChannelCount(
 }
 
 function flowPolicyLabel(policy?: string): string {
+  if (policy === "turn_based_floor" || policy === "natural") return "Turn-Based Floor";
   if (policy === "round_robin") return "Round Robin";
   if (policy === "free_interval") return "Free Interval";
   if (policy === "quiet") return "Quiet Call";
-  return "Natural Floor";
+  return "Turn-Based Floor";
 }
 
 function playErrorMessage(errorValue: unknown, fallback: string): string {
@@ -126,7 +127,7 @@ export default function RoomConnectionPanel({
   onMemberSearchQueryChange,
 }: RoomConnectionPanelProps) {
   const mutedCount = mutedChannelCount(channelNotifications);
-  const [selectedMode, setSelectedMode] = useState("natural");
+  const [selectedMode, setSelectedMode] = useState("turn_based_floor");
   const [selectedActivityId, setSelectedActivityId] = useState<PlayActivityId>("conversation");
   const [busy, setBusy] = useState(false);
   const [playError, setPlayError] = useState("");

@@ -316,9 +316,10 @@ export interface LiveAgent {
   character_mode?: string;
   join_semantics?: string;
   context_durability?: string;
-  execution_mode?: "call" | "persistent" | "manual" | "unknown" | string;
+  execution_mode?: "call" | "call_resume" | "persistent" | "provider_persistent" | "manual" | "unknown" | string;
   runner_residency?: string;
   provider_residency?: string;
+  provider_persistent?: boolean;
   execution_summary?: string;
   sandbox_enforcement: string;
   admission_status?: string;

@@ -22,6 +22,7 @@ from agentsassemble.live_agent_turns import (
     is_official_turn_reply_event,
     is_review_checkpoint_reply_event,
 )
+from agentsassemble.live_session_adapter import InvokeLiveSessionAdapter
 from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL, live_agent_poll_sleep_seconds
 from agentsassemble.live_agent_flow import (
     DEFAULT_FLOW_FAIRNESS_MAX_LEAD,
@@ -800,7 +801,8 @@ class LiveAgentRunner:
         heartbeat_stop = threading.Event()
         heartbeat_thread = self._start_working_heartbeat_loop(source_event_id, heartbeat_stop, cursor_field=cursor_field)
         try:
-            return self.command_runner(command, prompt, timeout_seconds=timeout_seconds)
+            adapter = InvokeLiveSessionAdapter(command_runner=self.command_runner)
+            return adapter.invoke(command, prompt, timeout_seconds=timeout_seconds).message
         finally:
             heartbeat_stop.set()
             if heartbeat_thread is not None:
@@ -1020,6 +1022,8 @@ def _flow_idle_tick_candidate(
     flow_id: str,
     meeting_id: str = "",
 ) -> dict[str, object] | None:
+    if _latest_flow_speech_is_self(events, agent_id, display_name, flow_id=flow_id, meeting_id=meeting_id):
+        return None
     for event in reversed(events):
         event_flow_id = str(event.get("flow_id") or "").strip()
         event_flow_type = str(event.get("flow_event_type") or "").strip()
@@ -1050,6 +1054,29 @@ def _flow_idle_tick_candidate(
     return None
 
 
+def _latest_flow_speech_is_self(
+    events: list[dict[str, object]],
+    agent_id: str,
+    display_name: str,
+    *,
+    flow_id: str,
+    meeting_id: str = "",
+) -> bool:
+    for event in reversed(events):
+        event_flow_id = str(event.get("flow_id") or "").strip()
+        if event_flow_id and event_flow_id != flow_id:
+            continue
+        event_meeting_id = str(event.get("flow_meeting_id") or "").strip()
+        if meeting_id and event_flow_id and event_meeting_id and event_meeting_id != meeting_id:
+            continue
+        if str(event.get("flow_event_type") or "") in FLOW_TERMINAL_EVENT_TYPES:
+            return False
+        if str(event.get("flow_action") or "") not in FLOW_SPEAKING_ACTIONS:
+            continue
+        return _is_self_event(event, agent_id, display_name)
+    return False
+
+
 def _flow_policy_fairness(policy: str, config: ResidentAgentConfig) -> dict[str, object] | None:
     if policy == "free_interval" or policy == "quiet":
         return None
@@ -1074,7 +1101,7 @@ def _flow_candidate_bypasses_fairness(
     agent_id: str,
     display_name: str,
 ) -> bool:
-    if policy != "natural":
+    if policy not in {"natural", "turn_based_floor"}:
         return False
     return _message_directly_mentions_agent(str(candidate.get("message") or ""), agent_id, display_name)
 
@@ -1208,10 +1235,10 @@ def should_reply_to_event(
 
 def delegate_prompt(config: ResidentAgentConfig, room: dict[str, object], source_event: dict[str, object]) -> str:
     lines = [
-        "You are a live AgentsAssemble participant connected through a resident agent bridge.",
+        "You are a live AgentsAssemble participant in the room.",
         f"Agent id: {config.agent_id}",
         f"Display name: {config.display_name or config.agent_id}",
-        "Reply with one concise lobby message only.",
+        "Reply with one lobby message only.",
         "Do not describe this runner, polling, room-event checking, heartbeats, control prompts, or delivery envelopes.",
         "Do not include markdown fences or multiple alternatives.",
         "",
@@ -1248,11 +1275,11 @@ def official_turn_prompt(config: ResidentAgentConfig, room: dict[str, object], s
     review_checkpoint_id = str(source_event.get("review_checkpoint_id") or "").strip()
     if review_checkpoint_id:
         intro = f"You are a live AgentsAssemble participant called into review checkpoint {review_checkpoint_id}."
-        reply_rule = "Reply with one concise review message only."
+        reply_rule = "Reply with one review message only."
         request_label = "Review request:"
     else:
         intro = "You are a live AgentsAssemble participant called into the official meeting record."
-        reply_rule = "Reply with one concise official meeting turn only."
+        reply_rule = "Reply with one official meeting turn only."
         request_label = "Moderator request:"
     lines = [
         intro,
@@ -1297,9 +1324,10 @@ def flow_decision_prompt(config: ResidentAgentConfig, room: dict[str, object], s
         "Choose your next room action from the recent context.",
         "Return one JSON object only with these keys:",
         '{"action":"speak|wait|ask|challenge|clarify|summarize|call_human","target_agent_id":"","reason":"short private reason","message":"one visible lobby message"}',
-        "For wait, set message to an empty string. For every other action, write exactly one visible Korean lobby message.",
+        "For wait, set message to an empty string. For every other action, write exactly one visible lobby message.",
+        "If the topic or newest event explicitly requests a language, answer in that language; otherwise follow the room context.",
         "Visible messages must not describe this runner, polling, room-event checking, heartbeats, control prompts, or delivery envelopes.",
-        "Avoid repeating yourself, avoid two-agent ping-pong, and keep the tone natural for the room.",
+        "Avoid repeating yourself or two-agent ping-pong.",
         "",
         *_room_delivery_envelope_lines(config, room, source_event),
         "",

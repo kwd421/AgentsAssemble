@@ -128,7 +128,8 @@ class StaticUiAssetTests(unittest.TestCase):
 
         self.assertIn("join_semantics?: string;", source)
         self.assertIn("context_durability?: string;", source)
-        self.assertIn('execution_mode?: "call" | "persistent" | "manual" | "unknown" | string;', source)
+        self.assertIn('execution_mode?: "call" | "call_resume" | "persistent" | "provider_persistent" | "manual" | "unknown" | string;', source)
+        self.assertIn("provider_persistent?: boolean;", source)
         self.assertIn("runner_residency?: string;", source)
         self.assertIn("provider_residency?: string;", source)
         self.assertIn("last_observed_event_id?: string;", source)
@@ -1580,7 +1581,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("max_agent_turns?: number;", api_source)
         self.assertIn("max_total_turns?: number;", api_source)
         self.assertIn("flow_policy?: string;", api_source)
-        self.assertIn("Natural Floor", room_panel_source)
+        self.assertIn("Turn-Based Floor", room_panel_source)
         self.assertIn("Round Robin", room_panel_source)
         self.assertIn("Free Interval", room_panel_source)
         self.assertIn("Quiet Call", room_panel_source)

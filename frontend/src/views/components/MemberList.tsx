@@ -234,7 +234,9 @@ function cooldownLabel(cooldown: number | null) {
 
 function agentExecutionMode(agent?: LiveAgent): "call" | "persistent" | "manual" | "unknown" {
   const mode = String(agent?.execution_mode || "").trim();
-  if (mode === "call" || mode === "persistent" || mode === "manual") return mode;
+  if (mode === "call" || mode === "call_resume") return "call";
+  if (mode === "persistent" || mode === "provider_persistent") return "persistent";
+  if (mode === "manual") return mode;
   const join = String(agent?.join_semantics || "").trim();
   if (
     [
@@ -264,7 +266,7 @@ function agentExecutionMode(agent?: LiveAgent): "call" | "persistent" | "manual"
 }
 
 function persistentModeAvailable(agent?: LiveAgent) {
-  return agentExecutionMode(agent) === "persistent";
+  return agentExecutionMode(agent) === "persistent" && agent?.provider_persistent !== false;
 }
 
 function callModeAvailable(agent?: LiveAgent) {
@@ -275,7 +277,7 @@ function callModeAvailable(agent?: LiveAgent) {
 function executionModeSummary(agent?: LiveAgent) {
   const mode = agentExecutionMode(agent);
   if (mode === "call") {
-    return "현재 이 AI는 호출형입니다. 방 runner는 살아 있지만 provider 답변은 매번 exec/resume으로 호출합니다.";
+    return "현재 이 AI는 LiveSessionAdapter 턴제 호출형입니다. 방 runner와 턴 스케줄러는 살아 있지만 provider 답변은 매번 exec/resume으로 호출합니다.";
   }
   if (mode === "persistent") {
     return "현재 이 AI는 상주형입니다. provider 프로세스/PTY/스트림/room loop가 실행 중인 동안 계속 붙어 있습니다.";
@@ -812,7 +814,7 @@ function MemberDetailModal({
             <div className="dc-member-execution-mode" aria-label={`${entry.displayName} 실행 방식`}>
               <div className="dc-member-execution-mode-head">
                 <span>실행 방식</span>
-                <span>{executionMode === "persistent" ? "상주형" : executionMode === "call" ? "호출형" : "미확인"}</span>
+                <span>{executionMode === "persistent" ? "빠른 provider 상주형" : executionMode === "call" ? "LiveSessionAdapter 턴제" : "미확인"}</span>
               </div>
               <div className="dc-member-execution-options" role="radiogroup" aria-label="에이전트 실행 방식">
                 <button
@@ -822,9 +824,9 @@ function MemberDetailModal({
                   aria-checked={executionMode === "call"}
                   data-active={executionMode === "call"}
                   disabled={!canUseCallMode}
-                  title="방 runner는 살아 있지만 provider는 매 답변마다 exec/resume으로 호출합니다."
+                  title="방 runner와 턴 스케줄러는 살아 있지만 provider는 매 답변마다 exec/resume으로 호출합니다."
                 >
-                  호출형
+                  LiveSessionAdapter 턴제
                 </button>
                 <button
                   type="button"
@@ -839,14 +841,14 @@ function MemberDetailModal({
                       : "이 provider는 아직 persistent bridge PoC가 통과하지 않아 선택할 수 없습니다."
                   }
                 >
-                  상주형
+                  빠른 provider 상주형
                 </button>
               </div>
               <p className="dc-member-detail-note preserve-words">
                 {executionSummary}
               </p>
               <p className="dc-member-detail-note preserve-words">
-                호출형은 유휴 자원이 적지만 느릴 수 있습니다. Codex 5.3 Spark 실측은 4-6초였고,
+                LiveSessionAdapter 턴제 호출형은 유휴 자원이 적지만 느릴 수 있습니다. Codex 5.3 Spark 실측은 4-6초였고,
                 원인은 polling/cooldown이 아니라 Codex exec/resume 호출 비용입니다.
               </p>
               <p className="dc-member-detail-note preserve-words">

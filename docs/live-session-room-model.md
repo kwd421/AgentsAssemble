@@ -89,7 +89,7 @@ Queue wait time and backpressure counts still require a later server/fanout
 slice and remain out of scope. Treat the output as operator evidence for
 comparing local changes on the same machine, not as a service-level objective.
 
-Play Mode flow fairness is a runner-side silent yield. Before a resident calls
+Play Mode `turn_based_floor` fairness is a runner-side silent yield. Before a resident calls
 its provider, it compares its own speaking count against the current active
 `flow` participants in the same meeting. The default guard looks at the last 24
 speaking events, blocks an immediate repeat with a one-speaking-turn `min_gap`,
@@ -103,6 +103,12 @@ resident should yield, it skips that tick without advancing the visible room,
 posting a nudge, or turning the room into a moderator. This guard applies only
 to informal flow participation, not official Work Mode turns; stale/offline
 participants are not used as the baseline.
+
+The flow scheduler must also avoid self-trigger loops. A resident's own visible
+reply is not a new reason for that same resident to speak again; another human
+or agent event, a direct mention, or a future explicit scheduler packet is
+needed before it should call the provider again. This rule applies even when a
+policy relaxes turn-balance fairness.
 
 ## Live Room Infrastructure vs Council Workflow
 

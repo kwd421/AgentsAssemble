@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.sandbox_launcher import sandbox_launcher_for, safe_sandbox_enforcement
+from agentsassemble.live_session_adapter import (
+    CALL_RESUME_JOIN_SEMANTICS,
+    PROVIDER_PERSISTENT_JOIN_SEMANTICS,
+    live_session_runtime_contract,
+)
 
 
 LIVE_AGENT_JOIN_SEMANTICS = {
@@ -30,21 +35,8 @@ LIVE_AGENT_CONTEXT_DURABILITY = {
     "provider_managed_resume",
     "unknown",
 }
-CALL_EXECUTION_JOIN_SEMANTICS = {
-    "codex_exec_resume",
-    "kiro_chat_resume",
-    "antigravity_conversation_resume",
-    "cursor_chat_resume",
-    "grok_session_resume",
-    "hermes_chat_resume",
-    "stateless_prompt_call",
-}
-PERSISTENT_EXECUTION_JOIN_SEMANTICS = {
-    "terminal_pty_prompt_bridge",
-    "self_service_room_loop",
-    "remote_bridge_room_loop",
-    "jsonl_live_session",
-}
+CALL_EXECUTION_JOIN_SEMANTICS = CALL_RESUME_JOIN_SEMANTICS
+PERSISTENT_EXECUTION_JOIN_SEMANTICS = PROVIDER_PERSISTENT_JOIN_SEMANTICS
 
 
 def live_agent_context_contract(provider_kind: object, connection_kind: object) -> dict[str, str]:
@@ -148,34 +140,15 @@ def live_agent_context_contract(provider_kind: object, connection_kind: object) 
     })
 
 
-def live_agent_execution_contract(join_semantics: object) -> dict[str, str]:
-    join = clean_lobby_text(join_semantics, limit=64)
-    if join in CALL_EXECUTION_JOIN_SEMANTICS:
-        return {
-            "execution_mode": "call",
-            "runner_residency": "resident_polling_runner",
-            "provider_residency": "per_turn_exec_resume",
-            "execution_summary": "Runner stays alive, but the provider is called per turn through exec/resume.",
-        }
-    if join in PERSISTENT_EXECUTION_JOIN_SEMANTICS:
-        return {
-            "execution_mode": "persistent",
-            "runner_residency": "resident_process",
-            "provider_residency": "persistent_provider_channel",
-            "execution_summary": "Provider process, PTY, stream, or room loop stays attached while the agent is running.",
-        }
-    if join == "manual_room_loop":
-        return {
-            "execution_mode": "manual",
-            "runner_residency": "manual",
-            "provider_residency": "external_or_human",
-            "execution_summary": "Manual participant; no provider execution is controlled by AgentsAssemble.",
-        }
+def live_agent_execution_contract(join_semantics: object) -> dict[str, object]:
+    runtime = live_session_runtime_contract(clean_lobby_text(join_semantics, limit=64))
+    runtime_mode = str(runtime.get("runtime_mode") or "unknown")
     return {
-        "execution_mode": "unknown",
-        "runner_residency": "unknown",
-        "provider_residency": "unknown",
-        "execution_summary": "Execution style is not proven.",
+        "execution_mode": "persistent" if runtime_mode == "provider_persistent" else runtime_mode.replace("_resume", ""),
+        "runner_residency": str(runtime.get("runner_residency") or "unknown"),
+        "provider_residency": str(runtime.get("provider_residency") or "unknown"),
+        "provider_persistent": bool(runtime.get("provider_persistent")),
+        "execution_summary": str(runtime.get("runtime_summary") or "Execution style is not proven."),
     }
 
 

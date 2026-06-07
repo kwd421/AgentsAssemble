@@ -561,7 +561,7 @@ def _restored_flow_state(events: list[dict[str, object]], *, meeting_id: str = "
         "flow_id": flow_id,
         "meeting_id": clean_lobby_text(context.get("flow_meeting_id"), limit=128),
         "topic": clean_lobby_text(context.get("flow_topic"), limit=ROOM_TOPIC_LIMIT),
-        "policy": clean_lobby_text(context.get("flow_policy"), limit=64) or "natural",
+        "policy": clean_lobby_text(context.get("flow_policy"), limit=64) or "turn_based_floor",
         "status": status,
         "started_at": clean_lobby_text(context.get("flow_started_at"), limit=64),
         "deadline_at": clean_lobby_text(context.get("flow_deadline_at"), limit=64),
