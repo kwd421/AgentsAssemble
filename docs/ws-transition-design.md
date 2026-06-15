@@ -75,9 +75,16 @@ WsConnection:
 5. close/에러/`self.stop_event` 시 close 프레임 후 return → 연결 종료.
 가짜 소켓(recv/sendall 큐) + 가짜 세션검증으로 단위테스트.
 
-## 알려진 갭 — provider WS 상주 (#1 코어, 코덱스 리뷰 2026-06-16, 담에 구현)
-커밋 149bc2e 리뷰. 코드로 검증 완료, 전부 유효:
-1. **[P1] 발화 메타데이터 유실** — `run_provider_ws_resident`는 `client.say(reply)`만 보내고,
+## 알려진 갭 — provider WS 상주 (#1 코어, 코덱스 리뷰 2026-06-16)
+커밋 149bc2e 리뷰 → **1·2·3 수정 완료 (커밋 a2f4953, 코덱스 수정·검증됨)**. 남은 잔여:
+- **[잔여] 빈 방 seeding 엣지**: 히스토리 없으면 스냅샷 프레임이 안 나가(`if events:` 가드)
+  접속 창에 들어온 메시지가 여전히 스킵될 수 있음. 해법: 빈 스냅샷도 항상 보내 경계 표시,
+  또는 subscribe-ack가 커서 명시.
+- **[잔여, 리뷰 4번] say fire-and-forget**: 상주가 ack/error 안 읽고 replies++ → muted/
+  read-only/거부 포스트가 성공처럼 보임. 해법: say 후 ack/error 프레임 확인.
+
+수정 완료된 원본 발견 (참고):
+1. **[P1·완료] 발화 메타데이터 유실** — `run_provider_ws_resident`는 `client.say(reply)`만 보내고,
    `_on_say`(ws_room_session)도 message/kind/vote_*만 전달. HTTP runner는 `source_event_id` +
    `auto_chain_depth=source_depth+1`을 실음. → WS 답이 depth 0·source 없음 = **chain-depth
    루프 제어/중복 source 처리가 HTTP와 갈라짐**(에이전트끼리 무한루프 안 막힘). "프롬프트
