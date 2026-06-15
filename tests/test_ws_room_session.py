@@ -120,6 +120,7 @@ class SubscribeTests(unittest.TestCase):
         self.assertEqual(msgs[0]["op"], "subscribed")
         self.assertEqual(msgs[0]["streams"], ["lobby"])
         self.assertEqual(msgs[1]["op"], "event")
+        self.assertTrue(msgs[1].get("snapshot"))
         self.assertEqual(msgs[1]["events"][0]["message"], "hi")
 
     def test_subscribe_defaults_to_all_streams(self):
@@ -153,6 +154,25 @@ class SayGovernanceTests(unittest.TestCase):
         # server injects identity, not the client
         identity, payload = deps.posted[0]
         self.assertEqual(identity["agent_id"], "guest-1")
+
+    def test_say_forwards_safe_reply_metadata(self):
+        deps = FakeDeps()
+        sess = _session(deps)
+        frames = sess.handle_frame(OP_TEXT, json.dumps({
+            "op": "say",
+            "message": "reply",
+            "source_event_id": "src1",
+            "auto_chain_depth": 2,
+            "flow_meeting_id": "room-1",
+            "actor_id": "spoofed-agent",
+        }).encode())
+        msgs = text_messages(frames)
+        self.assertEqual(msgs[0]["op"], "ack")
+        _identity, payload = deps.posted[0]
+        self.assertEqual(payload.get("source_event_id"), "src1")
+        self.assertEqual(payload.get("auto_chain_depth"), 2)
+        self.assertEqual(payload.get("flow_meeting_id"), "room-1")
+        self.assertNotIn("actor_id", payload)
 
     def test_read_only_scope_blocks_say(self):
         deps = FakeDeps()

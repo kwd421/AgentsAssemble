@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import socket as socket_module
+import ssl
 import urllib.request
 from urllib.parse import urlparse
 
@@ -160,6 +161,8 @@ def connect_room_ws(
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     sock = socket_module.create_connection((host, port), timeout=timeout)
+    if parsed.scheme == "https":
+        sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
     client = WsRoomClient(sock, host=f"{host}:{port}")
     client.open(f"/ws?ticket={ticket}")
     client.subscribe(streams)

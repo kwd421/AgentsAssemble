@@ -30,6 +30,34 @@ from agentsassemble.room_websocket import (
 
 WS_TICKET_TTL_SECONDS = 30.0
 WS_STREAMS = ("lobby", "roster", "side_chat")
+WS_SAY_METADATA_FIELDS = {
+    "source_event_id",
+    "thread_source_event_id",
+    "target_agent_id",
+    "auto_chain_depth",
+    "flow_id",
+    "flow_meeting_id",
+    "flow_event_type",
+    "flow_status",
+    "flow_topic",
+    "flow_policy",
+    "flow_action",
+    "flow_reason",
+    "flow_runtime_mode",
+    "flow_duration_seconds",
+    "flow_tick_interval",
+    "flow_cooldown",
+    "flow_max_agent_turns",
+    "flow_max_total_turns",
+    "flow_max_silence_seconds",
+    "flow_total_turns",
+    "flow_agent_count",
+    "flow_turn_delivery_ms",
+    "flow_provider_invocation_ms",
+    "flow_reply_post_ms",
+    "flow_started_at",
+    "flow_deadline_at",
+}
 
 
 class WsTicketStore:
@@ -154,7 +182,7 @@ class WsRoomSession:
             resume = str(msg.get("resume_from_id") or "") if stream == "lobby" else ""
             self._cursors[stream] = resume
         frames = [encode_text(json.dumps({"op": "subscribed", "streams": sorted(self.subscribed)}))]
-        frames.extend(self.poll())  # immediate snapshot after subscribe
+        frames.extend(self.poll(snapshot=True))  # immediate snapshot after subscribe
         return frames
 
     def _on_say(self, msg: dict) -> list[bytes]:
@@ -173,6 +201,9 @@ class WsRoomSession:
             "vote_options": msg.get("vote_options"),
             "vote_choice": msg.get("vote_choice"),
         }
+        for key in WS_SAY_METADATA_FIELDS:
+            if key in msg:
+                payload[key] = msg[key]
         try:
             event = self.deps.post_say(self.identity, payload)
         except WsSayRejected as rejected:
@@ -182,7 +213,7 @@ class WsRoomSession:
         return frames
 
     # -- delivery ---------------------------------------------------------- #
-    def poll(self) -> list[bytes]:
+    def poll(self, *, snapshot: bool = False) -> list[bytes]:
         """Read new events for subscribed streams; return push frames. Reuses the
         existing snapshot readers (no pub/sub yet — WS-6)."""
         if self.closed:
@@ -192,7 +223,10 @@ class WsRoomSession:
             events, latest = self.deps.read_lobby_after(self.meeting_id, self._cursors.get("lobby", ""))
             if events:
                 self._cursors["lobby"] = latest or self._cursors.get("lobby", "")
-                frames.append(encode_text(json.dumps({"op": "event", "stream": "lobby", "events": events})))
+                message: dict[str, object] = {"op": "event", "stream": "lobby", "events": events}
+                if snapshot:
+                    message["snapshot"] = True
+                frames.append(encode_text(json.dumps(message)))
         if "roster" in self.subscribed:
             members, signature = self.deps.read_roster(self.meeting_id)
             if signature != self._roster_sig:

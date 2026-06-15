@@ -13,8 +13,10 @@ import time
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 from urllib.request import Request, urlopen
 
+import agentsassemble.ws_resident as ws_resident
 from agentsassemble.gui import _make_handler
 from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.room_invite import create_room_invite, join_room_with_invite, reset_state
@@ -39,6 +41,7 @@ class WsResidentLiveTests(unittest.TestCase):
     def tearDown(self):
         for server in self._servers:
             server.shutdown()
+            server.server_close()
         reset_state()
 
     def _start(self, root: Path) -> str:
@@ -166,12 +169,136 @@ class ProviderWsResidentTests(WsResidentLiveTests):
             time.sleep(0.1)
         self.assertTrue(replies, "provider resident reply never appeared")
         self.assertEqual(replies[-1]["message"], "내 생각엔 좀 다른데, 근거를 보면...")
+        human_events = [m for m in messages if m.get("actor_id") == "human-1"]
+        self.assertTrue(human_events, "source human event missing")
+        self.assertEqual(replies[-1]["source_event_id"], human_events[-1]["id"])
+        self.assertEqual(replies[-1]["auto_chain_depth"], 1)
+        self.assertEqual(replies[-1]["flow_meeting_id"], "room-1")
 
         # and the brain got the full runner envelope, not a raw message
         self.assertTrue(captured, "command_runner was never called")
         prompt = captured[-1]
         self.assertIn("Agent id: codex-ws", prompt)
         self.assertIn("이거 맞지? 동의하지?", prompt)
+
+    def test_provider_resident_does_not_drop_live_event_batched_with_snapshot(self):
+        class FakeSock:
+            def settimeout(self, _timeout):
+                pass
+
+        class FakeClient:
+            def __init__(self):
+                self.sock = FakeSock()
+                self.closed = False
+                self.sent: list[dict] = []
+                self._messages = [
+                    [
+                        {"op": "subscribed", "streams": ["lobby"]},
+                        {
+                            "op": "event",
+                            "stream": "lobby",
+                            "snapshot": True,
+                            "events": [{"id": "old", "actor_type": "human", "name": "Human", "message": "old"}],
+                        },
+                        {
+                            "op": "event",
+                            "stream": "lobby",
+                            "events": [{"id": "new", "actor_type": "human", "name": "Human", "message": "new"}],
+                        },
+                    ]
+                ]
+
+            def receive(self):
+                return self._messages.pop(0) if self._messages else []
+
+            def thinking(self, on: bool):
+                self.sent.append({"op": "thinking", "on": on})
+
+            def say(self, message: str, **extra):
+                self.sent.append({"op": "say", "message": message, **extra})
+
+            def close(self):
+                self.closed = True
+
+        fake = FakeClient()
+
+        def stub_command_runner(command, prompt, *, timeout_seconds):
+            self.assertIn("new", prompt)
+            return "reply to new"
+
+        with patch.object(ws_resident, "connect_room_ws", return_value=fake):
+            replies = run_provider_ws_resident(
+                "http://room.local",
+                "session-token",
+                _resident_config("codex-ws"),
+                stub_command_runner,
+                max_replies=1,
+                max_idle_rounds=1,
+            )
+
+        self.assertEqual(replies, 1)
+        say_messages = [message for message in fake.sent if message.get("op") == "say"]
+        self.assertEqual(len(say_messages), 1)
+        self.assertEqual(say_messages[0]["message"], "reply to new")
+        self.assertEqual(say_messages[0]["source_event_id"], "new")
+
+    def test_provider_resident_keeps_snapshot_cursor_when_ack_is_split(self):
+        class FakeSock:
+            def settimeout(self, _timeout):
+                pass
+
+        class FakeClient:
+            def __init__(self):
+                self.sock = FakeSock()
+                self.closed = False
+                self.sent: list[dict] = []
+                self._messages = [
+                    [{"op": "subscribed", "streams": ["lobby"]}],
+                    [
+                        {
+                            "op": "event",
+                            "stream": "lobby",
+                            "snapshot": True,
+                            "events": [{"id": "old", "actor_type": "human", "name": "Human", "message": "old"}],
+                        }
+                    ],
+                    [
+                        {
+                            "op": "event",
+                            "stream": "lobby",
+                            "events": [{"id": "new", "actor_type": "human", "name": "Human", "message": "new"}],
+                        }
+                    ],
+                ]
+
+            def receive(self):
+                return self._messages.pop(0) if self._messages else []
+
+            def thinking(self, on: bool):
+                self.sent.append({"op": "thinking", "on": on})
+
+            def say(self, message: str, **extra):
+                self.sent.append({"op": "say", "message": message, **extra})
+
+            def close(self):
+                self.closed = True
+
+        fake = FakeClient()
+
+        with patch.object(ws_resident, "connect_room_ws", return_value=fake):
+            replies = run_provider_ws_resident(
+                "http://room.local",
+                "session-token",
+                _resident_config("codex-ws"),
+                lambda command, prompt, *, timeout_seconds: "reply",
+                max_replies=1,
+                max_idle_rounds=1,
+            )
+
+        self.assertEqual(replies, 1)
+        say_messages = [message for message in fake.sent if message.get("op") == "say"]
+        self.assertEqual(len(say_messages), 1)
+        self.assertEqual(say_messages[0]["source_event_id"], "new")
 
 
 if __name__ == "__main__":

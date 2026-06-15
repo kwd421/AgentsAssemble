@@ -14,6 +14,7 @@ from __future__ import annotations
 import socket as socket_module
 from typing import Callable
 
+from agentsassemble.room_engagement import chain_depth as _chain_depth
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws
 
 Brain = Callable[[dict], str]
@@ -129,22 +130,34 @@ def run_provider_ws_resident(
                     break
                 continue
             idle = 0
-            got_new = False
+            got_lobby_event = False
+            got_live_event = False
+            got_snapshot_event = False
             for message in messages:
                 if message.get("op") == "event" and message.get("stream") == "lobby":
                     events = message.get("events") or []
                     if events:
+                        got_lobby_event = True
                         buffer.extend(events)
-                        got_new = True
+                        if message.get("snapshot") is True:
+                            got_snapshot_event = True
+                            last_observed = str(events[-1].get("id") or last_observed)
+                        else:
+                            got_live_event = True
             if len(buffer) > buffer_size:
                 del buffer[:-buffer_size]
             if not seeded:
-                # Don't answer history that existed before we joined.
-                if buffer:
-                    last_observed = str(buffer[-1].get("id") or "")
+                # Don't answer history that existed before we joined. Newer WS
+                # servers mark that subscribe-time history as a snapshot, so a
+                # live event batched after it can still be answered. Unmarked
+                # first lobby batches are treated as legacy snapshots.
                 seeded = True
-                continue
-            if not got_new:
+                if got_lobby_event and (not got_live_event or not got_snapshot_event):
+                    last_observed = str(buffer[-1].get("id") or "")
+                    continue
+                if not got_lobby_event:
+                    continue
+            if not got_live_event:
                 continue
             candidate = event_reply_candidate(
                 buffer,
@@ -157,7 +170,8 @@ def run_provider_ws_resident(
             )
             if candidate is None:
                 continue
-            last_observed = str(candidate.get("id") or last_observed)
+            source_event_id = str(candidate.get("id") or last_observed)
+            last_observed = source_event_id
             room = {
                 "lobby_events": list(buffer),
                 "agent": {"agent_id": agent_id, "engagement_mode": config.engagement_mode},
@@ -173,7 +187,13 @@ def run_provider_ws_resident(
             reply = str(reply or "").strip()
             if not reply or visible_reply_contains_control_meta(reply):
                 continue
-            client.say(reply)
+            client.say(
+                reply,
+                kind="message",
+                source_event_id=source_event_id,
+                auto_chain_depth=_chain_depth(candidate) + 1,
+                flow_meeting_id=config.meeting_id,
+            )
             replies += 1
             if max_replies and replies >= max_replies:
                 return replies

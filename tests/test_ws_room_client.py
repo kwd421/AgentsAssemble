@@ -6,7 +6,9 @@ import unittest
 from collections import deque
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
+import agentsassemble.ws_room_client as ws_room_client
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import create_room_invite, join_room_with_invite, reset_state
 from agentsassemble.room_websocket import (
@@ -147,6 +149,7 @@ class LiveRoundTripTests(unittest.TestCase):
     def tearDown(self):
         for server in self._servers:
             server.shutdown()
+            server.server_close()
         reset_state()
 
     def _start(self, root: Path) -> str:
@@ -180,6 +183,39 @@ class LiveRoundTripTests(unittest.TestCase):
                 self.assertEqual(ack["event"]["actor_id"], "agent-ws")
             finally:
                 client.close()
+
+
+class ConnectRoomWsTests(unittest.TestCase):
+    def test_https_room_wraps_socket_with_tls(self):
+        sock = FakeSocket()
+
+        class FakeContext:
+            def __init__(self):
+                self.wrapped = []
+
+            def wrap_socket(self, raw_sock, *, server_hostname: str):
+                self.wrapped.append((raw_sock, server_hostname))
+                return raw_sock
+
+        context = FakeContext()
+
+        class FakeSslModule:
+            @staticmethod
+            def create_default_context():
+                return context
+
+        with (
+            patch("agentsassemble.ws_room_client.request_ws_ticket", return_value="ticket"),
+            patch("agentsassemble.ws_room_client.socket_module.create_connection", return_value=sock),
+            patch.object(ws_room_client, "ssl", FakeSslModule, create=True),
+        ):
+            client = connect_room_ws("https://room.example", "session-token", ["lobby"])
+
+        try:
+            self.assertEqual(context.wrapped, [(sock, "room.example")])
+            self.assertIn(b"GET /ws?ticket=ticket HTTP/1.1", sock.sent)
+        finally:
+            client.close()
 
 
 if __name__ == "__main__":
