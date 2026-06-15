@@ -956,6 +956,27 @@ export default function App() {
     [activeRoomMembers, scopedAgents]
   );
   const scopedOnlineCount = scopedAgents.filter((agent) => isActivePresence(agent.status)).length;
+  // Participants currently generating a reply (status "working") — drives the
+  // lobby typing indicator. Covers both managed live-agents and WS residents
+  // (whose roster status flips to "working" via the thinking signal).
+  const typingNames = useMemo(() => {
+    const names: string[] = [];
+    const seen = new Set<string>();
+    const add = (name: string) => {
+      const trimmed = name.trim();
+      if (trimmed && !seen.has(trimmed)) {
+        seen.add(trimmed);
+        names.push(trimmed);
+      }
+    };
+    scopedAgents.forEach((agent) => {
+      if (agent.status === "working") add(agent.display_name || agent.agent_id);
+    });
+    activeRoomMembers.forEach((member) => {
+      if (member.thinking) add(member.display_name || member.participant_id);
+    });
+    return names;
+  }, [scopedAgents, activeRoomMembers]);
   const activeChannelSettings = roomChannelSettings[activeRoomKey] || {};
   const menuRoom = roomMenu ? rooms.find((room) => room.id === roomMenu.roomId) : undefined;
   const menuChannel = channelMenu
@@ -2386,6 +2407,7 @@ export default function App() {
             onOpenSideThread={openSideChatThread}
             onGuestSessionExpired={expireGuestSession}
             threadSummaries={sideChatThreadSummaries}
+            typingNames={typingNames}
           />
         ) : channel === "live" ? (
           <LiveView

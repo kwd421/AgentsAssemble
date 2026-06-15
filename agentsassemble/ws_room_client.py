@@ -80,6 +80,14 @@ class WsRoomClient:
     def say(self, message: str, **extra: object) -> None:
         self._send({"op": "say", "message": message, **extra})
 
+    def thinking(self, on: bool) -> None:
+        """Signal that the agent started/finished generating (lights up the
+        room's typing indicator). Best-effort — a failed send doesn't matter."""
+        try:
+            self._send({"op": "thinking", "on": bool(on)})
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            self.closed = True
+
     def _send(self, obj: dict) -> None:
         self.sock.sendall(encode_client_text(json.dumps(obj)))
 

@@ -59,6 +59,7 @@ export interface RoomMember {
   participant_type: ParticipantType;
   provider_kind: string;
   connection_kind: string;
+  thinking?: boolean;
   status: string;
   muted?: boolean;
   source: string;

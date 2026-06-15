@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -90,6 +92,37 @@ def upsert_room_member(output_root: Path, payload: dict[str, object]) -> dict[st
     return identity_store_for_output_root(output_root).upsert_membership(member)
 
 
+# Ephemeral "thinking" registry (an agent is generating a reply). It is presence,
+# not persisted status — the roster recomputes status from live sessions, so a
+# stored status would be overwritten. TTL auto-clears it if a resident dies
+# mid-generation so the typing indicator never sticks forever.
+_THINKING_TTL_SECONDS = 120.0
+_thinking_lock = threading.Lock()
+_thinking: dict[tuple[str, str], float] = {}
+
+
+def mark_thinking(meeting_id: str, participant_id: str, on: bool, *, now: float | None = None) -> None:
+    moment = time.monotonic() if now is None else now
+    key = (str(meeting_id or ""), str(participant_id or ""))
+    if not key[0] or not key[1]:
+        return
+    with _thinking_lock:
+        if on:
+            _thinking[key] = moment + _THINKING_TTL_SECONDS
+        else:
+            _thinking.pop(key, None)
+
+
+def thinking_participants(meeting_id: str, *, now: float | None = None) -> set[str]:
+    moment = time.monotonic() if now is None else now
+    target = str(meeting_id or "")
+    with _thinking_lock:
+        expired = [key for key, expiry in _thinking.items() if moment > expiry]
+        for key in expired:
+            _thinking.pop(key, None)
+        return {pid for (mid, pid), _expiry in _thinking.items() if mid == target}
+
+
 def room_members_payload(
     output_root: Path,
     agents: list[dict[str, object]],
@@ -166,6 +199,11 @@ def room_members_payload(
             str(item.get("display_name") or item.get("participant_id") or "").lower(),
         ),
     )
+    # Ephemeral "generating a reply" flag — drives the typing indicator without
+    # touching the recomputed presence status.
+    thinking_ids = thinking_participants(room_id)
+    for member in members:
+        member["thinking"] = str(member.get("participant_id") or "") in thinking_ids
     return {
         "meeting_id": room_id,
         "members": members,

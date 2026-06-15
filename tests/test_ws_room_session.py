@@ -73,6 +73,7 @@ class FakeDeps:
         self.roster = ([], "sig0")
         self.muted = False
         self.posted = []
+        self.statuses = []             # (identity, status) from set_status
 
     def make(self):
         return WsRoomDeps(
@@ -80,6 +81,7 @@ class FakeDeps:
             read_roster=lambda meeting_id: self.roster,
             post_say=self._post_say,
             is_muted=lambda meeting_id, agent_id: self.muted,
+            set_thinking=lambda identity, on: self.statuses.append((identity, on)),
         )
 
     def _read_lobby_after(self, meeting_id, after):
@@ -182,6 +184,22 @@ class SayGovernanceTests(unittest.TestCase):
         sess = _session(deps)
         msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "x"}).encode()))
         self.assertEqual(msgs[0]["category"], "turn_conflict")
+
+
+class ThinkingTests(unittest.TestCase):
+    def test_thinking_on_signals_true(self):
+        deps = FakeDeps()
+        sess = _session(deps)
+        msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "thinking", "on": True}).encode()))
+        self.assertEqual(msgs[0], {"op": "thinking_ack", "on": True})
+        self.assertEqual(deps.statuses[-1][1], True)
+        self.assertEqual(deps.statuses[-1][0]["agent_id"], "guest-1")
+
+    def test_thinking_off_signals_false(self):
+        deps = FakeDeps()
+        sess = _session(deps)
+        sess.handle_frame(OP_TEXT, json.dumps({"op": "thinking", "on": False}).encode())
+        self.assertEqual(deps.statuses[-1][1], False)
 
 
 class ControlAndMiscTests(unittest.TestCase):

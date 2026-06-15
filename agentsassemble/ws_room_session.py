@@ -82,6 +82,7 @@ class WsRoomDeps:
     read_roster: Callable[[str], tuple[list, str]]
     post_say: Callable[[dict, dict], dict]
     is_muted: Callable[[str, str], bool]
+    set_thinking: Callable[[dict, bool], None]
 
 
 @dataclass
@@ -127,9 +128,22 @@ class WsRoomSession:
             return self._on_subscribe(msg)
         if op == "say":
             return self._on_say(msg)
+        if op == "thinking":
+            return self._on_thinking(msg)
         if op == "ping":  # app-level ping (in addition to control-frame ping)
             return [encode_text(json.dumps({"op": "pong"}))]
         return [self._error("unknown_op", f"Unknown op: {op!r}")]
+
+    def _on_thinking(self, msg: dict) -> list[bytes]:
+        """A resident signals it started/finished generating. We mark its roster
+        status working/online; the roster push then lights up the typing
+        indicator for everyone (no pub/sub needed — reuses the roster stream)."""
+        on = bool(msg.get("on"))
+        try:
+            self.deps.set_thinking(self.identity, on)
+        except Exception:  # thinking is best-effort UX; never break the connection
+            return [self._error("status_failed", "Could not update thinking status.")]
+        return [encode_text(json.dumps({"op": "thinking_ack", "on": on}))]
 
     # -- ops --------------------------------------------------------------- #
     def _on_subscribe(self, msg: dict) -> list[bytes]:

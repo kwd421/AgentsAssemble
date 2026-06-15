@@ -64,7 +64,11 @@ def run_resident_loop(
                 seen.add(event_id)
                 if not should_reply(event):
                     continue
-                reply = brain(event)
+                client.thinking(True)  # light up the typing indicator while generating
+                try:
+                    reply = brain(event)
+                finally:
+                    client.thinking(False)
                 if not reply:
                     continue
                 client.say(reply)

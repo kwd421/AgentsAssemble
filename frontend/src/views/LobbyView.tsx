@@ -145,9 +145,11 @@ export default function LobbyView({
   threadSummaries = {},
   roomSessionToken = "",
   localDisplayName = "",
+  typingNames = [],
 }: {
   activeRoom: RoomDockItem;
   agents: LiveAgent[];
+  typingNames?: string[];
   mentionables?: string[];
   canManageRoom?: boolean;
   canPostMessages?: boolean;
@@ -442,11 +444,10 @@ export default function LobbyView({
         )}
       </div>
 
-      {/* Typing indicator — agents currently generating a reply (status "working") */}
+      {/* Typing indicator — participants currently generating a reply */}
       {(() => {
-        const thinking = agents.filter((agent) => agent.status === "working");
-        if (thinking.length === 0) return null;
-        const names = thinking.map((agent) => agent.display_name || agent.agent_id);
+        const names = typingNames;
+        if (names.length === 0) return null;
         const label =
           names.length === 1
             ? `${names[0]} 생각 중`

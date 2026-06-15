@@ -151,7 +151,7 @@ from agentsassemble.room_friend_dms import (
 )
 from agentsassemble.room_friends import delete_room_friend, room_friends_payload, upsert_room_friend
 from agentsassemble.identity_store import default_identity_db_path
-from agentsassemble.room_members import is_room_member_muted, room_members_payload
+from agentsassemble.room_members import is_room_member_muted, mark_thinking, room_members_payload
 from agentsassemble.room_websocket import (
     CLOSE_PROTOCOL_ERROR,
     MessageAssembler,
@@ -8159,11 +8159,21 @@ def _make_handler(
                 allow_flow_metadata=_public_lobby_allows_room_scope(event_payload),
             )
 
+        def set_thinking(identity: dict, on: bool) -> None:
+            # Ephemeral "generating a reply" flag → the roster carries a `thinking`
+            # bool that the roster push delivers, lighting up the typing indicator.
+            mark_thinking(
+                str(identity.get("meeting_id") or ""),
+                str(identity.get("agent_id") or ""),
+                on,
+            )
+
         return WsRoomDeps(
             read_lobby_after=read_lobby_after,
             read_roster=read_roster,
             post_say=post_say,
             is_muted=lambda meeting_id, agent_id: is_room_member_muted(output_root, meeting_id, agent_id),
+            set_thinking=set_thinking,
         )
     # R2: route-table dispatcher. Migrated domains register here; do_GET/do_POST
     # try the table first and fall back to the legacy if-chains below.
@@ -11198,6 +11208,18 @@ def _make_handler(
             ws = WsRoomSession(identity=identity, deps=_ws_room_deps())
             assembler = MessageAssembler()
             sock = self.connection
+            def _send_all(frames: list[bytes]) -> bool:
+                # Deliver outbound frames; a send failure (client already gone)
+                # must NOT abort processing — the important side effects (append,
+                # status) already ran in handle_frame. Returns False if the peer
+                # is gone so the loop can wind down after the batch is processed.
+                for frame in frames:
+                    try:
+                        sock.sendall(frame)
+                    except (BrokenPipeError, ConnectionResetError, OSError):
+                        return False
+                return True
+
             try:
                 while not ws.closed:
                     ready, _, _ = select.select([sock], [], [], SSE_EVENT_POLL_INTERVAL_SECONDS)
@@ -11206,11 +11228,16 @@ def _make_handler(
                         if not data:
                             break  # client closed the TCP connection
                         assembler.feed(data)
+                        # Process EVERY received frame first (side effects: say
+                        # append, thinking status) — then send. A say followed by
+                        # an immediate client close must still append.
+                        outbound: list[bytes] = []
                         for opcode, payload in assembler.messages():
-                            for frame in ws.handle_frame(opcode, payload):
-                                sock.sendall(frame)
-                    for frame in ws.poll():
-                        sock.sendall(frame)
+                            outbound.extend(ws.handle_frame(opcode, payload))
+                        if not _send_all(outbound):
+                            break
+                    if not _send_all(ws.poll()):
+                        break
             except WebSocketProtocolError:
                 try:
                     sock.sendall(encode_close(CLOSE_PROTOCOL_ERROR))
