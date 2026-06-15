@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import re
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -348,5 +350,14 @@ def remove_room_member(output_root: Path, meeting_id: str, participant_id: str) 
 
 
 def is_room_member_muted(output_root: Path, meeting_id: str, participant_id: str) -> bool:
-    """Return True if the participant is muted in the given room."""
-    return identity_store_for_output_root(output_root).membership_muted(meeting_id, participant_id)
+    """Return True if the participant is muted in the given room.
+
+    Fail-open: a transient SQLite read error (e.g. under heavy concurrent access
+    from many live connections) must NOT crash a message post / agent turn. The
+    worst case is a muted participant slipping one message through until the next
+    read succeeds — far better than dropping the connection. The host can re-mute."""
+    try:
+        return identity_store_for_output_root(output_root).membership_muted(meeting_id, participant_id)
+    except sqlite3.Error as error:
+        logging.getLogger(__name__).warning("mute check failed (treating as not muted): %s", error)
+        return False

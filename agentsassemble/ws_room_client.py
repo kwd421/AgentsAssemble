@@ -89,6 +89,8 @@ class WsRoomClient:
         out: list[dict] = []
         try:
             data = self.sock.recv(65536)
+        except (TimeoutError, socket_module.timeout):
+            return out  # idle this round — NOT a disconnect
         except (BrokenPipeError, ConnectionResetError, OSError):
             self.closed = True
             return out

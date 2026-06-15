@@ -598,13 +598,25 @@ def identity_store_at(db_path: Path) -> IdentityBackend:
         return store
 
 
+_migrated_member_roots: set[str] = set()
+
+
 def identity_store_for_output_root(output_root: Path) -> IdentityBackend:
     """Local-first entry: sqlite store for a server data root; imports legacy
-    room_members.json while empty. (Web mode uses a different entry once a
-    Postgres backend is registered.)"""
+    room_members.json once while empty. (Web mode uses a different entry once a
+    Postgres backend is registered.)
+
+    The legacy import runs at most ONCE per root — not on every call — so a busy
+    room (many concurrent WS connections each resolving the store) doesn't
+    re-count + re-attempt the migration on every request."""
     store = identity_store_at(default_identity_db_path(output_root))
-    if store.count_memberships() == 0:
-        migrate_legacy_members_json(store, Path(output_root) / "room_members.json")
+    key = str(Path(output_root).resolve())
+    if key not in _migrated_member_roots:
+        with _registry_lock:
+            if key not in _migrated_member_roots:
+                if store.count_memberships() == 0:
+                    migrate_legacy_members_json(store, Path(output_root) / "room_members.json")
+                _migrated_member_roots.add(key)
     return store
 
 
@@ -612,6 +624,7 @@ def reset_identity_store_registry() -> None:
     """Testing only: drop cached store instances (files stay on disk)."""
     with _registry_lock:
         _stores.clear()
+        _migrated_member_roots.clear()
 
 
 # Register the built-in sqlite backend (db_path kwarg).
