@@ -442,6 +442,32 @@ export default function LobbyView({
         )}
       </div>
 
+      {/* Typing indicator — agents currently generating a reply (status "working") */}
+      {(() => {
+        const thinking = agents.filter((agent) => agent.status === "working");
+        if (thinking.length === 0) return null;
+        const names = thinking.map((agent) => agent.display_name || agent.agent_id);
+        const label =
+          names.length === 1
+            ? `${names[0]} 생각 중`
+            : names.length === 2
+              ? `${names[0]}, ${names[1]} 생각 중`
+              : `${names[0]} 외 ${names.length - 1}명 생각 중`;
+        return (
+          <div
+            className="flex shrink-0 items-center gap-2 px-4 pb-1 text-[12px] text-text-muted"
+            aria-live="polite"
+          >
+            <span className="dc-typing-dots" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+            <span className="truncate">{label}</span>
+          </div>
+        );
+      })()}
+
       {/* Composer */}
       <div className="shrink-0 px-4 pb-5">
         <LobbyComposer

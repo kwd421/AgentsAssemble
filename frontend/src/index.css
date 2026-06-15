@@ -5888,6 +5888,43 @@ body[data-sidebar-resizing="true"] {
   animation: live-pulse 1.8s ease-in-out infinite;
 }
 
+/* Agent "thinking" typing indicator — pulse dots (each scales in sequence). */
+@keyframes dc-typing-pulse {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.7);
+    opacity: 0.35;
+  }
+  40% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+.dc-typing-dots {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.dc-typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+  animation: dc-typing-pulse 1.2s infinite ease-in-out;
+}
+
+.dc-typing-dots span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.dc-typing-dots span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
 :where(a, button, input, select, textarea):focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
@@ -5897,6 +5934,10 @@ body[data-sidebar-resizing="true"] {
 @media (prefers-reduced-motion: reduce) {
   .live-pulse {
     animation: none;
+  }
+  .dc-typing-dots span {
+    animation: none;
+    opacity: 0.6;
   }
 }
 
