@@ -16,8 +16,19 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
+from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.room_invite import create_room_invite, join_room_with_invite, reset_state
-from agentsassemble.ws_resident import run_ws_resident
+from agentsassemble.ws_resident import run_provider_ws_resident, run_ws_resident
+
+
+def _resident_config(agent_id: str, *, engagement_mode: str = "always") -> ResidentAgentConfig:
+    return ResidentAgentConfig(
+        server="", agent_id=agent_id, display_name=agent_id,
+        provider_kind="codex_live_session", connection_kind="live_session", session_id="",
+        endpoint="", auth_ref="", meeting_id="room-1", engagement_mode=engagement_mode,
+        command=["codex"], timeout_seconds=60, poll_interval=1.0, heartbeat_interval=30.0,
+        cooldown=1.0, max_chain_depth=1,
+    )
 
 
 class WsResidentLiveTests(unittest.TestCase):
@@ -106,6 +117,61 @@ class WsResidentLiveTests(unittest.TestCase):
         self.assertTrue(replies, "resident reply never appeared in the lobby over WS")
         self.assertEqual(replies[-1]["message"], "echo: 안녕 상주야")
         self.assertEqual(replies[-1]["actor_id"], "echo-bot")
+
+
+class ProviderWsResidentTests(WsResidentLiveTests):
+    """A provider agent over WS at the runner's prompt fidelity (delegate_prompt
+    + engagement), with a stub command_runner standing in for codex/grok."""
+
+    def test_provider_resident_replies_with_envelope_prompt(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        base = self._start(Path(tmp))
+        agent_token = self._token(base, "codex-ws", "agent")
+        human_token = self._token(base, "human-1", "human")
+
+        captured: list[str] = []
+
+        def stub_command_runner(command, prompt, *, timeout_seconds):
+            captured.append(prompt)
+            return "내 생각엔 좀 다른데, 근거를 보면..."
+
+        result: dict = {}
+
+        def resident():
+            result["replies"] = run_provider_ws_resident(
+                base,
+                agent_token,
+                _resident_config("codex-ws"),
+                stub_command_runner,
+                max_replies=1,
+                max_idle_rounds=80,
+            )
+
+        thread = threading.Thread(target=resident, daemon=True)
+        thread.start()
+        time.sleep(0.6)  # let it connect + seed (skip history)
+        self._post_say(base, human_token, "이거 맞지? 동의하지?")
+        thread.join(timeout=20)
+        self.assertFalse(thread.is_alive(), "provider resident did not finish")
+        self.assertEqual(result.get("replies"), 1)
+
+        # the reply landed
+        replies = []
+        for _ in range(50):
+            messages = self._lobby_messages(base, human_token)
+            replies = [m for m in messages if m.get("actor_id") == "codex-ws"]
+            if replies:
+                break
+            time.sleep(0.1)
+        self.assertTrue(replies, "provider resident reply never appeared")
+        self.assertEqual(replies[-1]["message"], "내 생각엔 좀 다른데, 근거를 보면...")
+
+        # and the brain got the full runner envelope, not a raw message
+        self.assertTrue(captured, "command_runner was never called")
+        prompt = captured[-1]
+        self.assertIn("Agent id: codex-ws", prompt)
+        self.assertIn("이거 맞지? 동의하지?", prompt)
 
 
 if __name__ == "__main__":

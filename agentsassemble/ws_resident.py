@@ -78,6 +78,110 @@ def run_resident_loop(
     return replies
 
 
+def run_provider_ws_resident(
+    server_url: str,
+    session_token: str,
+    config,
+    command_runner: Callable[..., str],
+    *,
+    streams: tuple[str, ...] = ("lobby",),
+    poll_timeout: float = 0.5,
+    buffer_size: int = 40,
+    max_replies: int = 0,
+    max_idle_rounds: int = 0,
+) -> int:
+    """Run a CLI/provider agent over WS at the HTTP runner's prompt fidelity.
+
+    Reuses the runner's own logic — `event_reply_candidate` (engagement: always /
+    mentioned / human_only / chain-depth / self-skip) and `delegate_prompt` (the
+    identity + anti-yes-man + recent-conversation envelope) — but drives it over
+    the governed WS transport instead of the HTTP poll loop. `command_runner` is
+    the provider's resident runner (CodexResidentCommandRunner, etc.). The control-
+    meta filter drops replies that leak runner/control instructions.
+
+    This is the additive WS agent path (task #39): it does NOT touch LiveAgentRunner.
+    """
+    from agentsassemble.live_agent_runner import (
+        delegate_prompt,
+        event_reply_candidate,
+        visible_reply_contains_control_meta,
+    )
+
+    agent_id = str(config.agent_id)
+    display_name = str(config.display_name or config.agent_id)
+    client = connect_room_ws(server_url, session_token, list(streams))
+    try:
+        client.sock.settimeout(poll_timeout)
+    except OSError:
+        pass
+
+    buffer: list[dict] = []
+    last_observed = ""
+    seeded = False
+    replies = 0
+    idle = 0
+    try:
+        while not client.closed:
+            messages = client.receive()
+            if not messages:
+                idle += 1
+                if max_idle_rounds and idle >= max_idle_rounds:
+                    break
+                continue
+            idle = 0
+            got_new = False
+            for message in messages:
+                if message.get("op") == "event" and message.get("stream") == "lobby":
+                    events = message.get("events") or []
+                    if events:
+                        buffer.extend(events)
+                        got_new = True
+            if len(buffer) > buffer_size:
+                del buffer[:-buffer_size]
+            if not seeded:
+                # Don't answer history that existed before we joined.
+                if buffer:
+                    last_observed = str(buffer[-1].get("id") or "")
+                seeded = True
+                continue
+            if not got_new:
+                continue
+            candidate = event_reply_candidate(
+                buffer,
+                agent_id,
+                display_name,
+                last_observed,
+                max_chain_depth=config.max_chain_depth,
+                engagement_mode=config.engagement_mode,
+                meeting_id=config.meeting_id,
+            )
+            if candidate is None:
+                continue
+            last_observed = str(candidate.get("id") or last_observed)
+            room = {
+                "lobby_events": list(buffer),
+                "agent": {"agent_id": agent_id, "engagement_mode": config.engagement_mode},
+                "meeting_id": config.meeting_id,
+                "shared_memory": {},
+            }
+            prompt = delegate_prompt(config, room, candidate)
+            client.thinking(True)
+            try:
+                reply = command_runner([], prompt, timeout_seconds=config.timeout_seconds)
+            finally:
+                client.thinking(False)
+            reply = str(reply or "").strip()
+            if not reply or visible_reply_contains_control_meta(reply):
+                continue
+            client.say(reply)
+            replies += 1
+            if max_replies and replies >= max_replies:
+                return replies
+        return replies
+    finally:
+        client.close()
+
+
 def run_ws_resident(
     server_url: str,
     session_token: str,
