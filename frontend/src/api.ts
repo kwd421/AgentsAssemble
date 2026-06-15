@@ -1972,9 +1972,10 @@ function wsBaseUrl(): string {
   return `${proto}//${window.location.host}`;
 }
 
-export async function getWsTicket(sessionToken: string): Promise<string> {
-  const res = await postJsonWithToken<WsTicketResponse>("/api/ws-ticket", {}, sessionToken);
-  return res.ticket;
+export function getWsTicket(sessionToken: string): Promise<string> {
+  return postJsonWithToken<WsTicketResponse>("/api/ws-ticket", {}, sessionToken).then(
+    (res) => res.ticket
+  );
 }
 
 /**
