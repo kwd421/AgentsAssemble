@@ -10,15 +10,20 @@ from agentsassemble.room_websocket import (
     Frame,
     MessageAssembler,
     WebSocketProtocolError,
+    client_handshake_request,
     compute_accept_key,
+    encode_client_frame,
+    encode_client_text,
     encode_close,
     encode_frame,
     encode_ping,
     encode_text,
+    handshake_accept_ok,
     handshake_response_lines,
     is_websocket_upgrade,
     parse_close,
     parse_frame,
+    parse_server_frame,
 )
 
 
@@ -180,6 +185,51 @@ class MessageAssemblerTests(unittest.TestCase):
         asm.feed(_client_frame(b"x", opcode=0x0, fin=True))
         with self.assertRaises(WebSocketProtocolError):
             list(asm.messages())
+
+
+class ClientCodecTests(unittest.TestCase):
+    def test_encode_client_frame_is_masked_and_decodes_server_side(self):
+        wire = encode_client_text("hello")
+        self.assertTrue(wire[1] & 0x80, "client frame must set the mask bit")
+        frame, rest = parse_frame(wire)  # server-side parse expects masking
+        self.assertEqual(frame.payload, b"hello")
+        self.assertEqual(rest, b"")
+
+    def test_deterministic_mask(self):
+        a = encode_client_frame(b"x", mask=b"\x01\x02\x03\x04")
+        b = encode_client_frame(b"x", mask=b"\x01\x02\x03\x04")
+        self.assertEqual(a, b)
+
+    def test_random_masks_differ_but_decode_same(self):
+        a = encode_client_text("same")
+        b = encode_client_text("same")
+        self.assertNotEqual(a, b)  # random masks → different wire bytes
+        self.assertEqual(parse_frame(a)[0].payload, parse_frame(b)[0].payload)
+
+    def test_parse_server_frame_accepts_unmasked(self):
+        frame, _ = parse_server_frame(encode_frame(b"srv"))
+        self.assertEqual(frame.payload, b"srv")
+
+    def test_parse_server_frame_rejects_masked(self):
+        with self.assertRaises(WebSocketProtocolError):
+            parse_server_frame(encode_client_text("x"))
+
+    def test_client_assembler_reads_server_frames(self):
+        asm = MessageAssembler(expect_mask=False)
+        asm.feed(encode_text("from server"))
+        self.assertEqual(list(asm.messages()), [(OP_TEXT, b"from server")])
+
+    def test_client_handshake_request_and_accept_roundtrip(self):
+        request, key = client_handshake_request("/ws?ticket=abc", "host:8765")
+        self.assertIn(b"GET /ws?ticket=abc HTTP/1.1", request)
+        self.assertIn(b"Upgrade: websocket", request)
+        # server computes the accept; client verifies it
+        server_lines = handshake_response_lines(
+            {"Upgrade": "websocket", "Connection": "Upgrade", "Sec-WebSocket-Key": key}
+        )
+        accept = [l.split(": ", 1)[1] for l in server_lines if l.startswith("Sec-WebSocket-Accept")][0]
+        self.assertTrue(handshake_accept_ok({"Sec-WebSocket-Accept": accept}, key))
+        self.assertFalse(handshake_accept_ok({"Sec-WebSocket-Accept": "wrong"}, key))
 
 
 if __name__ == "__main__":

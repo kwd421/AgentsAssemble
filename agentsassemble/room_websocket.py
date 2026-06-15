@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import secrets
 import struct
 from dataclasses import dataclass
 
@@ -151,13 +152,10 @@ def parse_close(payload: bytes) -> tuple[int, str]:
     return code, payload[2:].decode("utf-8", "replace")
 
 
-def parse_frame(buffer: bytes) -> tuple[Frame | None, bytes]:
-    """Parse ONE client→server frame from `buffer`.
-
-    Returns (frame, rest) when a full frame is present, or (None, buffer) when
-    more bytes are needed. Client frames must be masked; raises
-    WebSocketProtocolError on a violation or oversized payload.
-    """
+def _parse_frame(buffer: bytes, *, expect_mask: bool) -> tuple[Frame | None, bytes]:
+    """Parse ONE frame. `expect_mask` True = client→server (must be masked),
+    False = server→client (must NOT be masked). Returns (frame, rest), or
+    (None, buffer) when more bytes are needed."""
     if len(buffer) < 2:
         return None, buffer
     b0, b1 = buffer[0], buffer[1]
@@ -182,28 +180,92 @@ def parse_frame(buffer: bytes) -> tuple[Frame | None, bytes]:
         raise WebSocketProtocolError("Frame payload too large.")
     if opcode in CONTROL_OPCODES and length > 125:
         raise WebSocketProtocolError("Control frame payload exceeds 125 bytes.")
-    if not masked:
-        # A compliant browser/client always masks; refusing keeps us honest.
+    if expect_mask and not masked:
         raise WebSocketProtocolError("Client frame is not masked.")
-    if len(buffer) < offset + 4:
-        return None, buffer
-    mask = buffer[offset:offset + 4]
-    offset += 4
+    if not expect_mask and masked:
+        raise WebSocketProtocolError("Server frame must not be masked.")
+    mask = b""
+    if masked:
+        if len(buffer) < offset + 4:
+            return None, buffer
+        mask = buffer[offset:offset + 4]
+        offset += 4
     if len(buffer) < offset + length:
         return None, buffer
-    masked_payload = buffer[offset:offset + length]
-    payload = bytes(masked_payload[i] ^ mask[i & 3] for i in range(length))
+    raw = buffer[offset:offset + length]
+    payload = bytes(raw[i] ^ mask[i & 3] for i in range(length)) if masked else bytes(raw)
     return Frame(fin=fin, opcode=opcode, payload=payload), buffer[offset + length:]
+
+
+def parse_frame(buffer: bytes) -> tuple[Frame | None, bytes]:
+    """Parse a client→server frame (must be masked). For the server side."""
+    return _parse_frame(buffer, expect_mask=True)
+
+
+def parse_server_frame(buffer: bytes) -> tuple[Frame | None, bytes]:
+    """Parse a server→client frame (must be unmasked). For a WS client (e.g. a
+    Python resident connecting to /ws — WS-5 resident migration groundwork)."""
+    return _parse_frame(buffer, expect_mask=False)
+
+
+def encode_client_frame(payload: bytes, *, opcode: int = OP_TEXT, fin: bool = True, mask: bytes | None = None) -> bytes:
+    """Encode a client→server frame (MASKED, per spec). `mask` is random by
+    default; pass a fixed 4-byte mask in tests for determinism."""
+    payload = bytes(payload)
+    mask = bytes(mask) if mask is not None else secrets.token_bytes(4)
+    if len(mask) != 4:
+        raise WebSocketProtocolError("Mask must be 4 bytes.")
+    b0 = (0x80 if fin else 0x00) | (opcode & 0x0F)
+    length = len(payload)
+    if length < 126:
+        header = struct.pack("!BB", b0, 0x80 | length)
+    elif length < 65536:
+        header = struct.pack("!BBH", b0, 0x80 | 126, length)
+    else:
+        header = struct.pack("!BBQ", b0, 0x80 | 127, length)
+    masked = bytes(payload[i] ^ mask[i & 3] for i in range(length))
+    return header + mask + masked
+
+
+def encode_client_text(text: str) -> bytes:
+    return encode_client_frame(text.encode("utf-8"), opcode=OP_TEXT)
+
+
+def client_handshake_request(path: str, host: str, *, key: str = "", subprotocol: str = "") -> tuple[bytes, str]:
+    """Build a WS client upgrade GET request. Returns (request_bytes, key); pass
+    the key to handshake_accept_ok() to verify the server's 101 response."""
+    if not key:
+        key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
+    lines = [
+        f"GET {path} HTTP/1.1",
+        f"Host: {host}",
+        "Upgrade: websocket",
+        "Connection: Upgrade",
+        f"Sec-WebSocket-Key: {key}",
+        "Sec-WebSocket-Version: 13",
+    ]
+    if subprotocol:
+        lines.append(f"Sec-WebSocket-Protocol: {subprotocol}")
+    return ("\r\n".join(lines) + "\r\n\r\n").encode("ascii"), key
+
+
+def handshake_accept_ok(response_headers: object, key: str) -> bool:
+    """True iff the server's Sec-WebSocket-Accept matches our key."""
+    return _header(response_headers, "Sec-WebSocket-Accept").strip() == compute_accept_key(key)
 
 
 class MessageAssembler:
     """Accumulate bytes, yield complete messages, reassembling fragmented
-    (continuation) data frames. Control frames pass through immediately."""
+    (continuation) data frames. Control frames pass through immediately.
 
-    def __init__(self) -> None:
+    `expect_mask=True` (default) for the server side (client frames are masked);
+    `expect_mask=False` for a WS client parsing unmasked server frames."""
+
+    def __init__(self, *, expect_mask: bool = True) -> None:
         self._buffer = b""
         self._fragments: list[bytes] = []
         self._fragment_opcode: int | None = None
+        self._expect_mask = expect_mask
 
     def feed(self, data: bytes) -> None:
         self._buffer += bytes(data)
@@ -211,7 +273,7 @@ class MessageAssembler:
     def messages(self):
         """Yield (opcode, payload) for each complete message/control frame."""
         while True:
-            frame, rest = parse_frame(self._buffer)
+            frame, rest = _parse_frame(self._buffer, expect_mask=self._expect_mask)
             if frame is None:
                 return
             self._buffer = rest
