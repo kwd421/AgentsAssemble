@@ -87,6 +87,31 @@ exec/resume baseline were roughly 4-6 seconds, and the likely dominant cost is
 provider exec/resume startup/session reattachment, not the room polling
 interval or flow cooldown.
 
+## 2026-06-08 Invalid Claude Haiku Runs
+
+The 2026-06-08 comparison attempts that included `Claude Haiku` are invalid as
+provider-live comparison evidence.
+
+Invalid flow ids:
+
+- `flow-9a176598`
+- `flow-5be9c34a`
+- `flow-7683a50d`
+- `flow-6374362e`
+
+Reason: the temporary Claude config used `claude -p --model haiku`, which is
+Claude Code print/non-interactive one-shot mode. That violates the product
+boundary in `docs/provider-architecture.md`: `local_cli` one-shot/delegate
+style must not be presented as the final live teammate experience, and
+one-shot print calls must not be counted as live-session evidence.
+
+Action taken: the comparison configs no longer contain `claude -p`, and tracked
+preflight/run-group validation now rejects `claude_code` resident configs that
+use Claude Code print/non-interactive flags such as `-p` or `--print`. Claude
+Haiku is only a `terminal_session` candidate until a real provider-owned
+session path is proven. Do not reuse the invalid flow ids above as success
+evidence.
+
 ## 2026-06-07 Runtime-Managed Evidence
 
 The first 3-minute Korean runtime-managed probe using four comparison agents
@@ -122,6 +147,65 @@ room-turn structure for a short comparison run. It still uses
 `per_turn_exec_resume`, so it is not provider-persistent and should not be
 described as a fast provider-resident mode.
 
+## 2026-06-09 Claude/Codex 1:1 And 3-Minute Rerun Evidence
+
+Evidence root:
+`.agentsassemble/runtime-comparison-rerun/20260609T0101KST`.
+
+The 1:1 Claude/Codex checks used `flow_events` from the isolated meeting
+`verify-claude-codex-isolated-20260608T163547Z`. Claude was launched through
+`TerminalLiveSession` with `claude --model haiku --effort xhigh`; no
+`claude -p` or `claude --print` command was used. The same direct PTY check is
+recorded in
+`.agentsassemble/runtime-comparison-rerun/20260609T0101KST/claude-terminal-session-trust-check.log`
+and failed with:
+
+```text
+Terminal session requires workspace trust before it can answer. Open Claude once in this folder, accept the workspace trust prompt, then resume the agent.
+```
+
+| Structure | Flow | Duration | Result | Speaker distribution | Provider invocation |
+| --- | --- | ---: | --- | --- | --- |
+| Baseline 호출형 | `flow-a69834d8` | 1 minute | Codex answered; Claude did not answer because workspace trust blocked the terminal session. | Codex 5.3 Spark 1v1 1, Claude Haiku 1v1 0 | Codex 8.293s |
+| Runtime-managed | `flow-1ddf3fc2` | 1 minute | Codex answered through `runtime_managed_room_turn`; Claude stayed blocked by workspace trust. | Codex 5.3 Spark 1v1 1, Claude Haiku 1v1 0 | Codex 8.438s |
+| Provider tool-loop | not run as real provider | 1 minute target | No real Claude/Codex provider-owned MCP or CLI tool-loop attachment exists in the current code path. Manual host calls to `wait-next`/`say` would fake the provider, so they are not counted. | 0 verified | blocked |
+| Provider-persistent | direct PTY probe only | 1 minute target | Claude PTY is blocked by workspace trust. A direct `codex` PTY probe exited with return code 1, so Codex persistent provider input is not proven. | 0 verified | blocked |
+
+The 3-minute rerun included Codex 5.3 Spark, Antigravity Flash 3.5, Cursor
+auto, Grok, and Claude Haiku where the configured provider path could start.
+The tests used 0.25s flow tick interval and 0s cooldown; the remaining latency
+is provider invocation time, not a room cooldown.
+
+| Structure | Language | Flow | Turns | Speaker distribution | Avg/min/max provider invocation | Resource peak |
+| --- | --- | --- | ---: | --- | --- | --- |
+| Baseline 호출형 | Korean | `flow-ed5c53c3` | 4 | Grok 1, Cursor 1, Antigravity 1, Codex Spark 1, Claude 0 | 14.265s / 5.231s / 27.913s | supervised RSS 39.8 MB, total RSS 1780.4 MB, total CPU 60.7% |
+| Baseline 호출형 | English | `flow-f1b20455` | 4 | Grok 1, Cursor 1, Antigravity 1, Codex Spark 1, Claude 0 | 15.026s / 8.966s / 25.311s | supervised RSS 39.7 MB, total RSS 1527.5 MB, total CPU 86.6% |
+| Runtime-managed | Korean | `flow-754bd314` | 3 | Grok 1, Antigravity 1, Codex Spark 1, Cursor 0, Claude 0 | 17.674s / 13.185s / 26.407s | supervised RSS 39.6 MB, total RSS 1108.5 MB, total CPU 42.7% |
+| Runtime-managed | English | `flow-e3c4e423` | 3 | Grok 1, Antigravity 1, Codex Spark 1, Cursor 0, Claude 0 | 14.411s / 7.978s / 23.064s | supervised RSS 39.8 MB, total RSS 1114.3 MB, total CPU 82.5% |
+
+Observed failures in the same evidence:
+
+- Claude Haiku produced no room replies because the `terminal_session` path
+  reached the local Claude workspace-trust gate before it could answer.
+- Cursor answered in the baseline reruns, but the runtime-managed reruns left
+  Cursor in `error` with `Cursor live session command failed with return code
+  1.`
+- Provider tool-loop remains unverified for these real providers. The current
+  MCP server exposes `register`, `wait_next`, `read_since`, `say`, `heartbeat`,
+  and `leave`, but no real Codex, Claude, Cursor, Grok, or Antigravity process
+  was proven to own that MCP/tool loop in this rerun.
+- A raw `mcp serve --profile participant` process without an attached MCP
+  client exited after stdio closed. A previous connected/held MCP resource
+  sample for 20.779 seconds measured peak RSS 104.0 MB, average RSS 98.8 MB,
+  peak CPU 39.1%, and average CPU 2.0%.
+
+Conclusion: baseline and runtime-managed are currently real provider
+exec/resume structures, not fast provider-resident structures. Claude Haiku is
+not verified until the local workspace-trust prompt is accepted and rerun.
+Provider tool-loop and provider-persistent modes remain blocked/unverified for
+the target providers until a real provider-owned MCP/PTY/stream bridge is
+attached and measured.
+
 ## 2026-06-07 Tool-Loop Contract Evidence
 
 The provider-owned tool-loop contract is implemented and partly verified, but
@@ -148,20 +232,29 @@ transports. Those providers remain unverified for real `provider_tool_loop`
 comparison until each provider actually calls the tools itself or a
 provider-specific wrapper is tested.
 
-## Verification Matrix To Complete
+## Remaining Verification Matrix
 
-The target four-provider comparison remains:
+The current 2026-06-09 rerun completed a 3-minute baseline/runtime-managed
+comparison, but it did not prove every requested structure. The remaining
+matrix is:
 
-- Codex 5.3 Spark
-- Antigravity Flash 3.5
-- Cursor auto
-- Grok
+- Accept or otherwise resolve the local Claude workspace-trust gate, then rerun
+  Claude Haiku in the 1:1 and multi-agent flows without `-p`/`--print`.
+- Reproduce and fix the Cursor `runtime_managed_room_turn` return-code-1 error,
+  then rerun the runtime-managed Korean and English 3-minute flows.
+- Attach a real provider-owned MCP or CLI tool-loop for each target provider
+  before marking `provider_tool_loop` as verified. Host-side manual
+  `wait-next`/`say` calls are not valid provider evidence.
+- Prove a provider-persistent channel separately for each provider before
+  calling it fast resident. A PTY/stream/process must accept repeated room
+  inputs and return clean one-reply-per-turn outputs without per-turn
+  exec/resume.
 
-Run each structure with:
+When rerunning, use:
 
 - Korean: `비올때 뭘 해야하는가`
 - English: `What should we do when it rains?`
-- 6 minutes per language
+- 3 minutes per language unless a longer run is explicitly requested
 
 Record:
 
@@ -173,9 +266,9 @@ Record:
 - self-loop or duplicate post
 - visible runner/control prompt leakage
 - naturalness notes
+- local provider and MCP resource samples
 
 Do not mark `provider_tool_loop` as real-provider verified until those runs
-exist for the target providers or the failure reason is recorded beside the
-provider. Runtime-managed has short-run real-provider evidence, but a longer
-six-minute run can still be added if the product needs parity with earlier
-baseline evidence.
+exist for the target providers or the failure reason is recorded beside each
+provider. Do not mark `provider_persistent` as verified from baseline or
+runtime-managed exec/resume evidence.

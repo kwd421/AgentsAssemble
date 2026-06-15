@@ -14806,6 +14806,53 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("required live-session safety flags", stderr.getvalue())
         self.assertNotIn("Resident group stopped", stdout.getvalue())
 
+    def test_live_agent_run_group_rejects_claude_print_mode_before_launch(self):
+        configs = [
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="claude-haiku",
+                display_name="Claude Haiku",
+                provider_kind="claude_code",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["claude", "-p", "--model", "haiku"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=1,
+            )
+        ]
+        constructed = []
+
+        class RecordingRunner:
+            def __init__(self, *args, **kwargs):
+                constructed.append((args, kwargs))
+
+            def run(self):
+                return 0
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli.LiveAgentRunner", RecordingRunner),
+            patch("sys.stdout", stdout),
+            patch("sys.stderr", stderr),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(constructed, [])
+        self.assertIn("claude-haiku", stderr.getvalue())
+        self.assertIn("must not use Claude Code print/non-interactive mode", stderr.getvalue())
+        self.assertNotIn("Resident group stopped", stdout.getvalue())
+
     def test_live_agent_run_group_rejects_duplicate_agent_ids_before_launch(self):
         configs = [
             ResidentAgentConfig(

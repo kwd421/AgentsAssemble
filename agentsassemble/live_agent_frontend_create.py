@@ -56,9 +56,12 @@ DEFAULT_MODEL_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
 )
 CODEX_MODEL_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
     *DEFAULT_MODEL_OPTIONS,
-    FrontendLiveAgentOption("gpt-5.3", "GPT 5.3"),
-    FrontendLiveAgentOption("gpt-5.3-spark", "GPT 5.3 Spark"),
+    FrontendLiveAgentOption("gpt-5.5", "GPT 5.5"),
+    FrontendLiveAgentOption("gpt-5.4", "GPT 5.4"),
     FrontendLiveAgentOption("gpt-5.4-mini", "GPT 5.4 mini"),
+    FrontendLiveAgentOption("gpt-5.3-codex-spark", "GPT 5.3 Codex Spark"),
+    FrontendLiveAgentOption("gpt-5.3-codex", "GPT 5.3 Codex"),
+    FrontendLiveAgentOption("gpt-5.2", "GPT 5.2"),
 )
 CURSOR_MODEL_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
     *DEFAULT_MODEL_OPTIONS,
@@ -66,9 +69,26 @@ CURSOR_MODEL_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
     FrontendLiveAgentOption("sonnet-4", "Sonnet 4"),
     FrontendLiveAgentOption("sonnet-4-thinking", "Sonnet 4 Thinking"),
 )
+CLAUDE_MODEL_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
+    *DEFAULT_MODEL_OPTIONS,
+    FrontendLiveAgentOption("haiku", "Haiku"),
+    FrontendLiveAgentOption("sonnet", "Sonnet"),
+    FrontendLiveAgentOption("opus", "Opus"),
+)
 GROK_MODEL_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
     *DEFAULT_MODEL_OPTIONS,
     FrontendLiveAgentOption("grok-4", "Grok 4"),
+)
+ANTIGRAVITY_MODEL_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
+    *DEFAULT_MODEL_OPTIONS,
+    FrontendLiveAgentOption("Gemini 3.5 Flash (Medium)", "Gemini 3.5 Flash (Medium)"),
+    FrontendLiveAgentOption("Gemini 3.5 Flash (High)", "Gemini 3.5 Flash (High)"),
+    FrontendLiveAgentOption("Gemini 3.5 Flash (Low)", "Gemini 3.5 Flash (Low)"),
+    FrontendLiveAgentOption("Gemini 3.1 Pro (Low)", "Gemini 3.1 Pro (Low)"),
+    FrontendLiveAgentOption("Gemini 3.1 Pro (High)", "Gemini 3.1 Pro (High)"),
+    FrontendLiveAgentOption("Claude Sonnet 4.6 (Thinking)", "Claude Sonnet 4.6 (Thinking)"),
+    FrontendLiveAgentOption("Claude Opus 4.6 (Thinking)", "Claude Opus 4.6 (Thinking)"),
+    FrontendLiveAgentOption("GPT-OSS 120B (Medium)", "GPT-OSS 120B (Medium)"),
 )
 EFFORT_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
     FrontendLiveAgentOption("", "기본값"),
@@ -77,9 +97,12 @@ EFFORT_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
     FrontendLiveAgentOption("high", "High"),
     FrontendLiveAgentOption("xhigh", "XHigh"),
 )
-GROK_EFFORT_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
+EXTENDED_EFFORT_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
     *EFFORT_OPTIONS,
     FrontendLiveAgentOption("max", "Max"),
+)
+GROK_EFFORT_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
+    *EXTENDED_EFFORT_OPTIONS,
 )
 SPEED_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
     FrontendLiveAgentOption("balanced", "균형"),
@@ -118,7 +141,10 @@ FRONTEND_LIVE_AGENT_PROVIDERS: tuple[FrontendLiveAgentProvider, ...] = (
         timeout_seconds=120,
         terminal_idle_timeout=0.75,
         verification_note="선택지는 제공하지만 이 환경에서 실제 세션 검증은 별도로 확인해야 합니다.",
+        model_options=CLAUDE_MODEL_OPTIONS,
+        effort_options=EXTENDED_EFFORT_OPTIONS,
         speed_options=SPEED_OPTIONS,
+        login_command=("claude", "auth", "login"),
     ),
     FrontendLiveAgentProvider(
         id="cursor",
@@ -156,6 +182,7 @@ FRONTEND_LIVE_AGENT_PROVIDERS: tuple[FrontendLiveAgentProvider, ...] = (
         command=[],
         timeout_seconds=240,
         verification_note="실제 프론트 생성/시작 검증 대상입니다.",
+        model_options=ANTIGRAVITY_MODEL_OPTIONS,
         speed_options=SPEED_OPTIONS,
         login_command=("agy",),
     ),
@@ -256,6 +283,10 @@ def frontend_live_agent_create_payload(
             "capabilities": ["room_chat", "official_turn"],
             "process_group_id": group_id,
             "live_agent_config_path": str(live_agent_config_path) if live_agent_config_path else "",
+            "workspace_path": str(workspace),
+            "model_id": tuning.model_id,
+            "effort": tuning.effort,
+            "speed": tuning.speed,
             "poll_interval": tuning.poll_interval,
         },
     )
@@ -605,8 +636,9 @@ def _write_frontend_live_agent_config(
         agent["model_id"] = tuning.model_id
     if tuning.effort:
         agent["effort"] = tuning.effort
-    if provider.command:
-        agent["command"] = list(provider.command)
+    command = _frontend_resident_command(provider, tuning)
+    if command:
+        agent["command"] = command
     if provider.terminal_idle_timeout != 0.35:
         agent["terminal_idle_timeout"] = provider.terminal_idle_timeout
     config = {
@@ -619,6 +651,18 @@ def _write_frontend_live_agent_config(
     }
     _write_json(config_path, config)
     return config_path
+
+
+def _frontend_resident_command(provider: FrontendLiveAgentProvider, tuning: FrontendLiveAgentTuning) -> list[str]:
+    command = list(provider.command)
+    if not command:
+        return []
+    if provider.provider_kind == "claude_code" and provider.connection_kind == "terminal_session":
+        if tuning.model_id:
+            command.extend(["--model", tuning.model_id])
+        if tuning.effort:
+            command.extend(["--effort", tuning.effort])
+    return command
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:

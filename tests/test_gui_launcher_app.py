@@ -5,7 +5,12 @@ from pathlib import Path
 class GuiLauncherAppTests(unittest.TestCase):
     def test_terminal_free_launcher_starts_public_invite_ready_gui(self):
         root = Path(__file__).resolve().parents[1]
-        launcher = root / "Open AgentsAssemble Room.app" / "Contents" / "MacOS" / "open-agentsassemble-room"
+        macos_dir = root / "Open AgentsAssemble Room.app" / "Contents" / "MacOS"
+        # The bundle entrypoint is a compiled arm64 stub (avoids the macOS
+        # Rosetta prompt); the actual launch logic lives in the .sh next to it.
+        launcher = macos_dir / "open-agentsassemble-room.sh"
+        if not launcher.exists():
+            launcher = macos_dir / "open-agentsassemble-room"
 
         script = launcher.read_text(encoding="utf-8")
 

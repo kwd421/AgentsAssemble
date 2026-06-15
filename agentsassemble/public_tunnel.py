@@ -9,6 +9,7 @@ from collections import deque
 from collections.abc import Callable
 
 from agentsassemble.room_invite import clear_runtime_public_url, set_runtime_public_url
+from agentsassemble.stable_entry import announce_stable_entry
 
 
 TRYCLOUDFLARE_URL_RE = re.compile(r"https://[A-Za-z0-9-]+\.trycloudflare\.com")
@@ -115,6 +116,9 @@ class PublicTunnelManager:
                     if url and not self._public_url:
                         self._public_url = url
                         set_runtime_public_url(url)
+                        # Keep the permanent workers.dev entrypoint pointed at
+                        # this fresh tunnel hostname (async, best-effort).
+                        announce_stable_entry(url)
         except Exception as error:  # pragma: no cover - defensive thread guard
             with self._lock:
                 self._last_error = str(error)

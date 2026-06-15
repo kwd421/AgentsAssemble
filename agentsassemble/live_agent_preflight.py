@@ -23,6 +23,7 @@ from agentsassemble.codex_resident import (
     codex_provider_connection_check,
     default_codex_resident_command,
 )
+from agentsassemble.claude_resident import claude_code_print_mode_resident_check, claude_code_print_mode_resident_error
 from agentsassemble.cursor_resident import (
     cursor_auth_check,
     cursor_command_check,
@@ -187,6 +188,13 @@ def _preflight_agent(
     provider_connection_check = hermes_provider_connection_check(config.provider_kind, config.connection_kind)
     if provider_connection_check is not None:
         checks.append(provider_connection_check)
+    claude_command_check = claude_code_print_mode_resident_check(
+        config.provider_kind,
+        config.connection_kind,
+        config.command,
+    )
+    if claude_command_check is not None:
+        checks.append(claude_command_check)
     if config.connection_kind == "remote_bridge":
         checks.extend(
             [
@@ -317,6 +325,13 @@ def resident_config_setup_error(
     antigravity_auth = antigravity_auth_checker or antigravity_auth_check
     if config.connection_kind == "remote_bridge":
         return ""
+    claude_command_error = claude_code_print_mode_resident_error(
+        config.provider_kind,
+        config.connection_kind,
+        config.command,
+    )
+    if claude_command_error:
+        return claude_command_error
     cursor_superseded_error = cursor_terminal_session_superseded_error(
         config.provider_kind,
         config.connection_kind,

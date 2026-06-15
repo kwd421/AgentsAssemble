@@ -100,6 +100,9 @@ class AntigravityResidentCommandRunner:
             "--print-timeout",
             agy_timeout,
         ]
+        model_id = str(self.config.model_id or "").strip()
+        if model_id:
+            agy_command.extend(["--model", model_id])
         if self.session_id:
             agy_command.extend(["--conversation", self.session_id])
         agy_command.extend(["--print", prompt])

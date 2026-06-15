@@ -30,6 +30,7 @@ import {
   fetchPublicInviteStatus,
   fetchRoomFriends,
   fetchRoomSettings,
+  claimHostDevice,
   fetchRoomMembers,
   fetchMafiaGame,
   fetchMeetingLifecycle,
@@ -52,6 +53,7 @@ import {
   meetingLiveEventsToTimelineEvents,
   meetingStreamStateForActiveMeeting,
   subscribeMeetingEvents,
+  subscribeRoster,
   subscribeSideChat,
   type FlowResponse,
   type LiveAgentsResponse,
@@ -126,9 +128,15 @@ import {
 import {
   loadRoomGuestSession,
   persistRoomGuestSession,
+  roomGuestSessionExpired,
   roomGuestSessionFromJoinPayload,
   type RoomGuestSession,
 } from "./lib/roomGuestSession";
+import {
+  getOrCreateDeviceToken,
+  loadRememberedGuestProfile,
+  rememberGuestProfile,
+} from "./lib/deviceIdentity";
 import {
   inviteFriendDmMessage,
   remoteClientPacketPreview,
@@ -590,8 +598,30 @@ export default function App() {
     }
   }, [expireGuestSession, flowError, guestLocked, guestSession?.sessionToken]);
 
+  // Returning guests skip the profile panel: a remembered device profile
+  // auto-rejoins with the same identity (the server keeps the participant id
+  // stable via the device token).
+  // A stored session for THIS invite only counts as "already joined" while it's
+  // still valid; an expired one must re-join (reopening the link otherwise
+  // reused a dead token and showed "session expired" forever).
+  const guestAlreadyJoinedThisInvite = Boolean(
+    guestJoinToken &&
+      guestSession?.inviteToken === guestJoinToken &&
+      !roomGuestSessionExpired(guestSession)
+  );
+
   useEffect(() => {
-    if (!guestJoinToken || guestSession?.inviteToken === guestJoinToken) return;
+    if (!guestJoinToken || guestAlreadyJoinedThisInvite) return;
+    if (guestJoinRequested || guestExpired) return;
+    const remembered = loadRememberedGuestProfile();
+    if (!remembered) return;
+    setPendingGuestDisplayName(remembered.displayName);
+    setPendingGuestAvatarImage(remembered.avatarImage || "");
+    setGuestJoinRequested(true);
+  }, [guestAlreadyJoinedThisInvite, guestExpired, guestJoinRequested, guestJoinToken]);
+
+  useEffect(() => {
+    if (!guestJoinToken || guestAlreadyJoinedThisInvite) return;
     if (!guestJoinRequested) return;
     let cancelled = false;
     setGuestJoinStatus("초대 링크로 방에 입장 중...");
@@ -599,6 +629,8 @@ export default function App() {
       inviteToken: guestJoinToken,
       displayName: pendingGuestDisplayName,
       avatarImage: pendingGuestAvatarImage,
+      deviceToken: getOrCreateDeviceToken(),
+      participantType: "human",
     })
       .then((payload) => {
         if (cancelled) return;
@@ -607,6 +639,10 @@ export default function App() {
           avatar_image_url: payload.avatar_image_url || pendingGuestAvatarImage,
         });
         persistRoomGuestSession(nextSession);
+        rememberGuestProfile({
+          displayName: nextSession.displayName || pendingGuestDisplayName,
+          avatarImage: nextSession.avatarImage || pendingGuestAvatarImage || undefined,
+        });
         setGuestSession(nextSession);
         setGuestExpired(false);
         setGuestJoinRequested(false);
@@ -647,9 +683,9 @@ export default function App() {
       cancelled = true;
     };
   }, [
+    guestAlreadyJoinedThisInvite,
     guestJoinRequested,
     guestJoinToken,
-    guestSession?.inviteToken,
     pendingGuestAvatarImage,
     pendingGuestDisplayName,
   ]);
@@ -883,6 +919,25 @@ export default function App() {
   const scopedAgents = agents.filter((agent) => roomHasAgent(activeRoom, agent));
   const activeRoomKey = roomSettingsKey(activeRoom);
   const activeRoomMembers = roomMembersByRoom[activeRoomKey] || [];
+  const refreshMembers = useCallback(() => {
+    if (!activeRoom.meetingId) return;
+    // Through the public entrance the roster endpoint requires the guest
+    // session token; the local console reads it without one.
+    fetchRoomMembers(activeRoom.meetingId, guestSession?.sessionToken || "")
+      .then((payload) => {
+        setRoomMembersByRoom((previous) => ({
+          ...previous,
+          [activeRoomKey]: payload.members || [],
+        }));
+      })
+      .catch(() => {
+        // Roster refresh is best-effort; a transient miss should not blank the room.
+      });
+  }, [activeRoom.meetingId, activeRoomKey, guestSession?.sessionToken]);
+  const refreshSessionAndMembers = useCallback(() => {
+    refreshSessionSurfaces();
+    refreshMembers();
+  }, [refreshSessionSurfaces, refreshMembers]);
   const displayedSideChatEvents = sideChatEventsForThreadContext(sideChatEvents, sideChatThread);
   const sideChatThreadSummaries = useMemo(
     () => threadSummariesForSideChat(sideChatEvents),
@@ -1162,6 +1217,36 @@ export default function App() {
       cancelled = true;
     };
   }, [inviteModal?.roomId]);
+
+  // Host (non-guest) moderation — mute/kick — is host-token gated. Acquire and
+  // cache the token once on load so the local operator can moderate without first
+  // having to open the invite modal. With the token in hand, also claim this
+  // device for the operator account, so the same person keeps moderation rights
+  // when entering through the public URL as a guest.
+  useEffect(() => {
+    if (guestLocked) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        if (!loadHostToken()) {
+          const status = await fetchPublicInviteStatus();
+          if (cancelled) return;
+          setPublicInviteStatus(status);
+          if (status.host_token_configured || status.can_generate_host_token) {
+            await ensureHostTokenForInvite(status);
+          }
+        }
+        if (!cancelled && loadHostToken()) {
+          await claimHostDevice({ deviceToken: getOrCreateDeviceToken() });
+        }
+      } catch {
+        // Best-effort; moderation actions surface a clear error if the token is missing.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [guestLocked]);
 
   function openRoomSettings(roomId: string, initialSectionId: RoomSettingsSectionId = "settings-overview") {
     if (guestLocked) return;
@@ -1744,23 +1829,25 @@ export default function App() {
   }, [activeRoom.meetingId, activeRoomKey]);
 
   useEffect(() => {
-    if (!activeRoom.meetingId) return;
-    let cancelled = false;
-    fetchRoomMembers(activeRoom.meetingId)
-      .then((payload) => {
-        if (cancelled) return;
-        setRoomMembersByRoom((previous) => ({
-          ...previous,
-          [activeRoomKey]: payload.members || [],
-        }));
-      })
-      .catch(() => {
-        // Members are refreshed again after explicit invites; do not blank the room on a transient miss.
-      });
+    refreshMembers();
+    // Roster freshness (R6): the local console rides the roster SSE stream —
+    // joins/leaves/kicks push instantly — with a slow poll as the safety net.
+    // Guests can't attach EventSource auth headers, so they keep polling.
+    const subscribed = !guestLocked && activeRoom.meetingId;
+    const unsubscribe = subscribed
+      ? subscribeRoster(activeRoom.meetingId, (members) => {
+          setRoomMembersByRoom((previous) => ({
+            ...previous,
+            [activeRoomKey]: members,
+          }));
+        })
+      : undefined;
+    const intervalId = window.setInterval(refreshMembers, subscribed ? 30_000 : 10_000);
     return () => {
-      cancelled = true;
+      unsubscribe?.();
+      window.clearInterval(intervalId);
     };
-  }, [activeRoom.meetingId, activeRoomKey]);
+  }, [activeRoom.meetingId, activeRoomKey, guestLocked, refreshMembers]);
 
   function updateRoom(roomId: string, updates: Partial<RoomDockItem>) {
     setRooms((previous) =>
@@ -2251,7 +2338,7 @@ export default function App() {
             onActiveDmFriendChange={setActiveHomeDmFriendId}
             onSelectFriend={(friend) => setSelectedHomeFriendId(friend.friend_id)}
             processGroups={processData?.groups || []}
-            onSessionActionComplete={refreshSessionSurfaces}
+            onSessionActionComplete={refreshSessionAndMembers}
             onStartAddAgent={openAgentCreate}
           />
         ) : adminOpen ? (
@@ -2262,6 +2349,7 @@ export default function App() {
             agents={scopedAgents}
             mentionables={scopedMentionables}
             roomSessionToken={lobbyPostingState.sessionToken}
+            localDisplayName={guestSession?.displayName || ""}
             canManageRoom={!guestLocked}
             canPostMessages={lobbyPostingState.canPost}
             postingMode={lobbyPostingState.mode}
@@ -2407,13 +2495,15 @@ export default function App() {
                 onMafiaStarted={handleMafiaStarted}
                 onFlowStarted={handleFlowStarted}
                 guestLocked={guestLocked}
+                guestOperator={Boolean(guestSession?.operator)}
+                moderatorSessionToken={guestSession?.sessionToken || ""}
                 guestAiPacketPreview={guestAiPacketPreview}
                 guestAiPacketStatus={guestAiPacketStatus || guestJoinStatus}
                 onCreateCompanionAiPacket={() => void createCompanionAiPacket()}
                 onCopyGuestAiPacket={() => void copyGuestAiPacket()}
                 channelNotifications={activeChannelSettings}
                 processGroups={activeProcessGroups}
-                onSessionActionComplete={refreshSessionSurfaces}
+                onSessionActionComplete={refreshSessionAndMembers}
                 quotaViewer={quotaViewer}
                 onStartAddAgent={openAgentCreate}
                 memberSearchQuery={rightPanelSearchQuery}

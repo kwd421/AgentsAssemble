@@ -222,11 +222,14 @@ class TestGuestIdentityEnforcement(unittest.TestCase):
         reset_state()
 
     def test_session_identity_matches_invite(self):
+        # Single-use invites carry a fixed identity in the signed claims;
+        # reusable (default) invites mint per-join ids instead.
         invite = create_room_invite(
             room_url="http://127.0.0.1:8765",
             meeting_id="test",
             agent_id="guest-1",
             display_name="Guest One",
+            max_uses=1,
         )
         result = join_room_with_invite(str(invite["invite_token"]))
         self.assertEqual(result["status"], "admitted")

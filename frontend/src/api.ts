@@ -60,6 +60,7 @@ export interface RoomMember {
   provider_kind: string;
   connection_kind: string;
   status: string;
+  muted?: boolean;
   source: string;
   created_at: string;
   updated_at: string;
@@ -94,6 +95,7 @@ export interface RoomInviteJoinResponse {
   invite_scope: RoomAppearance["inviteScope"];
   connection_kind: string;
   expires_at: string;
+  operator?: boolean;
 }
 
 export interface PublicInviteStatus {
@@ -225,6 +227,7 @@ export interface LobbyEvent {
   official_record?: boolean;
   live_agent_endpoint?: boolean;
   actor_id?: string;
+  actor_type?: string;
   flow_id?: string;
   flow_meeting_id?: string;
   flow_event_type?: string;
@@ -232,7 +235,22 @@ export interface LobbyEvent {
   flow_reason?: string;
   target_agent_id?: string;
   channel?: string;
+  vote_id?: string;
+  vote_question?: string;
+  vote_options?: string[];
+  vote_choice?: string;
   attachments?: LobbyAttachmentRef[];
+}
+
+export interface VoteSummary {
+  vote_id: string;
+  question: string;
+  options: string[];
+  created_by: string;
+  created_at: string;
+  tallies: Record<string, number>;
+  voters: Record<string, string[]>;
+  total_votes: number;
 }
 
 export interface LobbyPostResponse {
@@ -292,6 +310,7 @@ export interface LiveAgent {
   session_id?: string;
   process_group_id?: string;
   live_agent_config_path?: string;
+  workspace_path?: string;
   last_seen_at: string;
   last_reply_at: string;
   last_observed_event_id?: string;
@@ -846,6 +865,20 @@ export async function postJsonHost<T>(url: string, body: object): Promise<T> {
   return res.json();
 }
 
+async function postJsonModerator<T>(url: string, body: object, sessionToken = ""): Promise<T> {
+  // Moderation endpoints accept the host token (local console) or the
+  // operator's guest session token (public entrance) — send what we have.
+  const hostToken = loadHostToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (hostToken) headers["X-Host-Token"] = hostToken;
+  if (sessionToken) headers["Authorization"] = `Bearer ${sessionToken}`;
+  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  if (!res.ok) {
+    throw await responseError(res);
+  }
+  return res.json();
+}
+
 async function fetchJsonWithToken<T>(url: string, sessionToken: string): Promise<T> {
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${sessionToken}` },
@@ -1008,16 +1041,21 @@ function userProfileToApi(profile: UserProfile): ApiUserProfile {
   };
 }
 
-export function fetchLobby(meetingId = "") {
-  return fetchJson<{ events: LobbyEvent[] }>(`/api/lobby${queryString({ meeting_id: meetingId })}`);
+export function fetchLobby(meetingId = "", options: { before?: string; limit?: number } = {}) {
+  const limitText = options.limit ? String(options.limit) : undefined;
+  return fetchJson<{ events: LobbyEvent[]; has_more?: boolean }>(
+    `/api/lobby${queryString({ meeting_id: meetingId, before: options.before, limit: limitText })}`
+  );
 }
 
-export function fetchRoomLobby(sessionToken: string) {
+export function fetchRoomLobby(sessionToken: string, options: { before?: string; limit?: number } = {}) {
+  const limitText = options.limit ? String(options.limit) : undefined;
   return fetchJsonWithToken<{
     events: LobbyEvent[];
+    has_more?: boolean;
     session: { agent_id: string; display_name: string; invite_scope?: RoomAppearance["inviteScope"] };
   }>(
-    "/api/room/lobby",
+    `/api/room/lobby${queryString({ before: options.before, limit: limitText })}`,
     sessionToken
   );
 }
@@ -1075,17 +1113,11 @@ function frontendLiveAgentCreatePayload(request: FrontendLiveAgentCreateRequest)
 }
 
 export function checkFrontendLiveAgent(request: FrontendLiveAgentCreateRequest) {
-  return postJson<FrontendLiveAgentCheckResponse>(
-    "/api/live-agent-create/check",
-    frontendLiveAgentCreatePayload(request)
-  );
+  return postJson<FrontendLiveAgentCheckResponse>("/api/live-agent-create/check", frontendLiveAgentCreatePayload(request));
 }
 
 export function createFrontendLiveAgent(request: FrontendLiveAgentCreateRequest) {
-  return postJson<FrontendLiveAgentCreateResponse>(
-    "/api/live-agent-create",
-    frontendLiveAgentCreatePayload(request)
-  );
+  return postJson<FrontendLiveAgentCreateResponse>("/api/live-agent-create", frontendLiveAgentCreatePayload(request));
 }
 
 export function startFrontendLiveAgentLogin(providerId: string) {
@@ -1273,15 +1305,21 @@ export function joinRoomInvite({
   inviteToken,
   displayName,
   avatarImage,
+  deviceToken,
+  participantType = "human",
 }: {
   inviteToken: string;
   displayName?: string;
   avatarImage?: string;
+  deviceToken?: string;
+  participantType?: "human" | "agent";
 }) {
   return postJson<RoomInviteJoinResponse>("/api/room-invite/join", {
     invite_token: inviteToken,
     display_name: displayName,
     avatar_image_url: avatarImage,
+    device_token: deviceToken,
+    participant_type: participantType,
   });
 }
 
@@ -1336,12 +1374,41 @@ export function postRoomFriendDm({
   });
 }
 
-export function fetchRoomMembers(meetingId: string) {
-  return fetchJson<RoomMembersResponse>(`/api/room-members${queryString({ meeting_id: meetingId })}`);
+export function fetchRoomMembers(meetingId: string, sessionToken = "") {
+  const url = `/api/room-members${queryString({ meeting_id: meetingId })}`;
+  return sessionToken ? fetchJsonWithToken<RoomMembersResponse>(url, sessionToken) : fetchJson<RoomMembersResponse>(url);
 }
 
 export function upsertRoomMember(member: Partial<RoomMember>) {
   return postJson<RoomMembersResponse & { member: RoomMember }>("/api/room-members", member);
+}
+
+export function muteRoomMember(params: { meetingId: string; participantId: string; muted: boolean; sessionToken?: string }) {
+  return postJsonModerator<RoomMembersResponse & { member: RoomMember }>("/api/room-members/mute", {
+    meeting_id: params.meetingId,
+    participant_id: params.participantId,
+    muted: params.muted,
+  }, params.sessionToken || "");
+}
+
+export function claimHostDevice(params: { deviceToken: string; displayName?: string }) {
+  return postJsonHost<{ status: string; user_id: string; participant_id: string; operator: boolean }>("/api/host/claim", {
+    device_token: params.deviceToken,
+    display_name: params.displayName || "",
+  });
+}
+
+export interface KickRoomMemberResponse extends RoomMembersResponse {
+  status: string;
+  participant_id: string;
+  revoked_sessions: number;
+  removed_member: boolean;
+  expelled_agent: boolean;
+}
+
+export function kickRoomMember(params: { meetingId: string; participantId: string; sessionToken?: string }) {
+  const body = { meeting_id: params.meetingId, participant_id: params.participantId };
+  return postJsonModerator<KickRoomMemberResponse>("/api/room-members/kick", body, params.sessionToken || "");
 }
 
 export function fetchUserProfile(): Promise<UserProfile> {
@@ -1375,13 +1442,21 @@ export function postLobbyMessage({
   message,
   attachments = [],
   meetingId = "",
+  voteId = "",
+  voteQuestion = "",
+  voteOptions = [],
+  voteChoice = "",
 }: {
   name: string;
   side?: string;
-  kind?: "message" | "ready" | "deploy";
+  kind?: "message" | "ready" | "deploy" | "vote" | "vote_cast";
   message: string;
   attachments?: LobbyAttachmentRef[];
   meetingId?: string;
+  voteId?: string;
+  voteQuestion?: string;
+  voteOptions?: string[];
+  voteChoice?: string;
 }) {
   return postJson<LobbyPostResponse>("/api/lobby", {
     name,
@@ -1390,6 +1465,10 @@ export function postLobbyMessage({
     message,
     attachments,
     flow_meeting_id: meetingId,
+    vote_id: voteId,
+    vote_question: voteQuestion,
+    vote_options: voteOptions,
+    vote_choice: voteChoice,
   });
 }
 
@@ -1397,18 +1476,41 @@ export function postRoomSay({
   sessionToken,
   message,
   attachments = [],
+  kind = "message",
+  voteId = "",
+  voteQuestion = "",
+  voteOptions = [],
+  voteChoice = "",
 }: {
   sessionToken: string;
   message: string;
   attachments?: LobbyAttachmentRef[];
+  kind?: "message" | "vote" | "vote_cast";
+  voteId?: string;
+  voteQuestion?: string;
+  voteOptions?: string[];
+  voteChoice?: string;
 }) {
   return postJsonWithToken<LobbyPostResponse>("/api/room/say",
     {
       message,
       attachments,
+      kind,
+      vote_id: voteId,
+      vote_question: voteQuestion,
+      vote_options: voteOptions,
+      vote_choice: voteChoice,
     },
     sessionToken
   );
+}
+
+export function fetchLobbyVote(meetingId: string, voteId: string) {
+  return fetchJson<VoteSummary>(`/api/lobby/vote${queryString({ meeting_id: meetingId, vote_id: voteId })}`);
+}
+
+export function fetchRoomVote(sessionToken: string, voteId: string) {
+  return fetchJsonWithToken<VoteSummary>(`/api/room/vote${queryString({ vote_id: voteId })}`, sessionToken);
 }
 
 export function fetchSideChat(meetingId = "") {
@@ -1803,6 +1905,28 @@ export function subscribeLobby(
 
   source.addEventListener("lobby", (e) => handleData((e as MessageEvent).data));
   source.onmessage = (e) => handleData(e.data);
+  if (onError) source.onerror = onError;
+  return () => source.close();
+}
+
+export function subscribeRoster(
+  meetingId: string,
+  onMembers: (members: RoomMember[]) => void,
+  onError?: (err: Event) => void
+): () => void {
+  const source = new EventSource(`/api/events/roster${queryString({ meeting_id: meetingId })}`);
+
+  function handleData(raw: string) {
+    try {
+      const payload = JSON.parse(raw) as { members?: RoomMember[] };
+      if (Array.isArray(payload.members)) onMembers(payload.members);
+    } catch {
+      // Ignore malformed frames; the next roster change resends a full snapshot.
+    }
+  }
+
+  source.addEventListener("roster", (event) => handleData((event as MessageEvent).data));
+  source.onmessage = (event) => handleData(event.data);
   if (onError) source.onerror = onError;
   return () => source.close();
 }

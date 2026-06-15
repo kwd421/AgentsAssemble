@@ -80,12 +80,19 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
         self.assertEqual(payload["providers"][0]["login_label"], "Codex 로그인 열기")
         self.assertFalse(payload["providers"][-1]["login_available"])
         codex = payload["providers"][0]
-        self.assertIn("gpt-5.3", [option["id"] for option in codex["model_options"]])
+        self.assertIn("gpt-5.3-codex-spark", [option["id"] for option in codex["model_options"]])
+        self.assertNotIn("gpt-5.3-spark", [option["id"] for option in codex["model_options"]])
         self.assertIn("medium", [option["id"] for option in codex["effort_options"]])
         self.assertEqual(
             [option["id"] for option in codex["speed_options"]],
             ["balanced", "fast", "slow"],
         )
+        claude = payload["providers"][1]
+        self.assertIn("haiku", [option["id"] for option in claude["model_options"]])
+        self.assertIn("xhigh", [option["id"] for option in claude["effort_options"]])
+        antigravity = payload["providers"][4]
+        self.assertIn("Gemini 3.5 Flash (Medium)", [option["id"] for option in antigravity["model_options"]])
+        self.assertEqual(antigravity["effort_options"], [])
 
     def test_create_adds_room_binding_and_writes_per_agent_config_with_workspace(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -185,6 +192,7 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
                                 "display_name": "Legacy Codex",
                                 "provider_kind": "codex_live_session",
                                 "connection_kind": "live_session",
+                                "workspace_path": str(root / "workspace"),
                             }
                         ],
                     },
@@ -208,6 +216,7 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
 
             self.assertEqual(agent["process_group_id"], "agent-codex-legacy-created")
             self.assertEqual(agent["live_agent_config_path"], str(config_path))
+            self.assertEqual(agent["workspace_path"], str(root / "workspace"))
 
     def test_create_persists_selected_model_effort_and_speed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -248,6 +257,67 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
             self.assertEqual(provider["default_model"], "gpt-5.4-mini")
             self.assertEqual(provider["effort"], "high")
             self.assertEqual(provider["speed"], "fast")
+
+    def test_create_claude_persists_model_effort_speed_and_terminal_command(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "aa"
+            workspace = Path(temp_dir) / "project"
+            workspace.mkdir()
+            write_meeting(root)
+
+            result = frontend_live_agent_create_payload(
+                root,
+                FakeSupervisor(),
+                {
+                    "meeting_id": "room-a",
+                    "provider_id": "claude",
+                    "display_name": "Claude Haiku",
+                    "workspace_path": str(workspace),
+                    "model_id": "haiku",
+                    "effort": "xhigh",
+                    "speed": "fast",
+                    "start_now": False,
+                },
+                default_server="http://127.0.0.1:8765",
+            )
+
+            config = json.loads(Path(str(result["live_agent_config_path"])).read_text(encoding="utf-8"))
+            agent_config = config["agents"][0]
+            self.assertEqual(agent_config["provider_kind"], "claude_code")
+            self.assertEqual(agent_config["connection_kind"], "terminal_session")
+            self.assertEqual(agent_config["command"], ["claude", "--model", "haiku", "--effort", "xhigh"])
+            self.assertEqual(agent_config["model_id"], "haiku")
+            self.assertEqual(agent_config["effort"], "xhigh")
+            self.assertEqual(agent_config["speed"], "fast")
+            self.assertEqual(agent_config["workspace_path"], str(workspace.resolve()))
+
+    def test_create_antigravity_persists_model_and_speed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "aa"
+            workspace = Path(temp_dir) / "project"
+            workspace.mkdir()
+            write_meeting(root)
+
+            result = frontend_live_agent_create_payload(
+                root,
+                FakeSupervisor(),
+                {
+                    "meeting_id": "room-a",
+                    "provider_id": "antigravity",
+                    "display_name": "Antigravity Flash",
+                    "workspace_path": str(workspace),
+                    "model_id": "Gemini 3.5 Flash (Medium)",
+                    "speed": "fast",
+                    "start_now": False,
+                },
+                default_server="http://127.0.0.1:8765",
+            )
+
+            config = json.loads(Path(str(result["live_agent_config_path"])).read_text(encoding="utf-8"))
+            agent_config = config["agents"][0]
+            self.assertEqual(agent_config["provider_kind"], "antigravity_live_session")
+            self.assertEqual(agent_config["model_id"], "Gemini 3.5 Flash (Medium)")
+            self.assertEqual(agent_config["speed"], "fast")
 
     def test_create_rejects_unsupported_tuning_values(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -491,6 +561,16 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
                 self.assertEqual(created["status"], "created")
                 self.assertEqual(created["agent"]["display_name"], "Codex From UI")
                 self.assertTrue(Path(created["live_agent_config_path"]).exists())
+
+                with urlopen(f"{server_url}/api/live-agents?safe=1&meeting_id=room-a", timeout=4) as response:
+                    roster = json.loads(response.read().decode("utf-8"))
+                created_agent = next(
+                    agent
+                    for agent in roster["agents"]
+                    if agent["agent_id"] == created["agent"]["agent_id"]
+                )
+                self.assertEqual(created_agent["admission_status"], "bound_to_meeting")
+                self.assertTrue(created_agent["host_approved_binding"])
             finally:
                 server.shutdown()
                 server.server_close()

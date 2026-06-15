@@ -503,6 +503,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                             "agent_id": "guest-1",
                             "display_name": "Guest One",
                             "local_dev_preview": True,
+                            "max_uses": 1,
                         },
                     ),
                     timeout=4,

@@ -142,6 +142,7 @@ class McpParticipantToolsTests(unittest.TestCase):
                 "heartbeat",
                 "wait_next",
                 "read_since",
+                "look",
                 "say",
                 "dm_reply",
                 "official_reply",
@@ -188,6 +189,9 @@ class McpParticipantToolsTests(unittest.TestCase):
             client,
             McpParticipantContext(agent_id="agent-a", display_name="Agent A", meeting_id="m1", engagement_mode="always"),
         )
+        tools["register"]()
+        # Events arriving AFTER register are delivered as new; pre-join history
+        # is fast-forwarded past at register time and never replayed.
         room.room["lobby_events"] = [{"id": "lobby-1", "name": "Human", "message": "hello"}]
         room.room["live_events"] = [
             {
@@ -198,8 +202,6 @@ class McpParticipantToolsTests(unittest.TestCase):
                 "content": "official turn",
             }
         ]
-
-        tools["register"]()
         wait_result = tools["wait_next"](timeout_seconds=0, poll_interval=0, max_chain_depth=1)
         tools["official_reply"](message="official answer", meeting_id="m1", source_event_id=wait_result["source_event_id"])
         packet = tools["read_return_packet"](source_event_id="packet-1", meeting_id="m1")
@@ -214,6 +216,7 @@ class McpParticipantToolsTests(unittest.TestCase):
             [
                 ("POST", "/api/live-agents"),
                 ("GET", "/api/live-agents/agent-a/room"),
+                ("GET", "/api/live-agents/agent-a/room"),
                 ("POST", "/api/live-agents/agent-a/official-turn"),
                 ("GET", "/api/live-agents/agent-a/return-packet?meeting_id=m1&source_event_id=packet-1"),
                 ("POST", "/api/live-agents/agent-a/lobby"),
@@ -222,9 +225,34 @@ class McpParticipantToolsTests(unittest.TestCase):
             ],
         )
         self.assertEqual(room.requests[0]["payload"]["agent_id"], "agent-a")
-        self.assertEqual(room.requests[2]["payload"]["meeting_id"], "m1")
-        self.assertEqual(room.requests[2]["payload"]["source_event_id"], "turn-1")
-        self.assertEqual(room.requests[4]["payload"]["source_event_id"], "lobby-1")
+        self.assertEqual(room.requests[3]["payload"]["meeting_id"], "m1")
+        self.assertEqual(room.requests[3]["payload"]["source_event_id"], "turn-1")
+        self.assertEqual(room.requests[5]["payload"]["source_event_id"], "lobby-1")
+
+    def test_register_fast_forwards_past_pre_join_backlog(self):
+        room = RecordingRoom()
+        client = McpRoomClient("http://room.local", request_json=room.request_json)
+        tools = build_tool_registry(
+            "participant",
+            client,
+            McpParticipantContext(agent_id="agent-a", display_name="Agent A", meeting_id="m1", engagement_mode="always"),
+        )
+        # Backlog written BEFORE the agent joins must never be replayed as new.
+        room.room["lobby_events"] = [
+            {"id": "old-1", "name": "Human", "message": "ancient question"},
+            {"id": "old-2", "name": "OtherAgent", "actor_id": "agent-b", "message": "ancient reply"},
+        ]
+
+        register_result = tools["register"]()
+        self.assertEqual(register_result.get("history_cursor"), "fast_forwarded_to_join_time")
+        timed_out = tools["wait_next"](timeout_seconds=0, poll_interval=0, max_chain_depth=1)
+        self.assertEqual(timed_out["status"], "timeout")
+
+        # A message arriving after join is delivered normally.
+        room.room["lobby_events"].append({"id": "new-1", "name": "Human", "message": "fresh question"})
+        delivered = tools["wait_next"](timeout_seconds=0, poll_interval=0, max_chain_depth=1)
+        self.assertEqual(delivered["status"], "event")
+        self.assertEqual(delivered["source_event_id"], "new-1")
 
     def test_wait_next_prefers_dm_and_dm_reply_posts_direct_message(self):
         room = RecordingRoom()
@@ -474,6 +502,83 @@ class McpParticipantToolsTests(unittest.TestCase):
         self.assertEqual(delivered["source_event_id"], "lobby-2")
         self.assertEqual(diff["last_observed_event_id"], "lobby-1")
         self.assertEqual([event["id"] for event in diff["lobby_events"]], ["lobby-2"])
+
+
+class SceneRoom:
+    """A room with a live roster and a recent transcript for look() tests."""
+
+    def __init__(self):
+        self.requests = []
+        self.room = {
+            "agent": {"agent_id": "agent-a", "display_name": "디오게네스", "engagement_mode": "always"},
+            "meeting_id": "m1",
+            "agents": [
+                {"agent_id": "agent-a", "display_name": "디오게네스", "meeting_id": "m1", "status": "online"},
+                {"agent_id": "agent-b", "display_name": "니체", "meeting_id": "m1", "status": "working"},
+                {"agent_id": "agent-c", "display_name": "소크라테스", "meeting_id": "m1", "status": "offline"},
+                {"agent_id": "agent-z", "display_name": "딴방", "meeting_id": "m2", "status": "online"},
+            ],
+            "lobby_events": [
+                {"id": "e1", "name": "니체", "actor_id": "agent-b", "actor_type": "agent", "message": "신은 죽었다."},
+                {"id": "e2", "name": "디오게네스", "actor_id": "agent-a", "actor_type": "agent", "message": "그럼 너는 뭘 믿나?"},
+                {"id": "e3", "name": "니체", "actor_id": "agent-b", "actor_type": "agent", "message": "나 자신의 의지다."},
+                {"id": "e4", "name": "사람손님", "actor_id": "", "actor_type": "human", "message": "둘 다 시끄럽다."},
+                {"id": "e5", "name": "투표함", "actor_id": "agent-b", "kind": "vote_cast", "vote_id": "v1", "vote_choice": "1", "message": "🗳️ 1"},
+            ],
+            "live_events": [],
+            "dm_events": [],
+        }
+
+    def request_json(self, *, method, path, payload=None, timeout_seconds=10.0):
+        self.requests.append({"method": method, "path": path, "payload": payload})
+        if method == "GET" and path == "/api/live-agents/agent-a/room":
+            return self.room
+        return {"status": "ok"}
+
+
+class McpLookToolTests(unittest.TestCase):
+    def _tools(self, room):
+        return build_tool_registry(
+            "participant",
+            McpRoomClient("http://room.local", request_json=room.request_json),
+            McpParticipantContext(agent_id="agent-a", display_name="디오게네스", meeting_id="m1"),
+        )
+
+    def test_look_returns_present_roster_excluding_offline_and_other_rooms(self):
+        room = SceneRoom()
+        scene = self._tools(room)["look"]()
+        names = {p["name"] for p in scene["present"]}
+        self.assertEqual(names, {"디오게네스", "니체"})  # offline 소크라테스, other-room 딴방 excluded
+        me = next(p for p in scene["present"] if p["is_me"])
+        self.assertEqual(me["name"], "디오게네스")
+
+    def test_look_transcript_marks_self_and_human_and_skips_ballots(self):
+        room = SceneRoom()
+        scene = self._tools(room)["look"]()
+        recent = scene["recent"]
+        # ballot (vote_cast) is not dialogue
+        self.assertNotIn("🗳️ 1", [event["text"] for event in recent])
+        human = next(event for event in recent if event["name"] == "사람손님")
+        self.assertEqual(human["actor_type"], "human")
+        mine = [event for event in recent if event["is_me"]]
+        self.assertTrue(mine and all(event["name"] == "디오게네스" for event in mine))
+
+    def test_look_reports_conversation_since_agent_last_spoke(self):
+        room = SceneRoom()
+        scene = self._tools(room)["look"]()
+        # agent-a last spoke at e2; e3 (니체) and e4 (사람) came after; e5 is a ballot (skipped)
+        since_texts = [event["text"] for event in scene["since_my_last_message"]]
+        self.assertEqual(since_texts, ["나 자신의 의지다.", "둘 다 시끄럽다."])
+        self.assertTrue(scene["i_have_spoken"])
+        self.assertIn("내가 마지막으로 말한 뒤", scene["scene_text"])
+
+    def test_look_requests_room_once(self):
+        room = SceneRoom()
+        self._tools(room)["look"]()
+        self.assertEqual(
+            [r["path"] for r in room.requests],
+            ["/api/live-agents/agent-a/room"],
+        )
 
 
 class McpArchiveToolsTests(unittest.TestCase):

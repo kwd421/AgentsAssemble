@@ -95,6 +95,9 @@ surface rather than silently counted as React parity.
 | `/api/demo` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/events/lobby` | GET | sse | `subscribeLobby()` | yes | React lobby subscribes to lobby stream. |
 | `/api/events/side-chat` | GET | sse | `subscribeSideChat()` | yes | React side chat subscribes to separate stream. |
+| `/api/events/roster` | GET | sse | `subscribeRoster()` | yes | React member panel rides a push roster stream on the local console; polling stays as a slow fallback. |
+| `/api/lobby/vote` | GET | exact | `fetchLobbyVote()` | yes | Poll standings for the local console: aggregates kind=vote/vote_cast lobby events; latest ballot per voter wins. |
+| `/api/room/vote` | GET | exact | `fetchRoomVote()` | yes | Poll standings for invited guests (session token), same aggregation as the console route. |
 | `/api/live-agent-discovery` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-flow` | GET | exact | `fetchLiveAgentFlow()` | yes | React Play Mode status surface. |
 | `/api/live-agent-flow/start` | POST | exact | `startFlow()` | yes | React Play Mode start control; does not start providers. |
@@ -136,7 +139,7 @@ surface rather than silently counted as React parity.
 | `/api/live-agent-sessions/stop` | POST | exact | `stopLiveAgentSession()` | yes | React member detail panel can stop an existing provider session group. |
 | `/api/live-agent-sessions/stop-agent` | POST | exact | `stopLiveAgentSessionAgent()` | yes | React member detail panel can stop one running agent-owned process group when the supervisor can prove single-agent ownership; multi-agent groups stay grouped. |
 | `/api/live-agent-smoke` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
-| `/api/live-agents` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agents` | GET | exact | `fetchLiveAgents()` | yes | React polls the live-agent registry for the member panel roster overlay (5s). |
 | `/api/live-agents` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agents/{agent_id}/engagement` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agents/{agent_id}/heartbeat` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
@@ -170,6 +173,7 @@ surface rather than silently counted as React parity.
 | `/api/play/mafia/resolve` | POST | exact | `resolveMafiaPhase()` | yes | React Mafia phase resolution. |
 | `/api/play/mafia/start` | POST | exact | `startMafiaGame()` | yes | React Mafia start action. |
 | `/api/play/mafia/vote` | POST | exact | `castMafiaVote()` | yes | React Mafia vote action. |
+| `/api/model-catalog` | GET | exact | `-` | no | API-provider lane model catalog (master plan 1단계 B) for `api_call` agent model selection; keys never exposed. Not wrapped by React preview yet. |
 | `/api/provider-health` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/providers` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/public-invite/status` | GET | exact | `fetchPublicInviteStatus()` | yes | React invite modal reads safe public invite state without exposing the host token. |
@@ -190,6 +194,16 @@ surface rather than silently counted as React parity.
 | `/api/user-profile` | POST | exact | `saveUserProfile()` | yes | React bottom user panel stores local identity, status, mic/deafen, banner preset, and accent color. |
 | `/api/room-members` | GET | exact | `fetchRoomMembers()` | yes | React reads persisted selected-room members, including saved friends invited from the Discord home surface. |
 | `/api/room-members` | POST | exact | `upsertRoomMember()` | yes | React writes saved-friend invitations into selected-room member state; this does not start providers or send external Discord invites. |
+| `/api/room-members/mute` | POST | exact | `muteRoomMember()` | yes | Moderation (host token or operator session): toggles a participant's muted flag from the member panel context menu. |
+| `/api/room-members/kick` | POST | exact | `kickRoomMember()` | yes | Moderation (host token or operator session): revokes the participant's sessions, removes the roster row, and expels a bound live agent. |
+| `/api/host/claim` | POST | exact | `claimHostDevice()` | yes | Host-token gated: binds this device's stable identity to the operator account so its sessions moderate from any entrance. |
+| `/api/live-agent-create/options` | GET | exact | `fetchLiveAgentCreateOptions()` | yes | React agent-create modal loads provider/options metadata. |
+| `/api/live-agent-create` | POST | exact | `createFrontendLiveAgent()` | yes | React agent-create modal provisions a frontend-created live agent config. |
+| `/api/live-agent-create/check` | POST | exact | `checkFrontendLiveAgent()` | yes | React agent-create modal validates the requested agent before creation. |
+| `/api/live-agent-create/login` | POST | exact | `startFrontendLiveAgentLogin()` | yes | React agent-create modal starts a provider login flow when required. |
+| `/api/live-agent-room/expel` | POST | exact | `expelLiveAgentFromRoom()` | yes | Member panel removes an agent from the room while keeping its saved session config. |
+| `/api/live-agent-room/delete-session` | POST | exact | `deleteLiveAgentSession()` | yes | Member panel deletes an agent session (room binding, record, and saved config). |
+| `/api/live-agent-sessions/agent-timing` | POST | exact | `updateLiveAgentSessionAgentTiming()` | yes | Member detail modal saves per-agent poll interval and cooldown. |
 | `/api/side-chat` | GET | exact | `fetchSideChat()` | yes | React side-chat read/write. |
 | `/api/side-chat` | POST | exact | `postSideChatMessage()` | yes | React side-chat read/write. |
 | `/api/room-invite/create` | POST | exact | `createRoomInvite()` | yes | React invite modal creates scoped browser/remote-client invite links and AI entry packets without starting providers. |

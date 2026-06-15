@@ -14,6 +14,7 @@ def build_remote_room_client_packet(
     display_name: object,
     expires_at: object = "",
     join_url: object = "",
+    invite_use: str = "single_use",
 ) -> dict[str, object]:
     normalized_room_url = _normalized_room_url(room_url)
     normalized_invite_token = str(invite_token or "").strip()
@@ -41,7 +42,7 @@ def build_remote_room_client_packet(
         },
         "admission_contract": {
             "identity_proof": "hmac_sha256_invite_token",
-            "invite_use": "single_use",
+            "invite_use": clean_lobby_text(invite_use, limit=32) or "single_use",
             "session_token": "issued_after_join",
             "session_scope": "one_meeting_room_api",
             "provider_execution": "not_started_by_invite",
@@ -65,7 +66,12 @@ def build_remote_room_client_packet(
             "join": {
                 "method": "POST",
                 "url": endpoints["join"],
-                "json": {"invite_token": "$AGENTSASSEMBLE_INVITE_TOKEN"},
+                "json": {
+                    "invite_token": "$AGENTSASSEMBLE_INVITE_TOKEN",
+                    "participant_type": "agent",
+                    "device_token": "<generate one random string once, store it, reuse on every rejoin>",
+                    "owner_display_name": "<the human you act for, if any>",
+                },
                 "stores": "session_token -> AGENTSASSEMBLE_ROOM_SESSION_TOKEN",
             },
             "read_lobby": {
@@ -119,7 +125,10 @@ def build_remote_room_client_packet(
         "instructions": [
             "This packet is for an already-running AI or remote client controlled by the invite recipient.",
             "Set the env values, call http.join once, and store the returned session_token locally.",
-            "Use http.read_lobby or http.events to observe the room before deciding whether to speak.",
+            "Send a stable device_token on every join: the server then keeps your participant id and profile across rejoins instead of minting a new identity.",
+            "Declare participant_type 'agent' (you are an AI) and owner_display_name (the human you act for) so the roster classifies you correctly.",
+            "Use http.read_lobby to observe the room before deciding whether to speak.",
+            "http.events is a server-sent-events stream, not a JSON snapshot; poll http.read_lobby instead if you cannot consume SSE.",
             "Use http.say for one visible lobby message at a time; the server enforces the admitted identity.",
             "Use http.leave before intentionally exiting the room.",
             "Do not treat this packet as permission to start provider CLIs, access files, or promote lobby chat to official records.",

@@ -84,7 +84,14 @@ class LiveAgentFlowClient:
         self.sleep_fn = sleep_fn
         self.now_fn = now_fn or (lambda: datetime.now(UTC))
 
-    def run(self, *, meeting_id: str, topic: str, options: FlowOptions) -> dict[str, object]:
+    def run(
+        self,
+        *,
+        meeting_id: str,
+        topic: str,
+        options: FlowOptions,
+        sample_fn: Callable[[dict[str, object]], None] | None = None,
+    ) -> dict[str, object]:
         payload = {
             "meeting_id": meeting_id,
             "topic": topic,
@@ -95,15 +102,23 @@ class LiveAgentFlowClient:
             method="POST",
             payload=payload,
         )
+        if sample_fn is not None:
+            sample_fn(result)
         deadline = self.now_fn() + timedelta(seconds=options.duration_seconds + max(options.tick_interval, 1.0) * 2)
         while True:
             flow = result.get("flow") if isinstance(result.get("flow"), dict) else {}
             if str(flow.get("status") or "") in {"finished", "stopped", "failed"}:
+                if sample_fn is not None:
+                    sample_fn(result)
                 return result
             if self.now_fn() >= deadline:
+                if sample_fn is not None:
+                    sample_fn(result)
                 return result
             self.sleep_fn(options.tick_interval)
             result = self.status(meeting_id=meeting_id)
+            if sample_fn is not None:
+                sample_fn(result)
 
     def status(self, *, meeting_id: str = "") -> dict[str, object]:
         query = urllib.parse.urlencode({"meeting_id": meeting_id}) if meeting_id else ""

@@ -66,6 +66,15 @@ def live_agent_context_contract(provider_kind: object, connection_kind: object) 
             "context_durability": "stateless_prompt",
             "sandbox_enforcement": sandbox_enforcement,
         })
+    if connection == "api_call":
+        # API-provider lane (master plan 1단계 B): a per-turn OpenAI-compatible
+        # model call. Same execution contract as local_cli (stateless per turn),
+        # but the runner invokes the model API in-process instead of a subprocess.
+        return _with_execution_contract({
+            "join_semantics": "stateless_prompt_call",
+            "context_durability": "stateless_prompt",
+            "sandbox_enforcement": sandbox_enforcement,
+        })
     if connection == "terminal_session":
         return _with_execution_contract({
             "join_semantics": "terminal_pty_prompt_bridge",
@@ -175,7 +184,11 @@ def live_agent_context_contract_with_join_semantics(
 ) -> dict[str, object]:
     contract: dict[str, object] = dict(live_agent_context_contract(provider_kind, connection_kind))
     safe_join = safe_live_agent_join_semantics(join_semantics)
-    if not safe_join:
+    if not safe_join or not _join_semantics_override_allowed(
+        connection_kind,
+        safe_join=safe_join,
+        default_join=str(contract.get("join_semantics") or ""),
+    ):
         return contract
     contract["join_semantics"] = safe_join
     contract.update(live_agent_execution_contract(safe_join))
@@ -185,6 +198,17 @@ def live_agent_context_contract_with_join_semantics(
 def safe_live_agent_join_semantics(value: object) -> str:
     text = clean_lobby_text(value, limit=64)
     return text if text in LIVE_AGENT_JOIN_SEMANTICS else ""
+
+
+def _join_semantics_override_allowed(connection_kind: object, *, safe_join: str, default_join: str) -> bool:
+    if safe_join == default_join:
+        return True
+    connection = clean_lobby_text(connection_kind, limit=64)
+    if safe_join == "runtime_managed_room_turn":
+        return connection in {"codex_resume", "live_session"}
+    if safe_join in {"mcp_tool_loop", "cli_tool_loop", "provider_tool_loop"}:
+        return connection in {"manual", "self_service", "native_remote_room_client", "live_session"}
+    return False
 
 
 def safe_live_agent_context_durability(value: object) -> str:

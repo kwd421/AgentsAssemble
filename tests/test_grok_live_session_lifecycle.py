@@ -431,6 +431,10 @@ def record(payload):
 
 
 args = sys.argv[1:]
+if args[:1] == ["models"]:
+    # Auth probe (grok_auth_check runs `grok models`): act logged in.
+    print("grok-4-fake")
+    raise SystemExit(0)
 mode = os.environ.get("AGENTSASSEMBLE_FAKE_GROK_MODE", "ok")
 if mode == "nonzero":
     print("private provider error", file=sys.stderr)

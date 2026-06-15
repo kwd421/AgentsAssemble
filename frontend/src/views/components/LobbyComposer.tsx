@@ -17,6 +17,7 @@ import {
 } from "../../lib/lobbyComposerModel";
 import { isUnauthorizedApiError } from "../../lib/apiErrors";
 import type { RoomPostingMode } from "../../lib/roomGuestPosting";
+import { parseVoteCommand } from "../../lib/votePoll";
 import MentionInput from "./MentionInput";
 
 type ComposerAccessory = {
@@ -170,17 +171,24 @@ export default function LobbyComposer({
       if (postingMode === "guest" && !roomSessionToken) {
         throw new Error("메시지를 보내려면 유효한 초대 세션이 필요합니다.");
       }
+      // "/vote 질문 | 옵션1 | 옵션2" opens a poll card instead of a message.
+      const voteCommand = parseVoteCommand(trimmed);
       const payload = await (postingMode === "guest" ? postRoomSay({
         sessionToken: roomSessionToken,
-        message: trimmed,
+        message: voteCommand ? "" : trimmed,
         attachments: draftAttachments,
+        kind: voteCommand ? "vote" : "message",
+        voteQuestion: voteCommand?.question || "",
+        voteOptions: voteCommand?.options || [],
       }) : postLobbyMessage({
         name: currentLobbyName(),
         side: "mine",
-        kind: "message",
-        message: trimmed,
+        kind: voteCommand ? "vote" : "message",
+        message: voteCommand ? "" : trimmed,
         attachments: draftAttachments,
         meetingId,
+        voteQuestion: voteCommand?.question || "",
+        voteOptions: voteCommand?.options || [],
       }));
       const cleared = lobbySubmitSuccessDraft<LobbyAttachmentRef>();
       setMessage(cleared.message);

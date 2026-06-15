@@ -94,6 +94,7 @@ class LiveAgentPresenceTests(unittest.TestCase):
                     "session_id": "claude-session-1",
                     "engagement_mode": "mentioned",
                     "meeting_id": "m1",
+                    "workspace_path": "/Users/seinel/Projects/AgentCouncil",
                     "capabilities": ["room_chat", "mentions"],
                 },
                 now=now,
@@ -106,6 +107,7 @@ class LiveAgentPresenceTests(unittest.TestCase):
             self.assertEqual(agent["sandbox_enforcement"], "advisory")
             self.assertEqual(agent["status"], "online")
             self.assertEqual(agent["last_seen_at"], "2026-05-17T12:00:00+00:00")
+            self.assertEqual(agent["workspace_path"], "/Users/seinel/Projects/AgentCouncil")
             self.assertEqual(agent["capabilities"], ["room_chat", "mentions"])
             visible = read_live_agents(root, now=now)[0]
             self.assertEqual({key: visible[key] for key in agent}, agent)

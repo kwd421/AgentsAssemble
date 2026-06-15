@@ -23,6 +23,17 @@ const ROOM_FLOW_MODES = [
   { id: "quiet", label: "Quiet Call" },
 ];
 
+// duration 0 = 무제한: 백엔드가 deadline을 잡지 않아 중지할 때까지 계속됩니다.
+const ROOM_FLOW_DURATIONS = [
+  { seconds: 0, label: "무제한" },
+  { seconds: 60, label: "1분" },
+  { seconds: 180, label: "3분" },
+  { seconds: 300, label: "5분" },
+  { seconds: 600, label: "10분" },
+  { seconds: 1800, label: "30분" },
+  { seconds: 3600, label: "1시간" },
+];
+
 const PLAY_ACTIVITIES = [
   { id: "conversation", label: "일반 대화", icon: Zap },
   { id: "mafia", label: "Mafia Night", icon: Gamepad2 },
@@ -50,6 +61,8 @@ type RoomConnectionPanelProps = {
   onMafiaStarted?: (game: MafiaGame) => void;
   onFlowStarted?: () => void;
   guestLocked?: boolean;
+  guestOperator?: boolean;
+  moderatorSessionToken?: string;
   guestAiPacketPreview?: string;
   guestAiPacketStatus?: string;
   onCreateCompanionAiPacket?: () => void;
@@ -75,6 +88,15 @@ function flowPolicyLabel(policy?: string): string {
   if (policy === "free_interval") return "Free Interval";
   if (policy === "quiet") return "Quiet Call";
   return "Turn-Based Floor";
+}
+
+function flowDurationLabel(durationSeconds?: number): string {
+  if (!durationSeconds || durationSeconds <= 0) return "무제한";
+  const preset = ROOM_FLOW_DURATIONS.find((option) => option.seconds === durationSeconds);
+  if (preset) return preset.label;
+  if (durationSeconds % 3600 === 0) return `${durationSeconds / 3600}시간`;
+  if (durationSeconds % 60 === 0) return `${durationSeconds / 60}분`;
+  return `${durationSeconds}초`;
 }
 
 function playErrorMessage(errorValue: unknown, fallback: string): string {
@@ -114,6 +136,8 @@ export default function RoomConnectionPanel({
   onMafiaStarted,
   onFlowStarted,
   guestLocked = false,
+  guestOperator = false,
+  moderatorSessionToken = "",
   guestAiPacketPreview = "",
   guestAiPacketStatus = "",
   onCreateCompanionAiPacket,
@@ -128,6 +152,7 @@ export default function RoomConnectionPanel({
 }: RoomConnectionPanelProps) {
   const mutedCount = mutedChannelCount(channelNotifications);
   const [selectedMode, setSelectedMode] = useState("turn_based_floor");
+  const [selectedDurationSeconds, setSelectedDurationSeconds] = useState(180);
   const [selectedActivityId, setSelectedActivityId] = useState<PlayActivityId>("conversation");
   const [busy, setBusy] = useState(false);
   const [playError, setPlayError] = useState("");
@@ -148,7 +173,7 @@ export default function RoomConnectionPanel({
         meeting_id: room.meetingId.trim(),
         topic: room.topic.trim() || undefined,
         flow_policy: selectedMode,
-        duration_seconds: 180,
+        duration_seconds: selectedDurationSeconds,
         max_agent_turns: 0,
         max_total_turns: 0,
       });
@@ -231,7 +256,8 @@ export default function RoomConnectionPanel({
           {isFlowRunning ? (
             <div className="dc-room-play-running">
               <span className="min-w-0 truncate text-text-secondary preserve-words">
-                {flowPolicyLabel(flow.policy)} · {flow.topic || flow.meeting_id || room.label}
+                {flowPolicyLabel(flow.policy)} · {flowDurationLabel(flow.duration_seconds)} ·{" "}
+                {flow.topic || flow.meeting_id || room.label}
               </span>
               <button type="button" onClick={handleStopFlow} disabled={busy} className="dc-room-play-stop">
                 <Square size={14} />
@@ -275,6 +301,22 @@ export default function RoomConnectionPanel({
                     {ROOM_FLOW_MODES.map((mode) => (
                       <option key={mode.id} value={mode.id}>
                         {mode.label}
+                      </option>
+                    ))}
+                  </select>
+                  <label className="dc-room-play-label" htmlFor="room-flow-duration">
+                    시간 제한
+                  </label>
+                  <select
+                    id="room-flow-duration"
+                    value={selectedDurationSeconds}
+                    onChange={(event) => setSelectedDurationSeconds(Number(event.target.value))}
+                    className="dc-room-play-select"
+                    aria-label="시간 제한"
+                  >
+                    {ROOM_FLOW_DURATIONS.map((option) => (
+                      <option key={option.seconds} value={option.seconds}>
+                        {option.label}
                       </option>
                     ))}
                   </select>
@@ -342,7 +384,8 @@ export default function RoomConnectionPanel({
         roomName={room.label}
         roleOverrides={roleOverrides}
         onRoleChange={onRoleChange}
-        canEditRoles={!guestLocked}
+        canEditRoles={!guestLocked || guestOperator}
+        moderatorSessionToken={moderatorSessionToken}
         processGroups={processGroups}
         onSessionActionComplete={onSessionActionComplete}
         quotaViewer={quotaViewer}

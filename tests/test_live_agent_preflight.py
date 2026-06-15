@@ -374,6 +374,112 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 report["agents"][0]["checks"],
             )
 
+    def test_preflight_rejects_claude_print_mode_as_resident_participation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "server": "http://room.local",
+                        "agents": [
+                            {
+                                "agent_id": "claude-haiku",
+                                "display_name": "Claude Haiku",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "local_cli",
+                                "command": ["claude", "-p", "--model", "haiku"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/claude" if command == "claude" else None,
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertIn(
+                {
+                    "id": "claude_code_resident_command",
+                    "status": "failed",
+                    "message": (
+                        "claude_code resident configs must not use Claude Code print/non-interactive mode; "
+                        "use terminal_session with command ['claude'] or a verified self_service/tool-loop wrapper."
+                    ),
+                },
+                report["agents"][0]["checks"],
+            )
+
+    def test_preflight_rejects_claude_long_print_flags_as_resident_participation(self):
+        for command in (["claude", "--print"], ["claude", "--print=json"]):
+            with self.subTest(command=command):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    config_path = Path(temp_dir) / "live-agents.json"
+                    config_path.write_text(
+                        json.dumps(
+                            {
+                                "server": "http://room.local",
+                                "agents": [
+                                    {
+                                        "agent_id": "claude-print",
+                                        "display_name": "Claude Print",
+                                        "provider_kind": "claude_code",
+                                        "connection_kind": "terminal_session",
+                                        "command": command,
+                                    }
+                                ],
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    report = preflight_live_agent_config(
+                        config_path,
+                        command_resolver=lambda executable: "/usr/local/bin/claude"
+                        if executable == "claude"
+                        else None,
+                    )
+
+                self.assertEqual(report["status"], "failed")
+                failed_check_ids = [
+                    check["id"]
+                    for check in report["agents"][0]["checks"]
+                    if check["status"] == "failed"
+                ]
+                self.assertIn("claude_code_resident_command", failed_check_ids)
+
+    def test_preflight_does_not_apply_claude_print_guard_to_remote_bridge(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "server": "http://room.local",
+                        "agents": [
+                            {
+                                "agent_id": "friend-claude",
+                                "display_name": "Friend Claude",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "remote_bridge",
+                                "endpoint": "http://friend.local:8777",
+                                "auth_ref": "literal:token-for-test",
+                                "command": ["claude", "-p"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(config_path)
+
+        self.assertEqual(report["status"], "ok")
+        check_ids = [check["id"] for check in report["agents"][0]["checks"]]
+        self.assertNotIn("claude_code_resident_command", check_ids)
+
     def test_preflight_rejects_terminal_session_when_pty_is_unavailable(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"

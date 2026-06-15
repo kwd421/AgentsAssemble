@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { Bot, Hash, MessageCircle, MoreHorizontal, Zap } from "lucide-react";
 import {
   fetchLobby,
@@ -9,6 +9,7 @@ import {
   type LobbyEvent,
 } from "../api";
 import type { RoomDockItem } from "../lib/roomDockModel";
+import VotePollCard from "./components/VotePollCard";
 import LobbyAttachments from "./components/LobbyAttachments";
 import LobbyComposer from "./components/LobbyComposer";
 import ChannelHeader from "./components/ChannelHeader";
@@ -27,15 +28,41 @@ function timeLabel(iso: string): string {
   }
 }
 
+function dateKey(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return `${parsed.getFullYear()}-${parsed.getMonth()}-${parsed.getDate()}`;
+}
+
+function dateDividerLabel(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (dateKey(iso) === dateKey(today.toISOString())) return "오늘";
+  if (dateKey(iso) === dateKey(yesterday.toISOString())) return "어제";
+  return parsed.toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+  });
+}
+
 function lobbyFeedIsNearBottom(element: HTMLDivElement) {
   const { scrollHeight, scrollTop, clientHeight } = element;
   return scrollHeight - scrollTop - clientHeight <= 64;
 }
 
-function MessageRow({ event, onOpenSideThread, threadSummary }: {
+const HISTORY_TOP_THRESHOLD = 120;
+const HISTORY_PAGE_SIZE = 50;
+
+function MessageRow({ event, onOpenSideThread, threadSummary, voteCard }: {
   event: LobbyEvent;
   onOpenSideThread?: (event: LobbyEvent) => void;
   threadSummary?: LobbyThreadSummary;
+  voteCard?: ReactNode;
 }) {
   const systemLike = event.kind === "system" || event.kind === "flow_event";
   return (
@@ -71,9 +98,13 @@ function MessageRow({ event, onOpenSideThread, threadSummary }: {
           </span>
           <span className="shrink-0 text-[11px] text-text-muted">{timeLabel(event.created_at)}</span>
         </p>
-        <div className="text-[14px] leading-relaxed text-text-secondary preserve-words">
-          <DiscordText text={event.message || ""} />
-        </div>
+        {voteCard ? (
+          voteCard
+        ) : (
+          <div className="text-[14px] leading-relaxed text-text-secondary preserve-words">
+            <DiscordText text={event.message || ""} />
+          </div>
+        )}
         <LobbyAttachments attachments={event.attachments} />
         {threadSummary && onOpenSideThread && (
           <button
@@ -112,6 +143,7 @@ export default function LobbyView({
   onGuestSessionExpired,
   threadSummaries = {},
   roomSessionToken = "",
+  localDisplayName = "",
 }: {
   activeRoom: RoomDockItem;
   agents: LiveAgent[];
@@ -130,12 +162,25 @@ export default function LobbyView({
   onGuestSessionExpired?: () => void;
   threadSummaries?: Record<string, LobbyThreadSummary>;
   roomSessionToken?: string;
+  localDisplayName?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const voterName = useMemo(() => {
+    if (localDisplayName) return localDisplayName;
+    try {
+      return window.localStorage.getItem("agentsassemble.name") || "나";
+    } catch {
+      return "나";
+    }
+  }, [localDisplayName]);
   const pinnedToLatestRef = useRef(true);
+  const loadingOlderRef = useRef(false);
+  const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const [events, setEvents] = useState<LobbyEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [pinnedToLatest, setPinnedToLatest] = useState(true);
+  const [hasMoreHistory, setHasMoreHistory] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
   const mentionables = useMemo(
     () =>
@@ -144,11 +189,16 @@ export default function LobbyView({
         : ["나", ...agents.map((agent) => agent.display_name || agent.agent_id).filter(Boolean)],
     [agents, roomMentionables]
   );
+  const conversationEvents = useMemo(
+    // Ballots update the poll card's tally; they are not chat lines.
+    () => events.filter((event) => event.kind !== "vote_cast"),
+    [events]
+  );
   const visibleEvents = useMemo(() => {
-    if (!activeRoom.createdAt) return events;
+    if (!activeRoom.createdAt) return conversationEvents;
     const roomStartedAt = Date.parse(activeRoom.createdAt);
-    if (!Number.isFinite(roomStartedAt)) return events;
-    return events.filter((event) => {
+    if (!Number.isFinite(roomStartedAt)) return conversationEvents;
+    return conversationEvents.filter((event) => {
       if (event.flow_meeting_id && event.flow_meeting_id !== activeRoom.meetingId) {
         return false;
       }
@@ -158,7 +208,7 @@ export default function LobbyView({
       const eventTime = Date.parse(event.created_at || "");
       return Number.isFinite(eventTime) && eventTime >= roomStartedAt;
     });
-  }, [activeRoom.createdAt, activeRoom.meetingId, events]);
+  }, [activeRoom.createdAt, activeRoom.meetingId, conversationEvents]);
 
   const updatePinnedToLatest = useCallback((nextPinned: boolean) => {
     pinnedToLatestRef.current = nextPinned;
@@ -172,16 +222,57 @@ export default function LobbyView({
     updatePinnedToLatest(true);
   }, [updatePinnedToLatest]);
 
+  const loadOlderHistory = useCallback(() => {
+    if (loadingOlderRef.current || !hasMoreHistory || !loaded) return;
+    const element = scrollRef.current;
+    const oldest = events[0];
+    if (!element || !oldest?.id) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    prependAnchorRef.current = { scrollHeight: element.scrollHeight, scrollTop: element.scrollTop };
+    const request = roomSessionToken
+      ? fetchRoomLobby(roomSessionToken, { before: oldest.id, limit: HISTORY_PAGE_SIZE })
+      : fetchLobby(activeRoom.meetingId, { before: oldest.id, limit: HISTORY_PAGE_SIZE });
+    request
+      .then((page) => {
+        const older = Array.isArray(page.events) ? page.events : [];
+        setHasMoreHistory(Boolean(page.has_more));
+        if (older.length) {
+          setEvents((previous) => mergeLobbyEvents(older, previous));
+        } else {
+          prependAnchorRef.current = null;
+        }
+      })
+      .catch(() => {
+        prependAnchorRef.current = null;
+      })
+      .finally(() => {
+        loadingOlderRef.current = false;
+        setLoadingOlder(false);
+      });
+  }, [activeRoom.meetingId, events, hasMoreHistory, loaded, roomSessionToken]);
+
   const handleLobbyScroll = useCallback(
     (event: UIEvent<HTMLDivElement>) => {
       updatePinnedToLatest(lobbyFeedIsNearBottom(event.currentTarget));
+      if (event.currentTarget.scrollTop <= HISTORY_TOP_THRESHOLD) {
+        loadOlderHistory();
+      }
     },
-    [updatePinnedToLatest]
+    [loadOlderHistory, updatePinnedToLatest]
   );
 
   useLayoutEffect(() => {
     const element = scrollRef.current;
-    if (!element || !pinnedToLatestRef.current) return;
+    if (!element) return;
+    const anchor = prependAnchorRef.current;
+    if (anchor) {
+      // Keep the viewport on the same message after older history is prepended.
+      prependAnchorRef.current = null;
+      element.scrollTop = element.scrollHeight - anchor.scrollHeight + anchor.scrollTop;
+      return;
+    }
+    if (!pinnedToLatestRef.current) return;
     element.scrollTop = element.scrollHeight;
   }, [visibleEvents]);
 
@@ -193,6 +284,7 @@ export default function LobbyView({
     let cancelled = false;
     setEvents([]);
     setLoaded(false);
+    setHasMoreHistory(true);
     function refreshLobby() {
       const lobbyRequest = roomSessionToken ? fetchRoomLobby(roomSessionToken) : fetchLobby(activeRoom.meetingId);
       lobbyRequest
@@ -282,20 +374,25 @@ export default function LobbyView({
             최신으로
           </button>
         )}
-        <section className="dc-channel-intro px-4 pb-5 pt-2">
-          <span className="dc-channel-intro-icon" data-has-image={Boolean(appearance?.iconImage)}>
-            {appearance?.iconImage ? "" : <Hash size={26} />}
-          </span>
-          <h2 className="mt-3 text-[28px] font-black leading-tight text-text-primary preserve-words">
-            {activeRoom.label}
-          </h2>
-          <p className="mt-1 max-w-2xl text-[14px] leading-relaxed text-text-muted preserve-words">
-            {activeRoom.topic || "이 방의 첫 메시지를 남겨 보세요."}
+        {loaded && !hasMoreHistory && (
+          // The channel intro marks the true beginning of history, like Discord.
+          <section className="dc-channel-intro px-4 pb-5 pt-2">
+            <span className="dc-channel-intro-icon" data-has-image={Boolean(appearance?.iconImage)}>
+              {appearance?.iconImage ? "" : <Hash size={26} />}
+            </span>
+            <h2 className="mt-3 text-[28px] font-black leading-tight text-text-primary preserve-words">
+              {activeRoom.label}
+            </h2>
+            <p className="mt-1 max-w-2xl text-[14px] leading-relaxed text-text-muted preserve-words">
+              {activeRoom.topic || "이 방의 첫 메시지를 남겨 보세요."}
+            </p>
+          </section>
+        )}
+        {loaded && hasMoreHistory && visibleEvents.length > 0 && (
+          <p className="px-4 pb-2 text-center text-[12px] text-text-muted">
+            {loadingOlder ? "이전 대화 불러오는 중..." : "위로 스크롤하면 이전 대화를 불러옵니다"}
           </p>
-        </section>
-        <div className="dc-date-divider px-4" aria-hidden>
-          <span>오늘</span>
-        </div>
+        )}
         {!loaded ? (
           <p className="px-4 text-[13px] text-text-muted">불러오는 중...</p>
         ) : visibleEvents.length === 0 ? (
@@ -303,14 +400,36 @@ export default function LobbyView({
             아직 채팅 메시지가 없습니다. 첫 메시지를 남겨 보세요.
           </p>
         ) : (
-          visibleEvents.map((event) => (
-            <MessageRow
-              key={event.id}
-              event={event}
-              onOpenSideThread={onOpenSideThread}
-              threadSummary={threadSummaries[event.id]}
-            />
-          ))
+          visibleEvents.map((event, index) => {
+            const previous = index > 0 ? visibleEvents[index - 1] : null;
+            const showDateDivider =
+              !previous || dateKey(previous.created_at) !== dateKey(event.created_at);
+            return (
+              <div key={event.id}>
+                {showDateDivider && (
+                  <div className="dc-date-divider px-4" aria-hidden>
+                    <span>{dateDividerLabel(event.created_at)}</span>
+                  </div>
+                )}
+                <MessageRow
+                  event={event}
+                  onOpenSideThread={onOpenSideThread}
+                  threadSummary={threadSummaries[event.id]}
+                  voteCard={
+                    event.kind === "vote" ? (
+                      <VotePollCard
+                        event={event}
+                        meetingId={activeRoom.meetingId}
+                        roomSessionToken={roomSessionToken}
+                        voterName={voterName}
+                        canVote={canPostMessages}
+                      />
+                    ) : undefined
+                  }
+                />
+              </div>
+            );
+          })
         )}
       </div>
 

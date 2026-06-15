@@ -10,6 +10,9 @@ export type RoomGuestSession = {
   inviteScope: RoomAppearance["inviteScope"];
   expiresAt: string;
   joinedAt: string;
+  // True when this session belongs to the server operator's account —
+  // unlocks host moderation through the public entrance.
+  operator?: boolean;
 };
 
 const ROOM_GUEST_SESSION_STORAGE_KEY = "agentsassemble.roomGuestSession.v1";
@@ -53,6 +56,7 @@ export function roomGuestSessionFromJoinPayload(
     inviteScope: normalizeInviteScope(record.invite_scope),
     expiresAt: cleanText(record.expires_at, 64),
     joinedAt: now.toISOString(),
+    operator: record.operator === true,
   };
 }
 
@@ -67,10 +71,26 @@ export function normalizeRoomGuestSession(value: unknown): RoomGuestSession | nu
     avatar_image_url: record.avatarImage,
     invite_scope: record.inviteScope,
     expires_at: record.expiresAt,
+    operator: record.operator,
   });
   session.joinedAt = cleanText(record.joinedAt, 64) || session.joinedAt;
   if (!session.sessionToken || !session.meetingId || !session.agentId) return null;
   return session;
+}
+
+// A guest session token lives ~1h server-side. Treat it as expired a minute
+// early so we re-join (reusable invite + device token = stable identity)
+// instead of firing a doomed request with a token about to die.
+const GUEST_SESSION_EXPIRY_SKEW_MS = 60_000;
+
+export function roomGuestSessionExpired(
+  session: RoomGuestSession | null | undefined,
+  now: number = Date.now()
+): boolean {
+  if (!session) return true;
+  const expiresAt = Date.parse(session.expiresAt || "");
+  if (Number.isNaN(expiresAt)) return false; // unknown expiry — let the server decide
+  return expiresAt - GUEST_SESSION_EXPIRY_SKEW_MS <= now;
 }
 
 export function loadRoomGuestSession(): RoomGuestSession | null {

@@ -9,7 +9,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 LobbySide = Literal["mine", "my-agent", "other", "other-agent"]
-LobbyKind = Literal["message", "ready", "deploy"]
+LobbyKind = Literal["message", "ready", "deploy", "vote", "vote_cast"]
 RoomChannel = Literal["lobby", "side_chat", "official", "system", "review"]
 MeetingEventKind = Literal[
     "meeting_started",
@@ -34,7 +34,10 @@ LiveEventKind = Literal[
 ]
 
 LOBBY_SIDES: set[str] = {"mine", "my-agent", "other", "other-agent"}
-LOBBY_KINDS: set[str] = {"message", "ready", "deploy"}
+LOBBY_KINDS: set[str] = {"message", "ready", "deploy", "vote", "vote_cast"}
+VOTE_MAX_OPTIONS = 10
+VOTE_OPTION_LIMIT = 100
+VOTE_QUESTION_LIMIT = 300
 LOBBY_CHANNELS: set[str] = {"lobby", "side_chat"}
 OFFICIAL_LIVE_KINDS: set[str] = {"message", "synthesis", "promoted_context"}
 JSONL_TAIL_BLOCK_BYTES = 8192
@@ -54,6 +57,7 @@ class LobbyEvent:
     audience: str = "room"
     official_record: bool = False
     actor_id: str = ""
+    actor_type: str = ""  # "human" | "agent" | "" (unknown/legacy) — stamped server-side
     target_agent_id: str = ""
     source_event_id: str = ""
     thread_source_event_id: str = ""
@@ -81,6 +85,12 @@ class LobbyEvent:
     flow_reply_post_ms: int = 0
     flow_started_at: str = ""
     flow_deadline_at: str = ""
+    # Poll events (kind "vote" carries question/options; kind "vote_cast" is
+    # one ballot referencing vote_id — latest cast per voter wins).
+    vote_id: str = ""
+    vote_question: str = ""
+    vote_options: list[str] = field(default_factory=list)
+    vote_choice: str = ""
     attachments: list[dict[str, object]] = field(default_factory=list)
 
     @classmethod
@@ -97,8 +107,31 @@ class LobbyEvent:
             message = "준비됐습니다."
         if kind == "deploy" and not message:
             message = "deploy 대기 상태로 전환했습니다."
+        event_id = uuid4().hex[:12]
+        vote_id = clean_lobby_text(payload.get("vote_id", ""), limit=128)
+        vote_question = clean_lobby_text(payload.get("vote_question", ""), limit=VOTE_QUESTION_LIMIT)
+        vote_options = clean_vote_options(payload.get("vote_options"))
+        vote_choice = clean_lobby_text(payload.get("vote_choice", ""), limit=VOTE_OPTION_LIMIT)
+        if kind == "vote":
+            # A poll needs a question and at least two options; otherwise it is
+            # just a message. The poll's own event id doubles as its vote_id.
+            if not vote_question or len(vote_options) < 2:
+                kind = "message"
+            else:
+                vote_id = vote_id or event_id
+                if not message:
+                    numbered = " / ".join(
+                        f"{index}. {option}" for index, option in enumerate(vote_options, start=1)
+                    )
+                    message = f"📊 투표: {vote_question} — {numbered}"
+        elif kind == "vote_cast":
+            # A ballot must reference a poll and pick an option.
+            if not vote_id or not vote_choice:
+                kind = "message"
+            elif not message:
+                message = f"🗳️ {vote_choice}"
         return cls(
-            id=uuid4().hex[:12],
+            id=event_id,
             created_at=datetime.now(UTC).isoformat(),
             name=clean_lobby_text(payload.get("name", "guest"), limit=32) or "guest",
             side=normalize_lobby_side(payload.get("side")),
@@ -106,6 +139,7 @@ class LobbyEvent:
             message=message,
             channel=channel,
             actor_id=clean_lobby_text(payload.get("actor_id", ""), limit=64),
+            actor_type=normalize_actor_type(payload.get("actor_type"), actor_id=payload.get("actor_id"), side=payload.get("side")),
             target_agent_id=clean_lobby_text(payload.get("target_agent_id", ""), limit=64),
             source_event_id=clean_lobby_text(payload.get("source_event_id", ""), limit=128),
             thread_source_event_id=clean_lobby_text(payload.get("thread_source_event_id", ""), limit=128),
@@ -132,6 +166,10 @@ class LobbyEvent:
             flow_reply_post_ms=normalize_flow_int(payload.get("flow_reply_post_ms")),
             flow_started_at=clean_lobby_text(payload.get("flow_started_at", ""), limit=64),
             flow_deadline_at=clean_lobby_text(payload.get("flow_deadline_at", ""), limit=64),
+            vote_id=vote_id if kind in {"vote", "vote_cast"} else "",
+            vote_question=vote_question if kind == "vote" else "",
+            vote_options=vote_options if kind == "vote" else [],
+            vote_choice=vote_choice if kind == "vote_cast" else "",
             attachments=clean_lobby_attachments(payload.get("attachments")),
         )
 
@@ -154,6 +192,7 @@ class LobbyEvent:
             audience=clean_lobby_text(payload.get("audience", "room"), limit=32) or "room",
             official_record=False,
             actor_id=clean_lobby_text(payload.get("actor_id", ""), limit=64),
+            actor_type=clean_lobby_text(payload.get("actor_type", ""), limit=16),
             target_agent_id=clean_lobby_text(payload.get("target_agent_id", ""), limit=64),
             source_event_id=clean_lobby_text(payload.get("source_event_id", ""), limit=128),
             thread_source_event_id=clean_lobby_text(payload.get("thread_source_event_id", ""), limit=128),
@@ -181,6 +220,10 @@ class LobbyEvent:
             flow_reply_post_ms=normalize_flow_int(payload.get("flow_reply_post_ms")),
             flow_started_at=clean_lobby_text(payload.get("flow_started_at", ""), limit=64),
             flow_deadline_at=clean_lobby_text(payload.get("flow_deadline_at", ""), limit=64),
+            vote_id=clean_lobby_text(payload.get("vote_id", ""), limit=128),
+            vote_question=clean_lobby_text(payload.get("vote_question", ""), limit=VOTE_QUESTION_LIMIT),
+            vote_options=clean_vote_options(payload.get("vote_options")),
+            vote_choice=clean_lobby_text(payload.get("vote_choice", ""), limit=VOTE_OPTION_LIMIT),
             attachments=clean_lobby_attachments(payload.get("attachments")),
         )
 
@@ -196,6 +239,7 @@ class LobbyEvent:
             "audience": self.audience,
             "official_record": self.official_record,
             "actor_id": self.actor_id,
+            "actor_type": self.actor_type,
             "target_agent_id": self.target_agent_id,
             "source_event_id": self.source_event_id,
             "thread_source_event_id": self.thread_source_event_id,
@@ -214,15 +258,20 @@ class LobbyEvent:
             "flow_runtime_mode",
             "flow_started_at",
             "flow_deadline_at",
+            "vote_id",
+            "vote_question",
+            "vote_options",
+            "vote_choice",
         ):
             value = getattr(self, key)
             if value:
                 payload[key] = value
+        # flow_meeting_id alone is mere room scoping carried by every message;
+        # only true flow events should serialize their zero-valued counters.
         has_flow_metadata = any(
             getattr(self, key)
             for key in (
                 "flow_id",
-                "flow_meeting_id",
                 "flow_event_type",
                 "flow_status",
                 "flow_topic",
@@ -300,6 +349,21 @@ def read_side_chat_events(path: Path, limit: int | None = 120) -> list[dict[str,
 
 def read_lobby_events_after(path: Path, last_event_id: str | None, limit: int = 80) -> list[dict[str, object]]:
     return _events_after_id(read_lobby_events(path, limit=limit), last_event_id)
+
+
+def iter_lobby_events_newest_first(path: Path, default_channel: Literal["lobby", "side_chat"] = "lobby"):
+    """Stream lobby events newest-first without loading the whole file.
+
+    Backs the scroll-up history pagination: the JSONL is read backwards in
+    blocks, so fetching one page of old messages stays cheap even when the
+    log has grown large.
+    """
+    if not path.exists():
+        return
+    for line in _jsonl_tail_lines_newest_first(path):
+        event = LobbyEvent.from_json_line(line, default_channel=default_channel)
+        if event is not None:
+            yield event.to_dict()
 
 
 def read_side_chat_events_after(path: Path, last_event_id: str | None, limit: int = 120) -> list[dict[str, object]]:
@@ -503,6 +567,22 @@ def clean_lobby_text(value: object, limit: int) -> str:
     return str(value or "").replace("\n", " ").replace("\r", " ").strip()[:limit].strip()
 
 
+def clean_vote_options(value: object) -> list[str]:
+    """Sanitize poll options: trimmed, deduplicated, capped at VOTE_MAX_OPTIONS."""
+    options: list[str] = []
+    seen: set[str] = set()
+    for item in (value if isinstance(value, list) else []):
+        text = clean_lobby_text(item, limit=VOTE_OPTION_LIMIT)
+        key = text.casefold()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        options.append(text)
+        if len(options) >= VOTE_MAX_OPTIONS:
+            break
+    return options
+
+
 def clean_lobby_attachments(value: object) -> list[dict[str, object]]:
     if not isinstance(value, list):
         return []
@@ -543,6 +623,22 @@ def normalize_lobby_kind(value: object) -> LobbyKind:
 
 def normalize_lobby_channel(value: object, default: Literal["lobby", "side_chat"] = "lobby") -> Literal["lobby", "side_chat"]:
     return value if value in LOBBY_CHANNELS else default  # type: ignore[return-value]
+
+
+def normalize_actor_type(value: object, *, actor_id: object = None, side: object = None) -> str:
+    """Resolve who authored an event: a person or an agent.
+
+    An explicit caller value wins (identity-layer endpoints stamp it from the
+    verified session). Otherwise fall back to the historical inference: events
+    without an actor_id come from the host-browser human path; events with one
+    come from agent endpoints.
+    """
+    cleaned = str(value or "").strip().lower()
+    if cleaned in {"human", "agent"}:
+        return cleaned
+    if str(actor_id or "").strip():
+        return "agent"
+    return "human" if str(side or "") in {"", "mine", "other"} else "agent"
 
 
 def normalize_chain_depth(value: object) -> int:

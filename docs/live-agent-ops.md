@@ -2865,6 +2865,10 @@ generic `antigravity_cli`, generic `hermes_cli`, `--continue`, or one-shot
 local CLI configs as resident sessions. Gemini CLI is now legacy for consumer
 use after Google's May 19, 2026 transition announcement; do not substitute bare
 Antigravity discovery as a runnable Google-backed resident without new proof.
+`claude_code` resident preflight and run-group validation also reject Claude
+Code print/non-interactive flags such as `-p` and `--print`; use a
+`terminal_session` command like `["claude"]` or a verified self-service/tool-loop
+wrapper instead.
 
 For the first Codex resident shape, use `configs/live-agents.codex-session.example.json`. It uses `provider_kind: "codex_live_session"` with `connection_kind: "live_session"` and may omit `command`, in which case the resident runner defaults to `["codex"]`:
 

@@ -1,0 +1,7 @@
+name = "agentsassemble-room"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+
+kv_namespaces = [
+  { binding = "ROOM_TARGET", id = "2509005efb0a43ac9cadb7d132ffd491" }
+]

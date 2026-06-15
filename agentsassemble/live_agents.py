@@ -26,6 +26,7 @@ LIVE_AGENT_CONNECTION_KINDS = {
     "native_remote_room_client",
     "self_service",
     "manual",
+    "api_call",
 }
 DEFAULT_STALE_AFTER_SECONDS = 180
 OUTPUT_ONLY_FRESHNESS_FIELDS = {"heartbeat_age_seconds", "stale_after_seconds"}
@@ -118,6 +119,8 @@ def connect_live_agent(
             "display_name": clean_lobby_text(payload.get("display_name"), limit=64)
             or clean_lobby_text(existing.get("display_name"), limit=64)
             or agent_id,
+            "owner_display_name": clean_lobby_text(payload.get("owner_display_name"), limit=64)
+            or clean_lobby_text(existing.get("owner_display_name"), limit=64),
             "provider_kind": provider_kind,
             "connection_kind": connection_kind,
             "join_semantics": context_contract["join_semantics"],
@@ -144,6 +147,14 @@ def connect_live_agent(
             or clean_lobby_text(existing.get("process_group_id"), limit=128),
             "live_agent_config_path": clean_lobby_text(payload.get("live_agent_config_path"), limit=2048)
             or clean_lobby_text(existing.get("live_agent_config_path"), limit=2048),
+            "workspace_path": clean_lobby_text(payload.get("workspace_path"), limit=2048)
+            or clean_lobby_text(existing.get("workspace_path"), limit=2048),
+            "model_id": clean_lobby_text(payload.get("model_id"), limit=128)
+            or clean_lobby_text(existing.get("model_id"), limit=128),
+            "effort": clean_lobby_text(payload.get("effort"), limit=64)
+            or clean_lobby_text(existing.get("effort"), limit=64),
+            "speed": clean_lobby_text(payload.get("speed"), limit=64)
+            or clean_lobby_text(existing.get("speed"), limit=64),
             "endpoint": endpoint,
             "capabilities": _clean_capabilities(payload.get("capabilities") or existing.get("capabilities")),
             "last_error": _clean_presence_last_error(payload.get("last_error"))
@@ -570,6 +581,10 @@ def _with_frontend_session_registration(output_root: Path, agent: dict[str, obje
         updated["process_group_id"] = f"agent-{agent_id}"
     if not updated.get("live_agent_config_path"):
         updated["live_agent_config_path"] = str(config_path)
+    if not updated.get("workspace_path"):
+        workspace_path = _config_file_agent_field(config_path, agent_id, "workspace_path")
+        if workspace_path:
+            updated["workspace_path"] = workspace_path
     return updated
 
 
@@ -578,14 +593,27 @@ def _safe_live_agent_filename(value: str) -> str:
 
 
 def _config_file_owned_by_agent(path: Path, agent_id: str) -> bool:
+    return bool(_config_file_agent_entry(path, agent_id))
+
+
+def _config_file_agent_field(path: Path, agent_id: str, field: str) -> str:
+    entry = _config_file_agent_entry(path, agent_id)
+    if not entry:
+        return ""
+    return clean_lobby_text(entry.get(field), limit=2048)
+
+
+def _config_file_agent_entry(path: Path, agent_id: str) -> dict[str, object] | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return False
+        return None
     agents = data.get("agents") if isinstance(data, dict) else None
     if not isinstance(agents, list) or len(agents) != 1 or not isinstance(agents[0], dict):
-        return False
-    return str(agents[0].get("agent_id") or "") == agent_id
+        return None
+    if str(agents[0].get("agent_id") or "") != agent_id:
+        return None
+    return agents[0]
 
 
 def _parse_timestamp(value: object) -> datetime | None:

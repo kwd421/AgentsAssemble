@@ -44,13 +44,15 @@ from agentsassemble.live_agent_discovery import (
     validate_distinct_session_bundle_paths,
 )
 from agentsassemble.live_agent_context import live_agent_context_contract, live_agent_context_contract_with_join_semantics
-from agentsassemble.live_agent_flow import FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
+from agentsassemble.live_agent_flow import FLOW_SPEAKING_ACTIONS, FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
 from agentsassemble.live_agent_frontend_create import (
     frontend_live_agent_check_payload,
     frontend_live_agent_create_payload,
     frontend_live_agent_login_payload,
     frontend_live_agent_options_payload,
 )
+from agentsassemble.gui_room_http import register_room_routes
+from agentsassemble.gui_router import GuiDeps, RequestContext, Router
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
 from agentsassemble.live_agent_room_admin import (
     delete_live_agent_session_payload,
@@ -148,25 +150,21 @@ from agentsassemble.room_friend_dms import (
     room_friend_dm_payload,
 )
 from agentsassemble.room_friends import delete_room_friend, room_friends_payload, upsert_room_friend
-from agentsassemble.room_members import room_members_payload, upsert_room_member
+from agentsassemble.identity_store import default_identity_db_path
+from agentsassemble.room_members import is_room_member_muted, room_members_payload
+from agentsassemble.room_users import configure_room_users_store
 from agentsassemble.room_settings import room_settings_payload, update_room_settings
 from agentsassemble.user_profile import read_user_profile, update_user_profile
 from agentsassemble.room_invite import (
-    NATIVE_REMOTE_ROOM_CLIENT_KIND,
     active_sessions_summary,
     configure_room_invite_store,
-    create_room_invite,
     default_room_invite_store_path,
     generate_runtime_host_token,
     get_host_token,
     get_public_url,
     has_runtime_host_token,
     host_gate_required,
-    join_room_with_invite,
     normalize_public_room_url,
-    pending_invites_summary,
-    revoke_invite,
-    revoke_session,
     set_runtime_host_token,
     set_runtime_public_url,
     verify_host_token,
@@ -179,6 +177,7 @@ from agentsassemble.meeting_events import (
     append_lobby_event_to_file,
     append_side_chat_event_to_file,
     clean_lobby_text,
+    iter_lobby_events_newest_first,
     read_live_events,
     read_live_events_after,
     read_lobby_events,
@@ -257,7 +256,10 @@ class LiveAgentFlowSupervisor:
                 return self.status(meeting_id=meeting_id)
             flow_id = f"flow-{uuid4().hex[:8]}"
             now = datetime.now(UTC)
-            deadline = now + timedelta(seconds=options.duration_seconds)
+            # duration_seconds <= 0 means an unlimited discussion: no deadline is
+            # set, so _flow_time_expired never trips and the flow runs until it is
+            # stopped manually (or hits a turn budget).
+            deadline = None if options.duration_seconds <= 0 else now + timedelta(seconds=options.duration_seconds)
             previous_modes, agent_count = self._set_bound_agents_to_flow(meeting, meeting_id)
             state: dict[str, object] = {
                 "flow_id": flow_id,
@@ -265,7 +267,7 @@ class LiveAgentFlowSupervisor:
                 "topic": topic,
                 "status": "running",
                 "started_at": now.isoformat(),
-                "deadline_at": deadline.isoformat(),
+                "deadline_at": deadline.isoformat() if deadline is not None else "",
                 "duration_seconds": options.duration_seconds,
                 "tick_interval": options.tick_interval,
                 "cooldown": options.cooldown,
@@ -1602,6 +1604,44 @@ def read_lobby(output_root: Path, limit: int | None = 80, *, meeting_id: str = "
     return _filter_lobby_events_for_meeting(events, meeting_id=meeting_id)
 
 
+LOBBY_HISTORY_PAGE_LIMIT = 50
+LOBBY_HISTORY_MAX_PAGE_LIMIT = 200
+
+
+def read_lobby_before(
+    output_root: Path,
+    *,
+    before_event_id: str,
+    limit: int = LOBBY_HISTORY_PAGE_LIMIT,
+    meeting_id: str = "",
+) -> dict[str, object]:
+    """One page of history strictly older than before_event_id (newest-last).
+
+    Streams the log backwards with the room filter applied during the scan,
+    so a page is full even when other rooms' messages are interleaved.
+    Returns {"events": [...], "has_more": bool} for scroll-up pagination.
+    """
+    clean_limit = max(1, min(int(limit or LOBBY_HISTORY_PAGE_LIMIT), LOBBY_HISTORY_MAX_PAGE_LIMIT))
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    anchor = clean_lobby_text(before_event_id, limit=128)
+    events: list[dict[str, object]] = []
+    has_more = False
+    seen_anchor = not anchor
+    for event in iter_lobby_events_newest_first(output_root / "lobby.jsonl"):
+        if not seen_anchor:
+            if str(event.get("id") or "") == anchor:
+                seen_anchor = True
+            continue
+        if clean_meeting_id and clean_lobby_text(event.get("flow_meeting_id"), limit=128) != clean_meeting_id:
+            continue
+        if len(events) >= clean_limit:
+            has_more = True
+            break
+        events.append(event)
+    events.reverse()
+    return {"events": events, "has_more": has_more}
+
+
 def _filter_lobby_events_for_meeting(events: list[dict[str, object]], *, meeting_id: str = "") -> list[dict[str, object]]:
     clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
     if not clean_meeting_id:
@@ -1731,6 +1771,22 @@ def _stream_snapshot_payload(
         events = read_side_chat_events_after(output_root / "side_chat.jsonl", last_event_id)
         events = _filter_side_chat_events_for_meeting(events, meeting_id)
         return {"stream": "side_chat", "events": events}
+    if stream == "roster":
+        # Push-style member panel (R6): the SSE loop diffs the signature and
+        # only emits a frame when the roster actually changes.
+        members_payload = room_members_payload(
+            output_root,
+            read_live_agents(output_root),
+            meeting_id=meeting_id or "",
+            sessions=active_sessions_summary(),
+        )
+        members = members_payload.get("members") or []
+        return {
+            "stream": "roster",
+            "meeting_id": meeting_id or "",
+            "members": members,
+            "payload_signature": json.dumps(members, ensure_ascii=False, sort_keys=True),
+        }
     if stream == "meeting":
         if not meeting_id:
             raise ValueError("Meeting id is required for meeting event stream.")
@@ -1798,6 +1854,18 @@ def send_lobby_message_to_remote_bridge(
 
 def provider_catalog_payload() -> dict[str, object]:
     return {"providers": default_provider_registry().catalog()}
+
+
+def model_catalog_payload() -> dict[str, object]:
+    """API-provider lane catalog (master plan 1단계 B) for model selection (2단계).
+
+    Distinct from provider_catalog_payload (the CLI/runtime provider registry):
+    this is the static OpenAI-compatible model catalog (NVIDIA/OpenRouter/LM
+    Studio/BYOK) the GUI offers when launching an `api_call` agent. Keys are never
+    exposed — only a `key_present` boolean per provider."""
+    from agentsassemble import provider_catalog
+
+    return provider_catalog.catalog_payload()
 
 
 def provider_health_payload(payload: dict[str, object]) -> dict[str, object]:
@@ -3153,12 +3221,135 @@ def live_agent_dm_reply_payload(output_root: Path, agent_id: str, payload: dict[
     return response
 
 
+def _history_page_limit(query: dict[str, list[str]]) -> int:
+    try:
+        return int(str(query.get("limit", [""])[0] or LOBBY_HISTORY_PAGE_LIMIT))
+    except (TypeError, ValueError):
+        return LOBBY_HISTORY_PAGE_LIMIT
+
+
+def _pre_join_guide_payload(server_url: str) -> dict[str, object]:
+    """Machine-readable join manual served from GET /join (Accept: application/json).
+
+    Lets an AI client go from invite link to participation without downloading
+    or reverse-engineering the SPA bundle.
+    """
+    base = (get_public_url() or server_url).rstrip("/")
+    return {
+        "service": "AgentsAssemble room",
+        "how_to_join": {
+            "request": f"POST {base}/api/room-invite/join",
+            "json": {
+                "invite_token": "<the token query parameter from this /join URL>",
+                "display_name": "<your name in the room>",
+                "participant_type": "human | agent",
+                "device_token": "<generate one random string once, store it, reuse on every rejoin — keeps your identity stable>",
+                "owner_display_name": "<for agents: the human you act for>",
+            },
+            "response": "session_token (Bearer) + guide(how_to/etiquette) — everything you need next is in that guide.",
+        },
+        "after_join": {
+            "read_room": f"GET {base}/api/room/lobby (Authorization: Bearer <session_token>; snapshot — poll this)",
+            "post_message": f"POST {base}/api/room/say {{\"message\": \"...\"}}",
+            "leave": f"POST {base}/api/room-invite/leave",
+            "warning": f"{base}/api/room/events is a server-sent-events stream, not JSON — it will hang plain HTTP clients.",
+        },
+        "api_catalog": f"GET {base}/api",
+    }
+
+
+def _api_catalog_payload(server_url: str) -> dict[str, object]:
+    """Minimal API self-description (friend feedback #2: 403s everywhere told
+    a new client nothing)."""
+    base = (get_public_url() or server_url).rstrip("/")
+    return {
+        "service": "AgentsAssemble room API",
+        "auth": {
+            "guest": "Authorization: Bearer <session_token from /api/room-invite/join>",
+            "host": "X-Host-Token header (host-only endpoints)",
+        },
+        "public_endpoints": {
+            "pre_join_guide": f"GET {base}/join?format=json (or Accept: application/json)",
+            "join": f"POST {base}/api/room-invite/join",
+            "read_room": f"GET {base}/api/room/lobby?after=<event_id>",
+            "events_sse": f"GET {base}/api/room/events (SSE stream)",
+            "say": f"POST {base}/api/room/say",
+            "leave": f"POST {base}/api/room-invite/leave",
+            "companion_invite": f"POST {base}/api/room-invite/companion",
+            "flow_status": f"GET {base}/api/live-agent-flow",
+        },
+        "notes": [
+            "Send a stable device_token on join to keep one identity across rejoins.",
+            "read_room supports ?after=<event_id> for incremental polling.",
+        ],
+    }
+
+
+def _flow_turn_conflict(
+    output_root: Path,
+    *,
+    actor_id: str,
+    source_event_id: str,
+    flow_id: str,
+    flow_action: str,
+    meeting_id: str,
+    message: str,
+) -> str:
+    """Serialize Play-Mode speech so concurrent agents can't double-take a turn.
+
+    Returns "" (allowed), "turn_conflict" (someone else already spoke after the
+    poster's source event — re-read the room and regenerate), or
+    "duplicate_flow_message" (identical to the latest flow speech, e.g. two
+    agents answering a word-chain prompt with the same word).
+    """
+    if not flow_id or flow_action not in FLOW_SPEAKING_ACTIONS:
+        return ""
+    events = read_lobby(output_root, meeting_id=meeting_id)
+    flow_policy = ""
+    for event in events:
+        if str(event.get("flow_id") or "") == flow_id and str(event.get("flow_event_type") or "") == "started":
+            flow_policy = str(event.get("flow_policy") or "")
+    normalized_message = " ".join(str(message or "").split()).casefold()
+    last_speaking: dict[str, object] | None = None
+    for event in reversed(events):
+        if str(event.get("flow_id") or "") == flow_id and str(event.get("flow_action") or "") in FLOW_SPEAKING_ACTIONS:
+            last_speaking = event
+            break
+    if (
+        last_speaking is not None
+        and normalized_message
+        and str(last_speaking.get("actor_id") or "") != actor_id
+        and " ".join(str(last_speaking.get("message") or "").split()).casefold() == normalized_message
+    ):
+        return "duplicate_flow_message"
+    if flow_policy not in {"turn_based_floor", "natural", "round_robin"}:
+        return ""
+    # CAS: reject when another participant's flow speech landed after the
+    # source event this reply was generated from (the poster saw a stale room).
+    seen_source = not source_event_id
+    for event in events:
+        if not seen_source:
+            if str(event.get("id") or "") == source_event_id:
+                seen_source = True
+            continue
+        if str(event.get("flow_id") or "") != flow_id:
+            continue
+        if str(event.get("flow_action") or "") not in FLOW_SPEAKING_ACTIONS:
+            continue
+        if str(event.get("actor_id") or "") == actor_id:
+            continue
+        return "turn_conflict"
+    return ""
+
+
 def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
     agent = heartbeat_live_agent(output_root, agent_id, status="online")
     message = str(payload.get("message") or "").strip()
     if not message:
         raise ValueError("Message is required.")
     actor_id = str(agent.get("agent_id") or agent_id)
+    if is_room_member_muted(output_root, clean_lobby_text(agent.get("meeting_id"), limit=128), actor_id):
+        raise ValueError("This participant is muted by the room host.")
     source_event_id = clean_lobby_text(payload.get("source_event_id"), limit=128)
     with LIVE_AGENT_LOBBY_LOCK:
         existing_event = _existing_live_agent_lobby_reply(output_root, actor_id=actor_id, source_event_id=source_event_id)
@@ -3189,6 +3380,23 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
         agent_meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
         if agent_meeting_id:
             flow_metadata["flow_meeting_id"] = agent_meeting_id
+        conflict = _flow_turn_conflict(
+            output_root,
+            actor_id=actor_id,
+            source_event_id=source_event_id,
+            flow_id=str(flow_metadata.get("flow_id") or ""),
+            flow_action=str(flow_metadata.get("flow_action") or ""),
+            meeting_id=str(flow_metadata.get("flow_meeting_id") or ""),
+            message=message,
+        )
+        if conflict:
+            updated_agent = heartbeat_live_agent(
+                output_root,
+                actor_id,
+                status="online",
+                metadata={"last_observed_event_id": source_event_id},
+            )
+            return {"status": conflict, "agent": updated_agent, "events": read_lobby(output_root)}
         event = append_lobby_event(
             output_root,
             {
@@ -3197,6 +3405,7 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
                 "kind": payload.get("kind") or "message",
                 "message": _real_session_smoke_reply_message(source_event_id, message),
                 "actor_id": actor_id,
+                "actor_type": "agent",
                 "source_event_id": source_event_id,
                 "auto_chain_depth": payload.get("auto_chain_depth") or 0,
                 **flow_metadata,
@@ -5521,13 +5730,35 @@ def _live_agent_register_operation_details(
     return details
 
 
+def _strict_meeting_record_for_admission(output_root: Path, meeting_id: str) -> dict[str, object]:
+    """Admission evidence requires a host-written meeting record.
+
+    Council meetings carry meeting.json. Live-agent meetings are created by
+    the host via start_live_agent_meeting, whose live_state.json includes the
+    full meeting shape (question/topic/roles). A skeletal live_state.json that
+    only lists agent_bindings is runner-writable state and must never grant
+    admission.
+    """
+    meeting_dir = _safe_meeting_dir(output_root, meeting_id)
+    meeting_path = meeting_dir / "meeting.json"
+    live_path = meeting_dir / "live_state.json"
+    if meeting_path.exists():
+        meeting = json.loads(meeting_path.read_text(encoding="utf-8"))
+        return _merge_live_progress_from_path(meeting, live_path)
+    if live_path.exists():
+        record = json.loads(live_path.read_text(encoding="utf-8"))
+        if isinstance(record, dict) and all(key in record for key in ("question", "topic", "roles")):
+            return record
+    raise ValueError("Meeting record is missing.")
+
+
 def _live_agent_register_admission_details(output_root: Path, agent: dict[str, object]) -> dict[str, object]:
     agent_id = clean_lobby_text(agent.get("agent_id"), limit=64)
     meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
     if not meeting_id:
         return {"admission_status": "lobby_only", "host_approved_binding": False}
     try:
-        meeting = _read_meeting_record(_safe_meeting_dir(output_root, meeting_id))
+        meeting = _strict_meeting_record_for_admission(output_root, meeting_id)
     except (OSError, ValueError, json.JSONDecodeError):
         return {"admission_status": "meeting_missing", "host_approved_binding": False}
     return _live_agent_admission_details_from_meeting(meeting, agent, agent_id=agent_id)
@@ -5539,11 +5770,7 @@ def _live_agent_roster_admission_details(output_root: Path, agent: dict[str, obj
     if not meeting_id:
         return {"admission_status": "lobby_only", "host_approved_binding": False}
     try:
-        meeting_dir = _safe_meeting_dir(output_root, meeting_id)
-        meeting_path = meeting_dir / "meeting.json"
-        if not meeting_path.exists():
-            raise ValueError("Meeting record is missing.")
-        meeting = json.loads(meeting_path.read_text(encoding="utf-8"))
+        meeting = _strict_meeting_record_for_admission(output_root, meeting_id)
     except (OSError, ValueError, json.JSONDecodeError):
         return {"admission_status": "meeting_missing", "host_approved_binding": False}
     return _live_agent_admission_details_from_meeting(meeting, agent, agent_id=agent_id)
@@ -7788,7 +8015,24 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
     method = method.upper()
     if method == "GET":
         return (
-            path in {"/join", "/join/", "/api/room/events", "/api/room/lobby", "/api/live-agent-flow"}
+            path
+            in {
+                "/join",
+                "/join/",
+                "/api",
+                "/api/",
+                "/api/room/events",
+                "/api/room/lobby",
+                "/api/room/vote",
+                "/api/live-agent-flow",
+                # Roster for the member panel; the handler requires a session
+                # (or host/operator) when the request comes from outside.
+                "/api/room-members",
+                # Moderator-gated listings so the operator's invite tools work
+                # away from the desk.
+                "/api/room-invite/sessions",
+                "/api/room-invite/invites",
+            }
             or path.startswith("/app/assets/")
         )
     if method == "POST":
@@ -7797,6 +8041,14 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             "/api/room-invite/leave",
             "/api/room-invite/companion",
             "/api/room/say",
+            # Host-token gated: lets the operator claim a new device (e.g. a
+            # phone) through the public entrance.
+            "/api/host/claim",
+            # Moderator-gated (host token OR operator session).
+            "/api/room-members/mute",
+            "/api/room-members/kick",
+            "/api/room-invite/create",
+            "/api/room-invite/revoke",
         }
     if method == "OPTIONS":
         return _public_invite_route_allowed(path, "GET") or _public_invite_route_allowed(path, "POST")
@@ -7848,11 +8100,28 @@ def _make_handler(
     live_agent_login_command_resolver: object | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     configure_room_invite_store(default_room_invite_store_path(output_root))
+    # Identity (users/credentials/memberships) lives in one SQLite file; a
+    # legacy users.json from the JSON era is imported on first run.
+    configure_room_users_store(default_identity_db_path(output_root))
     react_app_root = (frontend_dist_root or default_frontend_dist_root()).resolve()
     live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
     live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
     live_agent_flow_supervisor = flow_supervisor or LiveAgentFlowSupervisor(output_root)
     invite_tunnel_manager = public_tunnel_manager or PublicTunnelManager()
+    # R2: route-table dispatcher. Migrated domains register here; do_GET/do_POST
+    # try the table first and fall back to the legacy if-chains below.
+    route_deps = GuiDeps(
+        output_root=output_root,
+        process_supervisor=live_agent_process_supervisor,
+        read_lobby=read_lobby,
+        read_lobby_before=read_lobby_before,
+        append_lobby_event=append_lobby_event,
+        lobby_payload_with_attachments=lobby_payload_with_attachments,
+        public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
+        history_page_limit=_history_page_limit,
+    )
+    route_table = Router()
+    register_room_routes(route_table)
 
     class AgentsAssembleHandler(BaseHTTPRequestHandler):
         def _request_is_trusted(self, *, path: str, method: str) -> bool:
@@ -7900,6 +8169,8 @@ def _make_handler(
             if not self._request_is_trusted(path=path, method="GET"):
                 self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
                 return
+            if route_table.dispatch("GET", RequestContext(self, route_deps, parsed, query)):
+                return
             if path == "/":
                 self._send_react_app_index(react_app_root)
                 return
@@ -7910,7 +8181,17 @@ def _make_handler(
                 self._send_react_app_index(react_app_root)
                 return
             if path in {"/join", "/join/"}:
+                # AI clients negotiate JSON to get the pre-join manual instead
+                # of reverse-engineering the SPA bundle (friend feedback #1).
+                accepts_json = "application/json" in str(self.headers.get("Accept") or "")
+                wants_json = accepts_json or str(query.get("format", [""])[0]).lower() == "json"
+                if wants_json:
+                    self._send_json(_pre_join_guide_payload(self._request_server_url()))
+                    return
                 self._send_react_app_index(react_app_root)
+                return
+            if path in {"/api", "/api/"}:
+                self._send_json(_api_catalog_payload(self._request_server_url()))
                 return
             if path.startswith("/app/"):
                 rel = unquote(path.removeprefix("/app/"))
@@ -7946,16 +8227,6 @@ def _make_handler(
             if path == "/api/meetings":
                 self._send_json({"meetings": list_meetings(output_root)})
                 return
-            if path == "/api/lobby":
-                self._send_json(
-                    {
-                        "events": read_lobby(
-                            output_root,
-                            meeting_id=str(query.get("meeting_id", [""])[0] or ""),
-                        )
-                    }
-                )
-                return
             if path == "/api/events/lobby":
                 self._send_sse_stream(
                     "lobby",
@@ -7963,52 +8234,6 @@ def _make_handler(
                     meeting_id=str(query.get("meeting_id", [""])[0] or ""),
                     last_event_id=self._last_event_id(query),
                 )
-                return
-            if path == "/api/room/events":
-                session_token = self._extract_session_token()
-                if not session_token:
-                    self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
-                    return
-                session = verify_session_token(session_token)
-                if not session:
-                    self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
-                    return
-                self._send_sse_stream(
-                    "lobby",
-                    "lobby",
-                    meeting_id=str(session.get("meeting_id") or ""),
-                    last_event_id=self._last_event_id(query),
-                )
-                return
-            if path == "/api/room/lobby":
-                session_token = self._extract_session_token()
-                if not session_token:
-                    self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
-                    return
-                session = verify_session_token(session_token)
-                if not session:
-                    self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
-                    return
-                self._send_json(
-                    {
-                        "events": read_lobby(output_root, meeting_id=str(session.get("meeting_id") or "")),
-                        "session": {
-                            "agent_id": session["agent_id"],
-                            "display_name": session["display_name"],
-                            "invite_scope": session.get("invite_scope", "room"),
-                        },
-                    }
-                )
-                return
-            if path == "/api/room-invite/sessions":
-                if not self._verify_host_token():
-                    return
-                self._send_json({"sessions": active_sessions_summary()})
-                return
-            if path == "/api/room-invite/invites":
-                if not self._verify_host_token():
-                    return
-                self._send_json({"invites": pending_invites_summary()})
                 return
             if path == "/api/public-invite/status":
                 self._send_json(self._public_invite_status())
@@ -8029,6 +8254,9 @@ def _make_handler(
             if path == "/api/providers":
                 self._send_json(provider_catalog_payload())
                 return
+            if path == "/api/model-catalog":
+                self._send_json(model_catalog_payload())
+                return
             if path == "/api/room-settings":
                 self._send_json(room_settings_payload(output_root, room_id=str(query.get("room_id", [""])[0] or "")))
                 return
@@ -8048,16 +8276,6 @@ def _make_handler(
                 return
             if path == "/api/user-profile":
                 self._send_json(read_user_profile(output_root))
-                return
-            if path == "/api/room-members":
-                self._send_json(
-                    room_members_payload(
-                        output_root,
-                        read_live_agents(output_root),
-                        meeting_id=str(query.get("meeting_id", [""])[0] or ""),
-                        sessions=active_sessions_summary(),
-                    )
-                )
                 return
             if path == "/api/live-agents":
                 self._send_json(
@@ -8308,6 +8526,8 @@ def _make_handler(
             if not self._request_is_trusted(path=parsed.path, method="POST"):
                 self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
                 return
+            if route_table.dispatch("POST", RequestContext(self, route_deps, parsed, parse_qs(parsed.query))):
+                return
             if parsed.path == "/api/demo":
                 result = run_demo_meeting(adapter_name="mock", output_root=output_root)
                 self._send_json({"meeting_id": result.meeting_id, "path": str(result.meeting_dir)})
@@ -8385,41 +8605,6 @@ def _make_handler(
                         ),
                     }
                 )
-                return
-            if parsed.path == "/api/room/say":
-                session_token = self._extract_session_token()
-                if not session_token:
-                    self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
-                    return
-                session = verify_session_token(session_token)
-                if not session:
-                    self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
-                    return
-                if session.get("invite_scope") == "read_only":
-                    self._send_error(HTTPStatus.FORBIDDEN, "read-only invite session cannot post")
-                    return
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                # Inject authenticated identity; never trust client-supplied identity
-                payload["name"] = session["display_name"]
-                payload["actor_id"] = session["agent_id"]
-                payload["side"] = "other"
-                payload["kind"] = "message"
-                if session.get("meeting_id"):
-                    payload["flow_meeting_id"] = session["meeting_id"]
-                event = append_lobby_event(
-                    output_root,
-                    payload,
-                    allow_flow_metadata=_public_lobby_allows_room_scope(payload),
-                )
-                self._send_json({"event": event})
                 return
             if parsed.path == "/api/side-chat":
                 length = int(self.headers.get("Content-Length", "0") or "0")
@@ -8505,33 +8690,6 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
                     return
                 self._send_json(update_user_profile(output_root, payload))
-                return
-            if parsed.path == "/api/room-members":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                try:
-                    member = upsert_room_member(output_root, payload)
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                self._send_json(
-                    {
-                        "member": member,
-                        **room_members_payload(
-                            output_root,
-                            read_live_agents(output_root),
-                            meeting_id=str(member.get("meeting_id") or ""),
-                            sessions=active_sessions_summary(),
-                        ),
-                    }
-                )
                 return
             if parsed.path == "/api/lobby/remote":
                 length = int(self.headers.get("Content-Length", "0") or "0")
@@ -9451,177 +9609,6 @@ def _make_handler(
                     ),
                 )
                 self._send_json(live_agent)
-                return
-            if parsed.path == "/api/room-invite/create":
-                # Host token gate: only the host can create invites
-                if not self._verify_host_token():
-                    return
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                allow_local_dev_invite = payload.get("local_dev_preview") is True or payload.get("allow_local_dev") is True
-                if not get_public_url() and not allow_local_dev_invite:
-                    self._send_error(HTTPStatus.CONFLICT, "public URL is required before creating an external guest invite")
-                    return
-                try:
-                    invite = create_room_invite(
-                        room_url=self._local_server_url(),
-                        meeting_id=str(payload.get("meeting_id") or ""),
-                        agent_id=str(payload.get("agent_id") or ""),
-                        display_name=str(payload.get("display_name") or ""),
-                        ttl_seconds=int(payload.get("ttl_seconds") or 600),
-                        invite_scope=str(payload.get("invite_scope") or "room"),
-                    )
-                except (ValueError, TypeError) as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                self._send_json(invite)
-                return
-            if parsed.path == "/api/room-invite/join":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                token = str(payload.get("invite_token") or "").strip()
-                if not token:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "invite_token is required")
-                    return
-                result = join_room_with_invite(
-                    token,
-                    meeting_id=str(payload.get("meeting_id") or ""),
-                    display_name=str(payload.get("display_name") or ""),
-                )
-                if result.get("status") != "admitted":
-                    self._send_error(HTTPStatus.FORBIDDEN, str(result.get("reason", "rejected")))
-                    return
-                participant_type = str(result.get("participant_type") or "human")
-                if participant_type == "human":
-                    try:
-                        upsert_room_member(output_root, {
-                            "participant_id": result["agent_id"],
-                            "display_name": result["display_name"],
-                            "meeting_id": result["meeting_id"],
-                            "role": "human",
-                            "participant_type": "human",
-                            "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
-                            "status": "online",
-                            "source": "room_invite",
-                        })
-                    except ValueError:
-                        pass  # non-fatal: room access is still governed by the session token
-                else:
-                    try:
-                        connect_live_agent(output_root, {
-                            "agent_id": result["agent_id"],
-                            "display_name": result["display_name"],
-                            "provider_kind": "manual",
-                            "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
-                            "meeting_id": result["meeting_id"],
-                            "status": "online",
-                        })
-                    except ValueError:
-                        pass  # non-fatal: roster update best-effort
-                self._send_json(result)
-                return
-            if parsed.path == "/api/room-invite/companion":
-                session_token = self._extract_session_token()
-                if not session_token:
-                    self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
-                    return
-                session = verify_session_token(session_token)
-                if not session:
-                    self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
-                    return
-                if session.get("invite_scope") == "read_only":
-                    self._send_error(HTTPStatus.FORBIDDEN, "read-only invite session cannot create companion invites")
-                    return
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                try:
-                    invite = create_room_invite(
-                        room_url=self._local_server_url(),
-                        meeting_id=str(session.get("meeting_id") or ""),
-                        agent_id=str(payload.get("agent_id") or ""),
-                        display_name=str(payload.get("display_name") or ""),
-                        ttl_seconds=min(int(payload.get("ttl_seconds") or 600), 3600),
-                        invite_scope="room",
-                        participant_type="remote",
-                    )
-                except (ValueError, TypeError) as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                self._send_json(invite)
-                return
-            if parsed.path == "/api/room-invite/leave":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                session_token = self._extract_session_token()
-                if not session_token:
-                    self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
-                    return
-                session = verify_session_token(session_token)
-                if not session:
-                    self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
-                    return
-                # Mark agent offline in roster
-                try:
-                    connect_live_agent(output_root, {
-                        "agent_id": session["agent_id"],
-                        "status": "offline",
-                    })
-                except ValueError:
-                    pass
-                revoke_session(session_token)
-                self._send_json({"status": "left", "agent_id": session["agent_id"]})
-                return
-            if parsed.path == "/api/room-invite/revoke":
-                if not self._verify_host_token():
-                    return
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                invite_id = str(payload.get("invite_id") or "").strip()
-                session_token_to_revoke = str(payload.get("session_token") or "").strip()
-                if invite_id:
-                    if revoke_invite(invite_id):
-                        self._send_json({"status": "revoked", "invite_id": invite_id})
-                    else:
-                        self._send_error(HTTPStatus.NOT_FOUND, "invite not found")
-                elif session_token_to_revoke:
-                    if revoke_session(session_token_to_revoke):
-                        self._send_json({"status": "revoked"})
-                    else:
-                        self._send_error(HTTPStatus.NOT_FOUND, "session not found")
-                else:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "invite_id or session_token required")
                 return
             if parsed.path == "/api/public-invite/host-token":
                 if get_host_token():

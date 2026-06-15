@@ -9,6 +9,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 try:
     import pty
@@ -269,6 +270,7 @@ class TerminalLiveSession:
         popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
         idle_timeout_seconds: float = 0.35,
         max_response_bytes: int = 128_000,
+        cwd: str | Path | None = None,
     ) -> None:
         if not command:
             raise ValueError("Terminal session command is required.")
@@ -277,6 +279,7 @@ class TerminalLiveSession:
         self.command = list(command)
         self.idle_timeout_seconds = max(0.01, float(idle_timeout_seconds))
         self.max_response_bytes = max(1, int(max_response_bytes))
+        self.cwd = Path(cwd).expanduser() if cwd else None
         self._lock = threading.Lock()
         self._closed = False
         assert pty is not None
@@ -292,6 +295,7 @@ class TerminalLiveSession:
                 bufsize=0,
                 close_fds=True,
                 start_new_session=_supports_process_groups(),
+                cwd=str(self.cwd) if self.cwd is not None else None,
             )
         except Exception:
             try:
@@ -303,18 +307,22 @@ class TerminalLiveSession:
             os.close(slave_fd)
         _remember_process_group(self.process)
         os.set_blocking(self._master_fd, False)
-        self._drain_available(timeout_seconds=0.05)
+        self._startup_buffer = self._drain_available(timeout_seconds=0.05)
 
     def ask(self, prompt: str, *, timeout_seconds: int | float) -> str:
         with self._lock:
             self._ensure_running()
-            self._drain_available(timeout_seconds=0.01)
+            startup_output = self._startup_buffer + self._drain_available(timeout_seconds=0.01)
+            self._startup_buffer = b""
+            if startup_output:
+                _raise_if_terminal_gate_response(_clean_terminal_response(startup_output))
             deadline = time.monotonic() + max(0.0, float(timeout_seconds))
             self._write_terminal_submission(prompt, deadline=deadline, timeout_seconds=timeout_seconds)
             response = self._read_until_idle(deadline=deadline, timeout_seconds=timeout_seconds)
             message = _clean_terminal_response(response)
             if not message.strip():
                 raise ValueError("Terminal session returned an empty message.")
+            _raise_if_terminal_gate_response(message)
             return message
 
     def close(self, *, timeout_seconds: float = 2.0) -> None:
@@ -390,14 +398,20 @@ class TerminalLiveSession:
                 self.close(timeout_seconds=0.1)
                 raise ValueError(f"Terminal session response exceeded {self.max_response_bytes} bytes.")
 
-    def _drain_available(self, *, timeout_seconds: float) -> None:
+    def _drain_available(self, *, timeout_seconds: float) -> bytes:
+        chunks: list[bytes] = []
         deadline = time.monotonic() + max(0.0, timeout_seconds)
         while time.monotonic() < deadline:
             readable = _select_fds([self._master_fd], [], 0)[0]
             if not readable:
-                return
-            if not self._read_master_chunk():
-                return
+                return b"".join(chunks)
+            chunk = self._read_master_chunk()
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+            if sum(len(item) for item in chunks) > self.max_response_bytes:
+                raise ValueError(f"Terminal session response exceeded {self.max_response_bytes} bytes.")
+        return b"".join(chunks)
 
     def _read_master_chunk(self) -> bytes:
         try:
@@ -535,7 +549,29 @@ def _clean_terminal_response(response: bytes) -> str:
     text = response.decode("utf-8", errors="replace")
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    text = re.sub(r"\x1b[@-_][0-?]*[ -/]*[@-~]?", "", text)
+    text = text.replace("\x07", "")
     return text.strip()
+
+
+def _raise_if_terminal_gate_response(message: str) -> None:
+    compact = re.sub(r"\s+", "", message).casefold()
+    if (
+        "accessingworkspace:" in compact
+        and "quicksafetycheck:" in compact
+        and ("trustthisfolder" in compact or "trustthisproject" in compact)
+    ):
+        raise RuntimeError(
+            "Terminal session requires workspace trust before it can answer. "
+            "Open Claude once in this folder, accept the workspace trust prompt, then resume the agent."
+        )
+    if "claude" in compact and "login" in compact and (
+        "required" in compact or "notloggedin" in compact or "notauthenticated" in compact
+    ):
+        raise RuntimeError(
+            "Terminal session requires Claude login before it can answer. "
+            "Run Claude login locally, then resume the agent."
+        )
 
 
 def _stop_signal(name: str) -> int | None:

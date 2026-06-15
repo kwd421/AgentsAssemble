@@ -14,3 +14,9 @@ dist/
 build/
 *.egg-info/
 node_modules/
+
+# Cloudflare wrangler local cache + account credentials (room-redirector) — never commit
+.wrangler/
+**/.wrangler/
+infra/room-redirector/.wrangler/
+wrangler-account.json

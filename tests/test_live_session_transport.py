@@ -87,6 +87,30 @@ class JsonlLiveSessionTests(unittest.TestCase):
         self.assertIn("Terminal state 2: second prompt", second)
 
     @unittest.skipUnless(pty is not None and hasattr(pty, "openpty"), "requires POSIX PTY support")
+    def test_terminal_session_starts_process_in_configured_cwd(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir) / "workspace"
+            workspace.mkdir()
+            script = "\n".join(
+                [
+                    "import os, sys",
+                    "for line in sys.stdin:",
+                    "    print(os.getcwd(), flush=True)",
+                ]
+            )
+            session = TerminalLiveSession(
+                [sys.executable, "-u", "-c", script],
+                idle_timeout_seconds=0.05,
+                cwd=workspace,
+            )
+            try:
+                response = session.ask("where", timeout_seconds=2)
+            finally:
+                session.close()
+
+        self.assertIn(str(workspace), response)
+
+    @unittest.skipUnless(pty is not None and hasattr(pty, "openpty"), "requires POSIX PTY support")
     def test_terminal_session_delivers_long_submission_without_line_discipline_bells(self):
         script = "\n".join(
             [
@@ -106,6 +130,48 @@ class JsonlLiveSessionTests(unittest.TestCase):
 
         self.assertIn("long terminal prompt 10000", response)
         self.assertNotIn("\x07", response)
+
+    @unittest.skipUnless(pty is not None and hasattr(pty, "openpty"), "requires POSIX PTY support")
+    def test_terminal_session_rejects_claude_workspace_trust_prompt(self):
+        script = "\n".join(
+            [
+                "import sys",
+                "for line in sys.stdin:",
+                "    print('\\x1b7Accessing workspace: /tmp/project')",
+                "    print('Quick safety check: Is this a project you created or one you trust?')",
+                "    print('1. Yes, I trust this folder\\x1b8', flush=True)",
+            ]
+        )
+        session = TerminalLiveSession(
+            [sys.executable, "-u", "-c", script],
+            idle_timeout_seconds=0.05,
+        )
+        try:
+            with self.assertRaisesRegex(RuntimeError, "workspace trust"):
+                session.ask("prompt", timeout_seconds=2)
+        finally:
+            session.close()
+
+    @unittest.skipUnless(pty is not None and hasattr(pty, "openpty"), "requires POSIX PTY support")
+    def test_terminal_session_rejects_claude_workspace_trust_prompt_printed_on_startup(self):
+        script = "\n".join(
+            [
+                "import sys, time",
+                "print('Accessing workspace: /tmp/project')",
+                "print('Quick safety check: Is this a project you created or one you trust?')",
+                "print('1. Yes, I trust this folder', flush=True)",
+                "time.sleep(5)",
+            ]
+        )
+        session = TerminalLiveSession(
+            [sys.executable, "-u", "-c", script],
+            idle_timeout_seconds=0.05,
+        )
+        try:
+            with self.assertRaisesRegex(RuntimeError, "workspace trust"):
+                session.ask("prompt", timeout_seconds=2)
+        finally:
+            session.close()
 
     @unittest.skipUnless(pty is not None and hasattr(pty, "openpty"), "requires POSIX PTY support")
     def test_terminal_session_times_out_instead_of_returning_partial_output(self):

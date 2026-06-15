@@ -80,9 +80,25 @@ class LegacyReactParityInventoryTests(unittest.TestCase):
         self.assertIn("/legacy/", matrix_text)
 
 
-def _parse_gui_routes(path: Path) -> set[Route]:
-    text = path.read_text(encoding="utf-8")
+def _parse_router_module_routes(module_path: Path) -> set[Route]:
+    """Routes registered on the R2 route table (@router.get/post/delete)."""
     routes: set[Route] = set()
+    for line in module_path.read_text(encoding="utf-8").splitlines():
+        match = re.search(r'@router\.(get|post|delete)\("(/api/[^"]+)"\)', line.strip())
+        if match:
+            method = match.group(1).upper()
+            route_path = _normalize_gui_literal(match.group(2))
+            routes.add(Route(route_path, method, _handler_form(route_path)))
+    return routes
+
+
+def _parse_gui_routes(path: Path) -> set[Route]:
+    # The if-chain in gui.py is being replaced by route-table modules (R2);
+    # the inventory is the union of both registration styles.
+    routes: set[Route] = set()
+    for module_path in sorted(path.parent.glob("gui_*_http.py")):
+        routes |= _parse_router_module_routes(module_path)
+    text = path.read_text(encoding="utf-8")
     current_method = ""
     for line in text.splitlines():
         stripped = line.strip()
@@ -157,7 +173,7 @@ def _helper_actions(line: str, helper_name: str) -> list[str]:
 
 
 def _handler_form(path: str) -> str:
-    if path in {"/api/events/lobby", "/api/events/side-chat"}:
+    if path in {"/api/events/lobby", "/api/events/side-chat", "/api/events/roster"}:
         return "sse"
     return "exact"
 

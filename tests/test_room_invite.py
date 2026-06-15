@@ -89,6 +89,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
             meeting_id="test-meeting",
             agent_id="guest-1",
             display_name="Guest One",
+            max_uses=1,
         )
         result = join_room_with_invite(invite["invite_token"], meeting_id="test-meeting")
         self.assertEqual(result["status"], "admitted")
@@ -103,6 +104,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
             room_url="http://192.168.1.10:8765",
             meeting_id="test-meeting",
             agent_id="guest-1",
+            max_uses=1,
         )
         first = join_room_with_invite(invite["invite_token"], meeting_id="test-meeting")
         self.assertEqual(first["status"], "admitted")
@@ -119,11 +121,28 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
             room_url="http://192.168.1.10:8765",
             meeting_id="test-meeting",
             agent_id="guest-1",
+            max_uses=1,
         )
         join_result = join_room_with_invite(invite["invite_token"])
         session = verify_session_token(join_result["session_token"])
         self.assertIsNotNone(session)
         self.assertEqual(session["agent_id"], "guest-1")
+
+    def test_default_invite_is_unlimited_and_mints_unique_ids(self):
+        # Discord-style default: one open link admits many, each with a unique id.
+        invite = create_room_invite(
+            room_url="http://192.168.1.10:8765",
+            meeting_id="test-meeting",
+            agent_id="guest",
+        )
+        self.assertEqual(invite["max_uses"], 0)
+        self.assertEqual(invite["permission_mode"], "participant")
+        first = join_room_with_invite(invite["invite_token"], meeting_id="test-meeting")
+        second = join_room_with_invite(invite["invite_token"], meeting_id="test-meeting")
+        self.assertEqual(first["status"], "admitted")
+        self.assertEqual(second["status"], "admitted")
+        self.assertNotEqual(first["agent_id"], second["agent_id"])
+        self.assertTrue(first["agent_id"].startswith("guest-"))
 
     def test_read_only_invite_scope_survives_join_and_session_verification(self):
         invite = create_room_invite(
@@ -159,6 +178,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
             meeting_id="test-meeting",
             agent_id="guest-1",
             display_name="Guest One",
+            max_uses=1,
         )
         join_room_with_invite(invite["invite_token"])
         sessions = active_sessions_summary()
@@ -194,6 +214,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
                 meeting_id="test-meeting",
                 agent_id="guest-1",
                 display_name="Guest One",
+                max_uses=1,
             )
             join_result = join_room_with_invite(invite["invite_token"], meeting_id="test-meeting")
             self.assertEqual(join_result["status"], "admitted")

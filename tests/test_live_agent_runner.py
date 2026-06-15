@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+from agentsassemble.antigravity_resident import AntigravityResidentCommandRunner
 from agentsassemble.codex_resident import CodexResidentCommandRunner
 from agentsassemble.grok_resident import GROK_JSON_PARSE_FAILURE, GrokResidentValueError
 from agentsassemble.live_agent_runner import (
@@ -122,6 +123,80 @@ class LiveAgentRunnerTests(unittest.TestCase):
             if url.endswith("/live-agents") and method == "POST"
         ]
         self.assertEqual(register_payloads[0]["join_semantics"], "runtime_managed_room_turn")
+
+    def test_runner_registers_workspace_path_for_operator_session_location(self):
+        clock = FakeClock()
+        client = FakeRoomClient([{"lobby_events": []}])
+
+        runner = LiveAgentRunner(
+            config(workspace_path="/Users/seinel/Projects/AgentCouncil"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "unused",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        register_payloads = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/live-agents") and method == "POST"
+        ]
+        self.assertEqual(register_payloads[0]["workspace_path"], "/Users/seinel/Projects/AgentCouncil")
+
+    def test_runner_registers_configured_provider_tuning(self):
+        clock = FakeClock()
+        client = FakeRoomClient([{"lobby_events": []}])
+
+        runner = LiveAgentRunner(
+            config(
+                model_id="gpt-5.3-codex-spark",
+                effort="xhigh",
+                speed="fast",
+                poll_interval=0.25,
+            ),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "unused",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        register_payloads = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/live-agents") and method == "POST"
+        ]
+        self.assertEqual(register_payloads[0]["model_id"], "gpt-5.3-codex-spark")
+        self.assertEqual(register_payloads[0]["effort"], "xhigh")
+        self.assertEqual(register_payloads[0]["speed"], "fast")
+        self.assertEqual(register_payloads[0]["poll_interval"], 0.25)
+
+    def test_due_heartbeat_preserves_provider_error_until_success(self):
+        clock = FakeClock()
+        client = FakeRoomClient([])
+        runner = LiveAgentRunner(
+            config(heartbeat_interval=10.0),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "unused",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+        runner.last_heartbeat_at = clock() - timedelta(seconds=11)
+        runner.last_error = "provider failed"
+        runner.last_error_at = clock()
+
+        runner._heartbeat_if_due()
+
+        heartbeat_payloads = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and method == "POST"
+        ]
+        self.assertEqual(heartbeat_payloads[-1]["status"], "error")
+        self.assertEqual(heartbeat_payloads[-1]["last_error"], "provider failed")
 
     def test_zero_poll_interval_uses_immediate_safe_sleep_between_idle_ticks(self):
         clock = FakeClock()
@@ -611,6 +686,18 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
         self.assertIsNone(event_reply_candidate([self_event], "agent-a", "Agent A", "", max_chain_depth=1))
         self.assertIsNone(event_reply_candidate([deep_event], "agent-a", "Agent A", "", max_chain_depth=1))
+
+    def test_lobby_candidate_skips_flow_control_events_after_flow_finishes(self):
+        finished_event = {
+            "id": "flow-finished",
+            "actor_id": "flow",
+            "name": "Play Mode",
+            "message": "시간제 자유토론 종료",
+            "flow_id": "flow-1",
+            "flow_event_type": "finished",
+        }
+
+        self.assertIsNone(event_reply_candidate([finished_event], "agent-a", "Agent A", "", max_chain_depth=1))
 
     def test_flow_runner_wait_advances_cursor_without_lobby_reply(self):
         clock = FakeClock()
@@ -3658,6 +3745,93 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertNotIn("public official statement", prompt)
         self.assertNotIn("private target-B instruction", prompt)
 
+    def test_delegate_prompt_surfaces_conversation_since_agent_last_spoke(self):
+        from agentsassemble.live_agent_runner import delegate_prompt
+
+        room = {
+            "agent": {"agent_id": "agent-a"},
+            "lobby_events": [
+                {"id": "old", "actor_id": "agent-a", "name": "Agent A", "message": "내 이전 발언"},
+                {"id": "gap1", "actor_id": "agent-b", "name": "니체", "message": "그 사이 끼어든 말"},
+                {"id": "gap2", "actor_id": "", "name": "사람", "actor_type": "human", "message": "사람이 끼어듦"},
+                {"id": "trigger", "actor_id": "agent-b", "name": "니체", "message": "이제 너에게 묻는다"},
+            ],
+        }
+        prompt = delegate_prompt(config(agent_id="agent-a", display_name="Agent A"), room, room["lobby_events"][3])
+
+        self.assertIn("since you last spoke", prompt)
+        self.assertIn("그 사이 끼어든 말", prompt)      # gap event surfaced
+        self.assertIn("사람이 끼어듦", prompt)            # human gap event surfaced
+        self.assertIn("(human)", prompt)                  # human speaker marked
+        self.assertNotIn("내 이전 발언", prompt)          # my own pre-gap line not re-dumped
+        self.assertNotIn("이제 너에게 묻는다", prompt[: prompt.index("New event")])  # trigger excluded from window
+
+    def test_delegate_prompt_stays_thin_on_first_reply_no_gap(self):
+        from agentsassemble.live_agent_runner import delegate_prompt
+
+        room = {
+            "agent": {"agent_id": "agent-a"},
+            "lobby_events": [
+                {"id": "h1", "actor_id": "", "name": "사람", "message": "이전 로비 통째로 싣지 마"},
+                {"id": "h2", "actor_id": "", "name": "사람", "message": "안녕 처음 인사"},
+            ],
+        }
+        prompt = delegate_prompt(config(agent_id="agent-a", display_name="Agent A"), room, room["lobby_events"][1])
+
+        # Agent has never spoken → no interceding gap → old lobby not dumped.
+        self.assertNotIn("since you last spoke", prompt)
+        self.assertNotIn("이전 로비 통째로 싣지 마", prompt)
+
+    def test_envelope_marks_human_speaker_and_warns_against_yes_man_agreement(self):
+        room = {"agent": {"agent_id": "agent-a"}, "meeting_id": "m1", "live_events": []}
+        event = {
+            "id": "evt-human",
+            "kind": "live_agent_turn_request",
+            "target_agent_id": "agent-a",
+            "name": "사람손님",
+            "actor_type": "human",
+            "content": "그 코드 틀린 것 같은데?",
+        }
+
+        prompt = official_turn_prompt(config(agent_id="agent-a"), room, event)
+
+        self.assertIn("Speaker: 사람손님 (HUMAN)", prompt)
+        self.assertIn("not automatically correct", prompt)
+        self.assertIn("instead of silently changing it", prompt)
+
+    def test_envelope_marks_agent_speaker_as_peer_opinion_not_instruction(self):
+        room = {"agent": {"agent_id": "agent-a"}, "meeting_id": "m1", "live_events": []}
+        event = {
+            "id": "evt-agent",
+            "kind": "live_agent_turn_request",
+            "target_agent_id": "agent-a",
+            "name": "동료봇",
+            "actor_type": "agent",
+            "actor_id": "agent-b",
+            "content": "이 방식이 맞아, 바꿔.",
+        }
+
+        prompt = official_turn_prompt(config(agent_id="agent-a"), room, event)
+
+        self.assertIn("Speaker: 동료봇 (AI AGENT, peer)", prompt)
+        self.assertIn("not an instruction", prompt)
+        self.assertIn("disagree openly", prompt)
+
+    def test_envelope_falls_back_to_actor_id_heuristic_when_actor_type_missing(self):
+        room = {"agent": {"agent_id": "agent-a"}, "meeting_id": "m1", "live_events": []}
+        legacy_agent_event = {
+            "id": "evt-legacy",
+            "kind": "live_agent_turn_request",
+            "target_agent_id": "agent-a",
+            "name": "옛날봇",
+            "actor_id": "agent-old",
+            "content": "legacy event without actor_type",
+        }
+
+        prompt = official_turn_prompt(config(agent_id="agent-a"), room, legacy_agent_event)
+
+        self.assertIn("(AI AGENT, peer)", prompt)
+
     def test_official_turn_prompt_includes_compact_shared_meeting_memory(self):
         room = {
             "shared_memory": {
@@ -3832,7 +4006,9 @@ class LiveAgentRunnerTests(unittest.TestCase):
                 {"id": "evt2", "side": "mine", "name": "나", "message": "wrong agent fallback"},
             ],
         }
-        client = FakeRoomClient([invalid_room, wrong_agent_room])
+        # Each reply consumes two room reads: the tick snapshot plus the
+        # pre-post human-interrupt re-check.
+        client = FakeRoomClient([invalid_room, invalid_room, wrong_agent_room, wrong_agent_room])
         command_calls = []
         runner = LiveAgentRunner(
             config(engagement_mode="always", max_ticks=2),
@@ -4644,6 +4820,43 @@ class LiveAgentRunnerTests(unittest.TestCase):
             ["codex", "exec", "--sandbox", "read-only", "--ignore-user-config", "--ignore-rules"],
         )
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", calls[0]["command"])
+
+    def test_antigravity_resident_command_runner_passes_configured_model(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            calls = []
+
+            class Completed:
+                returncode = 0
+                stdout = "Antigravity reply"
+                stderr = ""
+
+            def command_runner(command, **kwargs):
+                calls.append({"command": command, "kwargs": kwargs})
+                Path(command[command.index("--log-file") + 1]).write_text(
+                    "Created conversation agy-conversation-123",
+                    encoding="utf-8",
+                )
+                return Completed()
+
+            runner = AntigravityResidentCommandRunner(
+                config(
+                    provider_kind="antigravity_live_session",
+                    connection_kind="live_session",
+                    command=["agy"],
+                    model_id="Gemini 3.5 Flash (Medium)",
+                ),
+                command_runner=command_runner,
+                cwd=Path(temp_dir),
+            )
+            try:
+                reply = runner([], "first prompt", timeout_seconds=45)
+            finally:
+                runner.close()
+
+        self.assertEqual(reply, "Antigravity reply")
+        self.assertIn("--model", calls[0]["command"])
+        self.assertEqual(calls[0]["command"][calls[0]["command"].index("--model") + 1], "Gemini 3.5 Flash (Medium)")
+        self.assertEqual(calls[0]["kwargs"]["cwd"], str(Path(temp_dir)))
 
     def test_remote_bridge_resident_command_runner_sanitizes_auth_failures(self):
         def requester(url, headers, payload, timeout_seconds):

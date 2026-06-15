@@ -33,6 +33,8 @@ def create_lan_invite_packet(
     ttl_seconds: int = 600,
     issued_at: datetime | None = None,
     nonce: str | None = None,
+    permission_mode: str = "meeting_read_only",
+    public_room_url: str = "",
 ) -> dict[str, object]:
     clean_secret = _usable_secret(secret)
     if not clean_secret:
@@ -58,8 +60,13 @@ def create_lan_invite_packet(
         "issued_at": issued.isoformat(),
         "expires_at": (issued + timedelta(seconds=ttl)).isoformat(),
         "nonce": clean_lobby_text(nonce or secrets.token_urlsafe(18), limit=96),
-        "admission": _admission_contract(),
+        "admission": _admission_contract(permission_mode=permission_mode),
     }
+    # room_url stays loopback (validated LAN scope); clients reached through a
+    # public tunnel decode public_room_url instead of failing on 127.0.0.1.
+    clean_public_room_url = clean_lobby_text(public_room_url, limit=200)
+    if clean_public_room_url:
+        claims["public_room_url"] = clean_public_room_url
     _validate_required_claims(claims)
     token = sign_lan_invite_claims(claims, secret=clean_secret)
     return {
@@ -71,7 +78,7 @@ def create_lan_invite_packet(
         "issued_at": claims["issued_at"],
         "expires_at": claims["expires_at"],
         "token": token,
-        "admission": _admission_contract(),
+        "admission": _admission_contract(permission_mode=permission_mode),
         "next_step": "A future native remote room client presents this token to the host admission endpoint.",
     }
 
@@ -176,14 +183,14 @@ def normalize_lan_room_url(room_url: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
 
 
-def _admission_contract() -> dict[str, object]:
+def _admission_contract(*, permission_mode: str = "meeting_read_only") -> dict[str, object]:
     return {
         "identity_proof": "hmac_sha256_invite_token",
         "host_verifies": ["token_signature", "token_expiry", "meeting_id", "agent_id"],
         "remote_transport": NATIVE_REMOTE_ROOM_CLIENT_KIND,
         "remote_http_bridge": False,
         "provider_execution": "not_started_by_invite",
-        "permission_mode": "meeting_read_only",
+        "permission_mode": permission_mode,
     }
 
 
@@ -242,7 +249,12 @@ def _failed_invite_verification(identity_status: str, *, claims: dict[str, objec
 
 def _safe_claims(claims: dict[str, object]) -> dict[str, object]:
     safe = dict(claims)
-    safe["admission"] = _admission_contract()
+    admission = claims.get("admission") if isinstance(claims.get("admission"), dict) else {}
+    # Re-canonicalize the contract but keep the token's actual permission mode
+    # (defaulting it silently downgraded participant invites to read-only).
+    safe["admission"] = _admission_contract(
+        permission_mode=str(admission.get("permission_mode") or "meeting_read_only")
+    )
     return safe
 
 

@@ -1,8 +1,13 @@
 import json
+import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import UTC, datetime, timedelta
+from io import StringIO
+from pathlib import Path
+from unittest.mock import patch
 
-from agentsassemble.cli import build_parser
+from agentsassemble.cli import build_parser, main
 from agentsassemble.live_agent_flow import (
     FlowOptions,
     LiveAgentFlowClient,
@@ -10,6 +15,7 @@ from agentsassemble.live_agent_flow import (
     flow_should_yield_for_fairness,
     parse_flow_decision,
 )
+from agentsassemble.live_agent_flow_resources import FlowResourceRecorder, summarize_resource_samples
 
 
 class FakeClock:
@@ -359,6 +365,68 @@ class LiveAgentFlowCliTests(unittest.TestCase):
         self.assertEqual(options.max_agent_turns, 0)
         self.assertEqual(options.max_total_turns, 0)
 
+    def test_flow_cli_writes_resource_report_from_public_command_path(self):
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            del timeout_seconds
+            calls.append((url, method, payload))
+            if url.endswith("/api/live-agent-flow/start"):
+                return {"flow": {"flow_id": "flow-cli", "status": "finished", "total_turns": 1, "agent_count": 2}}
+            if url.endswith("/api/local-resources"):
+                return {
+                    "status": "ok",
+                    "generated_at": "2026-06-08T00:00:00+00:00",
+                    "cpu_count": 8,
+                    "load_average": {"one": 0.1, "five": 0.1, "fifteen": 0.1},
+                    "summary": {
+                        "process_count": 3,
+                        "total_cpu_pct": 12.5,
+                        "total_rss_kb": 16384,
+                        "role_breakdown": {
+                            "supervised_resident": {"count": 2, "cpu_pct": 9.5, "rss_kb": 12288}
+                        },
+                    },
+                    "processes": [],
+                }
+            raise AssertionError(f"unexpected request {method} {url}")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            report_path = Path(temp_dir) / "flow-resources.json"
+            stdout = StringIO()
+            with patch("agentsassemble.cli._request_json", side_effect=request_json), redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "flow",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--topic",
+                        "비올때 뭘 해야하는가",
+                        "--duration-seconds",
+                        "1",
+                        "--resource-report",
+                        str(report_path),
+                        "--resource-sample-interval",
+                        "0",
+                        "--runtime-mode",
+                        "runtime_managed_room_turn",
+                    ]
+                )
+
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(any(url.endswith("/api/live-agent-flow/start") for url, _, _ in calls))
+        self.assertTrue(any(url.endswith("/api/local-resources") for url, _, _ in calls))
+        self.assertIn("Resource report:", stdout.getvalue())
+        self.assertEqual(report["schema"], "agentsassemble.flow_resource_report.v1")
+        self.assertEqual(report["runtime_mode"], "runtime_managed_room_turn")
+        self.assertEqual(report["sample_count"], 3)
+        self.assertEqual(report["summary"]["peak_supervised_rss_kb"], 12288)
+
 
 class LiveAgentFlowClientTests(unittest.TestCase):
     def test_client_starts_waits_and_finishes_flow_without_starting_providers(self):
@@ -389,6 +457,7 @@ class LiveAgentFlowClientTests(unittest.TestCase):
             meeting_id="m1",
             topic="고죠 vs 스쿠나",
             options=FlowOptions(duration_seconds=6, tick_interval=2, max_total_turns=3),
+            sample_fn=lambda payload: calls.append(("sample", "CALLBACK", payload, None)),
         )
 
         self.assertEqual(result["flow"]["status"], "finished")
@@ -398,6 +467,83 @@ class LiveAgentFlowClientTests(unittest.TestCase):
         self.assertEqual(start_payloads[0]["topic"], "고죠 vs 스쿠나")
         self.assertEqual(start_payloads[0]["duration_seconds"], 6)
         self.assertNotIn("command", json.dumps(calls, ensure_ascii=False))
+        self.assertTrue(any(url == "sample" for url, *_ in calls))
+
+
+class LiveAgentFlowResourceReportTests(unittest.TestCase):
+    def test_resource_recorder_samples_and_writes_peak_supervised_usage(self):
+        clock = FakeClock()
+        calls = []
+
+        def request_json(url, **kwargs):
+            calls.append((url, kwargs))
+            return {
+                "status": "ok",
+                "generated_at": clock().isoformat(),
+                "cpu_count": 8,
+                "load_average": {"one": 0.1, "five": 0.1, "fifteen": 0.1},
+                "summary": {
+                    "process_count": 2,
+                    "total_cpu_pct": 9.0,
+                    "total_rss_kb": 12000,
+                    "role_breakdown": {
+                        "supervised_resident": {"count": 1, "cpu_pct": 7.5, "rss_kb": 8192},
+                        "agentsassemble": {"count": 1, "cpu_pct": 1.5, "rss_kb": 3808},
+                        "other": {"count": 0, "cpu_pct": 0.0, "rss_kb": 0},
+                    },
+                    "attention": [],
+                },
+                "processes": [],
+            }
+
+        recorder = FlowResourceRecorder(
+            server="http://room.local/",
+            request_json=request_json,
+            sample_interval_seconds=5,
+            now_fn=clock,
+        )
+        recorder.sample({"flow": {"flow_id": "flow-1", "status": "running", "total_turns": 1}})
+        recorder.sample({"flow": {"flow_id": "flow-1", "status": "running", "total_turns": 2}})
+        clock.sleep(5)
+        recorder.sample({"flow": {"flow_id": "flow-1", "status": "finished", "total_turns": 2}})
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            report_path = Path(temp_dir) / "resources.json"
+            report = recorder.write_report(
+                report_path,
+                meeting_id="m1",
+                topic="비올때 뭘 해야하는가",
+                flow_result={"flow": {"flow_id": "flow-1", "status": "finished"}},
+                runtime_mode="runtime_managed_room_turn",
+            )
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][0], "http://room.local/api/local-resources")
+        self.assertEqual(report["sample_count"], 2)
+        self.assertEqual(report["summary"]["peak_supervised_rss_kb"], 8192)
+        self.assertEqual(report["summary"]["peak_supervised_cpu_pct"], 7.5)
+        self.assertEqual(report["runtime_mode"], "runtime_managed_room_turn")
+
+    def test_resource_summary_keeps_absent_supervised_usage_as_zero(self):
+        summary = summarize_resource_samples(
+            [
+                {
+                    "resources": {
+                        "status": "ok",
+                        "summary": {
+                            "process_count": 1,
+                            "total_cpu_pct": 2.0,
+                            "total_rss_kb": 2048,
+                            "role_breakdown": {},
+                        },
+                    }
+                }
+            ]
+        )
+
+        self.assertEqual(summary["sample_count"], 1)
+        self.assertEqual(summary["peak_supervised_rss_kb"], 0)
+        self.assertEqual(summary["peak_supervised_cpu_pct"], 0.0)
 
 
 if __name__ == "__main__":

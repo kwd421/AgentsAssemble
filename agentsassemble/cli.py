@@ -37,6 +37,7 @@ from agentsassemble.codex_sessions import (
     read_agent_config,
     write_agent_config,
 )
+from agentsassemble.claude_resident import claude_code_print_mode_resident_error
 from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
@@ -46,6 +47,7 @@ from agentsassemble.live_agents import (
     _looks_sensitive_presence_error,
 )
 from agentsassemble.live_agent_flow import FlowOptions, LiveAgentFlowClient
+from agentsassemble.live_agent_flow_resources import FlowResourceRecorder
 from agentsassemble.live_agent_continuity_proof import (
     run_live_agent_continuity_proof,
     run_live_agent_continuity_proof_batch,
@@ -374,6 +376,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     provider_health.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable provider health report.")
 
+    api_call = subparsers.add_parser(
+        "api-call",
+        help="One-shot OpenAI-compatible model call (the API-provider lane). Prompt on stdin, reply on stdout.",
+    )
+    api_call.add_argument("--provider", required=True, help="Catalog provider id (e.g. nvidia, openrouter, lmstudio).")
+    api_call.add_argument("--model", required=True, help="Model id within the provider.")
+    api_call.add_argument("--system", default="", help="Optional system prompt.")
+    api_call.add_argument("--output-root", default=".agentsassemble", help="Output root for the identity store (usage accounting).")
+    api_call.add_argument("--meeting-id", default="", help="Meeting/room id for usage attribution.")
+    api_call.add_argument("--participant-id", default="", help="Participant id for usage attribution.")
+    api_call.add_argument("--user-id", default="", help="User id for usage attribution.")
+    api_call.add_argument(
+        "--key-source",
+        default="",
+        choices=["", "byok", "free", "subscription", "local"],
+        help="Override cost_owner by where the key came from (default: catalog).",
+    )
+    api_call.add_argument("--timeout", type=int, default=60, help="Seconds to wait for the model.")
+    api_call.add_argument("--catalog", action="store_true", help="Print the safe model catalog (JSON) and exit.")
+
     memory_capsule = subparsers.add_parser("memory-capsule", help="Inspect importable memory/profile capsules.")
     memory_capsule_subparsers = memory_capsule.add_subparsers(dest="memory_capsule_command", required=True)
     memory_capsule_gate = memory_capsule_subparsers.add_parser(
@@ -598,6 +620,22 @@ def build_parser() -> argparse.ArgumentParser:
     live_flow.add_argument("--max-agent-turns", type=parse_nonnegative_int, default=0, help="Maximum speaking turns per agent; 0 means unlimited.")
     live_flow.add_argument("--max-total-turns", type=parse_nonnegative_int, default=0, help="Maximum total speaking turns; 0 means unlimited.")
     live_flow.add_argument("--max-silence-seconds", type=parse_nonnegative_float, default=20.0)
+    live_flow.add_argument(
+        "--resource-report",
+        default="",
+        help="Optional JSON path for CPU/RSS samples captured while the flow runs.",
+    )
+    live_flow.add_argument(
+        "--resource-sample-interval",
+        type=parse_nonnegative_float,
+        default=5.0,
+        help="Seconds between resource samples when --resource-report is set.",
+    )
+    live_flow.add_argument(
+        "--runtime-mode",
+        default="",
+        help="Optional comparison label written into --resource-report.",
+    )
     live_flow.add_argument("--json", action="store_true", dest="as_json", help="Print the raw flow result payload.")
 
     live_room_benchmark = live_agent_subparsers.add_parser(
@@ -1255,6 +1293,23 @@ def build_parser() -> argparse.ArgumentParser:
     live_run.add_argument("--endpoint", default="")
     live_run.add_argument("--auth-ref", default="")
     live_run.add_argument("--meeting-id", default="")
+    live_run.add_argument(
+        "--model",
+        dest="model_id",
+        default="",
+        help="Model id (api_call lane: a catalog model within --provider-kind).",
+    )
+    live_run.add_argument(
+        "--key-source",
+        default="",
+        choices=["", "byok", "free", "subscription", "local"],
+        help="api_call lane: override cost_owner by where the key came from (default: catalog).",
+    )
+    live_run.add_argument(
+        "--output-root",
+        default="",
+        help="api_call lane: identity-store root for best-effort usage accounting (local-first: match the server's).",
+    )
     live_run.add_argument("--engagement-mode", default="always")
     live_run.add_argument("--join-semantics", default="", help="Override execution structure for comparison runs.")
     live_run.add_argument("--timeout", type=int, default=120)
@@ -1600,6 +1655,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_live_agent_command(args)
     if args.command == "providers":
         return run_providers_command(args)
+    if args.command == "api-call":
+        return run_api_call_command(args)
     if args.command == "memory-capsule":
         return run_memory_capsule_command(args)
     if args.command == "persona":
@@ -1920,6 +1977,49 @@ def run_providers_command(args: argparse.Namespace) -> int:
     return 1
 
 
+def run_api_call_command(args: argparse.Namespace) -> int:
+    """API-provider lane: read a prompt on stdin, call an OpenAI-compatible model,
+    print the reply on stdout, and record token usage. Designed to be a live-agent
+    `command` so the runner's envelope/heartbeat/meta-filter wrap it unchanged."""
+    from agentsassemble import provider_catalog, room_api_provider
+    from agentsassemble.identity_store import identity_store_for_output_root
+
+    if getattr(args, "catalog", False):
+        print(json.dumps(provider_catalog.catalog_payload(), ensure_ascii=False, indent=2))
+        return 0
+
+    prompt = sys.stdin.read()
+    if not prompt.strip():
+        print("error: empty prompt on stdin", file=sys.stderr)
+        return 2
+
+    store = None
+    if args.output_root:
+        try:
+            store = identity_store_for_output_root(Path(args.output_root))
+        except (OSError, ValueError):
+            store = None  # usage accounting is best-effort; never block the reply
+
+    try:
+        text = room_api_provider.run_api_call(
+            args.provider,
+            args.model,
+            prompt,
+            store=store,
+            user_id=args.user_id,
+            participant_id=args.participant_id,
+            meeting_id=args.meeting_id,
+            system=args.system,
+            key_source=args.key_source,
+            timeout=args.timeout,
+        )
+    except room_api_provider.ApiProviderError as error:
+        print(f"error[{error.category}]: {error}", file=sys.stderr)
+        return 2
+    print(text)
+    return 0
+
+
 def run_memory_capsule_command(args: argparse.Namespace) -> int:
     try:
         if args.memory_capsule_command == "gate":
@@ -1972,9 +2072,10 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
                 "endpoint": args.endpoint,
                 "meeting_id": args.meeting_id,
                 "engagement_mode": args.engagement_mode,
-                "join_semantics": args.join_semantics,
                 "capabilities": ["room_chat", "mentions"],
             }
+            if args.join_semantics:
+                payload["join_semantics"] = args.join_semantics
             persona_card_id = clean_persona_card_id(args.persona_card_id)
             if persona_card_id:
                 payload["persona_card_id"] = persona_card_id
@@ -2650,9 +2751,38 @@ def _run_live_agent_flow(args: argparse.Namespace) -> int:
         request_json=_request_json,
         sleep_fn=time.sleep,
     )
-    response = client.run(meeting_id=args.meeting_id, topic=args.topic, options=options)
+    resource_recorder = None
+    if args.resource_report:
+        resource_recorder = FlowResourceRecorder(
+            server=args.server,
+            request_json=_request_json,
+            sample_interval_seconds=float(args.resource_sample_interval),
+        )
+    response = client.run(
+        meeting_id=args.meeting_id,
+        topic=args.topic,
+        options=options,
+        sample_fn=resource_recorder.sample if resource_recorder is not None else None,
+    )
+    resource_report = None
+    if resource_recorder is not None:
+        resource_recorder.sample(response, force=True)
+        resource_report = resource_recorder.write_report(
+            args.resource_report,
+            meeting_id=args.meeting_id,
+            topic=args.topic,
+            flow_result=response,
+            runtime_mode=args.runtime_mode,
+        )
     if args.as_json:
-        print(json.dumps(response, ensure_ascii=False, indent=2))
+        output = dict(response)
+        if resource_report is not None:
+            output["resource_report"] = {
+                "path": args.resource_report,
+                "summary": resource_report.get("summary", {}),
+                "sample_count": resource_report.get("sample_count", 0),
+            }
+        print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
         flow = response.get("flow") if isinstance(response.get("flow"), dict) else {}
         print(
@@ -2661,6 +2791,14 @@ def _run_live_agent_flow(args: argparse.Namespace) -> int:
             f"{flow.get('total_turns', 0)} turns · "
             f"{flow.get('agent_count', 0)} agents"
         )
+        if resource_report is not None:
+            summary = resource_report.get("summary") if isinstance(resource_report.get("summary"), dict) else {}
+            print(
+                "Resource report: "
+                f"{args.resource_report} · samples={resource_report.get('sample_count', 0)} · "
+                f"peak supervised RSS={summary.get('peak_supervised_rss_mb', 0)} MB · "
+                f"peak supervised CPU={summary.get('peak_supervised_cpu_pct', 0)}%"
+            )
     return 0 if str((response.get("flow") if isinstance(response.get("flow"), dict) else {}).get("status") or "") in {"finished", "stopped"} else 1
 
 
@@ -3443,7 +3581,7 @@ def _run_live_agent_resident(args: argparse.Namespace) -> int:
             restore_signal_handlers()
         print(f"Self-service resident agent stopped after posting {replies} parent-managed replies")
         return 0
-    command_runner = _command_runner_for_config(config)
+    command_runner = _command_runner_for_config(config, output_root=str(getattr(args, "output_root", "") or ""))
     runner = LiveAgentRunner(
         config,
         request_json=_request_json,
@@ -7009,15 +7147,20 @@ class _JsonlLiveSessionCommandRunner:
 
 
 class _TerminalLiveSessionCommandRunner:
-    def __init__(self, *, idle_timeout_seconds: float) -> None:
+    def __init__(self, *, idle_timeout_seconds: float, cwd: Path | None = None) -> None:
         self.idle_timeout_seconds = idle_timeout_seconds
+        self.cwd = Path(cwd or Path.cwd())
         self.session: TerminalLiveSession | None = None
         self._lock = threading.Lock()
 
     def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
         with self._lock:
             if self.session is None:
-                self.session = TerminalLiveSession(command, idle_timeout_seconds=self.idle_timeout_seconds)
+                self.session = TerminalLiveSession(
+                    command,
+                    idle_timeout_seconds=self.idle_timeout_seconds,
+                    cwd=self.cwd,
+                )
             session = self.session
         try:
             return session.ask(prompt, timeout_seconds=timeout_seconds)
@@ -7240,6 +7383,53 @@ class _LocalCliCommandRunner:
             _terminate_process(process)
 
 
+class _ApiCatalogCommandRunner:
+    """In-process runner for the API-provider lane (connection_kind=api_call).
+
+    Unlike the CLI residents, there's no subprocess: this calls the OpenAI-
+    compatible adapter (room_api_provider) directly, so the LiveAgentRunner's
+    envelope / heartbeat / meta-filter / turn-CAS wrap the model reply unchanged.
+    Token usage is recorded best-effort to the local identity store when
+    output_root is set (local-first: the resident shares the server's output_root).
+    http_post is injectable for tests."""
+
+    def __init__(self, config: ResidentAgentConfig, *, output_root: str = "", http_post=None) -> None:
+        self.config = config
+        self.output_root = str(output_root or "")
+        self._http_post = http_post
+
+    def _store(self):
+        if not self.output_root:
+            return None
+        try:
+            from agentsassemble.identity_store import identity_store_for_output_root
+
+            return identity_store_for_output_root(Path(self.output_root))
+        except (OSError, ValueError):
+            return None  # usage accounting is best-effort; never block the reply
+
+    def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
+        from agentsassemble import room_api_provider
+
+        try:
+            return room_api_provider.run_api_call(
+                self.config.provider_kind,
+                self.config.model_id,
+                prompt,
+                store=self._store(),
+                participant_id=self.config.agent_id,
+                meeting_id=self.config.meeting_id,
+                key_source=str(getattr(self.config, "key_source", "") or ""),
+                timeout=timeout_seconds,
+                http_post=self._http_post,
+            )
+        except room_api_provider.ApiProviderError as error:
+            raise RuntimeError(f"API provider call failed [{error.category}]: {error}") from error
+
+    def close(self) -> None:
+        return None
+
+
 def _self_service_process_env(config: ResidentAgentConfig) -> dict[str, str]:
     env = dict(os.environ)
     command_env = _self_service_room_command_env(config)
@@ -7437,6 +7627,21 @@ def _install_resident_shutdown_signal_handlers(on_shutdown):
 def _validate_resident_config(config: ResidentAgentConfig) -> None:
     if config.connection_kind not in SUPPORTED_RESIDENT_CONNECTION_KINDS:
         raise ValueError(resident_connection_kind_error())
+    if config.connection_kind == "api_call":
+        # API-provider lane: --provider-kind is a catalog provider id and --model
+        # must exist in that provider's catalog. No --command (the call is in-process).
+        from agentsassemble import provider_catalog
+
+        if not provider_catalog.get_provider(config.provider_kind):
+            raise ValueError(
+                f"api_call resident requires a known catalog provider as --provider-kind; got {config.provider_kind!r}. "
+                f"Known: {', '.join(provider_catalog.list_providers())}."
+            )
+        if not provider_catalog.get_model(config.provider_kind, config.model_id):
+            raise ValueError(
+                f"api_call resident requires a known --model for provider {config.provider_kind!r}; got {config.model_id!r}."
+            )
+        return
     if config.provider_kind == "codex_live_session" and config.connection_kind != "live_session":
         raise ValueError("codex_live_session resident requires live_session connection_kind.")
     if config.provider_kind == "kiro_live_session" and config.connection_kind != "live_session":
@@ -7459,6 +7664,13 @@ def _validate_resident_config(config: ResidentAgentConfig) -> None:
     cursor_generic_error = cursor_generic_resident_guard_error(config.provider_kind, config.connection_kind)
     if cursor_generic_error:
         raise ValueError(cursor_generic_error)
+    claude_command_error = claude_code_print_mode_resident_error(
+        config.provider_kind,
+        config.connection_kind,
+        config.command,
+    )
+    if claude_command_error:
+        raise ValueError(claude_command_error)
     if config.connection_kind == "remote_bridge":
         if not config.endpoint:
             raise ValueError("Remote bridge resident requires --endpoint.")
@@ -7469,9 +7681,11 @@ def _validate_resident_config(config: ResidentAgentConfig) -> None:
         raise ValueError(f"{config.connection_kind} resident requires --command.")
 
 
-def _command_runner_for_config(config: ResidentAgentConfig):
+def _command_runner_for_config(config: ResidentAgentConfig, *, output_root: str = ""):
     if config.connection_kind == "self_service":
         raise ValueError("self_service residents are supervised directly and do not use prompt-injection command runners.")
+    if config.connection_kind == "api_call":
+        return _ApiCatalogCommandRunner(config, output_root=output_root)
     cwd = _resident_workspace_cwd(config)
     if config.provider_kind == "codex_live_session" and config.connection_kind == "live_session":
         return CodexResidentCommandRunner(config, cwd=cwd)
@@ -7488,7 +7702,7 @@ def _command_runner_for_config(config: ResidentAgentConfig):
     if config.connection_kind == "live_session":
         return _JsonlLiveSessionCommandRunner()
     if config.connection_kind == "terminal_session":
-        return _TerminalLiveSessionCommandRunner(idle_timeout_seconds=config.terminal_idle_timeout)
+        return _TerminalLiveSessionCommandRunner(idle_timeout_seconds=config.terminal_idle_timeout, cwd=cwd)
     if config.connection_kind == "remote_bridge":
         return RemoteBridgeResidentCommandRunner(config)
     return _LocalCliCommandRunner()

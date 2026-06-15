@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import {
   Bot,
   Code2,
@@ -12,6 +12,9 @@ import {
   Trash2,
   User,
   UserCheck,
+  UserMinus,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -19,6 +22,8 @@ import {
   resumeLiveAgentSessionAgent,
   deleteLiveAgentSession,
   expelLiveAgentFromRoom,
+  kickRoomMember,
+  muteRoomMember,
   stopLiveAgentSessionAgent,
   updateLiveAgentSessionAgentTiming,
   uploadLobbyAttachment,
@@ -72,6 +77,8 @@ type MemberEntry = {
   agentProfile?: AgentProfileSettings;
   avatarImage?: string;
   active: boolean;
+  muted: boolean;
+  meetingId: string;
   canViewQuota: boolean;
   icon: LucideIcon;
 };
@@ -188,6 +195,41 @@ function processStatusLabel(status?: string) {
   if (status === "error") return "오류";
   if (status === "finished") return "종료됨";
   return "상태 미정";
+}
+
+function compactPathForDisplay(path?: string, maxSegments = 4) {
+  const cleanPath = String(path || "").trim();
+  if (!cleanPath) return "";
+  const normalized = cleanPath.replace(/\\/g, "/");
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.length <= maxSegments) return cleanPath;
+  const prefix = normalized.startsWith("/") ? "/" : "";
+  return `${prefix}.../${segments.slice(-maxSegments).join("/")}`;
+}
+
+function sessionLocationRows(agent: LiveAgent, sessionGroup?: LiveAgentProcessGroup) {
+  const rows = [
+    {
+      label: "프로세스 그룹",
+      value: sessionGroup?.group_id || agent.process_group_id || "",
+    },
+    {
+      label: "설정 파일",
+      value: sessionGroup?.config_path || agent.live_agent_config_path || "",
+      path: true,
+    },
+    {
+      label: "작업 폴더",
+      value: agent.workspace_path || "",
+      path: true,
+    },
+    {
+      label: "로그 파일",
+      value: sessionGroup?.log_path || "",
+      path: true,
+    },
+  ];
+  return rows.filter((row) => String(row.value || "").trim());
 }
 
 function pollIntervalFromAgent(agent?: LiveAgent) {
@@ -323,11 +365,13 @@ function MemberRow({
   entry,
   onOpenDetails,
   onRoleChange,
+  onContextMenu,
   canEditRoles,
 }: {
   entry: MemberEntry;
   onOpenDetails: (entry: MemberEntry) => void;
   onRoleChange: (memberId: string, role: RoleId) => void;
+  onContextMenu: (entry: MemberEntry, event: ReactMouseEvent<HTMLElement>) => void;
   canEditRoles: boolean;
 }) {
   const Icon = entry.icon;
@@ -369,9 +413,11 @@ function MemberRow({
       data-active={entry.active}
       role={entry.agent ? "button" : undefined}
       tabIndex={entry.agent ? 0 : undefined}
+      data-muted={entry.muted}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
+      onContextMenu={(event) => onContextMenu(entry, event)}
       onClick={(event) => {
         if (rowTargetIsInteractive(event.target)) return;
         openDetails();
@@ -405,8 +451,22 @@ function MemberRow({
             {entry.displayName}
           </p>
           {entry.owner && (
-            <span className="rounded bg-accent/20 px-1 py-0.5 text-[9px] font-black text-accent">
-              YOU
+            // canEditRoles is only true for the room host's own view, so the
+            // host sees HOST on themselves while guests see YOU on themselves.
+            <span
+              className="rounded bg-accent/20 px-1 py-0.5 text-[9px] font-black text-accent"
+              title={canEditRoles ? "이 방의 호스트(방장)" : "나"}
+            >
+              {canEditRoles ? "HOST" : "YOU"}
+            </span>
+          )}
+          {entry.muted && (
+            <span
+              className="dc-member-muted-badge"
+              title={`${entry.displayName}은(는) 뮤트되어 발언할 수 없습니다`}
+              aria-label="뮤트됨"
+            >
+              <VolumeX size={11} />
             </span>
           )}
           {quotaChips.length > 0 && (
@@ -538,7 +598,11 @@ function MemberDetailModal({
       sessionGroup.meeting_id &&
       processRunning
   );
-  const hasSessionSection = Boolean(hasResumeControl || hasStopControl || showIndividualControlReason);
+  const locationRows = sessionLocationRows(agent, sessionGroup);
+  const hasSessionLocation = locationRows.length > 0;
+  const hasSessionSection = Boolean(
+    hasSessionLocation || hasResumeControl || hasStopControl || showIndividualControlReason
+  );
   const hasTimingControl = Boolean(
     sessionGroup &&
       processOwnsAgent &&
@@ -839,9 +903,29 @@ function MemberDetailModal({
         {hasSessionSection && (
           <section className="dc-member-detail-section" aria-label={`${entry.displayName} 세션 제어`}>
             <h3>세션 제어</h3>
-            <p className="dc-member-session-summary preserve-words">
-              {sessionGroup?.group_id} · {processStatusLabel(sessionGroup?.status)}
-            </p>
+            {hasSessionLocation ? (
+              <div className="dc-member-session-location" aria-label={`${entry.displayName} 세션 위치`}>
+                <div className="dc-member-session-location-head">
+                  <span>세션 위치</span>
+                  <span>{processStatusLabel(sessionGroup?.status)}</span>
+                </div>
+                <dl>
+                  {locationRows.map((row) => {
+                    const value = String(row.value || "");
+                    return (
+                      <div key={row.label}>
+                        <dt>{row.label}</dt>
+                        <dd title={value}>{row.path ? compactPathForDisplay(value) : value}</dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+              </div>
+            ) : (
+              <p className="dc-member-session-summary preserve-words">
+                세션 위치 기록 없음 · {processStatusLabel(sessionGroup?.status)}
+              </p>
+            )}
             <div className="dc-member-execution-mode" aria-label={`${entry.displayName} 실행 방식`}>
               <div className="dc-member-execution-mode-head">
                 <span>실행 방식</span>
@@ -997,7 +1081,7 @@ function MemberDetailModal({
               </button>
             </div>
             <p className="dc-member-session-status preserve-words">
-              현재 호출 {pollIntervalLabel(pollIntervalValue)} · 쿨다운 {cooldownLabel(cooldownValue)}
+              현재 호출 {pollIntervalLabel(pollIntervalValue)} · 쿨다운 {cooldownLabel(cooldownValue)} (초 단위)
             </p>
             {pollIntervalStatus && (
               <p className="dc-member-session-status preserve-words">{pollIntervalStatus}</p>
@@ -1056,6 +1140,7 @@ export default function MemberList({
   searchQuery,
   onSearchQueryChange,
   hideSearch = false,
+  moderatorSessionToken = "",
 }: {
   agents: LiveAgent[];
   members?: RoomMember[];
@@ -1070,11 +1155,14 @@ export default function MemberList({
   searchQuery?: string;
   onSearchQueryChange?: (query: string) => void;
   hideSearch?: boolean;
+  moderatorSessionToken?: string;
 }) {
   const [localRoleOverrides, setLocalRoleOverrides] = useState<Record<string, RoleId>>({});
   const [localQuery, setLocalQuery] = useState("");
   const [detailEntry, setDetailEntry] = useState<MemberEntry | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [memberMenu, setMemberMenu] = useState<{ x: number; y: number; entry: MemberEntry } | null>(null);
+  const [muteBusy, setMuteBusy] = useState(false);
   const [agentProfileSettings, setAgentProfileSettings] = useState<Record<string, AgentProfileSettings>>(
     () => loadAgentProfileSettings()
   );
@@ -1082,6 +1170,7 @@ export default function MemberList({
   const contextBadges = roomContextSummaryBadges(agents);
   const effectiveRoleOverrides = (roleOverrides || localRoleOverrides) as Record<string, RoleId>;
   const entries = useMemo<MemberEntry[]>(() => {
+    const mutedById = new Map(members.map((member) => [member.participant_id, Boolean(member.muted)]));
     const human: MemberEntry = {
       id: "human:self",
       displayName: "나",
@@ -1089,6 +1178,8 @@ export default function MemberList({
       role: effectiveRoleOverrides["human:self"] || "human",
       owner: true,
       active: true,
+      muted: false,
+      meetingId: "",
       canViewQuota: false,
       ownedByViewer: true,
       icon: UserCheck,
@@ -1109,6 +1200,8 @@ export default function MemberList({
         role,
         owner: false,
         active: isActive(agent),
+        muted: mutedById.get(agent.agent_id) ?? false,
+        meetingId: String(agent.meeting_id || ""),
         canViewQuota: canViewQuotaForAgent,
         ownedByViewer: canViewQuotaForAgent,
         ownerDisplayName,
@@ -1149,6 +1242,8 @@ export default function MemberList({
           role,
           owner: false,
           active: memberActive(member),
+          muted: Boolean(member.muted),
+          meetingId: String(member.meeting_id || ""),
           canViewQuota: false,
           ownedByViewer: false,
           avatarImage: member.avatar_image_url,
@@ -1180,6 +1275,63 @@ export default function MemberList({
     setAgentProfileSettings(loadAgentProfileSettings());
   }, [roomId]);
 
+  const canModerate = canEditRoles;
+
+  function handleMemberContextMenu(entry: MemberEntry, event: ReactMouseEvent<HTMLElement>) {
+    // Host-only moderation: right-clicking a participant opens the mute menu.
+    // Self and any participant without a room scope can't be muted.
+    if (!canModerate || entry.id === "human:self" || !entry.meetingId) return;
+    event.preventDefault();
+    setMemberMenu({ x: event.clientX, y: event.clientY, entry });
+  }
+
+  async function handleToggleMute(entry: MemberEntry) {
+    if (!entry.meetingId) return;
+    setMuteBusy(true);
+    try {
+      await muteRoomMember({
+        meetingId: entry.meetingId,
+        participantId: entry.id,
+        muted: !entry.muted,
+        sessionToken: moderatorSessionToken,
+      });
+      onSessionActionComplete?.();
+    } catch (error) {
+      window.alert(
+        `뮤트 변경 실패: ${error instanceof Error ? error.message : String(error)}\n` +
+          "(호스트 토큰이 없으면 거부됩니다 — 호스트 브라우저에서 다시 시도하세요)"
+      );
+    } finally {
+      setMuteBusy(false);
+      setMemberMenu(null);
+    }
+  }
+
+  async function handleKick(entry: MemberEntry) {
+    if (!entry.meetingId) return;
+    if (!window.confirm(`${entry.displayName}을(를) 이 방에서 내보낼까요? (열린 초대 링크로는 다시 들어올 수 있어요)`)) {
+      setMemberMenu(null);
+      return;
+    }
+    setMuteBusy(true);
+    try {
+      await kickRoomMember({
+        meetingId: entry.meetingId,
+        participantId: entry.id,
+        sessionToken: moderatorSessionToken,
+      });
+      onSessionActionComplete?.();
+    } catch (error) {
+      window.alert(
+        `내보내기 실패: ${error instanceof Error ? error.message : String(error)}\n` +
+          "(호스트 토큰이 없으면 거부됩니다 — 호스트 브라우저에서 다시 시도하세요)"
+      );
+    } finally {
+      setMuteBusy(false);
+      setMemberMenu(null);
+    }
+  }
+
   function handleRoleChange(memberId: string, role: RoleId) {
     if (onRoleChange) {
       onRoleChange(memberId, role);
@@ -1202,11 +1354,14 @@ export default function MemberList({
 
   const visibleGroups = useMemo(
     () => [
+      // Invited members carry no LiveAgent record, so split them by role
+      // (seeded from participant_type at join, host-adjustable via dropdown)
+      // instead of dumping every guest into the people section.
       {
         id: "people",
         label: "사람",
         icon: User,
-        entries: visibleEntries.filter((entry) => !entry.agent),
+        entries: visibleEntries.filter((entry) => !entry.agent && entry.role === "human"),
       },
       {
         id: "owned-agents",
@@ -1218,7 +1373,10 @@ export default function MemberList({
         id: "other-agents",
         label: "다른 사람의 에이전트",
         icon: Bot,
-        entries: visibleEntries.filter((entry) => entry.agent && !entry.ownedByViewer),
+        entries: visibleEntries.filter(
+          (entry) =>
+            (entry.agent && !entry.ownedByViewer) || (!entry.agent && entry.role !== "human")
+        ),
       },
     ],
     [visibleEntries]
@@ -1281,6 +1439,7 @@ export default function MemberList({
                   entry={entry}
                   onOpenDetails={setDetailEntry}
                   onRoleChange={handleRoleChange}
+                  onContextMenu={handleMemberContextMenu}
                   canEditRoles={canEditRoles}
                 />
               ))}
@@ -1304,6 +1463,47 @@ export default function MemberList({
           onSessionActionComplete={onSessionActionComplete}
           onAgentProfileSettingsChange={setAgentProfileSettings}
         />
+      )}
+      {memberMenu && (
+        <>
+          <div
+            className="dc-member-menu-backdrop"
+            role="presentation"
+            onClick={() => setMemberMenu(null)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setMemberMenu(null);
+            }}
+          />
+          <div
+            className="dc-member-context-menu"
+            role="menu"
+            style={{ top: memberMenu.y, left: memberMenu.x }}
+          >
+            <p className="dc-member-context-menu-title preserve-words">{memberMenu.entry.displayName}</p>
+            <button
+              type="button"
+              role="menuitem"
+              className="dc-member-context-menu-item"
+              disabled={muteBusy}
+              onClick={() => void handleToggleMute(memberMenu.entry)}
+            >
+              {memberMenu.entry.muted ? <Volume2 size={14} /> : <VolumeX size={14} />}
+              {memberMenu.entry.muted ? "뮤트 해제" : "뮤트"}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="dc-member-context-menu-item"
+              data-variant="danger"
+              disabled={muteBusy}
+              onClick={() => void handleKick(memberMenu.entry)}
+            >
+              <UserMinus size={14} />
+              내보내기
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
