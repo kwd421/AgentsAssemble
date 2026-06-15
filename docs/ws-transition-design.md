@@ -54,8 +54,10 @@ WsConnection:
 - ping/pong = RFC 6455 control frame (앱 keep-alive 불필요).
 
 ## 단계별 빌드
-- **WS-3** `room_websocket.py`: RFC 6455 핸드셰이크 + 프레임 코덱(순수 stdlib) + 코덱 단위테스트. ← 토대, 브라우저 없이 검증.
-- **WS-4** `/ws` 엔드포인트(gui.py) + `ws_ticket` 발급 + 핸드셰이크 신원·클라이언트종류 + 연결상태 + 거버넌스 `say` + 이벤트 전달(snapshot 리더 재사용). 가짜 소켓으로 테스트.
+- **WS-3 ✅** `room_websocket.py`: RFC 6455 핸드셰이크 + 프레임 코덱(순수 stdlib) + 코덱 단위테스트(22).
+- **WS-4 ✅** `ws_room_session.py`(WsTicketStore + WsRoomSession 프로토콜 코어, 16테스트) +
+  gui.py `/ws` 소켓 하이재킹 + `POST /api/ws-ticket` + 핸드셰이크 신원·클라이언트종류 + 거버넌스 `say`
+  + 이벤트 전달(snapshot 리더 재사용). 실소켓 통합테스트 3(ws-ticket→핸드셰이크→subscribe/say 왕복).
 - **WS-5** 프런트 `RoomTransport` seam + `WebSocketTransport` + SSE/폴 폴백.
 - **WS-6 (후속)** `RoomEventHub` pub/sub로 내부 폴링 은퇴(지연/효율).
 

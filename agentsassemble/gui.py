@@ -152,6 +152,20 @@ from agentsassemble.room_friend_dms import (
 from agentsassemble.room_friends import delete_room_friend, room_friends_payload, upsert_room_friend
 from agentsassemble.identity_store import default_identity_db_path
 from agentsassemble.room_members import is_room_member_muted, room_members_payload
+from agentsassemble.room_websocket import (
+    CLOSE_PROTOCOL_ERROR,
+    MessageAssembler,
+    WebSocketProtocolError,
+    compute_accept_key,
+    encode_close,
+    is_websocket_upgrade,
+)
+from agentsassemble.ws_room_session import (
+    WS_TICKET_TTL_SECONDS,
+    WsRoomDeps,
+    WsRoomSession,
+    WsTicketStore,
+)
 from agentsassemble.room_users import configure_room_users_store
 from agentsassemble.room_settings import room_settings_payload, update_room_settings
 from agentsassemble.user_profile import read_user_profile, update_user_profile
@@ -8108,6 +8122,49 @@ def _make_handler(
     live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
     live_agent_flow_supervisor = flow_supervisor or LiveAgentFlowSupervisor(output_root)
     invite_tunnel_manager = public_tunnel_manager or PublicTunnelManager()
+    # WS 전환 (WS-4): single-use tickets bind a verified session to a /ws open
+    # (browsers can't set Authorization on `new WebSocket`).
+    ws_ticket_store = WsTicketStore()
+
+    def _ws_room_deps() -> WsRoomDeps:
+        # Reuse the proven SSE snapshot machinery + the governed say append path,
+        # so the WS transport behaves exactly like the HTTP/SSE one (no pub/sub yet).
+        def read_lobby_after(meeting_id: str, after_id: str) -> tuple[list, str]:
+            payload = _stream_snapshot_payload(
+                output_root, "lobby", meeting_id=meeting_id, last_event_id=after_id or None
+            )
+            events = list(payload.get("events", []))
+            return events, (_last_payload_event_id(payload) or after_id)
+
+        def read_roster(meeting_id: str) -> tuple[list, str]:
+            payload = _stream_snapshot_payload(output_root, "roster", meeting_id=meeting_id, last_event_id=None)
+            return list(payload.get("members", [])), str(_payload_signature(payload) or "")
+
+        def post_say(identity: dict, payload: dict) -> dict:
+            # mirrors POST /api/room/say identity injection (never trust client)
+            event_payload = dict(payload)
+            event_payload["name"] = identity.get("display_name")
+            event_payload["actor_id"] = identity.get("agent_id")
+            event_payload["actor_type"] = (
+                "human" if str(identity.get("participant_type") or "human") == "human" else "agent"
+            )
+            event_payload["side"] = "other"
+            requested_kind = str(event_payload.get("kind") or "")
+            event_payload["kind"] = requested_kind if requested_kind in {"vote", "vote_cast"} else "message"
+            if identity.get("meeting_id"):
+                event_payload["flow_meeting_id"] = identity["meeting_id"]
+            return append_lobby_event(
+                output_root,
+                event_payload,
+                allow_flow_metadata=_public_lobby_allows_room_scope(event_payload),
+            )
+
+        return WsRoomDeps(
+            read_lobby_after=read_lobby_after,
+            read_roster=read_roster,
+            post_say=post_say,
+            is_muted=lambda meeting_id, agent_id: is_room_member_muted(output_root, meeting_id, agent_id),
+        )
     # R2: route-table dispatcher. Migrated domains register here; do_GET/do_POST
     # try the table first and fall back to the legacy if-chains below.
     route_deps = GuiDeps(
@@ -8168,6 +8225,9 @@ def _make_handler(
             query = parse_qs(parsed.query)
             if not self._request_is_trusted(path=path, method="GET"):
                 self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
+                return
+            if path == "/ws":
+                self._handle_ws_upgrade(query)
                 return
             if route_table.dispatch("GET", RequestContext(self, route_deps, parsed, query)):
                 return
@@ -8527,6 +8587,14 @@ def _make_handler(
                 self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
                 return
             if route_table.dispatch("POST", RequestContext(self, route_deps, parsed, parse_qs(parsed.query))):
+                return
+            if parsed.path == "/api/ws-ticket":
+                ctx = RequestContext(self, route_deps, parsed, parse_qs(parsed.query))
+                session = ctx.require_session()
+                if session is None:
+                    return  # require_session already sent 401
+                ticket = ws_ticket_store.issue(session)
+                self._send_json({"ticket": ticket, "ttl_seconds": WS_TICKET_TTL_SECONDS})
                 return
             if parsed.path == "/api/demo":
                 result = run_demo_meeting(adapter_name="mock", output_root=output_root)
@@ -11091,6 +11159,65 @@ def _make_handler(
             self._send_public_invite_cors_headers()
             self.end_headers()
             self.wfile.write(data)
+
+        def _handle_ws_upgrade(self, query: dict) -> None:
+            """WS 전환 (WS-4): upgrade /ws, bind the ticket's session as a fixed
+            identity, then run the per-connection frame loop. Delivery reuses the
+            SSE snapshot reader (no pub/sub yet); the win here is the governed
+            handshake (identity + client_type fixed once)."""
+            import select
+
+            if not is_websocket_upgrade(self.headers):
+                self._send_error(HTTPStatus.BAD_REQUEST, "WebSocket upgrade required")
+                return
+            ticket = (query.get("ticket") or [""])[0]
+            session = ws_ticket_store.consume(ticket)
+            if not session:
+                self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired ws ticket")
+                return
+            key = str(self.headers.get("Sec-WebSocket-Key") or "")
+            if not key:
+                self._send_error(HTTPStatus.BAD_REQUEST, "missing Sec-WebSocket-Key")
+                return
+            identity = {
+                "agent_id": str(session.get("agent_id") or ""),
+                "display_name": str(session.get("display_name") or ""),
+                "participant_type": str(session.get("participant_type") or "human"),
+                "client_type": str(session.get("client_type") or session.get("connection_kind") or "browser"),
+                "invite_scope": str(session.get("invite_scope") or "read_write"),
+                "meeting_id": str(session.get("meeting_id") or ""),
+                "operator": bool(session.get("operator")),
+            }
+            self.close_connection = True
+            self.send_response(HTTPStatus.SWITCHING_PROTOCOLS)
+            self.send_header("Upgrade", "websocket")
+            self.send_header("Connection", "Upgrade")
+            self.send_header("Sec-WebSocket-Accept", compute_accept_key(key))
+            self.end_headers()
+            self.wfile.flush()
+            ws = WsRoomSession(identity=identity, deps=_ws_room_deps())
+            assembler = MessageAssembler()
+            sock = self.connection
+            try:
+                while not ws.closed:
+                    ready, _, _ = select.select([sock], [], [], SSE_EVENT_POLL_INTERVAL_SECONDS)
+                    if ready:
+                        data = sock.recv(65536)
+                        if not data:
+                            break  # client closed the TCP connection
+                        assembler.feed(data)
+                        for opcode, payload in assembler.messages():
+                            for frame in ws.handle_frame(opcode, payload):
+                                sock.sendall(frame)
+                    for frame in ws.poll():
+                        sock.sendall(frame)
+            except WebSocketProtocolError:
+                try:
+                    sock.sendall(encode_close(CLOSE_PROTOCOL_ERROR))
+                except OSError:
+                    pass
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
 
         def _send_sse_stream(
             self,

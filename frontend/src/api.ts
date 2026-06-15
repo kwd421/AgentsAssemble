@@ -1949,6 +1949,86 @@ export function subscribeSideChat(
   return () => source.close();
 }
 
+// --- WebSocket transport (WS 전환, WS-5) ------------------------------------
+// Additive: WS gives a single push channel (esp. for guests, who can't attach
+// auth to EventSource and otherwise poll). Callers run it ALONGSIDE the existing
+// SSE+poll; lobby/roster updates are idempotent (dedup by id / full snapshot),
+// so a WS failure leaves the existing path covering everything.
+
+interface WsTicketResponse {
+  ticket: string;
+  ttl_seconds?: number;
+}
+
+export interface RoomSocketHandlers {
+  onLobby?: (events: LobbyEvent[]) => void;
+  onRoster?: (members: RoomMember[]) => void;
+  onOpen?: () => void;
+  onError?: (err: Event | Error) => void;
+}
+
+function wsBaseUrl(): string {
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}`;
+}
+
+export async function getWsTicket(sessionToken: string): Promise<string> {
+  const res = await postJsonWithToken<WsTicketResponse>("/api/ws-ticket", {}, sessionToken);
+  return res.ticket;
+}
+
+/**
+ * Open a room WebSocket: fetch a single-use ticket, connect to /ws, subscribe to
+ * the given streams, and dispatch pushed lobby/roster frames. Returns an
+ * unsubscribe that closes the socket. Send still goes over HTTP (postRoomSay);
+ * this is the faster receive path.
+ */
+export function connectRoomSocket(
+  sessionToken: string,
+  streams: string[],
+  handlers: RoomSocketHandlers
+): () => void {
+  let socket: WebSocket | null = null;
+  let closed = false;
+
+  (async () => {
+    try {
+      const ticket = await getWsTicket(sessionToken);
+      if (closed) return;
+      socket = new WebSocket(`${wsBaseUrl()}/ws?ticket=${encodeURIComponent(ticket)}`);
+      socket.onopen = () => {
+        socket?.send(JSON.stringify({ op: "subscribe", streams }));
+        handlers.onOpen?.();
+      };
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data as string) as {
+            op?: string;
+            stream?: string;
+            events?: LobbyEvent[];
+            members?: RoomMember[];
+          };
+          if (msg.op === "event" && msg.stream === "lobby" && Array.isArray(msg.events)) {
+            handlers.onLobby?.(msg.events);
+          } else if (msg.op === "event" && msg.stream === "roster" && Array.isArray(msg.members)) {
+            handlers.onRoster?.(msg.members);
+          }
+        } catch {
+          // Ignore malformed frames; SSE+poll fallback still covers updates.
+        }
+      };
+      socket.onerror = (event) => handlers.onError?.(event);
+    } catch (err) {
+      handlers.onError?.(err as Error);
+    }
+  })();
+
+  return () => {
+    closed = true;
+    socket?.close();
+  };
+}
+
 export function subscribeMeetingEvents(
   meetingId: string,
   onUpdate: (update: MeetingStreamUpdate) => void,

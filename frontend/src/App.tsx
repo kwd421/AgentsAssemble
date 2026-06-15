@@ -49,6 +49,7 @@ import {
   upsertRoomMember,
   applyMeetingStreamUpdate,
   initialMeetingStreamState,
+  connectRoomSocket,
   mergeSideChatEvents,
   meetingLiveEventsToTimelineEvents,
   meetingStreamStateForActiveMeeting,
@@ -1842,12 +1843,34 @@ export default function App() {
           }));
         })
       : undefined;
+    // Guests can't attach auth to EventSource, so they get roster PUSH over the
+    // WebSocket instead (WS 전환, WS-5). Additive + idempotent: the snapshot
+    // replaces the roster; if the socket never opens, the poll below covers it.
+    const guestToken =
+      guestLocked && activeRoom.meetingId ? guestSession?.sessionToken || "" : "";
+    const wsUnsubscribe = guestToken
+      ? connectRoomSocket(guestToken, ["roster"], {
+          onRoster: (members) => {
+            setRoomMembersByRoom((previous) => ({
+              ...previous,
+              [activeRoomKey]: members,
+            }));
+          },
+        })
+      : undefined;
     const intervalId = window.setInterval(refreshMembers, subscribed ? 30_000 : 10_000);
     return () => {
       unsubscribe?.();
+      wsUnsubscribe?.();
       window.clearInterval(intervalId);
     };
-  }, [activeRoom.meetingId, activeRoomKey, guestLocked, refreshMembers]);
+  }, [
+    activeRoom.meetingId,
+    activeRoomKey,
+    guestLocked,
+    guestSession?.sessionToken,
+    refreshMembers,
+  ]);
 
   function updateRoom(roomId: string, updates: Partial<RoomDockItem>) {
     setRooms((previous) =>

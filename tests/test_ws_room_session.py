@@ -1,0 +1,215 @@
+import json
+import struct
+import unittest
+
+from agentsassemble.room_websocket import OP_CLOSE, OP_PING, OP_PONG, OP_TEXT
+from agentsassemble.ws_room_session import (
+    WsRoomDeps,
+    WsRoomSession,
+    WsSayRejected,
+    WsTicketStore,
+)
+
+
+def server_frames(frames):
+    """Decode a list of server→client (unmasked) frames into (opcode, payload)."""
+    out = []
+    for frame in frames:
+        b0, b1 = frame[0], frame[1]
+        opcode = b0 & 0x0F
+        length = b1 & 0x7F
+        offset = 2
+        if length == 126:
+            (length,) = struct.unpack("!H", frame[2:4])
+            offset = 4
+        elif length == 127:
+            (length,) = struct.unpack("!Q", frame[2:10])
+            offset = 10
+        out.append((opcode, frame[offset:offset + length]))
+    return out
+
+
+def text_messages(frames):
+    """JSON objects from server TEXT frames."""
+    return [json.loads(payload.decode("utf-8")) for op, payload in server_frames(frames) if op == OP_TEXT]
+
+
+class FakeClock:
+    def __init__(self):
+        self.t = 1000.0
+
+    def __call__(self):
+        return self.t
+
+
+class TicketStoreTests(unittest.TestCase):
+    def test_issue_then_consume_returns_session(self):
+        store = WsTicketStore()
+        ticket = store.issue({"agent_id": "guest-1", "meeting_id": "room-1"})
+        session = store.consume(ticket)
+        self.assertEqual(session["agent_id"], "guest-1")
+
+    def test_ticket_is_single_use(self):
+        store = WsTicketStore()
+        ticket = store.issue({"agent_id": "guest-1"})
+        self.assertIsNotNone(store.consume(ticket))
+        self.assertIsNone(store.consume(ticket))  # second use fails
+
+    def test_expired_ticket_rejected(self):
+        clock = FakeClock()
+        store = WsTicketStore(ttl_seconds=30, now_fn=clock)
+        ticket = store.issue({"agent_id": "guest-1"})
+        clock.t += 31
+        self.assertIsNone(store.consume(ticket))
+
+    def test_unknown_ticket_is_none(self):
+        self.assertIsNone(WsTicketStore().consume("wst_nope"))
+
+
+class FakeDeps:
+    def __init__(self):
+        self.lobby_queue = []          # events to hand out once
+        self.lobby_latest = ""
+        self.roster = ([], "sig0")
+        self.muted = False
+        self.posted = []
+
+    def make(self):
+        return WsRoomDeps(
+            read_lobby_after=self._read_lobby_after,
+            read_roster=lambda meeting_id: self.roster,
+            post_say=self._post_say,
+            is_muted=lambda meeting_id, agent_id: self.muted,
+        )
+
+    def _read_lobby_after(self, meeting_id, after):
+        events = self.lobby_queue
+        self.lobby_queue = []
+        return events, self.lobby_latest
+
+    def _post_say(self, identity, payload):
+        event = {"id": "evt1", "message": payload["message"], "actor_id": identity["agent_id"]}
+        self.posted.append((identity, payload))
+        return event
+
+
+def _session(deps, **identity_over):
+    identity = {
+        "agent_id": "guest-1",
+        "display_name": "테스터",
+        "participant_type": "human",
+        "client_type": "browser",
+        "invite_scope": "read_write",
+        "meeting_id": "room-1",
+        "operator": False,
+    }
+    identity.update(identity_over)
+    return WsRoomSession(identity=identity, deps=deps.make())
+
+
+class SubscribeTests(unittest.TestCase):
+    def test_subscribe_acks_and_pushes_snapshot(self):
+        deps = FakeDeps()
+        deps.lobby_queue = [{"id": "e1", "message": "hi"}]
+        deps.lobby_latest = "e1"
+        sess = _session(deps)
+        frames = sess.handle_frame(OP_TEXT, json.dumps({"op": "subscribe", "streams": ["lobby"]}).encode())
+        msgs = text_messages(frames)
+        self.assertEqual(msgs[0]["op"], "subscribed")
+        self.assertEqual(msgs[0]["streams"], ["lobby"])
+        self.assertEqual(msgs[1]["op"], "event")
+        self.assertEqual(msgs[1]["events"][0]["message"], "hi")
+
+    def test_subscribe_defaults_to_all_streams(self):
+        sess = _session(FakeDeps())
+        frames = sess.handle_frame(OP_TEXT, json.dumps({"op": "subscribe"}).encode())
+        self.assertEqual(set(text_messages(frames)[0]["streams"]), {"lobby", "roster", "side_chat"})
+
+    def test_roster_only_pushed_on_signature_change(self):
+        deps = FakeDeps()
+        deps.roster = ([{"agent_id": "a"}], "sig1")
+        sess = _session(deps)
+        sess.handle_frame(OP_TEXT, json.dumps({"op": "subscribe", "streams": ["roster"]}).encode())
+        # second poll with same signature → no roster frame
+        self.assertEqual(sess.poll(), [])
+        # signature change → push
+        deps.roster = ([{"agent_id": "a"}, {"agent_id": "b"}], "sig2")
+        msgs = text_messages(sess.poll())
+        self.assertEqual(msgs[0]["stream"], "roster")
+        self.assertEqual(len(msgs[0]["members"]), 2)
+
+
+class SayGovernanceTests(unittest.TestCase):
+    def test_say_posts_and_acks(self):
+        deps = FakeDeps()
+        sess = _session(deps)
+        frames = sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "hello"}).encode())
+        msgs = text_messages(frames)
+        self.assertEqual(msgs[0]["op"], "ack")
+        self.assertEqual(msgs[0]["event"]["message"], "hello")
+        self.assertEqual(len(deps.posted), 1)
+        # server injects identity, not the client
+        identity, payload = deps.posted[0]
+        self.assertEqual(identity["agent_id"], "guest-1")
+
+    def test_read_only_scope_blocks_say(self):
+        deps = FakeDeps()
+        sess = _session(deps, invite_scope="read_only")
+        msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "x"}).encode()))
+        self.assertEqual(msgs[0]["op"], "error")
+        self.assertEqual(msgs[0]["category"], "read_only")
+        self.assertEqual(deps.posted, [])
+
+    def test_muted_blocks_say(self):
+        deps = FakeDeps()
+        deps.muted = True
+        sess = _session(deps)
+        msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "x"}).encode()))
+        self.assertEqual(msgs[0]["category"], "muted")
+        self.assertEqual(deps.posted, [])
+
+    def test_empty_message_rejected(self):
+        deps = FakeDeps()
+        sess = _session(deps)
+        msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "   "}).encode()))
+        self.assertEqual(msgs[0]["category"], "empty")
+
+    def test_post_say_rejection_becomes_error_frame(self):
+        deps = FakeDeps()
+        deps._post_say = lambda identity, payload: (_ for _ in ()).throw(
+            WsSayRejected("someone spoke", category="turn_conflict")
+        )
+        sess = _session(deps)
+        msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "x"}).encode()))
+        self.assertEqual(msgs[0]["category"], "turn_conflict")
+
+
+class ControlAndMiscTests(unittest.TestCase):
+    def test_ping_returns_pong(self):
+        sess = _session(FakeDeps())
+        frames = sess.handle_frame(OP_PING, b"abc")
+        self.assertEqual(server_frames(frames), [(OP_PONG, b"abc")])
+
+    def test_close_marks_closed_and_polls_quiet(self):
+        deps = FakeDeps()
+        deps.lobby_queue = [{"id": "e1"}]
+        sess = _session(deps)
+        sess.handle_frame(OP_TEXT, json.dumps({"op": "subscribe", "streams": ["lobby"]}).encode())
+        out = sess.handle_frame(OP_CLOSE, b"")
+        self.assertTrue(sess.closed)
+        self.assertEqual(server_frames(out)[0][0], OP_CLOSE)
+        self.assertEqual(sess.poll(), [])  # closed sessions don't deliver
+
+    def test_bad_json_errors(self):
+        sess = _session(FakeDeps())
+        msgs = text_messages(sess.handle_frame(OP_TEXT, b"{not json"))
+        self.assertEqual(msgs[0]["category"], "bad_message")
+
+    def test_unknown_op_errors(self):
+        sess = _session(FakeDeps())
+        msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "frobnicate"}).encode()))
+        self.assertEqual(msgs[0]["category"], "unknown_op")
+
+
+if __name__ == "__main__":
+    unittest.main()

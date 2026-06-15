@@ -192,6 +192,7 @@ surface rather than silently counted as React parity.
 | `/api/room-settings` | POST | exact | `saveRoomSettings()` | yes | React stores room label/topic/appearance/member-role/channel settings from the Discord shell. |
 | `/api/user-profile` | GET | exact | `fetchUserProfile()` | yes | React bottom user panel reads the persisted local Discord-style identity. |
 | `/api/user-profile` | POST | exact | `saveUserProfile()` | yes | React bottom user panel stores local identity, status, mic/deafen, banner preset, and accent color. |
+| `/api/ws-ticket` | POST | exact | `-` | no | WS 전환 (WS-4): issues a single-use short-TTL ticket (authed session) so the browser can open `/ws?ticket=...` without an Authorization header. React WS client lands in WS-5. |
 | `/api/room-members` | GET | exact | `fetchRoomMembers()` | yes | React reads persisted selected-room members, including saved friends invited from the Discord home surface. |
 | `/api/room-members` | POST | exact | `upsertRoomMember()` | yes | React writes saved-friend invitations into selected-room member state; this does not start providers or send external Discord invites. |
 | `/api/room-members/mute` | POST | exact | `muteRoomMember()` | yes | Moderation (host token or operator session): toggles a participant's muted flag from the member panel context menu. |

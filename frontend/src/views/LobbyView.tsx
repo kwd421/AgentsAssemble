@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { Bot, Hash, MessageCircle, MoreHorizontal, Zap } from "lucide-react";
 import {
+  connectRoomSocket,
   fetchLobby,
   fetchRoomLobby,
   mergeLobbyEvents,
@@ -324,6 +325,14 @@ export default function LobbyView({
   useEffect(() => {
     if (roomSessionToken) return undefined;
     return subscribeLobby(handleSSE, undefined, activeRoom.meetingId);
+  }, [activeRoom.meetingId, handleSSE, roomSessionToken]);
+
+  // Guests can't auth EventSource, so they get lobby PUSH over the WebSocket
+  // (WS 전환, WS-5). Additive + idempotent (mergeLobbyEvents dedups by id); the
+  // 15s poll above remains the fallback if the socket never opens.
+  useEffect(() => {
+    if (!roomSessionToken) return undefined;
+    return connectRoomSocket(roomSessionToken, ["lobby"], { onLobby: handleSSE });
   }, [activeRoom.meetingId, handleSSE, roomSessionToken]);
 
   const handleLobbyPosted = useCallback((postedEvents: LobbyEvent[]) => {
