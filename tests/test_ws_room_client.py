@@ -1,0 +1,186 @@
+import json
+import re
+import tempfile
+import threading
+import unittest
+from collections import deque
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+
+from agentsassemble.gui import _make_handler
+from agentsassemble.room_invite import create_room_invite, join_room_with_invite, reset_state
+from agentsassemble.room_websocket import (
+    OP_PING,
+    OP_PONG,
+    OP_TEXT,
+    compute_accept_key,
+    encode_frame,
+    encode_text,
+    parse_frame,
+)
+from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws
+
+
+class FakeSocket:
+    """A socket-like that auto-answers the WS handshake and serves queued frames."""
+
+    def __init__(self, *, auto_handshake: bool = True):
+        self.sent = b""
+        self.auto_handshake = auto_handshake
+        self._recv_queue: deque[bytes] = deque()
+        self.closed = False
+
+    def settimeout(self, _t):
+        pass
+
+    def sendall(self, data: bytes):
+        self.sent += bytes(data)
+        if self.auto_handshake and b"GET " in data and b"Sec-WebSocket-Key:" in data:
+            match = re.search(rb"Sec-WebSocket-Key:\s*(\S+)", data)
+            key = match.group(1).decode("ascii")
+            accept = compute_accept_key(key)
+            self._recv_queue.append(
+                f"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"
+                f"Connection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n".encode()
+            )
+
+    def queue_recv(self, data: bytes):
+        self._recv_queue.append(bytes(data))
+
+    def recv(self, _n: int) -> bytes:
+        return self._recv_queue.popleft() if self._recv_queue else b""
+
+    def close(self):
+        self.closed = True
+
+    # test helper: decode the client→server (masked) text frames it sent
+    def sent_messages(self) -> list[dict]:
+        out, buf = [], self.sent
+        # skip the handshake request line block
+        if b"\r\n\r\n" in buf and buf.startswith(b"GET "):
+            buf = buf.split(b"\r\n\r\n", 1)[1]
+        while buf:
+            frame, rest = parse_frame(buf)
+            if frame is None:
+                break
+            buf = rest
+            if frame.opcode == OP_TEXT:
+                out.append(json.loads(frame.payload.decode("utf-8")))
+        return out
+
+
+class HandshakeUnitTests(unittest.TestCase):
+    def test_open_succeeds_with_valid_accept(self):
+        sock = FakeSocket()
+        client = WsRoomClient(sock, host="localhost")
+        client.open("/ws?ticket=abc")  # should not raise
+        self.assertIn(b"GET /ws?ticket=abc HTTP/1.1", sock.sent)
+
+    def test_open_rejects_wrong_accept(self):
+        sock = FakeSocket(auto_handshake=False)
+        sock.queue_recv(
+            b"HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Accept: wrong\r\n\r\n"
+        )
+        with self.assertRaises(Exception):
+            WsRoomClient(sock).open("/ws?ticket=abc")
+
+    def test_open_rejects_non_101(self):
+        sock = FakeSocket(auto_handshake=False)
+        sock.queue_recv(b"HTTP/1.1 401 Unauthorized\r\n\r\n")
+        with self.assertRaises(Exception):
+            WsRoomClient(sock).open("/ws?ticket=abc")
+
+
+class SendUnitTests(unittest.TestCase):
+    def _opened(self):
+        sock = FakeSocket()
+        client = WsRoomClient(sock)
+        client.open("/ws?ticket=t")
+        return client, sock
+
+    def test_subscribe_sends_masked_frame(self):
+        client, sock = self._opened()
+        client.subscribe(["lobby", "roster"])
+        msgs = sock.sent_messages()
+        self.assertEqual(msgs[-1], {"op": "subscribe", "streams": ["lobby", "roster"]})
+
+    def test_say_sends_message(self):
+        client, sock = self._opened()
+        client.say("hello", kind="message")
+        self.assertEqual(sock.sent_messages()[-1], {"op": "say", "message": "hello", "kind": "message"})
+
+
+class ReceiveUnitTests(unittest.TestCase):
+    def _opened(self):
+        sock = FakeSocket()
+        client = WsRoomClient(sock)
+        client.open("/ws?ticket=t")
+        return client, sock
+
+    def test_receive_parses_server_event(self):
+        client, sock = self._opened()
+        sock.queue_recv(encode_text(json.dumps({"op": "event", "stream": "lobby", "events": [{"id": "e1"}]})))
+        msgs = client.receive()
+        self.assertEqual(msgs[0]["op"], "event")
+        self.assertEqual(msgs[0]["events"][0]["id"], "e1")
+
+    def test_receive_auto_pongs_ping(self):
+        client, sock = self._opened()
+        sock.queue_recv(encode_frame(b"hb", opcode=OP_PING))  # server ping (unmasked)
+        client.receive()
+        # the client must have replied with a (masked) pong
+        last = sock.sent[-(len(encode_frame(b"hb", opcode=OP_PONG)) + 2):]
+        self.assertIn(OP_PONG, [sock.sent[i] & 0x0F for i in range(len(sock.sent)) if sock.sent[i] & 0x80])
+
+    def test_receive_eof_marks_closed(self):
+        client, sock = self._opened()
+        # no queued data → recv returns b"" → closed
+        self.assertEqual(client.receive(), [])
+        self.assertTrue(client.closed)
+
+
+class LiveRoundTripTests(unittest.TestCase):
+    def setUp(self):
+        reset_state()
+        self._servers: list[ThreadingHTTPServer] = []
+
+    def tearDown(self):
+        for server in self._servers:
+            server.shutdown()
+        reset_state()
+
+    def _start(self, root: Path) -> str:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self._servers.append(server)
+        host, port = server.server_address
+        return f"http://{host}:{port}"
+
+    def _drain(self, client: WsRoomClient, want_op: str, tries: int = 30) -> dict:
+        for _ in range(tries):
+            for msg in client.receive():
+                if msg.get("op") == want_op:
+                    return msg
+        raise AssertionError(f"no {want_op} message received")
+
+    def test_python_client_talks_to_real_ws_server(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._start(Path(tmp))
+            invite = create_room_invite(
+                room_url=base, meeting_id="room-1", agent_id="agent-ws", display_name="WS봇", max_uses=1
+            )
+            token = str(join_room_with_invite(str(invite["invite_token"]))["session_token"])
+
+            client = connect_room_ws(base, token, ["lobby"])
+            try:
+                self._drain(client, "subscribed")
+                client.say("hello from python client")
+                ack = self._drain(client, "ack")
+                self.assertEqual(ack["event"]["message"], "hello from python client")
+                self.assertEqual(ack["event"]["actor_id"], "agent-ws")
+            finally:
+                client.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
