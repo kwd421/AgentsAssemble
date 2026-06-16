@@ -77,16 +77,18 @@ class AntigravityResidentTests(unittest.TestCase):
         self.assertEqual(calls[0]["kwargs"]["cwd"], str(Path(temp_dir)))
 
     def test_runner_reports_safe_failures(self):
+        # A missing conversation id is no longer fatal: Antigravity answers even
+        # when not fully logged in (no id in the log), so a valid reply still
+        # reaches the room — just statelessly (no --conversation resume).
         def no_conversation(command, **kwargs):
             return subprocess.CompletedProcess(command, 0, stdout="READY", stderr="")
 
         runner = AntigravityResidentCommandRunner(config(), command_runner=no_conversation, cwd=Path.cwd())
         try:
-            with self.assertRaisesRegex(ValueError, "safe conversation id") as missing:
-                runner([], "prompt", timeout_seconds=45)
+            self.assertEqual(runner([], "prompt", timeout_seconds=45), "READY")
+            self.assertEqual(runner.session_id, "")  # stayed stateless, did not raise
         finally:
             runner.close()
-        self.assertEqual(antigravity_error_category(missing.exception), ANTIGRAVITY_MISSING_CONVERSATION_ID)
 
         def nonzero(command, **kwargs):
             return subprocess.CompletedProcess(command, 7, stdout="", stderr="SECRET")

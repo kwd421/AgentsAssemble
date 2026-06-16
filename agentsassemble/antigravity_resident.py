@@ -71,13 +71,14 @@ class AntigravityResidentCommandRunner:
         log_path = Path(self._log_dir.name) / f"turn-{self._turn_index}.log"
         agy_command = self._build_command(prompt, log_path=log_path, timeout_seconds=timeout_seconds)
         completed = self._run_antigravity_command(agy_command, timeout_seconds=timeout_seconds)
+        # Session continuity (the conversation id, for --conversation resume) is a
+        # best-effort nicety, NOT a precondition for speaking: Antigravity answers
+        # fine even when it isn't fully logged in (the log then carries auth-poll
+        # warnings + no conversation id). Don't go silent over a missing id.
         if not self.session_id:
-            self.session_id = self._conversation_id_from_log(log_path)
-            if not self.session_id:
-                raise AntigravityResidentValueError(
-                    "Antigravity live session did not expose a safe conversation id.",
-                    category=ANTIGRAVITY_MISSING_CONVERSATION_ID,
-                )
+            self.session_id = self._conversation_id_from_log(log_path)  # "" is fine
+        # Real backend failures (RESOURCE_EXHAUSTED / executor errors) still reject,
+        # since stdout may then be stale.
         self._raise_backend_error_from_log(log_path)
         reply = _visible_antigravity_reply(getattr(completed, "stdout", ""))
         if not reply:
