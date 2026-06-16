@@ -13,6 +13,13 @@ from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payload
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.room_channels import (
+    ChannelError,
+    add_channel,
+    remove_channel,
+    rename_channel,
+    reorder_channels,
+)
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.room_invite import (
     active_sessions_summary,
@@ -31,6 +38,7 @@ from agentsassemble.room_members import (
     set_room_member_muted,
     upsert_room_member,
 )
+from agentsassemble.room_settings import room_settings_payload, update_room_settings
 from agentsassemble.room_users import grant_operator_to_device
 from agentsassemble.room_votes import vote_summary
 from agentsassemble.stable_entry import stable_entry_url
@@ -286,6 +294,84 @@ def register_room_routes(router: Router) -> None:
                 **_members_payload(ctx, kick_meeting_id),
             }
         )
+
+    # -- custom channels (Discord-style text/voice) -------------------------
+
+    def _channels_for(output_root, meeting_id: str) -> list[dict[str, object]]:
+        payload = room_settings_payload(output_root, room_id=meeting_id)
+        settings = payload.get("settings") if isinstance(payload, dict) else {}
+        channels = settings.get("channels") if isinstance(settings, dict) else None
+        return list(channels) if isinstance(channels, list) else []
+
+    def _channel_error(ctx: RequestContext, error: ChannelError) -> None:
+        status = {
+            "not_found": HTTPStatus.NOT_FOUND,
+            "duplicate": HTTPStatus.CONFLICT,
+            "limit": HTTPStatus.CONFLICT,
+        }.get(error.category, HTTPStatus.BAD_REQUEST)
+        ctx.send_error(status, str(error))
+
+    @router.get("/api/room-channels")
+    def room_channels_list(ctx: RequestContext) -> None:
+        # Readable like the roster: local console freely, public entrance needs a
+        # valid session or the host credential.
+        if (
+            not ctx.handler._request_uses_loopback_host()
+            and ctx.session() is None
+            and not ctx.is_host()
+        ):
+            ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+            return
+        meeting_id = ctx.query_value("meeting_id") or ctx.query_value("room_id")
+        ctx.send_json({"room_id": meeting_id, "channels": _channels_for(ctx.deps.output_root, meeting_id)})
+
+    @router.post("/api/room-channels")
+    def room_channels_mutate(ctx: RequestContext) -> None:
+        # Channel create/rename/delete/reorder is a room-shape change: host token
+        # or operator (director) session only — same gate as mute/kick.
+        if not ctx.require_moderator():
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        meeting_id = str(payload.get("meeting_id") or payload.get("room_id") or "")
+        if not meeting_id.strip():
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "meeting_id is required")
+            return
+        action = str(payload.get("action") or "").strip().lower()
+        output_root = ctx.deps.output_root
+        current = _channels_for(output_root, meeting_id)
+        created: dict[str, object] | None = None
+        try:
+            if action == "create":
+                current, created = add_channel(
+                    current,
+                    name=payload.get("name"),
+                    channel_type=payload.get("type") or payload.get("channel_type") or "text",
+                )
+            elif action == "rename":
+                current = rename_channel(current, str(payload.get("channel_id") or ""), payload.get("name"))
+            elif action in {"delete", "remove"}:
+                current = remove_channel(current, str(payload.get("channel_id") or ""))
+            elif action == "reorder":
+                ordered = payload.get("ordered_ids") or payload.get("orderedIds") or []
+                current = reorder_channels(current, [str(item) for item in ordered] if isinstance(ordered, list) else [])
+            else:
+                ctx.send_error(HTTPStatus.BAD_REQUEST, "unknown channel action")
+                return
+        except ChannelError as error:
+            _channel_error(ctx, error)
+            return
+        saved = update_room_settings(output_root, {"room_id": meeting_id, "channels": current})
+        result_settings = saved.get("settings") if isinstance(saved, dict) else {}
+        channels = result_settings.get("channels") if isinstance(result_settings, dict) else None
+        response: dict[str, object] = {
+            "room_id": meeting_id,
+            "channels": list(channels) if isinstance(channels, list) else [],
+        }
+        if created is not None:
+            response["channel"] = created
+        ctx.send_json(response)
 
     # -- operator account ------------------------------------------------------
 
