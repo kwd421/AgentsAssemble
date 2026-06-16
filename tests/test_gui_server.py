@@ -9062,6 +9062,31 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["agent"]["display_name"], "Claude Code Live")
             self.assertEqual(payload["lobby_events"][0]["message"], "방 상태 보여?")
 
+    def test_read_lobby_returns_room_history_buried_past_global_tail(self):
+        # A room's initial load must surface ITS last events even when other
+        # rooms' chatter dominates the shared log. (Regression: read_lobby used
+        # to take a global tail then filter, so older rooms loaded empty.)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            old_event = append_lobby_event(
+                root,
+                {"name": "상남자페이블", "side": "other-agent", "message": "옛날 방 발언", "actor_id": "fable-macho", "flow_meeting_id": "fable-room"},
+                allow_flow_metadata=True,
+            )
+            # Bury it under 200 messages from a different room.
+            for index in range(200):
+                append_lobby_event(
+                    root,
+                    {"name": "딴방", "side": "other-agent", "message": f"chatter {index}", "actor_id": f"other-{index}", "flow_meeting_id": "other-room"},
+                    allow_flow_metadata=True,
+                )
+            # Global tail no longer contains the old event...
+            self.assertNotIn(old_event["id"], {e["id"] for e in read_lobby(root)})
+            # ...but a room-scoped read still finds it.
+            scoped = read_lobby(root, meeting_id="fable-room")
+            self.assertIn(old_event["id"], {e["id"] for e in scoped})
+            self.assertTrue(all(e.get("flow_meeting_id") == "fable-room" for e in scoped))
+
     def test_live_agent_room_endpoint_keeps_probe_sized_lobby_tail(self):
         expected_room_tail_limit = LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT
         with tempfile.TemporaryDirectory() as temp_dir:

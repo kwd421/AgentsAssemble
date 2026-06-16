@@ -1615,8 +1615,25 @@ def _read_optional(path: Path) -> str:
 
 
 def read_lobby(output_root: Path, limit: int | None = 80, *, meeting_id: str = "") -> list[dict[str, object]]:
-    events = read_lobby_events(output_root / "lobby.jsonl", limit=limit)
-    return _filter_lobby_events_for_meeting(events, meeting_id=meeting_id)
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    if not clean_meeting_id:
+        # Global lobby: a plain global tail is what we want.
+        return read_lobby_events(output_root / "lobby.jsonl", limit=limit)
+    # Per-room: scan newest-first and keep this room's last `limit` events. The
+    # lobby is one shared append-only log, so a global tail (read_lobby_events)
+    # can contain zero of this room's events once other rooms' messages push
+    # past the window — which made older rooms load empty. Filtering during the
+    # backward scan (like the scroll-up pagination) fixes that.
+    cap = limit if isinstance(limit, int) and limit > 0 else None
+    collected: list[dict[str, object]] = []
+    for event in iter_lobby_events_newest_first(output_root / "lobby.jsonl"):
+        if clean_lobby_text(event.get("flow_meeting_id"), limit=128) != clean_meeting_id:
+            continue
+        collected.append(event)
+        if cap is not None and len(collected) >= cap:
+            break
+    collected.reverse()  # oldest-last, matching read_lobby_events ordering
+    return collected
 
 
 LOBBY_HISTORY_PAGE_LIMIT = 50
