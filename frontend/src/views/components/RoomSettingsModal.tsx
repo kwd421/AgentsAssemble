@@ -172,11 +172,11 @@ export default function RoomSettingsModal({
                   <input
                     type="radio"
                     name="conversation-mode"
-                    checked={conversationMode !== "free"}
-                    onChange={() => onConversationModeChange("turn")}
+                    checked={conversationMode === "quiet"}
+                    onChange={() => onConversationModeChange("quiet")}
                   />
                   <span className="preserve-words">
-                    차례제 — 에이전트는 각자의 응답 규칙(멘션 등)을 따릅니다. 차분한 회의실.
+                    🤫 조용 — @멘션될 때만 답합니다. 차분하고 토큰을 아끼는 기본값.
                   </span>
                 </label>
                 <label>
@@ -187,7 +187,18 @@ export default function RoomSettingsModal({
                     onChange={() => onConversationModeChange("free")}
                   />
                   <span className="preserve-words">
-                    자유 — 에이전트가 사람·서로에게 자유롭게 이어 말합니다 (연쇄 깊이로만 제한). 자연스러운 대화/난상토론.
+                    🔥 자유 — 에이전트가 사람·서로에게 다 끼어듭니다 (연쇄 깊이로만 제한). 난상토론.
+                  </span>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="conversation-mode"
+                    checked={conversationMode === "ordered"}
+                    onChange={() => onConversationModeChange("ordered")}
+                  />
+                  <span className="preserve-words">
+                    🔢 순서 — 다들 말하고 싶어 하지만, 알고리즘이 다음 발언자를 정합니다 (공정하게 번갈아, 동시발언·도배 방지).
                   </span>
                 </label>
               </div>

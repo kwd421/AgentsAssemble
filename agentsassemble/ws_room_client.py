@@ -222,6 +222,25 @@ def join_room_session(
     return token
 
 
+def meeting_id_from_invite_token(invite_token: str) -> str:
+    """Best-effort: read meeting_id out of the invite token's payload (the
+    middle base64 segment of `aai1.<payload>.<sig>`), so a resident launched with
+    only --invite-token still knows its room. Returns "" if it can't be read."""
+    import base64
+
+    token = str(invite_token or "")
+    parts = token.split(".")
+    if len(parts) < 2:
+        return ""
+    segment = parts[1]
+    try:
+        padded = segment + "=" * (-len(segment) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+    except Exception:
+        return ""
+    return str(payload.get("meeting_id") or "") if isinstance(payload, dict) else ""
+
+
 def fetch_room_conversation_mode(server_url: str, meeting_id: str, *, timeout: float = 5.0) -> str:
     """GET /api/room-settings → the room's conversation_mode ("turn"/"free").
     Best-effort: returns "turn" on any error so a resident never fails to launch."""

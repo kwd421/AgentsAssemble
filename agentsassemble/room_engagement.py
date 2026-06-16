@@ -118,15 +118,69 @@ def _contains_direct_mention_token(normalized_message: str, normalized_mention: 
 
 
 def resolve_engagement(conversation_mode: str, agent_engagement_mode: str) -> str:
-    """A room's free-flow policy overrides a per-agent engagement default.
+    """Map the room's mode to how eagerly an agent reacts.
 
-    "free": agents reply to everyone — humans AND each other — bounded only by
-    chain-depth / dedup / human-priority, so conversation flows naturally and
-    consecutively. "turn" (default): keep the agent's own engagement_mode
-    (mentioned / human_only / ...), so the room stays orderly."""
-    if str(conversation_mode or "").strip().lower() == "free":
+    quiet   → "mentioned" (speak only when @called) — the token-cheap default.
+    free    → "always" (react to everything, no floor).
+    ordered → "always" too — every agent *wants* to react; the floor algorithm
+              (see room_uses_floor / should_yield_for_floor) is what spaces them
+              out, not the engagement mode.
+    Unknown modes fall back to the agent's own engagement_mode (legacy/advanced)."""
+    mode = str(conversation_mode or "").strip().lower()
+    if mode in {"free", "ordered"}:
         return "always"
+    if mode == "quiet":
+        return "mentioned"
     return str(agent_engagement_mode or "mentioned")
+
+
+def room_uses_floor(conversation_mode: str) -> bool:
+    """True for "ordered": a deterministic turn floor spaces speakers out."""
+    return str(conversation_mode or "").strip().lower() == "ordered"
+
+
+def should_yield_for_floor(
+    events: list[dict[str, object]],
+    agent_id: str,
+    display_name: str,
+    *,
+    recent_window: int = 8,
+) -> bool:
+    """Deterministic turn floor for "ordered" rooms — no AI decides turns, this does.
+
+    An agent yields (stays silent this round) when, among the recent human+agent
+    messages, it has already spoken at least as much as the quietest active
+    speaker — i.e. it's not "behind". It also never speaks twice in a row. The
+    effect is rough round-robin: after you speak you're ahead, so you yield until
+    peers catch up, then you're behind again and may speak. Humans are never
+    counted (they always have priority), so a human message always lets agents
+    respond."""
+    me = str(agent_id or "")
+    recent = [
+        event
+        for event in events
+        if str(event.get("kind") or "message") == "message"
+        and str(event.get("message") or "").strip()
+    ][-max(1, int(recent_window)):]
+    if not recent:
+        return False
+    # No double-speak: if the last message was mine, yield.
+    last = recent[-1]
+    if is_self_event(last, me, display_name):
+        return True
+    # Count only agent speakers (humans always have priority, never gate agents).
+    counts: dict[str, int] = {}
+    for event in recent:
+        if is_human_lobby_event(event):
+            continue
+        speaker = str(event.get("actor_id") or event.get("name") or "")
+        if speaker:
+            counts[speaker] = counts.get(speaker, 0) + 1
+    my_count = counts.get(me, 0) or counts.get(display_name, 0)
+    if not counts or my_count == 0:
+        return False  # I haven't spoken recently → I'm behind → speak.
+    # Yield while I'm not strictly the most-behind active speaker.
+    return my_count > min(counts.values())
 
 
 def should_reply_to_event(

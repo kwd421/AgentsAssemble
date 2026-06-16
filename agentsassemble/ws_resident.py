@@ -100,6 +100,7 @@ def run_provider_ws_resident(
     max_replies: int = 0,
     max_idle_rounds: int = 0,
     engagement_mode: str | None = None,
+    use_floor: bool = False,
 ) -> int:
     """Run a CLI/provider agent over WS at the HTTP runner's prompt fidelity.
 
@@ -122,6 +123,7 @@ def run_provider_ws_resident(
         event_reply_candidate,
         visible_reply_contains_control_meta,
     )
+    from agentsassemble.room_engagement import should_yield_for_floor
 
     agent_id = str(config.agent_id)
     display_name = str(config.display_name or config.agent_id)
@@ -189,6 +191,11 @@ def run_provider_ws_resident(
                 continue
             source_event_id = str(candidate.get("id") or last_observed)
             last_observed = source_event_id
+            # "ordered" rooms: a deterministic floor spaces speakers out. If it's
+            # not our turn, stay silent this round (cursor already advanced, so we
+            # stay responsive to the next message — turns emerge as peers catch up).
+            if use_floor and should_yield_for_floor(buffer, agent_id, display_name):
+                continue
             room = {
                 "lobby_events": list(buffer),
                 "agent": {"agent_id": agent_id, "engagement_mode": effective_engagement},

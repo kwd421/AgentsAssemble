@@ -77,20 +77,25 @@ class RoomSettingsTests(unittest.TestCase):
             "2026-06-03T10:20:30Z",
         )
 
-    def test_conversation_mode_defaults_to_turn_and_round_trips_free(self):
+    def test_conversation_mode_defaults_to_quiet_and_round_trips(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            # Default when never set.
+            # Default when never set = quiet (token-cheap).
             default = update_room_settings(root, {"room_id": "resident-m1", "label": "Room"})
-            self.assertEqual(default["settings"]["conversation_mode"], "turn")
-            # camelCase accepted; bad values fall back to "turn".
+            self.assertEqual(default["settings"]["conversation_mode"], "quiet")
+            # camelCase + case-insensitive; free/ordered round-trip.
             free = update_room_settings(root, {"room_id": "resident-m1", "conversationMode": "FREE"})
             self.assertEqual(free["settings"]["conversation_mode"], "free")
             self.assertEqual(free["settings"]["label"], "Room")  # partial update preserved
+            ordered = update_room_settings(root, {"room_id": "resident-m1", "conversation_mode": "ordered"})
+            self.assertEqual(ordered["settings"]["conversation_mode"], "ordered")
+            # legacy "turn" maps to quiet; bad values fall back to quiet.
+            legacy = update_room_settings(root, {"room_id": "resident-m1", "conversation_mode": "turn"})
+            self.assertEqual(legacy["settings"]["conversation_mode"], "quiet")
             bogus = update_room_settings(root, {"room_id": "resident-m1", "conversation_mode": "chaos"})
-            self.assertEqual(bogus["settings"]["conversation_mode"], "turn")
+            self.assertEqual(bogus["settings"]["conversation_mode"], "quiet")
             loaded = room_settings_payload(root, room_id="resident-m1")
-        self.assertEqual(loaded["settings"]["conversation_mode"], "turn")
+        self.assertEqual(loaded["settings"]["conversation_mode"], "quiet")
 
 
 if __name__ == "__main__":

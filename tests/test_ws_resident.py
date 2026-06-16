@@ -566,24 +566,25 @@ class WsLaunchWiringTests(unittest.TestCase):
 
         seen = {}
 
-        def fake_run(server, token, config, runner, *, max_replies=0, engagement_mode=None):
+        def fake_run(server, token, config, runner, *, max_replies=0, engagement_mode=None, use_floor=False):
             seen.update(
                 server=server, token=token, agent_id=config.agent_id,
-                max_replies=max_replies, engagement_mode=engagement_mode,
+                max_replies=max_replies, engagement_mode=engagement_mode, use_floor=use_floor,
             )
             return 2
 
         args = self._args("--session-token", "tok-123", "--max-ticks", "2")
         config = config_from_args(args)
-        with mock.patch("agentsassemble.ws_room_client.fetch_room_conversation_mode", lambda *a, **k: "turn"), \
+        with mock.patch("agentsassemble.ws_room_client.fetch_room_conversation_mode", lambda *a, **k: "quiet"), \
              mock.patch("agentsassemble.ws_resident.run_provider_ws_resident", fake_run):
             rc = cli._run_ws_resident_command(args, config)
         self.assertEqual(rc, 0)
         self.assertEqual(seen["token"], "tok-123")
         self.assertEqual(seen["agent_id"], "codex-ws")
         self.assertEqual(seen["max_replies"], 2)
-        # turn-based room keeps the agent's own engagement default ("always" here).
-        self.assertEqual(seen["engagement_mode"], "always")
+        # a "quiet" room → agents speak only when mentioned; no turn floor.
+        self.assertEqual(seen["engagement_mode"], "mentioned")
+        self.assertFalse(seen["use_floor"])
 
     def test_free_room_resolves_engagement_to_always(self):
         import agentsassemble.cli as cli
@@ -591,7 +592,7 @@ class WsLaunchWiringTests(unittest.TestCase):
         from agentsassemble.live_agent_runner import config_from_args
 
         seen = {}
-        # Agent default is "mentioned"; a free-flow room must override it to "always".
+        # Agent default is "mentioned"; a free room overrides it to "always" (no floor).
         args = build_parser().parse_args([
             "live-agent", "run", "--server", "http://127.0.0.1:8765",
             "--agent-id", "codex-ws", "--display-name", "Codex",
@@ -602,10 +603,32 @@ class WsLaunchWiringTests(unittest.TestCase):
         config = config_from_args(args)
         with mock.patch("agentsassemble.ws_room_client.fetch_room_conversation_mode", lambda *a, **k: "free"), \
              mock.patch("agentsassemble.ws_resident.run_provider_ws_resident",
-                        lambda server, token, cfg, runner, *, max_replies=0, engagement_mode=None:
-                        seen.update(engagement_mode=engagement_mode) or 0):
+                        lambda server, token, cfg, runner, *, max_replies=0, engagement_mode=None, use_floor=False:
+                        seen.update(engagement_mode=engagement_mode, use_floor=use_floor) or 0):
             cli._run_ws_resident_command(args, config)
         self.assertEqual(seen["engagement_mode"], "always")
+        self.assertFalse(seen["use_floor"])
+
+    def test_ordered_room_resolves_to_always_with_floor(self):
+        import agentsassemble.cli as cli
+        from agentsassemble.cli import build_parser
+        from agentsassemble.live_agent_runner import config_from_args
+
+        seen = {}
+        args = build_parser().parse_args([
+            "live-agent", "run", "--server", "http://127.0.0.1:8765",
+            "--agent-id", "codex-ws", "--provider-kind", "codex_live_session",
+            "--connection-kind", "live_session", "--transport", "ws",
+            "--engagement-mode", "mentioned", "--session-token", "tok-123", "--command", "codex",
+        ])
+        config = config_from_args(args)
+        with mock.patch("agentsassemble.ws_room_client.fetch_room_conversation_mode", lambda *a, **k: "ordered"), \
+             mock.patch("agentsassemble.ws_resident.run_provider_ws_resident",
+                        lambda server, token, cfg, runner, *, max_replies=0, engagement_mode=None, use_floor=False:
+                        seen.update(engagement_mode=engagement_mode, use_floor=use_floor) or 0):
+            cli._run_ws_resident_command(args, config)
+        self.assertEqual(seen["engagement_mode"], "always")  # ordered: everyone wants to talk
+        self.assertTrue(seen["use_floor"])  # ...but the floor algorithm spaces them out
 
     def test_invite_token_is_joined_for_a_session(self):
         import agentsassemble.cli as cli
@@ -614,10 +637,10 @@ class WsLaunchWiringTests(unittest.TestCase):
         seen = {}
         args = self._args("--invite-token", "inv-xyz")
         config = config_from_args(args)
-        with mock.patch("agentsassemble.ws_room_client.fetch_room_conversation_mode", lambda *a, **k: "turn"), \
+        with mock.patch("agentsassemble.ws_room_client.fetch_room_conversation_mode", lambda *a, **k: "quiet"), \
              mock.patch("agentsassemble.ws_room_client.join_room_session", lambda *a, **k: "tok-from-invite") as _j, \
              mock.patch("agentsassemble.ws_resident.run_provider_ws_resident",
-                        lambda server, token, cfg, runner, *, max_replies=0, engagement_mode=None:
+                        lambda server, token, cfg, runner, *, max_replies=0, engagement_mode=None, use_floor=False:
                         seen.update(token=token) or 0):
             cli._run_ws_resident_command(args, config)
         self.assertEqual(seen["token"], "tok-from-invite")

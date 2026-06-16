@@ -21,7 +21,7 @@ export interface LobbyAttachmentRef {
   download_url: string;
 }
 
-export type ConversationMode = "turn" | "free";
+export type ConversationMode = "quiet" | "free" | "ordered";
 
 export interface RoomSettings {
   roomId: string;
@@ -31,8 +31,8 @@ export interface RoomSettings {
   appearance: RoomAppearance;
   memberRoles: Record<string, string>;
   channelSettings: Record<string, ChannelSettings>;
-  // "turn": orderly (agents follow their own engagement mode). "free": agents
-  // reply to everyone — humans AND each other — bounded by chain-depth/dedup.
+  // quiet: agents speak only when @mentioned. free: everyone reacts to everything.
+  // ordered: everyone reacts, but a deterministic floor algorithm spaces them out.
   conversationMode: ConversationMode;
 }
 
@@ -972,7 +972,12 @@ function normalizeRoomSettings(payload: ApiRoomSettings | undefined, fallbackRoo
     },
     memberRoles: payload?.member_roles && typeof payload.member_roles === "object" ? payload.member_roles : {},
     channelSettings: normalizeChannelSettings(payload?.channel_settings),
-    conversationMode: payload?.conversation_mode === "free" ? "free" : "turn",
+    conversationMode:
+      payload?.conversation_mode === "free"
+        ? "free"
+        : payload?.conversation_mode === "ordered"
+          ? "ordered"
+          : "quiet",
   };
 }
 

@@ -3571,13 +3571,17 @@ def _run_ws_resident_command(args: argparse.Namespace, config: ResidentAgentConf
     """One-command WS launch: connect the provider agent over the governed
     WebSocket (run_provider_ws_resident) instead of the HTTP poll runner. Reuses
     the provider's command runner as the brain + the runner's prompt envelope."""
-    from agentsassemble.room_engagement import resolve_engagement
+    from agentsassemble.room_engagement import resolve_engagement, room_uses_floor
     from agentsassemble.ws_resident import run_provider_ws_resident
-    from agentsassemble.ws_room_client import fetch_room_conversation_mode, join_room_session
+    from agentsassemble.ws_room_client import (
+        fetch_room_conversation_mode,
+        join_room_session,
+        meeting_id_from_invite_token,
+    )
 
+    invite_token = str(getattr(args, "invite_token", "") or "")
     session_token = str(getattr(args, "session_token", "") or "")
     if not session_token:
-        invite_token = str(getattr(args, "invite_token", "") or "")
         if not invite_token:
             raise ValueError("--transport ws requires --session-token or --invite-token.")
         session_token = join_room_session(
@@ -3586,10 +3590,14 @@ def _run_ws_resident_command(args: argparse.Namespace, config: ResidentAgentConf
             display_name=config.display_name or config.agent_id,
             participant_type="agent",
         )
-    # A free-flow room overrides the agent's engagement default so agents reply to
-    # each other (bounded by chain-depth/dedup); a turn-based room keeps the default.
-    conversation_mode = fetch_room_conversation_mode(config.server, config.meeting_id)
+    # The room's conversation mode (quiet/free/ordered) drives how the agent
+    # engages. Resolve the room id: explicit --meeting-id, else read it from the
+    # invite token — without it the fetch can't find the room (the bug that made
+    # free/ordered silently no-op).
+    meeting_id = str(config.meeting_id or "") or meeting_id_from_invite_token(invite_token)
+    conversation_mode = fetch_room_conversation_mode(config.server, meeting_id)
     effective_engagement = resolve_engagement(conversation_mode, config.engagement_mode)
+    use_floor = room_uses_floor(conversation_mode)
     command_runner = _command_runner_for_config(config, output_root=str(getattr(args, "output_root", "") or ""))
     restore_signal_handlers = _install_resident_shutdown_signal_handlers(lambda: _close_command_runner(command_runner))
     try:
@@ -3600,6 +3608,7 @@ def _run_ws_resident_command(args: argparse.Namespace, config: ResidentAgentConf
             command_runner,
             max_replies=int(getattr(config, "max_ticks", 0) or 0),  # 0 = run until killed
             engagement_mode=effective_engagement,
+            use_floor=use_floor,
         )
     finally:
         restore_signal_handlers()
