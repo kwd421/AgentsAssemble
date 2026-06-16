@@ -1,3 +1,4 @@
+import base64
 import subprocess
 import tempfile
 import unittest
@@ -17,6 +18,47 @@ from agentsassemble.antigravity_resident import (
     default_antigravity_resident_command,
 )
 from agentsassemble.live_agent_runner import ResidentAgentConfig
+
+
+REAL_AGY_PRINT_CAPTURE_B64 = (
+    "7KeI66y47ZWY7IugICoqIuybkO2UvOyKpCDstZzqsJU/Iioq7J2AIOuLpOydjCDrkZAg6rCA7KeAIOunpeudveycvOuhnCDri7Xr"
+    "s4Drk5zrprQg7IiYIOyeiOyKteuLiOuLpC4KCi0tLQoKIyMjIDEuIOybkO2UvOyKpCDshLjqs4TqtIAg64K0IOy1nOqwleyekCAo"
+    "7JuQ7J6RIOyEpOyglSkK7ZiE7J6sIOybkO2UvOyKpCDshLjqs4TqtIDsl5DshJwg7LWc6rCV7Jy866GcIOq8ve2eiOuKlCDsnbjr"
+    "rLzrk6TsnYAg64uk7J2M6rO8IOqwmeyKteuLiOuLpDoKKiAqKuyghOyEpOyggeyduCDsoJXsoJAqKjog6rOoIEQuIOuhnOyggCwg"
+    "7JeQ65Oc7JuM65OcIOuJtOqyjOydtO2KuCAo7Z2w7IiY7Je8KSwg66Gd7IqkIEQuIOyngOuyoQoqICoq7ZiE7IS464yAIOy1nOqw"
+    "leq4iSAo7IKs7ZmpKSoqOiDsg7ntgazsiqQsIOy5tOydtOuPhCjsg53sobQg7IucKSwg66eI7IOsIEQuIO2LsOy5mCAo6rKA7J2A"
+    "IOyImOyXvCkKKiAqKuyjvOyduOqztSoqOiDrqr3tgqQgRC4g66Oo7ZS8ICjquLDslrQgNSAn7YOc7JaR7IugIOuLiOy5tCcg6rCB"
+    "7ISxKQoqICoq66eJ7ZuE7J2YIOygiOuMgOyekCoqOiDsnoQgKEltdSksIOyhsOydtOuztOydtCAo7Jet7IKs7KCBIOyduOusvCkK"
+    "Ci0tLQoKIyMjIDIuIGBBZ2VudHNBc3NlbWJsZWAg7ZSE66Gc7KCd7Yq4IOuCtCDrjbDrqqgg7Yag66GgCuuzuCDroIjtj6zsp4Dt"
+    "hqDrpqwoYEFnZW50c0Fzc2VtYmxlYCnsl5DripQg7JuQ7ZS87IqkIO2GoOuhoOydhCDthYzrp4jroZwg7ZWcIOupgO2LsCDsl5Ds"
+    "nbTsoITtirgg7ZqM7J2YIOuNsOuqqOqwgCDtj6ztlajrkJjslrQg7J6I7Iq164uI64ukLgoqICoq7KO87KCcKio6ICLsm5DtlLzs"
+    "iqQgM+uMgOyepSDspJEg64iE6rCAIOygnOydvCDshLzqsIA/IiAoW2RlbW8tY291bmNpbC5qc29uXShmaWxlOi8vL1VzZXJzL3Nl"
+    "aW5lbC9Qcm9qZWN0cy9BZ2VudHNBc3NlbWJsZS9jb25maWdzL2RlbW8tY291bmNpbC5qc29uKSDshKTsoJUg7LC46rOgKQoqICoq"
+    "7JeQ7J207KCE7Yq4IOudvOyduOyXhSoqOgogICogKirshKTsoJXstqkqKiAoYGxvcmVfbGF3eWVyYCk6IOqzteyLnSDshKTsoJXq"
+    "s7wg7JuQ7J6R7J2YIOydvOq0gOyEseydhCDsmrDshKDsi5ztlaguCiAgKiAqKuqzteyLneydtOutmOyVjOyVhCoqIChgc2hvd19t"
+    "ZV90aGVfZmVhdHNgKTog7Iuk7KCcIOyekeykkeyXkOyEnCDrs7Tsl6zspIAg7KCE7YisIOusmOyCrOyZgCDsoITsoIHsnYQg7KSR"
+    "7Iuc7ZWoLgogICogKirrp4zqsKTrn6wqKiAoYGZhbmJvYXJkX3NrZXB0aWNgKTog7Luk666k64uI7YuwKOuUlOyLnOyduOyCrOyd"
+    "tOuTnCDrp4ztmZQg6rCk65+s66asIOuTsSkg67CI6rO8IOu5hO2MkOyggSDqtIDsoJDsnYQg7KCB7Jqp7ZWoLgoKIyMjIyDrjbDr"
+    "qqgg7Iuk7ZaJIOuwqeuylQrroZzsu6wg7ZmY6rK97JeQ7IScIOyVhOuemCDrqoXroLnslrTrpbwg7Iuk7ZaJ7ZWY7JesIOydtOuT"
+    "pOydtCDthqDroaDtlZjripQg642w66qo66W8IO2ZleyduO2VoCDsiJgg7J6I7Iq164uI64ukOgpgYGBiYXNoCnB5dGhvbjMgLW0g"
+    "YWdlbnRzYXNzZW1ibGUuY2xpIGRlbW8gLS1hZGFwdGVyIG1vY2sKYGBgCgotLS0KCu2YueyLnCDsm5DtlLzsiqQg7IS46rOE6rSA"
+    "7J2YIO2MjOybjCDrsLjrn7DsiqTsl5Ag64yA7ZW0IOuNlCDqtoHquIjtlZwg7KCQ7J20IOyeiOycvOyLnOqxsOuCmCwg67O4IO2U"
+    "hOuhnOygne2KuOydmCDrjbDrqqgg7ISk7KCV7J2EIOyImOyglSDrmJDripQg7Iuk7ZaJ7ZW067O06rOgIOyLtuycvOyLoOqwgOya"
+    "lD8g7Y647ZWY6rKMIOyVjOugpOyjvOyLnOuptCDrj4TsmYDrk5zrpqzqsqDsirXri4jri6QhCgojIyMg7J6R7JeFIOyalOyVvQoq"
+    "IOyCrOyaqeyekCDsp4jrrLgg67aE7ISd7J2EIOychO2VtCDsoITssrQg7ZSE66Gc7KCd7Yq4IOuUlOugie2GoOumrOulvCDrpqzs"
+    "iqTtjIXtlZjqs6AsIGDsm5DtlLzsiqRgIO2CpOybjOuTnOuhnCDshozsiqTsvZTrk5zrpbwg6rKA7IOJ7ZaI7Iq164uI64ukLgoq"
+    "IOyEpOyglSDtjIzsnbwoW2RlbW8tY291bmNpbC5qc29uXShmaWxlOi8vL1VzZXJzL3NlaW5lbC9Qcm9qZWN0cy9BZ2VudHNBc3Nl"
+    "bWJsZS9jb25maWdzL2RlbW8tY291bmNpbC5qc29uKSkg67CPIO2FnO2UjOumvyhbdGVtcGxhdGVzLnB5XShmaWxlOi8vL1VzZXJz"
+    "L3NlaW5lbC9Qcm9qZWN0cy9BZ2VudHNBc3NlbWJsZS9hZ2VudHNhc3NlbWJsZS90ZW1wbGF0ZXMucHkpKSwg7YWM7Iqk7Yq4IOy9"
+    "lOuTnChbdGVzdF9jbGF1ZGVfcmVzaWRlbnQucHldKGZpbGU6Ly8vVXNlcnMvc2VpbmVsL1Byb2plY3RzL0FnZW50c0Fzc2VtYmxl"
+    "L3Rlc3RzL3Rlc3RfY2xhdWRlX3Jlc2lkZW50LnB5KSkg67aE7ISd7J2EIO2Gte2VtCDtlITroZzsoJ3tirgg64K0IOuNsOuqqCDq"
+    "tazshLHsnYQg7YyM7JWF7ZWY6rOgIOydtOulvCDsm5DsnpEg7ISk7KCV6rO8IOunpO2Vke2VmOyXrCDslYjrgrTrk5zroLjsirXr"
+    "i4jri6QuCg=="
+)
+
+
+def real_agy_print_capture() -> str:
+    return base64.b64decode(REAL_AGY_PRINT_CAPTURE_B64).decode("utf-8")
 
 
 def config(**overrides):
@@ -329,6 +371,49 @@ class AntigravityResidentTests(unittest.TestCase):
             runner.close()
 
         self.assertEqual(antigravity_error_category(empty.exception), ANTIGRAVITY_EMPTY_REPLY)
+
+    def test_runner_extracts_leading_answer_from_real_agy_print_capture(self):
+        conversation_id = "a" * 36
+
+        def real_capture(command, **kwargs):
+            return subprocess.CompletedProcess(command, 0, stdout=real_agy_print_capture(), stderr="")
+
+        runner = AntigravityResidentCommandRunner(
+            config(session_id=conversation_id),
+            command_runner=real_capture,
+            cwd=Path.cwd(),
+        )
+        try:
+            reply = runner([], "prompt", timeout_seconds=45)
+        finally:
+            runner.close()
+
+        self.assertTrue(reply.startswith('질문하신 **"원피스 최강?"**은'))
+        self.assertIn("원피스 세계관 내 최강자", reply)
+        self.assertNotIn("### 작업 요약", reply)
+        self.assertNotIn("전체 프로젝트 디렉토리를 리스팅", reply)
+
+    def test_runner_strips_trailing_antigravity_meta_summary_line(self):
+        conversation_id = "a" * 36
+        stdout = (
+            "루피가 현재 주인공 보정과 기어 5 각성까지 포함하면 최강 후보입니다.\n\n"
+            "데모 데이터 상의 최강 대장 결론 정리 및 원작의 대표적인 명대사 명단을 정리하여 답변 제공."
+        )
+
+        def reported_meta_tail(command, **kwargs):
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+        runner = AntigravityResidentCommandRunner(
+            config(session_id=conversation_id),
+            command_runner=reported_meta_tail,
+            cwd=Path.cwd(),
+        )
+        try:
+            reply = runner([], "prompt", timeout_seconds=45)
+        finally:
+            runner.close()
+
+        self.assertEqual(reply, "루피가 현재 주인공 보정과 기어 5 각성까지 포함하면 최강 후보입니다.")
 
     def test_provider_checks_and_defaults_are_narrow(self):
         self.assertEqual(default_antigravity_resident_command("antigravity_live_session", "live_session", []), ["agy"])

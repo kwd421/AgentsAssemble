@@ -303,9 +303,13 @@ def _visible_antigravity_reply(stdout: object) -> str:
         if _looks_like_antigravity_status(trailing) or _ACTION_FRAGMENT_RE.search(trailing):
             return ""
         if trailing:
-            return _latest_nonempty_line(trailing)
+            return _visible_antigravity_plain_reply(trailing)
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    candidate = _latest_nonempty_line(text)
+    return _visible_antigravity_plain_reply(text)
+
+
+def _visible_antigravity_plain_reply(text: str) -> str:
+    candidate = _strip_antigravity_plain_reply_tail(text)
     if _looks_like_antigravity_status(candidate) or _ACTION_FRAGMENT_RE.search(candidate):
         return ""
     return candidate
@@ -327,12 +331,66 @@ def _json_object_spans_in_text(text: str) -> list[tuple[dict[str, object], int, 
 
 
 def _looks_like_antigravity_status(text: str) -> bool:
-    return "is present and ready for AgentsAssemble" in text or "Connection active at cursor" in text
+    folded = text.casefold()
+    return (
+        "is present and ready for AgentsAssemble" in text
+        or "Connection active at cursor" in text
+        or "timed out waiting for response" in folded
+    )
 
 
-def _latest_nonempty_line(text: str) -> str:
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    return lines[-1] if lines else ""
+def _strip_antigravity_plain_reply_tail(text: str) -> str:
+    lines = _trim_blank_lines(text.replace("\r\n", "\n").replace("\r", "\n").split("\n"))
+    lines = _strip_antigravity_work_summary_section(lines)
+    lines = _strip_antigravity_trailing_meta_lines(lines)
+    return "\n".join(lines).strip()
+
+
+def _strip_antigravity_work_summary_section(lines: list[str]) -> list[str]:
+    for index, line in enumerate(lines):
+        if not _looks_like_antigravity_work_summary_heading(line):
+            continue
+        return _trim_blank_lines(lines[:index])
+    return lines
+
+
+def _looks_like_antigravity_work_summary_heading(line: str) -> bool:
+    text = re.sub(r"^\s{0,3}#{1,6}\s*", "", line.strip())
+    text = re.sub(r"^[^\w가-힣A-Za-z0-9]+", "", text).strip()
+    normalized = text.rstrip(":：").strip().casefold().replace(" ", "")
+    return normalized in {"작업요약", "worksummary", "tasksummary"}
+
+
+def _strip_antigravity_trailing_meta_lines(lines: list[str]) -> list[str]:
+    remaining = list(lines)
+    while True:
+        remaining = _trim_blank_lines(remaining)
+        if not remaining:
+            return []
+        if not any(line.strip() for line in remaining[:-1]):
+            return remaining
+        tail = remaining[-1].strip()
+        if not _looks_like_antigravity_trailing_meta_line(tail):
+            return remaining
+        remaining.pop()
+
+
+def _looks_like_antigravity_trailing_meta_line(line: str) -> bool:
+    if _looks_like_antigravity_status(line) or _ACTION_FRAGMENT_RE.search(line):
+        return True
+    return "답변 제공" in line and any(
+        marker in line for marker in ("결론", "명단", "분석", "요약", "정리", "작성", "안내")
+    )
+
+
+def _trim_blank_lines(lines: list[str]) -> list[str]:
+    start = 0
+    end = len(lines)
+    while start < end and not lines[start].strip():
+        start += 1
+    while end > start and not lines[end - 1].strip():
+        end -= 1
+    return lines[start:end]
 
 
 def _combined_antigravity_probe_output(completed: Any, log_path: Path) -> str:
