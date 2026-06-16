@@ -271,6 +271,11 @@ class TerminalLiveSession:
         idle_timeout_seconds: float = 0.35,
         max_response_bytes: int = 128_000,
         cwd: str | Path | None = None,
+        message_extractor: Callable[[bytes], str] | None = None,
+        ready_predicate: Callable[[bytes], bool] | None = None,
+        submit_newline: str = "\n",
+        submit_settle_seconds: float = 0.0,
+        warmup_idle_seconds: float = 0.0,
     ) -> None:
         if not command:
             raise ValueError("Terminal session command is required.")
@@ -279,6 +284,16 @@ class TerminalLiveSession:
         self.command = list(command)
         self.idle_timeout_seconds = max(0.01, float(idle_timeout_seconds))
         self.max_response_bytes = max(1, int(max_response_bytes))
+        # message_extractor: pull the real reply out of a TUI's scraped bytes
+        # (default: ANSI-strip the whole thing). ready_predicate: completion gate
+        # — return only once the answer has actually rendered, so an idle pause
+        # *before* the reply (a TUI redrawing/thinking) never returns early.
+        self._message_extractor = message_extractor
+        self._ready_predicate = ready_predicate
+        self._submit_newline = submit_newline or "\n"
+        self._submit_settle_seconds = max(0.0, float(submit_settle_seconds or 0.0))
+        self._warmup_idle_seconds = max(0.0, float(warmup_idle_seconds or 0.0))
+        self._warmed_up = False
         self.cwd = Path(cwd).expanduser() if cwd else None
         self._lock = threading.Lock()
         self._closed = False
@@ -312,15 +327,28 @@ class TerminalLiveSession:
     def ask(self, prompt: str, *, timeout_seconds: int | float) -> str:
         with self._lock:
             self._ensure_running()
+            deadline = time.monotonic() + max(0.0, float(timeout_seconds))
             startup_output = self._startup_buffer + self._drain_available(timeout_seconds=0.01)
             self._startup_buffer = b""
+            if not self._warmed_up and self._warmup_idle_seconds > 0:
+                # A full-screen TUI (Claude Code) boots over a few seconds; typing
+                # into a half-rendered screen is dropped. Wait for the boot output
+                # to go quiet (input box ready) before the first submission.
+                startup_output += self._drain_until_quiet(
+                    self._warmup_idle_seconds, budget_seconds=15.0, deadline=deadline
+                )
+                self._warmed_up = True
             if startup_output:
                 _raise_if_terminal_gate_response(_clean_terminal_response(startup_output))
-            deadline = time.monotonic() + max(0.0, float(timeout_seconds))
             self._write_terminal_submission(prompt, deadline=deadline, timeout_seconds=timeout_seconds)
             response = self._read_until_idle(deadline=deadline, timeout_seconds=timeout_seconds)
-            message = _clean_terminal_response(response)
+            if self._message_extractor is not None:
+                message = self._message_extractor(response)
+            else:
+                message = _clean_terminal_response(response)
             if not message.strip():
+                # Surface the gate (e.g. trust prompt) rather than a bare "empty".
+                _raise_if_terminal_gate_response(_clean_terminal_response(response))
                 raise ValueError("Terminal session returned an empty message.")
             _raise_if_terminal_gate_response(message)
             return message
@@ -344,7 +372,16 @@ class TerminalLiveSession:
         deadline: float,
         timeout_seconds: int | float,
     ) -> None:
-        data = (_single_terminal_submission(prompt) + "\n").encode("utf-8")
+        # Type the prompt, optionally let the TUI register it, then send the
+        # submit key. Some TUIs (Claude Code) submit on CR ("\r"), not LF, and
+        # want the text settled in the input box before Enter — hence the split.
+        body = _single_terminal_submission(prompt).encode("utf-8")
+        self._write_all(body, deadline=deadline, timeout_seconds=timeout_seconds)
+        if self._submit_settle_seconds > 0:
+            time.sleep(self._submit_settle_seconds)
+        self._write_all(self._submit_newline.encode("utf-8"), deadline=deadline, timeout_seconds=timeout_seconds)
+
+    def _write_all(self, data: bytes, *, deadline: float, timeout_seconds: int | float) -> None:
         offset = 0
         while offset < len(data):
             remaining = deadline - time.monotonic()
@@ -369,25 +406,32 @@ class TerminalLiveSession:
         chunks: list[bytes] = []
         total_bytes = 0
         last_read_at: float | None = None
+
+        def _ready() -> bool:
+            # An idle gap only counts as "done" once the answer has rendered.
+            if self._ready_predicate is None:
+                return True
+            return self._ready_predicate(b"".join(chunks))
+
         while True:
             now = time.monotonic()
-            if last_read_at is None:
-                wait_until = deadline
-            else:
-                wait_until = min(deadline, last_read_at + self.idle_timeout_seconds)
-            wait_seconds = max(0.0, wait_until - now)
-            if wait_seconds <= 0:
-                if chunks and last_read_at is not None and now >= last_read_at + self.idle_timeout_seconds:
-                    return b"".join(chunks)
+            if now >= deadline:
+                # Out of time without a clean idle gap: never return mid-stream.
                 self.close(timeout_seconds=0.1)
                 raise TimeoutError(f"Terminal session timed out after {timeout_seconds} seconds.")
+            # With a ready answer in hand, return after a quiet gap; otherwise block
+            # for more data up to the deadline (no busy-spin while the TUI thinks).
+            if chunks and last_read_at is not None and _ready():
+                wait_until = min(deadline, last_read_at + self.idle_timeout_seconds)
+            else:
+                wait_until = deadline
+            wait_seconds = max(0.0, wait_until - now)
             readable = _select_fds([self._master_fd], [], wait_seconds)[0]
             if not readable:
                 now = time.monotonic()
-                if chunks and last_read_at is not None and now >= last_read_at + self.idle_timeout_seconds:
+                if chunks and last_read_at is not None and _ready() and now >= last_read_at + self.idle_timeout_seconds:
                     return b"".join(chunks)
-                self.close(timeout_seconds=0.1)
-                raise TimeoutError(f"Terminal session timed out after {timeout_seconds} seconds.")
+                continue
             chunk = self._read_master_chunk()
             if not chunk:
                 raise self._process_closed_error()
@@ -397,6 +441,31 @@ class TerminalLiveSession:
             if total_bytes > self.max_response_bytes:
                 self.close(timeout_seconds=0.1)
                 raise ValueError(f"Terminal session response exceeded {self.max_response_bytes} bytes.")
+
+    def _drain_until_quiet(self, quiet_seconds: float, *, budget_seconds: float, deadline: float) -> bytes:
+        """Read boot/warmup output until the stream is quiet for quiet_seconds
+        (the TUI finished rendering) or a small budget elapses. Bounded so a
+        chatty/never-quiet startup can't burn the whole ask() deadline."""
+        chunks: list[bytes] = []
+        last_read_at: float | None = None
+        warmup_deadline = min(deadline, time.monotonic() + max(0.1, float(budget_seconds)))
+        while True:
+            now = time.monotonic()
+            if now >= warmup_deadline:
+                break
+            if last_read_at is not None and now >= last_read_at + quiet_seconds:
+                break
+            wait_until = warmup_deadline if last_read_at is None else min(warmup_deadline, last_read_at + quiet_seconds)
+            wait_seconds = max(0.0, wait_until - now)
+            readable = _select_fds([self._master_fd], [], wait_seconds)[0]
+            if not readable:
+                continue
+            chunk = self._read_master_chunk()
+            if not chunk:
+                break
+            chunks.append(chunk)
+            last_read_at = time.monotonic()
+        return b"".join(chunks)
 
     def _drain_available(self, *, timeout_seconds: float) -> bytes:
         chunks: list[bytes] = []

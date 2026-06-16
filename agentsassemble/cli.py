@@ -7198,10 +7198,25 @@ class _JsonlLiveSessionCommandRunner:
 
 
 class _TerminalLiveSessionCommandRunner:
-    def __init__(self, *, idle_timeout_seconds: float, cwd: Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        idle_timeout_seconds: float,
+        cwd: Path | None = None,
+        message_extractor=None,
+        ready_predicate=None,
+        submit_newline: str = "\n",
+        submit_settle_seconds: float = 0.0,
+        warmup_idle_seconds: float = 0.0,
+    ) -> None:
         self.idle_timeout_seconds = idle_timeout_seconds
         self.cwd = Path(cwd or Path.cwd())
         self.session: TerminalLiveSession | None = None
+        self._message_extractor = message_extractor
+        self._ready_predicate = ready_predicate
+        self._submit_newline = submit_newline
+        self._submit_settle_seconds = submit_settle_seconds
+        self._warmup_idle_seconds = warmup_idle_seconds
         self._lock = threading.Lock()
 
     def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
@@ -7211,6 +7226,11 @@ class _TerminalLiveSessionCommandRunner:
                     command,
                     idle_timeout_seconds=self.idle_timeout_seconds,
                     cwd=self.cwd,
+                    message_extractor=self._message_extractor,
+                    ready_predicate=self._ready_predicate,
+                    submit_newline=self._submit_newline,
+                    submit_settle_seconds=self._submit_settle_seconds,
+                    warmup_idle_seconds=self._warmup_idle_seconds,
                 )
             session = self.session
         try:
@@ -7750,6 +7770,24 @@ def _command_runner_for_config(config: ResidentAgentConfig, *, output_root: str 
         return AntigravityResidentCommandRunner(config, cwd=cwd)
     if config.provider_kind == "hermes_live_session" and config.connection_kind == "live_session":
         return HermesResidentCommandRunner(config, cwd=cwd)
+    if config.provider_kind == "claude_code" and config.connection_kind == "terminal_session":
+        # Claude Code's interactive TUI: scrape the PTY, gate completion on the ⏺
+        # answer marker, and extract just the reply (see claude_resident). A longer
+        # idle floor tolerates mid-answer pauses while it streams.
+        from agentsassemble.claude_resident import (
+            claude_answer_ready,
+            extract_claude_terminal_message,
+        )
+
+        return _TerminalLiveSessionCommandRunner(
+            idle_timeout_seconds=max(float(config.terminal_idle_timeout or 0.0), 1.0),
+            cwd=cwd,
+            message_extractor=extract_claude_terminal_message,
+            ready_predicate=claude_answer_ready,
+            submit_newline="\r",  # Claude Code's TUI submits on Enter (CR), not LF
+            submit_settle_seconds=0.4,  # let the typed prompt land in the input box first
+            warmup_idle_seconds=1.5,  # wait for the TUI to finish booting before first submit
+        )
     if config.connection_kind == "live_session":
         return _JsonlLiveSessionCommandRunner()
     if config.connection_kind == "terminal_session":
