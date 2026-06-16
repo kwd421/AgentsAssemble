@@ -2,8 +2,10 @@ import unittest
 
 from agentsassemble.sandbox_launcher import (
     CODEX_EXEC_SAFETY_FLAGS,
+    CODEX_EXEC_WORKSPACE_WRITE_FLAGS,
     SANDBOX_ENFORCEMENT_LEVELS,
     CodexReadonlyLauncher,
+    CodexWorkspaceWriteLauncher,
     NoSandboxLauncher,
     sandbox_launcher_for,
     safe_sandbox_enforcement,
@@ -15,6 +17,26 @@ class TestSandboxLauncherFor(unittest.TestCase):
         launcher = sandbox_launcher_for("codex_live_session", "codex_resume")
         self.assertIsInstance(launcher, CodexReadonlyLauncher)
         self.assertEqual(launcher.enforcement, "codex_readonly")
+
+    def test_codex_defaults_to_readonly_without_opt_in(self):
+        launcher = sandbox_launcher_for("codex_live_session", "live_session")
+        self.assertIsInstance(launcher, CodexReadonlyLauncher)
+        self.assertIn("read-only", launcher.command(["codex"]))
+
+    def test_codex_workspace_write_opt_in(self):
+        launcher = sandbox_launcher_for("codex_live_session", "live_session", sandbox="workspace-write")
+        self.assertIsInstance(launcher, CodexWorkspaceWriteLauncher)
+        self.assertEqual(launcher.enforcement, "codex_workspace_write")
+        cmd = launcher.command(["codex"])
+        self.assertEqual(cmd[:2], ["codex", "exec"])
+        self.assertIn("workspace-write", cmd)
+        self.assertNotIn("read-only", cmd)
+        self.assertNotIn("danger-full-access", cmd)
+
+    def test_non_codex_ignores_sandbox_opt_in(self):
+        # workspace-write only applies to codex; others stay advisory/no-sandbox.
+        launcher = sandbox_launcher_for("cursor", "live_session", sandbox="workspace-write")
+        self.assertIsInstance(launcher, NoSandboxLauncher)
 
     def test_codex_live_session_live_session(self):
         launcher = sandbox_launcher_for("codex_live_session", "live_session")

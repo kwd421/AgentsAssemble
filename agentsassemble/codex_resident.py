@@ -19,8 +19,8 @@ CODEX_AUTH_REQUIRED = "codex_auth_required"
 CODEX_LOGIN_REQUIRED_MESSAGE = provider_login_required_message("Codex", "codex login")
 
 
-def codex_exec_prefix(base_command: list[str]) -> list[str]:
-    return sandbox_launcher_for("codex_live_session", "live_session").command(base_command)
+def codex_exec_prefix(base_command: list[str], *, sandbox: str = "read-only") -> list[str]:
+    return sandbox_launcher_for("codex_live_session", "live_session", sandbox=sandbox).command(base_command)
 
 
 class CodexResidentCommandRunner:
@@ -82,7 +82,7 @@ class CodexResidentCommandRunner:
     def _build_command(self, output_path: Path) -> list[str]:
         configured_command = list(self.config.command or ["codex"])
         base_command = [configured_command[0]]
-        exec_prefix = codex_exec_prefix(base_command)
+        exec_prefix = codex_exec_prefix(base_command, sandbox=str(getattr(self.config, "codex_sandbox", "") or "read-only"))
         tuning_args = _codex_tuning_args(self.config.model_id, self.config.effort)
         if self.session_id:
             return [

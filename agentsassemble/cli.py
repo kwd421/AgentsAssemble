@@ -1320,6 +1320,12 @@ def build_parser() -> argparse.ArgumentParser:
     live_run.add_argument("--session-token", default="", help="ws transport: a room session token for this agent.")
     live_run.add_argument("--invite-token", default="", help="ws transport: an invite token to join for a session (alternative to --session-token).")
     live_run.add_argument("--join-semantics", default="", help="Override execution structure for comparison runs.")
+    live_run.add_argument(
+        "--codex-sandbox",
+        choices=["read-only", "workspace-write"],
+        default="read-only",
+        help="codex resident sandbox: read-only (default, chat/advisory) or workspace-write (worker — may edit files in its working dir).",
+    )
     live_run.add_argument("--timeout", type=int, default=120)
     live_run.add_argument(
         "--official-turn-timeout",

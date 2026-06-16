@@ -104,6 +104,7 @@ class ResidentAgentConfig:
     key_source: str = ""
     effort: str = ""
     speed: str = ""
+    codex_sandbox: str = "read-only"  # opt-in "workspace-write" lets a codex worker edit its repo
     workspace_path: str = ""
     join_semantics: str = ""
     max_ticks: int = 0
@@ -1861,6 +1862,7 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         key_source=str(getattr(args, "key_source", "") or ""),
         effort=str(getattr(args, "effort", "") or ""),
         speed=str(getattr(args, "speed", "") or ""),
+        codex_sandbox=str(getattr(args, "codex_sandbox", "") or "read-only"),
         workspace_path=str(getattr(args, "workspace_path", "") or ""),
         join_semantics=str(getattr(args, "join_semantics", "") or ""),
         timeout_seconds=int(getattr(args, "timeout")),
