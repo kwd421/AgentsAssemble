@@ -7,15 +7,23 @@ reach server-scoped helpers through ctx.deps.
 """
 from __future__ import annotations
 
+import threading
 from http import HTTPStatus
 
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payload
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.meeting_events import (
+    append_lobby_event_to_file,
+    clean_lobby_text,
+    read_lobby_events,
+    read_lobby_events_after,
+)
 from agentsassemble.room_channels import (
     ChannelError,
     add_channel,
+    channel_stream_filename,
+    find_channel,
     remove_channel,
     rename_channel,
     reorder_channels,
@@ -42,6 +50,28 @@ from agentsassemble.room_settings import room_settings_payload, update_room_sett
 from agentsassemble.room_users import grant_operator_to_device
 from agentsassemble.room_votes import vote_summary
 from agentsassemble.stable_entry import stable_entry_url
+
+# Custom text channels each have their own channel_<id>.jsonl. A single lock
+# serializes appends across them (low write rate; separate files don't race, but
+# two writers to one channel would), mirroring gui's LIVE_AGENT_LOBBY_LOCK.
+_CHANNEL_LOBBY_LOCK = threading.Lock()
+
+
+def _stamp_session_identity(payload: dict[str, object], session: dict[str, object]) -> None:
+    """Overwrite client-supplied identity with the authenticated session's, so a
+    poster can never spoof name/actor. Shared by the lobby and custom-channel say
+    paths so they can't drift. Polls ride the same field: only "vote"/"vote_cast"
+    survive as kinds; everything else is a plain message."""
+    payload["name"] = session["display_name"]
+    payload["actor_id"] = session["agent_id"]
+    payload["actor_type"] = (
+        "human" if str(session.get("participant_type") or "human") == "human" else "agent"
+    )
+    payload["side"] = "other"
+    requested_kind = str(payload.get("kind") or "")
+    payload["kind"] = requested_kind if requested_kind in {"vote", "vote_cast"} else "message"
+    if session.get("meeting_id"):
+        payload["flow_meeting_id"] = session["meeting_id"]
 
 
 def register_room_routes(router: Router) -> None:
@@ -139,18 +169,8 @@ def register_room_routes(router: Router) -> None:
         payload = ctx.read_json_body()
         if payload is None:
             return
-        # Inject authenticated identity; never trust client-supplied identity
-        payload["name"] = session["display_name"]
-        payload["actor_id"] = session["agent_id"]
-        payload["actor_type"] = (
-            "human" if str(session.get("participant_type") or "human") == "human" else "agent"
-        )
-        payload["side"] = "other"
-        # Polls ride the same channel: "vote" opens one, "vote_cast" is a ballot.
-        requested_kind = str(payload.get("kind") or "")
-        payload["kind"] = requested_kind if requested_kind in {"vote", "vote_cast"} else "message"
-        if session.get("meeting_id"):
-            payload["flow_meeting_id"] = session["meeting_id"]
+        # Inject authenticated identity; never trust client-supplied identity.
+        _stamp_session_identity(payload, session)
         event = ctx.deps.append_lobby_event(
             ctx.deps.output_root,
             payload,
@@ -372,6 +392,68 @@ def register_room_routes(router: Router) -> None:
         if created is not None:
             response["channel"] = created
         ctx.send_json(response)
+
+    # -- custom text channel message streams --------------------------------
+
+    def _resolve_text_channel(ctx: RequestContext, session: dict[str, object], channel_id: str):
+        """Return (channel_id, filename) for a text channel the session's room
+        owns, or send the right error and return (None, None). Guards: channel
+        must exist, be type text, and have a path-safe id."""
+        meeting_id = str(session.get("meeting_id") or "")
+        channel = find_channel(_channels_for(ctx.deps.output_root, meeting_id), channel_id)
+        if channel is None:
+            ctx.send_error(HTTPStatus.NOT_FOUND, "unknown channel")
+            return None, None
+        if str(channel.get("type")) != "text":
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "channel is not a text channel")
+            return None, None
+        filename = channel_stream_filename(channel_id)
+        if not filename:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "invalid channel id")
+            return None, None
+        return channel_id, filename
+
+    @router.get("/api/room/channel-lobby")
+    def room_channel_lobby(ctx: RequestContext) -> None:
+        session = ctx.require_session()
+        if session is None:
+            return
+        channel_id, filename = _resolve_text_channel(ctx, session, str(ctx.query_value("channel_id") or ""))
+        if channel_id is None:
+            return
+        path = ctx.deps.output_root / filename
+        after_event_id = ctx.query_value("after").strip()
+        if after_event_id:
+            events = read_lobby_events_after(path, after_event_id)
+        else:
+            events = read_lobby_events(path, limit=80)
+        ctx.send_json(
+            {"events": events, "channel_id": channel_id, "session": _session_summary(session)}
+        )
+
+    @router.post("/api/room/channel-say")
+    def room_channel_say(ctx: RequestContext) -> None:
+        session = ctx.require_posting_session()
+        if session is None:
+            return
+        if is_room_member_muted(
+            ctx.deps.output_root,
+            str(session.get("meeting_id") or ""),
+            str(session.get("agent_id") or ""),
+        ):
+            ctx.send_error(HTTPStatus.FORBIDDEN, "muted by room host")
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        channel_id, filename = _resolve_text_channel(ctx, session, str(payload.get("channel_id") or ""))
+        if channel_id is None:
+            return
+        _stamp_session_identity(payload, session)
+        path = ctx.deps.output_root / filename
+        with _CHANNEL_LOBBY_LOCK:
+            event = append_lobby_event_to_file(path, payload, allow_flow_metadata=True)
+        ctx.send_json({"event": event, "channel_id": channel_id})
 
     # -- operator account ------------------------------------------------------
 

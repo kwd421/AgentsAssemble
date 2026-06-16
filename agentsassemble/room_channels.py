@@ -13,6 +13,7 @@ functions over a channel list, so the HTTP layer stays thin and tests are direct
 """
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -22,7 +23,21 @@ MAX_CHANNELS_PER_ROOM = 50
 
 # Custom channel ids are opaque + filesystem/url/stream safe ([a-z0-9]). A name
 # is a separate, freely-editable display label (rename never moves the stream).
-_CHANNEL_ID_RE = r"c[0-9a-f]{12}"
+_CHANNEL_ID_RE = re.compile(r"c[0-9a-f]{12}")
+
+
+def is_channel_id(value: object) -> bool:
+    """True only for a well-formed opaque channel id. The gate that keeps a
+    client-supplied channel id from escaping into a path (traversal) or stream."""
+    return bool(_CHANNEL_ID_RE.fullmatch(str(value or "")))
+
+
+def channel_stream_filename(channel_id: object) -> str:
+    """Filesystem name for a text channel's own message stream, or "" if the id
+    is not a valid channel id. Each text channel gets channel_<id>.jsonl, read
+    and appended through the same generic lobby-event IO as the main lobby."""
+    cid = str(channel_id or "")
+    return f"channel_{cid}.jsonl" if is_channel_id(cid) else ""
 
 
 class ChannelError(ValueError):
