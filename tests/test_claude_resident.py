@@ -9,6 +9,7 @@ import base64
 import unittest
 
 from agentsassemble.claude_resident import (
+    _strip_envelope_leak,
     claude_answer_ready,
     extract_claude_terminal_message,
 )
@@ -126,6 +127,23 @@ class ClaudeTerminalExtractionTests(unittest.TestCase):
             + _ansi("(1s \u00b7 tokens)") + b"\n"
         )
         self.assertEqual(extract_claude_terminal_message(raw), "새 답.")
+
+
+class EnvelopeLeakStripTests(unittest.TestCase):
+    def test_strips_mashed_envelope_echo(self):
+        # The real artifact: a Korean answer with the (space-mashed) envelope echo.
+        leaked = "누가 카이도 위를 증명할 근거를 댈 수 있죠?transporthasroomtools,inspectread-since,archivea"
+        self.assertEqual(
+            _strip_envelope_leak(leaked), "누가 카이도 위를 증명할 근거를 댈 수 있죠?"
+        )
+
+    def test_strips_spaced_envelope_echo(self):
+        leaked = "real answer here. transport has room tools, inspect read-since"
+        self.assertEqual(_strip_envelope_leak(leaked), "real answer here.")
+
+    def test_leaves_clean_answer_untouched(self):
+        clean = "루피. 니카 각성으로 카이도를 이겼으니까."
+        self.assertEqual(_strip_envelope_leak(clean), clean)
 
 
 if __name__ == "__main__":

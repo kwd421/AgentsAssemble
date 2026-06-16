@@ -46,6 +46,43 @@ def claude_answer_ready(raw: bytes) -> bool:
     return CLAUDE_ANSWER_MARKER in _strip_terminal_ansi(raw)
 
 
+# Distinctive fragments of the "Room delivery envelope" prompt boilerplate
+# (live_agent_runner) — these must NEVER appear in a reply. The TUI scrape can
+# tack the echoed envelope onto the answer, and the lost spaces defeat the normal
+# control-meta filter, so we strip it here space-insensitively.
+_ENVELOPE_LEAK_SIGNATURES = (
+    "transporthasroomtools",
+    "roomdeliveryenvelope",
+    "agentsassembleownsroom",
+    "inspectread-since",
+    "speakeridentity",
+    "sourceeventid:",
+    "officialcursor:",
+    "lobbycursor:",
+)
+
+
+def _strip_envelope_leak(message: str) -> str:
+    """Cut the message at the earliest echoed-envelope signature, matched with
+    spaces removed (so "transport has room tools" and "transporthasroomtools"
+    both trigger). Maps the compact hit back to the original index."""
+    compact_chars: list[str] = []
+    original_index: list[int] = []
+    for index, char in enumerate(message):
+        if not char.isspace():
+            compact_chars.append(char.lower())
+            original_index.append(index)
+    compact = "".join(compact_chars)
+    cut: int | None = None
+    for signature in _ENVELOPE_LEAK_SIGNATURES:
+        pos = compact.find(signature)
+        if pos != -1:
+            cut = pos if cut is None else min(cut, pos)
+    if cut is None:
+        return message
+    return message[: original_index[cut]].rstrip(" \n\t·,-")
+
+
 def extract_claude_terminal_message(raw: bytes) -> str:
     """Pull Claude's reply out of the scraped TUI: the text after the LAST ⏺
     marker, joined until the next chrome line. Returns '' if no answer rendered."""
@@ -62,7 +99,7 @@ def extract_claude_terminal_message(raw: bytes) -> str:
         if _is_claude_chrome_line(line):
             break
         collected.append(line.strip())
-    return "\n".join(part for part in collected if part).strip()
+    return _strip_envelope_leak("\n".join(part for part in collected if part).strip())
 CLAUDE_CODE_PRINT_MODE_MESSAGE = (
     "claude_code resident configs must not use Claude Code print/non-interactive mode; "
     "use terminal_session with command ['claude'] or a verified self_service/tool-loop wrapper."
