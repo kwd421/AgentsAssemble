@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Image as ImageIcon, UserPlus, X } from "lucide-react";
-import { type ChannelNotificationSetting, type ChannelSettings, uploadLobbyAttachment } from "../../api";
+import {
+  type ChannelNotificationSetting,
+  type ChannelSettings,
+  type ConversationMode,
+  uploadLobbyAttachment,
+} from "../../api";
 import {
   roomAppearanceStyle,
   type RoomAppearance,
@@ -36,23 +41,27 @@ export default function RoomSettingsModal({
   initialSectionId,
   appearance,
   channelSettings,
+  conversationMode,
   canInvite,
   onClose,
   onInvite,
   onRoomChange,
   onAppearanceChange,
   onChannelSettingChange,
+  onConversationModeChange,
 }: {
   room: RoomDockItem;
   initialSectionId?: RoomSettingsSectionId;
   appearance: RoomAppearance;
   channelSettings: Record<string, ChannelSettings>;
+  conversationMode: ConversationMode;
   canInvite: boolean;
   onClose: () => void;
   onInvite: () => void;
   onRoomChange: (updates: Partial<Pick<RoomDockItem, "label" | "topic" | "shortLabel">>) => void;
   onAppearanceChange: (updates: Partial<RoomAppearance>) => void;
   onChannelSettingChange: (channelId: string, updates: Partial<ChannelSettings>) => void;
+  onConversationModeChange: (mode: ConversationMode) => void;
 }) {
   const [uploadStatus, setUploadStatus] = useState("");
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -156,6 +165,33 @@ export default function RoomSettingsModal({
                 onChange={(event) => onRoomChange({ topic: event.target.value.slice(0, 160) })}
               />
             </label>
+            <div className="dc-settings-field">
+              <p className="dc-settings-field-label">대화 모드</p>
+              <div className="dc-radio-stack">
+                <label>
+                  <input
+                    type="radio"
+                    name="conversation-mode"
+                    checked={conversationMode !== "free"}
+                    onChange={() => onConversationModeChange("turn")}
+                  />
+                  <span className="preserve-words">
+                    차례제 — 에이전트는 각자의 응답 규칙(멘션 등)을 따릅니다. 차분한 회의실.
+                  </span>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="conversation-mode"
+                    checked={conversationMode === "free"}
+                    onChange={() => onConversationModeChange("free")}
+                  />
+                  <span className="preserve-words">
+                    자유 — 에이전트가 사람·서로에게 자유롭게 이어 말합니다 (연쇄 깊이로만 제한). 자연스러운 대화/난상토론.
+                  </span>
+                </label>
+              </div>
+            </div>
           </section>
 
           <section id="settings-appearance" className="dc-settings-section">

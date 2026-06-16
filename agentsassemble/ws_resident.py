@@ -99,6 +99,7 @@ def run_provider_ws_resident(
     buffer_size: int = 40,
     max_replies: int = 0,
     max_idle_rounds: int = 0,
+    engagement_mode: str | None = None,
 ) -> int:
     """Run a CLI/provider agent over WS at the HTTP runner's prompt fidelity.
 
@@ -108,6 +109,11 @@ def run_provider_ws_resident(
     the governed WS transport instead of the HTTP poll loop. `command_runner` is
     the provider's resident runner (CodexResidentCommandRunner, etc.). The control-
     meta filter drops replies that leak runner/control instructions.
+
+    `engagement_mode` overrides `config.engagement_mode` for this run when given —
+    a free-flow room resolves to "always" so agents reply to each other, while a
+    turn-based room keeps the agent's own default. The caller resolves the room's
+    conversation_mode against the agent default (see `resolve_engagement`).
 
     This is the additive WS agent path (task #39): it does NOT touch LiveAgentRunner.
     """
@@ -119,6 +125,7 @@ def run_provider_ws_resident(
 
     agent_id = str(config.agent_id)
     display_name = str(config.display_name or config.agent_id)
+    effective_engagement = str(engagement_mode or config.engagement_mode or "mentioned")
     client = connect_room_ws(server_url, session_token, list(streams))
     try:
         client.sock.settimeout(poll_timeout)
@@ -175,7 +182,7 @@ def run_provider_ws_resident(
                 display_name,
                 last_observed,
                 max_chain_depth=config.max_chain_depth,
-                engagement_mode=config.engagement_mode,
+                engagement_mode=effective_engagement,
                 meeting_id=config.meeting_id,
             )
             if candidate is None:
@@ -184,7 +191,7 @@ def run_provider_ws_resident(
             last_observed = source_event_id
             room = {
                 "lobby_events": list(buffer),
-                "agent": {"agent_id": agent_id, "engagement_mode": config.engagement_mode},
+                "agent": {"agent_id": agent_id, "engagement_mode": effective_engagement},
                 "meeting_id": config.meeting_id,
                 "shared_memory": {},
             }

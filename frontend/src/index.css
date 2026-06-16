@@ -4914,6 +4914,25 @@ body[data-sidebar-resizing="true"] {
   gap: 9px;
 }
 
+.dc-settings-field {
+  display: grid;
+  gap: 7px;
+}
+
+.dc-settings-field-label {
+  font-weight: 800;
+}
+
+/* Radio rows with descriptive captions wrap, not center-clip, the long text. */
+.dc-settings-field .dc-radio-stack label {
+  align-items: flex-start;
+}
+
+.dc-settings-field .dc-radio-stack input[type="radio"] {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
 .dc-settings-invite {
   width: fit-content;
   display: inline-flex;

@@ -70,6 +70,7 @@ import {
   type SideChatEvent,
   type ChannelNotificationSetting,
   type ChannelSettings,
+  type ConversationMode,
   type RoomFriend,
   type RoomFriendsResponse,
   type RoomMember,
@@ -421,6 +422,9 @@ export default function App() {
   const [roomMembersByRoom, setRoomMembersByRoom] = useState<Record<string, RoomMember[]>>({});
   const [roomChannelSettings, setRoomChannelSettings] = useState<
     Record<string, Record<string, ChannelSettings>>
+  >({});
+  const [roomConversationModes, setRoomConversationModes] = useState<
+    Record<string, ConversationMode>
   >({});
   const [collapsedChannelSections, setCollapsedChannelSections] = useState<Record<string, boolean>>(
     {}
@@ -1841,6 +1845,10 @@ export default function App() {
           ...previous,
           [activeRoomKey]: settings.channelSettings,
         }));
+        setRoomConversationModes((previous) => ({
+          ...previous,
+          [activeRoomKey]: settings.conversationMode,
+        }));
       })
       .catch(() => {
         // Room settings are a UI enhancement; an unavailable endpoint should not blank the room.
@@ -1903,7 +1911,8 @@ export default function App() {
     room: RoomDockItem,
     nextAppearance: RoomAppearance,
     nextRoles?: Record<string, string>,
-    nextChannels?: Record<string, ChannelSettings>
+    nextChannels?: Record<string, ChannelSettings>,
+    nextConversationMode?: ConversationMode
   ) {
     void saveRoomSettings({
       roomId: room.meetingId,
@@ -1913,6 +1922,8 @@ export default function App() {
       appearance: nextAppearance,
       memberRoles: nextRoles ?? roomMemberRoles[roomSettingsKey(room)] ?? {},
       channelSettings: nextChannels ?? roomChannelSettings[roomSettingsKey(room)] ?? {},
+      conversationMode:
+        nextConversationMode ?? roomConversationModes[roomSettingsKey(room)] ?? "turn",
     }).catch(() => {
       // Saving is reflected again by the next explicit settings read; keep the optimistic UI state.
     });
@@ -2072,6 +2083,7 @@ export default function App() {
             roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
           )}
           channelSettings={roomChannelSettings[roomSettingsKey(settingsModalRoom)] || {}}
+          conversationMode={roomConversationModes[roomSettingsKey(settingsModalRoom)] || "turn"}
           canInvite={!guestLocked}
           onClose={() => setSettingsModal(null)}
           onInvite={() => {
@@ -2109,6 +2121,19 @@ export default function App() {
               ),
               roomMemberRoles[key] || {},
               nextSettings
+            );
+          }}
+          onConversationModeChange={(mode) => {
+            const key = roomSettingsKey(settingsModalRoom);
+            setRoomConversationModes((previous) => ({ ...previous, [key]: mode }));
+            persistRoomSettings(
+              settingsModalRoom,
+              completeRoomAppearance(
+                roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
+              ),
+              roomMemberRoles[key] || {},
+              roomChannelSettings[key] || {},
+              mode
             );
           }}
         />

@@ -62,6 +62,10 @@ def update_room_settings(output_root: Path, payload: dict[str, object]) -> dict[
         settings["channel_settings"] = clean_channel_settings(
             payload.get("channel_settings") or payload.get("channelSettings")
         )
+    if "conversation_mode" in payload or "conversationMode" in payload:
+        settings["conversation_mode"] = clean_conversation_mode(
+            payload.get("conversation_mode") or payload.get("conversationMode")
+        )
     settings["updated_at"] = datetime.now(UTC).isoformat()
     if not settings.get("created_at"):
         settings["created_at"] = settings["updated_at"]
@@ -83,9 +87,22 @@ def public_room_settings(value: object, *, room_id: str) -> dict[str, object]:
         "channel_settings": clean_channel_settings(
             source.get("channel_settings") or source.get("channelSettings")
         ),
+        "conversation_mode": clean_conversation_mode(
+            source.get("conversation_mode") or source.get("conversationMode")
+        ),
         "created_at": clean_room_text(source.get("created_at"), limit=64),
         "updated_at": clean_room_text(source.get("updated_at"), limit=64),
     }
+
+
+CONVERSATION_MODES = {"turn", "free"}
+
+
+def clean_conversation_mode(value: object) -> str:
+    """Room conversation policy: "turn" (orderly, default) or "free" (agents reply
+    to each other freely, bounded only by chain-depth/dedup/human-priority)."""
+    mode = str(value or "").strip().lower()
+    return mode if mode in CONVERSATION_MODES else "turn"
 
 
 def clean_room_id(value: object, *, required: bool) -> str:

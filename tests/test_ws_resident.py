@@ -360,6 +360,76 @@ class ProviderWsResidentTests(WsResidentLiveTests):
         self.assertEqual(len(say_messages), 1)
         self.assertEqual(say_messages[0]["source_event_id"], "new")
 
+    def test_engagement_override_makes_resident_reply_to_unmentioned_peer(self):
+        # A peer agent's message that does NOT mention us: with the agent's own
+        # "mentioned" default the resident stays silent; the free-flow override
+        # ("always") makes it reply. Proves the engagement_mode param reaches the
+        # reply decision, not just storage.
+        def make_client():
+            class FakeSock:
+                def settimeout(self, _timeout):
+                    pass
+
+            class FakeClient:
+                def __init__(self):
+                    self.sock = FakeSock()
+                    self.closed = False
+                    self.sent: list[dict] = []
+                    self._messages = [
+                        [
+                            {"op": "subscribed", "streams": ["lobby"]},
+                            {"op": "event", "stream": "lobby", "snapshot": True, "events": []},
+                            {
+                                "op": "event",
+                                "stream": "lobby",
+                                "events": [{
+                                    "id": "peer1", "actor_type": "agent", "actor_id": "other-bot",
+                                    "name": "OtherBot", "message": "작업을 나눠보자",
+                                }],
+                            },
+                        ]
+                    ]
+
+                def receive(self):
+                    return self._messages.pop(0) if self._messages else []
+
+                def thinking(self, on: bool):
+                    pass
+
+                def say(self, message: str, **extra):
+                    self.sent.append({"op": "say", "message": message, **extra})
+                    return {"op": "ack", "event": {"id": "reply1"}}
+
+                def close(self):
+                    self.closed = True
+
+            return FakeClient()
+
+        config = _resident_config("codex-ws", engagement_mode="mentioned")
+
+        silent = make_client()
+        with patch.object(ws_resident, "connect_room_ws", return_value=silent):
+            silent_replies = run_provider_ws_resident(
+                "http://room.local", "session-token", config,
+                lambda command, prompt, *, timeout_seconds: "reply",
+                max_replies=1, max_idle_rounds=1,
+            )
+        self.assertEqual(silent_replies, 0)
+        self.assertEqual([m for m in silent.sent if m.get("op") == "say"], [])
+
+        chatty = make_client()
+        with patch.object(ws_resident, "connect_room_ws", return_value=chatty):
+            chatty_replies = run_provider_ws_resident(
+                "http://room.local", "session-token", config,
+                lambda command, prompt, *, timeout_seconds: "reply",
+                max_replies=1, max_idle_rounds=1,
+                engagement_mode="always",
+            )
+        self.assertEqual(chatty_replies, 1)
+        say_messages = [m for m in chatty.sent if m.get("op") == "say"]
+        self.assertEqual(len(say_messages), 1)
+        self.assertEqual(say_messages[0]["source_event_id"], "peer1")
+
     def test_provider_resident_does_not_count_rejected_say_as_reply(self):
         class FakeSock:
             def settimeout(self, _timeout):
@@ -438,18 +508,46 @@ class WsLaunchWiringTests(unittest.TestCase):
 
         seen = {}
 
-        def fake_run(server, token, config, runner, *, max_replies=0):
-            seen.update(server=server, token=token, agent_id=config.agent_id, max_replies=max_replies)
+        def fake_run(server, token, config, runner, *, max_replies=0, engagement_mode=None):
+            seen.update(
+                server=server, token=token, agent_id=config.agent_id,
+                max_replies=max_replies, engagement_mode=engagement_mode,
+            )
             return 2
 
         args = self._args("--session-token", "tok-123", "--max-ticks", "2")
         config = config_from_args(args)
-        with mock.patch("agentsassemble.ws_resident.run_provider_ws_resident", fake_run):
+        with mock.patch("agentsassemble.ws_room_client.fetch_room_conversation_mode", lambda *a, **k: "turn"), \
+             mock.patch("agentsassemble.ws_resident.run_provider_ws_resident", fake_run):
             rc = cli._run_ws_resident_command(args, config)
         self.assertEqual(rc, 0)
         self.assertEqual(seen["token"], "tok-123")
         self.assertEqual(seen["agent_id"], "codex-ws")
         self.assertEqual(seen["max_replies"], 2)
+        # turn-based room keeps the agent's own engagement default ("always" here).
+        self.assertEqual(seen["engagement_mode"], "always")
+
+    def test_free_room_resolves_engagement_to_always(self):
+        import agentsassemble.cli as cli
+        from agentsassemble.cli import build_parser
+        from agentsassemble.live_agent_runner import config_from_args
+
+        seen = {}
+        # Agent default is "mentioned"; a free-flow room must override it to "always".
+        args = build_parser().parse_args([
+            "live-agent", "run", "--server", "http://127.0.0.1:8765",
+            "--agent-id", "codex-ws", "--display-name", "Codex",
+            "--provider-kind", "codex_live_session", "--connection-kind", "live_session",
+            "--transport", "ws", "--engagement-mode", "mentioned",
+            "--session-token", "tok-123", "--command", "codex",
+        ])
+        config = config_from_args(args)
+        with mock.patch("agentsassemble.ws_room_client.fetch_room_conversation_mode", lambda *a, **k: "free"), \
+             mock.patch("agentsassemble.ws_resident.run_provider_ws_resident",
+                        lambda server, token, cfg, runner, *, max_replies=0, engagement_mode=None:
+                        seen.update(engagement_mode=engagement_mode) or 0):
+            cli._run_ws_resident_command(args, config)
+        self.assertEqual(seen["engagement_mode"], "always")
 
     def test_invite_token_is_joined_for_a_session(self):
         import agentsassemble.cli as cli
@@ -458,9 +556,11 @@ class WsLaunchWiringTests(unittest.TestCase):
         seen = {}
         args = self._args("--invite-token", "inv-xyz")
         config = config_from_args(args)
-        with mock.patch("agentsassemble.ws_room_client.join_room_session", lambda *a, **k: "tok-from-invite") as _j, \
+        with mock.patch("agentsassemble.ws_room_client.fetch_room_conversation_mode", lambda *a, **k: "turn"), \
+             mock.patch("agentsassemble.ws_room_client.join_room_session", lambda *a, **k: "tok-from-invite") as _j, \
              mock.patch("agentsassemble.ws_resident.run_provider_ws_resident",
-                        lambda server, token, cfg, runner, *, max_replies=0: seen.update(token=token) or 0):
+                        lambda server, token, cfg, runner, *, max_replies=0, engagement_mode=None:
+                        seen.update(token=token) or 0):
             cli._run_ws_resident_command(args, config)
         self.assertEqual(seen["token"], "tok-from-invite")
 

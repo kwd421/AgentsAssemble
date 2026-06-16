@@ -222,6 +222,24 @@ def join_room_session(
     return token
 
 
+def fetch_room_conversation_mode(server_url: str, meeting_id: str, *, timeout: float = 5.0) -> str:
+    """GET /api/room-settings → the room's conversation_mode ("turn"/"free").
+    Best-effort: returns "turn" on any error so a resident never fails to launch."""
+    try:
+        request = urllib.request.Request(
+            f"{server_url.rstrip('/')}/api/room-settings?room_id={urllib.parse.quote(str(meeting_id or ''))}",
+            method="GET",
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return "turn"
+    settings = payload.get("settings") if isinstance(payload, dict) else None
+    if isinstance(settings, dict):
+        return str(settings.get("conversation_mode") or "turn")
+    return "turn"
+
+
 def connect_room_ws(
     server_url: str,
     session_token: str,

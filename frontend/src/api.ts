@@ -21,6 +21,8 @@ export interface LobbyAttachmentRef {
   download_url: string;
 }
 
+export type ConversationMode = "turn" | "free";
+
 export interface RoomSettings {
   roomId: string;
   label: string;
@@ -29,6 +31,9 @@ export interface RoomSettings {
   appearance: RoomAppearance;
   memberRoles: Record<string, string>;
   channelSettings: Record<string, ChannelSettings>;
+  // "turn": orderly (agents follow their own engagement mode). "free": agents
+  // reply to everyone — humans AND each other — bounded by chain-depth/dedup.
+  conversationMode: ConversationMode;
 }
 
 export type ParticipantType = "human" | "subscription_ai" | "api" | "local" | "remote" | "unknown";
@@ -196,6 +201,7 @@ type ApiRoomSettings = {
   appearance?: ApiRoomAppearance;
   member_roles?: Record<string, string>;
   channel_settings?: Record<string, ApiChannelSettings>;
+  conversation_mode?: ConversationMode;
 };
 
 type ApiChannelSettings = {
@@ -966,6 +972,7 @@ function normalizeRoomSettings(payload: ApiRoomSettings | undefined, fallbackRoo
     },
     memberRoles: payload?.member_roles && typeof payload.member_roles === "object" ? payload.member_roles : {},
     channelSettings: normalizeChannelSettings(payload?.channel_settings),
+    conversationMode: payload?.conversation_mode === "free" ? "free" : "turn",
   };
 }
 
@@ -1075,6 +1082,7 @@ export function saveRoomSettings({
   appearance,
   memberRoles,
   channelSettings,
+  conversationMode,
 }: Partial<Omit<RoomSettings, "roomId">> & { roomId: string }): Promise<RoomSettings> {
   return postJson<{ room_id: string; settings: ApiRoomSettings }>("/api/room-settings", {
     room_id: roomId,
@@ -1084,6 +1092,7 @@ export function saveRoomSettings({
     appearance: roomAppearanceToApi(appearance),
     member_roles: memberRoles,
     channel_settings: channelSettingsToApi(channelSettings),
+    conversation_mode: conversationMode,
   }).then((payload) => normalizeRoomSettings(payload.settings, payload.room_id || roomId));
 }
 

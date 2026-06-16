@@ -117,6 +117,18 @@ def _contains_direct_mention_token(normalized_message: str, normalized_mention: 
     return re.search(at_pattern, normalized_message) is not None or re.search(angle_pattern, normalized_message) is not None
 
 
+def resolve_engagement(conversation_mode: str, agent_engagement_mode: str) -> str:
+    """A room's free-flow policy overrides a per-agent engagement default.
+
+    "free": agents reply to everyone — humans AND each other — bounded only by
+    chain-depth / dedup / human-priority, so conversation flows naturally and
+    consecutively. "turn" (default): keep the agent's own engagement_mode
+    (mentioned / human_only / ...), so the room stays orderly."""
+    if str(conversation_mode or "").strip().lower() == "free":
+        return "always"
+    return str(agent_engagement_mode or "mentioned")
+
+
 def should_reply_to_event(
     engagement_mode: str,
     event: dict[str, object],
