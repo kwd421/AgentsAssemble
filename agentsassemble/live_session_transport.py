@@ -21,6 +21,13 @@ try:
 except ImportError:  # pragma: no cover - depends on host platform
     termios = None  # type: ignore[assignment]
 
+try:
+    import fcntl
+    import struct
+except ImportError:  # pragma: no cover - depends on host platform
+    fcntl = None  # type: ignore[assignment]
+    struct = None  # type: ignore[assignment]
+
 
 class JsonlLiveSession:
     def __init__(
@@ -302,6 +309,10 @@ class TerminalLiveSession:
         self._master_fd = master_fd
         try:
             _disable_terminal_echo(slave_fd)
+            # A tall+wide window keeps a TUI's answer inside one screen (no
+            # scrollback loss) so the screen-emulator scrape (claude_resident) can
+            # reconstruct the whole reply with spaces intact.
+            _set_terminal_window_size(slave_fd, rows=200, cols=200)
             self.process = popen_factory(
                 self.command,
                 stdin=slave_fd,
@@ -597,6 +608,19 @@ def _select_fds(readers: list[int], writers: list[int], timeout: float) -> tuple
     import select
 
     return select.select(readers, writers, [], timeout)
+
+
+def _set_terminal_window_size(fd: int, *, rows: int, cols: int) -> None:
+    """Best-effort TIOCSWINSZ so a TUI lays its answer out in a big screen."""
+    if fcntl is None or struct is None or termios is None:
+        return
+    winsize = getattr(termios, "TIOCSWINSZ", None)
+    if winsize is None:
+        return
+    try:
+        fcntl.ioctl(fd, winsize, struct.pack("HHHH", rows, cols, 0, 0))
+    except OSError:  # pragma: no cover - platform/driver dependent
+        pass
 
 
 def _disable_terminal_echo(fd: int) -> None:

@@ -12,7 +12,29 @@ from agentsassemble.claude_resident import (
     _strip_envelope_leak,
     claude_answer_ready,
     extract_claude_terminal_message,
+    render_terminal_screen,
 )
+
+
+class ScreenRenderTests(unittest.TestCase):
+    """The VT screen emulator that recovers spaces from cursor-positioned TUI
+    output (the fix for Claude's "현재시점" / "현재  시점" mangling)."""
+
+    def test_real_space_between_cjk_preserved_single(self):
+        self.assertEqual(render_terminal_screen("현재 시점".encode()), "현재 시점")
+
+    def test_cursor_forward_gap_renders_as_one_space(self):
+        # CJK is double-width; a CUF over the (single) space column must not
+        # become several spaces — the width-aware grid keeps it to one.
+        seq = "현재".encode() + b"\x1b[1C" + "시점".encode()
+        self.assertEqual(render_terminal_screen(seq), "현재 시점")
+
+    def test_cursor_reposition_overwrites(self):
+        seq = "가나".encode() + b"\x1b[1;1H" + "다라마".encode()
+        self.assertEqual(render_terminal_screen(seq), "다라마")
+
+    def test_plain_ascii_untouched(self):
+        self.assertEqual(render_terminal_screen(b"hello world\r\n"), "hello world")
 
 REAL_CAPTURE_B64 = (
     "GzcbW3IbOBtbPzI1aBtbPzI1bBtbPzIwMDRoG1s/MTAwNGgbWz8yMDMxaBtbPjBxG1tjG1s/MTA0OWgbWzJKG1tIG1s/MTAwMGgb"

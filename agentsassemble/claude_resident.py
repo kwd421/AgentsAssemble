@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 
 CLAUDE_CODE_PRINT_FLAGS = {"-p", "--print"}
@@ -22,6 +23,107 @@ def _strip_terminal_ansi(raw: bytes) -> str:
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
     text = re.sub(r"\x1b[@-_][0-?]*[ -/]*[@-~]?", "", text)
     return text.replace("\x07", "")
+
+
+_CSI_RE = re.compile(r"\x1b\[([0-9;?]*)([@-~])")
+_SCREEN_MAX_ROWS = 400
+_SCREEN_MAX_COLS = 400
+
+
+def render_terminal_screen(raw: bytes) -> str:
+    """Render a cursor-positioned TUI byte stream into plain text by emulating a
+    virtual screen grid. Claude Code draws each glyph at an absolute (row, col)
+    and uses cursor moves where spaces would be, so a linear ANSI-strip mashes
+    words ("현 시점"→"현시점"). Replaying the moves onto a space-filled grid puts
+    the gaps back. Handles the CSI subset Claude actually emits (CUP/CUU/CUD/CUF/
+    CUB/CHA, EL, ED) + CR/LF/BS/TAB; SGR and the rest are ignored."""
+    text = raw.decode("utf-8", errors="replace")
+    grid: list[list[str]] = []
+    row = col = 0
+
+    def cell_row(r: int) -> list[str]:
+        while len(grid) <= r:
+            grid.append([])
+        return grid[r]
+
+    def put(ch: str) -> None:
+        nonlocal col
+        if row >= _SCREEN_MAX_ROWS or col >= _SCREEN_MAX_COLS:
+            return
+        # CJK/fullwidth glyphs occupy two terminal columns; advancing by one would
+        # leave a spurious gap per character ("현재" → "현 재"). Mark the trailing
+        # column with a sentinel that the render step drops.
+        width = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+        line = cell_row(row)
+        while len(line) <= col + width - 1:
+            line.append(" ")
+        line[col] = ch
+        if width == 2:
+            line[col + 1] = "\x00"
+        col += width
+
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\x1b":
+            match = _CSI_RE.match(text, i)
+            if not match:
+                i += 2  # non-CSI escape (e.g. ESC ] OSC start) — skip the pair
+                continue
+            params, final = match.group(1), match.group(2)
+            nums = [int(p) for p in params.split(";") if p.isdigit()]
+            first = nums[0] if nums else 0
+            if final in "Hf":
+                row = max(0, (nums[0] - 1) if len(nums) >= 1 and nums[0] else 0)
+                col = max(0, (nums[1] - 1) if len(nums) >= 2 and nums[1] else 0)
+            elif final == "A":
+                row = max(0, row - max(1, first))
+            elif final == "B":
+                row = row + max(1, first)
+            elif final == "C":
+                col = col + max(1, first)
+            elif final == "D":
+                col = max(0, col - max(1, first))
+            elif final == "G":
+                col = max(0, first - 1 if first else 0)
+            elif final == "K":  # erase line
+                line = cell_row(row)
+                if first == 0:
+                    del line[col:]
+                elif first == 1:
+                    for c in range(min(col + 1, len(line))):
+                        line[c] = " "
+                else:
+                    line.clear()
+            elif final == "J":  # erase display
+                if first == 2:
+                    grid.clear()
+                    row = col = 0
+                elif first == 0:
+                    del cell_row(row)[col:]
+                    del grid[row + 1:]
+            i = match.end()
+            continue
+        if ch == "\n":
+            row += 1
+            i += 1
+        elif ch == "\r":
+            col = 0
+            i += 1
+        elif ch == "\x08":
+            col = max(0, col - 1)
+            i += 1
+        elif ch == "\t":
+            col = (col // 8 + 1) * 8
+            i += 1
+        elif ch == "\x07":
+            i += 1
+        else:
+            put(ch)
+            i += 1
+
+    lines = ["".join(c for c in line if c != "\x00").rstrip() for line in grid]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
 def _is_claude_chrome_line(line: str) -> bool:
@@ -86,7 +188,7 @@ def _strip_envelope_leak(message: str) -> str:
 def extract_claude_terminal_message(raw: bytes) -> str:
     """Pull Claude's reply out of the scraped TUI: the text after the LAST ⏺
     marker, joined until the next chrome line. Returns '' if no answer rendered."""
-    lines = _strip_terminal_ansi(raw).split("\n")
+    lines = render_terminal_screen(raw).split("\n")
     marker_index: int | None = None
     for index, line in enumerate(lines):
         if CLAUDE_ANSWER_MARKER in line:
