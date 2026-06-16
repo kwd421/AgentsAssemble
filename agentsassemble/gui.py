@@ -46,6 +46,7 @@ from agentsassemble.live_agent_discovery import (
 from agentsassemble.live_agent_context import live_agent_context_contract, live_agent_context_contract_with_join_semantics
 from agentsassemble.live_agent_flow import FLOW_SPEAKING_ACTIONS, FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
 from agentsassemble.live_agent_frontend_create import (
+    ensure_frontend_meeting,
     frontend_live_agent_check_payload,
     frontend_live_agent_create_payload,
     frontend_live_agent_login_payload,
@@ -9129,6 +9130,23 @@ def _make_handler(
                     details={"provider_id": clean_lobby_text(payload.get("provider_id"), limit=64)},
                 )
                 self._send_json(login)
+                return
+            if parsed.path == "/api/room/ensure":
+                # Promote a localStorage room to a server-backed meeting on demand
+                # (rooms-as-server-objects). Idempotent; safe to call on room open.
+                payload = self._operation_json_payload(operation="room.ensure")
+                if payload is None:
+                    return
+                try:
+                    meeting_dir = ensure_frontend_meeting(
+                        output_root,
+                        clean_lobby_text(payload.get("meeting_id"), limit=128),
+                        label=clean_lobby_text(payload.get("label"), limit=128),
+                    )
+                except (OSError, ValueError) as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json({"status": "ready", "meeting_id": meeting_dir.name})
                 return
             if parsed.path == "/api/live-agent-create":
                 payload = self._operation_json_payload(operation="frontend_agent.create")

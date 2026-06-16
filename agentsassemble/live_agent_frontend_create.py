@@ -225,7 +225,10 @@ def frontend_live_agent_create_payload(
     if start_now and not provider.startable:
         raise ValueError("Local runtime is not configured for frontend start yet.")
 
-    meeting_dir = _existing_meeting_dir(output_root, meeting_id)
+    # A UI room may not have a server meeting yet (it lives in localStorage);
+    # materialize one on demand so adding an agent no longer fails with
+    # "Meeting <id> was not found".
+    meeting_dir = ensure_frontend_meeting(output_root, meeting_id, label=clean_lobby_text(payload.get("room_label"), limit=128))
     meeting = _read_meeting(meeting_dir)
     agent_id = _unique_agent_id(meeting, provider=provider, display_name=display_name)
     role_id = agent_id
@@ -507,6 +510,46 @@ def _existing_meeting_dir(output_root: Path, meeting_id: str) -> Path:
         raise ValueError(f"Meeting {meeting_id} was not found.") from error
     if not (meeting_dir / "live_state.json").exists():
         raise ValueError(f"Meeting {meeting_id} was not found.")
+    return meeting_dir
+
+
+def ensure_frontend_meeting(output_root: Path, meeting_id: str, *, label: str = "") -> Path:
+    """Return the meeting dir for a UI room, materializing a minimal one if absent.
+
+    Frontend rooms (the Discord-style dock) live in the browser's localStorage and
+    have no server-side meeting of their own. The agent-create flow, roster, and
+    lobby all expect a real meeting dir, so the first time a room needs server
+    backing we create a minimal-but-valid ``live_state.json`` here. This is the
+    seam that promotes a localStorage room to a first-class server object on
+    demand — localStorage becomes a cache, the meeting dir the source of truth.
+    """
+    clean = _clean_existing_meeting_id(meeting_id)
+    meetings_root = (output_root / "meetings").resolve()
+    meeting_dir = (meetings_root / clean).resolve()
+    try:
+        meeting_dir.relative_to(meetings_root)
+    except ValueError as error:
+        raise ValueError(f"Meeting {clean} was not found.") from error
+    if (meeting_dir / "live_state.json").exists():
+        return meeting_dir
+    meeting_dir.mkdir(parents=True, exist_ok=True)
+    title = clean_lobby_text(label, limit=128) or clean
+    write_live_state(
+        meeting_dir,
+        {
+            "meeting_id": clean,
+            "topic": title,
+            "display_topic": title,
+            "roles": [],
+            "agent_bindings": [],
+            "provider_configs": {},
+            "permission_profiles": {},
+            "room_chat": [],
+            "research_depth": {"name": "resident_live"},
+            "live_status": "running",
+            "origin": "frontend_room",
+        },
+    )
     return meeting_dir
 
 

@@ -1135,6 +1135,15 @@ export function createFrontendLiveAgent(request: FrontendLiveAgentCreateRequest)
   return postJson<FrontendLiveAgentCreateResponse>("/api/live-agent-create", frontendLiveAgentCreatePayload(request));
 }
 
+// Promote a localStorage room to a server-backed meeting (rooms-as-server-objects).
+// Idempotent; called when a room becomes active so its meeting always exists.
+export function ensureRoomMeeting(meetingId: string, label = "") {
+  return postJson<{ status: string; meeting_id: string }>("/api/room/ensure", {
+    meeting_id: meetingId,
+    label,
+  });
+}
+
 export function startFrontendLiveAgentLogin(providerId: string) {
   return postJson<FrontendLiveAgentLoginResponse>("/api/live-agent-create/login", {
     provider_id: providerId,

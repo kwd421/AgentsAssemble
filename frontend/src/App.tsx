@@ -31,6 +31,7 @@ import {
   fetchLiveAgentProcesses,
   fetchPublicInviteStatus,
   fetchRoomChannels,
+  ensureRoomMeeting,
   createRoomChannel,
   fetchRoomFriends,
   fetchRoomSettings,
@@ -548,6 +549,19 @@ export default function App() {
     8000
   );
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? createFreshRoom();
+  // Rooms-as-server-objects: when a room becomes active, promote it to a
+  // server-backed meeting (idempotent) so adding agents / roster / lobby always
+  // have a real meeting to bind to instead of failing with "Meeting not found".
+  const ensuredMeetingsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const meetingId = activeRoom.meetingId || "";
+    if (!meetingId || meetingId === "pending-join" || guestLocked) return;
+    if (ensuredMeetingsRef.current.has(meetingId)) return;
+    ensuredMeetingsRef.current.add(meetingId);
+    ensureRoomMeeting(meetingId, activeRoom.label || "").catch(() => {
+      ensuredMeetingsRef.current.delete(meetingId); // allow a later retry
+    });
+  }, [activeRoom.meetingId, activeRoom.label, guestLocked]);
   const activeSideChatMeetingId = activeRoom.meetingId || "";
   const activeMafiaGameId = mafiaGameId === activeRoom.meetingId ? mafiaGameId : "";
   const mafiaFetcher = useCallback((): Promise<MafiaGameResponse> => {

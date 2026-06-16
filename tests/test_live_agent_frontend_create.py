@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.live_agent_frontend_create import (
+    ensure_frontend_meeting,
     frontend_live_agent_check_payload,
     frontend_live_agent_create_payload,
     frontend_live_agent_login_payload,
@@ -136,6 +137,58 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
             self.assertEqual(live_agents[0]["status"], "offline")
             self.assertEqual(live_agents[0]["process_group_id"], result["group_id"])
             self.assertEqual(live_agents[0]["live_agent_config_path"], result["live_agent_config_path"])
+
+    def test_create_materializes_missing_meeting_for_localstorage_room(self):
+        # A UI room (localStorage) has no server meeting yet; adding an agent
+        # must auto-create it instead of failing with "Meeting <id> was not found".
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "aa"
+            workspace = Path(temp_dir) / "project"
+            workspace.mkdir()
+            self.assertFalse((root / "meetings" / "resident-m1").exists())
+
+            result = frontend_live_agent_create_payload(
+                root,
+                FakeSupervisor(),
+                {
+                    "meeting_id": "resident-m1",
+                    "provider_id": "cursor",
+                    "display_name": "Cursor Planner",
+                    "workspace_path": str(workspace),
+                    "room_label": "상주방 m1",
+                    "start_now": False,
+                },
+                default_server="http://127.0.0.1:8765",
+            )
+
+            self.assertEqual(result["status"], "created")
+            self.assertEqual(result["meeting_id"], "resident-m1")
+            meeting = json.loads((root / "meetings" / "resident-m1" / "live_state.json").read_text(encoding="utf-8"))
+            self.assertEqual(meeting["meeting_id"], "resident-m1")
+            self.assertEqual(meeting["topic"], "상주방 m1")
+            self.assertEqual(meeting["origin"], "frontend_room")
+            self.assertEqual(meeting["agent_bindings"][0]["agent_id"], result["agent"]["agent_id"])
+
+    def test_ensure_frontend_meeting_is_idempotent_and_preserves_existing_state(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "aa"
+            first = ensure_frontend_meeting(root, "work-room", label="작업방")
+            self.assertTrue((first / "live_state.json").exists())
+            # Mutate the meeting, then re-ensure: must not overwrite existing state.
+            state = json.loads((first / "live_state.json").read_text(encoding="utf-8"))
+            state["roles"] = [{"id": "keep-me"}]
+            (first / "live_state.json").write_text(json.dumps(state), encoding="utf-8")
+            second = ensure_frontend_meeting(root, "work-room", label="다른라벨")
+            self.assertEqual(first, second)
+            reread = json.loads((second / "live_state.json").read_text(encoding="utf-8"))
+            self.assertEqual(reread["roles"], [{"id": "keep-me"}])
+            self.assertEqual(reread["topic"], "작업방")
+
+    def test_ensure_frontend_meeting_rejects_path_traversal(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "aa"
+            with self.assertRaises(ValueError):
+                ensure_frontend_meeting(root, "../escape")
 
     def test_created_but_never_started_agent_can_resume_from_saved_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
