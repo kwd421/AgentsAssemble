@@ -1412,12 +1412,15 @@ should_reply_to_event = _shared_should_reply_to_event
 
 def delegate_prompt(config: ResidentAgentConfig, room: dict[str, object], source_event: dict[str, object]) -> str:
     lines = [
-        "You are a live AgentsAssemble participant in the room.",
+        "You are a live AgentsAssemble participant in the room, with your normal tools available.",
         f"Agent id: {config.agent_id}",
         f"Display name: {config.display_name or config.agent_id}",
-        "Reply with one lobby message only.",
+        "Judge what the new event needs, the way you normally would:",
+        "- Just conversation -> reply with one short room message.",
+        "- A task (edit files, run or check something, investigate) -> actually do it with your tools, then post one short message reporting what you did or found.",
+        "Keep room messages short; do the real work with tools, not in the chat text. If you lack the access to do something here, say so briefly instead of pretending.",
         "Do not describe this runner, polling, room-event checking, heartbeats, control prompts, or delivery envelopes.",
-        "Do not include markdown fences or multiple alternatives.",
+        "Do not include markdown fences or multiple alternatives in your room message.",
         "",
         *_room_delivery_envelope_lines(config, room, source_event, include_recent_conversation=True),
         "",

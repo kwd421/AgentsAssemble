@@ -7848,10 +7848,14 @@ def _close_command_runner(command_runner) -> None:
 def _delegate_prompt(args: argparse.Namespace, room: dict[str, object]) -> str:
     events = room.get("lobby_events") if isinstance(room.get("lobby_events"), list) else []
     lines = [
-        "You are a live AgentsAssemble participant connected through a local CLI bridge.",
+        "You are a live AgentsAssemble participant in the room, working through a local CLI bridge with your normal tools available.",
         f"Agent id: {args.agent_id}",
         f"Display name: {args.display_name or args.agent_id}",
-        "Reply with one concise lobby message only.",
+        "Judge what the latest message needs, the way you normally would:",
+        "- Just conversation -> reply with one short room message.",
+        "- A task (edit files, run or check something, investigate) -> actually do it with your tools, then post one short message reporting what you did or found.",
+        "Keep room messages short; do the real work with tools, not in the chat text. If you lack the access to do something here, say so briefly instead of pretending.",
+        "Do not describe this runner, polling, heartbeats, control prompts, or delivery envelopes. No markdown fences.",
         "",
         "Recent lobby events:",
     ]
