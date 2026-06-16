@@ -25,7 +25,7 @@ Cursor/opencode/Claude Code 급 클라이언트인데, 차별점 = 멀티에이�
 - **[대부분완료] 1단계: 모델 다양화** — 정적 모델 카탈로그(`provider_catalog.py`, 데이터) + OpenAI-호환 어댑터 1개(`room_api_provider.py`, urllib·의존성0, fallback chain) + `assemble api-call` CLI + **`api_call` 라이브에이전트 레인**(in-process runner, runner 거버넌스 재사용) ✅. 모델 추가 = 데이터 한 줄. **남은 것**: (a) 모델 선택 UI는 2단계, (b) usage는 resident-프로세스라 `--output-root` 줄 때만 로컬 기록(서버측 토큰 귀속 = resident가 reply와 함께 토큰 보고 → room HTTP 페이로드 확장, 2단계 usage UI와 함께).
 - **2단계: 앱급 권한(웹분)** — 세션 허용 · 권한 건너뛰기 · 키 관리 UI · 모델 선택.
 - **3단계: 멀티모달·깊이** — 이미지 보기(Claude base64 + Codex `-i`) · 세션 메모리(누적) · 거주자 핑퐁. (1·2와 병행 가능)
-- **★ WS 전환** — 전송 계층 교체. 접속 거버넌스(핸드셰이크가 신원·클라이언트종류 확정, 자작루프 차단, 도배관리) 한 번에 해결. **상주(residency)도 여기서 근본 해결**: 지금은 에이전트가 `wait-next` 폴 루프를 스스로 돌려야 상주가 되는데(폴 루프 안 돌리면 무응답 — Claude 상주가 어설펐던 원인), WS는 연결 유지만으로 서버가 이벤트를 푸시 → **폴 루프 폐기.** Grok/Gemini/Claude 상주 문제 근본 해결.
+- **[대부분완료] ★ WS 전환** (`ws-transition-design.md`) — 전송 계층 교체. ✅ RFC6455 코덱(순수stdlib) · `/ws`+ticket+거버넌스 핸드셰이크(신원·클라이언트종류 한 번 확정 = 자작루프/잘못된경로 차단) · 게스트 푸시 · **provider WS 상주**(runner 봉투+engagement 재사용, codex/grok/agy 라이브 검증) · **한 줄 런치**(`live-agent run --transport ws`) · 펄스 타이핑 표시기. 코덱스 리뷰 4건 수정·검증. **남은 것**: WS-6 pub/sub(200ms 폴 제거 — 리소스/확장성, 지연이득은 작음) · 스트리밍(API레인 실토큰=키필요 / CLI는 exec라 못함) · 기존 HTTP runner는 공존(추가형, 나중 기본 전환).
 - **4단계: 네이티브 앱** — file access · voice · 기기 신원 · OS 권한.
 - **★★ 상위 축: 자율 팀 오케스트레이션** (`orchestration-vision-20260616.md`) — 방을 일터로 둔 자율 멀티에이전트 팀. 방 생성/이동 · 역할/계층(디렉터>팀장>팀원) · 수동지정+자동위임 · 에이전트 자율 이동/보고 · 제네릭 오케스트레이션 도구. 사람은 디렉터 중심 대화 + 전체 관찰. WS·상주·자유발화 위에 얹힘. **이 플랫폼의 진짜 목적지.** 디자인 탈-디스코드 reskin은 별개 병행 트랙.
 - **[먼 미래] 유료 구독** — 사용자 붙은 뒤(결제·측정·법무).

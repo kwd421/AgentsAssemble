@@ -58,8 +58,9 @@ WsConnection:
 - **WS-4 ✅** `ws_room_session.py`(WsTicketStore + WsRoomSession 프로토콜 코어, 16테스트) +
   gui.py `/ws` 소켓 하이재킹 + `POST /api/ws-ticket` + 핸드셰이크 신원·클라이언트종류 + 거버넌스 `say`
   + 이벤트 전달(snapshot 리더 재사용). 실소켓 통합테스트 3(ws-ticket→핸드셰이크→subscribe/say 왕복).
-- **WS-5** 프런트 `RoomTransport` seam + `WebSocketTransport` + SSE/폴 폴백.
-- **WS-6 (후속)** `RoomEventHub` pub/sub로 내부 폴링 은퇴(지연/효율).
+- **WS-5 ✅** 프런트 `connectRoomSocket`(게스트 푸시) + 펄스 타이핑 표시기.
+- **WS-resident ✅** `run_provider_ws_resident`(runner 봉투+engagement 재사용) + **한 줄 런치** `live-agent run --transport ws --invite-token <t> --command codex`(`_run_ws_resident_command`, `join_room_session`). 실CLI 경로로 codex 라이브 검증(auto_chain_depth/source 실림). 기존 HTTP runner와 공존(추가형).
+- **WS-6 (후속)** `RoomEventHub` pub/sub로 내부 폴링 은퇴(리소스/확장성; 지연이득은 작음).
 
 ## WS-4 통합 메모 (http.server 하이재킹)
 서버는 `ThreadingHTTPServer` + `AgentsAssembleHandler(BaseHTTPRequestHandler)` (gui.py:8126).
