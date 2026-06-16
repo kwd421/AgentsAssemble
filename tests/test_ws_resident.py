@@ -11,6 +11,7 @@ import threading
 import tempfile
 import time
 import unittest
+from unittest import mock
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
@@ -414,6 +415,63 @@ class ProviderWsResidentTests(WsResidentLiveTests):
         self.assertEqual(replies, 0)
         say_messages = [message for message in fake.sent if message.get("op") == "say"]
         self.assertEqual(len(say_messages), 1)
+
+
+class WsLaunchWiringTests(unittest.TestCase):
+    """The one-command WS launch (`live-agent run --transport ws`) wires the
+    provider brain + session into run_provider_ws_resident. Stubbed — no network."""
+
+    def _args(self, *extra):
+        from agentsassemble.cli import build_parser
+
+        return build_parser().parse_args([
+            "live-agent", "run", "--server", "http://127.0.0.1:8765",
+            "--agent-id", "codex-ws", "--display-name", "Codex",
+            "--provider-kind", "codex_live_session", "--connection-kind", "live_session",
+            "--transport", "ws", "--engagement-mode", "always",
+            *extra, "--command", "codex",
+        ])
+
+    def test_session_token_is_passed_through(self):
+        import agentsassemble.cli as cli
+        from agentsassemble.live_agent_runner import config_from_args
+
+        seen = {}
+
+        def fake_run(server, token, config, runner, *, max_replies=0):
+            seen.update(server=server, token=token, agent_id=config.agent_id, max_replies=max_replies)
+            return 2
+
+        args = self._args("--session-token", "tok-123", "--max-ticks", "2")
+        config = config_from_args(args)
+        with mock.patch("agentsassemble.ws_resident.run_provider_ws_resident", fake_run):
+            rc = cli._run_ws_resident_command(args, config)
+        self.assertEqual(rc, 0)
+        self.assertEqual(seen["token"], "tok-123")
+        self.assertEqual(seen["agent_id"], "codex-ws")
+        self.assertEqual(seen["max_replies"], 2)
+
+    def test_invite_token_is_joined_for_a_session(self):
+        import agentsassemble.cli as cli
+        from agentsassemble.live_agent_runner import config_from_args
+
+        seen = {}
+        args = self._args("--invite-token", "inv-xyz")
+        config = config_from_args(args)
+        with mock.patch("agentsassemble.ws_room_client.join_room_session", lambda *a, **k: "tok-from-invite") as _j, \
+             mock.patch("agentsassemble.ws_resident.run_provider_ws_resident",
+                        lambda server, token, cfg, runner, *, max_replies=0: seen.update(token=token) or 0):
+            cli._run_ws_resident_command(args, config)
+        self.assertEqual(seen["token"], "tok-from-invite")
+
+    def test_requires_token_or_invite(self):
+        import agentsassemble.cli as cli
+        from agentsassemble.live_agent_runner import config_from_args
+
+        args = self._args()  # no session-token, no invite-token
+        config = config_from_args(args)
+        with self.assertRaises(ValueError):
+            cli._run_ws_resident_command(args, config)
 
 
 if __name__ == "__main__":

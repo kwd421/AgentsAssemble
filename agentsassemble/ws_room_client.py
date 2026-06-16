@@ -191,6 +191,37 @@ def request_ws_ticket(server_url: str, session_token: str, *, timeout: float = 5
         return str(json.loads(response.read().decode("utf-8"))["ticket"])
 
 
+def join_room_session(
+    server_url: str,
+    invite_token: str,
+    *,
+    display_name: str = "",
+    participant_type: str = "agent",
+    device_token: str = "",
+    timeout: float = 5.0,
+) -> str:
+    """POST /api/room-invite/join → session token. Lets a one-command WS launch
+    turn an invite token into the session a ws-ticket needs."""
+    body = {
+        "invite_token": invite_token,
+        "display_name": display_name,
+        "participant_type": participant_type,
+        "device_token": device_token,
+    }
+    request = urllib.request.Request(
+        f"{server_url.rstrip('/')}/api/room-invite/join",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    token = str(payload.get("session_token") or "")
+    if not token:
+        raise WebSocketProtocolError("Join did not return a session token.")
+    return token
+
+
 def connect_room_ws(
     server_url: str,
     session_token: str,

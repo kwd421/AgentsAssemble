@@ -1311,6 +1311,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="api_call lane: identity-store root for best-effort usage accounting (local-first: match the server's).",
     )
     live_run.add_argument("--engagement-mode", default="always")
+    live_run.add_argument(
+        "--transport",
+        choices=["http", "ws"],
+        default="http",
+        help="http (poll runner, default) or ws (governed WebSocket resident; reuses the provider brain + runner prompt).",
+    )
+    live_run.add_argument("--session-token", default="", help="ws transport: a room session token for this agent.")
+    live_run.add_argument("--invite-token", default="", help="ws transport: an invite token to join for a session (alternative to --session-token).")
     live_run.add_argument("--join-semantics", default="", help="Override execution structure for comparison runs.")
     live_run.add_argument("--timeout", type=int, default=120)
     live_run.add_argument(
@@ -3559,11 +3567,48 @@ def _sequence_result_summary(result: dict[str, object]) -> str:
     return status
 
 
+def _run_ws_resident_command(args: argparse.Namespace, config: ResidentAgentConfig) -> int:
+    """One-command WS launch: connect the provider agent over the governed
+    WebSocket (run_provider_ws_resident) instead of the HTTP poll runner. Reuses
+    the provider's command runner as the brain + the runner's prompt envelope."""
+    from agentsassemble.ws_resident import run_provider_ws_resident
+    from agentsassemble.ws_room_client import join_room_session
+
+    session_token = str(getattr(args, "session_token", "") or "")
+    if not session_token:
+        invite_token = str(getattr(args, "invite_token", "") or "")
+        if not invite_token:
+            raise ValueError("--transport ws requires --session-token or --invite-token.")
+        session_token = join_room_session(
+            config.server,
+            invite_token,
+            display_name=config.display_name or config.agent_id,
+            participant_type="agent",
+        )
+    command_runner = _command_runner_for_config(config, output_root=str(getattr(args, "output_root", "") or ""))
+    restore_signal_handlers = _install_resident_shutdown_signal_handlers(lambda: _close_command_runner(command_runner))
+    try:
+        replies = run_provider_ws_resident(
+            config.server,
+            session_token,
+            config,
+            command_runner,
+            max_replies=int(getattr(config, "max_ticks", 0) or 0),  # 0 = run until killed
+        )
+    finally:
+        restore_signal_handlers()
+        _close_command_runner(command_runner)
+    print(f"WS resident agent stopped after posting {replies} replies")
+    return 0
+
+
 def _run_live_agent_resident(args: argparse.Namespace) -> int:
     config = config_from_args(args)
     setup_error = _resident_config_setup_error(config)
     if setup_error:
         raise ValueError(f"{config.agent_id}: {setup_error}")
+    if str(getattr(args, "transport", "http") or "http") == "ws":
+        return _run_ws_resident_command(args, config)
     if config.connection_kind == "self_service":
         runner = _SelfServiceResidentSupervisor(
             config,
