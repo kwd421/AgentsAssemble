@@ -430,6 +430,64 @@ class ProviderWsResidentTests(WsResidentLiveTests):
         self.assertEqual(len(say_messages), 1)
         self.assertEqual(say_messages[0]["source_event_id"], "peer1")
 
+    def test_resident_passes_configured_command_to_runner(self):
+        # The WS loop must hand the runner config.command, not []. Provider runners
+        # (codex/grok) ignore it, but generic terminal/jsonl runners (claude_code
+        # via terminal_session) need it or they raise "Live session command is
+        # required". Regression for the claude_code launch fix.
+        class FakeSock:
+            def settimeout(self, _timeout):
+                pass
+
+        class FakeClient:
+            def __init__(self):
+                self.sock = FakeSock()
+                self.closed = False
+                self.sent: list[dict] = []
+                self._messages = [
+                    [
+                        {"op": "subscribed", "streams": ["lobby"]},
+                        {"op": "event", "stream": "lobby", "snapshot": True, "events": []},
+                        {
+                            "op": "event",
+                            "stream": "lobby",
+                            "events": [{"id": "new", "actor_type": "human", "name": "Human", "message": "hi"}],
+                        },
+                    ]
+                ]
+
+            def receive(self):
+                return self._messages.pop(0) if self._messages else []
+
+            def thinking(self, on: bool):
+                pass
+
+            def say(self, message: str, **extra):
+                self.sent.append({"op": "say", "message": message, **extra})
+                return {"op": "ack", "event": {"id": "reply1"}}
+
+            def close(self):
+                self.closed = True
+
+        captured: list[list[str]] = []
+
+        def stub_command_runner(command, prompt, *, timeout_seconds):
+            captured.append(list(command))
+            return "reply"
+
+        import dataclasses
+        config = dataclasses.replace(_resident_config("claude-bot"), command=["claude"])
+
+        fake = FakeClient()
+        with patch.object(ws_resident, "connect_room_ws", return_value=fake):
+            run_provider_ws_resident(
+                "http://room.local", "session-token", config, stub_command_runner,
+                max_replies=1, max_idle_rounds=1,
+            )
+
+        self.assertTrue(captured, "command_runner was never called")
+        self.assertEqual(captured[-1], ["claude"])  # config.command, not []
+
     def test_provider_resident_does_not_count_rejected_say_as_reply(self):
         class FakeSock:
             def settimeout(self, _timeout):

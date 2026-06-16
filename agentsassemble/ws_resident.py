@@ -198,7 +198,11 @@ def run_provider_ws_resident(
             prompt = delegate_prompt(config, room, candidate)
             client.thinking(True)
             try:
-                reply = command_runner([], prompt, timeout_seconds=config.timeout_seconds)
+                # Pass the configured command (not []): provider runners (codex/
+                # grok/…) ignore it and build their own, but the generic terminal/
+                # jsonl runners (claude_code via terminal_session, plain live_session)
+                # need it — otherwise they raise "Live session command is required".
+                reply = command_runner(list(config.command or []), prompt, timeout_seconds=config.timeout_seconds)
             finally:
                 client.thinking(False)
             reply = str(reply or "").strip()
