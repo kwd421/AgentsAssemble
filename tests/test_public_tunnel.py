@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 
 from agentsassemble.public_tunnel import PublicTunnelManager, extract_trycloudflare_url
 from agentsassemble.room_invite import get_public_url, reset_state, set_runtime_public_url
@@ -48,6 +49,28 @@ class PublicTunnelTests(unittest.TestCase):
         self.assertEqual(status["phase"], "stopped")
         self.assertEqual(status["last_error"], "cloudflared is not installed")
         self.assertEqual(get_public_url(), "")
+
+    def test_reconnect_with_new_url_updates_and_reannounces(self):
+        # cloudflared re-issues a hostname on reconnect; the manager must follow
+        # it (not stay locked on the first, now-dead URL) and re-point workers.dev.
+        manager = PublicTunnelManager(local_url="http://127.0.0.1:8765", which=lambda _name: "/bin/cloudflared")
+        process = FakeProcess(lines=[
+            "Visit https://old-tunnel.trycloudflare.com to inspect\n",
+            "connection lost, reconnecting...\n",
+            "Visit https://new-tunnel.trycloudflare.com to inspect\n",
+        ])
+        manager._process = process
+        manager._generation = 1
+        announced: list[str] = []
+        with mock.patch("agentsassemble.public_tunnel.announce_stable_entry", lambda url: announced.append(url)):
+            manager._read_output(process, 1)
+        self.assertEqual(manager._public_url, "https://new-tunnel.trycloudflare.com")
+        self.assertEqual(get_public_url(), "https://new-tunnel.trycloudflare.com")
+        # both hostnames were announced in order — workers.dev ends on the live one
+        self.assertEqual(
+            announced,
+            ["https://old-tunnel.trycloudflare.com", "https://new-tunnel.trycloudflare.com"],
+        )
 
     def test_stale_reader_output_after_stop_does_not_restore_public_url(self):
         manager = PublicTunnelManager(local_url="http://127.0.0.1:8765", which=lambda _name: "/bin/cloudflared")

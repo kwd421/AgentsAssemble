@@ -113,11 +113,18 @@ class PublicTunnelManager:
                         return
                     if clean_line:
                         self._logs.append(clean_line)
-                    if url and not self._public_url:
+                    # Update whenever a NEW hostname appears — not just the first.
+                    # cloudflared can re-issue a trycloudflare URL on reconnect; if
+                    # we keep the stale first one, the room (and the workers.dev
+                    # entrypoint) point at a dead tunnel while we report "running".
+                    if url and url != self._public_url:
+                        previous = self._public_url
                         self._public_url = url
+                        if previous:
+                            clear_runtime_public_url(previous)
                         set_runtime_public_url(url)
-                        # Keep the permanent workers.dev entrypoint pointed at
-                        # this fresh tunnel hostname (async, best-effort).
+                        # Re-point the permanent workers.dev entrypoint at the
+                        # fresh tunnel hostname (async, best-effort).
                         announce_stable_entry(url)
         except Exception as error:  # pragma: no cover - defensive thread guard
             with self._lock:
