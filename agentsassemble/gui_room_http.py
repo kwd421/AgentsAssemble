@@ -50,6 +50,12 @@ from agentsassemble.room_settings import room_settings_payload, update_room_sett
 from agentsassemble.room_users import grant_operator_to_device
 from agentsassemble.room_votes import vote_summary
 from agentsassemble.stable_entry import stable_entry_url
+from agentsassemble.voice_presence import (
+    join_voice,
+    leave_all_voice,
+    leave_voice,
+    voice_participants,
+)
 
 # Custom text channels each have their own channel_<id>.jsonl. A single lock
 # serializes appends across them (low write rate; separate files don't race, but
@@ -286,6 +292,7 @@ def register_room_routes(router: Router) -> None:
             return
         revoked_sessions = revoke_sessions_for_participant(kick_meeting_id, kick_participant_id)
         removed_member = remove_room_member(ctx.deps.output_root, kick_meeting_id, kick_participant_id)
+        leave_all_voice(kick_meeting_id, kick_participant_id)  # drop from any voice channel too
         expelled_agent = False
         if any(
             clean_lobby_text(agent.get("agent_id"), limit=128) == clean_lobby_text(kick_participant_id, limit=128)
@@ -454,6 +461,74 @@ def register_room_routes(router: Router) -> None:
         with _CHANNEL_LOBBY_LOCK:
             event = append_lobby_event_to_file(path, payload, allow_flow_metadata=True)
         ctx.send_json({"event": event, "channel_id": channel_id})
+
+    # -- voice channels (presence only; audio streaming deferred) -----------
+
+    def _resolve_voice_channel(ctx: RequestContext, session: dict[str, object], channel_id: str):
+        """Return the channel_id for a voice channel the session's room owns, or
+        send the right error and return None."""
+        meeting_id = str(session.get("meeting_id") or "")
+        channel = find_channel(_channels_for(ctx.deps.output_root, meeting_id), channel_id)
+        if channel is None:
+            ctx.send_error(HTTPStatus.NOT_FOUND, "unknown channel")
+            return None
+        if str(channel.get("type")) != "voice":
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "channel is not a voice channel")
+            return None
+        return channel_id
+
+    def _voice_presence_response(ctx: RequestContext, meeting_id: str, channel_id: str) -> None:
+        ctx.send_json(
+            {"channel_id": channel_id, "participants": voice_participants(meeting_id, channel_id)}
+        )
+
+    @router.get("/api/room/voice")
+    def room_voice_presence(ctx: RequestContext) -> None:
+        session = ctx.require_session()
+        if session is None:
+            return
+        channel_id = _resolve_voice_channel(ctx, session, str(ctx.query_value("channel_id") or ""))
+        if channel_id is None:
+            return
+        _voice_presence_response(ctx, str(session.get("meeting_id") or ""), channel_id)
+
+    @router.post("/api/room/voice/join")
+    def room_voice_join(ctx: RequestContext) -> None:
+        # A heartbeat too: re-posting join refreshes presence so a live client
+        # stays in the voice roster and a dropped one falls out after the TTL.
+        session = ctx.require_posting_session("join voice")
+        if session is None:
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        channel_id = _resolve_voice_channel(ctx, session, str(payload.get("channel_id") or ""))
+        if channel_id is None:
+            return
+        meeting_id = str(session.get("meeting_id") or "")
+        join_voice(
+            meeting_id,
+            channel_id,
+            str(session.get("agent_id") or ""),
+            display_name=str(session.get("display_name") or session.get("agent_id") or ""),
+            self_muted=bool(payload.get("muted", False)),
+        )
+        _voice_presence_response(ctx, meeting_id, channel_id)
+
+    @router.post("/api/room/voice/leave")
+    def room_voice_leave(ctx: RequestContext) -> None:
+        session = ctx.require_session()
+        if session is None:
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        channel_id = str(payload.get("channel_id") or "")
+        meeting_id = str(session.get("meeting_id") or "")
+        leave_voice(meeting_id, channel_id, str(session.get("agent_id") or ""))
+        ctx.send_json(
+            {"channel_id": channel_id, "participants": voice_participants(meeting_id, channel_id)}
+        )
 
     # -- operator account ------------------------------------------------------
 
