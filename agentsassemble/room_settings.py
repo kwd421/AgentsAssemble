@@ -5,6 +5,8 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
+from agentsassemble.room_channels import clean_channels
+
 ROOM_TEXT_LIMIT = 160
 ROOM_ID_LIMIT = 128
 IMAGE_URL_LIMIT = 240
@@ -66,6 +68,8 @@ def update_room_settings(output_root: Path, payload: dict[str, object]) -> dict[
         settings["conversation_mode"] = clean_conversation_mode(
             payload.get("conversation_mode") or payload.get("conversationMode")
         )
+    if "channels" in payload:
+        settings["channels"] = clean_channels(payload.get("channels"))
     settings["updated_at"] = datetime.now(UTC).isoformat()
     if not settings.get("created_at"):
         settings["created_at"] = settings["updated_at"]
@@ -90,6 +94,7 @@ def public_room_settings(value: object, *, room_id: str) -> dict[str, object]:
         "conversation_mode": clean_conversation_mode(
             source.get("conversation_mode") or source.get("conversationMode")
         ),
+        "channels": clean_channels(source.get("channels")),
         "created_at": clean_room_text(source.get("created_at"), limit=64),
         "updated_at": clean_room_text(source.get("updated_at"), limit=64),
     }
