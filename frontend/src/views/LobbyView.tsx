@@ -59,6 +59,34 @@ function lobbyFeedIsNearBottom(element: HTMLDivElement) {
 const HISTORY_TOP_THRESHOLD = 120;
 const HISTORY_PAGE_SIZE = 50;
 
+// Placeholder row for a participant who is currently generating a reply. It
+// matches MessageRow's grid so the bubble lands in the exact spot where the
+// real message will appear — the dots simply fill in with text once it posts.
+function TypingRow({ name }: { name: string }) {
+  return (
+    <div className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-1.5">
+      <span className="dc-message-avatar mt-0.5 agent">
+        <Bot size={16} />
+      </span>
+      <div className="min-w-0">
+        <p className="flex items-baseline gap-2">
+          <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">
+            {name}
+          </span>
+        </p>
+        <div className="flex items-center gap-2 text-[13px] text-text-muted" aria-live="polite">
+          <span className="dc-typing-dots" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+          <span>입력 중…</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MessageRow({ event, onOpenSideThread, threadSummary, voteCard }: {
   event: LobbyEvent;
   onOpenSideThread?: (event: LobbyEvent) => void;
@@ -277,7 +305,8 @@ export default function LobbyView({
     }
     if (!pinnedToLatestRef.current) return;
     element.scrollTop = element.scrollHeight;
-  }, [visibleEvents]);
+    // typingNames is a dep so placeholder rows stay in view when they appear.
+  }, [visibleEvents, typingNames]);
 
   useEffect(() => {
     updatePinnedToLatest(true);
@@ -442,32 +471,12 @@ export default function LobbyView({
             );
           })
         )}
+        {/* Typing indicators render in the message body, where each reply will
+            actually appear — one placeholder row per participant generating. */}
+        {typingNames.map((name) => (
+          <TypingRow key={`typing-${name}`} name={name} />
+        ))}
       </div>
-
-      {/* Typing indicator — participants currently generating a reply */}
-      {(() => {
-        const names = typingNames;
-        if (names.length === 0) return null;
-        const label =
-          names.length === 1
-            ? `${names[0]} 생각 중`
-            : names.length === 2
-              ? `${names[0]}, ${names[1]} 생각 중`
-              : `${names[0]} 외 ${names.length - 1}명 생각 중`;
-        return (
-          <div
-            className="flex shrink-0 items-center gap-2 px-4 pb-1 text-[12px] text-text-muted"
-            aria-live="polite"
-          >
-            <span className="dc-typing-dots" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-            </span>
-            <span className="truncate">{label}</span>
-          </div>
-        );
-      })()}
 
       {/* Composer */}
       <div className="shrink-0 px-4 pb-5">
