@@ -217,6 +217,13 @@ surface rather than silently counted as React parity.
 | `/api/room/events` | GET | exact | `-` | no | Authenticated remote-client SSE stream; current Discord shell reads normal lobby/meeting streams. |
 | `/api/room/lobby` | GET | exact | `fetchRoomLobby()` | yes | React guest room view reads the admitted single-room lobby through the session token. |
 | `/api/room/say` | POST | exact | `postRoomSay()` | yes | React guest composer writes lobby messages using the admitted session identity. |
+| `/api/room-channels` | GET | exact | `-` | no | Custom text/voice channel registry list (CH-2); React channel sidebar wires in CH-5. |
+| `/api/room-channels` | POST | exact | `-` | no | Moderation (host token or operator session): create/rename/delete/reorder custom channels (CH-2); React wires in CH-5. |
+| `/api/room/channel-lobby` | GET | exact | `-` | no | A custom text channel's own message stream, after-cursor polling (CH-3); React wires in CH-5. |
+| `/api/room/channel-say` | POST | exact | `-` | no | Write to a custom text channel with the admitted session identity (CH-3); React wires in CH-5. |
+| `/api/room/voice` | GET | exact | `-` | no | Voice channel presence — who is connected (CH-4); React wires in CH-5. |
+| `/api/room/voice/join` | POST | exact | `-` | no | Join/heartbeat a voice channel; audio deferred (CH-4); React wires in CH-5. |
+| `/api/room/voice/leave` | POST | exact | `-` | no | Leave a voice channel (CH-4); React wires in CH-5. |
 | `/api/play/mafia/action` | POST | exact | `-` | no | Mafia night action endpoint. |
 
 ## Room-Event Contract Signals
