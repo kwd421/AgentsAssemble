@@ -63,6 +63,12 @@ from agentsassemble.voice_presence import (
 _CHANNEL_LOBBY_LOCK = threading.Lock()
 
 
+# The local operator console (loopback) has no session; like /api/lobby it is
+# trusted to name itself. A stable id keeps its voice presence + messages coherent.
+_LOCAL_OPERATOR_PARTICIPANT_ID = "operator-local"
+_LOCAL_OPERATOR_DISPLAY_DEFAULT = "호스트"
+
+
 def _stamp_session_identity(payload: dict[str, object], session: dict[str, object]) -> None:
     """Overwrite client-supplied identity with the authenticated session's, so a
     poster can never spoof name/actor. Shared by the lobby and custom-channel say
@@ -78,6 +84,20 @@ def _stamp_session_identity(payload: dict[str, object], session: dict[str, objec
     payload["kind"] = requested_kind if requested_kind in {"vote", "vote_cast"} else "message"
     if session.get("meeting_id"):
         payload["flow_meeting_id"] = session["meeting_id"]
+
+
+def _stamp_local_identity(payload: dict[str, object], meeting_id: str) -> None:
+    """Stamp the local operator console's identity on a channel message. Like
+    /api/lobby, the loopback caller is trusted to supply its display name; the
+    actor id is fixed so the operator reads as one consistent participant."""
+    payload["name"] = clean_lobby_text(payload.get("name"), limit=80) or _LOCAL_OPERATOR_DISPLAY_DEFAULT
+    payload["actor_id"] = _LOCAL_OPERATOR_PARTICIPANT_ID
+    payload["actor_type"] = "human"
+    payload["side"] = "mine"
+    requested_kind = str(payload.get("kind") or "")
+    payload["kind"] = requested_kind if requested_kind in {"vote", "vote_cast"} else "message"
+    if meeting_id:
+        payload["flow_meeting_id"] = meeting_id
 
 
 def register_room_routes(router: Router) -> None:
@@ -400,82 +420,98 @@ def register_room_routes(router: Router) -> None:
             response["channel"] = created
         ctx.send_json(response)
 
-    # -- custom text channel message streams --------------------------------
+    # -- custom text/voice channels (dual-mode auth) ------------------------
+    #
+    # The local operator console (loopback, no session) and admitted guests
+    # (session token) share these routes — mirroring the /api/lobby vs
+    # /api/room/* split, collapsed into one family. A guest is stamped with its
+    # admitted identity; a loopback/host caller (the operator's own machine) is
+    # trusted to supply its display name, exactly as /api/lobby already is.
 
-    def _resolve_text_channel(ctx: RequestContext, session: dict[str, object], channel_id: str):
-        """Return (channel_id, filename) for a text channel the session's room
-        owns, or send the right error and return (None, None). Guards: channel
-        must exist, be type text, and have a path-safe id."""
-        meeting_id = str(session.get("meeting_id") or "")
+    def _channel_caller(ctx: RequestContext, payload_meeting_id: str = "", *, write: bool = False):
+        """Resolve (meeting_id, session_or_None) for a channel request, or send
+        the right error and return (None, None)."""
+        session = ctx.session()
+        if session is not None:
+            if write and session.get("invite_scope") == "read_only":
+                ctx.send_error(HTTPStatus.FORBIDDEN, "read-only invite session cannot post")
+                return None, None
+            return str(session.get("meeting_id") or ""), session
+        if ctx.handler._request_uses_loopback_host() or ctx.is_host():
+            return str(payload_meeting_id or ""), None
+        ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+        return None, None
+
+    def _resolve_channel(ctx: RequestContext, meeting_id: str, channel_id: str, *, want_type: str):
         channel = find_channel(_channels_for(ctx.deps.output_root, meeting_id), channel_id)
         if channel is None:
             ctx.send_error(HTTPStatus.NOT_FOUND, "unknown channel")
-            return None, None
-        if str(channel.get("type")) != "text":
-            ctx.send_error(HTTPStatus.BAD_REQUEST, "channel is not a text channel")
-            return None, None
-        filename = channel_stream_filename(channel_id)
-        if not filename:
-            ctx.send_error(HTTPStatus.BAD_REQUEST, "invalid channel id")
-            return None, None
-        return channel_id, filename
+            return None
+        if str(channel.get("type")) != want_type:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, f"channel is not a {want_type} channel")
+            return None
+        return channel
+
+    def _voice_caller_identity(session: dict[str, object] | None, payload: dict[str, object]) -> tuple[str, str]:
+        if session is not None:
+            return (
+                str(session.get("agent_id") or ""),
+                str(session.get("display_name") or session.get("agent_id") or ""),
+            )
+        return (
+            _LOCAL_OPERATOR_PARTICIPANT_ID,
+            clean_lobby_text(payload.get("name"), limit=80) or _LOCAL_OPERATOR_DISPLAY_DEFAULT,
+        )
 
     @router.get("/api/room/channel-lobby")
     def room_channel_lobby(ctx: RequestContext) -> None:
-        session = ctx.require_session()
-        if session is None:
+        meeting_id, _session = _channel_caller(ctx, ctx.query_value("room_id") or ctx.query_value("meeting_id"))
+        if meeting_id is None:
             return
-        channel_id, filename = _resolve_text_channel(ctx, session, str(ctx.query_value("channel_id") or ""))
-        if channel_id is None:
+        channel_id = str(ctx.query_value("channel_id") or "")
+        if _resolve_channel(ctx, meeting_id, channel_id, want_type="text") is None:
+            return
+        filename = channel_stream_filename(channel_id)
+        if not filename:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "invalid channel id")
             return
         path = ctx.deps.output_root / filename
         after_event_id = ctx.query_value("after").strip()
-        if after_event_id:
-            events = read_lobby_events_after(path, after_event_id)
-        else:
-            events = read_lobby_events(path, limit=80)
-        ctx.send_json(
-            {"events": events, "channel_id": channel_id, "session": _session_summary(session)}
-        )
+        events = read_lobby_events_after(path, after_event_id) if after_event_id else read_lobby_events(path, limit=80)
+        ctx.send_json({"events": events, "channel_id": channel_id})
 
     @router.post("/api/room/channel-say")
     def room_channel_say(ctx: RequestContext) -> None:
-        session = ctx.require_posting_session()
-        if session is None:
-            return
-        if is_room_member_muted(
-            ctx.deps.output_root,
-            str(session.get("meeting_id") or ""),
-            str(session.get("agent_id") or ""),
-        ):
-            ctx.send_error(HTTPStatus.FORBIDDEN, "muted by room host")
-            return
         payload = ctx.read_json_body()
         if payload is None:
             return
-        channel_id, filename = _resolve_text_channel(ctx, session, str(payload.get("channel_id") or ""))
-        if channel_id is None:
+        meeting_id, session = _channel_caller(
+            ctx, str(payload.get("meeting_id") or payload.get("room_id") or ""), write=True
+        )
+        if meeting_id is None:
             return
-        _stamp_session_identity(payload, session)
+        if session is not None and is_room_member_muted(
+            ctx.deps.output_root, meeting_id, str(session.get("agent_id") or "")
+        ):
+            ctx.send_error(HTTPStatus.FORBIDDEN, "muted by room host")
+            return
+        channel_id = str(payload.get("channel_id") or "")
+        if _resolve_channel(ctx, meeting_id, channel_id, want_type="text") is None:
+            return
+        filename = channel_stream_filename(channel_id)
+        if not filename:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "invalid channel id")
+            return
+        if session is not None:
+            _stamp_session_identity(payload, session)
+        else:
+            _stamp_local_identity(payload, meeting_id)
         path = ctx.deps.output_root / filename
         with _CHANNEL_LOBBY_LOCK:
             event = append_lobby_event_to_file(path, payload, allow_flow_metadata=True)
         ctx.send_json({"event": event, "channel_id": channel_id})
 
     # -- voice channels (presence only; audio streaming deferred) -----------
-
-    def _resolve_voice_channel(ctx: RequestContext, session: dict[str, object], channel_id: str):
-        """Return the channel_id for a voice channel the session's room owns, or
-        send the right error and return None."""
-        meeting_id = str(session.get("meeting_id") or "")
-        channel = find_channel(_channels_for(ctx.deps.output_root, meeting_id), channel_id)
-        if channel is None:
-            ctx.send_error(HTTPStatus.NOT_FOUND, "unknown channel")
-            return None
-        if str(channel.get("type")) != "voice":
-            ctx.send_error(HTTPStatus.BAD_REQUEST, "channel is not a voice channel")
-            return None
-        return channel_id
 
     def _voice_presence_response(ctx: RequestContext, meeting_id: str, channel_id: str) -> None:
         ctx.send_json(
@@ -484,48 +520,49 @@ def register_room_routes(router: Router) -> None:
 
     @router.get("/api/room/voice")
     def room_voice_presence(ctx: RequestContext) -> None:
-        session = ctx.require_session()
-        if session is None:
+        meeting_id, _session = _channel_caller(ctx, ctx.query_value("room_id") or ctx.query_value("meeting_id"))
+        if meeting_id is None:
             return
-        channel_id = _resolve_voice_channel(ctx, session, str(ctx.query_value("channel_id") or ""))
-        if channel_id is None:
+        channel_id = str(ctx.query_value("channel_id") or "")
+        if _resolve_channel(ctx, meeting_id, channel_id, want_type="voice") is None:
             return
-        _voice_presence_response(ctx, str(session.get("meeting_id") or ""), channel_id)
+        _voice_presence_response(ctx, meeting_id, channel_id)
 
     @router.post("/api/room/voice/join")
     def room_voice_join(ctx: RequestContext) -> None:
         # A heartbeat too: re-posting join refreshes presence so a live client
         # stays in the voice roster and a dropped one falls out after the TTL.
-        session = ctx.require_posting_session("join voice")
-        if session is None:
-            return
         payload = ctx.read_json_body()
         if payload is None:
             return
-        channel_id = _resolve_voice_channel(ctx, session, str(payload.get("channel_id") or ""))
-        if channel_id is None:
+        meeting_id, session = _channel_caller(
+            ctx, str(payload.get("meeting_id") or payload.get("room_id") or ""), write=True
+        )
+        if meeting_id is None:
             return
-        meeting_id = str(session.get("meeting_id") or "")
+        channel_id = str(payload.get("channel_id") or "")
+        if _resolve_channel(ctx, meeting_id, channel_id, want_type="voice") is None:
+            return
+        participant_id, display_name = _voice_caller_identity(session, payload)
         join_voice(
-            meeting_id,
-            channel_id,
-            str(session.get("agent_id") or ""),
-            display_name=str(session.get("display_name") or session.get("agent_id") or ""),
-            self_muted=bool(payload.get("muted", False)),
+            meeting_id, channel_id, participant_id,
+            display_name=display_name, self_muted=bool(payload.get("muted", False)),
         )
         _voice_presence_response(ctx, meeting_id, channel_id)
 
     @router.post("/api/room/voice/leave")
     def room_voice_leave(ctx: RequestContext) -> None:
-        session = ctx.require_session()
-        if session is None:
-            return
         payload = ctx.read_json_body()
         if payload is None:
             return
+        meeting_id, session = _channel_caller(
+            ctx, str(payload.get("meeting_id") or payload.get("room_id") or "")
+        )
+        if meeting_id is None:
+            return
         channel_id = str(payload.get("channel_id") or "")
-        meeting_id = str(session.get("meeting_id") or "")
-        leave_voice(meeting_id, channel_id, str(session.get("agent_id") or ""))
+        participant_id, _ = _voice_caller_identity(session, payload)
+        leave_voice(meeting_id, channel_id, participant_id)
         ctx.send_json(
             {"channel_id": channel_id, "participants": voice_participants(meeting_id, channel_id)}
         )

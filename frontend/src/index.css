@@ -4914,6 +4914,159 @@ body[data-sidebar-resizing="true"] {
   gap: 9px;
 }
 
+/* ---- custom channels (CH-5): sidebar + text/voice views + create modal --- */
+.dc-channel-category-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dc-channel-add {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+}
+
+.dc-channel-add:hover {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dc-channel-message-list {
+  display: grid;
+  gap: 10px;
+}
+
+.dc-channel-message {
+  display: grid;
+  gap: 2px;
+}
+
+.dc-channel-message-author {
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.dc-channel-message-body {
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+
+.dc-channel-composer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-panel-border);
+}
+
+.dc-channel-composer-input {
+  flex: 1;
+  min-height: 40px;
+  resize: none;
+  padding: 9px 12px;
+}
+
+.dc-channel-composer-send {
+  align-self: stretch;
+  padding: 0 14px;
+}
+
+.dc-channel-composer-error {
+  padding: 0 16px 10px;
+  font-size: 12px;
+  color: var(--color-danger, #f87171);
+}
+
+.dc-voice-stage {
+  display: grid;
+  gap: 14px;
+}
+
+.dc-voice-roster {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.dc-voice-tile {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 16px 10px;
+  border-radius: 10px;
+  background: var(--color-panel-bg);
+  border: 1px solid var(--color-panel-border);
+}
+
+.dc-voice-tile[data-muted="true"] {
+  opacity: 0.7;
+}
+
+.dc-voice-avatar {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #5865f2;
+  color: #fff;
+  font-weight: 900;
+}
+
+.dc-voice-name {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dc-voice-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-panel-border);
+}
+
+.dc-voice-controls .ops-cta[data-tone="danger"] {
+  background: var(--color-danger, #ed4245);
+}
+
+.dc-create-channel-modal {
+  width: min(440px, 92vw);
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 10px;
+  background: var(--color-panel-bg);
+  border: 1px solid var(--color-panel-border);
+}
+
+.dc-create-channel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dc-create-channel-head h2 {
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.dc-create-channel-name {
+  display: grid;
+  gap: 7px;
+  font-weight: 800;
+}
+
+.dc-create-channel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .dc-settings-field {
   display: grid;
   gap: 7px;

@@ -15,10 +15,12 @@ import {
   Hash,
   Home,
   LayoutDashboard,
+  Plus,
   Radio,
   Search,
   UserPlus,
   UserRound,
+  Volume2,
 } from "lucide-react";
 import {
   createCompanionRoomInvite,
@@ -28,6 +30,8 @@ import {
   fetchLiveAgentFlow,
   fetchLiveAgentProcesses,
   fetchPublicInviteStatus,
+  fetchRoomChannels,
+  createRoomChannel,
   fetchRoomFriends,
   fetchRoomSettings,
   claimHostDevice,
@@ -71,6 +75,7 @@ import {
   type ChannelNotificationSetting,
   type ChannelSettings,
   type ConversationMode,
+  type RoomChannel,
   type RoomFriend,
   type RoomFriendsResponse,
   type RoomMember,
@@ -81,6 +86,8 @@ import AdminPanel from "./views/AdminPanel";
 import BoardView from "./views/BoardView";
 import FriendsView, { type FriendListFilter } from "./views/FriendsView";
 import LiveView from "./views/LiveView";
+import CustomChannelView from "./views/CustomChannelView";
+import CreateChannelModal from "./views/components/CreateChannelModal";
 import LobbyView from "./views/LobbyView";
 import RecordsView from "./views/RecordsView";
 import ChannelContextMenu from "./views/components/ChannelContextMenu";
@@ -376,7 +383,8 @@ export default function App() {
   const [pendingGuestDisplayName, setPendingGuestDisplayName] = useState("Guest");
   const [pendingGuestAvatarImage, setPendingGuestAvatarImage] = useState("");
   const guestLocked = Boolean(guestInvite || guestSession || guestJoinToken || guestExpired);
-  const [channel, setChannel] = useState<Channel>(() => {
+  // A fixed Channel ("lobby"/"live"/...) OR a custom channel id (opaque "c…").
+  const [channel, setChannel] = useState<string>(() => {
     if (
       startupRoute.initialChannel === "friends" &&
       mobileViewportMatches()
@@ -426,6 +434,10 @@ export default function App() {
   const [roomConversationModes, setRoomConversationModes] = useState<
     Record<string, ConversationMode>
   >({});
+  const [roomCustomChannels, setRoomCustomChannels] = useState<
+    Record<string, RoomChannel[]>
+  >({});
+  const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const [collapsedChannelSections, setCollapsedChannelSections] = useState<Record<string, boolean>>(
     {}
   );
@@ -943,6 +955,19 @@ export default function App() {
     refreshSessionSurfaces();
     refreshMembers();
   }, [refreshSessionSurfaces, refreshMembers]);
+  const refreshCustomChannels = useCallback(() => {
+    if (!activeRoom.meetingId) return;
+    fetchRoomChannels(activeRoom.meetingId, guestSession?.sessionToken || "")
+      .then((channels) => {
+        setRoomCustomChannels((previous) => ({ ...previous, [activeRoomKey]: channels }));
+      })
+      .catch(() => {
+        // Channel list is additive UI; an unavailable endpoint must not blank the room.
+      });
+  }, [activeRoom.meetingId, activeRoomKey, guestSession?.sessionToken]);
+  useEffect(() => {
+    refreshCustomChannels();
+  }, [refreshCustomChannels]);
   const displayedSideChatEvents = sideChatEventsForThreadContext(sideChatEvents, sideChatThread);
   const sideChatThreadSummaries = useMemo(
     () => threadSummariesForSideChat(sideChatEvents),
@@ -982,6 +1007,8 @@ export default function App() {
     return names;
   }, [scopedAgents, activeRoomMembers]);
   const activeChannelSettings = roomChannelSettings[activeRoomKey] || {};
+  const activeCustomChannels = roomCustomChannels[activeRoomKey] || [];
+  const activeCustomChannel = activeCustomChannels.find((item) => item.id === channel) || null;
   const menuRoom = roomMenu ? rooms.find((room) => room.id === roomMenu.roomId) : undefined;
   const menuChannel = channelMenu
     ? CHANNELS.find((item) => item.id === channelMenu.channelId)
@@ -1331,11 +1358,26 @@ export default function App() {
     closeMobileOverlays();
   }
 
-  function goToChannel(next: Channel) {
-    setChannel(guestLocked && next !== "lobby" ? "lobby" : next);
+  function goToChannel(next: string) {
+    // Guests stay out of the operator-only fixed surfaces (live/board/records/
+    // friends), but custom channels are shared spaces they can enter.
+    const isCustom = (roomCustomChannels[activeRoomKey] || []).some((item) => item.id === next);
+    const guestBlocked = guestLocked && next !== "lobby" && !isCustom;
+    setChannel(guestBlocked ? "lobby" : next);
     setAdminOpen(false);
     setChannelMenu(null);
     closeMobileOverlays();
+  }
+
+  async function createChannel(params: { name: string; type: "text" | "voice" }) {
+    const result = await createRoomChannel({
+      meetingId: activeRoom.meetingId,
+      name: params.name,
+      type: params.type,
+      sessionToken: guestSession?.sessionToken || undefined,
+    });
+    setRoomCustomChannels((previous) => ({ ...previous, [activeRoomKey]: result.channels }));
+    if (result.channel) goToChannel(result.channel.id);
   }
 
   async function refreshPublicInviteState() {
@@ -1968,7 +2010,7 @@ export default function App() {
     }
   }
 
-  function updateChannelSetting(channelId: Channel, updates: Partial<ChannelSettings>) {
+  function updateChannelSetting(channelId: string, updates: Partial<ChannelSettings>) {
     const key = roomSettingsKey(activeRoom);
     const currentSetting = activeChannelSettings[channelId];
     const nextSetting: ChannelSettings = {
@@ -1983,7 +2025,7 @@ export default function App() {
     persistRoomSettings(activeRoom, activeAppearance, activeMemberRoles, nextChannelSettings);
   }
 
-  function markChannelRead(channelId: Channel) {
+  function markChannelRead(channelId: string) {
     updateChannelSetting(channelId, { lastReadAt: new Date().toISOString() });
     setChannelMenu(null);
   }
@@ -2146,6 +2188,13 @@ export default function App() {
         onClose={() => setAgentCreateOpen(false)}
         onCreated={() => refreshSessionSurfaces()}
       />
+
+      {createChannelOpen && !guestLocked && (
+        <CreateChannelModal
+          onClose={() => setCreateChannelOpen(false)}
+          onCreate={createChannel}
+        />
+      )}
 
       {guestJoinToken && !guestSession && !guestExpired && (
         <GuestJoinProfilePanel
@@ -2325,6 +2374,47 @@ export default function App() {
               </section>
             );
           })}
+          {(() => {
+            const customChannels = activeCustomChannels.filter(
+              (item) => !channelSearchNeedle || item.name.toLowerCase().includes(channelSearchNeedle)
+            );
+            if (!customChannels.length && guestLocked) return null;
+            return (
+              <section className="dc-channel-section">
+                <div className="dc-channel-category dc-channel-category-row">
+                  <span>Channels</span>
+                  {!guestLocked && (
+                    <button
+                      type="button"
+                      className="dc-channel-add"
+                      onClick={() => setCreateChannelOpen(true)}
+                      aria-label="채널 만들기"
+                      title="채널 만들기"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  )}
+                </div>
+                {customChannels.map((item) => (
+                  <div key={item.id}>
+                    <button
+                      type="button"
+                      data-active={!adminOpen && channel === item.id}
+                      onClick={() => goToChannel(item.id)}
+                      className="dc-channel"
+                    >
+                      {item.type === "voice" ? (
+                        <Volume2 size={18} className="shrink-0 opacity-70" />
+                      ) : (
+                        <Hash size={18} className="shrink-0 opacity-70" />
+                      )}
+                      <span className="truncate">{item.name}</span>
+                    </button>
+                  </div>
+                ))}
+              </section>
+            );
+          })()}
           {menuChannelDisplay && channelMenu && (
             <ChannelContextMenu
               channelLabel={menuChannelDisplay.label}
@@ -2459,6 +2549,19 @@ export default function App() {
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
             headerActions={channelHeaderActions("board")}
+            onOpenMobileSidebar={openMobileSidebar}
+            onOpenMobileInfo={openMobileRoomInfo}
+          />
+        ) : activeCustomChannel ? (
+          <CustomChannelView
+            key={activeCustomChannel.id}
+            channel={activeCustomChannel}
+            meetingId={activeRoom.meetingId}
+            sessionToken={guestSession?.sessionToken || ""}
+            localDisplayName={guestSession?.displayName || ""}
+            canPost={lobbyPostingState.canPost}
+            membersOpen={membersOpen}
+            onToggleMembers={toggleMembers}
             onOpenMobileSidebar={openMobileSidebar}
             onOpenMobileInfo={openMobileRoomInfo}
           />

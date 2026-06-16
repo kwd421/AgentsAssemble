@@ -1515,6 +1515,192 @@ export function postRoomSay({
   );
 }
 
+// -- custom channels (CH-5): Discord-style text/voice channels --------------
+
+export interface RoomChannel {
+  id: string;
+  name: string;
+  type: "text" | "voice";
+  position: number;
+  createdAt: string;
+}
+
+export interface VoiceParticipant {
+  participantId: string;
+  name: string;
+  muted: boolean;
+}
+
+type ApiRoomChannel = {
+  id?: string;
+  name?: string;
+  type?: "text" | "voice";
+  position?: number;
+  created_at?: string;
+};
+
+type ApiVoiceParticipant = {
+  participant_id?: string;
+  name?: string;
+  muted?: boolean;
+};
+
+function normalizeChannel(channel: ApiRoomChannel): RoomChannel {
+  return {
+    id: String(channel.id || ""),
+    name: String(channel.name || ""),
+    type: channel.type === "voice" ? "voice" : "text",
+    position: Number(channel.position || 0),
+    createdAt: String(channel.created_at || ""),
+  };
+}
+
+function normalizeChannelList(channels: ApiRoomChannel[] | undefined): RoomChannel[] {
+  return Array.isArray(channels) ? channels.map(normalizeChannel) : [];
+}
+
+function normalizeVoiceParticipants(participants: ApiVoiceParticipant[] | undefined): VoiceParticipant[] {
+  return Array.isArray(participants)
+    ? participants.map((p) => ({
+        participantId: String(p.participant_id || ""),
+        name: String(p.name || ""),
+        muted: Boolean(p.muted),
+      }))
+    : [];
+}
+
+export function fetchRoomChannels(meetingId: string, sessionToken = ""): Promise<RoomChannel[]> {
+  const url = `/api/room-channels${queryString({ meeting_id: meetingId })}`;
+  const result = sessionToken
+    ? fetchJsonWithToken<{ channels: ApiRoomChannel[] }>(url, sessionToken)
+    : fetchJson<{ channels: ApiRoomChannel[] }>(url);
+  return result.then((payload) => normalizeChannelList(payload.channels));
+}
+
+export function createRoomChannel(params: {
+  meetingId: string;
+  name: string;
+  type: "text" | "voice";
+  sessionToken?: string;
+}): Promise<{ channels: RoomChannel[]; channel: RoomChannel | null }> {
+  // NOTE: keep the route literal on the postJson* line — the parity inventory
+  // parser infers POST from "postJson" being on the same line as the path.
+  return postJsonModerator<{ channels: ApiRoomChannel[]; channel?: ApiRoomChannel }>("/api/room-channels",
+    { meeting_id: params.meetingId, action: "create", name: params.name, type: params.type },
+    params.sessionToken || ""
+  ).then((payload) => ({
+    channels: normalizeChannelList(payload.channels),
+    channel: payload.channel ? normalizeChannel(payload.channel) : null,
+  }));
+}
+
+export function renameRoomChannel(params: {
+  meetingId: string;
+  channelId: string;
+  name: string;
+  sessionToken?: string;
+}): Promise<RoomChannel[]> {
+  return postJsonModerator<{ channels: ApiRoomChannel[] }>("/api/room-channels",
+    { meeting_id: params.meetingId, action: "rename", channel_id: params.channelId, name: params.name },
+    params.sessionToken || ""
+  ).then((payload) => normalizeChannelList(payload.channels));
+}
+
+export function deleteRoomChannel(params: {
+  meetingId: string;
+  channelId: string;
+  sessionToken?: string;
+}): Promise<RoomChannel[]> {
+  return postJsonModerator<{ channels: ApiRoomChannel[] }>("/api/room-channels",
+    { meeting_id: params.meetingId, action: "delete", channel_id: params.channelId },
+    params.sessionToken || ""
+  ).then((payload) => normalizeChannelList(payload.channels));
+}
+
+export function reorderRoomChannels(params: {
+  meetingId: string;
+  orderedIds: string[];
+  sessionToken?: string;
+}): Promise<RoomChannel[]> {
+  return postJsonModerator<{ channels: ApiRoomChannel[] }>("/api/room-channels",
+    { meeting_id: params.meetingId, action: "reorder", ordered_ids: params.orderedIds },
+    params.sessionToken || ""
+  ).then((payload) => normalizeChannelList(payload.channels));
+}
+
+// Channel routes are dual-mode: a guest passes sessionToken; the local operator
+// console (no token) passes meetingId + name and rides the loopback path.
+export function fetchChannelLobby(
+  channelId: string,
+  options: { sessionToken?: string; meetingId?: string; after?: string } = {}
+): Promise<LobbyEvent[]> {
+  const token = options.sessionToken || "";
+  const url = token
+    ? `/api/room/channel-lobby${queryString({ channel_id: channelId, after: options.after })}`
+    : `/api/room/channel-lobby${queryString({ channel_id: channelId, meeting_id: options.meetingId, after: options.after })}`;
+  const result = token
+    ? fetchJsonWithToken<{ events: LobbyEvent[] }>(url, token)
+    : fetchJson<{ events: LobbyEvent[] }>(url);
+  return result.then((payload) => payload.events || []);
+}
+
+export function postChannelSay(params: {
+  channelId: string;
+  message: string;
+  sessionToken?: string;
+  meetingId?: string;
+  name?: string;
+}): Promise<LobbyPostResponse> {
+  return params.sessionToken
+    ? postJsonWithToken<LobbyPostResponse>("/api/room/channel-say",
+        { channel_id: params.channelId, message: params.message },
+        params.sessionToken)
+    : postJson<LobbyPostResponse>("/api/room/channel-say",
+        { channel_id: params.channelId, message: params.message, meeting_id: params.meetingId, name: params.name });
+}
+
+export function fetchVoicePresence(
+  channelId: string,
+  options: { sessionToken?: string; meetingId?: string } = {}
+): Promise<VoiceParticipant[]> {
+  const token = options.sessionToken || "";
+  const url = token
+    ? `/api/room/voice${queryString({ channel_id: channelId })}`
+    : `/api/room/voice${queryString({ channel_id: channelId, meeting_id: options.meetingId })}`;
+  const result = token
+    ? fetchJsonWithToken<{ participants: ApiVoiceParticipant[] }>(url, token)
+    : fetchJson<{ participants: ApiVoiceParticipant[] }>(url);
+  return result.then((payload) => normalizeVoiceParticipants(payload.participants));
+}
+
+export function joinVoiceChannel(params: {
+  channelId: string;
+  sessionToken?: string;
+  meetingId?: string;
+  name?: string;
+  muted?: boolean;
+}): Promise<VoiceParticipant[]> {
+  const result = params.sessionToken
+    ? postJsonWithToken<{ participants: ApiVoiceParticipant[] }>("/api/room/voice/join",
+        { channel_id: params.channelId, muted: Boolean(params.muted) }, params.sessionToken)
+    : postJson<{ participants: ApiVoiceParticipant[] }>("/api/room/voice/join",
+        { channel_id: params.channelId, muted: Boolean(params.muted), meeting_id: params.meetingId, name: params.name });
+  return result.then((payload) => normalizeVoiceParticipants(payload.participants));
+}
+
+export function leaveVoiceChannel(params: {
+  channelId: string;
+  sessionToken?: string;
+  meetingId?: string;
+}): Promise<VoiceParticipant[]> {
+  const result = params.sessionToken
+    ? postJsonWithToken<{ participants: ApiVoiceParticipant[] }>("/api/room/voice/leave",
+        { channel_id: params.channelId }, params.sessionToken)
+    : postJson<{ participants: ApiVoiceParticipant[] }>("/api/room/voice/leave",
+        { channel_id: params.channelId, meeting_id: params.meetingId });
+  return result.then((payload) => normalizeVoiceParticipants(payload.participants));
+}
+
 export function fetchLobbyVote(meetingId: string, voteId: string) {
   return fetchJson<VoteSummary>(`/api/lobby/vote${queryString({ meeting_id: meetingId, vote_id: voteId })}`);
 }

@@ -121,15 +121,31 @@ class RoomChannelStreamTests(unittest.TestCase):
                 self._say(base, token, "cffffffffffff", "유령")
             self.assertEqual(ctx.exception.code, 404)  # unknown channel
 
-    def test_read_requires_session(self):
+    def test_loopback_local_console_reads_and_says_without_session(self):
+        # The local operator console (loopback, no session) shares the channel
+        # routes — like /api/lobby. It passes meeting_id and is trusted to name
+        # itself; over the public tunnel (non-loopback) a session is still required.
         with tempfile.TemporaryDirectory() as temp_dir:
             set_runtime_host_token("host-secret")
             base = self._start(Path(temp_dir) / "room")
             channel_id = self._create_channel(base, "room-1", "구현방", "text")
-            request = Request(f"{base}/api/room/channel-lobby?channel_id={channel_id}")
-            with self.assertRaises(HTTPError) as ctx:
-                urlopen(request, timeout=4)
-            self.assertEqual(ctx.exception.code, 401)
+
+            say = Request(
+                f"{base}/api/room/channel-say",
+                data=json.dumps({"meeting_id": "room-1", "channel_id": channel_id, "message": "로컬", "name": "운영자"}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urlopen(say, timeout=4) as response:
+                posted = json.loads(response.read().decode("utf-8"))
+            self.assertEqual(posted["event"]["message"], "로컬")
+            self.assertEqual(posted["event"]["name"], "운영자")  # loopback trusts supplied name
+            self.assertEqual(posted["event"]["actor_type"], "human")
+
+            read = Request(f"{base}/api/room/channel-lobby?channel_id={channel_id}&meeting_id=room-1")
+            with urlopen(read, timeout=4) as response:
+                events = json.loads(response.read().decode("utf-8"))["events"]
+            self.assertEqual([e["message"] for e in events], ["로컬"])
 
 
 if __name__ == "__main__":
