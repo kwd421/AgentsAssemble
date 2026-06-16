@@ -123,6 +123,18 @@ class SubscribeTests(unittest.TestCase):
         self.assertTrue(msgs[1].get("snapshot"))
         self.assertEqual(msgs[1]["events"][0]["message"], "hi")
 
+    def test_subscribe_pushes_empty_snapshot_boundary(self):
+        deps = FakeDeps()
+        sess = _session(deps)
+        frames = sess.handle_frame(OP_TEXT, json.dumps({"op": "subscribe", "streams": ["lobby"]}).encode())
+        msgs = text_messages(frames)
+        self.assertEqual(msgs[0]["op"], "subscribed")
+        self.assertGreaterEqual(len(msgs), 2)
+        self.assertEqual(msgs[1]["op"], "event")
+        self.assertEqual(msgs[1]["stream"], "lobby")
+        self.assertTrue(msgs[1].get("snapshot"))
+        self.assertEqual(msgs[1]["events"], [])
+
     def test_subscribe_defaults_to_all_streams(self):
         sess = _session(FakeDeps())
         frames = sess.handle_frame(OP_TEXT, json.dumps({"op": "subscribe"}).encode())

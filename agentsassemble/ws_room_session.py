@@ -227,6 +227,13 @@ class WsRoomSession:
                 if snapshot:
                     message["snapshot"] = True
                 frames.append(encode_text(json.dumps(message)))
+            elif snapshot:
+                frames.append(encode_text(json.dumps({
+                    "op": "event",
+                    "stream": "lobby",
+                    "events": [],
+                    "snapshot": True,
+                })))
         if "roster" in self.subscribed:
             members, signature = self.deps.read_roster(self.meeting_id)
             if signature != self._roster_sig:

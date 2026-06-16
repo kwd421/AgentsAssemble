@@ -198,7 +198,7 @@ class ProviderWsResidentTests(WsResidentLiveTests):
                             "op": "event",
                             "stream": "lobby",
                             "snapshot": True,
-                            "events": [{"id": "old", "actor_type": "human", "name": "Human", "message": "old"}],
+                            "events": [],
                         },
                         {
                             "op": "event",
@@ -216,6 +216,7 @@ class ProviderWsResidentTests(WsResidentLiveTests):
 
             def say(self, message: str, **extra):
                 self.sent.append({"op": "say", "message": message, **extra})
+                return {"op": "ack", "event": {"id": "reply1"}}
 
             def close(self):
                 self.closed = True
@@ -279,6 +280,7 @@ class ProviderWsResidentTests(WsResidentLiveTests):
 
             def say(self, message: str, **extra):
                 self.sent.append({"op": "say", "message": message, **extra})
+                return {"op": "ack", "event": {"id": "reply1"}}
 
             def close(self):
                 self.closed = True
@@ -299,6 +301,119 @@ class ProviderWsResidentTests(WsResidentLiveTests):
         say_messages = [message for message in fake.sent if message.get("op") == "say"]
         self.assertEqual(len(say_messages), 1)
         self.assertEqual(say_messages[0]["source_event_id"], "new")
+
+    def test_provider_resident_answers_first_live_event_after_empty_snapshot_boundary(self):
+        class FakeSock:
+            def settimeout(self, _timeout):
+                pass
+
+        class FakeClient:
+            def __init__(self):
+                self.sock = FakeSock()
+                self.closed = False
+                self.sent: list[dict] = []
+                self._messages = [
+                    [
+                        {"op": "subscribed", "streams": ["lobby"]},
+                        {
+                            "op": "event",
+                            "stream": "lobby",
+                            "snapshot": True,
+                            "events": [],
+                        },
+                        {
+                            "op": "event",
+                            "stream": "lobby",
+                            "events": [{"id": "new", "actor_type": "human", "name": "Human", "message": "new"}],
+                        },
+                    ]
+                ]
+
+            def receive(self):
+                return self._messages.pop(0) if self._messages else []
+
+            def thinking(self, on: bool):
+                self.sent.append({"op": "thinking", "on": on})
+
+            def say(self, message: str, **extra):
+                self.sent.append({"op": "say", "message": message, **extra})
+                return {"op": "ack", "event": {"id": "reply1"}}
+
+            def close(self):
+                self.closed = True
+
+        fake = FakeClient()
+
+        with patch.object(ws_resident, "connect_room_ws", return_value=fake):
+            replies = run_provider_ws_resident(
+                "http://room.local",
+                "session-token",
+                _resident_config("codex-ws"),
+                lambda command, prompt, *, timeout_seconds: "reply",
+                max_replies=1,
+                max_idle_rounds=1,
+            )
+
+        self.assertEqual(replies, 1)
+        say_messages = [message for message in fake.sent if message.get("op") == "say"]
+        self.assertEqual(len(say_messages), 1)
+        self.assertEqual(say_messages[0]["source_event_id"], "new")
+
+    def test_provider_resident_does_not_count_rejected_say_as_reply(self):
+        class FakeSock:
+            def settimeout(self, _timeout):
+                pass
+
+        class FakeClient:
+            def __init__(self):
+                self.sock = FakeSock()
+                self.closed = False
+                self.sent: list[dict] = []
+                self._messages = [
+                    [
+                        {"op": "subscribed", "streams": ["lobby"]},
+                        {
+                            "op": "event",
+                            "stream": "lobby",
+                            "snapshot": True,
+                            "events": [{"id": "old", "actor_type": "human", "name": "Human", "message": "old"}],
+                        },
+                        {
+                            "op": "event",
+                            "stream": "lobby",
+                            "events": [{"id": "new", "actor_type": "human", "name": "Human", "message": "new"}],
+                        },
+                    ],
+                    [{"op": "error", "category": "muted", "message": "muted"}],
+                ]
+
+            def receive(self):
+                return self._messages.pop(0) if self._messages else []
+
+            def thinking(self, on: bool):
+                self.sent.append({"op": "thinking", "on": on})
+
+            def say(self, message: str, **extra):
+                self.sent.append({"op": "say", "message": message, **extra})
+
+            def close(self):
+                self.closed = True
+
+        fake = FakeClient()
+
+        with patch.object(ws_resident, "connect_room_ws", return_value=fake):
+            replies = run_provider_ws_resident(
+                "http://room.local",
+                "session-token",
+                _resident_config("codex-ws"),
+                lambda command, prompt, *, timeout_seconds: "reply",
+                max_replies=1,
+                max_idle_rounds=1,
+            )
+
+        self.assertEqual(replies, 0)
+        say_messages = [message for message in fake.sent if message.get("op") == "say"]
+        self.assertEqual(len(say_messages), 1)
 
 
 if __name__ == "__main__":

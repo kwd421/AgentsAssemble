@@ -12,6 +12,7 @@ returns an opened+subscribed client.
 """
 from __future__ import annotations
 
+from collections import deque
 import json
 import socket as socket_module
 import ssl
@@ -30,6 +31,14 @@ from agentsassemble.room_websocket import (
     encode_client_text,
     handshake_accept_ok,
 )
+
+
+class WsRoomSayRejected(Exception):
+    """Raised when the room rejects a `say` operation over WS."""
+
+    def __init__(self, message: str, *, category: str = "rejected") -> None:
+        super().__init__(message)
+        self.category = category
 
 
 def _parse_response_headers(blob: bytes) -> tuple[bytes, dict[str, str]]:
@@ -51,6 +60,7 @@ class WsRoomClient:
         self.host = host
         self.closed = False
         self._assembler = MessageAssembler(expect_mask=False)
+        self._pending_messages: deque[dict] = deque()
 
     def open(self, path: str) -> None:
         """Send the upgrade request, verify the 101 + accept key, and buffer any
@@ -78,8 +88,18 @@ class WsRoomClient:
             message["resume_from_id"] = resume_from_id
         self._send(message)
 
-    def say(self, message: str, **extra: object) -> None:
+    def say(
+        self,
+        message: str,
+        *,
+        wait_for_ack: bool = False,
+        ack_rounds: int = 5,
+        **extra: object,
+    ) -> dict | None:
         self._send({"op": "say", "message": message, **extra})
+        if wait_for_ack:
+            return self._wait_for_say_ack(ack_rounds=ack_rounds)
+        return None
 
     def thinking(self, on: bool) -> None:
         """Signal that the agent started/finished generating (lights up the
@@ -95,6 +115,13 @@ class WsRoomClient:
     def receive(self) -> list[dict]:
         """One recv; return parsed server messages (dicts). Auto-responds to ping;
         marks closed on close/EOF. The resident drives this in a loop."""
+        if self._pending_messages:
+            out = list(self._pending_messages)
+            self._pending_messages.clear()
+            return out
+        return self._receive_from_socket()
+
+    def _receive_from_socket(self) -> list[dict]:
         out: list[dict] = []
         try:
             data = self.sock.recv(65536)
@@ -120,6 +147,22 @@ class WsRoomClient:
                 except (ValueError, UnicodeDecodeError):
                     continue
         return out
+
+    def _wait_for_say_ack(self, *, ack_rounds: int) -> dict:
+        for _ in range(max(1, int(ack_rounds))):
+            messages = self._receive_from_socket()
+            for message in messages:
+                op = str(message.get("op") or "")
+                if op == "ack":
+                    return message
+                if op == "error":
+                    category = str(message.get("category") or "rejected")
+                    detail = str(message.get("message") or category)
+                    raise WsRoomSayRejected(detail, category=category)
+                self._pending_messages.append(message)
+            if self.closed:
+                break
+        raise TimeoutError("No acknowledgement received for WS say.")
 
     def _safe_send(self, frame: bytes) -> None:
         try:

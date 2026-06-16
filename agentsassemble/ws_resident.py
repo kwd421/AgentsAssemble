@@ -15,10 +15,18 @@ import socket as socket_module
 from typing import Callable
 
 from agentsassemble.room_engagement import chain_depth as _chain_depth
-from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws
+from agentsassemble.ws_room_client import WsRoomClient, WsRoomSayRejected, connect_room_ws
 
 Brain = Callable[[dict], str]
 ShouldReply = Callable[[dict], bool]
+
+
+def _say_confirmed(client: WsRoomClient, message: str, **extra: object) -> bool:
+    try:
+        ack = client.say(message, wait_for_ack=True, **extra)
+    except (OSError, TimeoutError, WsRoomSayRejected):
+        return False
+    return isinstance(ack, dict) and str(ack.get("op") or "") == "ack"
 
 
 def reply_to_humans(event: dict) -> bool:
@@ -72,7 +80,8 @@ def run_resident_loop(
                     client.thinking(False)
                 if not reply:
                     continue
-                client.say(reply)
+                if not _say_confirmed(client, reply):
+                    continue
                 replies += 1
                 if max_replies and replies >= max_replies:
                     return replies
@@ -136,11 +145,12 @@ def run_provider_ws_resident(
             for message in messages:
                 if message.get("op") == "event" and message.get("stream") == "lobby":
                     events = message.get("events") or []
+                    if message.get("snapshot") is True:
+                        got_snapshot_event = True
                     if events:
                         got_lobby_event = True
                         buffer.extend(events)
                         if message.get("snapshot") is True:
-                            got_snapshot_event = True
                             last_observed = str(events[-1].get("id") or last_observed)
                         else:
                             got_live_event = True
@@ -187,13 +197,15 @@ def run_provider_ws_resident(
             reply = str(reply or "").strip()
             if not reply or visible_reply_contains_control_meta(reply):
                 continue
-            client.say(
+            if not _say_confirmed(
+                client,
                 reply,
                 kind="message",
                 source_event_id=source_event_id,
                 auto_chain_depth=_chain_depth(candidate) + 1,
                 flow_meeting_id=config.meeting_id,
-            )
+            ):
+                continue
             replies += 1
             if max_replies and replies >= max_replies:
                 return replies

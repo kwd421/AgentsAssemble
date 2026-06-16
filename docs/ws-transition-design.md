@@ -76,12 +76,15 @@ WsConnection:
 가짜 소켓(recv/sendall 큐) + 가짜 세션검증으로 단위테스트.
 
 ## 알려진 갭 — provider WS 상주 (#1 코어, 코덱스 리뷰 2026-06-16)
-커밋 149bc2e 리뷰 → **1·2·3 수정 완료 (커밋 a2f4953, 코덱스 수정·검증됨)**. 남은 잔여:
-- **[잔여] 빈 방 seeding 엣지**: 히스토리 없으면 스냅샷 프레임이 안 나가(`if events:` 가드)
-  접속 창에 들어온 메시지가 여전히 스킵될 수 있음. 해법: 빈 스냅샷도 항상 보내 경계 표시,
-  또는 subscribe-ack가 커서 명시.
-- **[잔여, 리뷰 4번] say fire-and-forget**: 상주가 ack/error 안 읽고 replies++ → muted/
-  read-only/거부 포스트가 성공처럼 보임. 해법: say 후 ack/error 프레임 확인.
+커밋 149bc2e 리뷰 → **1·2·3 수정 완료 (커밋 a2f4953, 코덱스 수정·검증됨)**.
+후속 잔여였던 빈 방 seeding 엣지와 say fire-and-forget도 수정 완료:
+- **[완료] 빈 방 seeding 엣지** — subscribe 직후 lobby snapshot이 비어 있어도
+  `snapshot: true, events: []` 프레임을 보내 경계 표시. provider WS resident는 빈
+  snapshot 경계를 seed 완료 신호로 인식하므로, 그 직후 같은 receive 창에 들어온 live
+  메시지를 history로 오인해 스킵하지 않음.
+- **[완료, 리뷰 4번] say fire-and-forget** — WS client `say(wait_for_ack=True)`가
+  ack/error 프레임을 확인하고, resident는 ack가 확인된 경우에만 `replies++`.
+  muted/read-only/거부 포스트가 성공처럼 집계되지 않음.
 
 수정 완료된 원본 발견 (참고):
 1. **[P1·완료] 발화 메타데이터 유실** — `run_provider_ws_resident`는 `client.say(reply)`만 보내고,
@@ -90,14 +93,14 @@ WsConnection:
    루프 제어/중복 source 처리가 HTTP와 갈라짐**(에이전트끼리 무한루프 안 막힘). "프롬프트
    fidelity"는 맞지만 "POST fidelity"가 빠짐. 고칠 곳: client.say에 source_event_id/
    auto_chain_depth 인자 추가 + _on_say가 그 필드 전달 + 상주가 source_depth+1 계산.
-2. **[P1] HTTPS/wss 미지원** — `connect_room_ws`가 https일 때 443에 raw TCP(ssl 래핑 없음) →
+2. **[P1·완료] HTTPS/wss 미지원** — `connect_room_ws`가 https일 때 443에 raw TCP(ssl 래핑 없음) →
    공개 Cloudflare 방은 핸드셰이크 실패. 루프백 http만 동작. 고칠 곳: scheme==https면
    `ssl.create_default_context().wrap_socket(sock, server_hostname=host)`.
-3. **[P2] seeding 레이스** — 첫 비어있지 않은 receive를 통째로 history로 마킹+스킵 → 접속
+3. **[P2·완료] seeding 레이스** — 첫 비어있지 않은 receive를 통째로 history로 마킹+스킵 → 접속
    창에 들어온 사람 메시지 유실 가능(테스트는 sleep으로 회피). 고칠 곳: subscribe-ack 시점의
    커서를 서버가 명시 전달, 또는 접속 직후 짧은 창의 이벤트는 live로 취급.
-4. **[잔여] say fire-and-forget** — 상주가 ack/error 안 읽고 replies++ → muted/read-only/거부
-   포스트가 성공처럼 보임. 고칠 곳: say 후 ack/error 프레임 확인.
+4. **[완료] say fire-and-forget** — 상주가 ack/error를 확인하고 ack가 있을 때만
+   replies++.
 
 ## 비목표 (이 단계에서 안 함)
 - 전체 HTTP 표면의 Protocol 래핑(거대 리팩토링). 추가형으로 공존.

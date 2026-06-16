@@ -111,6 +111,20 @@ class SendUnitTests(unittest.TestCase):
         client.say("hello", kind="message")
         self.assertEqual(sock.sent_messages()[-1], {"op": "say", "message": "hello", "kind": "message"})
 
+    def test_say_can_wait_for_ack(self):
+        client, sock = self._opened()
+        sock.queue_recv(encode_text(json.dumps({"op": "ack", "event": {"id": "evt1"}})))
+        ack = client.say("hello", wait_for_ack=True)
+        self.assertIsNotNone(ack)
+        self.assertEqual(ack["event"]["id"], "evt1")
+        self.assertEqual(sock.sent_messages()[-1], {"op": "say", "message": "hello"})
+
+    def test_say_wait_for_ack_raises_on_error(self):
+        client, sock = self._opened()
+        sock.queue_recv(encode_text(json.dumps({"op": "error", "category": "muted", "message": "muted"})))
+        with self.assertRaisesRegex(Exception, "muted"):
+            client.say("hello", wait_for_ack=True)
+
 
 class ReceiveUnitTests(unittest.TestCase):
     def _opened(self):
