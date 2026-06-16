@@ -1344,6 +1344,12 @@ def build_parser() -> argparse.ArgumentParser:
     live_group.add_argument("--config", required=True)
     live_group.add_argument("--server", default=None)
     live_group.add_argument("--max-ticks", type=parse_nonnegative_int, default=None)
+    live_group.add_argument(
+        "--launch-stagger-seconds",
+        type=parse_nonnegative_float,
+        default=2.0,
+        help="Delay between starting each resident so concurrent boots/connects don't pile up (0 = all at once).",
+    )
     live_group.add_argument("--agent-manifest", default="", help=argparse.SUPPRESS)
 
     persona = subparsers.add_parser("persona", help="Inspect and import Play Mode persona cards.")
@@ -3732,16 +3738,27 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
                         active_command_runners.remove(command_runner)
 
     threads = [threading.Thread(target=run_agent, args=(config,), daemon=True) for config in configs]
+    # Stagger startups so N residents don't all boot their CLI / open their WS
+    # connection in the same instant (a thundering herd that starved connects in
+    # practice). Only the *launch* is serialized — once started, agents run
+    # concurrently, so a slow provider never blocks the others' turns.
+    stagger_seconds = max(0.0, float(getattr(args, "launch_stagger_seconds", 0.0) or 0.0))
+    started_threads: list[threading.Thread] = []
     restore_signal_handlers = lambda: None
     try:
         restore_signal_handlers = _install_resident_shutdown_signal_handlers(shutdown_group)
-        for thread in threads:
+        for index, thread in enumerate(threads):
+            if index > 0 and stagger_seconds > 0:
+                sleep(stagger_seconds)
+                if stop_event.is_set():
+                    break  # a shutdown arrived during the stagger wait; don't keep launching
             thread.start()
-        for thread in threads:
+            started_threads.append(thread)
+        for thread in started_threads:
             thread.join()
     except KeyboardInterrupt:
         shutdown_group()
-        for thread in threads:
+        for thread in started_threads:
             thread.join(timeout=5)
     finally:
         restore_signal_handlers()

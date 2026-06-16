@@ -15455,7 +15455,9 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", StringIO()),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            # stagger 0: this test asserts concurrent-runtime sibling/shutdown
+            # semantics, not staggered startup ordering.
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json", "--launch-stagger-seconds", "0"])
 
         self.assertEqual(exit_code, 0)
         self.assertTrue(sibling_closed_while_running.is_set())
@@ -15777,10 +15779,78 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", StringIO()),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            # stagger 0: this test asserts concurrent-runtime sibling/shutdown
+            # semantics, not staggered startup ordering.
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json", "--launch-stagger-seconds", "0"])
 
         self.assertEqual(exit_code, 0)
         self.assertTrue(sibling_closed_while_running.is_set())
+
+    def test_live_agent_run_group_stagger_skips_remaining_starts_after_shutdown(self):
+        # With a launch stagger, residents start one at a time. If a shutdown
+        # arrives during the stagger wait, the not-yet-started residents must
+        # never launch (serialized startup, bail-on-shutdown).
+        def _cfg(agent_id):
+            return ResidentAgentConfig(
+                server="http://room.local",
+                agent_id=agent_id,
+                display_name=agent_id,
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["fake"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=0,
+            )
+
+        configs = [_cfg("first-agent"), _cfg("second-agent")]
+        created_runners: list[str] = []
+        first_started = threading.Event()
+
+        class _Runner:
+            def close(self):
+                pass
+
+        class ShutdownTriggeringRunner:
+            def __init__(self, config, *, command_runner, **kwargs):
+                del kwargs, command_runner
+                self.config = config
+
+            def run(self):
+                # The first resident requests shutdown immediately; the second
+                # must never be reached because of the (large) stagger wait.
+                if self.config.agent_id == "first-agent":
+                    first_started.set()
+                    raise KeyboardInterrupt()
+                return 0
+
+        def command_runner_for_config(config):
+            created_runners.append(config.agent_id)
+            return _Runner()
+
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
+            patch("agentsassemble.cli._command_runner_for_config", side_effect=command_runner_for_config),
+            patch("agentsassemble.cli.LiveAgentRunner", ShutdownTriggeringRunner),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", StringIO()),
+        ):
+            # A large stagger would block for 30s if the shutdown were ignored;
+            # the test returns promptly because stop_event interrupts the wait.
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json", "--launch-stagger-seconds", "30"])
+
+        self.assertTrue(first_started.is_set())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(created_runners, ["first-agent"])
 
     def test_live_agent_run_group_keeps_sibling_runner_after_primary_failure(self):
         configs = [
@@ -15872,7 +15942,9 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", stderr),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            # stagger 0: this test asserts concurrent-runtime sibling/shutdown
+            # semantics, not staggered startup ordering.
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json", "--launch-stagger-seconds", "0"])
 
         self.assertEqual(exit_code, 2)
         self.assertIn("primary-error: primary boom", stderr.getvalue())
