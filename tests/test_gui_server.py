@@ -9253,6 +9253,34 @@ class GuiServerTests(unittest.TestCase):
             self.assertIn(old_event["id"], {e["id"] for e in scoped})
             self.assertTrue(all(e.get("flow_meeting_id") == "fable-room" for e in scoped))
 
+    def test_backfill_room_registry_seeds_existing_meetings(self):
+        # Rooms created before the registry existed must resurface in /api/rooms.
+        from agentsassemble.gui import _backfill_room_registry
+        from agentsassemble.identity_store import default_identity_db_path, reset_identity_store_registry
+        from agentsassemble.room_users import configure_room_users_store, list_rooms, reset_state
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            configure_room_users_store(default_identity_db_path(root))
+            try:
+                for mid in ("old-room-a", "old-room-b"):
+                    meeting_dir = root / "meetings" / mid
+                    meeting_dir.mkdir(parents=True)
+                    (meeting_dir / "live_state.json").write_text(
+                        json.dumps({"meeting_id": mid, "topic": f"T-{mid}", "live_status": "running"}),
+                        encoding="utf-8",
+                    )
+                self.assertEqual(list_rooms(include_archived=True), [])
+                _backfill_room_registry(root)
+                ids = {str(r["room_id"]) for r in list_rooms(include_archived=True)}
+                self.assertEqual(ids, {"old-room-a", "old-room-b"})
+                # Idempotent: a second pass adds no duplicates.
+                _backfill_room_registry(root)
+                self.assertEqual(len(list_rooms(include_archived=True)), 2)
+            finally:
+                reset_state()
+                reset_identity_store_registry()
+
     def test_live_agent_room_endpoint_keeps_probe_sized_lobby_tail(self):
         expected_room_tail_limit = LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT
         with tempfile.TemporaryDirectory() as temp_dir:

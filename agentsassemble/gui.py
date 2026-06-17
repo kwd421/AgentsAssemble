@@ -167,7 +167,14 @@ from agentsassemble.ws_room_session import (
     WsRoomSession,
     WsTicketStore,
 )
-from agentsassemble.room_users import configure_room_users_store, operator_user_id, touch_room, user_for_participant
+from agentsassemble.room_users import (
+    configure_room_users_store,
+    list_rooms,
+    operator_user_id,
+    touch_room,
+    upsert_room,
+    user_for_participant,
+)
 from agentsassemble.room_settings import room_settings_payload, update_room_settings
 from agentsassemble.user_profile import read_user_profile, update_user_profile
 from agentsassemble.room_invite import (
@@ -689,6 +696,32 @@ def _live_agent_round_scheduler_lock(meeting_id: str) -> threading.RLock:
             lock = threading.RLock()
             LIVE_AGENT_ROUND_SCHEDULER_LOCKS[meeting_id] = lock
         return lock
+
+
+def _backfill_room_registry(output_root: Path) -> None:
+    """Register pre-existing meeting dirs into the rooms table.
+
+    The rooms registry only fills going forward (on ensure), so rooms created
+    before it existed — or before a localStorage clear — wouldn't show in
+    /api/rooms. Seed them once from the meeting dirs on disk so old rooms
+    resurface in the dock. Idempotent (skips known rooms) and best-effort: a
+    failure here must never block server startup.
+    """
+    try:
+        known = {str(room.get("room_id")) for room in list_rooms(include_archived=True)}
+        owner = operator_user_id()
+        for meeting in list_meetings(output_root):
+            meeting_id = str(meeting.get("meeting_id") or "")
+            if not meeting_id or meeting_id in known:
+                continue
+            upsert_room(
+                room_id=meeting_id,
+                owner_id=owner,
+                label=str(meeting.get("topic") or ""),
+                origin="backfill",
+            )
+    except Exception:
+        return
 
 
 def list_meetings(output_root: Path, now: float | None = None) -> list[dict[str, object]]:
@@ -8144,6 +8177,9 @@ def _make_handler(
     # Identity (users/credentials/memberships) lives in one SQLite file; a
     # legacy users.json from the JSON era is imported on first run.
     configure_room_users_store(default_identity_db_path(output_root))
+    # Seed the rooms registry from existing meeting dirs so rooms that predate
+    # the registry (or survived a localStorage clear) still list in /api/rooms.
+    _backfill_room_registry(output_root)
     react_app_root = (frontend_dist_root or default_frontend_dist_root()).resolve()
     live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
     live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
