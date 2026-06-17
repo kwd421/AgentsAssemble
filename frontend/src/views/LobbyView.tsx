@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
-import { Bot, Hash, MessageCircle, MoreHorizontal, Zap } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, Hash, MessageCircle, MoreHorizontal, Zap } from "lucide-react";
 import {
   connectRoomSocket,
   fetchLobby,
@@ -56,8 +56,86 @@ function lobbyFeedIsNearBottom(element: HTMLDivElement) {
   return scrollHeight - scrollTop - clientHeight <= 64;
 }
 
+type LobbyRow =
+  | { type: "divider"; key: string; label: string }
+  | { type: "thinking"; key: string; events: LobbyEvent[] }
+  | { type: "event"; key: string; event: LobbyEvent };
+
+// Collapse consecutive kind="thinking" events (same actor) into one foldable
+// group; everything else stays a normal row. Date dividers are emitted as their
+// own rows when the day changes.
+function buildLobbyRows(events: LobbyEvent[]): LobbyRow[] {
+  const rows: LobbyRow[] = [];
+  let lastDateKey = "";
+  let buffer: LobbyEvent[] = [];
+  const flush = () => {
+    if (buffer.length) {
+      rows.push({ type: "thinking", key: `think-${buffer[0].id}`, events: buffer });
+      buffer = [];
+    }
+  };
+  for (const event of events) {
+    const dk = dateKey(event.created_at);
+    const newDay = dk !== lastDateKey;
+    if (event.kind === "thinking") {
+      if (buffer.length && buffer[0].actor_id !== event.actor_id) flush();
+      if (newDay) {
+        flush();
+        rows.push({ type: "divider", key: `d-${event.id}`, label: dateDividerLabel(event.created_at) });
+        lastDateKey = dk;
+      }
+      buffer.push(event);
+    } else {
+      flush();
+      if (newDay) {
+        rows.push({ type: "divider", key: `d-${event.id}`, label: dateDividerLabel(event.created_at) });
+        lastDateKey = dk;
+      }
+      rows.push({ type: "event", key: event.id, event });
+    }
+  }
+  flush();
+  return rows;
+}
+
 const HISTORY_TOP_THRESHOLD = 120;
 const HISTORY_PAGE_SIZE = 50;
+
+// Streamed reasoning/tool steps (kind="thinking"), grouped and collapsed by
+// default — like "what it's doing" you can expand. The final answer is a normal
+// message right after this block.
+function ThinkingGroup({ events }: { events: LobbyEvent[] }) {
+  const [open, setOpen] = useState(false);
+  const name = events[events.length - 1]?.name || events[0]?.name || "agent";
+  return (
+    <div className="dc-thinking-group grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-0.5">
+      <span aria-hidden="true" />
+      <div className="min-w-0">
+        <button
+          type="button"
+          className="dc-thinking-toggle flex items-center gap-1 text-[12px] text-text-muted hover:text-text-secondary"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+        >
+          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          <span>{`💭 ${name}의 생각 · ${events.length}단계`}</span>
+        </button>
+        {open && (
+          <div className="dc-thinking-steps mt-1 border-l border-white/10 pl-3">
+            {events.map((event) => (
+              <div
+                key={event.id}
+                className="dc-thinking-step py-0.5 text-[13px] leading-relaxed text-text-muted preserve-words"
+              >
+                <DiscordText text={event.message || ""} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // Placeholder row for a participant who is currently generating a reply. It
 // matches MessageRow's grid so the bubble lands in the exact spot where the
@@ -240,6 +318,7 @@ export default function LobbyView({
       return Number.isFinite(eventTime) && eventTime >= roomStartedAt;
     });
   }, [activeRoom.createdAt, activeRoom.meetingId, conversationEvents]);
+  const lobbyRows = useMemo(() => buildLobbyRows(visibleEvents), [visibleEvents]);
 
   const updatePinnedToLatest = useCallback((nextPinned: boolean) => {
     pinnedToLatestRef.current = nextPinned;
@@ -440,34 +519,36 @@ export default function LobbyView({
             아직 채팅 메시지가 없습니다. 첫 메시지를 남겨 보세요.
           </p>
         ) : (
-          visibleEvents.map((event, index) => {
-            const previous = index > 0 ? visibleEvents[index - 1] : null;
-            const showDateDivider =
-              !previous || dateKey(previous.created_at) !== dateKey(event.created_at);
+          lobbyRows.map((row) => {
+            if (row.type === "divider") {
+              return (
+                <div className="dc-date-divider px-4" key={row.key} aria-hidden>
+                  <span>{row.label}</span>
+                </div>
+              );
+            }
+            if (row.type === "thinking") {
+              return <ThinkingGroup key={row.key} events={row.events} />;
+            }
+            const event = row.event;
             return (
-              <div key={event.id}>
-                {showDateDivider && (
-                  <div className="dc-date-divider px-4" aria-hidden>
-                    <span>{dateDividerLabel(event.created_at)}</span>
-                  </div>
-                )}
-                <MessageRow
-                  event={event}
-                  onOpenSideThread={onOpenSideThread}
-                  threadSummary={threadSummaries[event.id]}
-                  voteCard={
-                    event.kind === "vote" ? (
-                      <VotePollCard
-                        event={event}
-                        meetingId={activeRoom.meetingId}
-                        roomSessionToken={roomSessionToken}
-                        voterName={voterName}
-                        canVote={canPostMessages}
-                      />
-                    ) : undefined
-                  }
-                />
-              </div>
+              <MessageRow
+                key={row.key}
+                event={event}
+                onOpenSideThread={onOpenSideThread}
+                threadSummary={threadSummaries[event.id]}
+                voteCard={
+                  event.kind === "vote" ? (
+                    <VotePollCard
+                      event={event}
+                      meetingId={activeRoom.meetingId}
+                      roomSessionToken={roomSessionToken}
+                      voterName={voterName}
+                      canVote={canPostMessages}
+                    />
+                  ) : undefined
+                }
+              />
             );
           })
         )}
