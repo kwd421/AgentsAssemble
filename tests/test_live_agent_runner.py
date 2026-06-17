@@ -279,6 +279,39 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(runner.run(), 1)
         self.assertEqual(len(command_calls), 1)
 
+    def test_runner_pushes_runtime_permission_and_fast_overrides_from_room(self):
+        clock = FakeClock()
+        applied: list[dict] = []
+
+        class _Runner:
+            def apply_runtime_overrides(self, *, permission_option=None, fast_mode=None):
+                applied.append({"permission_option": permission_option, "fast_mode": fast_mode})
+
+            def __call__(self, command, prompt, *, timeout_seconds):
+                return "unused"
+
+        client = FakeRoomClient(
+            [
+                {
+                    "agent": {
+                        "agent_id": "agent-a",
+                        "permission_option": "danger-full-access",
+                        "fast_mode": True,
+                    },
+                    "lobby_events": [],
+                }
+            ]
+        )
+        runner = LiveAgentRunner(
+            config(max_ticks=1, poll_interval=0.01, heartbeat_interval=0),
+            request_json=client,
+            command_runner=_Runner(),
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+        runner.run()
+        self.assertEqual(applied, [{"permission_option": "danger-full-access", "fast_mode": True}])
+
     def test_always_runner_replies_to_new_non_self_event_and_records_chain_metadata(self):
         clock = FakeClock()
         room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "상태 어때?", "auto_chain_depth": 0}]}

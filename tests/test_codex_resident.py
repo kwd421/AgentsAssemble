@@ -44,6 +44,22 @@ class CodexResidentFastModeTests(unittest.TestCase):
         self.assertNotIn("--enable", command)
         runner.close()
 
+    def test_runtime_overrides_apply_live_without_restart(self):
+        # Config says read-only + fast off; a live edit flips both for the next turn.
+        runner = CodexResidentCommandRunner(_codex_config(permission_option="read-only"))
+        out = Path(tempfile.gettempdir()) / "out.txt"
+        runner.apply_runtime_overrides(permission_option="danger-full-access", fast_mode=True)
+        command = runner._build_command(out)
+        self.assertIn("danger-full-access", command)
+        self.assertIn("--enable", command)
+        self.assertEqual(command[command.index("--enable") + 1], "fast_mode")
+        # Flipping back is also live.
+        runner.apply_runtime_overrides(permission_option="read-only", fast_mode=False)
+        reverted = runner._build_command(out)
+        self.assertIn("read-only", reverted)
+        self.assertNotIn("--enable", reverted)
+        runner.close()
+
 
 class CodexResidentAuthTests(unittest.TestCase):
     def test_auth_check_reports_login_required_and_accepts_login_status(self):

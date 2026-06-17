@@ -42,6 +42,15 @@ class CodexResidentCommandRunner:
         self.cwd = Path(cwd or Path.cwd())
         self.session_id = str(config.session_id or "").strip()
         self._output_dir = tempfile.TemporaryDirectory(prefix="agentsassemble-codex-resident-")
+        # Live overrides pushed by the runner each turn (edited from the room).
+        self._override_permission_option: str | None = None
+        self._override_fast_mode: bool | None = None
+
+    def apply_runtime_overrides(
+        self, *, permission_option: str | None = None, fast_mode: bool | None = None
+    ) -> None:
+        self._override_permission_option = permission_option
+        self._override_fast_mode = fast_mode
 
     def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
         del command
@@ -199,7 +208,8 @@ class CodexResidentCommandRunner:
         configured_command = list(self.config.command or ["codex"])
         base_command = [configured_command[0]]
         sandbox = (
-            str(getattr(self.config, "permission_option", "") or "")
+            (self._override_permission_option if self._override_permission_option is not None else "")
+            or str(getattr(self.config, "permission_option", "") or "")
             or str(getattr(self.config, "codex_sandbox", "") or "")
             or "read-only"
         )
@@ -207,7 +217,12 @@ class CodexResidentCommandRunner:
         tuning_args = _codex_tuning_args(self.config.model_id, self.config.effort)
         # Per-agent fast toggle: explicitly force codex's fast_mode feature on.
         # Off = leave codex's own default (already fast) — no regression.
-        if bool(getattr(self.config, "fast_mode", False)):
+        fast_mode = (
+            self._override_fast_mode
+            if self._override_fast_mode is not None
+            else bool(getattr(self.config, "fast_mode", False))
+        )
+        if fast_mode:
             tuning_args = [*tuning_args, "--enable", "fast_mode"]
         stream_args = ["--json"] if json_stream else []
         if self.session_id:

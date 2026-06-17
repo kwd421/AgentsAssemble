@@ -182,6 +182,7 @@ class LiveAgentRunner:
             return 0
         self.active_poll_interval = _runtime_poll_interval(self.config, room)
         self.active_cooldown = _runtime_cooldown(self.config, room)
+        self._apply_runtime_command_overrides(room)
         engagement_mode = _runtime_engagement_mode(self.config, room)
         dm_candidate = direct_dm_candidate(_dm_events(room), self.config.agent_id, self.last_observed_dm_event_id)
         if dm_candidate is not None:
@@ -724,6 +725,22 @@ class LiveAgentRunner:
             last_error=self.last_error,
             **self._cursor_metadata(cursor_field, observed_event_id),
         )
+
+    def _apply_runtime_command_overrides(self, room: dict[str, object]) -> None:
+        """Push live permission/fast values (edited from the room) into the command
+        runner so exec-per-turn providers (codex/grok/antigravity) pick them up on
+        the next turn — no restart. A persistent-PTY runner (claude) that can't hot-
+        apply simply omits the hook. Best-effort: never break a turn."""
+        apply = getattr(self.command_runner, "apply_runtime_overrides", None)
+        if not callable(apply):
+            return
+        try:
+            apply(
+                permission_option=_runtime_permission_option(self.config, room),
+                fast_mode=_runtime_fast_mode(self.config, room),
+            )
+        except Exception:
+            return
 
     def _register(self) -> None:
         persona_card_id = _resident_persona_card_id(self.config)
@@ -1393,6 +1410,26 @@ def _runtime_cooldown(config: ResidentAgentConfig, room: dict[str, object]) -> f
     if not math.isfinite(parsed) or parsed < 0:
         return config.cooldown
     return parsed
+
+
+def _runtime_permission_option(config: ResidentAgentConfig, room: dict[str, object]) -> str:
+    """The agent's live permission_option from the room record, else its config value."""
+    agent = room.get("agent")
+    if not isinstance(agent, dict) or str(agent.get("agent_id") or "") != config.agent_id:
+        return str(getattr(config, "permission_option", "") or "")
+    if "permission_option" not in agent:
+        return str(getattr(config, "permission_option", "") or "")
+    return str(agent.get("permission_option") or "")
+
+
+def _runtime_fast_mode(config: ResidentAgentConfig, room: dict[str, object]) -> bool:
+    """The agent's live fast_mode from the room record, else its config value."""
+    agent = room.get("agent")
+    if not isinstance(agent, dict) or str(agent.get("agent_id") or "") != config.agent_id:
+        return bool(getattr(config, "fast_mode", False))
+    if "fast_mode" not in agent:
+        return bool(getattr(config, "fast_mode", False))
+    return bool(agent.get("fast_mode"))
 
 
 def _active_flow_participant_agent_ids(room: dict[str, object], agent_id: str, meeting_id: str) -> list[str]:

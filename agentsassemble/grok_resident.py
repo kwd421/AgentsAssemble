@@ -64,6 +64,14 @@ class GrokResidentCommandRunner:
         self.session_id = clean_grok_session_id(config.session_id)
         self._prompt_dir = tempfile.TemporaryDirectory(prefix="agentsassemble-grok-resident-")
         self._turn_index = 0
+        # Live override pushed by the runner each turn (edited from the room).
+        self._override_permission_option: str | None = None
+
+    def apply_runtime_overrides(
+        self, *, permission_option: str | None = None, fast_mode: bool | None = None
+    ) -> None:
+        del fast_mode  # grok has no fast toggle
+        self._override_permission_option = permission_option
 
     def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
         del command
@@ -216,7 +224,11 @@ class GrokResidentCommandRunner:
         effort = str(self.config.effort or "").strip()
         if effort:
             command.extend(["--effort", effort])
-        permission = str(getattr(self.config, "permission_option", "") or "").strip()
+        permission = (
+            self._override_permission_option
+            if self._override_permission_option is not None
+            else str(getattr(self.config, "permission_option", "") or "")
+        ).strip()
         if permission:
             command.extend(["--permission-mode", permission])
         if self.session_id:
