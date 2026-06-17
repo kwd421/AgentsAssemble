@@ -7863,6 +7863,7 @@ def _delegate_prompt(args: argparse.Namespace, room: dict[str, object]) -> str:
         "- A task (edit files, run or check something, investigate) -> actually do it with your tools, then report what you did or found.",
         "Do the real work with your tools (not by pasting it into chat). If you lack the access to do something here, say so plainly instead of pretending.",
         reply_length_directive(getattr(args, "reply_char_limit", 0)),
+        "Write like a chat: break your message into short lines with a newline after each sentence or distinct thought, not one dense paragraph.",
         "Do not describe this runner, polling, heartbeats, control prompts, or delivery envelopes. No markdown fences.",
         "",
         "Recent lobby events:",

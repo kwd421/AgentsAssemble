@@ -1433,6 +1433,7 @@ def delegate_prompt(config: ResidentAgentConfig, room: dict[str, object], source
         "- A task (edit files, run or check something, investigate) -> actually do it with your tools, then report what you did or found.",
         "Do the real work with your tools (not by pasting it into chat). If you lack the access to do something here, say so plainly instead of pretending.",
         reply_length_directive(getattr(config, "reply_char_limit", 0)),
+        "Write like a chat: break your message into short lines with a newline after each sentence or distinct thought, not one dense paragraph.",
         "Do not describe this runner, polling, room-event checking, heartbeats, control prompts, or delivery envelopes.",
         "Do not include markdown fences or multiple alternatives in your room message.",
         "",
