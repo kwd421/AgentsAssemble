@@ -58,41 +58,57 @@ function lobbyFeedIsNearBottom(element: HTMLDivElement) {
 
 type LobbyRow =
   | { type: "divider"; key: string; label: string }
-  | { type: "thinking"; key: string; events: LobbyEvent[] }
-  | { type: "event"; key: string; event: LobbyEvent };
+  | { type: "thinking"; key: string; events: LobbyEvent[]; showHeader: boolean }
+  | { type: "event"; key: string; event: LobbyEvent; showHeader: boolean };
 
-// Collapse consecutive kind="thinking" events (same actor) into one foldable
-// group; everything else stays a normal row. Date dividers are emitted as their
-// own rows when the day changes.
+// Discord-style grouping: collapse consecutive kind="thinking" events into one
+// foldable group, and show the avatar/name header only on the FIRST row of a
+// run by the same author — follow-ups render body-only (a new author, a date
+// change, or a >7-min gap starts a fresh header). The thinking group, streamed
+// before the answer, becomes the header row of its author's block, so it sits
+// under that agent's name (not the previous speaker's).
+const GROUP_GAP_MS = 7 * 60 * 1000;
+
 function buildLobbyRows(events: LobbyEvent[]): LobbyRow[] {
   const rows: LobbyRow[] = [];
   let lastDateKey = "";
+  let prevAuthor = "";
+  let prevTime = 0;
   let buffer: LobbyEvent[] = [];
+  const authorKey = (event: LobbyEvent) =>
+    event.kind === "system" || event.kind === "flow_event" ? "::system" : event.actor_id || event.name || "";
+  const ms = (iso: string) => Date.parse(iso || "") || 0;
   const flush = () => {
-    if (buffer.length) {
-      rows.push({ type: "thinking", key: `think-${buffer[0].id}`, events: buffer });
-      buffer = [];
-    }
+    if (!buffer.length) return;
+    const key = authorKey(buffer[0]);
+    const startTime = ms(buffer[0].created_at);
+    const showHeader = key !== prevAuthor || startTime - prevTime > GROUP_GAP_MS;
+    rows.push({ type: "thinking", key: `think-${buffer[0].id}`, events: buffer, showHeader });
+    prevAuthor = key;
+    prevTime = ms(buffer[buffer.length - 1].created_at) || startTime;
+    buffer = [];
   };
   for (const event of events) {
     const dk = dateKey(event.created_at);
-    const newDay = dk !== lastDateKey;
-    if (event.kind === "thinking") {
-      if (buffer.length && buffer[0].actor_id !== event.actor_id) flush();
-      if (newDay) {
-        flush();
-        rows.push({ type: "divider", key: `d-${event.id}`, label: dateDividerLabel(event.created_at) });
-        lastDateKey = dk;
-      }
-      buffer.push(event);
-    } else {
+    if (dk !== lastDateKey) {
       flush();
-      if (newDay) {
-        rows.push({ type: "divider", key: `d-${event.id}`, label: dateDividerLabel(event.created_at) });
-        lastDateKey = dk;
-      }
-      rows.push({ type: "event", key: event.id, event });
+      rows.push({ type: "divider", key: `d-${event.id}`, label: dateDividerLabel(event.created_at) });
+      lastDateKey = dk;
+      prevAuthor = "";
+      prevTime = 0;
     }
+    if (event.kind === "thinking") {
+      if (buffer.length && authorKey(buffer[0]) !== authorKey(event)) flush();
+      buffer.push(event);
+      continue;
+    }
+    flush();
+    const key = authorKey(event);
+    const time = ms(event.created_at);
+    const showHeader = key !== prevAuthor || time - prevTime > GROUP_GAP_MS;
+    rows.push({ type: "event", key: event.id, event, showHeader });
+    prevAuthor = key;
+    prevTime = time;
   }
   flush();
   return rows;
@@ -104,13 +120,22 @@ const HISTORY_PAGE_SIZE = 50;
 // Streamed reasoning/tool steps (kind="thinking"), grouped and collapsed by
 // default — like "what it's doing" you can expand. The final answer is a normal
 // message right after this block.
-function ThinkingGroup({ events }: { events: LobbyEvent[] }) {
+function ThinkingGroup({ events, showHeader }: { events: LobbyEvent[]; showHeader: boolean }) {
   const [open, setOpen] = useState(false);
-  const name = events[events.length - 1]?.name || events[0]?.name || "agent";
+  const header = events[0];
+  const name = header?.name || "agent";
   return (
     <div className="dc-thinking-group grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-0.5">
-      <span aria-hidden="true" />
+      <span className={showHeader ? "dc-message-avatar mt-0.5 agent" : ""} aria-hidden="true">
+        {showHeader ? <Bot size={16} /> : null}
+      </span>
       <div className="min-w-0">
+        {showHeader && (
+          <p className="flex items-baseline gap-2">
+            <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">{name}</span>
+            <span className="shrink-0 text-[11px] text-text-muted">{timeLabel(header?.created_at || "")}</span>
+          </p>
+        )}
         <button
           type="button"
           className="dc-thinking-toggle flex items-center gap-1 text-[12px] text-text-muted hover:text-text-secondary"
@@ -165,17 +190,18 @@ function TypingRow({ name }: { name: string }) {
   );
 }
 
-function MessageRow({ event, onOpenSideThread, threadSummary, voteCard }: {
+function MessageRow({ event, onOpenSideThread, threadSummary, voteCard, showHeader = true }: {
   event: LobbyEvent;
   onOpenSideThread?: (event: LobbyEvent) => void;
   threadSummary?: LobbyThreadSummary;
   voteCard?: ReactNode;
+  showHeader?: boolean;
 }) {
   const systemLike = event.kind === "system" || event.kind === "flow_event";
   return (
-    <div className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-1.5" tabIndex={0}>
-      <span className={`dc-message-avatar mt-0.5 ${systemLike ? "system" : "agent"}`}>
-        {systemLike ? <Zap size={16} /> : <Bot size={16} />}
+    <div className={`dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 ${showHeader ? "py-1.5" : "py-0.5"}`} tabIndex={0}>
+      <span className={showHeader ? `dc-message-avatar mt-0.5 ${systemLike ? "system" : "agent"}` : ""} aria-hidden={!showHeader}>
+        {showHeader ? (systemLike ? <Zap size={16} /> : <Bot size={16} />) : null}
       </span>
       <div className="dc-message-actions" aria-label="메시지 작업">
         {onOpenSideThread && (
@@ -199,12 +225,14 @@ function MessageRow({ event, onOpenSideThread, threadSummary, voteCard }: {
         </button>
       </div>
       <div className="min-w-0">
-        <p className="flex items-baseline gap-2">
-          <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">
-            {event.name || "Room"}
-          </span>
-          <span className="shrink-0 text-[11px] text-text-muted">{timeLabel(event.created_at)}</span>
-        </p>
+        {showHeader && (
+          <p className="flex items-baseline gap-2">
+            <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">
+              {event.name || "Room"}
+            </span>
+            <span className="shrink-0 text-[11px] text-text-muted">{timeLabel(event.created_at)}</span>
+          </p>
+        )}
         {voteCard ? (
           voteCard
         ) : (
@@ -528,13 +556,14 @@ export default function LobbyView({
               );
             }
             if (row.type === "thinking") {
-              return <ThinkingGroup key={row.key} events={row.events} />;
+              return <ThinkingGroup key={row.key} events={row.events} showHeader={row.showHeader} />;
             }
             const event = row.event;
             return (
               <MessageRow
                 key={row.key}
                 event={event}
+                showHeader={row.showHeader}
                 onOpenSideThread={onOpenSideThread}
                 threadSummary={threadSummaries[event.id]}
                 voteCard={
