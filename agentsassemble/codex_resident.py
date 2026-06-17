@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import tempfile
+import threading
+import urllib.request
 from pathlib import Path
 from subprocess import TimeoutExpired
 from typing import TYPE_CHECKING, Any
 
 from agentsassemble.codex_session_ids import extract_codex_session_id
+from agentsassemble.codex_stream import parse_codex_stream_line
 from agentsassemble.provider_auth import provider_auth_error_message, provider_login_required_message
 from agentsassemble.sandbox_launcher import CODEX_EXEC_SAFETY_FLAGS, sandbox_launcher_for
 
@@ -41,6 +45,8 @@ class CodexResidentCommandRunner:
 
     def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
         del command
+        if getattr(self.config, "stream_thinking", False):
+            return self._streaming_call(prompt, timeout_seconds=timeout_seconds)
         output_path = Path(self._output_dir.name) / f"{_safe_stem(self.config.agent_id)}-last-message.txt"
         codex_command = self._build_command(output_path)
         try:
@@ -79,15 +85,127 @@ class CodexResidentCommandRunner:
     def close(self) -> None:
         self._output_dir.cleanup()
 
-    def _build_command(self, output_path: Path) -> list[str]:
+    def _streaming_call(self, prompt: str, *, timeout_seconds: int) -> str:
+        """Run codex with --json and stream its reasoning/tool runs to the room as
+        it works; return the final assistant message as the canonical reply.
+
+        Intermediate agent_message chunks + command runs + reasoning are posted
+        live (operator-only) so the human watches the thinking flow. The last
+        agent_message is held back and returned so the normal reply path posts it
+        once — no duplicate."""
+        output_path = Path(self._output_dir.name) / f"{_safe_stem(self.config.agent_id)}-last-message.txt"
+        codex_command = self._build_command(output_path, json_stream=True)
+        try:
+            process = subprocess.Popen(  # noqa: S603 - command is built from a fixed codex prefix
+                codex_command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=str(self.cwd),
+            )
+        except OSError as error:
+            raise RuntimeError(f"Codex live session command failed to start: {error}.") from error
+
+        killed = {"value": False}
+
+        def _kill_on_timeout() -> None:
+            killed["value"] = True
+            try:
+                process.kill()
+            except Exception:
+                pass
+
+        watchdog = threading.Timer(max(1.0, float(timeout_seconds)), _kill_on_timeout)
+        watchdog.daemon = True
+        watchdog.start()
+        pending_message: str | None = None
+        try:
+            try:
+                if process.stdin is not None:
+                    process.stdin.write(prompt)
+                    process.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
+            for line in process.stdout or ():
+                event = parse_codex_stream_line(line)
+                if event is None:
+                    continue
+                kind = event["kind"]
+                if kind == "thread":
+                    if event["text"]:
+                        self.session_id = event["text"]
+                elif kind == "message":
+                    # Post the previous chunk as a live thought; hold the newest
+                    # so the final one becomes the canonical reply (no dup).
+                    if pending_message is not None:
+                        self._post_thought(pending_message, kind="message")
+                    pending_message = event["text"]
+                elif kind == "command":
+                    self._post_thought(f"🔧 {event['text']}", kind="command")
+                elif kind == "reasoning":
+                    self._post_thought(event["text"], kind="reasoning")
+            stderr = _text(process.stderr.read()) if process.stderr is not None else ""
+            process.wait(timeout=5)
+        finally:
+            watchdog.cancel()
+        if killed["value"]:
+            raise RuntimeError(f"Codex live session command timed out after {timeout_seconds} seconds.")
+        returncode = int(process.returncode or 0)
+        if returncode != 0:
+            login_message = codex_login_required_message(stderr)
+            if login_message:
+                raise RuntimeError(login_message)
+            raise RuntimeError(f"Codex live session command failed with return code {returncode}.")
+        final = (pending_message or "").strip()
+        if not final and output_path.exists():
+            final = output_path.read_text(encoding="utf-8").strip()
+        if not final:
+            raise ValueError("Codex live session returned an empty reply.")
+        return final
+
+    def _post_thought(self, text: str, *, kind: str) -> None:
+        """Best-effort post of one live thought to the room (operator-only).
+
+        Never raises — a streaming/network hiccup must not break the turn."""
+        body = (text or "").strip()
+        server = str(getattr(self.config, "server", "") or "").rstrip("/")
+        meeting_id = str(getattr(self.config, "meeting_id", "") or "")
+        if not body or not server or not meeting_id:
+            return
+        payload = {
+            "name": self.config.display_name or self.config.agent_id,
+            "message": body,
+            "kind": "thinking",
+            "channel": "lobby",
+            "audience": "operator",
+            "actor_type": "agent",
+            "actor_id": self.config.agent_id,
+            "flow_meeting_id": meeting_id,
+            "thinking_kind": kind,
+        }
+        try:
+            request = urllib.request.Request(
+                f"{server}/api/lobby",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(request, timeout=5).read()
+        except Exception:
+            return
+
+    def _build_command(self, output_path: Path, *, json_stream: bool = False) -> list[str]:
         configured_command = list(self.config.command or ["codex"])
         base_command = [configured_command[0]]
         exec_prefix = codex_exec_prefix(base_command, sandbox=str(getattr(self.config, "codex_sandbox", "") or "read-only"))
         tuning_args = _codex_tuning_args(self.config.model_id, self.config.effort)
+        stream_args = ["--json"] if json_stream else []
         if self.session_id:
             return [
                 *exec_prefix,
                 *tuning_args,
+                *stream_args,
                 "resume",
                 "--skip-git-repo-check",
                 "--output-last-message",
@@ -98,6 +216,7 @@ class CodexResidentCommandRunner:
         return [
             *exec_prefix,
             *tuning_args,
+            *stream_args,
             "--skip-git-repo-check",
             "--cd",
             str(self.cwd),

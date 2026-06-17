@@ -9,7 +9,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 LobbySide = Literal["mine", "my-agent", "other", "other-agent"]
-LobbyKind = Literal["message", "ready", "deploy", "vote", "vote_cast"]
+LobbyKind = Literal["message", "ready", "deploy", "vote", "vote_cast", "thinking"]
 RoomChannel = Literal["lobby", "side_chat", "official", "system", "review"]
 MeetingEventKind = Literal[
     "meeting_started",
@@ -34,7 +34,7 @@ LiveEventKind = Literal[
 ]
 
 LOBBY_SIDES: set[str] = {"mine", "my-agent", "other", "other-agent"}
-LOBBY_KINDS: set[str] = {"message", "ready", "deploy", "vote", "vote_cast"}
+LOBBY_KINDS: set[str] = {"message", "ready", "deploy", "vote", "vote_cast", "thinking"}
 VOTE_MAX_OPTIONS = 10
 VOTE_OPTION_LIMIT = 100
 VOTE_QUESTION_LIMIT = 300

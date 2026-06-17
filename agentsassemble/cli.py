@@ -1333,6 +1333,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="Approx character cap for room messages (0 = no limit, default: narrate freely). Suggested menu: 100/250/400/700/1000.",
     )
+    live_run.add_argument(
+        "--stream-thinking",
+        action="store_true",
+        help="Stream the agent's reasoning/progress to the operator as it works (codex --json today). Default off.",
+    )
     live_run.add_argument("--timeout", type=int, default=120)
     live_run.add_argument(
         "--official-turn-timeout",

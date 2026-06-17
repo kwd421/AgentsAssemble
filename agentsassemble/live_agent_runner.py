@@ -106,6 +106,7 @@ class ResidentAgentConfig:
     speed: str = ""
     codex_sandbox: str = "read-only"  # opt-in "workspace-write" lets a codex worker edit its repo
     reply_char_limit: int = 0  # 0 = no length cap (default; narrate freely); >0 caps room messages
+    stream_thinking: bool = False  # stream the agent's reasoning/progress to the operator as it works
     workspace_path: str = ""
     join_semantics: str = ""
     max_ticks: int = 0
@@ -1022,6 +1023,9 @@ def event_reply_candidate(
     for event in _events_after(events, last_observed_event_id):
         if _is_flow_control_event(event):
             continue
+        if str(event.get("kind") or "") == "thinking":
+            # Streamed reasoning is operator-only ambience, not a turn to answer.
+            continue
         if not _event_matches_room_scope(event, meeting_id):
             continue
         if _is_self_event(event, agent_id, display_name):
@@ -1059,6 +1063,9 @@ def _latest_human_reply_candidate(
     """
     for event in _events_after(events, last_observed_event_id):
         if _is_flow_control_event(event):
+            continue
+        if str(event.get("kind") or "") == "thinking":
+            # Streamed reasoning is operator-only ambience, not a turn to answer.
             continue
         if not _event_matches_room_scope(event, meeting_id):
             continue
@@ -1882,6 +1889,7 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         speed=str(getattr(args, "speed", "") or ""),
         codex_sandbox=str(getattr(args, "codex_sandbox", "") or "read-only"),
         reply_char_limit=max(0, int(getattr(args, "reply_char_limit", 0) or 0)),
+        stream_thinking=bool(getattr(args, "stream_thinking", False)),
         workspace_path=str(getattr(args, "workspace_path", "") or ""),
         join_semantics=str(getattr(args, "join_semantics", "") or ""),
         timeout_seconds=int(getattr(args, "timeout")),
@@ -1958,6 +1966,7 @@ def _config_from_mapping(
         speed=str(data.get("speed") or ""),
         codex_sandbox=str(data.get("codex_sandbox") or "read-only"),
         reply_char_limit=max(0, int(data.get("reply_char_limit") or 0)),
+        stream_thinking=bool(data.get("stream_thinking")),
         workspace_path=_resident_workspace_path(data.get("workspace_path"), base_dir=config_dir),
         join_semantics=str(data.get("join_semantics") or ""),
         timeout_seconds=int(data.get("timeout_seconds") or data.get("timeout") or 120),
