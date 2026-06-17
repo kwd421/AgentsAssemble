@@ -3012,6 +3012,11 @@ body[data-sidebar-resizing="true"] {
 
 .dc-member-detail-modal {
   width: min(560px, calc(100vw - 32px));
+  /* Tall cards (resident sessions with execution-mode controls + notes) used to
+     clip at the viewport edge. Cap the height and scroll the body instead. */
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   background: #313338;

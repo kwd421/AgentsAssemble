@@ -1094,6 +1094,11 @@ function MemberDetailModal({
             <p className="dc-member-detail-note preserve-words">
               추방은 이 방에서만 제거하고, 삭제는 저장된 세션 설정까지 제거합니다.
             </p>
+            {!hasResumeControl && !hasStopControl && (
+              <p className="dc-member-detail-note preserve-words">
+                이 세션은 서버가 직접 실행하는 프로세스가 아니라 여기서 멈추거나 재개할 수 없습니다. (UI에서 시작한 세션이라야 RESUME/STOP이 표시됩니다.)
+              </p>
+            )}
             <div className="dc-member-session-actions">
               <button
                 type="button"
