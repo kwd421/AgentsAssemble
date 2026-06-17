@@ -443,6 +443,7 @@ export interface FrontendLiveAgentCreateRequest {
   speed?: string;
   replyCharLimit?: number;
   permissionOption?: string;
+  fastMode?: boolean;
   sessionId?: string;
   startNow?: boolean;
 }
@@ -1152,6 +1153,7 @@ function frontendLiveAgentCreatePayload(request: FrontendLiveAgentCreateRequest)
     speed: request.speed || "",
     reply_char_limit: request.replyCharLimit || 0,
     permission_option: request.permissionOption || "",
+    fast_mode: Boolean(request.fastMode),
     session_id: request.sessionId || "",
     start_now: Boolean(request.startNow),
   };

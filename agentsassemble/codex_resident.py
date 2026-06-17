@@ -205,6 +205,10 @@ class CodexResidentCommandRunner:
         )
         exec_prefix = codex_exec_prefix(base_command, sandbox=sandbox)
         tuning_args = _codex_tuning_args(self.config.model_id, self.config.effort)
+        # Per-agent fast toggle: explicitly force codex's fast_mode feature on.
+        # Off = leave codex's own default (already fast) — no regression.
+        if bool(getattr(self.config, "fast_mode", False)):
+            tuning_args = [*tuning_args, "--enable", "fast_mode"]
         stream_args = ["--json"] if json_stream else []
         if self.session_id:
             return [

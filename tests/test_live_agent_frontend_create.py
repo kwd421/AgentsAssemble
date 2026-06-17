@@ -167,6 +167,49 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
             config = json.loads(Path(str(result["live_agent_config_path"])).read_text(encoding="utf-8"))
             self.assertEqual(config["agents"][0]["reply_char_limit"], 250)
 
+    def test_create_persists_fast_mode_into_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "aa"
+            workspace = Path(temp_dir) / "project"
+            workspace.mkdir()
+            write_meeting(root)
+            result = frontend_live_agent_create_payload(
+                root,
+                FakeSupervisor(),
+                {
+                    "meeting_id": "room-a",
+                    "provider_id": "codex",
+                    "display_name": "Fast Codex",
+                    "workspace_path": str(workspace),
+                    "fast_mode": True,
+                    "start_now": False,
+                },
+                default_server="http://127.0.0.1:8765",
+            )
+            config = json.loads(Path(str(result["live_agent_config_path"])).read_text(encoding="utf-8"))
+            self.assertIs(config["agents"][0]["fast_mode"], True)
+
+    def test_create_omits_fast_mode_when_off(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "aa"
+            workspace = Path(temp_dir) / "project"
+            workspace.mkdir()
+            write_meeting(root)
+            result = frontend_live_agent_create_payload(
+                root,
+                FakeSupervisor(),
+                {
+                    "meeting_id": "room-a",
+                    "provider_id": "codex",
+                    "display_name": "Normal Codex",
+                    "workspace_path": str(workspace),
+                    "start_now": False,
+                },
+                default_server="http://127.0.0.1:8765",
+            )
+            config = json.loads(Path(str(result["live_agent_config_path"])).read_text(encoding="utf-8"))
+            self.assertNotIn("fast_mode", config["agents"][0])
+
     def test_clean_reply_char_limit_snaps_to_menu(self):
         self.assertEqual(_clean_reply_char_limit(0), 0)
         self.assertEqual(_clean_reply_char_limit(""), 0)

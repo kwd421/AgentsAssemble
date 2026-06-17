@@ -36,6 +36,7 @@ export default function AgentCreateModal({
   const [speed, setSpeed] = useState("balanced");
   const [permissionOption, setPermissionOption] = useState("");
   const [replyCharLimit, setReplyCharLimit] = useState(0);
+  const [fastMode, setFastMode] = useState(false);
   const [sessions, setSessions] = useState<ProviderSession[]>([]);
   const [sessionId, setSessionId] = useState("");
   const [startNow, setStartNow] = useState(true);
@@ -65,6 +66,10 @@ export default function AgentCreateModal({
   const modelOptions = selectedProvider?.model_options || [];
   const effortOptions = selectedProvider?.effort_options || [];
   const permissionOptions = selectedProvider?.permission_options || [];
+  // Fast toggle only where the CLI has one: codex (--enable fast_mode), claude (/fast).
+  const supportsFast =
+    selectedProvider?.provider_kind === "codex_live_session" ||
+    selectedProvider?.provider_kind === "claude_code";
   const canCreate = Boolean(meetingId && providerId && displayName.trim() && workspacePath.trim());
   const effectiveStartNow = Boolean(startNow && selectedProvider?.startable);
 
@@ -103,6 +108,7 @@ export default function AgentCreateModal({
     setEffort(firstOptionId(provider.effort_options));
     setSpeed(firstOptionId(provider.speed_options, "balanced"));
     setPermissionOption(firstOptionId(provider.permission_options));
+    setFastMode(false);
     if (!provider.startable) setStartNow(false);
   }
 
@@ -138,6 +144,7 @@ export default function AgentCreateModal({
         speed,
         replyCharLimit,
         permissionOption,
+        fastMode,
         sessionId,
         startNow: effectiveStartNow,
       });
@@ -183,6 +190,7 @@ export default function AgentCreateModal({
         speed,
         replyCharLimit,
         permissionOption,
+        fastMode,
         sessionId,
         startNow: effectiveStartNow,
       });
@@ -313,6 +321,16 @@ export default function AgentCreateModal({
                   </option>
                 ))}
               </select>
+            </label>
+          )}
+          {supportsFast && (
+            <label className="dc-agent-start-toggle">
+              <input
+                type="checkbox"
+                checked={fastMode}
+                onChange={(event) => setFastMode(event.currentTarget.checked)}
+              />
+              <span>빠른 모드 (fast)</span>
             </label>
           )}
           <label className="dc-agent-start-toggle">

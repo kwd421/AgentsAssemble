@@ -54,6 +54,7 @@ class FrontendLiveAgentTuning:
     poll_interval: float
     reply_char_limit: int = 0  # 0 = no cap (narrate freely); >0 caps room messages
     permission_option: str = ""  # the provider's chosen permission/sandbox value (its own flag)
+    fast_mode: bool = False  # per-agent fast toggle (codex --enable fast_mode, claude /fast)
 
 
 DEFAULT_MODEL_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
@@ -500,6 +501,7 @@ def _tuning_for_payload(provider: FrontendLiveAgentProvider, payload: dict[str, 
         poll_interval=SPEED_POLL_INTERVALS.get(speed, DEFAULT_LIVE_AGENT_POLL_INTERVAL),
         reply_char_limit=reply_char_limit,
         permission_option=permission_option,
+        fast_mode=bool(payload.get("fast_mode")),
     )
 
 
@@ -756,6 +758,8 @@ def _write_frontend_live_agent_config(
         agent["reply_char_limit"] = tuning.reply_char_limit
     if tuning.permission_option:
         agent["permission_option"] = tuning.permission_option
+    if tuning.fast_mode:
+        agent["fast_mode"] = True
     if session_id:
         agent["session_id"] = session_id  # resume an existing local session
     command = _frontend_resident_command(provider, tuning)

@@ -106,6 +106,7 @@ class ResidentAgentConfig:
     speed: str = ""
     codex_sandbox: str = "read-only"  # legacy alias; superseded by permission_option for codex
     permission_option: str = ""  # the provider's own permission/sandbox value (its native flag)
+    fast_mode: bool = False  # per-agent fast toggle (codex --enable fast_mode, claude /fast)
     reply_char_limit: int = 0  # 0 = no length cap (default; narrate freely); >0 caps room messages
     stream_thinking: bool = False  # stream the agent's reasoning/progress to the operator as it works
     workspace_path: str = ""
@@ -1890,6 +1891,7 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         speed=str(getattr(args, "speed", "") or ""),
         codex_sandbox=str(getattr(args, "codex_sandbox", "") or "read-only"),
         permission_option=str(getattr(args, "permission_option", "") or ""),
+        fast_mode=bool(getattr(args, "fast_mode", False)),
         reply_char_limit=max(0, int(getattr(args, "reply_char_limit", 0) or 0)),
         stream_thinking=bool(getattr(args, "stream_thinking", False)),
         workspace_path=str(getattr(args, "workspace_path", "") or ""),
@@ -1968,6 +1970,7 @@ def _config_from_mapping(
         speed=str(data.get("speed") or ""),
         codex_sandbox=str(data.get("codex_sandbox") or "read-only"),
         permission_option=str(data.get("permission_option") or ""),
+        fast_mode=bool(data.get("fast_mode")),
         reply_char_limit=max(0, int(data.get("reply_char_limit") or 0)),
         stream_thinking=bool(data.get("stream_thinking")),
         workspace_path=_resident_workspace_path(data.get("workspace_path"), base_dir=config_dir),

@@ -364,6 +364,31 @@ class TerminalLiveSession:
             _raise_if_terminal_gate_response(message)
             return message
 
+    def submit_slash_command(self, command: str, *, timeout_seconds: int | float = 10.0) -> None:
+        """Submit a one-shot TUI slash command (e.g. ``/fast``) and drain its
+        acknowledgement. Best-effort: a slash toggle renders a status update, not
+        a normal answer, so we do NOT extract a message or raise on empty — this
+        is a side-effecting control, not a turn."""
+        text = (command or "").strip()
+        if not text:
+            return
+        with self._lock:
+            self._ensure_running()
+            deadline = time.monotonic() + max(0.1, float(timeout_seconds))
+            startup_output = self._startup_buffer + self._drain_available(timeout_seconds=0.01)
+            self._startup_buffer = b""
+            if not self._warmed_up and self._warmup_idle_seconds > 0:
+                # Same boot wait as ask(): typing into a half-rendered TUI is lost.
+                self._drain_until_quiet(
+                    self._warmup_idle_seconds, budget_seconds=15.0, deadline=deadline
+                )
+                self._warmed_up = True
+            if startup_output:
+                _raise_if_terminal_gate_response(_clean_terminal_response(startup_output))
+            self._write_terminal_submission(text, deadline=deadline, timeout_seconds=timeout_seconds)
+            # Let the toggle's status update render, then move on — discard output.
+            self._drain_until_quiet(self.idle_timeout_seconds, budget_seconds=3.0, deadline=deadline)
+
     def close(self, *, timeout_seconds: float = 2.0) -> None:
         if self._closed:
             return

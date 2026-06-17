@@ -1,7 +1,48 @@
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
-from agentsassemble.codex_resident import codex_auth_check
+from agentsassemble.codex_resident import CodexResidentCommandRunner, codex_auth_check
+from agentsassemble.live_agent_runner import ResidentAgentConfig
+
+
+def _codex_config(**overrides) -> ResidentAgentConfig:
+    base = dict(
+        server="http://room.local",
+        agent_id="codex-1",
+        display_name="Codex",
+        provider_kind="codex_live_session",
+        connection_kind="live_session",
+        session_id="",
+        endpoint="",
+        auth_ref="",
+        meeting_id="",
+        engagement_mode="mentioned",
+        command=["codex"],
+        timeout_seconds=5,
+        poll_interval=0.05,
+        heartbeat_interval=0.0,
+        cooldown=0.0,
+        max_chain_depth=0,
+    )
+    base.update(overrides)
+    return ResidentAgentConfig(**base)
+
+
+class CodexResidentFastModeTests(unittest.TestCase):
+    def test_build_command_enables_fast_mode_when_toggled(self):
+        runner = CodexResidentCommandRunner(_codex_config(fast_mode=True))
+        command = runner._build_command(Path(tempfile.gettempdir()) / "out.txt")
+        self.assertIn("--enable", command)
+        self.assertEqual(command[command.index("--enable") + 1], "fast_mode")
+        runner.close()
+
+    def test_build_command_omits_fast_mode_by_default(self):
+        runner = CodexResidentCommandRunner(_codex_config())
+        command = runner._build_command(Path(tempfile.gettempdir()) / "out.txt")
+        self.assertNotIn("--enable", command)
+        runner.close()
 
 
 class CodexResidentAuthTests(unittest.TestCase):

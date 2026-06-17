@@ -1343,6 +1343,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Stream the agent's reasoning/progress to the operator as it works (codex --json today). Default off.",
     )
+    live_run.add_argument(
+        "--fast-mode",
+        action="store_true",
+        help="Per-agent fast toggle (codex --enable fast_mode, claude /fast). A deliberate user setting, not auto. Default off.",
+    )
     live_run.add_argument("--timeout", type=int, default=120)
     live_run.add_argument(
         "--official-turn-timeout",
@@ -7259,6 +7264,7 @@ class _TerminalLiveSessionCommandRunner:
         warmup_idle_seconds: float = 0.0,
         stream_config=None,
         permission_mode: str = "",
+        fast_mode: bool = False,
     ) -> None:
         self.idle_timeout_seconds = idle_timeout_seconds
         self.cwd = Path(cwd or Path.cwd())
@@ -7270,6 +7276,9 @@ class _TerminalLiveSessionCommandRunner:
         self._warmup_idle_seconds = warmup_idle_seconds
         self._lock = threading.Lock()
         self._permission_mode = str(permission_mode or "").strip()
+        # Per-agent fast toggle: send claude's `/fast` slash command once after the
+        # TUI boots (a runtime control, not a launch flag).
+        self._fast_mode = bool(fast_mode)
         # When set (claude_code + stream_thinking), launch with a known
         # --session-id and tail that transcript to stream tool/reasoning steps.
         self._stream_config = stream_config
@@ -7297,6 +7306,12 @@ class _TerminalLiveSessionCommandRunner:
                     submit_settle_seconds=self._submit_settle_seconds,
                     warmup_idle_seconds=self._warmup_idle_seconds,
                 )
+                if self._fast_mode:
+                    # Toggle fast once on the fresh session; best-effort.
+                    try:
+                        self.session.submit_slash_command("/fast")
+                    except Exception:
+                        pass
             session = self.session
         if self._stream_config is None:
             try:
@@ -7890,6 +7905,8 @@ def _command_runner_for_config(config: ResidentAgentConfig, *, output_root: str 
             stream_config=config if getattr(config, "stream_thinking", False) else None,
             # claude's own --permission-mode (default/plan/acceptEdits/bypassPermissions).
             permission_mode=str(getattr(config, "permission_option", "") or ""),
+            # Per-agent fast toggle → claude's /fast runtime slash command.
+            fast_mode=bool(getattr(config, "fast_mode", False)),
         )
     if config.connection_kind == "live_session":
         return _JsonlLiveSessionCommandRunner()
