@@ -82,6 +82,7 @@ from agentsassemble.live_agent_runner import (
     config_from_args,
     load_group_configs,
     official_turn_request_candidate,
+    reply_length_directive,
     resident_connection_kind_error,
     should_reply_to_event,
 )
@@ -1325,6 +1326,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["read-only", "workspace-write"],
         default="read-only",
         help="codex resident sandbox: read-only (default, chat/advisory) or workspace-write (worker — may edit files in its working dir).",
+    )
+    live_run.add_argument(
+        "--reply-char-limit",
+        type=parse_nonnegative_int,
+        default=0,
+        help="Approx character cap for room messages (0 = no limit, default: narrate freely). Suggested menu: 100/250/400/700/1000.",
     )
     live_run.add_argument("--timeout", type=int, default=120)
     live_run.add_argument(
@@ -7852,9 +7859,10 @@ def _delegate_prompt(args: argparse.Namespace, room: dict[str, object]) -> str:
         f"Agent id: {args.agent_id}",
         f"Display name: {args.display_name or args.agent_id}",
         "Judge what the latest message needs, the way you normally would:",
-        "- Just conversation -> reply with one short room message.",
-        "- A task (edit files, run or check something, investigate) -> actually do it with your tools, then post one short message reporting what you did or found.",
-        "Keep room messages short; do the real work with tools, not in the chat text. If you lack the access to do something here, say so briefly instead of pretending.",
+        "- Just conversation -> reply conversationally.",
+        "- A task (edit files, run or check something, investigate) -> actually do it with your tools, then report what you did or found.",
+        "Do the real work with your tools (not by pasting it into chat). If you lack the access to do something here, say so plainly instead of pretending.",
+        reply_length_directive(getattr(args, "reply_char_limit", 0)),
         "Do not describe this runner, polling, heartbeats, control prompts, or delivery envelopes. No markdown fences.",
         "",
         "Recent lobby events:",

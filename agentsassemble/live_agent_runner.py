@@ -105,6 +105,7 @@ class ResidentAgentConfig:
     effort: str = ""
     speed: str = ""
     codex_sandbox: str = "read-only"  # opt-in "workspace-write" lets a codex worker edit its repo
+    reply_char_limit: int = 0  # 0 = no length cap (default; narrate freely); >0 caps room messages
     workspace_path: str = ""
     join_semantics: str = ""
     max_ticks: int = 0
@@ -1410,15 +1411,28 @@ def _active_flow_participant_agent_ids(room: dict[str, object], agent_id: str, m
 should_reply_to_event = _shared_should_reply_to_event
 
 
+def reply_length_directive(reply_char_limit: object) -> str:
+    """Room-message length guidance. 0/None = no cap (narrate your reasoning and
+    process freely); a positive cap asks the agent to keep the post within it."""
+    try:
+        limit = int(reply_char_limit or 0)
+    except (TypeError, ValueError):
+        limit = 0
+    if limit > 0:
+        return f"Keep your room message within about {limit} characters — the key points only."
+    return "No length limit on your room message — share your reasoning and what you did as you naturally would."
+
+
 def delegate_prompt(config: ResidentAgentConfig, room: dict[str, object], source_event: dict[str, object]) -> str:
     lines = [
         "You are a live AgentsAssemble participant in the room, with your normal tools available.",
         f"Agent id: {config.agent_id}",
         f"Display name: {config.display_name or config.agent_id}",
         "Judge what the new event needs, the way you normally would:",
-        "- Just conversation -> reply with one short room message.",
-        "- A task (edit files, run or check something, investigate) -> actually do it with your tools, then post one short message reporting what you did or found.",
-        "Keep room messages short; do the real work with tools, not in the chat text. If you lack the access to do something here, say so briefly instead of pretending.",
+        "- Just conversation -> reply conversationally.",
+        "- A task (edit files, run or check something, investigate) -> actually do it with your tools, then report what you did or found.",
+        "Do the real work with your tools (not by pasting it into chat). If you lack the access to do something here, say so plainly instead of pretending.",
+        reply_length_directive(getattr(config, "reply_char_limit", 0)),
         "Do not describe this runner, polling, room-event checking, heartbeats, control prompts, or delivery envelopes.",
         "Do not include markdown fences or multiple alternatives in your room message.",
         "",
@@ -1866,6 +1880,7 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         effort=str(getattr(args, "effort", "") or ""),
         speed=str(getattr(args, "speed", "") or ""),
         codex_sandbox=str(getattr(args, "codex_sandbox", "") or "read-only"),
+        reply_char_limit=max(0, int(getattr(args, "reply_char_limit", 0) or 0)),
         workspace_path=str(getattr(args, "workspace_path", "") or ""),
         join_semantics=str(getattr(args, "join_semantics", "") or ""),
         timeout_seconds=int(getattr(args, "timeout")),
