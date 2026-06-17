@@ -31,6 +31,7 @@ import {
   fetchLiveAgentProcesses,
   fetchPublicInviteStatus,
   fetchRoomChannels,
+  fetchRooms,
   ensureRoomMeeting,
   createRoomChannel,
   fetchRoomFriends,
@@ -128,6 +129,7 @@ import {
   createFreshRoom,
   createStartupRoute,
   localPreviewInviteUrlForRoom,
+  mergeServerRoomsIntoDock,
   persistableRoom,
   roomFromFlow,
   roomFromGuestSession,
@@ -725,6 +727,22 @@ export default function App() {
     if (guestLocked) return;
     persistRoomDockItems(rooms.map(persistableRoom));
   }, [guestLocked, rooms]);
+
+  useEffect(() => {
+    if (guestLocked) return;
+    let cancelled = false;
+    fetchRooms()
+      .then((payload) => {
+        if (cancelled) return;
+        setRooms((previous) => mergeServerRoomsIntoDock(previous, payload.rooms || []));
+      })
+      .catch(() => {
+        // localStorage remains a fast-path cache when the server room registry is unavailable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [guestLocked]);
 
   useEffect(() => {
     if (guestLocked) return;

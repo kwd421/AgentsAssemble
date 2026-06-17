@@ -66,12 +66,18 @@ class IdentityBackend(Protocol):
     ) -> dict[str, object] | None: ...
     def set_user_operator(self, user_id: str, is_operator: bool) -> bool: ...
     def participant_is_operator(self, participant_id: str) -> bool: ...
+    def operator_user_id(self) -> str: ...
     def list_memberships(self, meeting_id: str = "") -> list[dict[str, object]]: ...
     def get_membership(self, meeting_id: str, participant_id: str) -> dict[str, object] | None: ...
     def upsert_membership(self, record: dict[str, object]) -> dict[str, object]: ...
     def remove_membership(self, meeting_id: str, participant_id: str) -> bool: ...
     def set_membership_muted(self, meeting_id: str, participant_id: str, muted: bool) -> dict[str, object]: ...
     def membership_muted(self, meeting_id: str, participant_id: str) -> bool: ...
+    def upsert_room(self, *, room_id: str, owner_id: str = "", label: str = "", origin: str = "") -> dict[str, object]: ...
+    def list_rooms(self, *, owner_id: str = "", include_archived: bool = False) -> list[dict[str, object]]: ...
+    def get_room(self, room_id: str) -> dict[str, object] | None: ...
+    def set_room_archived(self, room_id: str, archived: bool) -> bool: ...
+    def touch_room(self, room_id: str) -> None: ...
     def record_usage(self, event: dict[str, object]) -> None: ...
     def usage_summary(self, *, user_id: str = "", meeting_id: str = "", since: str = "") -> dict[str, object]: ...
 
@@ -115,6 +121,18 @@ CREATE TABLE IF NOT EXISTS memberships (
     last_seen_at TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (meeting_id, participant_id)
 );
+
+CREATE TABLE IF NOT EXISTS rooms (
+    room_id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL DEFAULT '',
+    label TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    last_active_at TEXT NOT NULL,
+    archived INTEGER NOT NULL DEFAULT 0,
+    origin TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_rooms_owner_active ON rooms(owner_id, last_active_at);
+CREATE INDEX IF NOT EXISTS idx_rooms_active ON rooms(last_active_at);
 
 CREATE TABLE IF NOT EXISTS usage_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -177,6 +195,16 @@ _MEMBERSHIP_MERGE_FIELDS = (
     "last_seen_at",
 )
 
+_ROOM_FIELDS = (
+    "room_id",
+    "owner_id",
+    "label",
+    "created_at",
+    "last_active_at",
+    "archived",
+    "origin",
+)
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
@@ -203,6 +231,12 @@ class IdentityStore:
             # Additive column migrations (CREATE TABLE IF NOT EXISTS won't add
             # columns to a pre-existing table). Idempotent: skip if present.
             self._ensure_column(connection, "usage_events", "estimated", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "rooms", "owner_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "rooms", "label", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "rooms", "created_at", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "rooms", "last_active_at", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "rooms", "archived", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "rooms", "origin", "TEXT NOT NULL DEFAULT ''")
 
     @staticmethod
     def _ensure_column(connection: sqlite3.Connection, table: str, column: str, decl: str) -> None:
@@ -222,6 +256,12 @@ class IdentityStore:
         member["muted"] = bool(member["muted"])
         member["is_host"] = bool(member["is_host"])
         return member
+
+    @staticmethod
+    def _room_dict(row: sqlite3.Row) -> dict[str, object]:
+        room = {key: row[key] for key in _ROOM_FIELDS}
+        room["archived"] = bool(room["archived"])
+        return room
 
     def count_users(self) -> int:
         with closing(self._connect()) as connection:
@@ -345,6 +385,13 @@ class IdentityStore:
     def participant_is_operator(self, participant_id: str) -> bool:
         user = self.user_for_participant(participant_id)
         return bool(user and user.get("is_operator"))
+
+    def operator_user_id(self) -> str:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT user_id FROM users WHERE is_operator = 1 ORDER BY last_seen_at DESC, created_at DESC LIMIT 1"
+            ).fetchone()
+        return str(row["user_id"]) if row else ""
 
     # -- memberships ----------------------------------------------------------
     def list_memberships(self, meeting_id: str = "") -> list[dict[str, object]]:
@@ -470,6 +517,94 @@ class IdentityStore:
     def membership_muted(self, meeting_id: str, participant_id: str) -> bool:
         member = self.get_membership(meeting_id, participant_id)
         return bool(member and member.get("muted"))
+
+    # -- rooms ---------------------------------------------------------------
+    def upsert_room(self, *, room_id: str, owner_id: str = "", label: str = "", origin: str = "") -> dict[str, object]:
+        clean_room_id = clean_lobby_text(room_id, limit=128)
+        if not clean_room_id:
+            raise ValueError("room_id is required.")
+        clean_owner_id = clean_lobby_text(owner_id, limit=128)
+        clean_label = clean_lobby_text(label, limit=128)
+        clean_origin = clean_lobby_text(origin, limit=64)
+        now = _now()
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            existing = connection.execute(
+                "SELECT * FROM rooms WHERE room_id = ?",
+                (clean_room_id,),
+            ).fetchone()
+            if existing is None:
+                connection.execute(
+                    "INSERT INTO rooms (room_id, owner_id, label, created_at, last_active_at, archived, origin)"
+                    " VALUES (?, ?, ?, ?, ?, 0, ?)",
+                    (clean_room_id, clean_owner_id, clean_label, now, now, clean_origin),
+                )
+            else:
+                updates: dict[str, object] = {"last_active_at": now}
+                if clean_owner_id:
+                    updates["owner_id"] = clean_owner_id
+                if clean_label:
+                    updates["label"] = clean_label
+                if clean_origin:
+                    updates["origin"] = clean_origin
+                assignments = ", ".join(f"{column} = ?" for column in updates)
+                connection.execute(
+                    f"UPDATE rooms SET {assignments} WHERE room_id = ?",
+                    (*updates.values(), clean_room_id),
+                )
+            refreshed = connection.execute(
+                "SELECT * FROM rooms WHERE room_id = ?",
+                (clean_room_id,),
+            ).fetchone()
+        return self._room_dict(refreshed)
+
+    def list_rooms(self, *, owner_id: str = "", include_archived: bool = False) -> list[dict[str, object]]:
+        clean_owner_id = clean_lobby_text(owner_id, limit=128)
+        where: list[str] = []
+        params: list[object] = []
+        if clean_owner_id:
+            where.append("owner_id = ?")
+            params.append(clean_owner_id)
+        if not include_archived:
+            where.append("archived = 0")
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                f"SELECT * FROM rooms{clause} ORDER BY last_active_at DESC",
+                params,
+            ).fetchall()
+        return [self._room_dict(row) for row in rows]
+
+    def get_room(self, room_id: str) -> dict[str, object] | None:
+        clean_room_id = clean_lobby_text(room_id, limit=128)
+        if not clean_room_id:
+            return None
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM rooms WHERE room_id = ?",
+                (clean_room_id,),
+            ).fetchone()
+        return self._room_dict(row) if row else None
+
+    def set_room_archived(self, room_id: str, archived: bool) -> bool:
+        clean_room_id = clean_lobby_text(room_id, limit=128)
+        if not clean_room_id:
+            return False
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            cursor = connection.execute(
+                "UPDATE rooms SET archived = ? WHERE room_id = ?",
+                (1 if archived else 0, clean_room_id),
+            )
+        return cursor.rowcount > 0
+
+    def touch_room(self, room_id: str) -> None:
+        clean_room_id = clean_lobby_text(room_id, limit=128)
+        if not clean_room_id:
+            return
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            connection.execute(
+                "UPDATE rooms SET last_active_at = ? WHERE room_id = ?",
+                (_now(), clean_room_id),
+            )
 
     # -- usage accounting -----------------------------------------------------
     def record_usage(self, event: dict[str, object]) -> None:

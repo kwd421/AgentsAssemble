@@ -167,7 +167,7 @@ from agentsassemble.ws_room_session import (
     WsRoomSession,
     WsTicketStore,
 )
-from agentsassemble.room_users import configure_room_users_store
+from agentsassemble.room_users import configure_room_users_store, operator_user_id, touch_room, user_for_participant
 from agentsassemble.room_settings import room_settings_payload, update_room_settings
 from agentsassemble.user_profile import read_user_profile, update_user_profile
 from agentsassemble.room_invite import (
@@ -1693,12 +1693,19 @@ def append_lobby_event(
     allow_flow_metadata: bool = False,
 ) -> dict[str, object]:
     with LIVE_AGENT_LOBBY_LOCK:
-        return append_lobby_event_to_file(
+        appended = append_lobby_event_to_file(
             output_root / "lobby.jsonl",
             event,
             live_agent_endpoint=live_agent_endpoint,
             allow_flow_metadata=allow_flow_metadata,
         )
+    room_id = clean_lobby_text(appended.get("flow_meeting_id"), limit=128)
+    if room_id:
+        try:
+            touch_room(room_id)
+        except Exception:
+            pass
+    return appended
 
 
 def lobby_payload_with_attachments(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
@@ -8056,6 +8063,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
                 "/api/room/events",
                 "/api/room/lobby",
                 "/api/room/vote",
+                "/api/rooms",
                 "/api/live-agent-flow",
                 # Roster for the member panel; the handler requires a session
                 # (or host/operator) when the request comes from outside.
@@ -8073,6 +8081,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             "/api/room-invite/leave",
             "/api/room-invite/companion",
             "/api/room/say",
+            "/api/rooms/archive",
             # Host-token gated: lets the operator claim a new device (e.g. a
             # phone) through the public entrance.
             "/api/host/claim",
@@ -9159,6 +9168,7 @@ def _make_handler(
                         output_root,
                         clean_lobby_text(payload.get("meeting_id"), limit=128),
                         label=clean_lobby_text(payload.get("label"), limit=128),
+                        owner_id=self._room_owner_id_for_request(),
                     )
                 except (OSError, ValueError) as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
@@ -11060,6 +11070,23 @@ def _make_handler(
                 and self._request_uses_loopback_host()
                 and _origin_is_loopback_or_empty(self.headers.get("Origin"))
             )
+
+        def _room_owner_id_for_request(self) -> str:
+            session = RequestContext(self, route_deps, urlparse(self.path), parse_qs(urlparse(self.path).query)).session()
+            if session is not None:
+                participant_id = str(session.get("agent_id") or "")
+                user = user_for_participant(participant_id)
+                return str((user or {}).get("user_id") or participant_id)
+            if self._request_is_local_operator():
+                return operator_user_id()
+            token = (self.headers.get("X-Host-Token") or "").strip()
+            if not token:
+                auth = self.headers.get("Authorization") or ""
+                if auth.startswith("Bearer "):
+                    token = auth.removeprefix("Bearer ").strip()
+            if verify_host_token(token):
+                return operator_user_id()
+            return ""
 
         def _public_invite_status(self, tunnel_status: dict[str, object] | None = None) -> dict[str, object]:
             tunnel = tunnel_status or invite_tunnel_manager.status()

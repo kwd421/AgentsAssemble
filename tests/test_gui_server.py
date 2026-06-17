@@ -7,13 +7,13 @@ import sys
 import threading
 import time
 from datetime import UTC, datetime, timedelta
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from unittest.mock import ANY, patch
 from urllib.error import HTTPError
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import (
@@ -56,6 +56,8 @@ from agentsassemble.gui import (
     send_lobby_message_to_remote_bridge,
     append_side_chat_event,
 )
+from agentsassemble.gui_room_http import register_room_routes
+from agentsassemble.gui_router import GuiDeps, RequestContext, Router
 from agentsassemble.meeting_events import append_live_event, read_live_events, write_live_state
 from agentsassemble.meeting_events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after
 from agentsassemble.meeting import run_demo_meeting
@@ -66,7 +68,18 @@ from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 from agentsassemble.live_session_transport import terminal_sessions_supported
-from agentsassemble.room_invite import reset_state as reset_room_invite_state
+from agentsassemble.room_invite import (
+    create_room_invite,
+    join_room_with_invite,
+    reset_state as reset_room_invite_state,
+    set_runtime_host_token,
+    set_runtime_public_url,
+)
+from agentsassemble.room_users import (
+    configure_room_users_store,
+    reset_state as reset_room_users_state,
+    user_for_participant,
+)
 
 
 def _read_sse_frame(response, timeout: float = 3.0) -> str:
@@ -85,7 +98,160 @@ def _read_sse_frame(response, timeout: float = 3.0) -> str:
     return "\n".join(lines)
 
 
+class _RoomsRouteHandler:
+    def __init__(
+        self,
+        *,
+        path: str,
+        method: str = "GET",
+        payload: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+        loopback: bool = True,
+    ) -> None:
+        self.path = path
+        self.command = method
+        self.headers = dict(headers or {})
+        body = b""
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+            self.headers.setdefault("Content-Type", "application/json")
+            self.headers["Content-Length"] = str(len(body))
+        self.rfile = BytesIO(body)
+        self.sent_json: dict[str, object] | None = None
+        self.sent_error: tuple[HTTPStatus, str] | None = None
+        self._loopback = loopback
+
+    def _send_json(self, payload: dict[str, object]) -> None:
+        self.sent_json = payload
+
+    def _send_error(self, status: HTTPStatus, message: str) -> None:
+        self.sent_error = (status, message)
+
+    def _request_uses_loopback_host(self) -> bool:
+        return self._loopback
+
+
+def _dispatch_room_route(
+    output_root: Path,
+    *,
+    path: str,
+    method: str = "GET",
+    payload: dict[str, object] | None = None,
+    headers: dict[str, str] | None = None,
+    loopback: bool = True,
+) -> _RoomsRouteHandler:
+    parsed = urlparse(path)
+    handler = _RoomsRouteHandler(
+        path=path,
+        method=method,
+        payload=payload,
+        headers=headers,
+        loopback=loopback,
+    )
+    router = Router()
+    register_room_routes(router)
+    ctx = RequestContext(handler, GuiDeps(output_root=output_root), parsed, parse_qs(parsed.query))
+    self_handled = router.dispatch(method, ctx)
+    if not self_handled:
+        raise AssertionError(f"route not handled: {method} {path}")
+    return handler
+
+
 class GuiServerTests(unittest.TestCase):
+    def test_rooms_endpoint_lists_room_created_by_ensure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            configure_room_users_store(root / "identity.db")
+            from agentsassemble.room_users import upsert_room
+
+            upsert_room(room_id="db-room", label="DB 방", origin="frontend_room")
+            handler = _dispatch_room_route(root, path="/api/rooms")
+            payload = handler.sent_json
+
+            rooms = payload["rooms"]
+            self.assertIn("db-room", [room["room_id"] for room in rooms])
+            room = next(room for room in rooms if room["room_id"] == "db-room")
+            self.assertEqual(room["label"], "DB 방")
+            self.assertFalse(room["archived"])
+            self.assertNotIn("owner_id", room)
+
+    def test_rooms_endpoint_guest_sees_only_own_rooms(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            configure_room_users_store(root / "identity.db")
+            try:
+                from agentsassemble.room_users import upsert_room
+
+                set_runtime_public_url("https://room.example.com")
+                set_runtime_host_token("host-secret")
+                invite = create_room_invite(
+                    room_url="http://127.0.0.1:8765",
+                    meeting_id="guest-room",
+                    agent_id="guest",
+                    display_name="Guest",
+                )
+                session = join_room_with_invite(
+                    invite["invite_token"],
+                    meeting_id="guest-room",
+                    display_name="Guest",
+                    device_token="guest-device-token-123",
+                )
+                guest_user = user_for_participant(str(session["agent_id"]))
+                upsert_room(
+                    room_id="guest-room",
+                    owner_id=str(guest_user["user_id"]),
+                    label="Guest Room",
+                    origin="frontend_room",
+                )
+                upsert_room(room_id="operator-room", label="Operator Room", origin="frontend_room")
+                handler = _dispatch_room_route(
+                    root,
+                    path="/api/rooms",
+                    headers={
+                        "Authorization": f"Bearer {session['session_token']}",
+                        "Host": "room.example.com",
+                        "Origin": "https://room.example.com",
+                    },
+                    loopback=False,
+                )
+                payload = handler.sent_json
+            finally:
+                reset_room_invite_state()
+                reset_room_users_state()
+
+            self.assertEqual([room["room_id"] for room in payload["rooms"]], ["guest-room"])
+
+    def test_rooms_archive_hides_room_from_default_list(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            configure_room_users_store(root / "identity.db")
+            try:
+                from agentsassemble.room_users import upsert_room
+
+                set_runtime_host_token("host-secret")
+                upsert_room(room_id="archive-room", label="Archive Room", origin="frontend_room")
+                archive_handler = _dispatch_room_route(
+                    root,
+                    path="/api/rooms/archive",
+                    method="POST",
+                    payload={"room_id": "archive-room", "archived": True},
+                    headers={"X-Host-Token": "host-secret"},
+                )
+                self.assertEqual(archive_handler.sent_json["status"], "archived")
+                default_payload = _dispatch_room_route(root, path="/api/rooms").sent_json
+                archived_payload = _dispatch_room_route(root, path="/api/rooms?include_archived=true").sent_json
+            finally:
+                reset_room_invite_state()
+                reset_room_users_state()
+
+            self.assertNotIn("archive-room", [room["room_id"] for room in default_payload["rooms"]])
+            archived_rooms = {room["room_id"]: room for room in archived_payload["rooms"]}
+            self.assertTrue(archived_rooms["archive-room"]["archived"])
+
     def test_live_agent_lobby_flow_metadata_computes_reply_post_latency_from_start_time(self):
         started_at = (datetime.now(UTC) - timedelta(milliseconds=25)).isoformat()
 

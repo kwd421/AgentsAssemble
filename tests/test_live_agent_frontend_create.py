@@ -7,6 +7,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
+from agentsassemble.identity_store import identity_store_for_output_root, reset_identity_store_registry
 from agentsassemble.live_agent_frontend_create import (
     ensure_frontend_meeting,
     frontend_live_agent_check_payload,
@@ -16,6 +17,7 @@ from agentsassemble.live_agent_frontend_create import (
 )
 from agentsassemble.live_agent_sessions import resume_live_agent_session_agent
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
+from agentsassemble.room_users import configure_room_users_store, reset_state as reset_room_users_state
 
 
 class FakeSupervisor:
@@ -66,6 +68,10 @@ def write_meeting(output_root: Path, meeting_id: str = "room-a") -> Path:
 
 
 class FrontendLiveAgentCreateTests(unittest.TestCase):
+    def tearDown(self):
+        reset_room_users_state()
+        reset_identity_store_registry()
+
     def test_options_include_codex_claude_cursor_grok_antigravity_and_local_with_default_workspace(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             payload = frontend_live_agent_options_payload(default_workspace=Path(temp_dir))
@@ -172,6 +178,7 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
     def test_ensure_frontend_meeting_is_idempotent_and_preserves_existing_state(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "aa"
+            configure_room_users_store(root / "identity.db")
             first = ensure_frontend_meeting(root, "work-room", label="작업방")
             self.assertTrue((first / "live_state.json").exists())
             # Mutate the meeting, then re-ensure: must not overwrite existing state.
@@ -183,6 +190,22 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
             reread = json.loads((second / "live_state.json").read_text(encoding="utf-8"))
             self.assertEqual(reread["roles"], [{"id": "keep-me"}])
             self.assertEqual(reread["topic"], "작업방")
+            rooms = identity_store_for_output_root(root).list_rooms()
+            self.assertEqual([room["room_id"] for room in rooms], ["work-room"])
+
+    def test_ensure_frontend_meeting_writes_room_registry_owner_and_label(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "aa"
+            configure_room_users_store(root / "identity.db")
+            ensure_frontend_meeting(root, "db-room", label="DB 방", owner_id="owner-1")
+            ensure_frontend_meeting(root, "db-room", label="다른 이름", owner_id="owner-1")
+
+            rooms = identity_store_for_output_root(root).list_rooms(include_archived=True)
+            self.assertEqual(len(rooms), 1)
+            self.assertEqual(rooms[0]["room_id"], "db-room")
+            self.assertEqual(rooms[0]["owner_id"], "owner-1")
+            self.assertEqual(rooms[0]["label"], "다른 이름")
+            self.assertEqual(rooms[0]["origin"], "frontend_room")
 
     def test_ensure_frontend_meeting_rejects_path_traversal(self):
         with tempfile.TemporaryDirectory() as temp_dir:

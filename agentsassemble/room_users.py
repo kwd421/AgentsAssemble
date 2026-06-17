@@ -137,6 +137,52 @@ def participant_is_operator(participant_id: str) -> bool:
         return _store.participant_is_operator(participant_id)
 
 
+def user_for_participant(participant_id: str) -> dict[str, object] | None:
+    with _state_lock:
+        if _store is None:
+            return None
+        return _store.user_for_participant(participant_id)
+
+
+def operator_user_id() -> str:
+    with _state_lock:
+        if _store is None:
+            return ""
+        return _store.operator_user_id()
+
+
+def upsert_room(*, room_id: str, owner_id: str = "", label: str = "", origin: str = "") -> dict[str, object]:
+    with _state_lock:
+        return _active_store().upsert_room(
+            room_id=room_id,
+            owner_id=owner_id,
+            label=label,
+            origin=origin,
+        )
+
+
+def list_rooms(*, owner_id: str = "", include_archived: bool = False) -> list[dict[str, object]]:
+    with _state_lock:
+        return _active_store().list_rooms(owner_id=owner_id, include_archived=include_archived)
+
+
+def get_room(room_id: str) -> dict[str, object] | None:
+    with _state_lock:
+        return _active_store().get_room(room_id)
+
+
+def set_room_archived(room_id: str, archived: bool) -> bool:
+    with _state_lock:
+        return _active_store().set_room_archived(room_id, archived)
+
+
+def touch_room(room_id: str) -> None:
+    with _state_lock:
+        if _store is None:
+            return
+        _store.touch_room(room_id)
+
+
 def grant_operator_to_device(device_token: str, *, display_name: str = "") -> dict[str, object] | None:
     """Mark the device-token user as the server operator (host across entrances)."""
     auth_key = device_auth_key(device_token)

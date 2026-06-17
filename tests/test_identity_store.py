@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import time
 from contextlib import closing
 import tempfile
 import unittest
@@ -97,6 +98,68 @@ class MembershipTests(IdentityStoreTestCase):
     def test_upsert_requires_participant_id(self):
         with self.assertRaises(ValueError):
             self.store.upsert_membership({"meeting_id": ROOM, "display_name": "익명"})
+
+
+class RoomRegistryTests(IdentityStoreTestCase):
+    def test_upsert_room_creates_then_updates_non_empty_fields_and_last_active(self):
+        created = self.store.upsert_room(
+            room_id="room-a",
+            owner_id="owner-a",
+            label="첫 방",
+            origin="frontend_room",
+        )
+        self.assertEqual(created["room_id"], "room-a")
+        self.assertEqual(created["owner_id"], "owner-a")
+        self.assertEqual(created["label"], "첫 방")
+        self.assertFalse(created["archived"])
+        first_active = created["last_active_at"]
+
+        time.sleep(0.001)
+        updated = self.store.upsert_room(room_id="room-a", label="수정 방")
+        self.assertEqual(updated["owner_id"], "owner-a")
+        self.assertEqual(updated["label"], "수정 방")
+        self.assertGreater(updated["last_active_at"], first_active)
+
+        time.sleep(0.001)
+        owner_updated = self.store.upsert_room(room_id="room-a", owner_id="owner-b")
+        self.assertEqual(owner_updated["owner_id"], "owner-b")
+
+    def test_list_rooms_orders_filters_owner_and_archived(self):
+        old_room = self.store.upsert_room(room_id="old-room", owner_id="owner-a", label="Old")
+        time.sleep(0.001)
+        new_room = self.store.upsert_room(room_id="new-room", owner_id="owner-a", label="New")
+        self.store.upsert_room(room_id="other-room", owner_id="owner-b", label="Other")
+
+        owner_rooms = self.store.list_rooms(owner_id="owner-a")
+        self.assertEqual([room["room_id"] for room in owner_rooms], ["new-room", "old-room"])
+        self.assertEqual(owner_rooms[0]["last_active_at"], new_room["last_active_at"])
+        self.assertEqual(owner_rooms[1]["last_active_at"], old_room["last_active_at"])
+
+        self.assertTrue(self.store.set_room_archived("new-room", True))
+        self.assertEqual([room["room_id"] for room in self.store.list_rooms(owner_id="owner-a")], ["old-room"])
+        self.assertEqual(
+            [room["room_id"] for room in self.store.list_rooms(owner_id="owner-a", include_archived=True)],
+            ["new-room", "old-room"],
+        )
+        self.assertEqual(
+            {room["room_id"] for room in self.store.list_rooms()},
+            {"old-room", "other-room"},
+        )
+
+    def test_get_room_and_archive_missing(self):
+        self.assertIsNone(self.store.get_room("missing-room"))
+        self.assertFalse(self.store.set_room_archived("missing-room", True))
+        self.store.upsert_room(room_id="room-a")
+        self.assertEqual(self.store.get_room("room-a")["room_id"], "room-a")
+
+    def test_touch_room_bumps_last_active_only(self):
+        created = self.store.upsert_room(room_id="room-a", owner_id="owner-a", label="Room")
+        time.sleep(0.001)
+        self.store.touch_room("room-a")
+        touched = self.store.get_room("room-a")
+        self.assertEqual(touched["owner_id"], "owner-a")
+        self.assertEqual(touched["label"], "Room")
+        self.assertGreater(touched["last_active_at"], created["last_active_at"])
 
 
 class MigrationTests(IdentityStoreTestCase):

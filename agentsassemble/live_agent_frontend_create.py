@@ -513,7 +513,7 @@ def _existing_meeting_dir(output_root: Path, meeting_id: str) -> Path:
     return meeting_dir
 
 
-def ensure_frontend_meeting(output_root: Path, meeting_id: str, *, label: str = "") -> Path:
+def ensure_frontend_meeting(output_root: Path, meeting_id: str, *, label: str = "", owner_id: str = "") -> Path:
     """Return the meeting dir for a UI room, materializing a minimal one if absent.
 
     Frontend rooms (the Discord-style dock) live in the browser's localStorage and
@@ -530,10 +530,11 @@ def ensure_frontend_meeting(output_root: Path, meeting_id: str, *, label: str = 
         meeting_dir.relative_to(meetings_root)
     except ValueError as error:
         raise ValueError(f"Meeting {clean} was not found.") from error
+    title = clean_lobby_text(label, limit=128) or clean
     if (meeting_dir / "live_state.json").exists():
+        _upsert_frontend_room_registry(clean, owner_id=owner_id, label=title)
         return meeting_dir
     meeting_dir.mkdir(parents=True, exist_ok=True)
-    title = clean_lobby_text(label, limit=128) or clean
     write_live_state(
         meeting_dir,
         {
@@ -550,7 +551,23 @@ def ensure_frontend_meeting(output_root: Path, meeting_id: str, *, label: str = 
             "origin": "frontend_room",
         },
     )
+    _upsert_frontend_room_registry(clean, owner_id=owner_id, label=title)
     return meeting_dir
+
+
+def _upsert_frontend_room_registry(room_id: str, *, owner_id: str = "", label: str = "") -> None:
+    """Best-effort DB room registry write; meeting materialization is primary."""
+    try:
+        from agentsassemble.room_users import upsert_room
+
+        upsert_room(
+            room_id=room_id,
+            owner_id=owner_id,
+            label=label,
+            origin="frontend_room",
+        )
+    except Exception:
+        return
 
 
 def _read_meeting(meeting_dir: Path) -> dict[str, object]:

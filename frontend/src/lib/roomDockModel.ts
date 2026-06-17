@@ -34,6 +34,12 @@ export type StartupRoute = {
   initialChannel: "friends" | "lobby" | "live";
 };
 
+export type ServerRoomDockSource = {
+  room_id: string;
+  label?: string;
+  last_active_at?: string;
+};
+
 export const PINNED_ROOMS: RoomDockItem[] = [
   {
     id: "resident-m1",
@@ -142,6 +148,39 @@ export function initialOperatorRooms(directRoom?: RoomDockItem | null) {
     return next;
   }
   return [directRoom, ...rooms];
+}
+
+export function roomFromServerRoom(room: ServerRoomDockSource): RoomDockItem | null {
+  const meetingId = String(room.room_id || "").trim();
+  if (!meetingId) return null;
+  const label = String(room.label || meetingId).trim() || meetingId;
+  return {
+    id: `server-${meetingId}`,
+    label,
+    meetingId,
+    topic: label,
+    shortLabel: label.slice(0, 1).toUpperCase() || "R",
+    icon: Radio,
+    createdAt: String(room.last_active_at || ""),
+    tone: "resident",
+  };
+}
+
+export function mergeServerRoomsIntoDock(
+  currentRooms: RoomDockItem[],
+  serverRooms: ServerRoomDockSource[]
+): RoomDockItem[] {
+  const next = [...currentRooms];
+  const seenMeetingIds = new Set(next.map((room) => room.meetingId));
+  let added = false;
+  for (const serverRoom of serverRooms) {
+    const dockRoom = roomFromServerRoom(serverRoom);
+    if (!dockRoom || seenMeetingIds.has(dockRoom.meetingId)) continue;
+    next.push(dockRoom);
+    seenMeetingIds.add(dockRoom.meetingId);
+    added = true;
+  }
+  return added ? next : currentRooms;
 }
 
 function cleanInviteValue(value: string | null, fallback: string, limit: number) {

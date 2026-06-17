@@ -36,6 +36,18 @@ export interface RoomSettings {
   conversationMode: ConversationMode;
 }
 
+export interface ServerRoom {
+  room_id: string;
+  label: string;
+  last_active_at: string;
+  archived: boolean;
+  origin: string;
+}
+
+export interface ServerRoomsResponse {
+  rooms: ServerRoom[];
+}
+
 export type ParticipantType = "human" | "subscription_ai" | "api" | "local" | "remote" | "unknown";
 
 export interface RoomFriend {
@@ -1141,6 +1153,20 @@ export function ensureRoomMeeting(meetingId: string, label = "") {
   return postJson<{ status: string; meeting_id: string }>("/api/room/ensure", {
     meeting_id: meetingId,
     label,
+  });
+}
+
+export function fetchRooms(includeArchived = false) {
+  if (includeArchived) {
+    return fetchJson<ServerRoomsResponse>("/api/rooms?include_archived=true");
+  }
+  return fetchJson<ServerRoomsResponse>("/api/rooms");
+}
+
+export function archiveRoom(roomId: string, archived: boolean) {
+  return postJsonModerator<{ status: string; room_id: string }>("/api/rooms/archive", {
+    room_id: roomId,
+    archived,
   });
 }
 

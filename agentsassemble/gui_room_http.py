@@ -47,7 +47,13 @@ from agentsassemble.room_members import (
     upsert_room_member,
 )
 from agentsassemble.room_settings import room_settings_payload, update_room_settings
-from agentsassemble.room_users import grant_operator_to_device
+from agentsassemble.room_users import (
+    grant_operator_to_device,
+    list_rooms,
+    operator_user_id,
+    set_room_archived,
+    user_for_participant,
+)
 from agentsassemble.room_votes import vote_summary
 from agentsassemble.stable_entry import stable_entry_url
 from agentsassemble.voice_presence import (
@@ -116,6 +122,22 @@ def register_room_routes(router: Router) -> None:
             "agent_id": session["agent_id"],
             "display_name": session["display_name"],
             "invite_scope": session.get("invite_scope", "room"),
+        }
+
+    def _owner_id_for_session(session: dict[str, object] | None) -> str:
+        if session is None:
+            return operator_user_id()
+        participant_id = str(session.get("agent_id") or "")
+        user = user_for_participant(participant_id)
+        return str((user or {}).get("user_id") or participant_id)
+
+    def _room_payload(room: dict[str, object]) -> dict[str, object]:
+        return {
+            "room_id": str(room.get("room_id") or ""),
+            "label": str(room.get("label") or ""),
+            "last_active_at": str(room.get("last_active_at") or ""),
+            "archived": bool(room.get("archived")),
+            "origin": str(room.get("origin") or ""),
         }
 
     # -- lobby history ------------------------------------------------------
@@ -225,6 +247,47 @@ def register_room_routes(router: Router) -> None:
         _vote_summary_response(
             ctx, str(session.get("meeting_id") or ""), ctx.query_value("vote_id")
         )
+
+    # -- room registry -------------------------------------------------------
+
+    @router.get("/api/rooms")
+    def rooms_list(ctx: RequestContext) -> None:
+        session = ctx.session()
+        operator_view = (
+            ctx.handler._request_uses_loopback_host()
+            or ctx.is_host()
+            or ctx.is_operator_session()
+        )
+        if not operator_view and session is None:
+            ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+            return
+        include_archived = ctx.query_value("include_archived").lower() in {"1", "true", "yes", "on"}
+        owner_id = "" if operator_view else _owner_id_for_session(session)
+        ctx.send_json(
+            {
+                "rooms": [
+                    _room_payload(room)
+                    for room in list_rooms(owner_id=owner_id, include_archived=include_archived)
+                ]
+            }
+        )
+
+    @router.post("/api/rooms/archive")
+    def rooms_archive(ctx: RequestContext) -> None:
+        if not ctx.require_moderator():
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        room_id = clean_lobby_text(payload.get("room_id"), limit=128)
+        if not room_id:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
+            return
+        updated = set_room_archived(room_id, bool(payload.get("archived")))
+        if not updated:
+            ctx.send_error(HTTPStatus.NOT_FOUND, "room not found")
+            return
+        ctx.send_json({"status": "archived" if payload.get("archived") else "active", "room_id": room_id})
 
     # -- roster + host moderation -------------------------------------------
 
