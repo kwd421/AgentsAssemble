@@ -4,11 +4,13 @@ import json
 import re
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 from subprocess import TimeoutExpired
 from typing import TYPE_CHECKING, Any
 
 from agentsassemble.provider_auth import provider_auth_error_message, provider_login_required_message
+from agentsassemble.room_thought import ThoughtChunker, post_room_thought
 
 if TYPE_CHECKING:
     from agentsassemble.live_agent_runner import ResidentAgentConfig
@@ -68,6 +70,8 @@ class GrokResidentCommandRunner:
         self._turn_index += 1
         prompt_path = Path(self._prompt_dir.name) / f"{_safe_stem(self.config.agent_id)}-{self._turn_index}.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
+        if getattr(self.config, "stream_thinking", False):
+            return self._streaming_call(prompt_path, timeout_seconds=timeout_seconds)
         grok_command = self._build_command(prompt_path)
         try:
             completed = self.command_runner(
@@ -118,7 +122,82 @@ class GrokResidentCommandRunner:
     def close(self) -> None:
         self._prompt_dir.cleanup()
 
-    def _build_command(self, prompt_path: Path) -> list[str]:
+    def _streaming_call(self, prompt_path: Path, *, timeout_seconds: int) -> str:
+        """Run grok with --output-format streaming-json and stream its reasoning
+        to the room token-by-token (buffered into sentence chunks); return the
+        assembled answer text as the final reply."""
+        grok_command = self._build_command(prompt_path, stream=True)
+        try:
+            process = subprocess.Popen(  # noqa: S603 - command built from the grok executable + fixed flags
+                grok_command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=str(self.cwd),
+            )
+        except OSError as error:
+            raise GrokResidentRuntimeError(
+                f"Grok live session command failed to start: {error}.",
+                category=GROK_SUBPROCESS_NONZERO,
+            ) from error
+        killed = {"value": False}
+
+        def _kill_on_timeout() -> None:
+            killed["value"] = True
+            try:
+                process.kill()
+            except Exception:
+                pass
+
+        watchdog = threading.Timer(max(1.0, float(timeout_seconds)), _kill_on_timeout)
+        watchdog.daemon = True
+        watchdog.start()
+        chunker = ThoughtChunker()
+        answer_parts: list[str] = []
+        try:
+            for line in process.stdout or ():
+                event = parse_grok_stream_line(line)
+                if event is None:
+                    continue
+                kind = event["kind"]
+                if kind == "thought":
+                    for chunk in chunker.add(event["text"]):
+                        post_room_thought(self.config, chunk, kind="reasoning")
+                elif kind == "text":
+                    answer_parts.append(event["text"])
+                elif kind == "end":
+                    if event["text"]:
+                        self.session_id = clean_grok_session_id(event["text"]) or self.session_id
+            leftover = chunker.flush()
+            if leftover:
+                post_room_thought(self.config, leftover, kind="reasoning")
+            stderr = _text(process.stderr.read()) if process.stderr is not None else ""
+            process.wait(timeout=5)
+        finally:
+            watchdog.cancel()
+        if killed["value"]:
+            raise GrokResidentRuntimeError(
+                f"Grok live session command timed out after {timeout_seconds} seconds.",
+                category=GROK_SUBPROCESS_TIMEOUT,
+            )
+        if int(process.returncode or 0) != 0:
+            login_message = grok_login_required_message(stderr)
+            if login_message:
+                raise GrokResidentRuntimeError(login_message, category=GROK_AUTH_REQUIRED)
+            raise GrokResidentRuntimeError(
+                f"Grok live session command failed with return code {process.returncode}.",
+                category=GROK_SUBPROCESS_NONZERO,
+            )
+        answer = "".join(answer_parts).strip()
+        if not answer:
+            raise GrokResidentValueError(
+                "Grok live session returned an empty streamed reply.",
+                category=GROK_EMPTY_TEXT,
+            )
+        return answer
+
+    def _build_command(self, prompt_path: Path, *, stream: bool = False) -> list[str]:
         configured_command = list(self.config.command or ["grok"])
         executable = configured_command[0] if configured_command else "grok"
         command = [
@@ -126,7 +205,7 @@ class GrokResidentCommandRunner:
             "--prompt-file",
             str(prompt_path),
             "--output-format",
-            "json",
+            "streaming-json" if stream else "json",
             "--disable-web-search",
             "--no-subagents",
             "--verbatim",
@@ -140,6 +219,32 @@ class GrokResidentCommandRunner:
         if self.session_id:
             command.extend(["--resume", self.session_id])
         return command
+
+
+def parse_grok_stream_line(line: str) -> dict | None:
+    """Map one grok `--output-format streaming-json` line to an event.
+
+    grok emits token deltas: {"type":"thought","data":"..."} (reasoning),
+    {"type":"text","data":"..."} (answer), {"type":"end","sessionId":"..."}.
+    Returns {"kind": "thought"|"text"|"end", "text": ...} or None.
+    """
+    text = (line or "").strip()
+    if not text:
+        return None
+    try:
+        event = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(event, dict):
+        return None
+    event_type = str(event.get("type") or "")
+    if event_type == "thought":
+        return {"kind": "thought", "text": str(event.get("data") or "")}
+    if event_type == "text":
+        return {"kind": "text", "text": str(event.get("data") or "")}
+    if event_type == "end":
+        return {"kind": "end", "text": str(event.get("sessionId") or event.get("session_id") or "")}
+    return None
 
 
 def default_grok_resident_command(provider_kind: str, connection_kind: str, command: list[str]) -> list[str]:
