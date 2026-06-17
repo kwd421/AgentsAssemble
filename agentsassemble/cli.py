@@ -1325,7 +1325,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--codex-sandbox",
         choices=["read-only", "workspace-write"],
         default="read-only",
-        help="codex resident sandbox: read-only (default, chat/advisory) or workspace-write (worker — may edit files in its working dir).",
+        help="(legacy) codex sandbox; superseded by --permission-option.",
+    )
+    live_run.add_argument(
+        "--permission-option",
+        default="",
+        help="Provider's own permission/sandbox value passed through as-is (codex --sandbox, claude/grok --permission-mode, agy --sandbox/--dangerously-skip-permissions).",
     )
     live_run.add_argument(
         "--reply-char-limit",
@@ -7253,6 +7258,7 @@ class _TerminalLiveSessionCommandRunner:
         submit_settle_seconds: float = 0.0,
         warmup_idle_seconds: float = 0.0,
         stream_config=None,
+        permission_mode: str = "",
     ) -> None:
         self.idle_timeout_seconds = idle_timeout_seconds
         self.cwd = Path(cwd or Path.cwd())
@@ -7263,6 +7269,7 @@ class _TerminalLiveSessionCommandRunner:
         self._submit_settle_seconds = submit_settle_seconds
         self._warmup_idle_seconds = warmup_idle_seconds
         self._lock = threading.Lock()
+        self._permission_mode = str(permission_mode or "").strip()
         # When set (claude_code + stream_thinking), launch with a known
         # --session-id and tail that transcript to stream tool/reasoning steps.
         self._stream_config = stream_config
@@ -7276,6 +7283,8 @@ class _TerminalLiveSessionCommandRunner:
         with self._lock:
             if self.session is None:
                 launch_command = list(command)
+                if self._permission_mode and "--permission-mode" not in launch_command:
+                    launch_command = [*launch_command, "--permission-mode", self._permission_mode]
                 if self._stream_config is not None and "--session-id" not in launch_command:
                     launch_command = [*launch_command, "--session-id", self._stream_session_id]
                 self.session = TerminalLiveSession(
@@ -7879,6 +7888,8 @@ def _command_runner_for_config(config: ResidentAgentConfig, *, output_root: str 
             # Stream claude's tool/reasoning steps by tailing its transcript JSONL
             # (launched with a known --session-id so it's unambiguous across runs).
             stream_config=config if getattr(config, "stream_thinking", False) else None,
+            # claude's own --permission-mode (default/plan/acceptEdits/bypassPermissions).
+            permission_mode=str(getattr(config, "permission_option", "") or ""),
         )
     if config.connection_kind == "live_session":
         return _JsonlLiveSessionCommandRunner()

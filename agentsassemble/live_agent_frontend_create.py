@@ -40,6 +40,9 @@ class FrontendLiveAgentProvider:
     model_options: tuple[FrontendLiveAgentOption, ...] = ()
     effort_options: tuple[FrontendLiveAgentOption, ...] = ()
     speed_options: tuple[FrontendLiveAgentOption, ...] = ()
+    # The provider's OWN permission/sandbox options, surfaced as-is (the room
+    # doesn't impose its own model). Empty = no choice for this provider.
+    permission_options: tuple[FrontendLiveAgentOption, ...] = ()
     login_command: tuple[str, ...] = ()
 
 
@@ -50,6 +53,7 @@ class FrontendLiveAgentTuning:
     speed: str
     poll_interval: float
     reply_char_limit: int = 0  # 0 = no cap (narrate freely); >0 caps room messages
+    permission_option: str = ""  # the provider's chosen permission/sandbox value (its own flag)
 
 
 DEFAULT_MODEL_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
@@ -116,6 +120,26 @@ SPEED_POLL_INTERVALS = {
     "slow": 1.0,
 }
 
+# Each provider's OWN permission/sandbox options (real CLI values), surfaced
+# as-is. The launch layer maps the chosen value to that CLI's actual flag.
+CODEX_PERMISSION_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
+    FrontendLiveAgentOption("read-only", "읽기 전용 (읽기·탐색만)"),
+    FrontendLiveAgentOption("workspace-write", "작업 (작업폴더 쓰기)"),
+    FrontendLiveAgentOption("danger-full-access", "전체 해제 (위험)"),
+)
+# claude + grok share Claude-Code-style --permission-mode values.
+CLAUDE_PERMISSION_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
+    FrontendLiveAgentOption("default", "기본 (행동마다 확인)"),
+    FrontendLiveAgentOption("plan", "계획만 (실행 안 함)"),
+    FrontendLiveAgentOption("acceptEdits", "편집 자동수락"),
+    FrontendLiveAgentOption("bypassPermissions", "전체 해제 (위험)"),
+)
+ANTIGRAVITY_PERMISSION_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
+    FrontendLiveAgentOption("default", "기본"),
+    FrontendLiveAgentOption("sandbox", "샌드박스 (터미널 제한)"),
+    FrontendLiveAgentOption("skip-permissions", "전체 해제 (위험)"),
+)
+
 
 FRONTEND_LIVE_AGENT_PROVIDERS: tuple[FrontendLiveAgentProvider, ...] = (
     FrontendLiveAgentProvider(
@@ -130,6 +154,7 @@ FRONTEND_LIVE_AGENT_PROVIDERS: tuple[FrontendLiveAgentProvider, ...] = (
         model_options=CODEX_MODEL_OPTIONS,
         effort_options=EFFORT_OPTIONS,
         speed_options=SPEED_OPTIONS,
+        permission_options=CODEX_PERMISSION_OPTIONS,
         login_command=("codex", "login"),
     ),
     FrontendLiveAgentProvider(
@@ -145,6 +170,7 @@ FRONTEND_LIVE_AGENT_PROVIDERS: tuple[FrontendLiveAgentProvider, ...] = (
         model_options=CLAUDE_MODEL_OPTIONS,
         effort_options=EXTENDED_EFFORT_OPTIONS,
         speed_options=SPEED_OPTIONS,
+        permission_options=CLAUDE_PERMISSION_OPTIONS,
         login_command=("claude", "auth", "login"),
     ),
     FrontendLiveAgentProvider(
@@ -172,6 +198,7 @@ FRONTEND_LIVE_AGENT_PROVIDERS: tuple[FrontendLiveAgentProvider, ...] = (
         model_options=GROK_MODEL_OPTIONS,
         effort_options=GROK_EFFORT_OPTIONS,
         speed_options=SPEED_OPTIONS,
+        permission_options=CLAUDE_PERMISSION_OPTIONS,
         login_command=("grok", "login"),
     ),
     FrontendLiveAgentProvider(
@@ -185,6 +212,7 @@ FRONTEND_LIVE_AGENT_PROVIDERS: tuple[FrontendLiveAgentProvider, ...] = (
         verification_note="실제 프론트 생성/시작 검증 대상입니다.",
         model_options=ANTIGRAVITY_MODEL_OPTIONS,
         speed_options=SPEED_OPTIONS,
+        permission_options=ANTIGRAVITY_PERMISSION_OPTIONS,
         login_command=("agy",),
     ),
     FrontendLiveAgentProvider(
@@ -412,6 +440,7 @@ def _provider_payload(provider: FrontendLiveAgentProvider) -> dict[str, object]:
         "model_options": [_option_payload(option) for option in provider.model_options],
         "effort_options": [_option_payload(option) for option in provider.effort_options],
         "speed_options": [_option_payload(option) for option in provider.speed_options],
+        "permission_options": [_option_payload(option) for option in provider.permission_options],
         "login_available": bool(provider.login_command),
         "login_label": f"{provider.label} 로그인 열기" if provider.login_command else "",
     }
@@ -458,12 +487,19 @@ def _tuning_for_payload(provider: FrontendLiveAgentProvider, payload: dict[str, 
         error_label="speed",
     )
     reply_char_limit = _clean_reply_char_limit(payload.get("reply_char_limit"))
+    permission_option = _selected_option_id(
+        payload.get("permission_option"),
+        provider.permission_options,
+        default=provider.permission_options[0].id if provider.permission_options else "",
+        error_label="permission",
+    )
     return FrontendLiveAgentTuning(
         model_id=model_id,
         effort=effort,
         speed=speed,
         poll_interval=SPEED_POLL_INTERVALS.get(speed, DEFAULT_LIVE_AGENT_POLL_INTERVAL),
         reply_char_limit=reply_char_limit,
+        permission_option=permission_option,
     )
 
 
@@ -718,6 +754,8 @@ def _write_frontend_live_agent_config(
         agent["effort"] = tuning.effort
     if tuning.reply_char_limit:
         agent["reply_char_limit"] = tuning.reply_char_limit
+    if tuning.permission_option:
+        agent["permission_option"] = tuning.permission_option
     if session_id:
         agent["session_id"] = session_id  # resume an existing local session
     command = _frontend_resident_command(provider, tuning)

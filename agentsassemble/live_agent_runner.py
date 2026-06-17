@@ -104,7 +104,8 @@ class ResidentAgentConfig:
     key_source: str = ""
     effort: str = ""
     speed: str = ""
-    codex_sandbox: str = "read-only"  # opt-in "workspace-write" lets a codex worker edit its repo
+    codex_sandbox: str = "read-only"  # legacy alias; superseded by permission_option for codex
+    permission_option: str = ""  # the provider's own permission/sandbox value (its native flag)
     reply_char_limit: int = 0  # 0 = no length cap (default; narrate freely); >0 caps room messages
     stream_thinking: bool = False  # stream the agent's reasoning/progress to the operator as it works
     workspace_path: str = ""
@@ -1888,6 +1889,7 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         effort=str(getattr(args, "effort", "") or ""),
         speed=str(getattr(args, "speed", "") or ""),
         codex_sandbox=str(getattr(args, "codex_sandbox", "") or "read-only"),
+        permission_option=str(getattr(args, "permission_option", "") or ""),
         reply_char_limit=max(0, int(getattr(args, "reply_char_limit", 0) or 0)),
         stream_thinking=bool(getattr(args, "stream_thinking", False)),
         workspace_path=str(getattr(args, "workspace_path", "") or ""),
@@ -1965,6 +1967,7 @@ def _config_from_mapping(
         effort=str(data.get("effort") or ""),
         speed=str(data.get("speed") or ""),
         codex_sandbox=str(data.get("codex_sandbox") or "read-only"),
+        permission_option=str(data.get("permission_option") or ""),
         reply_char_limit=max(0, int(data.get("reply_char_limit") or 0)),
         stream_thinking=bool(data.get("stream_thinking")),
         workspace_path=_resident_workspace_path(data.get("workspace_path"), base_dir=config_dir),

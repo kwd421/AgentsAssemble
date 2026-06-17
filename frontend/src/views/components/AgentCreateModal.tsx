@@ -34,6 +34,7 @@ export default function AgentCreateModal({
   const [modelId, setModelId] = useState("");
   const [effort, setEffort] = useState("");
   const [speed, setSpeed] = useState("balanced");
+  const [permissionOption, setPermissionOption] = useState("");
   const [replyCharLimit, setReplyCharLimit] = useState(0);
   const [sessions, setSessions] = useState<ProviderSession[]>([]);
   const [sessionId, setSessionId] = useState("");
@@ -63,7 +64,7 @@ export default function AgentCreateModal({
   );
   const modelOptions = selectedProvider?.model_options || [];
   const effortOptions = selectedProvider?.effort_options || [];
-  const speedOptions = selectedProvider?.speed_options || [];
+  const permissionOptions = selectedProvider?.permission_options || [];
   const canCreate = Boolean(meetingId && providerId && displayName.trim() && workspacePath.trim());
   const effectiveStartNow = Boolean(startNow && selectedProvider?.startable);
 
@@ -101,6 +102,7 @@ export default function AgentCreateModal({
     setModelId(firstOptionId(provider.model_options));
     setEffort(firstOptionId(provider.effort_options));
     setSpeed(firstOptionId(provider.speed_options, "balanced"));
+    setPermissionOption(firstOptionId(provider.permission_options));
     if (!provider.startable) setStartNow(false);
   }
 
@@ -135,6 +137,7 @@ export default function AgentCreateModal({
         effort,
         speed,
         replyCharLimit,
+        permissionOption,
         sessionId,
         startNow: effectiveStartNow,
       });
@@ -179,6 +182,7 @@ export default function AgentCreateModal({
         effort,
         speed,
         replyCharLimit,
+        permissionOption,
         sessionId,
         startNow: effectiveStartNow,
       });
@@ -272,12 +276,12 @@ export default function AgentCreateModal({
               </select>
             </label>
           )}
-          {speedOptions.length > 0 && (
+          {permissionOptions.length > 0 && (
             <label>
-              <span>응답 속도</span>
-              <select value={speed} onChange={(event) => setSpeed(event.currentTarget.value)}>
-                {speedOptions.map((option) => (
-                  <option key={`${providerId}:speed:${option.id}`} value={option.id}>
+              <span>권한</span>
+              <select value={permissionOption} onChange={(event) => setPermissionOption(event.currentTarget.value)}>
+                {permissionOptions.map((option) => (
+                  <option key={`${providerId}:perm:${option.id}`} value={option.id}>
                     {option.label}
                   </option>
                 ))}

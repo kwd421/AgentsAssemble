@@ -216,6 +216,9 @@ class GrokResidentCommandRunner:
         effort = str(self.config.effort or "").strip()
         if effort:
             command.extend(["--effort", effort])
+        permission = str(getattr(self.config, "permission_option", "") or "").strip()
+        if permission:
+            command.extend(["--permission-mode", permission])
         if self.session_id:
             command.extend(["--resume", self.session_id])
         return command

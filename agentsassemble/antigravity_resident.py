@@ -104,6 +104,11 @@ class AntigravityResidentCommandRunner:
         model_id = str(self.config.model_id or "").strip()
         if model_id:
             agy_command.extend(["--model", model_id])
+        permission = str(getattr(self.config, "permission_option", "") or "").strip()
+        if permission == "sandbox":
+            agy_command.append("--sandbox")
+        elif permission == "skip-permissions":
+            agy_command.append("--dangerously-skip-permissions")
         if self.session_id:
             agy_command.extend(["--conversation", self.session_id])
         agy_command.extend(["--print", prompt])

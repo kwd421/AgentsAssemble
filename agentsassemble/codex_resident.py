@@ -198,7 +198,12 @@ class CodexResidentCommandRunner:
     def _build_command(self, output_path: Path, *, json_stream: bool = False) -> list[str]:
         configured_command = list(self.config.command or ["codex"])
         base_command = [configured_command[0]]
-        exec_prefix = codex_exec_prefix(base_command, sandbox=str(getattr(self.config, "codex_sandbox", "") or "read-only"))
+        sandbox = (
+            str(getattr(self.config, "permission_option", "") or "")
+            or str(getattr(self.config, "codex_sandbox", "") or "")
+            or "read-only"
+        )
+        exec_prefix = codex_exec_prefix(base_command, sandbox=sandbox)
         tuning_args = _codex_tuning_args(self.config.model_id, self.config.effort)
         stream_args = ["--json"] if json_stream else []
         if self.session_id:

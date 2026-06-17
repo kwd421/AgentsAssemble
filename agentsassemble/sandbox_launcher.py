@@ -14,10 +14,11 @@ SANDBOX_ENFORCEMENT_LEVELS = {
     "unknown",
 }
 CODEX_EXEC_SAFETY_FLAGS = ("--sandbox", "read-only", "--ignore-user-config", "--ignore-rules")
-# Opt-in "worker" sandbox: codex may write within its working dir (the repo) but
-# not the wider filesystem (and no network). Only used when a resident is
-# explicitly launched with --codex-sandbox workspace-write.
-CODEX_EXEC_WORKSPACE_WRITE_FLAGS = ("--sandbox", "workspace-write", "--ignore-user-config", "--ignore-rules")
+# Released sandboxes drop --ignore-user-config so the user's MCP servers / tools
+# are available (the room doesn't strip the agent's native capability).
+CODEX_EXEC_WORKSPACE_WRITE_FLAGS = ("--sandbox", "workspace-write", "--ignore-rules")
+# Full access: no sandbox. EXTREMELY powerful — only via explicit "전체 해제".
+CODEX_EXEC_FULL_ACCESS_FLAGS = ("--sandbox", "danger-full-access", "--ignore-rules")
 
 
 class SandboxLauncher(Protocol):
@@ -53,6 +54,14 @@ class CodexWorkspaceWriteLauncher:
         return [*command, "exec", *CODEX_EXEC_WORKSPACE_WRITE_FLAGS]
 
 
+@dataclass(frozen=True)
+class CodexFullAccessLauncher:
+    enforcement: str = "codex_full_access"
+
+    def command(self, command: Sequence[str]) -> list[str]:
+        return [*command, "exec", *CODEX_EXEC_FULL_ACCESS_FLAGS]
+
+
 def sandbox_launcher_for(
     provider_kind: object,
     connection_kind: object,
@@ -68,10 +77,12 @@ def sandbox_launcher_for(
         provider == "codex"
         and connection == "codex_resume"
     ):
-        # Default is read-only; workspace-write is an explicit opt-in for worker
-        # residents that are meant to edit the repo they run in.
-        if clean_lobby_text(sandbox, limit=32) == "workspace-write":
+        # Surface codex's own sandbox modes; default stays read-only.
+        mode = clean_lobby_text(sandbox, limit=32)
+        if mode == "workspace-write":
             return CodexWorkspaceWriteLauncher()
+        if mode == "danger-full-access":
+            return CodexFullAccessLauncher()
         return CodexReadonlyLauncher()
     return NoSandboxLauncher()
 

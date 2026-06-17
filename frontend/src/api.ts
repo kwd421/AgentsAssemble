@@ -424,6 +424,7 @@ export interface LiveAgentCreateProvider {
   model_options: LiveAgentCreateOption[];
   effort_options: LiveAgentCreateOption[];
   speed_options: LiveAgentCreateOption[];
+  permission_options: LiveAgentCreateOption[];
 }
 
 export interface LiveAgentCreateOptionsResponse {
@@ -441,6 +442,7 @@ export interface FrontendLiveAgentCreateRequest {
   effort?: string;
   speed?: string;
   replyCharLimit?: number;
+  permissionOption?: string;
   sessionId?: string;
   startNow?: boolean;
 }
@@ -1149,6 +1151,7 @@ function frontendLiveAgentCreatePayload(request: FrontendLiveAgentCreateRequest)
     effort: request.effort || "",
     speed: request.speed || "",
     reply_char_limit: request.replyCharLimit || 0,
+    permission_option: request.permissionOption || "",
     session_id: request.sessionId || "",
     start_now: Boolean(request.startNow),
   };
