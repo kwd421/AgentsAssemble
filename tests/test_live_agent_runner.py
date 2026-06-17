@@ -279,6 +279,46 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(runner.run(), 1)
         self.assertEqual(len(command_calls), 1)
 
+    def test_self_relaunch_runner_registers_pid_and_relaunch_recipe(self):
+        clock = FakeClock()
+        client = FakeRoomClient([{"agent": {"agent_id": "agent-a"}, "lobby_events": []}])
+        runner = LiveAgentRunner(
+            config(max_ticks=1, poll_interval=0.01, heartbeat_interval=0),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "unused",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+            self_relaunch=True,
+        )
+        runner.run()
+        register = next(
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/live-agents") and method == "POST"
+        )
+        self.assertGreater(int(register["relaunch_pid"]), 0)
+        self.assertIsInstance(register["relaunch_argv"], list)
+        self.assertTrue(register["relaunch_cwd"])
+        self.assertTrue(register["relaunch_host"])
+
+    def test_default_runner_does_not_register_relaunch_recipe(self):
+        clock = FakeClock()
+        client = FakeRoomClient([{"agent": {"agent_id": "agent-a"}, "lobby_events": []}])
+        runner = LiveAgentRunner(
+            config(max_ticks=1, poll_interval=0.01, heartbeat_interval=0),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "unused",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+        runner.run()
+        register = next(
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/live-agents") and method == "POST"
+        )
+        self.assertNotIn("relaunch_pid", register)
+
     def test_runner_pushes_runtime_permission_and_fast_overrides_from_room(self):
         clock = FakeClock()
         applied: list[dict] = []

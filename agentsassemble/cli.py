@@ -3681,6 +3681,9 @@ def _run_live_agent_resident(args: argparse.Namespace) -> int:
         request_json=_request_json,
         command_runner=command_runner,
         sleep_fn=time.sleep,
+        # Standalone single-agent run owns its own process: advertise pid +
+        # relaunch recipe so the room can STOP/RESUME it like a spawned agent.
+        self_relaunch=True,
     )
     replies = 0
     restore_signal_handlers = lambda: None

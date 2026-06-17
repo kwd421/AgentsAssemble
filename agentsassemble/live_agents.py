@@ -160,6 +160,7 @@ def connect_live_agent(
             "fast_mode": _bool_value(
                 payload.get("fast_mode") if "fast_mode" in payload else existing.get("fast_mode")
             ),
+            **_clean_relaunch_fields(payload, existing),
             "endpoint": endpoint,
             "capabilities": _clean_capabilities(payload.get("capabilities") or existing.get("capabilities")),
             "last_error": _clean_presence_last_error(payload.get("last_error"))
@@ -274,6 +275,36 @@ def update_live_agent_cooldown(
             agent = _without_output_only_freshness(existing)
             agent["cooldown"] = parsed_cooldown
             agent["cooldown_updated_at"] = timestamp
+            agent["updated_at"] = timestamp
+            agents[index] = agent
+            _write_state(output_root, {"agents": agents})
+            return agent
+    raise ValueError(f"Live agent {clean_agent_id} was not found.")
+
+
+def set_live_agent_status(
+    output_root: Path,
+    agent_id: str,
+    status: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    """Force an agent record's presence status (e.g. mark it offline right after a
+    STOP kill, instead of waiting for the heartbeat to go stale)."""
+    current_time = now or datetime.now(UTC)
+    timestamp = current_time.isoformat()
+    clean_agent_id = clean_lobby_text(agent_id, limit=64)
+    if not clean_agent_id:
+        raise ValueError("Agent id is required.")
+    normalized = _normalize_persisted_status(status)
+    with LIVE_AGENT_STATE_LOCK:
+        state = _read_state(output_root)
+        agents = _agent_entries(state)
+        for index, existing in enumerate(agents):
+            if existing.get("agent_id") != clean_agent_id:
+                continue
+            agent = _without_output_only_freshness(existing)
+            agent["status"] = normalized
             agent["updated_at"] = timestamp
             agents[index] = agent
             _write_state(output_root, {"agents": agents})
@@ -686,6 +717,33 @@ def _bool_value(value: object) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return False
+
+
+def _clean_relaunch_fields(payload: dict[str, object], existing: dict[str, object]) -> dict[str, object]:
+    """Sanitize the resident's self-managed relaunch recipe (pid + argv + cwd +
+    host) used for room STOP/RESUME of agents the server did not spawn. Prefer the
+    payload (a fresh register), else keep the existing record's values."""
+    source = payload if any(
+        key in payload for key in ("relaunch_pid", "relaunch_argv", "relaunch_cwd", "relaunch_host")
+    ) else existing
+    pid_raw = source.get("relaunch_pid")
+    try:
+        pid = int(pid_raw)
+    except (TypeError, ValueError):
+        pid = 0
+    if pid < 0:
+        pid = 0
+    argv_raw = source.get("relaunch_argv")
+    argv: list[str] = []
+    if isinstance(argv_raw, list):
+        for item in argv_raw[:64]:
+            argv.append(clean_lobby_text(item, limit=1024))
+    return {
+        "relaunch_pid": pid,
+        "relaunch_host": clean_lobby_text(source.get("relaunch_host"), limit=256),
+        "relaunch_argv": argv,
+        "relaunch_cwd": clean_lobby_text(source.get("relaunch_cwd"), limit=2048),
+    }
 
 
 def _clean_capabilities(value: object) -> list[str]:

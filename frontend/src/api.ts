@@ -340,6 +340,10 @@ export interface LiveAgent {
   cooldown_updated_at?: string;
   permission_option?: string;
   fast_mode?: boolean;
+  relaunch_pid?: number;
+  relaunch_host?: string;
+  relaunch_argv?: string[];
+  relaunch_cwd?: string;
   quota_5h?: string;
   quota_1w?: string;
   quota_state?: "ok" | "low" | "exhausted" | "unknown" | "";
@@ -1312,6 +1316,18 @@ export function updateLiveAgentSessionAgentOptions({
     ...(liveAgentConfigPath ? { live_agent_config_path: liveAgentConfigPath } : {}),
     ...(permissionOption !== undefined ? { permission_option: permissionOption } : {}),
     ...(fastMode !== undefined ? { fast_mode: fastMode } : {}),
+  });
+}
+
+export function stopSelfManagedAgent({ agentId }: { agentId: string }) {
+  return postJson<LiveAgentSessionActionResponse>("/api/live-agent-room/stop-self-managed", {
+    agent_id: agentId,
+  });
+}
+
+export function resumeSelfManagedAgent({ agentId }: { agentId: string }) {
+  return postJson<LiveAgentSessionActionResponse>("/api/live-agent-room/resume-self-managed", {
+    agent_id: agentId,
   });
 }
 

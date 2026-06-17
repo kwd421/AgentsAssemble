@@ -25,6 +25,8 @@ import {
   kickRoomMember,
   muteRoomMember,
   stopLiveAgentSessionAgent,
+  stopSelfManagedAgent,
+  resumeSelfManagedAgent,
   updateLiveAgentSessionAgentTiming,
   updateLiveAgentSessionAgentOptions,
   uploadLobbyAttachment,
@@ -628,6 +630,19 @@ function MemberDetailModal({
   const canStopSession = Boolean(
     hasStopControl
   );
+  // Self-managed agents (e.g. launched from a terminal) advertise their own pid +
+  // relaunch recipe, so the room can really STOP (kill) and RESUME (relaunch) them
+  // even though the server didn't spawn them. Only when not server-owned + mine.
+  const selfRelaunchPid = Number(agent.relaunch_pid || 0);
+  const selfRelaunchArgv = Array.isArray(agent.relaunch_argv)
+    ? agent.relaunch_argv.filter(Boolean)
+    : [];
+  const isAgentOnline = isActivePresence(agent.status);
+  const selfManaged = Boolean(
+    entry.ownedByViewer && !sessionGroup && (selfRelaunchPid > 0 || selfRelaunchArgv.length > 0)
+  );
+  const canSelfStop = Boolean(selfManaged && isAgentOnline && selfRelaunchPid > 0);
+  const canSelfResume = Boolean(selfManaged && !isAgentOnline && selfRelaunchArgv.length > 0);
   const canEditAgentProfile = entry.ownedByViewer;
   // Edit the agent's provider-native permission + fast toggle after creation.
   const permissionOptions = permissionOptionsForKind(agent.provider_kind);
@@ -686,6 +701,36 @@ function MemberDetailModal({
       setOptionsStatus(error instanceof Error ? error.message : "권한/속도 저장 실패");
     } finally {
       setOptionsBusy(false);
+    }
+  }
+
+  async function handleSelfStop() {
+    if (!canSelfStop) return;
+    setSessionActionBusy(true);
+    setSessionActionStatus("STOP(종료) 요청 중...");
+    try {
+      await stopSelfManagedAgent({ agentId: agent.agent_id });
+      setSessionActionStatus("STOP 완료 · 프로세스 종료됨");
+      onSessionActionComplete?.();
+    } catch (error) {
+      setSessionActionStatus(error instanceof Error ? error.message : "STOP 실패");
+    } finally {
+      setSessionActionBusy(false);
+    }
+  }
+
+  async function handleSelfResume() {
+    if (!canSelfResume) return;
+    setSessionActionBusy(true);
+    setSessionActionStatus("RESUME(재실행) 요청 중...");
+    try {
+      await resumeSelfManagedAgent({ agentId: agent.agent_id });
+      setSessionActionStatus("RESUME 완료 · 서버 백그라운드로 재실행됨");
+      onSessionActionComplete?.();
+    } catch (error) {
+      setSessionActionStatus(error instanceof Error ? error.message : "RESUME 실패");
+    } finally {
+      setSessionActionBusy(false);
     }
   }
 
@@ -1181,12 +1226,39 @@ function MemberDetailModal({
             <p className="dc-member-detail-note preserve-words">
               추방은 이 방에서만 제거하고, 삭제는 저장된 세션 설정까지 제거합니다.
             </p>
-            {!hasResumeControl && !hasStopControl && (
+            {!hasResumeControl && !hasStopControl && !canSelfStop && !canSelfResume && (
               <p className="dc-member-detail-note preserve-words">
-                이 세션은 서버가 직접 실행하는 프로세스가 아니라 여기서 멈추거나 재개할 수 없습니다. (UI에서 시작한 세션이라야 RESUME/STOP이 표시됩니다.)
+                이 세션은 서버가 직접 실행하는 프로세스도 아니고, 자기 실행 정보(pid/재실행 명령)도 등록하지 않아 여기서 멈추거나 재개할 수 없습니다.
+              </p>
+            )}
+            {(canSelfStop || canSelfResume) && (
+              <p className="dc-member-detail-note preserve-words">
+                터미널에서 직접 띄운 내 에이전트입니다. STOP은 그 프로세스를 실제로 종료하고, RESUME은 서버 백그라운드로 다시 띄웁니다.
               </p>
             )}
             <div className="dc-member-session-actions">
+              {canSelfStop && (
+                <button
+                  type="button"
+                  className="dc-member-session-button"
+                  disabled={sessionActionBusy}
+                  onClick={() => void handleSelfStop()}
+                >
+                  <Square size={15} />
+                  STOP
+                </button>
+              )}
+              {canSelfResume && (
+                <button
+                  type="button"
+                  className="dc-member-session-button"
+                  disabled={sessionActionBusy}
+                  onClick={() => void handleSelfResume()}
+                >
+                  <Play size={15} />
+                  RESUME
+                </button>
+              )}
               <button
                 type="button"
                 className="dc-member-session-button"

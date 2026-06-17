@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
+import socket
 import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -135,6 +138,7 @@ class LiveAgentRunner:
         sleep_fn: Callable[[float], None],
         now_fn: Callable[[], datetime] | None = None,
         stop_event: threading.Event | None = None,
+        self_relaunch: bool = False,
     ) -> None:
         self.config = config
         self.request_json = request_json
@@ -142,6 +146,10 @@ class LiveAgentRunner:
         self.sleep_fn = sleep_fn
         self.now_fn = now_fn or (lambda: datetime.now(UTC))
         self.stop_event = stop_event or threading.Event()
+        # When True (a standalone single-agent `live-agent run`), the resident
+        # registers its own pid + relaunch recipe so the room can STOP it (real
+        # os.kill) and RESUME it (relaunch) even though it wasn't server-spawned.
+        self.self_relaunch = bool(self_relaunch)
         self.last_observed_event_id = ""
         self.last_observed_live_event_id = ""
         self.last_observed_dm_event_id = ""
@@ -768,9 +776,26 @@ class LiveAgentRunner:
                     has_card=bool(persona_card_id or self.config.persona_path),
                 ),
                 "capabilities": ["room_chat", "mentions"],
+                **self._self_relaunch_fields(),
             },
         )
         self._restore_agent_snapshot(response.get("agent"))
+
+    def _self_relaunch_fields(self) -> dict[str, object]:
+        """When this resident manages its own process (standalone single-agent
+        run), advertise its pid + relaunch recipe so the room can STOP (real kill)
+        and RESUME (relaunch) it — the same control UI-spawned agents already get."""
+        if not self.self_relaunch:
+            return {}
+        try:
+            return {
+                "relaunch_pid": int(os.getpid()),
+                "relaunch_host": socket.gethostname(),
+                "relaunch_argv": [str(part) for part in sys.argv],
+                "relaunch_cwd": os.getcwd(),
+            }
+        except Exception:
+            return {}
 
     def _heartbeat(self, status: str, **metadata: object) -> None:
         payload = {"status": status, **metadata}
