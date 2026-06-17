@@ -18,9 +18,13 @@ class ParseClaudeTranscriptLineTests(unittest.TestCase):
         line = self._assistant([{"type": "text", "text": "hello there"}])
         self.assertEqual(parse_claude_transcript_line(line), {"kind": "message", "text": "hello there"})
 
-    def test_tool_use_is_command(self):
-        line = self._assistant([{"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}])
-        self.assertEqual(parse_claude_transcript_line(line), {"kind": "command", "text": "Bash"})
+    def test_tool_use_includes_input_detail(self):
+        line = self._assistant([{"type": "tool_use", "name": "Bash", "input": {"command": "ls -la"}}])
+        self.assertEqual(parse_claude_transcript_line(line), {"kind": "command", "text": "Bash: ls -la"})
+        read = self._assistant([{"type": "tool_use", "name": "Read", "input": {"file_path": "/tmp/x.py"}}])
+        self.assertEqual(parse_claude_transcript_line(read), {"kind": "command", "text": "Read: /tmp/x.py"})
+        bare = self._assistant([{"type": "tool_use", "name": "Foo", "input": {}}])
+        self.assertEqual(parse_claude_transcript_line(bare), {"kind": "command", "text": "Foo"})
 
     def test_thinking_block_is_reasoning(self):
         line = self._assistant([{"type": "thinking", "thinking": "let me consider..."}])

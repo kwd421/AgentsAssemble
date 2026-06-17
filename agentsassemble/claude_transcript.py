@@ -81,9 +81,35 @@ def parse_claude_transcript_line(line: str) -> dict | None:
                 return {"kind": "reasoning", "text": piece}
         elif block_type == "tool_use":
             tool = str(block.get("name") or "tool")
-            return {"kind": "command", "text": f"{tool}"}
+            detail = _summarize_tool_input(tool, block.get("input"))
+            return {"kind": "command", "text": f"{tool}: {detail}" if detail else tool}
     body = "\n".join(parts).strip()
     return {"kind": "message", "text": body} if body else None
+
+
+_TOOL_INPUT_KEYS = ("command", "file_path", "path", "pattern", "query", "url", "description", "prompt")
+_TOOL_DETAIL_LIMIT = 140
+
+
+def _summarize_tool_input(tool: str, tool_input: object) -> str:
+    """A short, human-readable summary of what a tool call is doing.
+
+    Bash -> the command, Read/Edit -> the file path, Grep/Glob -> the pattern,
+    etc. Falls back to the first useful field, then a compact json snippet.
+    """
+    if not isinstance(tool_input, dict) or not tool_input:
+        return ""
+    for key in _TOOL_INPUT_KEYS:
+        value = tool_input.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:_TOOL_DETAIL_LIMIT]
+    for value in tool_input.values():
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:_TOOL_DETAIL_LIMIT]
+    try:
+        return json.dumps(tool_input, ensure_ascii=False)[:_TOOL_DETAIL_LIMIT]
+    except (TypeError, ValueError):
+        return ""
 
 
 class ClaudeTranscriptTailer:
