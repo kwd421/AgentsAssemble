@@ -49,6 +49,7 @@ class FrontendLiveAgentTuning:
     effort: str
     speed: str
     poll_interval: float
+    reply_char_limit: int = 0  # 0 = no cap (narrate freely); >0 caps room messages
 
 
 DEFAULT_MODEL_OPTIONS: tuple[FrontendLiveAgentOption, ...] = (
@@ -455,12 +456,29 @@ def _tuning_for_payload(provider: FrontendLiveAgentProvider, payload: dict[str, 
         default="balanced" if provider.speed_options else "",
         error_label="speed",
     )
+    reply_char_limit = _clean_reply_char_limit(payload.get("reply_char_limit"))
     return FrontendLiveAgentTuning(
         model_id=model_id,
         effort=effort,
         speed=speed,
         poll_interval=SPEED_POLL_INTERVALS.get(speed, DEFAULT_LIVE_AGENT_POLL_INTERVAL),
+        reply_char_limit=reply_char_limit,
     )
+
+
+REPLY_CHAR_LIMIT_CHOICES = (0, 100, 250, 400, 700, 1000)
+
+
+def _clean_reply_char_limit(value: object) -> int:
+    """0 = no cap (default). Anything off the menu snaps to the nearest choice
+    so a stray value can't smuggle in an unbounded/odd limit."""
+    try:
+        limit = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    if limit <= 0:
+        return 0
+    return min(REPLY_CHAR_LIMIT_CHOICES[1:], key=lambda choice: abs(choice - limit))
 
 
 def _selected_option_id(
@@ -696,6 +714,8 @@ def _write_frontend_live_agent_config(
         agent["model_id"] = tuning.model_id
     if tuning.effort:
         agent["effort"] = tuning.effort
+    if tuning.reply_char_limit:
+        agent["reply_char_limit"] = tuning.reply_char_limit
     command = _frontend_resident_command(provider, tuning)
     if command:
         agent["command"] = command

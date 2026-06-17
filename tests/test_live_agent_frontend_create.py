@@ -9,6 +9,7 @@ from urllib.request import Request, urlopen
 from agentsassemble.gui import _make_handler
 from agentsassemble.identity_store import identity_store_for_output_root, reset_identity_store_registry
 from agentsassemble.live_agent_frontend_create import (
+    _clean_reply_char_limit,
     ensure_frontend_meeting,
     frontend_live_agent_check_payload,
     frontend_live_agent_create_payload,
@@ -143,6 +144,36 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
             self.assertEqual(live_agents[0]["status"], "offline")
             self.assertEqual(live_agents[0]["process_group_id"], result["group_id"])
             self.assertEqual(live_agents[0]["live_agent_config_path"], result["live_agent_config_path"])
+
+    def test_create_persists_reply_char_limit_into_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "aa"
+            workspace = Path(temp_dir) / "project"
+            workspace.mkdir()
+            write_meeting(root)
+            result = frontend_live_agent_create_payload(
+                root,
+                FakeSupervisor(),
+                {
+                    "meeting_id": "room-a",
+                    "provider_id": "cursor",
+                    "display_name": "Verbose Agent",
+                    "workspace_path": str(workspace),
+                    "reply_char_limit": 250,
+                    "start_now": False,
+                },
+                default_server="http://127.0.0.1:8765",
+            )
+            config = json.loads(Path(str(result["live_agent_config_path"])).read_text(encoding="utf-8"))
+            self.assertEqual(config["agents"][0]["reply_char_limit"], 250)
+
+    def test_clean_reply_char_limit_snaps_to_menu(self):
+        self.assertEqual(_clean_reply_char_limit(0), 0)
+        self.assertEqual(_clean_reply_char_limit(""), 0)
+        self.assertEqual(_clean_reply_char_limit(-5), 0)
+        self.assertEqual(_clean_reply_char_limit(250), 250)
+        self.assertEqual(_clean_reply_char_limit(300), 250)  # nearest menu choice
+        self.assertEqual(_clean_reply_char_limit(99999), 1000)
 
     def test_create_materializes_missing_meeting_for_localstorage_room(self):
         # A UI room (localStorage) has no server meeting yet; adding an agent

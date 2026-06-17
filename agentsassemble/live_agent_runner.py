@@ -1955,6 +1955,8 @@ def _config_from_mapping(
         key_source=str(data.get("key_source") or ""),
         effort=str(data.get("effort") or ""),
         speed=str(data.get("speed") or ""),
+        codex_sandbox=str(data.get("codex_sandbox") or "read-only"),
+        reply_char_limit=max(0, int(data.get("reply_char_limit") or 0)),
         workspace_path=_resident_workspace_path(data.get("workspace_path"), base_dir=config_dir),
         join_semantics=str(data.get("join_semantics") or ""),
         timeout_seconds=int(data.get("timeout_seconds") or data.get("timeout") or 120),

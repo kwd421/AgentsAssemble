@@ -32,6 +32,7 @@ export default function AgentCreateModal({
   const [modelId, setModelId] = useState("");
   const [effort, setEffort] = useState("");
   const [speed, setSpeed] = useState("balanced");
+  const [replyCharLimit, setReplyCharLimit] = useState(0);
   const [startNow, setStartNow] = useState(true);
   const [status, setStatus] = useState("");
   const [authAction, setAuthAction] = useState<FrontendLiveAgentCheckResponse["auth_action"] | null>(null);
@@ -108,6 +109,7 @@ export default function AgentCreateModal({
         modelId,
         effort,
         speed,
+        replyCharLimit,
         startNow: effectiveStartNow,
       });
       setAuthAction(result.auth_action || null);
@@ -150,6 +152,7 @@ export default function AgentCreateModal({
         modelId,
         effort,
         speed,
+        replyCharLimit,
         startNow: effectiveStartNow,
       });
       setStatus(result.status === "starting" ? "시작 요청 완료" : "추가됨");
@@ -254,6 +257,20 @@ export default function AgentCreateModal({
               </select>
             </label>
           )}
+          <label>
+            <span>답변 길이</span>
+            <select
+              value={String(replyCharLimit)}
+              onChange={(event) => setReplyCharLimit(Number(event.currentTarget.value))}
+            >
+              <option value="0">기본 (제한 없음)</option>
+              <option value="100">100자</option>
+              <option value="250">250자</option>
+              <option value="400">400자</option>
+              <option value="700">700자</option>
+              <option value="1000">1000자</option>
+            </select>
+          </label>
           <label className="dc-agent-start-toggle">
             <input
               type="checkbox"

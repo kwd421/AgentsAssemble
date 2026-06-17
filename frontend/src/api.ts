@@ -440,6 +440,7 @@ export interface FrontendLiveAgentCreateRequest {
   modelId?: string;
   effort?: string;
   speed?: string;
+  replyCharLimit?: number;
   startNow?: boolean;
 }
 
@@ -1135,6 +1136,7 @@ function frontendLiveAgentCreatePayload(request: FrontendLiveAgentCreateRequest)
     model_id: request.modelId || "",
     effort: request.effort || "",
     speed: request.speed || "",
+    reply_char_limit: request.replyCharLimit || 0,
     start_now: Boolean(request.startNow),
   };
 }
