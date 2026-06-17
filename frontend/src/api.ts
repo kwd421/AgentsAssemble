@@ -441,7 +441,19 @@ export interface FrontendLiveAgentCreateRequest {
   effort?: string;
   speed?: string;
   replyCharLimit?: number;
+  sessionId?: string;
   startNow?: boolean;
+}
+
+export interface ProviderSession {
+  session_id: string;
+  label: string;
+  updated_at: string;
+}
+
+export function fetchProviderSessions(providerKind: string, workspace = "") {
+  const params = new URLSearchParams({ provider_kind: providerKind, workspace });
+  return fetchJson<{ sessions: ProviderSession[] }>(`/api/provider-sessions?${params.toString()}`);
 }
 
 export interface FrontendLiveAgentCreateResponse {
@@ -1137,6 +1149,7 @@ function frontendLiveAgentCreatePayload(request: FrontendLiveAgentCreateRequest)
     effort: request.effort || "",
     speed: request.speed || "",
     reply_char_limit: request.replyCharLimit || 0,
+    session_id: request.sessionId || "",
     start_now: Boolean(request.startNow),
   };
 }

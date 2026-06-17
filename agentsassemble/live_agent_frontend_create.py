@@ -250,6 +250,7 @@ def frontend_live_agent_create_payload(
             workspace_path=workspace,
             server=default_server,
             tuning=tuning,
+            session_id=clean_lobby_text(payload.get("session_id"), limit=200),
         )
         group_id = clean_live_agent_group_id(f"agent-{agent_id}")
         if start_now:
@@ -692,6 +693,7 @@ def _write_frontend_live_agent_config(
     workspace_path: Path,
     server: str,
     tuning: FrontendLiveAgentTuning,
+    session_id: str = "",
     draft: bool = False,
 ) -> Path:
     config_dir = output_root / ("live-agent-drafts" if draft else "live-agent-created")
@@ -716,6 +718,8 @@ def _write_frontend_live_agent_config(
         agent["effort"] = tuning.effort
     if tuning.reply_char_limit:
         agent["reply_char_limit"] = tuning.reply_char_limit
+    if session_id:
+        agent["session_id"] = session_id  # resume an existing local session
     command = _frontend_resident_command(provider, tuning)
     if command:
         agent["command"] = command

@@ -52,6 +52,7 @@ from agentsassemble.live_agent_frontend_create import (
     frontend_live_agent_login_payload,
     frontend_live_agent_options_payload,
 )
+from agentsassemble.provider_sessions import list_provider_sessions
 from agentsassemble.gui_room_http import register_room_routes
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
@@ -8495,6 +8496,19 @@ def _make_handler(
                 return
             if path == "/api/live-agent-create/options":
                 self._send_json(frontend_live_agent_options_payload(default_workspace=Path.cwd()))
+                return
+            if path == "/api/provider-sessions":
+                # Local sessions for a provider so the create flow can resume one.
+                provider_kind = (query.get("provider_kind") or query.get("provider") or [""])[0]
+                workspace = (query.get("workspace") or query.get("workspace_path") or [""])[0]
+                self._send_json(
+                    {
+                        "sessions": list_provider_sessions(
+                            clean_lobby_text(provider_kind, limit=64),
+                            workspace=clean_lobby_text(workspace, limit=512),
+                        )
+                    }
+                )
                 return
             if path == "/api/live-agent-process-events":
                 self._send_json(

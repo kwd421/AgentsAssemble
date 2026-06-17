@@ -4,10 +4,12 @@ import {
   checkFrontendLiveAgent,
   createFrontendLiveAgent,
   fetchLiveAgentCreateOptions,
+  fetchProviderSessions,
   startFrontendLiveAgentLogin,
   type FrontendLiveAgentCreateResponse,
   type FrontendLiveAgentCheckResponse,
   type LiveAgentCreateProvider,
+  type ProviderSession,
 } from "../../api";
 
 type AgentCreateModalProps = {
@@ -33,6 +35,8 @@ export default function AgentCreateModal({
   const [effort, setEffort] = useState("");
   const [speed, setSpeed] = useState("balanced");
   const [replyCharLimit, setReplyCharLimit] = useState(0);
+  const [sessions, setSessions] = useState<ProviderSession[]>([]);
+  const [sessionId, setSessionId] = useState("");
   const [startNow, setStartNow] = useState(true);
   const [status, setStatus] = useState("");
   const [authAction, setAuthAction] = useState<FrontendLiveAgentCheckResponse["auth_action"] | null>(null);
@@ -62,6 +66,27 @@ export default function AgentCreateModal({
   const speedOptions = selectedProvider?.speed_options || [];
   const canCreate = Boolean(meetingId && providerId && displayName.trim() && workspacePath.trim());
   const effectiveStartNow = Boolean(startNow && selectedProvider?.startable);
+
+  // Local sessions for the selected provider so the user can resume one.
+  useEffect(() => {
+    setSessionId("");
+    const kind = selectedProvider?.provider_kind;
+    if (!open || !kind) {
+      setSessions([]);
+      return;
+    }
+    let cancelled = false;
+    fetchProviderSessions(kind, workspacePath)
+      .then((payload) => {
+        if (!cancelled) setSessions(payload.sessions || []);
+      })
+      .catch(() => {
+        if (!cancelled) setSessions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, selectedProvider?.provider_kind, workspacePath]);
 
   function firstOptionId(
     options: Array<{ id: string; label: string }> | undefined,
@@ -110,6 +135,7 @@ export default function AgentCreateModal({
         effort,
         speed,
         replyCharLimit,
+        sessionId,
         startNow: effectiveStartNow,
       });
       setAuthAction(result.auth_action || null);
@@ -153,6 +179,7 @@ export default function AgentCreateModal({
         effort,
         speed,
         replyCharLimit,
+        sessionId,
         startNow: effectiveStartNow,
       });
       setStatus(result.status === "starting" ? "시작 요청 완료" : "추가됨");
@@ -271,6 +298,19 @@ export default function AgentCreateModal({
               <option value="1000">1000자</option>
             </select>
           </label>
+          {sessions.length > 0 && (
+            <label>
+              <span>세션</span>
+              <select value={sessionId} onChange={(event) => setSessionId(event.currentTarget.value)}>
+                <option value="">새 세션</option>
+                {sessions.map((session) => (
+                  <option key={session.session_id} value={session.session_id}>
+                    {`${(session.label || session.session_id).slice(0, 40)} · ${session.updated_at.slice(5, 16).replace("T", " ")}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="dc-agent-start-toggle">
             <input
               type="checkbox"
