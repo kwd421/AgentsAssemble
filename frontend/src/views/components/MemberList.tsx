@@ -59,6 +59,7 @@ import {
 } from "../../lib/liveAgentProcessControls";
 import {
   permissionOptionsForKind,
+  providerAppliesOptionsLive,
   providerSupportsFast,
 } from "../../lib/liveAgentPermissionOptions";
 import { participantTypeMeta } from "../../lib/participantTypes";
@@ -1025,7 +1026,9 @@ function MemberDetailModal({
               저장
             </button>
             <p className="dc-member-detail-note preserve-words">
-              변경은 다음 시작/재시작부터 적용됩니다. (실행 중인 세션은 재시작 전까지 기존 설정 유지)
+              {providerAppliesOptionsLive(agent.provider_kind)
+                ? "변경은 다음 턴부터 자동 적용됩니다. (재시작 불필요)"
+                : "권한 변경은 재시작 후 적용됩니다. (claude는 세션 하나로 떠 있어 런치 플래그로 고정)"}
             </p>
             {optionsStatus && (
               <p className="dc-member-session-status preserve-words">{optionsStatus}</p>

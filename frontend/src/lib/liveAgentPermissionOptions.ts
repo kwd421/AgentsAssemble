@@ -41,3 +41,10 @@ export function permissionOptionsForKind(providerKind?: string): PermissionOptio
 export function providerSupportsFast(providerKind?: string): boolean {
   return FAST_SUPPORTED_KINDS.has(String(providerKind || ""));
 }
+
+// Exec-per-turn providers re-read permission/fast from the room each turn, so an
+// edit applies on the next turn with no restart. claude holds one persistent PTY,
+// so its permission change only lands on restart.
+export function providerAppliesOptionsLive(providerKind?: string): boolean {
+  return String(providerKind || "") !== "claude_code";
+}
