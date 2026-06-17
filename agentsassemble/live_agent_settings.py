@@ -48,6 +48,55 @@ def update_live_agent_config_poll_interval(
     }
 
 
+def update_live_agent_config_options(
+    config_path: Path,
+    agent_id: str,
+    *,
+    permission_option: object | None = None,
+    fast_mode: object | None = None,
+) -> dict[str, object]:
+    """Update permission_option / fast_mode for one agent in a saved group config.
+
+    Either field may be None to leave it unchanged. The new values take effect the
+    next time the agent is launched (RESUME/START)."""
+    clean_agent_id = clean_lobby_text(agent_id, limit=64)
+    if not clean_agent_id:
+        raise ValueError("Agent id is required.")
+    new_permission = None if permission_option is None else clean_lobby_text(permission_option, limit=64)
+
+    data = _read_config(config_path)
+    agents = data.get("agents")
+    if not isinstance(agents, list) or not agents:
+        raise ValueError("Live agent group config requires a non-empty agents list.")
+
+    updated = False
+    applied: dict[str, object] = {}
+    for agent in agents:
+        if not isinstance(agent, dict):
+            raise ValueError("Each live agent entry must be a JSON object.")
+        if clean_lobby_text(agent.get("agent_id"), limit=64) != clean_agent_id:
+            continue
+        if new_permission is not None:
+            if new_permission:
+                agent["permission_option"] = new_permission
+            else:
+                agent.pop("permission_option", None)
+            applied["permission_option"] = new_permission
+        if fast_mode is not None:
+            if bool(fast_mode):
+                agent["fast_mode"] = True
+            else:
+                agent.pop("fast_mode", None)
+            applied["fast_mode"] = bool(fast_mode)
+        updated = True
+
+    if not updated:
+        raise ValueError(f"Live agent config does not include {clean_agent_id}.")
+
+    _write_config(config_path, data)
+    return {"config_path": str(config_path), "agent_id": clean_agent_id, **applied}
+
+
 def _read_config(config_path: Path) -> dict[str, Any]:
     try:
         data = json.loads(config_path.read_text(encoding="utf-8"))

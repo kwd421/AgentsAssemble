@@ -155,6 +155,11 @@ def connect_live_agent(
             or clean_lobby_text(existing.get("effort"), limit=64),
             "speed": clean_lobby_text(payload.get("speed"), limit=64)
             or clean_lobby_text(existing.get("speed"), limit=64),
+            "permission_option": clean_lobby_text(payload.get("permission_option"), limit=64)
+            or clean_lobby_text(existing.get("permission_option"), limit=64),
+            "fast_mode": _bool_value(
+                payload.get("fast_mode") if "fast_mode" in payload else existing.get("fast_mode")
+            ),
             "endpoint": endpoint,
             "capabilities": _clean_capabilities(payload.get("capabilities") or existing.get("capabilities")),
             "last_error": _clean_presence_last_error(payload.get("last_error"))
@@ -269,6 +274,43 @@ def update_live_agent_cooldown(
             agent = _without_output_only_freshness(existing)
             agent["cooldown"] = parsed_cooldown
             agent["cooldown_updated_at"] = timestamp
+            agent["updated_at"] = timestamp
+            agents[index] = agent
+            _write_state(output_root, {"agents": agents})
+            return agent
+    raise ValueError(f"Live agent {clean_agent_id} was not found.")
+
+
+def update_live_agent_options(
+    output_root: Path,
+    agent_id: str,
+    *,
+    permission_option: object | None = None,
+    fast_mode: object | None = None,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    """Update the agent record's permission_option / fast_mode (post-creation edit).
+
+    Either field may be omitted (None) to leave it unchanged. Takes effect on the
+    agent's next start/restart — a running resident keeps its launch-time config."""
+    current_time = now or datetime.now(UTC)
+    timestamp = current_time.isoformat()
+    clean_agent_id = clean_lobby_text(agent_id, limit=64)
+    if not clean_agent_id:
+        raise ValueError("Agent id is required.")
+    new_permission = None if permission_option is None else clean_lobby_text(permission_option, limit=64)
+
+    with LIVE_AGENT_STATE_LOCK:
+        state = _read_state(output_root)
+        agents = _agent_entries(state)
+        for index, existing in enumerate(agents):
+            if existing.get("agent_id") != clean_agent_id:
+                continue
+            agent = _without_output_only_freshness(existing)
+            if new_permission is not None:
+                agent["permission_option"] = new_permission
+            if fast_mode is not None:
+                agent["fast_mode"] = _bool_value(fast_mode)
             agent["updated_at"] = timestamp
             agents[index] = agent
             _write_state(output_root, {"agents": agents})

@@ -338,6 +338,8 @@ export interface LiveAgent {
   poll_interval_updated_at?: string;
   cooldown?: number;
   cooldown_updated_at?: string;
+  permission_option?: string;
+  fast_mode?: boolean;
   quota_5h?: string;
   quota_1w?: string;
   quota_state?: "ok" | "low" | "exhausted" | "unknown" | "";
@@ -1282,6 +1284,34 @@ export function updateLiveAgentSessionAgentTiming({
     live_agent_config_path: liveAgentConfigPath || "",
     poll_interval: pollInterval,
     ...(typeof cooldown === "number" ? { cooldown } : {}),
+  });
+}
+
+export interface LiveAgentOptionsUpdateResponse {
+  status: string;
+  agent_id: string;
+  permission_option?: string;
+  fast_mode?: boolean;
+  config_path?: string;
+  applies_on?: string;
+}
+
+export function updateLiveAgentSessionAgentOptions({
+  agentId,
+  liveAgentConfigPath,
+  permissionOption,
+  fastMode,
+}: {
+  agentId: string;
+  liveAgentConfigPath?: string;
+  permissionOption?: string;
+  fastMode?: boolean;
+}) {
+  return postJson<LiveAgentOptionsUpdateResponse>("/api/live-agent-sessions/agent-options", {
+    agent_id: agentId,
+    ...(liveAgentConfigPath ? { live_agent_config_path: liveAgentConfigPath } : {}),
+    ...(permissionOption !== undefined ? { permission_option: permissionOption } : {}),
+    ...(fastMode !== undefined ? { fast_mode: fastMode } : {}),
   });
 }
 

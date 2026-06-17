@@ -66,13 +66,17 @@ from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_quota import LIVE_AGENT_QUOTA_FIELDS, quota_viewer_for_host, quota_viewer_for_session
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
-from agentsassemble.live_agent_settings import update_live_agent_config_poll_interval
+from agentsassemble.live_agent_settings import (
+    update_live_agent_config_options,
+    update_live_agent_config_poll_interval,
+)
 from agentsassemble.live_agents import (
     connect_live_agent,
     heartbeat_live_agent,
     read_live_agents,
     update_live_agent_cooldown,
     update_live_agent_engagement,
+    update_live_agent_options,
     update_live_agent_poll_interval,
 )
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operation_history
@@ -2768,6 +2772,55 @@ def live_agent_session_agent_timing_payload(
         "poll_interval": agent.get("poll_interval"),
         "cooldown": agent.get("cooldown"),
         "config_path": str(config_result.get("config_path") or live_agent_config_path),
+        "agent": agent,
+    }
+
+
+def live_agent_session_agent_options_payload(
+    output_root: Path,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    """Edit an existing agent's permission_option / fast_mode (post-creation).
+
+    Writes both the room agent record and, when a saved group config is known, the
+    config file so the change survives a RESUME/START. Takes effect on next launch
+    — a running resident keeps its launch-time config until restarted."""
+    agent_id = clean_lobby_text(payload.get("agent_id"), limit=64)
+    if not agent_id:
+        raise ValueError("Agent id is required.")
+    if not any(str(agent.get("agent_id") or "") == agent_id for agent in read_live_agents(output_root)):
+        raise ValueError(f"Live agent {agent_id} was not found.")
+    has_permission = "permission_option" in payload
+    has_fast = "fast_mode" in payload
+    if not has_permission and not has_fast:
+        raise ValueError("Nothing to update: provide permission_option and/or fast_mode.")
+    permission_option = payload.get("permission_option") if has_permission else None
+    fast_mode = payload.get("fast_mode") if has_fast else None
+
+    live_agent_config_path = str(
+        payload.get("live_agent_config_path") or payload.get("live_agent_config") or ""
+    ).strip()
+    config_result: dict[str, object] = {}
+    if live_agent_config_path:
+        config_result = update_live_agent_config_options(
+            Path(live_agent_config_path),
+            agent_id,
+            permission_option=permission_option,
+            fast_mode=fast_mode,
+        )
+    agent = update_live_agent_options(
+        output_root,
+        agent_id,
+        permission_option=permission_option,
+        fast_mode=fast_mode,
+    )
+    return {
+        "status": "updated",
+        "agent_id": agent_id,
+        "permission_option": agent.get("permission_option"),
+        "fast_mode": bool(agent.get("fast_mode")),
+        "config_path": str(config_result.get("config_path") or live_agent_config_path),
+        "applies_on": "next_start",
         "agent": agent,
     }
 
@@ -9427,6 +9480,41 @@ def _make_handler(
                     details={
                         "agent_id": str(session.get("agent_id") or agent_id),
                         "poll_interval": session.get("poll_interval"),
+                        "config_path": str(session.get("config_path") or ""),
+                    },
+                )
+                self._send_json(session)
+                return
+            if parsed.path == "/api/live-agent-sessions/agent-options":
+                payload = self._operation_json_payload(operation="session.agent_options")
+                if payload is None:
+                    return
+                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
+                try:
+                    session = live_agent_session_agent_options_payload(output_root, payload)
+                except (OSError, ValueError) as error:
+                    safe_error = str(error)
+                    safe_details = _session_start_error_details(payload, error)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session.agent_options",
+                        status="failed",
+                        target_id=agent_id or str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
+                        error=safe_error,
+                        details={**safe_details, "agent_id": agent_id},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details={**safe_details, "agent_id": agent_id})
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="session.agent_options",
+                    status="updated",
+                    target_id=str(session.get("agent_id") or agent_id),
+                    summary=f"permission_option={session.get('permission_option')} fast_mode={session.get('fast_mode')}",
+                    details={
+                        "agent_id": str(session.get("agent_id") or agent_id),
+                        "permission_option": session.get("permission_option"),
+                        "fast_mode": session.get("fast_mode"),
                         "config_path": str(session.get("config_path") or ""),
                     },
                 )

@@ -26,6 +26,7 @@ import {
   muteRoomMember,
   stopLiveAgentSessionAgent,
   updateLiveAgentSessionAgentTiming,
+  updateLiveAgentSessionAgentOptions,
   uploadLobbyAttachment,
   type LiveAgent,
   type LiveAgentProcessGroup,
@@ -54,6 +55,10 @@ import {
   processGroupIndividualControlReason,
   registeredAgentProcessGroupForAgent,
 } from "../../lib/liveAgentProcessControls";
+import {
+  permissionOptionsForKind,
+  providerSupportsFast,
+} from "../../lib/liveAgentPermissionOptions";
 import { participantTypeMeta } from "../../lib/participantTypes";
 import { isActivePresence, presenceStatusLabel } from "../../lib/presenceStatus";
 import ProviderTruthChips from "./ProviderTruthChips";
@@ -544,6 +549,10 @@ function MemberDetailModal({
   const [agentAvatarImage, setAgentAvatarImage] = useState(entry.avatarImage || "");
   const [agentProfileCropFile, setAgentProfileCropFile] = useState<File | null>(null);
   const [agentProfileStatus, setAgentProfileStatus] = useState("");
+  const [permissionDraft, setPermissionDraft] = useState(entry.agent?.permission_option || "");
+  const [fastModeDraft, setFastModeDraft] = useState(Boolean(entry.agent?.fast_mode));
+  const [optionsBusy, setOptionsBusy] = useState(false);
+  const [optionsStatus, setOptionsStatus] = useState("");
 
   useEffect(() => {
     const nextPollInterval = pollIntervalFromAgent(entry.agent);
@@ -620,6 +629,16 @@ function MemberDetailModal({
     hasStopControl
   );
   const canEditAgentProfile = entry.ownedByViewer;
+  // Edit the agent's provider-native permission + fast toggle after creation.
+  const permissionOptions = permissionOptionsForKind(agent.provider_kind);
+  const supportsFast = providerSupportsFast(agent.provider_kind);
+  const optionsConfigPath = agent.live_agent_config_path || sessionGroup?.config_path || "";
+  const canEditAgentOptions = Boolean(
+    canEditAgentProfile && (permissionOptions.length > 0 || supportsFast)
+  );
+  const optionsDirty =
+    permissionDraft !== (agent.permission_option || "") ||
+    fastModeDraft !== Boolean(agent.fast_mode);
   const executionMode = agentExecutionMode(agent);
   const canUseCallMode = callModeAvailable(agent);
   const canUsePersistentMode = persistentModeAvailable(agent);
@@ -644,6 +663,30 @@ function MemberDetailModal({
     });
     onAgentProfileSettingsChange?.(nextProfiles);
     setAgentProfileStatus("에이전트 프로필 저장됨");
+  }
+
+  async function handleSaveAgentOptions() {
+    if (!canEditAgentOptions || optionsBusy) return;
+    setOptionsBusy(true);
+    setOptionsStatus("권한/속도 저장 중...");
+    try {
+      const response = await updateLiveAgentSessionAgentOptions({
+        agentId: agent.agent_id,
+        liveAgentConfigPath: optionsConfigPath || undefined,
+        ...(permissionOptions.length > 0 ? { permissionOption: permissionDraft } : {}),
+        ...(supportsFast ? { fastMode: fastModeDraft } : {}),
+      });
+      setOptionsStatus(
+        response.config_path
+          ? "저장됨 · 다음 시작/재시작부터 적용"
+          : "저장됨 (방 기록만) · 다음 시작부터 적용"
+      );
+      onSessionActionComplete?.();
+    } catch (error) {
+      setOptionsStatus(error instanceof Error ? error.message : "권한/속도 저장 실패");
+    } finally {
+      setOptionsBusy(false);
+    }
   }
 
   async function handleResumeSession() {
@@ -897,6 +940,50 @@ function MemberDetailModal({
             )}
             {agentProfileStatus && (
               <p className="dc-member-session-status preserve-words">{agentProfileStatus}</p>
+            )}
+          </section>
+        )}
+        {canEditAgentOptions && (
+          <section className="dc-member-detail-section" aria-label={`${entry.displayName} 권한·속도`}>
+            <h3>권한 / 속도</h3>
+            {permissionOptions.length > 0 && (
+              <label className="dc-agent-profile-field">
+                권한
+                <select
+                  value={permissionDraft}
+                  onChange={(event) => setPermissionDraft(event.currentTarget.value)}
+                >
+                  {permissionOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {supportsFast && (
+              <label className="dc-agent-start-toggle">
+                <input
+                  type="checkbox"
+                  checked={fastModeDraft}
+                  onChange={(event) => setFastModeDraft(event.currentTarget.checked)}
+                />
+                <span>빠른 모드 (fast)</span>
+              </label>
+            )}
+            <button
+              type="button"
+              className="dc-member-session-button"
+              onClick={() => void handleSaveAgentOptions()}
+              disabled={optionsBusy || !optionsDirty}
+            >
+              저장
+            </button>
+            <p className="dc-member-detail-note preserve-words">
+              변경은 다음 시작/재시작부터 적용됩니다. (실행 중인 세션은 재시작 전까지 기존 설정 유지)
+            </p>
+            {optionsStatus && (
+              <p className="dc-member-session-status preserve-words">{optionsStatus}</p>
             )}
           </section>
         )}

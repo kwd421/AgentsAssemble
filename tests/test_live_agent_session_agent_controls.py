@@ -199,6 +199,55 @@ class LiveAgentSessionAgentControlTests(unittest.TestCase):
             self.assertEqual(config_agent["poll_interval"], 0.25)
             self.assertEqual(config_agent["cooldown"], 0.5)
 
+    def test_agent_options_endpoint_updates_permission_and_fast_in_record_and_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _, _, live_agent_config = _write_two_agent_session_configs(root)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "meeting_id": "resident-m1",
+                    "provider_kind": "codex_live_session",
+                    "connection_kind": "live_session",
+                    "permission_option": "read-only",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/agent-options",
+                    data=json.dumps(
+                        {
+                            "agent_id": "agent-a",
+                            "live_agent_config_path": str(live_agent_config),
+                            "permission_option": "danger-full-access",
+                            "fast_mode": True,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["permission_option"], "danger-full-access")
+            self.assertIs(payload["fast_mode"], True)
+            self.assertEqual(payload["applies_on"], "next_start")
+            agent = read_live_agents(root)[0]
+            self.assertEqual(agent["permission_option"], "danger-full-access")
+            self.assertIs(agent["fast_mode"], True)
+            config_payload = json.loads(live_agent_config.read_text(encoding="utf-8"))
+            config_agent = next(a for a in config_payload["agents"] if a["agent_id"] == "agent-a")
+            self.assertEqual(config_agent["permission_option"], "danger-full-access")
+            self.assertIs(config_agent["fast_mode"], True)
+
     def test_resume_agent_from_stopped_bundle_starts_agent_owned_process(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -5,7 +5,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from agentsassemble.live_agent_context import live_agent_context_contract
-from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
+from agentsassemble.live_agents import (
+    connect_live_agent,
+    heartbeat_live_agent,
+    read_live_agents,
+    update_live_agent_engagement,
+    update_live_agent_options,
+)
 from agentsassemble.sandbox_launcher import NoSandboxLauncher, sandbox_launcher_for
 
 
@@ -113,6 +119,33 @@ class LiveAgentPresenceTests(unittest.TestCase):
             self.assertEqual({key: visible[key] for key in agent}, agent)
             self.assertEqual(visible["heartbeat_age_seconds"], 0)
             self.assertEqual(visible["stale_after_seconds"], 180)
+
+    def test_update_live_agent_options_edits_permission_and_fast_and_leaves_others(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "codex-live",
+                    "display_name": "Codex",
+                    "provider_kind": "codex_live_session",
+                    "connection_kind": "live_session",
+                    "permission_option": "read-only",
+                },
+            )
+            updated = update_live_agent_options(
+                root, "codex-live", permission_option="danger-full-access", fast_mode=True
+            )
+            self.assertEqual(updated["permission_option"], "danger-full-access")
+            self.assertIs(updated["fast_mode"], True)
+
+            # Omitting a field (None) leaves it unchanged.
+            again = update_live_agent_options(root, "codex-live", fast_mode=False)
+            self.assertEqual(again["permission_option"], "danger-full-access")
+            self.assertIs(again["fast_mode"], False)
+
+            with self.assertRaisesRegex(ValueError, "was not found"):
+                update_live_agent_options(root, "missing", fast_mode=True)
 
     def test_read_live_agents_marks_quiet_online_agents_stale(self):
         with tempfile.TemporaryDirectory() as temp_dir:
