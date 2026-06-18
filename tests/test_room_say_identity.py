@@ -8,11 +8,13 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import reset_state, verify_session_token
+from agentsassemble.room_speech import SERVER_AUTO_CHAIN_DEPTH_LIMIT
 
 
 class TestRoomSayIdentity(unittest.TestCase):
@@ -161,6 +163,39 @@ class TestRoomSayIdentity(unittest.TestCase):
         self.assertEqual(event["actor_id"], "friend-ai")
         self.assertEqual(event["name"], "Friend AI")
         self.assertEqual(event["message"], "friend ai is here")
+
+    def test_say_rejects_over_depth_auto_reply_as_conflict(self):
+        invite = self._post("/api/room-invite/create", {
+            "meeting_id": "test-m",
+            "agent_id": "review-guest",
+            "display_name": "Review Guest",
+            "local_dev_preview": True,
+            "max_uses": 1,
+        })
+        join = self._post("/api/room-invite/join", {
+            "invite_token": invite["invite_token"],
+            "meeting_id": "test-m",
+        })
+        request = Request(
+            f"{self.url}/api/room/say",
+            data=json.dumps(
+                {
+                    "message": "too deep",
+                    "source_event_id": "src1",
+                    "auto_chain_depth": SERVER_AUTO_CHAIN_DEPTH_LIMIT + 1,
+                }
+            ).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {join['session_token']}",
+            },
+            method="POST",
+        )
+
+        with self.assertRaises(HTTPError) as rejected:
+            urlopen(request, timeout=4)
+
+        self.assertEqual(rejected.exception.code, 409)
 
 
 if __name__ == "__main__":

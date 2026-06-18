@@ -7,6 +7,8 @@ from pathlib import Path
 from agentsassemble.room_speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
+    SERVER_AUTO_CHAIN_DEPTH_LIMIT,
+    SERVER_SPEECH_BURST_LIMIT,
     ensure_lobby_say_allowed,
     governed_official_reply,
     governed_channel_say,
@@ -130,6 +132,66 @@ class GovernedLobbySayTests(unittest.TestCase):
                     require_nonempty_message=True,
                 )
             self.assertEqual(empty.exception.category, "empty")
+
+    def test_rejects_over_depth_auto_reply_before_append(self):
+        appended: list[dict[str, object]] = []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaises(GovernedLobbySayRejected) as rejected:
+                governed_lobby_say(
+                    Path(temp_dir),
+                    identity=ActorIdentity(agent_id="agent-a", display_name="Agent A"),
+                    payload={
+                        "message": "too deep",
+                        "source_event_id": "src1",
+                        "auto_chain_depth": SERVER_AUTO_CHAIN_DEPTH_LIMIT + 1,
+                    },
+                    append_lobby_event=lambda root, payload, *, allow_flow_metadata: appended.append(payload) or payload,
+                    public_lobby_allows_room_scope=lambda payload: False,
+                    is_muted=lambda root, meeting_id, agent_id: False,
+                )
+
+        self.assertEqual(rejected.exception.category, "chain_depth")
+        self.assertEqual(appended, [])
+
+    def test_rejects_actor_flood_before_append(self):
+        appended: list[dict[str, object]] = []
+
+        def append_lobby_event(
+            root: Path,
+            payload: dict[str, object],
+            *,
+            allow_flow_metadata: bool,
+        ) -> dict[str, object]:
+            appended.append(payload)
+            return payload
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            identity = ActorIdentity(agent_id="agent-flood", display_name="Flood Bot")
+            for index in range(SERVER_SPEECH_BURST_LIMIT):
+                governed_lobby_say(
+                    root,
+                    identity=identity,
+                    payload={"message": f"burst {index}"},
+                    append_lobby_event=append_lobby_event,
+                    public_lobby_allows_room_scope=lambda payload: False,
+                    is_muted=lambda root, meeting_id, agent_id: False,
+                    now_monotonic=lambda: 100.0,
+                )
+            with self.assertRaises(GovernedLobbySayRejected) as rejected:
+                governed_lobby_say(
+                    root,
+                    identity=identity,
+                    payload={"message": "one too many"},
+                    append_lobby_event=append_lobby_event,
+                    public_lobby_allows_room_scope=lambda payload: False,
+                    is_muted=lambda root, meeting_id, agent_id: False,
+                    now_monotonic=lambda: 100.0,
+                )
+
+        self.assertEqual(rejected.exception.category, "rate_limited")
+        self.assertEqual(len(appended), SERVER_SPEECH_BURST_LIMIT)
 
     def test_channel_say_stamps_identity_and_appends_to_channel_path(self):
         captured: dict[str, object] = {}

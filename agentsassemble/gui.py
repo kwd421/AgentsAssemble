@@ -1946,20 +1946,23 @@ def send_lobby_message_to_remote_bridge(
         raise ValueError(str(rejected)) from rejected
     adapter = RemoteBridgeAdapter(provider, requester=REMOTE_LOBBY_REQUESTER)
     remote_event = adapter.run_lobby_message(role, session, speaker_name=speaker_name, message=message.strip())
-    return governed_lobby_say(
-        output_root,
-        identity=identity,
-        payload={
-            "kind": remote_event.get("kind") or "message",
-            "message": remote_event.get("message") or "",
-        },
-        append_lobby_event=append_lobby_event,
-        public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
-        is_muted=is_room_member_muted,
-        policy_already_checked=True,
-        side="other-agent",
-        allowed_kinds=LOBBY_KINDS,
-    )
+    try:
+        return governed_lobby_say(
+            output_root,
+            identity=identity,
+            payload={
+                "kind": remote_event.get("kind") or "message",
+                "message": remote_event.get("message") or "",
+            },
+            append_lobby_event=append_lobby_event,
+            public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
+            is_muted=is_room_member_muted,
+            policy_already_checked=True,
+            side="other-agent",
+            allowed_kinds=LOBBY_KINDS,
+        )
+    except GovernedLobbySayRejected as rejected:
+        raise ValueError(str(rejected)) from rejected
 
 
 def provider_catalog_payload() -> dict[str, object]:
@@ -3566,25 +3569,28 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
                 metadata={"last_observed_event_id": source_event_id},
             )
             return {"status": conflict, "agent": updated_agent, "events": read_lobby(output_root)}
-        event = governed_lobby_say(
-            output_root,
-            identity=identity,
-            payload={
-                "kind": payload.get("kind") or "message",
-                "message": _real_session_smoke_reply_message(source_event_id, message),
-                "source_event_id": source_event_id,
-                "auto_chain_depth": payload.get("auto_chain_depth") or 0,
-                **flow_metadata,
-            },
-            append_lobby_event=append_lobby_event,
-            public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
-            is_muted=is_room_member_muted,
-            policy_already_checked=True,
-            side="other-agent",
-            live_agent_endpoint=True,
-            allow_flow_metadata=True,
-            allowed_kinds=LOBBY_KINDS,
-        )
+        try:
+            event = governed_lobby_say(
+                output_root,
+                identity=identity,
+                payload={
+                    "kind": payload.get("kind") or "message",
+                    "message": _real_session_smoke_reply_message(source_event_id, message),
+                    "source_event_id": source_event_id,
+                    "auto_chain_depth": payload.get("auto_chain_depth") or 0,
+                    **flow_metadata,
+                },
+                append_lobby_event=append_lobby_event,
+                public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
+                is_muted=is_room_member_muted,
+                policy_already_checked=True,
+                side="other-agent",
+                live_agent_endpoint=True,
+                allow_flow_metadata=True,
+                allowed_kinds=LOBBY_KINDS,
+            )
+        except GovernedLobbySayRejected as rejected:
+            raise ValueError(str(rejected)) from rejected
         reply_metadata: dict[str, object] = {
             "last_error": "",
             "last_reply_at": event.get("created_at") or datetime.now(UTC).isoformat(),

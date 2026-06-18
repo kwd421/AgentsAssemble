@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from time import monotonic
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,42 @@ AppendLobbyEvent = Callable[..., dict[str, object]]
 AppendLiveEvent = Callable[[Path, dict[str, object]], dict[str, object]]
 AllowsRoomScope = Callable[[dict[str, object]], bool]
 IsMuted = Callable[[Path, str, str], bool]
+NowMonotonic = Callable[[], float]
 PUBLIC_SPEECH_KINDS = frozenset({"vote", "vote_cast"})
+SERVER_AUTO_CHAIN_DEPTH_LIMIT = 8
+SERVER_SPEECH_BURST_LIMIT = 20
+SERVER_SPEECH_BURST_WINDOW_SECONDS = 10.0
+_SPEECH_RATE_BUCKETS: dict[tuple[str, str, str], list[float]] = {}
+
+
+def _chain_depth_value(value: object) -> int:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return max(0, value)
+    if isinstance(value, float) and value.is_integer():
+        return max(0, int(value))
+    if isinstance(value, str) and value.strip().isdigit():
+        return max(0, int(value.strip()))
+    return 0
+
+
+def _enforce_payload_limits(
+    output_root: Path,
+    identity: ActorIdentity,
+    payload: Mapping[str, object],
+    *,
+    now_monotonic: NowMonotonic,
+) -> None:
+    chain_depth = _chain_depth_value(payload.get("auto_chain_depth"))
+    if chain_depth > SERVER_AUTO_CHAIN_DEPTH_LIMIT:
+        raise GovernedLobbySayRejected("auto-reply chain depth exceeded", category="chain_depth")
+    now = float(now_monotonic())
+    key = (str(output_root), identity.meeting_id, identity.agent_id)
+    bucket = _SPEECH_RATE_BUCKETS.setdefault(key, [])
+    window_start = now - SERVER_SPEECH_BURST_WINDOW_SECONDS
+    bucket[:] = [timestamp for timestamp in bucket if timestamp > window_start]
+    if len(bucket) >= SERVER_SPEECH_BURST_LIMIT:
+        raise GovernedLobbySayRejected("speech rate limit exceeded", category="rate_limited")
+    bucket.append(now)
 
 
 def _stamped_room_speech_payload(
@@ -97,6 +133,7 @@ def governed_lobby_say(
     live_agent_endpoint: bool = False,
     allow_flow_metadata: bool | None = None,
     allowed_kinds: Collection[str] = PUBLIC_SPEECH_KINDS,
+    now_monotonic: NowMonotonic = monotonic,
 ) -> dict[str, object]:
     """Stamp authenticated identity and append one lobby speech event.
 
@@ -114,6 +151,7 @@ def governed_lobby_say(
     )
     if require_nonempty_message and not str(event_payload.get("message") or "").strip():
         raise GovernedLobbySayRejected("Message is required.", category="empty")
+    _enforce_payload_limits(output_root, identity, event_payload, now_monotonic=now_monotonic)
     if allow_flow_metadata is None:
         allow_flow_metadata = public_lobby_allows_room_scope(event_payload)
     append_kwargs: dict[str, object] = {"allow_flow_metadata": allow_flow_metadata}
@@ -133,6 +171,7 @@ def governed_channel_say(
     side: str = "other",
     require_nonempty_message: bool = False,
     policy_already_checked: bool = False,
+    now_monotonic: NowMonotonic = monotonic,
 ) -> dict[str, object]:
     """Stamp authenticated identity and append one custom-channel speech event."""
     if not policy_already_checked:
@@ -144,6 +183,7 @@ def governed_channel_say(
     )
     if require_nonempty_message and not str(event_payload.get("message") or "").strip():
         raise GovernedLobbySayRejected("Message is required.", category="empty")
+    _enforce_payload_limits(output_root, identity, event_payload, now_monotonic=now_monotonic)
     return append_channel_event(channel_path, event_payload, allow_flow_metadata=True)
 
 

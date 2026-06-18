@@ -82,6 +82,16 @@ _LOCAL_OPERATOR_PARTICIPANT_ID = "operator-local"
 _LOCAL_OPERATOR_DISPLAY_DEFAULT = "호스트"
 
 
+def _speech_rejection_status(category: str) -> HTTPStatus:
+    if category == "rate_limited":
+        return HTTPStatus.TOO_MANY_REQUESTS
+    if category == "chain_depth":
+        return HTTPStatus.CONFLICT
+    if category in {"read_only", "muted"}:
+        return HTTPStatus.FORBIDDEN
+    return HTTPStatus.BAD_REQUEST
+
+
 def register_room_routes(router: Router) -> None:
     """Attach the room-domain routes to the server's route table."""
 
@@ -201,15 +211,19 @@ def register_room_routes(router: Router) -> None:
         payload = ctx.read_json_body()
         if payload is None:
             return
-        event = governed_lobby_say(
-            ctx.deps.output_root,
-            identity=identity,
-            payload=payload,
-            append_lobby_event=ctx.deps.append_lobby_event,
-            public_lobby_allows_room_scope=ctx.deps.public_lobby_allows_room_scope,
-            is_muted=is_room_member_muted,
-            policy_already_checked=True,
-        )
+        try:
+            event = governed_lobby_say(
+                ctx.deps.output_root,
+                identity=identity,
+                payload=payload,
+                append_lobby_event=ctx.deps.append_lobby_event,
+                public_lobby_allows_room_scope=ctx.deps.public_lobby_allows_room_scope,
+                is_muted=is_room_member_muted,
+                policy_already_checked=True,
+            )
+        except GovernedLobbySayRejected as rejected:
+            ctx.send_error(_speech_rejection_status(rejected.category), str(rejected))
+            return
         ctx.send_json({"event": event})
 
     # -- polls (/vote) ---------------------------------------------------------
@@ -571,17 +585,21 @@ def register_room_routes(router: Router) -> None:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "invalid channel id")
             return
         path = ctx.deps.output_root / filename
-        with _CHANNEL_LOBBY_LOCK:
-            event = governed_channel_say(
-                ctx.deps.output_root,
-                channel_path=path,
-                identity=identity,
-                payload=payload,
-                append_channel_event=append_lobby_event_to_file,
-                is_muted=is_room_member_muted,
-                side="mine" if session is None else "other",
-                policy_already_checked=True,
-            )
+        try:
+            with _CHANNEL_LOBBY_LOCK:
+                event = governed_channel_say(
+                    ctx.deps.output_root,
+                    channel_path=path,
+                    identity=identity,
+                    payload=payload,
+                    append_channel_event=append_lobby_event_to_file,
+                    is_muted=is_room_member_muted,
+                    side="mine" if session is None else "other",
+                    policy_already_checked=True,
+                )
+        except GovernedLobbySayRejected as rejected:
+            ctx.send_error(_speech_rejection_status(rejected.category), str(rejected))
+            return
         ctx.send_json({"event": event, "channel_id": channel_id})
 
     # -- voice channels (presence only; audio streaming deferred) -----------
