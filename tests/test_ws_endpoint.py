@@ -23,6 +23,7 @@ from agentsassemble.room_invite import (
     reset_state,
 )
 from agentsassemble.room_websocket import OP_TEXT, compute_accept_key
+from agentsassemble.ws_room_session import WS_SESSION_REVOKED_CATEGORY
 
 
 def _client_text_frame(text: str) -> bytes:
@@ -100,6 +101,16 @@ class WsEndpointTests(unittest.TestCase):
         with urlopen(req, timeout=4) as resp:
             return json.loads(resp.read().decode("utf-8"))["ticket"]
 
+    def _leave(self, base: str, token: str) -> dict:
+        req = Request(
+            f"{base}/api/room-invite/leave",
+            data=b"{}",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(req, timeout=4) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
     def _handshake(self, host: str, port: int, ticket: str) -> socket.socket:
         sock = socket.create_connection((host, port), timeout=4)
         key = base64.b64encode(b"0123456789abcdef").decode("ascii")
@@ -155,6 +166,25 @@ class WsEndpointTests(unittest.TestCase):
                 self.assertEqual(msg["event"]["message"], "안녕 WS")
                 # server-injected identity, not client-supplied
                 self.assertEqual(msg["event"]["actor_id"], "guest-1")
+            finally:
+                sock.close()
+
+    def test_existing_ws_rejects_say_after_session_leave(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            server = self._start_server(Path(tmp))
+            host, port = server.server_address
+            base = f"http://{host}:{port}"
+            token = self._session_token(base)
+            ticket = self._ws_ticket(base, token)
+            sock = self._handshake(host, port, ticket)
+            try:
+                leave = self._leave(base, token)
+                self.assertEqual(leave["status"], "left")
+
+                sock.sendall(_client_text_frame(json.dumps({"op": "say", "message": "after leave"})))
+                msg = _recv_server_text(sock)
+                self.assertEqual(msg["op"], "error")
+                self.assertEqual(msg["category"], WS_SESSION_REVOKED_CATEGORY)
             finally:
                 sock.close()
 

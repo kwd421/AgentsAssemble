@@ -4,6 +4,7 @@ import unittest
 
 from agentsassemble.room_websocket import OP_CLOSE, OP_PING, OP_PONG, OP_TEXT
 from agentsassemble.ws_room_session import (
+    WS_SESSION_REVOKED_CATEGORY,
     WsRoomDeps,
     WsRoomSession,
     WsSayRejected,
@@ -72,6 +73,7 @@ class FakeDeps:
         self.lobby_latest = ""
         self.roster = ([], "sig0")
         self.muted = False
+        self.session_active = True
         self.posted = []
         self.statuses = []             # (identity, status) from set_status
 
@@ -82,6 +84,7 @@ class FakeDeps:
             post_say=self._post_say,
             is_muted=lambda meeting_id, agent_id: self.muted,
             set_thinking=lambda identity, on: self.statuses.append((identity, on)),
+            is_session_active=lambda session_token: self.session_active,
         )
 
     def _read_lobby_after(self, meeting_id, after):
@@ -95,7 +98,7 @@ class FakeDeps:
         return event
 
 
-def _session(deps, **identity_over):
+def _session(deps, *, session_token="", **identity_over):
     identity = {
         "agent_id": "guest-1",
         "display_name": "테스터",
@@ -106,7 +109,7 @@ def _session(deps, **identity_over):
         "operator": False,
     }
     identity.update(identity_over)
-    return WsRoomSession(identity=identity, deps=deps.make())
+    return WsRoomSession(identity=identity, deps=deps.make(), session_token=session_token)
 
 
 class SubscribeTests(unittest.TestCase):
@@ -216,6 +219,24 @@ class SayGovernanceTests(unittest.TestCase):
         sess = _session(deps)
         msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "x"}).encode()))
         self.assertEqual(msgs[0]["category"], "turn_conflict")
+
+    def test_revoked_backing_session_blocks_say(self):
+        deps = FakeDeps()
+        deps.session_active = False
+        sess = _session(deps, session_token="aas1.dead")
+        msgs = text_messages(sess.handle_frame(OP_TEXT, json.dumps({"op": "say", "message": "x"}).encode()))
+        self.assertEqual(msgs[0]["op"], "error")
+        self.assertEqual(msgs[0]["category"], WS_SESSION_REVOKED_CATEGORY)
+        self.assertEqual(deps.posted, [])
+        self.assertTrue(sess.closed)
+
+    def test_revoked_backing_session_stops_polling(self):
+        deps = FakeDeps()
+        deps.session_active = False
+        sess = _session(deps, session_token="aas1.dead")
+        msgs = text_messages(sess.poll())
+        self.assertEqual(msgs[0]["category"], WS_SESSION_REVOKED_CATEGORY)
+        self.assertTrue(sess.closed)
 
 
 class ThinkingTests(unittest.TestCase):

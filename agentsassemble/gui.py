@@ -178,6 +178,7 @@ from agentsassemble.room_websocket import (
     is_websocket_upgrade,
 )
 from agentsassemble.ws_room_session import (
+    WS_SESSION_TOKEN_KEY,
     WS_TICKET_TTL_SECONDS,
     WsRoomDeps,
     WsSayRejected,
@@ -8334,6 +8335,7 @@ def _make_handler(
             post_say=post_say,
             is_muted=lambda meeting_id, agent_id: is_room_member_muted(output_root, meeting_id, agent_id),
             set_thinking=set_thinking,
+            is_session_active=lambda session_token: bool(verify_session_token(session_token)),
         )
     # R2: route-table dispatcher. Migrated domains register here; do_GET/do_POST
     # try the table first and fall back to the legacy if-chains below.
@@ -8776,7 +8778,7 @@ def _make_handler(
                 session = ctx.require_session()
                 if session is None:
                     return  # require_session already sent 401
-                ticket = ws_ticket_store.issue(session)
+                ticket = ws_ticket_store.issue(session, session_token=ctx.bearer_token())
                 self._send_json({"ticket": ticket, "ttl_seconds": WS_TICKET_TTL_SECONDS})
                 return
             if parsed.path == "/api/demo":
@@ -11484,6 +11486,7 @@ def _make_handler(
             if not session:
                 self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired ws ticket")
                 return
+            session_token = str(session.pop(WS_SESSION_TOKEN_KEY, "") or "")
             key = str(self.headers.get("Sec-WebSocket-Key") or "")
             if not key:
                 self._send_error(HTTPStatus.BAD_REQUEST, "missing Sec-WebSocket-Key")
@@ -11504,7 +11507,7 @@ def _make_handler(
             self.send_header("Sec-WebSocket-Accept", compute_accept_key(key))
             self.end_headers()
             self.wfile.flush()
-            ws = WsRoomSession(identity=identity, deps=_ws_room_deps())
+            ws = WsRoomSession(identity=identity, deps=_ws_room_deps(), session_token=session_token)
             assembler = MessageAssembler()
             sock = self.connection
             def _send_all(frames: list[bytes]) -> bool:

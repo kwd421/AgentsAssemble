@@ -3,10 +3,10 @@
 Separated from the pure codec (`room_websocket.py`) so it can be unit-tested
 without a socket: feed decoded messages, assert the outgoing frames.
 
-Governance (deliberately minimal — the user's stated problem was *wrong connection
-path*, not spam): identity + client_type are fixed at the handshake (the single
-governed entry), plus the existing per-room controls (invite scope + mute). No
-burst/dedup limiter — that was explicitly rejected as throwaway pre-WS work.
+Governance: identity + client_type are fixed at the handshake, then every
+speech append still goes through the shared server-governed say path. Existing
+connections also re-check their backing invite session so leave/kick revokes
+already-open sockets, not just future HTTP requests.
 """
 from __future__ import annotations
 
@@ -58,6 +58,8 @@ WS_SAY_METADATA_FIELDS = {
     "flow_started_at",
     "flow_deadline_at",
 }
+WS_SESSION_TOKEN_KEY = "_ws_session_token"
+WS_SESSION_REVOKED_CATEGORY = "session_revoked"
 
 
 class WsTicketStore:
@@ -71,12 +73,12 @@ class WsTicketStore:
     def __init__(self, *, ttl_seconds: float = WS_TICKET_TTL_SECONDS, now_fn: Callable[[], float] = time.monotonic) -> None:
         self._ttl = float(ttl_seconds)
         self._now = now_fn
-        self._tickets: dict[str, tuple[dict, float]] = {}
+        self._tickets: dict[str, tuple[dict, str, float]] = {}
 
-    def issue(self, session: dict) -> str:
+    def issue(self, session: dict, *, session_token: str = "") -> str:
         self._prune()
         ticket = "wst_" + secrets.token_urlsafe(24)
-        self._tickets[ticket] = (dict(session), self._now() + self._ttl)
+        self._tickets[ticket] = (dict(session), str(session_token or ""), self._now() + self._ttl)
         return ticket
 
     def consume(self, ticket: str) -> dict | None:
@@ -84,14 +86,16 @@ class WsTicketStore:
         entry = self._tickets.pop(str(ticket or ""), None)
         if entry is None:
             return None
-        session, expires_at = entry
+        session, session_token, expires_at = entry
         if self._now() > expires_at:
             return None
+        if session_token:
+            session[WS_SESSION_TOKEN_KEY] = session_token
         return session
 
     def _prune(self) -> None:
         now = self._now()
-        expired = [t for t, (_, exp) in self._tickets.items() if now > exp]
+        expired = [t for t, (_, _, exp) in self._tickets.items() if now > exp]
         for t in expired:
             self._tickets.pop(t, None)
 
@@ -111,6 +115,7 @@ class WsRoomDeps:
     post_say: Callable[[dict, dict], dict]
     is_muted: Callable[[str, str], bool]
     set_thinking: Callable[[dict, bool], None]
+    is_session_active: Callable[[str], bool] = lambda token: True
 
 
 @dataclass
@@ -121,6 +126,7 @@ class WsRoomSession:
 
     identity: dict
     deps: WsRoomDeps
+    session_token: str = ""
     subscribed: set = field(default_factory=set)
     _cursors: dict = field(default_factory=dict)
     _roster_sig: str = ""
@@ -145,6 +151,8 @@ class WsRoomSession:
         return []
 
     def _handle_text(self, payload: bytes) -> list[bytes]:
+        if not self._session_is_active():
+            return [self._error(WS_SESSION_REVOKED_CATEGORY, "This room session has ended.")]
         try:
             msg = json.loads(payload.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
@@ -218,6 +226,8 @@ class WsRoomSession:
         existing snapshot readers (no pub/sub yet — WS-6)."""
         if self.closed:
             return []
+        if not self._session_is_active():
+            return [self._error(WS_SESSION_REVOKED_CATEGORY, "This room session has ended.")]
         frames: list[bytes] = []
         if "lobby" in self.subscribed:
             events, latest = self.deps.read_lobby_after(self.meeting_id, self._cursors.get("lobby", ""))
@@ -240,6 +250,18 @@ class WsRoomSession:
                 self._roster_sig = signature
                 frames.append(encode_text(json.dumps({"op": "event", "stream": "roster", "members": members})))
         return frames
+
+    def _session_is_active(self) -> bool:
+        if not self.session_token:
+            return True
+        try:
+            active = bool(self.deps.is_session_active(self.session_token))
+        except Exception:
+            active = False
+        if active:
+            return True
+        self.closed = True
+        return False
 
     def _error(self, category: str, message: str) -> bytes:
         return encode_text(json.dumps({"op": "error", "category": category, "message": message}))
