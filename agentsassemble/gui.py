@@ -162,6 +162,7 @@ from agentsassemble.room_friend_dms import (
 from agentsassemble.room_friends import delete_room_friend, room_friends_payload, upsert_room_friend
 from agentsassemble.identity_store import default_identity_db_path
 from agentsassemble.room_members import is_room_member_muted, mark_thinking, room_members_payload
+from agentsassemble.room_speech import ActorIdentity, GovernedLobbySayRejected, governed_lobby_say
 from agentsassemble.room_websocket import (
     CLOSE_PROTOCOL_ERROR,
     MessageAssembler,
@@ -173,6 +174,7 @@ from agentsassemble.room_websocket import (
 from agentsassemble.ws_room_session import (
     WS_TICKET_TTL_SECONDS,
     WsRoomDeps,
+    WsSayRejected,
     WsRoomSession,
     WsTicketStore,
 )
@@ -8262,23 +8264,18 @@ def _make_handler(
             return list(payload.get("members", [])), str(_payload_signature(payload) or "")
 
         def post_say(identity: dict, payload: dict) -> dict:
-            # mirrors POST /api/room/say identity injection (never trust client)
-            event_payload = dict(payload)
-            event_payload["name"] = identity.get("display_name")
-            event_payload["actor_id"] = identity.get("agent_id")
-            event_payload["actor_type"] = (
-                "human" if str(identity.get("participant_type") or "human") == "human" else "agent"
-            )
-            event_payload["side"] = "other"
-            requested_kind = str(event_payload.get("kind") or "")
-            event_payload["kind"] = requested_kind if requested_kind in {"vote", "vote_cast"} else "message"
-            if identity.get("meeting_id"):
-                event_payload["flow_meeting_id"] = identity["meeting_id"]
-            return append_lobby_event(
-                output_root,
-                event_payload,
-                allow_flow_metadata=_public_lobby_allows_room_scope(event_payload),
-            )
+            try:
+                return governed_lobby_say(
+                    output_root,
+                    identity=ActorIdentity.from_mapping(identity),
+                    payload=payload,
+                    append_lobby_event=append_lobby_event,
+                    public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
+                    is_muted=is_room_member_muted,
+                    require_nonempty_message=True,
+                )
+            except GovernedLobbySayRejected as rejected:
+                raise WsSayRejected(str(rejected), category=rejected.category) from rejected
 
         def set_thinking(identity: dict, on: bool) -> None:
             # Ephemeral "generating a reply" flag → the roster carries a `thinking`

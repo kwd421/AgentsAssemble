@@ -46,6 +46,12 @@ from agentsassemble.room_members import (
     set_room_member_muted,
     upsert_room_member,
 )
+from agentsassemble.room_speech import (
+    ActorIdentity,
+    GovernedLobbySayRejected,
+    ensure_lobby_say_allowed,
+    governed_lobby_say,
+)
 from agentsassemble.room_settings import room_settings_payload, update_room_settings
 from agentsassemble.room_users import (
     grant_operator_to_device,
@@ -207,22 +213,32 @@ def register_room_routes(router: Router) -> None:
         session = ctx.require_posting_session()
         if session is None:
             return
-        if is_room_member_muted(
-            ctx.deps.output_root,
-            str(session.get("meeting_id") or ""),
-            str(session.get("agent_id") or ""),
-        ):
-            ctx.send_error(HTTPStatus.FORBIDDEN, "muted by room host")
+        identity = ActorIdentity.from_mapping(session)
+        try:
+            ensure_lobby_say_allowed(
+                ctx.deps.output_root,
+                identity,
+                is_muted=is_room_member_muted,
+            )
+        except GovernedLobbySayRejected as rejected:
+            message = (
+                "read-only invite session cannot post"
+                if rejected.category == "read_only"
+                else "muted by room host"
+            )
+            ctx.send_error(HTTPStatus.FORBIDDEN, message)
             return
         payload = ctx.read_json_body()
         if payload is None:
             return
-        # Inject authenticated identity; never trust client-supplied identity.
-        _stamp_session_identity(payload, session)
-        event = ctx.deps.append_lobby_event(
+        event = governed_lobby_say(
             ctx.deps.output_root,
-            payload,
-            allow_flow_metadata=ctx.deps.public_lobby_allows_room_scope(payload),
+            identity=identity,
+            payload=payload,
+            append_lobby_event=ctx.deps.append_lobby_event,
+            public_lobby_allows_room_scope=ctx.deps.public_lobby_allows_room_scope,
+            is_muted=is_room_member_muted,
+            policy_already_checked=True,
         )
         ctx.send_json({"event": event})
 
