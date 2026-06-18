@@ -50,6 +50,24 @@ AllowsRoomScope = Callable[[dict[str, object]], bool]
 IsMuted = Callable[[Path, str, str], bool]
 
 
+def _stamped_room_speech_payload(
+    *,
+    identity: ActorIdentity,
+    payload: Mapping[str, object],
+    side: str,
+) -> dict[str, object]:
+    event_payload = dict(payload)
+    event_payload["name"] = identity.display_name
+    event_payload["actor_id"] = identity.agent_id
+    event_payload["actor_type"] = identity.actor_type
+    event_payload["side"] = side
+    requested_kind = str(event_payload.get("kind") or "")
+    event_payload["kind"] = requested_kind if requested_kind in {"vote", "vote_cast"} else "message"
+    if identity.meeting_id:
+        event_payload["flow_meeting_id"] = identity.meeting_id
+    return event_payload
+
+
 def ensure_lobby_say_allowed(
     output_root: Path,
     identity: ActorIdentity,
@@ -81,20 +99,40 @@ def governed_lobby_say(
     """
     if not policy_already_checked:
         ensure_lobby_say_allowed(output_root, identity, is_muted=is_muted)
-    event_payload = dict(payload)
+    event_payload = _stamped_room_speech_payload(
+        identity=identity,
+        payload=payload,
+        side="other",
+    )
     if require_nonempty_message and not str(event_payload.get("message") or "").strip():
         raise GovernedLobbySayRejected("Message is required.", category="empty")
-    event_payload["name"] = identity.display_name
-    event_payload["actor_id"] = identity.agent_id
-    event_payload["actor_type"] = identity.actor_type
-    event_payload["side"] = "other"
-    requested_kind = str(event_payload.get("kind") or "")
-    event_payload["kind"] = requested_kind if requested_kind in {"vote", "vote_cast"} else "message"
-    if identity.meeting_id:
-        event_payload["flow_meeting_id"] = identity.meeting_id
     return append_lobby_event(
         output_root,
         event_payload,
         allow_flow_metadata=public_lobby_allows_room_scope(event_payload),
     )
 
+
+def governed_channel_say(
+    output_root: Path,
+    *,
+    channel_path: Path,
+    identity: ActorIdentity,
+    payload: Mapping[str, object],
+    append_channel_event: AppendLobbyEvent,
+    is_muted: IsMuted,
+    side: str = "other",
+    require_nonempty_message: bool = False,
+    policy_already_checked: bool = False,
+) -> dict[str, object]:
+    """Stamp authenticated identity and append one custom-channel speech event."""
+    if not policy_already_checked:
+        ensure_lobby_say_allowed(output_root, identity, is_muted=is_muted)
+    event_payload = _stamped_room_speech_payload(
+        identity=identity,
+        payload=payload,
+        side=side,
+    )
+    if require_nonempty_message and not str(event_payload.get("message") or "").strip():
+        raise GovernedLobbySayRejected("Message is required.", category="empty")
+    return append_channel_event(channel_path, event_payload, allow_flow_metadata=True)

@@ -49,6 +49,7 @@ from agentsassemble.room_members import (
 from agentsassemble.room_speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
+    governed_channel_say,
     ensure_lobby_say_allowed,
     governed_lobby_say,
 )
@@ -79,37 +80,6 @@ _CHANNEL_LOBBY_LOCK = threading.Lock()
 # trusted to name itself. A stable id keeps its voice presence + messages coherent.
 _LOCAL_OPERATOR_PARTICIPANT_ID = "operator-local"
 _LOCAL_OPERATOR_DISPLAY_DEFAULT = "호스트"
-
-
-def _stamp_session_identity(payload: dict[str, object], session: dict[str, object]) -> None:
-    """Overwrite client-supplied identity with the authenticated session's, so a
-    poster can never spoof name/actor. Shared by the lobby and custom-channel say
-    paths so they can't drift. Polls ride the same field: only "vote"/"vote_cast"
-    survive as kinds; everything else is a plain message."""
-    payload["name"] = session["display_name"]
-    payload["actor_id"] = session["agent_id"]
-    payload["actor_type"] = (
-        "human" if str(session.get("participant_type") or "human") == "human" else "agent"
-    )
-    payload["side"] = "other"
-    requested_kind = str(payload.get("kind") or "")
-    payload["kind"] = requested_kind if requested_kind in {"vote", "vote_cast"} else "message"
-    if session.get("meeting_id"):
-        payload["flow_meeting_id"] = session["meeting_id"]
-
-
-def _stamp_local_identity(payload: dict[str, object], meeting_id: str) -> None:
-    """Stamp the local operator console's identity on a channel message. Like
-    /api/lobby, the loopback caller is trusted to supply its display name; the
-    actor id is fixed so the operator reads as one consistent participant."""
-    payload["name"] = clean_lobby_text(payload.get("name"), limit=80) or _LOCAL_OPERATOR_DISPLAY_DEFAULT
-    payload["actor_id"] = _LOCAL_OPERATOR_PARTICIPANT_ID
-    payload["actor_type"] = "human"
-    payload["side"] = "mine"
-    requested_kind = str(payload.get("kind") or "")
-    payload["kind"] = requested_kind if requested_kind in {"vote", "vote_cast"} else "message"
-    if meeting_id:
-        payload["flow_meeting_id"] = meeting_id
 
 
 def register_room_routes(router: Router) -> None:
@@ -569,11 +539,30 @@ def register_room_routes(router: Router) -> None:
         )
         if meeting_id is None:
             return
-        if session is not None and is_room_member_muted(
-            ctx.deps.output_root, meeting_id, str(session.get("agent_id") or "")
-        ):
-            ctx.send_error(HTTPStatus.FORBIDDEN, "muted by room host")
-            return
+        if session is not None:
+            identity = ActorIdentity.from_mapping(session)
+            try:
+                ensure_lobby_say_allowed(
+                    ctx.deps.output_root,
+                    identity,
+                    is_muted=is_room_member_muted,
+                )
+            except GovernedLobbySayRejected as rejected:
+                message = (
+                    "read-only invite session cannot post"
+                    if rejected.category == "read_only"
+                    else "muted by room host"
+                )
+                ctx.send_error(HTTPStatus.FORBIDDEN, message)
+                return
+        else:
+            identity = ActorIdentity(
+                agent_id=_LOCAL_OPERATOR_PARTICIPANT_ID,
+                display_name=clean_lobby_text(payload.get("name"), limit=80)
+                or _LOCAL_OPERATOR_DISPLAY_DEFAULT,
+                participant_type="human",
+                meeting_id=meeting_id,
+            )
         channel_id = str(payload.get("channel_id") or "")
         if _resolve_channel(ctx, meeting_id, channel_id, want_type="text") is None:
             return
@@ -581,13 +570,18 @@ def register_room_routes(router: Router) -> None:
         if not filename:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "invalid channel id")
             return
-        if session is not None:
-            _stamp_session_identity(payload, session)
-        else:
-            _stamp_local_identity(payload, meeting_id)
         path = ctx.deps.output_root / filename
         with _CHANNEL_LOBBY_LOCK:
-            event = append_lobby_event_to_file(path, payload, allow_flow_metadata=True)
+            event = governed_channel_say(
+                ctx.deps.output_root,
+                channel_path=path,
+                identity=identity,
+                payload=payload,
+                append_channel_event=append_lobby_event_to_file,
+                is_muted=is_room_member_muted,
+                side="mine" if session is None else "other",
+                policy_already_checked=True,
+            )
         ctx.send_json({"event": event, "channel_id": channel_id})
 
     # -- voice channels (presence only; audio streaming deferred) -----------

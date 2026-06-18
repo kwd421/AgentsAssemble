@@ -1,6 +1,6 @@
 # Server-Governed Speech Matrix
 
-Reviewed: 2026-06-18
+Reviewed: 2026-06-19
 
 This is the working map for server-governed speech in the room. It is
 intentionally a current-state audit plus the next safe refactor order, not a
@@ -53,7 +53,7 @@ Excluded from the main matrix:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `POST /api/room/say` | `ENFORCED` by session token via `RequestContext.require_posting_session` in `agentsassemble/gui_router.py:151`; identity is normalized through `ActorIdentity.from_mapping` in `agentsassemble/room_speech.py:23` and stamped server-side in `agentsassemble/room_speech.py:87`. | `ENFORCED` read-only reject in `agentsassemble/gui_router.py:156`; shared policy check in `agentsassemble/room_speech.py:53`; HTTP preserves the pre-body mute check order in `agentsassemble/gui_room_http.py:216`. | `DELEGATED` to governed lobby payload stamping in `agentsassemble/room_speech.py:65` and event cleanup in `agentsassemble/meeting_events.py:97`. | `MISSING` for flood/rate and server-side chain-depth policy. | `N/A` for ordinary lobby speech; flow turn CAS only exists on live-agent lobby replies. | Appends lobby event through `governed_lobby_say` in `agentsassemble/gui_room_http.py:230`. | First slice complete: HTTP room say uses the shared governed lobby-say service, while keeping transport parsing/error behavior in the route. |
 | WebSocket `op: "say"` | `ENFORCED` by the verified WS identity; client metadata is safelisted in `agentsassemble/ws_room_session.py:33`, then real server deps normalize/stamp through `governed_lobby_say` in `agentsassemble/gui.py:8266` and `agentsassemble/room_speech.py:87`. | `ENFORCED` read-only and mute checks still fast-fail in `agentsassemble/ws_room_session.py:188`; real server deps re-check shared policy in `agentsassemble/room_speech.py:53`. | `DELEGATED` through WS metadata safelist in `agentsassemble/ws_room_session.py:196` and governed lobby append in `agentsassemble/gui.py:8266`. | `MISSING` for burst/flood/rate; the file comment says burst/dedup limiting is not implemented in `agentsassemble/ws_room_session.py:6`. Server accepts safelisted `auto_chain_depth`, but does not enforce a chain policy here. | `N/A` for ordinary lobby speech. | Appends lobby event through `governed_lobby_say` in `agentsassemble/gui.py:8266`. | First slice complete: WS now shares the same server-side identity stamping/append service as HTTP, though protocol-level fast-fails remain in the WS core. |
-| `POST /api/room/channel-say` | `ENFORCED` for session callers by `ctx.session()`/host fallback in `agentsassemble/gui_room_http.py:494`; session identity stamped in `agentsassemble/gui_room_http.py:568`; local operator identity stamped in `agentsassemble/gui_room_http.py:570`. | `ENFORCED` read-only for session callers in `agentsassemble/gui_room_http.py:499`; mute for session callers in `agentsassemble/gui_room_http.py:556`; host/local operator mute is `N/A/TRUSTED`. Channel existence/type is checked in `agentsassemble/gui_room_http.py:561`. | `DELEGATED` to `append_lobby_event_to_file` in `agentsassemble/gui_room_http.py:573` and `agentsassemble/meeting_events.py:399`. | `MISSING` for flood/rate and chain policy. | `N/A` for custom channel speech today. | Appends channel event file at `agentsassemble/gui_room_http.py:573`. | Same family as room say, but it bypasses the HTTP/WS lobby append route and therefore duplicates governance. |
+| `POST /api/room/channel-say` | `ENFORCED` for session callers by `ctx.session()`/host fallback in `agentsassemble/gui_room_http.py:537`; session identity is normalized through `ActorIdentity.from_mapping` in `agentsassemble/gui_room_http.py:543`; local operator identity is explicitly built in `agentsassemble/gui_room_http.py:559`; final identity stamping is shared in `agentsassemble/room_speech.py:53`. | `ENFORCED` read-only for session callers in `_channel_caller`; shared session mute/read-only policy runs in `agentsassemble/gui_room_http.py:545`; host/local operator mute is `N/A/TRUSTED`. Channel existence/type is checked in `agentsassemble/gui_room_http.py:567`. | `DELEGATED` through `governed_channel_say` in `agentsassemble/room_speech.py:116` and event cleanup in `agentsassemble/meeting_events.py:399`. | `MISSING` for flood/rate and chain policy. | `N/A` for custom channel speech today. | Appends channel event through `governed_channel_say` in `agentsassemble/gui_room_http.py:575`. | Second slice complete: channel say now uses the shared identity/sanitizer core and a sibling governed channel append path, while channel validation stays route-local. |
 | `POST /api/live-agents/{agent_id}/lobby` | `ENFORCED` from persisted live-agent state via heartbeat lookup in `agentsassemble/gui.py:3475`; actor id comes from the stored agent in `agentsassemble/gui.py:3480`. Route dispatch starts in `agentsassemble/gui.py:11108`. | `ENFORCED` mute check in `agentsassemble/gui.py:3481`; read-only is `N/A` because this is a server-owned resident endpoint, not a guest invite session. | `DELEGATED` to lobby append cleanup in `agentsassemble/gui.py:3530` and `agentsassemble/meeting_events.py:97`. | `UNCLEAR/MISSING`: `auto_chain_depth` is copied from payload in `agentsassemble/gui.py:3540`, while flow turn CAS exists, but there is no generic chain-depth cap or flood/rate limit. | `ENFORCED` for flow speaking actions through `_flow_turn_conflict` in `agentsassemble/gui.py:3513`, with duplicate/stale-turn checks in `agentsassemble/gui.py:3448` and `agentsassemble/gui.py:3457`. | Appends lobby event at `agentsassemble/gui.py:3530` and updates heartbeat after reply. | This is closest to a policy choke, but only for live-agent lobby replies. |
 | `POST /api/live-agents/{agent_id}/official-turn` | `ENFORCED` by live-agent lookup and meeting attachment in `agentsassemble/gui.py:4077`. | `UNCLEAR`: meeting attachment is enforced in `agentsassemble/gui.py:4079`, but muted-agent behavior is not checked here. Product rule must decide whether host-requested official replies bypass lobby mute or still honor mute. | `ENFORCED` content cleanup in `agentsassemble/gui.py:4086`; official event cleanup delegated to `append_live_event` in `agentsassemble/gui.py:4132` and `agentsassemble/meeting_events.py:430`. | `N/A` for lobby chain; official turns are bounded by turn requests rather than auto-reply chain depth. | `ENFORCED` matching request/cancellation/idempotency under `LIVE_AGENT_TURN_LOCK` in `agentsassemble/gui.py:4092`. | Appends official live event at `agentsassemble/gui.py:4132` and refreshes shared memory in `agentsassemble/gui.py:4133`. | This must remain a separate official-record choke, not be folded into generic lobby `say`. |
 | `POST /api/lobby` | `TRUSTED` local/operator route: it is not in the public invite allowlist in `agentsassemble/gui.py:8170`; loopback trust gate is in `agentsassemble/gui.py:8190`. | `MISSING/TRUSTED`: no participant session, read-only, or mute enforcement in the route body at `agentsassemble/gui.py:8791`. | `DELEGATED` through attachment cleanup in `agentsassemble/gui.py:8802` and lobby event cleanup in `agentsassemble/gui.py:8806`. | `MISSING` for chain/flood/rate. | `N/A` for generic operator lobby post. | Appends lobby event at `agentsassemble/gui.py:8806`. | If this route remains operator-only, mark it explicitly as control-plane. If exposed to participants, it must call governed speech. |
@@ -78,9 +78,10 @@ that later speaks.
 
 ## Current Bug-Shaped Findings
 
-1. The first shared lobby-say service now exists for HTTP room say and WS say,
+1. The first shared lobby-say service now exists for HTTP room say, WS say, and
+   custom channel say,
    but there is still no complete single choke for all room-visible speech.
-   Channel say, live-agent lobby replies, local `/api/lobby`, side-chat, DM, and
+   Live-agent lobby replies, local `/api/lobby`, side-chat, DM, and
    remote bridge still assemble their own pre-append policy.
 2. WS can be treated as the preferred transport for invited room clients only
    when new WS speech features continue to delegate to the shared governed
@@ -104,15 +105,13 @@ that later speaks.
 1. Extend the shared governance core cautiously. `ActorIdentity` and
    `governed_lobby_say()` exist; `RoomScope` and sanitizer helpers should be
    added only when the next caller needs them.
-2. Move `POST /api/room/channel-say` to a sibling governed channel path that
-   reuses identity/scope/sanitizer but keeps channel validation local.
-3. Move live-agent lobby replies to the same governed lobby service, preserving
+2. Move live-agent lobby replies to the same governed lobby service, preserving
    existing flow turn-CAS behavior.
-4. Add `governed_official_reply()` separately for official-turn replies.
-5. Decide side-chat, DM, and `/api/lobby/remote` policy: operator-only trusted
+3. Add `governed_official_reply()` separately for official-turn replies.
+4. Decide side-chat, DM, and `/api/lobby/remote` policy: operator-only trusted
    routes or participant-governed speech routes. Do not leave them ambiguous.
-6. Add flood/rate and chain-depth policy at the shared service boundary.
-7. Add a focused governance test suite that attacks every speech entry with:
+5. Add flood/rate and chain-depth policy at the shared service boundary.
+6. Add a focused governance test suite that attacks every speech entry with:
    spoofed `actor_id`, read-only session, muted participant, over-depth chain,
    stale turn source, expired/missing session, and flood/rate attempts where
    applicable.

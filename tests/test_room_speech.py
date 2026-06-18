@@ -8,6 +8,7 @@ from agentsassemble.room_speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
     ensure_lobby_say_allowed,
+    governed_channel_say,
     governed_lobby_say,
 )
 
@@ -128,6 +129,52 @@ class GovernedLobbySayTests(unittest.TestCase):
                     require_nonempty_message=True,
                 )
             self.assertEqual(empty.exception.category, "empty")
+
+    def test_channel_say_stamps_identity_and_appends_to_channel_path(self):
+        captured: dict[str, object] = {}
+
+        def append_channel_event(
+            path: Path,
+            payload: dict[str, object],
+            *,
+            allow_flow_metadata: bool,
+        ) -> dict[str, object]:
+            captured["path"] = str(path)
+            captured.update(payload)
+            captured["allow_flow_metadata"] = allow_flow_metadata
+            return {"id": "chan1", **payload}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            event = governed_channel_say(
+                root,
+                channel_path=root / "channel_c123.jsonl",
+                identity=ActorIdentity(
+                    agent_id="guest-1",
+                    display_name="Guest One",
+                    participant_type="remote",
+                    meeting_id="room-1",
+                ),
+                payload={
+                    "message": "채널 답변",
+                    "name": "Spoofed",
+                    "actor_id": "spoofed",
+                    "side": "mine",
+                    "kind": "deploy",
+                },
+                append_channel_event=append_channel_event,
+                is_muted=lambda root, meeting_id, agent_id: False,
+            )
+
+        self.assertEqual(captured["path"], str(Path(temp_dir) / "channel_c123.jsonl"))
+        self.assertEqual(event["message"], "채널 답변")
+        self.assertEqual(event["name"], "Guest One")
+        self.assertEqual(event["actor_id"], "guest-1")
+        self.assertEqual(event["actor_type"], "agent")
+        self.assertEqual(event["side"], "other")
+        self.assertEqual(event["kind"], "message")
+        self.assertEqual(event["flow_meeting_id"], "room-1")
+        self.assertTrue(captured["allow_flow_metadata"])
 
 
 if __name__ == "__main__":
