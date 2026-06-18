@@ -267,6 +267,14 @@ class PublicInviteHttpTests(unittest.TestCase):
                         urlopen(Request(f"{base}/api/lobby", headers=public_headers), timeout=4)
                     self.assertEqual(blocked_operator_route.exception.code, 403)
 
+                    for blocked_path in (
+                        "/api/side-chat",
+                        "/api/room-friends/dm?friend_id=friend%3Aagent",
+                    ):
+                        with self.assertRaises(HTTPError) as blocked_private_get:
+                            urlopen(Request(f"{base}{blocked_path}", headers=public_headers), timeout=4)
+                        self.assertEqual(blocked_private_get.exception.code, 403)
+
                     with urlopen(
                         _json_request(
                             f"{base}/api/room-invite/join",
@@ -312,6 +320,18 @@ class PublicInviteHttpTests(unittest.TestCase):
                             timeout=4,
                         )
                     self.assertEqual(blocked_lobby_post.exception.code, 403)
+
+                    for blocked_path in ("/api/side-chat", "/api/room-friends/dm"):
+                        with self.assertRaises(HTTPError) as blocked_private_post:
+                            urlopen(
+                                _json_request(
+                                    f"{base}{blocked_path}",
+                                    {"message": "private path from public guest"},
+                                    public_headers,
+                                ),
+                                timeout=4,
+                            )
+                        self.assertEqual(blocked_private_post.exception.code, 403)
 
                     with urlopen(
                         _json_request(
