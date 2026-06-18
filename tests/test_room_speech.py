@@ -176,6 +176,57 @@ class GovernedLobbySayTests(unittest.TestCase):
         self.assertEqual(event["flow_meeting_id"], "room-1")
         self.assertTrue(captured["allow_flow_metadata"])
 
+    def test_lobby_say_can_mark_live_agent_endpoint(self):
+        captured: dict[str, object] = {}
+
+        def append_lobby_event(
+            root: Path,
+            payload: dict[str, object],
+            *,
+            live_agent_endpoint: bool,
+            allow_flow_metadata: bool,
+        ) -> dict[str, object]:
+            captured.update(payload)
+            captured["live_agent_endpoint"] = live_agent_endpoint
+            captured["allow_flow_metadata"] = allow_flow_metadata
+            return {"id": "evt-live", **payload, "live_agent_endpoint": live_agent_endpoint}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            event = governed_lobby_say(
+                Path(temp_dir),
+                identity=ActorIdentity(
+                    agent_id="agent-a",
+                    display_name="Agent A",
+                    participant_type="live_session",
+                    meeting_id="room-1",
+                ),
+                payload={
+                    "message": "live reply",
+                    "kind": "ready",
+                    "source_event_id": "src1",
+                    "auto_chain_depth": 3,
+                    "flow_id": "flow-1",
+                    "flow_action": "challenge",
+                },
+                append_lobby_event=append_lobby_event,
+                public_lobby_allows_room_scope=lambda payload: False,
+                is_muted=lambda root, meeting_id, agent_id: False,
+                side="other-agent",
+                live_agent_endpoint=True,
+                allow_flow_metadata=True,
+                allowed_kinds={"message", "ready"},
+            )
+
+        self.assertEqual(event["name"], "Agent A")
+        self.assertEqual(event["actor_id"], "agent-a")
+        self.assertEqual(event["side"], "other-agent")
+        self.assertEqual(event["kind"], "ready")
+        self.assertEqual(event["flow_meeting_id"], "room-1")
+        self.assertEqual(event["flow_id"], "flow-1")
+        self.assertEqual(event["flow_action"], "challenge")
+        self.assertTrue(captured["live_agent_endpoint"])
+        self.assertTrue(captured["allow_flow_metadata"])
+
 
 if __name__ == "__main__":
     unittest.main()

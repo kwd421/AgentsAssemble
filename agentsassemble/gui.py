@@ -162,7 +162,12 @@ from agentsassemble.room_friend_dms import (
 from agentsassemble.room_friends import delete_room_friend, room_friends_payload, upsert_room_friend
 from agentsassemble.identity_store import default_identity_db_path
 from agentsassemble.room_members import is_room_member_muted, mark_thinking, room_members_payload
-from agentsassemble.room_speech import ActorIdentity, GovernedLobbySayRejected, governed_lobby_say
+from agentsassemble.room_speech import (
+    ActorIdentity,
+    GovernedLobbySayRejected,
+    ensure_lobby_say_allowed,
+    governed_lobby_say,
+)
 from agentsassemble.room_websocket import (
     CLOSE_PROTOCOL_ERROR,
     MessageAssembler,
@@ -205,6 +210,7 @@ from agentsassemble.room_invite import (
 )
 from agentsassemble.meeting_events import (
     FLOW_METADATA_KEYS,
+    LOBBY_KINDS,
     ROOM_TOPIC_LIMIT,
     append_live_event,
     append_lobby_event_to_file,
@@ -3480,8 +3486,19 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
     if not message:
         raise ValueError("Message is required.")
     actor_id = str(agent.get("agent_id") or agent_id)
-    if is_room_member_muted(output_root, clean_lobby_text(agent.get("meeting_id"), limit=128), actor_id):
-        raise ValueError("This participant is muted by the room host.")
+    agent_meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
+    identity = ActorIdentity(
+        agent_id=actor_id,
+        display_name=str(agent.get("display_name") or agent.get("agent_id") or agent_id),
+        participant_type="live_session",
+        meeting_id=agent_meeting_id,
+    )
+    try:
+        ensure_lobby_say_allowed(output_root, identity, is_muted=is_room_member_muted)
+    except GovernedLobbySayRejected as rejected:
+        if rejected.category == "muted":
+            raise ValueError("This participant is muted by the room host.") from rejected
+        raise ValueError(str(rejected)) from rejected
     source_event_id = clean_lobby_text(payload.get("source_event_id"), limit=128)
     with LIVE_AGENT_LOBBY_LOCK:
         existing_event = _existing_live_agent_lobby_reply(output_root, actor_id=actor_id, source_event_id=source_event_id)
@@ -3509,7 +3526,6 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
             )
             return {"agent": updated_agent, "event": existing_event, "events": read_lobby(output_root)}
         flow_metadata = _live_agent_lobby_flow_metadata(payload)
-        agent_meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
         if agent_meeting_id:
             flow_metadata["flow_meeting_id"] = agent_meeting_id
         conflict = _flow_turn_conflict(
@@ -3529,21 +3545,24 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
                 metadata={"last_observed_event_id": source_event_id},
             )
             return {"status": conflict, "agent": updated_agent, "events": read_lobby(output_root)}
-        event = append_lobby_event(
+        event = governed_lobby_say(
             output_root,
-            {
-                "name": agent.get("display_name") or agent.get("agent_id") or agent_id,
-                "side": "other-agent",
+            identity=identity,
+            payload={
                 "kind": payload.get("kind") or "message",
                 "message": _real_session_smoke_reply_message(source_event_id, message),
-                "actor_id": actor_id,
-                "actor_type": "agent",
                 "source_event_id": source_event_id,
                 "auto_chain_depth": payload.get("auto_chain_depth") or 0,
                 **flow_metadata,
             },
+            append_lobby_event=append_lobby_event,
+            public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
+            is_muted=is_room_member_muted,
+            policy_already_checked=True,
+            side="other-agent",
             live_agent_endpoint=True,
             allow_flow_metadata=True,
+            allowed_kinds=LOBBY_KINDS,
         )
         reply_metadata: dict[str, object] = {
             "last_error": "",

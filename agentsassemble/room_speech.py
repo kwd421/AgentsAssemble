@@ -7,7 +7,7 @@ live here.
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,6 +48,7 @@ class GovernedLobbySayRejected(ValueError):
 AppendLobbyEvent = Callable[..., dict[str, object]]
 AllowsRoomScope = Callable[[dict[str, object]], bool]
 IsMuted = Callable[[Path, str, str], bool]
+PUBLIC_SPEECH_KINDS = frozenset({"vote", "vote_cast"})
 
 
 def _stamped_room_speech_payload(
@@ -55,6 +56,7 @@ def _stamped_room_speech_payload(
     identity: ActorIdentity,
     payload: Mapping[str, object],
     side: str,
+    allowed_kinds: Collection[str] = PUBLIC_SPEECH_KINDS,
 ) -> dict[str, object]:
     event_payload = dict(payload)
     event_payload["name"] = identity.display_name
@@ -62,7 +64,7 @@ def _stamped_room_speech_payload(
     event_payload["actor_type"] = identity.actor_type
     event_payload["side"] = side
     requested_kind = str(event_payload.get("kind") or "")
-    event_payload["kind"] = requested_kind if requested_kind in {"vote", "vote_cast"} else "message"
+    event_payload["kind"] = requested_kind if requested_kind in allowed_kinds else "message"
     if identity.meeting_id:
         event_payload["flow_meeting_id"] = identity.meeting_id
     return event_payload
@@ -90,6 +92,10 @@ def governed_lobby_say(
     is_muted: IsMuted,
     require_nonempty_message: bool = False,
     policy_already_checked: bool = False,
+    side: str = "other",
+    live_agent_endpoint: bool = False,
+    allow_flow_metadata: bool | None = None,
+    allowed_kinds: Collection[str] = PUBLIC_SPEECH_KINDS,
 ) -> dict[str, object]:
     """Stamp authenticated identity and append one lobby speech event.
 
@@ -102,15 +108,17 @@ def governed_lobby_say(
     event_payload = _stamped_room_speech_payload(
         identity=identity,
         payload=payload,
-        side="other",
+        side=side,
+        allowed_kinds=allowed_kinds,
     )
     if require_nonempty_message and not str(event_payload.get("message") or "").strip():
         raise GovernedLobbySayRejected("Message is required.", category="empty")
-    return append_lobby_event(
-        output_root,
-        event_payload,
-        allow_flow_metadata=public_lobby_allows_room_scope(event_payload),
-    )
+    if allow_flow_metadata is None:
+        allow_flow_metadata = public_lobby_allows_room_scope(event_payload)
+    append_kwargs: dict[str, object] = {"allow_flow_metadata": allow_flow_metadata}
+    if live_agent_endpoint:
+        append_kwargs["live_agent_endpoint"] = True
+    return append_lobby_event(output_root, event_payload, **append_kwargs)
 
 
 def governed_channel_say(
