@@ -8,6 +8,7 @@ from agentsassemble.room_speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
     ensure_lobby_say_allowed,
+    governed_official_reply,
     governed_channel_say,
     governed_lobby_say,
 )
@@ -226,6 +227,66 @@ class GovernedLobbySayTests(unittest.TestCase):
         self.assertEqual(event["flow_action"], "challenge")
         self.assertTrue(captured["live_agent_endpoint"])
         self.assertTrue(captured["allow_flow_metadata"])
+
+    def test_official_reply_builds_official_event_payload(self):
+        captured: dict[str, object] = {}
+
+        def append_live_event(meeting_dir: Path, payload: dict[str, object]) -> dict[str, object]:
+            captured["meeting_dir"] = str(meeting_dir)
+            captured.update(payload)
+            return {"id": "live1", **payload}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir) / "meetings" / "m1"
+            event = governed_official_reply(
+                meeting_dir,
+                identity=ActorIdentity(agent_id="agent-a", display_name="Agent A", participant_type="live_session"),
+                meeting_id="m1",
+                source_event_id="turn-request-1",
+                role_id="architect",
+                display_name="Architect A",
+                content="공식 답변",
+                turn_id="turn-1",
+                turn_index=2,
+                append_live_event=append_live_event,
+            )
+
+        self.assertEqual(captured["meeting_dir"], str(meeting_dir))
+        self.assertEqual(event["kind"], "message")
+        self.assertEqual(event["meeting_id"], "m1")
+        self.assertEqual(event["actor_id"], "agent-a")
+        self.assertEqual(event["target_agent_id"], "agent-a")
+        self.assertEqual(event["source_event_id"], "turn-request-1")
+        self.assertEqual(event["role_id"], "architect")
+        self.assertEqual(event["display_name"], "Architect A")
+        self.assertEqual(event["content"], "공식 답변")
+        self.assertEqual(event["turn_id"], "turn-1")
+        self.assertEqual(event["turn_index"], 2)
+        self.assertEqual(event["engagement_mode"], "moderator_called")
+
+    def test_official_reply_marks_review_checkpoint_nonofficial(self):
+        captured: dict[str, object] = {}
+
+        def append_live_event(meeting_dir: Path, payload: dict[str, object]) -> dict[str, object]:
+            captured.update(payload)
+            return {"id": "review1", **payload}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            event = governed_official_reply(
+                Path(temp_dir),
+                identity=ActorIdentity(agent_id="agent-a", display_name="Agent A", participant_type="live_session"),
+                meeting_id="m1",
+                source_event_id="turn-request-1",
+                role_id="reviewer",
+                display_name="Reviewer A",
+                content="리뷰 답변",
+                review_checkpoint_id="checkpoint-1",
+                append_live_event=append_live_event,
+            )
+
+        self.assertEqual(event["review_checkpoint_id"], "checkpoint-1")
+        self.assertEqual(event["channel"], "review")
+        self.assertFalse(event["official_record"])
 
 
 if __name__ == "__main__":

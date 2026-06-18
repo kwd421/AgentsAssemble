@@ -46,6 +46,7 @@ class GovernedLobbySayRejected(ValueError):
 
 
 AppendLobbyEvent = Callable[..., dict[str, object]]
+AppendLiveEvent = Callable[[Path, dict[str, object]], dict[str, object]]
 AllowsRoomScope = Callable[[dict[str, object]], bool]
 IsMuted = Callable[[Path, str, str], bool]
 PUBLIC_SPEECH_KINDS = frozenset({"vote", "vote_cast"})
@@ -144,3 +145,42 @@ def governed_channel_say(
     if require_nonempty_message and not str(event_payload.get("message") or "").strip():
         raise GovernedLobbySayRejected("Message is required.", category="empty")
     return append_channel_event(channel_path, event_payload, allow_flow_metadata=True)
+
+
+def governed_official_reply(
+    meeting_dir: Path,
+    *,
+    identity: ActorIdentity,
+    meeting_id: str,
+    source_event_id: str,
+    role_id: str,
+    display_name: str,
+    content: str,
+    append_live_event: AppendLiveEvent,
+    turn_id: str = "",
+    turn_index: int | None = None,
+    review_checkpoint_id: str = "",
+) -> dict[str, object]:
+    """Build and append one official-turn reply event."""
+    event_payload: dict[str, object] = {
+        "kind": "message",
+        "meeting_id": meeting_id,
+        "actor_id": identity.agent_id,
+        "target_agent_id": identity.agent_id,
+        "source_event_id": source_event_id,
+        "role_id": role_id,
+        "display_name": display_name or identity.display_name,
+        "content": content,
+        "turn_id": turn_id,
+        "turn_index": turn_index,
+        "engagement_mode": "moderator_called",
+    }
+    if review_checkpoint_id:
+        event_payload.update(
+            {
+                "review_checkpoint_id": review_checkpoint_id,
+                "channel": "review",
+                "official_record": False,
+            }
+        )
+    return append_live_event(meeting_dir, event_payload)

@@ -166,6 +166,7 @@ from agentsassemble.room_speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
     ensure_lobby_say_allowed,
+    governed_official_reply,
     governed_lobby_say,
 )
 from agentsassemble.room_websocket import (
@@ -4128,29 +4129,25 @@ def live_agent_official_turn_payload(output_root: Path, agent_id: str, payload: 
             )
             request_turn_index = request_event.get("turn_index")
             turn_index = request_turn_index if isinstance(request_turn_index, int) and not isinstance(request_turn_index, bool) else None
-            event_payload: dict[str, object] = {
-                "kind": "message",
-                "meeting_id": meeting_id,
-                "actor_id": agent_id,
-                "target_agent_id": agent_id,
-                "source_event_id": source_event_id,
-                "role_id": role_id,
-                "display_name": display_name,
-                "content": content,
-                "turn_id": clean_lobby_text(request_event.get("turn_id"), limit=128),
-                "turn_index": turn_index,
-                "engagement_mode": "moderator_called",
-            }
             review_checkpoint_id = clean_lobby_text(request_event.get("review_checkpoint_id"), limit=128)
-            if review_checkpoint_id:
-                event_payload.update(
-                    {
-                        "review_checkpoint_id": review_checkpoint_id,
-                        "channel": "review",
-                        "official_record": False,
-                    }
-                )
-            event = append_live_event(meeting_dir, event_payload)
+            event = governed_official_reply(
+                meeting_dir,
+                identity=ActorIdentity(
+                    agent_id=agent_id,
+                    display_name=display_name,
+                    participant_type="live_session",
+                    meeting_id=meeting_id,
+                ),
+                meeting_id=meeting_id,
+                source_event_id=source_event_id,
+                role_id=role_id,
+                display_name=display_name,
+                content=content,
+                turn_id=clean_lobby_text(request_event.get("turn_id"), limit=128),
+                turn_index=turn_index,
+                review_checkpoint_id=review_checkpoint_id,
+                append_live_event=append_live_event,
+            )
         shared_memory = _refresh_live_meeting_memory_after_official_reply(meeting_dir, event)
     updated_agent = heartbeat_live_agent(
         output_root,
