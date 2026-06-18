@@ -20729,7 +20729,7 @@ class GuiServerTests(unittest.TestCase):
             def __call__(self, url, headers, payload, timeout_seconds):
                 self.calls.append({"url": url, "headers": headers, "payload": payload})
                 return {
-                    "text": '{"message":"친구 Claude Code 준비됐습니다.","kind":"message"}',
+                    "text": '{"message":"친구 Claude Code 준비됐습니다.","kind":"deploy","name":"Spoofed Remote"}',
                     "metadata": {"bridge": "friend-mac"},
                 }
 
@@ -20806,6 +20806,10 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(event["side"], "other-agent")
             self.assertEqual(event["name"], "공식이뭘알아")
+            self.assertEqual(event["actor_id"], "friend-agent")
+            self.assertEqual(event["actor_type"], "agent")
+            self.assertEqual(event["kind"], "deploy")
+            self.assertEqual(event["flow_meeting_id"], "m1")
             self.assertEqual(event["message"], "친구 Claude Code 준비됐습니다.")
             self.assertEqual(read_lobby(root)[0]["message"], "친구 Claude Code 준비됐습니다.")
             self.assertEqual(requester.calls[0]["headers"]["Authorization"], "Bearer bridge-token")

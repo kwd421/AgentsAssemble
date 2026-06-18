@@ -60,7 +60,7 @@ Excluded from the main matrix:
 | `POST /api/side-chat` | `TRUSTED` local/operator route under the same request trust gate; no participant session in route body at `agentsassemble/gui.py:8821`. | `MISSING/TRUSTED`: no session, read-only, or mute enforcement before append. | `DELEGATED` to side-chat event cleanup in `agentsassemble/gui.py:8828` and `agentsassemble/meeting_events.py:422`. | `MISSING` for flood/rate. Chain depth is `N/A` unless side-chat auto-replies are added. | `N/A`. | Appends side-chat event at `agentsassemble/gui.py:8828`. | Side-chat needs an explicit decision: operator-only scratchpad or governed participant channel. |
 | `POST /api/room-friends/dm` | `TRUSTED` operator-to-friend DM route; route delegates at `agentsassemble/gui.py:8854`. | `N/A/TRUSTED`: this is a directed operator DM, not room participant speech. | `ENFORCED` message/friend/target cleanup in `agentsassemble/room_friend_dms.py:84`. | `MISSING` for DM flood/rate. | `N/A` for outgoing operator DM. | Appends queued DM event at `agentsassemble/room_friend_dms.py:102`. | DM is outside public lobby, but still needs bounded rate/cost policy if long-running rooms use it. |
 | `POST /api/live-agents/{agent_id}/dm-reply` | `ENFORCED` by target agent id and source event lookup in `agentsassemble/room_friend_dms.py:152` and `agentsassemble/room_friend_dms.py:161`. | `UNCLEAR`: mute/read-only room policy is not checked; this may be acceptable because DM is not public room speech. | `ENFORCED` reply cleanup in `agentsassemble/room_friend_dms.py:153`. | `MISSING` for DM flood/rate. | `ENFORCED` source DM must exist for that agent in `agentsassemble/room_friend_dms.py:161`. | Appends DM reply at `agentsassemble/room_friend_dms.py:165`. | Decide whether public room mute should also suppress private DM replies. |
-| `POST /api/lobby/remote` | `TRUSTED` operator-triggered remote bridge call in `agentsassemble/gui.py:8906`; binding/provider selected in `agentsassemble/gui.py:1913`. | `MISSING/TRUSTED`: no mute/read-only check for the selected remote binding before append. Meeting scope is used to resolve the meeting, but the appended event does not carry `flow_meeting_id` in `agentsassemble/gui.py:1927`. | `DELEGATED` remote response normalized by adapter in `agentsassemble/adapters/remote_bridge.py:170`; lobby append cleanup in `agentsassemble/gui.py:1933`. | `MISSING` for chain/flood/rate. | `N/A` for one-shot remote bridge lobby call. | Calls remote bridge in `agentsassemble/adapters/remote_bridge.py:190` and appends returned lobby text in `agentsassemble/gui.py:1933`. | High-value cleanup: stamp actor/source/meeting scope and route through governed speech if this is used as participant speech. |
+| `POST /api/lobby/remote` | `TRUSTED` operator-triggered remote bridge call in `agentsassemble/gui.py:8939`; binding/provider selected in `agentsassemble/gui.py:1924`; reply identity is built from the server-side binding in `agentsassemble/gui.py:1934` and stamped by `governed_lobby_say` in `agentsassemble/gui.py:1949`. | `ENFORCED` remote bridge binding mute/read-only policy runs before calling the bridge in `agentsassemble/gui.py:1942`. Route-level access is still operator/control-plane. | `DELEGATED` remote response normalized by adapter in `agentsassemble/adapters/remote_bridge.py:170`; governed payload stamping runs in `agentsassemble/gui.py:1949`; lobby append cleanup remains in `agentsassemble/meeting_events.py:97`. | `MISSING` for chain/flood/rate. | `N/A` for one-shot remote bridge lobby call. | Calls remote bridge in `agentsassemble/adapters/remote_bridge.py:190` and appends returned lobby text through `governed_lobby_say` in `agentsassemble/gui.py:1949`. | Fifth slice complete: remote bridge reply content remains bridge-provided, but actor/name/meeting scope now come from server-side binding and cannot be spoofed by the bridge response. |
 
 ## Admission And Presence Entries
 
@@ -81,8 +81,8 @@ that later speaks.
 1. The first shared lobby-say service now exists for HTTP room say, WS say,
    custom channel say, and live-agent lobby replies,
    but there is still no complete single choke for all room-visible speech.
-   Local `/api/lobby`, side-chat, DM, and
-   remote bridge still assemble their own pre-append policy.
+   Local `/api/lobby`, side-chat, and DM still assemble their own pre-append
+   policy or intentionally remain trusted operator/private-message routes.
 2. WS can be treated as the preferred transport for invited room clients only
    when new WS speech features continue to delegate to the shared governed
    lobby-say service instead of adding another transport-local append path.
@@ -93,16 +93,13 @@ that later speaks.
 4. Flood/rate governance is missing almost everywhere. Long-running AI rooms
    need bounded post frequency and chain policy at the server before multi-day
    autonomous rooms are safe.
-5. `/api/lobby/remote` currently appends a remote bridge response without
-   actor/source/meeting metadata. If it is still used as participant speech, it
-   should be moved behind the same governed lobby service.
 
 ## Refactor Order
 
 1. Extend the shared governance core cautiously. `ActorIdentity` and
    `governed_lobby_say()` exist; `RoomScope` and sanitizer helpers should be
    added only when the next caller needs them.
-2. Decide side-chat, DM, and `/api/lobby/remote` policy: operator-only trusted
+2. Decide side-chat and DM policy: operator-only trusted
    routes or participant-governed speech routes. Do not leave them ambiguous.
 3. Add flood/rate and chain-depth policy at the shared service boundary.
 4. Add a focused governance test suite that attacks every speech entry with:

@@ -1931,15 +1931,35 @@ def send_lobby_message_to_remote_bridge(
         "join_mode": binding.get("join_mode"),
         "session_id": binding.get("session_id"),
     }
+    remote_agent_id = clean_lobby_text(binding.get("agent_id"), limit=64) or role.id
+    identity = ActorIdentity(
+        agent_id=remote_agent_id,
+        display_name=role.display_name,
+        participant_type="remote_http_bridge",
+        meeting_id=clean_lobby_text(session.get("meeting_id"), limit=128),
+    )
+    try:
+        ensure_lobby_say_allowed(output_root, identity, is_muted=is_room_member_muted)
+    except GovernedLobbySayRejected as rejected:
+        if rejected.category == "muted":
+            raise ValueError("This participant is muted by the room host.") from rejected
+        raise ValueError(str(rejected)) from rejected
     adapter = RemoteBridgeAdapter(provider, requester=REMOTE_LOBBY_REQUESTER)
     remote_event = adapter.run_lobby_message(role, session, speaker_name=speaker_name, message=message.strip())
-    event = {
-        "name": remote_event.get("name") or role.display_name,
-        "side": "other-agent",
-        "kind": remote_event.get("kind") or "message",
-        "message": remote_event.get("message") or "",
-    }
-    return append_lobby_event(output_root, event)
+    return governed_lobby_say(
+        output_root,
+        identity=identity,
+        payload={
+            "kind": remote_event.get("kind") or "message",
+            "message": remote_event.get("message") or "",
+        },
+        append_lobby_event=append_lobby_event,
+        public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
+        is_muted=is_room_member_muted,
+        policy_already_checked=True,
+        side="other-agent",
+        allowed_kinds=LOBBY_KINDS,
+    )
 
 
 def provider_catalog_payload() -> dict[str, object]:
