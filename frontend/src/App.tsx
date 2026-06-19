@@ -1342,13 +1342,15 @@ export default function App() {
     setChannelMenu(null);
   }
 
-  function leaveRoom(roomId: string) {
+  async function leaveRoom(roomId: string) {
     if (guestLocked) {
       const sessionToken = guestSession?.sessionToken || "";
       persistRoomGuestSession(null);
       setGuestSession(null);
+      setRoomMenu(null);
+      setChannelMenu(null);
       if (sessionToken) {
-        void leaveRoomInvite({ sessionToken }).catch(() => {
+        await leaveRoomInvite({ sessionToken }).catch(() => {
           // Local guest exit should not be blocked by a stale or expired server session.
         });
       }

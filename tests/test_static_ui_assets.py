@@ -1534,7 +1534,12 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("AI 세션 패킷 만들기", room_connection_source)
         self.assertIn("guestAiPacketPreview", room_connection_source)
         self.assertIn("persistRoomGuestSession(null)", app_source)
-        self.assertIn("void leaveRoomInvite({ sessionToken })", app_source)
+        self.assertIn("async function leaveRoom", app_source)
+        self.assertIn("await leaveRoomInvite({ sessionToken })", app_source)
+        self.assertLess(
+            app_source.index("await leaveRoomInvite({ sessionToken })"),
+            app_source.index('url.pathname = "/join";'),
+        )
         self.assertIn('url.pathname = "/join";', app_source)
         self.assertIn("입장 프로필", join_profile_source)
         self.assertIn("프로필 사진", join_profile_source)
