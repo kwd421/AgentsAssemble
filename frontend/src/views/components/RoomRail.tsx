@@ -9,6 +9,10 @@ import {
   roomSettingsKey,
   type RoomDockItem,
 } from "../../lib/roomDockModel";
+import {
+  ROOM_RAIL_MENU_SIZE,
+  ROOM_RAIL_MENU_VIEWPORT_MARGIN,
+} from "../../lib/roomRailMenuPosition";
 
 export type RoomMenuState = {
   roomId: string;
@@ -112,7 +116,12 @@ export default function RoomRail({
       {menuRoom && roomMenu && (
         <div
           className="dc-context-menu"
-          style={{ left: roomMenu.x, top: roomMenu.y }}
+          style={{
+            left: roomMenu.x,
+            top: roomMenu.y,
+            width: ROOM_RAIL_MENU_SIZE.width,
+            maxHeight: `calc(100vh - ${roomMenu.y}px - ${ROOM_RAIL_MENU_VIEWPORT_MARGIN}px)`,
+          }}
           role="menu"
           aria-label={`${menuRoom.label} 서버 메뉴`}
           onClick={(event) => event.stopPropagation()}

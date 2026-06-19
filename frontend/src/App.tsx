@@ -137,6 +137,7 @@ import {
   roomSettingsKey,
   type RoomDockItem,
 } from "./lib/roomDockModel";
+import { roomRailMenuPosition } from "./lib/roomRailMenuPosition";
 import {
   loadRoomGuestSession,
   persistRoomGuestSession,
@@ -1232,10 +1233,14 @@ export default function App() {
     event.preventDefault();
     setActiveRoomId(room.id);
     setAdminOpen(false);
+    const position = roomRailMenuPosition(
+      { x: event.clientX, y: event.clientY },
+      { width: window.innerWidth, height: window.innerHeight }
+    );
     setRoomMenu({
       roomId: room.id,
-      x: Math.min(event.clientX, window.innerWidth - 220),
-      y: Math.min(event.clientY, window.innerHeight - 160),
+      x: position.left,
+      y: position.top,
     });
     setChannelMenu(null);
   }
