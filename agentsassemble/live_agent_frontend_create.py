@@ -17,6 +17,7 @@ from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
 from agentsassemble.meeting_events import clean_lobby_text, write_live_state
+from agentsassemble.room_invite import create_room_invite
 
 
 @dataclass(frozen=True)
@@ -767,8 +768,15 @@ def _write_frontend_live_agent_config(
         agent["command"] = command
     if provider.terminal_idle_timeout != 0.35:
         agent["terminal_idle_timeout"] = provider.terminal_idle_timeout
+    agent["invite_token"] = _agent_ws_invite_token(
+        server=server,
+        meeting_id=meeting_id,
+        agent_id=agent_id,
+        display_name=display_name,
+    )
     config = {
         "server": server,
+        "transport": "ws",
         "poll_interval": DEFAULT_LIVE_AGENT_POLL_INTERVAL,
         "heartbeat_interval": 30,
         "cooldown": 0,
@@ -789,6 +797,28 @@ def _frontend_resident_command(provider: FrontendLiveAgentProvider, tuning: Fron
         if tuning.effort:
             command.extend(["--effort", tuning.effort])
     return command
+
+
+def _agent_ws_invite_token(
+    *,
+    server: str,
+    meeting_id: str,
+    agent_id: str,
+    display_name: str,
+) -> str:
+    invite = create_room_invite(
+        room_url=server,
+        meeting_id=meeting_id,
+        agent_id=agent_id,
+        display_name=display_name,
+        participant_type="agent",
+        ttl_seconds=7 * 24 * 3600,
+        max_uses=0,
+    )
+    token = str(invite.get("invite_token") or "")
+    if not token:
+        raise ValueError("Agent WebSocket invite was not created.")
+    return token
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:

@@ -126,6 +126,8 @@ class ResidentAgentConfig:
     first_message_index: int = 0
     terminal_idle_timeout: float = 0.35
     official_turn_timeout_seconds: int = 0
+    invite_token: str = ""
+    transport: str = "http"
 
 
 class LiveAgentRunner:
@@ -1878,6 +1880,16 @@ def _memory_int(value: object) -> int:
     return 0
 
 
+def load_group_transport(path: Path) -> str:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Live agent group config must be a JSON object.")
+    transport = str(data.get("transport") or "http").strip().lower()
+    if transport not in {"http", "ws"}:
+        raise ValueError(f"Unsupported group transport {transport!r}.")
+    return transport
+
+
 def load_group_configs(
     path: Path,
     *,
@@ -1888,6 +1900,9 @@ def load_group_configs(
     if not isinstance(data, dict):
         raise ValueError("Live agent group config must be a JSON object.")
     server = str(server_override or data.get("server") or "http://127.0.0.1:8765")
+    group_transport = str(data.get("transport") or "http").strip().lower()
+    if group_transport not in {"http", "ws"}:
+        raise ValueError(f"Unsupported group transport {group_transport!r}.")
     defaults = {
         "poll_interval": live_agent_nonnegative_float(
             data.get("poll_interval"),
@@ -1926,7 +1941,14 @@ def load_group_configs(
     if not all(isinstance(agent, dict) for agent in agents):
         raise ValueError("Each live agent entry must be a JSON object.")
     return [
-        _config_from_mapping(agent, server=server, defaults=defaults, server_override=server_override, config_dir=path.parent)
+        _config_from_mapping(
+            agent,
+            server=server,
+            defaults=defaults,
+            server_override=server_override,
+            config_dir=path.parent,
+            group_transport=group_transport,
+        )
         for agent in agents
     ]
 
@@ -1994,6 +2016,7 @@ def _config_from_mapping(
     defaults: dict[str, int | float | bool],
     server_override: str | None = None,
     config_dir: Path = Path("."),
+    group_transport: str = "http",
 ) -> ResidentAgentConfig:
     connection_kind = str(data.get("connection_kind") or "local_cli")
     if connection_kind not in SUPPORTED_RESIDENT_CONNECTION_KINDS:
@@ -2088,6 +2111,8 @@ def _config_from_mapping(
             0.35,
             "terminal_idle_timeout",
         ),
+        invite_token=str(data.get("invite_token") or ""),
+        transport=str(data.get("transport") or group_transport or "http"),
     )
 
 

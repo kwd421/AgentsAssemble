@@ -3699,6 +3699,44 @@ def _run_live_agent_resident(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_ws_group_resident(config) -> int:
+    """Run one group member over the governed WebSocket resident loop."""
+    from agentsassemble.room_engagement import resolve_engagement, room_uses_floor
+    from agentsassemble.ws_resident import run_provider_ws_resident
+    from agentsassemble.ws_room_client import (
+        fetch_room_conversation_mode,
+        join_room_session,
+        meeting_id_from_invite_token,
+    )
+
+    invite_token = str(getattr(config, "invite_token", "") or "")
+    if not invite_token:
+        raise ValueError(f"{config.agent_id}: ws transport requires invite_token in group config.")
+    session_token = join_room_session(
+        config.server,
+        invite_token,
+        display_name=config.display_name or config.agent_id,
+        participant_type="agent",
+    )
+    meeting_id = str(config.meeting_id or "") or meeting_id_from_invite_token(invite_token)
+    conversation_mode = fetch_room_conversation_mode(config.server, meeting_id)
+    effective_engagement = resolve_engagement(conversation_mode, config.engagement_mode)
+    use_floor = room_uses_floor(conversation_mode)
+    command_runner = _command_runner_for_config(config)
+    try:
+        return run_provider_ws_resident(
+            config.server,
+            session_token,
+            config,
+            command_runner,
+            max_replies=int(config.max_ticks or 0),
+            engagement_mode=effective_engagement,
+            use_floor=use_floor,
+        )
+    finally:
+        _close_command_runner(command_runner)
+
+
 def _run_live_agent_group(args: argparse.Namespace) -> int:
     configs = load_group_configs(Path(args.config), max_ticks_override=args.max_ticks, server_override=args.server)
     config_errors = _resident_group_config_errors(configs)
@@ -3729,6 +3767,12 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
         command_runner = None
         try:
             _validate_resident_config(config)
+            transport = str(getattr(config, "transport", "http") or "http")
+            if transport == "ws":
+                if config.connection_kind == "self_service":
+                    raise ValueError(f"{config.agent_id}: self_service does not support ws transport.")
+                results[config.agent_id] = _run_ws_group_resident(config)
+                return
             if config.connection_kind == "self_service":
                 command_runner = _SelfServiceResidentSupervisor(
                     config,
