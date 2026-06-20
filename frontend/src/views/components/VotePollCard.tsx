@@ -8,6 +8,7 @@ import {
   type LobbyEvent,
   type VoteSummary,
 } from "../../api";
+import { useRoomSocket } from "../../RoomSocketContext";
 
 export default function VotePollCard({
   event,
@@ -22,6 +23,7 @@ export default function VotePollCard({
   voterName: string;
   canVote?: boolean;
 }) {
+  const roomSocket = useRoomSocket();
   const voteId = event.vote_id || event.id;
   const [summary, setSummary] = useState<VoteSummary | null>(null);
   const [busyOption, setBusyOption] = useState("");
@@ -50,7 +52,14 @@ export default function VotePollCard({
     setBusyOption(option);
     setError("");
     try {
-      if (roomSessionToken) {
+      if (roomSocket?.ready()) {
+        await roomSocket.say({
+          message: "",
+          kind: "vote_cast",
+          voteId,
+          voteChoice: option,
+        });
+      } else if (roomSessionToken) {
         await postRoomSay({
           sessionToken: roomSessionToken,
           message: "",

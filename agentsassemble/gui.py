@@ -8309,14 +8309,17 @@ def _make_handler(
 
         def post_say(identity: dict, payload: dict) -> dict:
             try:
+                resolved = lobby_payload_with_attachments(output_root, dict(payload))
+            except AttachmentError as error:
+                raise WsSayRejected(str(error), category="bad_message") from error
+            try:
                 return governed_lobby_say(
                     output_root,
                     identity=ActorIdentity.from_mapping(identity),
-                    payload=payload,
+                    payload=resolved,
                     append_lobby_event=append_lobby_event,
                     public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
                     is_muted=is_room_member_muted,
-                    require_nonempty_message=True,
                 )
             except GovernedLobbySayRejected as rejected:
                 raise WsSayRejected(str(rejected), category=rejected.category) from rejected

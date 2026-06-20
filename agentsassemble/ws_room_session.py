@@ -220,12 +220,16 @@ class WsRoomSession:
             return [self._error("read_only", "This session cannot post.")]
         if self.deps.is_muted(self.meeting_id, str(self.identity.get("agent_id") or "")):
             return [self._error("muted", "You are muted by the room host.")]
+        kind = str(msg.get("kind") or "message")
         message = msg.get("message")
-        if not isinstance(message, str) or not message.strip():
+        if not isinstance(message, str):
+            return [self._error("empty", "Message is required.")]
+        if kind not in {"vote", "vote_cast"} and not message.strip():
             return [self._error("empty", "Message is required.")]
         payload = {
             "message": message,
             "kind": msg.get("kind"),
+            "attachments": msg.get("attachments"),
             "vote_id": msg.get("vote_id"),
             "vote_question": msg.get("vote_question"),
             "vote_options": msg.get("vote_options"),

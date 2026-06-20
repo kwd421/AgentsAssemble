@@ -4,10 +4,12 @@ import { AtSign, Gift, Paperclip, Send, Smile, Sparkles, Sticker, X } from "luci
 import {
   postLobbyMessage,
   postRoomSay,
+  RoomSocketSayError,
   uploadLobbyAttachment,
   type LobbyAttachmentRef,
   type LobbyEvent,
 } from "../../api";
+import { useRoomSocket } from "../../RoomSocketContext";
 import {
   MAX_ATTACHMENTS_MESSAGE,
   MAX_ATTACHMENTS_PER_EVENT,
@@ -96,6 +98,7 @@ export default function LobbyComposer({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [accessoryNotice, setAccessoryNotice] = useState("");
+  const roomSocket = useRoomSocket();
   const disabled = Boolean(disabledReason);
   const canUploadAttachments = postingMode === "host";
   const canSubmit = Boolean(message.trim() || pendingAttachments.length) && !busy && !uploading && !disabled;
@@ -173,29 +176,39 @@ export default function LobbyComposer({
       }
       // "/vote 질문 | 옵션1 | 옵션2" opens a poll card instead of a message.
       const voteCommand = parseVoteCommand(trimmed);
-      const payload = await (postingMode === "guest" ? postRoomSay({
-        sessionToken: roomSessionToken,
+      const sayRequest = {
         message: voteCommand ? "" : trimmed,
         attachments: draftAttachments,
-        kind: voteCommand ? "vote" : "message",
+        kind: voteCommand ? ("vote" as const) : ("message" as const),
         voteQuestion: voteCommand?.question || "",
         voteOptions: voteCommand?.options || [],
-      }) : postLobbyMessage({
-        name: currentLobbyName(),
-        side: "mine",
-        kind: voteCommand ? "vote" : "message",
-        message: voteCommand ? "" : trimmed,
-        attachments: draftAttachments,
-        meetingId,
-        voteQuestion: voteCommand?.question || "",
-        voteOptions: voteCommand?.options || [],
-      }));
+      };
+      const payload = roomSocket?.ready()
+        ? await roomSocket.say(sayRequest)
+        : postingMode === "guest"
+          ? await postRoomSay({
+              sessionToken: roomSessionToken,
+              ...sayRequest,
+            })
+          : await postLobbyMessage({
+              name: currentLobbyName(),
+              side: "mine",
+              kind: sayRequest.kind,
+              message: sayRequest.message,
+              attachments: sayRequest.attachments,
+              meetingId,
+              voteQuestion: sayRequest.voteQuestion,
+              voteOptions: sayRequest.voteOptions,
+            });
       const cleared = lobbySubmitSuccessDraft<LobbyAttachmentRef>();
       setMessage(cleared.message);
       setPendingAttachments(cleared.pendingAttachments);
       onPosted(payload.events || (payload.event ? [payload.event] : []));
     } catch (errorValue) {
-      if (isUnauthorizedApiError(errorValue)) {
+      if (
+        isUnauthorizedApiError(errorValue) ||
+        (errorValue instanceof RoomSocketSayError && errorValue.category === "session_revoked")
+      ) {
         onGuestSessionExpired?.();
       }
       const restored = lobbySubmitFailureDraft(

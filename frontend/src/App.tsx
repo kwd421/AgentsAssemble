@@ -55,7 +55,8 @@ import {
   upsertRoomMember,
   applyMeetingStreamUpdate,
   initialMeetingStreamState,
-  connectRoomSocket,
+  openRoomSocket,
+  type RoomSocketHandle,
   mergeSideChatEvents,
   meetingLiveEventsToTimelineEvents,
   meetingStreamStateForActiveMeeting,
@@ -90,6 +91,7 @@ import LiveView from "./views/LiveView";
 import CustomChannelView from "./views/CustomChannelView";
 import CreateChannelModal from "./views/components/CreateChannelModal";
 import LobbyView from "./views/LobbyView";
+import { RoomSocketProvider } from "./RoomSocketContext";
 import RecordsView from "./views/RecordsView";
 import ChannelContextMenu from "./views/components/ChannelContextMenu";
 import type { ChannelHeaderActions } from "./views/components/ChannelHeader";
@@ -555,6 +557,7 @@ export default function App() {
   // server-backed meeting (idempotent) so adding agents / roster / lobby always
   // have a real meeting to bind to instead of failing with "Meeting not found".
   const ensuredMeetingsRef = useRef<Set<string>>(new Set());
+  const [roomSocket, setRoomSocket] = useState<RoomSocketHandle | null>(null);
   const lobbyStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
   const bindLobbyStream = useCallback((receive: (events: LobbyEvent[]) => void) => {
     lobbyStreamRef.current = receive;
@@ -1959,7 +1962,7 @@ export default function App() {
     if (!auth) return undefined;
     // One governed WebSocket per room client: lobby + roster push (host via
     // ws-ticket + meeting_id; guests via invite session token).
-    const wsUnsubscribe = connectRoomSocket(auth, ["lobby", "roster"], {
+    const socket = openRoomSocket(auth, ["lobby", "roster"], {
       onLobby: (events) => {
         lobbyStreamRef.current?.(events);
       },
@@ -1970,10 +1973,12 @@ export default function App() {
         }));
       },
     });
+    setRoomSocket(socket);
     const subscribed = !guestLocked;
     const intervalId = window.setInterval(refreshMembers, subscribed ? 30_000 : 10_000);
     return () => {
-      wsUnsubscribe();
+      socket.close();
+      setRoomSocket(null);
       window.clearInterval(intervalId);
     };
   }, [
@@ -2097,6 +2102,7 @@ export default function App() {
   }
 
   return (
+    <RoomSocketProvider socket={roomSocket}>
     <div
       className="dc-shell flex h-screen max-h-screen overflow-hidden text-text-primary"
       style={shellStyle}
@@ -2748,5 +2754,6 @@ export default function App() {
         </aside>
       )}
     </div>
+    </RoomSocketProvider>
   );
 }

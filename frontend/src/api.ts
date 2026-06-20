@@ -2288,19 +2288,98 @@ export function getWsTicket(auth: RoomSocketAuth): Promise<string> {
   );
 }
 
+export interface RoomSayRequest {
+  message: string;
+  attachments?: LobbyAttachmentRef[];
+  kind?: "message" | "ready" | "deploy" | "vote" | "vote_cast";
+  voteId?: string;
+  voteQuestion?: string;
+  voteOptions?: string[];
+  voteChoice?: string;
+}
+
+export class RoomSocketSayError extends Error {
+  category: string;
+
+  constructor(message: string, category = "rejected") {
+    super(message);
+    this.name = "RoomSocketSayError";
+    this.category = category;
+  }
+}
+
+export interface RoomSocketHandle {
+  close: () => void;
+  ready: () => boolean;
+  say: (request: RoomSayRequest) => Promise<LobbyPostResponse>;
+}
+
+const ROOM_SOCKET_SAY_TIMEOUT_MS = 15_000;
+
 /**
- * Open a room WebSocket: fetch a single-use ticket, connect to /ws, subscribe to
- * the given streams, and dispatch pushed lobby/roster frames. Returns an
- * unsubscribe that closes the socket. Send still goes over HTTP (postRoomSay);
- * this is the faster receive path.
+ * Open a governed room WebSocket: ticket auth, subscribe to streams, push
+ * lobby/roster frames, and send lobby speech with ack over the same socket.
  */
-export function connectRoomSocket(
+export function openRoomSocket(
   auth: RoomSocketAuth,
   streams: string[],
   handlers: RoomSocketHandlers
-): () => void {
+): RoomSocketHandle {
   let socket: WebSocket | null = null;
   let closed = false;
+  let sayPending: {
+    resolve: (value: LobbyPostResponse) => void;
+    reject: (reason: Error) => void;
+    timerId: number;
+  } | null = null;
+
+  function clearSayPending(error?: Error) {
+    if (!sayPending) return;
+    window.clearTimeout(sayPending.timerId);
+    const pending = sayPending;
+    sayPending = null;
+    if (error) pending.reject(error);
+  }
+
+  function dispatchFrame(raw: string) {
+    const msg = JSON.parse(raw) as {
+      op?: string;
+      stream?: string;
+      events?: LobbyEvent[];
+      members?: RoomMember[];
+      event?: LobbyEvent;
+      category?: string;
+      message?: string;
+    };
+    if (msg.op === "ack" && msg.event) {
+      if (sayPending) {
+        const pending = sayPending;
+        sayPending = null;
+        window.clearTimeout(pending.timerId);
+        pending.resolve({ event: msg.event, events: [msg.event] });
+      }
+      return;
+    }
+    if (msg.op === "error") {
+      const error = new RoomSocketSayError(
+        String(msg.message || "Room message was rejected."),
+        String(msg.category || "rejected")
+      );
+      if (sayPending) {
+        const pending = sayPending;
+        sayPending = null;
+        window.clearTimeout(pending.timerId);
+        pending.reject(error);
+      }
+      handlers.onError?.(error);
+      return;
+    }
+    if (msg.op === "event" && msg.stream === "lobby" && Array.isArray(msg.events)) {
+      handlers.onLobby?.(msg.events);
+    } else if (msg.op === "event" && msg.stream === "roster" && Array.isArray(msg.members)) {
+      handlers.onRoster?.(msg.members);
+    }
+  }
 
   (async () => {
     try {
@@ -2313,31 +2392,65 @@ export function connectRoomSocket(
       };
       socket.onmessage = (event) => {
         try {
-          const msg = JSON.parse(event.data as string) as {
-            op?: string;
-            stream?: string;
-            events?: LobbyEvent[];
-            members?: RoomMember[];
-          };
-          if (msg.op === "event" && msg.stream === "lobby" && Array.isArray(msg.events)) {
-            handlers.onLobby?.(msg.events);
-          } else if (msg.op === "event" && msg.stream === "roster" && Array.isArray(msg.members)) {
-            handlers.onRoster?.(msg.members);
-          }
+          dispatchFrame(event.data as string);
         } catch {
-          // Ignore malformed frames; SSE+poll fallback still covers updates.
+          // Ignore malformed frames.
         }
       };
       socket.onerror = (event) => handlers.onError?.(event);
+      socket.onclose = () => clearSayPending(new RoomSocketSayError("Room socket closed.", "socket_closed"));
     } catch (err) {
       handlers.onError?.(err as Error);
     }
   })();
 
-  return () => {
-    closed = true;
-    socket?.close();
+  return {
+    close: () => {
+      closed = true;
+      clearSayPending(new RoomSocketSayError("Room socket closed.", "socket_closed"));
+      socket?.close();
+    },
+    ready: () => socket?.readyState === WebSocket.OPEN,
+    say: (request) =>
+      new Promise<LobbyPostResponse>((resolve, reject) => {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          reject(new RoomSocketSayError("Room socket is not connected.", "socket_closed"));
+          return;
+        }
+        if (sayPending) {
+          reject(new RoomSocketSayError("Another room message is still sending.", "busy"));
+          return;
+        }
+        const timerId = window.setTimeout(() => {
+          if (!sayPending) return;
+          const pending = sayPending;
+          sayPending = null;
+          pending.reject(new RoomSocketSayError("Room message timed out.", "timeout"));
+        }, ROOM_SOCKET_SAY_TIMEOUT_MS);
+        sayPending = { resolve, reject, timerId };
+        socket.send(
+          JSON.stringify({
+            op: "say",
+            message: request.message,
+            attachments: request.attachments || [],
+            kind: request.kind || "message",
+            vote_id: request.voteId || "",
+            vote_question: request.voteQuestion || "",
+            vote_options: request.voteOptions || [],
+            vote_choice: request.voteChoice || "",
+          })
+        );
+      }),
   };
+}
+
+/** @deprecated Prefer openRoomSocket — returns only the close handle. */
+export function connectRoomSocket(
+  auth: RoomSocketAuth,
+  streams: string[],
+  handlers: RoomSocketHandlers
+): () => void {
+  return openRoomSocket(auth, streams, handlers).close;
 }
 
 export function subscribeMeetingEvents(
