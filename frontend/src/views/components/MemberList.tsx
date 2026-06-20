@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
-  resumeLiveAgentSessionAgent,
+  resumeAgentSession,
   deleteLiveAgentSession,
   expelLiveAgentFromRoom,
   kickRoomMember,
@@ -740,14 +740,17 @@ function MemberDetailModal({
     setSessionActionBusy(true);
     setSessionActionStatus(`${resumeActionLabel} 요청 중...`);
     try {
-      const response = await resumeLiveAgentSessionAgent({
-        meetingId: sessionGroup.meeting_id,
-        groupId: sessionGroup.group_id,
+      const response = await resumeAgentSession({
+        roomId: sessionGroup.meeting_id,
         agentId: agent.agent_id,
-        liveAgentConfigPath: sessionGroup.config_path,
+        sessionId: agent.session_id || agent.agent_id,
+        displayName: agent.display_name,
+        providerKind: agent.provider_kind,
+        sandbox: agent.sandbox_enforcement,
+        permissions: agent.permission_option || agent.binding_permission_profile_id,
       });
       setSessionActionStatus(
-        `${resumeActionLabel} 완료${response.status ? ` · ${processStatusLabel(response.status)}` : ""}`
+        `${resumeActionLabel} 완료${response.status ? ` · Agent Session ${response.status}` : ""}`
       );
       onSessionActionComplete?.();
     } catch (error) {

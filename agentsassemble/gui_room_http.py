@@ -12,6 +12,13 @@ from http import HTTPStatus
 
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payload
+from agentsassemble.agent_sessions import (
+    resume_agent_session_payload,
+    room_action_payload,
+    room_lifecycle_payload,
+    room_status_payload,
+)
+from agentsassemble.room_store import RoomStore
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
 from agentsassemble.meeting_events import (
     append_lobby_event_to_file,
@@ -118,11 +125,13 @@ def register_room_routes(router: Router) -> None:
         return str((user or {}).get("user_id") or participant_id)
 
     def _room_payload(room: dict[str, object]) -> dict[str, object]:
+        status = str(room.get("status") or ("archived" if room.get("archived") else "active"))
         return {
             "room_id": str(room.get("room_id") or ""),
             "label": str(room.get("label") or ""),
             "last_active_at": str(room.get("last_active_at") or ""),
-            "archived": bool(room.get("archived")),
+            "archived": bool(room.get("archived")) or status == "archived",
+            "status": status,
             "origin": str(room.get("origin") or ""),
         }
 
@@ -159,6 +168,20 @@ def register_room_routes(router: Router) -> None:
             meeting_id=str(session.get("meeting_id") or ""),
             last_event_id=ctx.handler._last_event_id(ctx.query),
         )
+
+    @router.get("/api/room-events/stream")
+    def canonical_room_events_stream(ctx: RequestContext) -> None:
+        room_id = ctx.query_value("room_id") or ctx.query_value("meeting_id")
+        if not room_id:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
+            return
+        if hasattr(ctx.handler, "_send_room_events_sse_stream"):
+            ctx.handler._send_room_events_sse_stream(
+                room_id=room_id,
+                cursor=ctx.query_value("cursor") or ctx.handler._last_event_id(ctx.query),
+            )
+            return
+        ctx.send_json(room_status_payload(ctx.deps.output_root, room_id))
 
     @router.get("/api/room/lobby")
     def room_lobby(ctx: RequestContext) -> None:
@@ -263,14 +286,91 @@ def register_room_routes(router: Router) -> None:
             return
         include_archived = ctx.query_value("include_archived").lower() in {"1", "true", "yes", "on"}
         owner_id = "" if operator_view else _owner_id_for_session(session)
-        ctx.send_json(
-            {
-                "rooms": [
-                    _room_payload(room)
-                    for room in list_rooms(owner_id=owner_id, include_archived=include_archived)
-                ]
+        rooms_by_id = {
+            str(room.get("room_id") or ""): _room_payload(room)
+            for room in list_rooms(owner_id=owner_id, include_archived=include_archived)
+        }
+        for room in RoomStore(ctx.deps.output_root).list_rooms(include_archived=include_archived):
+            room_id = str(room.get("room_id") or "")
+            if not room_id:
+                continue
+            rooms_by_id[room_id] = {
+                **rooms_by_id.get(room_id, {}),
+                **_room_payload(
+                    {
+                        "room_id": room_id,
+                        "label": room.get("label", ""),
+                        "last_active_at": room.get("updated_at", ""),
+                        "status": room.get("status", "active"),
+                        "origin": "agent_session",
+                    }
+                ),
             }
-        )
+        ctx.send_json({"rooms": list(rooms_by_id.values())})
+
+    @router.get("/api/rooms/state")
+    def room_state(ctx: RequestContext) -> None:
+        room_id = ctx.query_value("room_id") or ctx.query_value("meeting_id")
+        if not room_id:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
+            return
+        try:
+            ctx.send_json(room_status_payload(ctx.deps.output_root, room_id))
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+
+    @router.post("/api/agent-sessions/resume")
+    def agent_sessions_resume(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        try:
+            ctx.send_json(resume_agent_session_payload(ctx.deps.output_root, payload))
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+
+    def _loopback_or_moderator(ctx: RequestContext) -> bool:
+        if ctx.handler._request_uses_loopback_host():
+            return True
+        return ctx.require_moderator()
+
+    def _participant_action(ctx: RequestContext, action: str) -> None:
+        if action in {"kick", "export"} and not _loopback_or_moderator(ctx):
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        try:
+            ctx.send_json(room_action_payload(ctx.deps.output_root, payload, action))
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+
+    @router.post("/api/room-participants/leave")
+    def room_participants_leave(ctx: RequestContext) -> None:
+        _participant_action(ctx, "leave")
+
+    @router.post("/api/room-participants/kick")
+    def room_participants_kick(ctx: RequestContext) -> None:
+        _participant_action(ctx, "kick")
+
+    @router.post("/api/room-participants/export")
+    def room_participants_export(ctx: RequestContext) -> None:
+        _participant_action(ctx, "export")
+
+    def _room_lifecycle_action(ctx: RequestContext, action: str) -> None:
+        if not _loopback_or_moderator(ctx):
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        try:
+            ctx.send_json(room_lifecycle_payload(ctx.deps.output_root, payload, action))
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+
+    @router.post("/api/rooms/close")
+    def rooms_close(ctx: RequestContext) -> None:
+        _room_lifecycle_action(ctx, "close")
 
     @router.post("/api/rooms/archive")
     def rooms_archive(ctx: RequestContext) -> None:
@@ -283,11 +383,19 @@ def register_room_routes(router: Router) -> None:
         if not room_id:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
             return
-        updated = set_room_archived(room_id, bool(payload.get("archived")))
-        if not updated:
+        archived = bool(payload.get("archived"))
+        updated = set_room_archived(room_id, archived)
+        store_updated = False
+        try:
+            if RoomStore(ctx.deps.output_root).room(room_id):
+                RoomStore(ctx.deps.output_root).set_room_status(room_id, "archived" if archived else "active")
+                store_updated = True
+        except ValueError:
+            store_updated = False
+        if not updated and not store_updated:
             ctx.send_error(HTTPStatus.NOT_FOUND, "room not found")
             return
-        ctx.send_json({"status": "archived" if payload.get("archived") else "active", "room_id": room_id})
+        ctx.send_json({"status": "archived" if archived else "active", "room_id": room_id})
 
     # -- roster + host moderation -------------------------------------------
 

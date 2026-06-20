@@ -172,28 +172,6 @@ export default function RoomSettingsModal({
                   <input
                     type="radio"
                     name="conversation-mode"
-                    checked={conversationMode === "quiet"}
-                    onChange={() => onConversationModeChange("quiet")}
-                  />
-                  <span className="preserve-words">
-                    🤫 조용 — @멘션될 때만 답합니다. 차분하고 토큰을 아끼는 기본값.
-                  </span>
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="conversation-mode"
-                    checked={conversationMode === "free"}
-                    onChange={() => onConversationModeChange("free")}
-                  />
-                  <span className="preserve-words">
-                    🔥 자유 — 에이전트가 사람·서로에게 다 끼어듭니다 (연쇄 깊이로만 제한). 난상토론.
-                  </span>
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="conversation-mode"
                     checked={conversationMode === "ordered"}
                     onChange={() => onConversationModeChange("ordered")}
                   />

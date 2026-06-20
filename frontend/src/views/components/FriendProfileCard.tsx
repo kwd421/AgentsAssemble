@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Bot, MessageCircle, Play, Square, Trash2 } from "lucide-react";
 import {
-  resumeLiveAgentSessionAgent,
+  resumeAgentSession,
   stopLiveAgentSessionAgent,
   type LiveAgentProcessGroup,
   type RoomFriend,
@@ -42,6 +42,7 @@ export default function FriendProfileCard({
     );
   }
 
+  const activeFriend = friend;
   const meta = participantTypeMeta(friend.participant_type);
   const Icon = meta.icon || Bot;
   const sourceAgentId = String(friend.source_agent_id || friend.agent_id || "").trim();
@@ -81,13 +82,14 @@ export default function FriendProfileCard({
     setSessionActionBusy(true);
     setSessionActionStatus("RESUME 요청 중...");
     try {
-      const response = await resumeLiveAgentSessionAgent({
-        meetingId: sessionGroup.meeting_id,
-        groupId: sessionGroup.group_id,
+      const response = await resumeAgentSession({
+        roomId: sessionGroup.meeting_id,
         agentId: sourceAgentId,
-        liveAgentConfigPath: sessionGroup.config_path,
+        sessionId: sourceAgentId,
+        displayName: activeFriend.display_name,
+        providerKind: activeFriend.provider_kind,
       });
-      setSessionActionStatus(`RESUME 완료${response.status ? ` · ${response.status}` : ""}`);
+      setSessionActionStatus(`RESUME 완료${response.status ? ` · Agent Session ${response.status}` : ""}`);
       onSessionActionComplete?.();
     } catch (error) {
       setSessionActionStatus(error instanceof Error ? error.message : "RESUME 실패");

@@ -9,6 +9,10 @@ from typing import Any, Callable
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+CLAUDE_PRINT_MODE_DISABLED_MESSAGE = (
+    "Claude print-mode bridge is disabled. AgentsAssemble requires resumable local Agent Sessions; "
+    "do not use claude -p."
+)
 
 
 def run_bridge_request(
@@ -17,29 +21,16 @@ def run_bridge_request(
     runner: Runner = subprocess.run,
     timeout_seconds: int = 300,
 ) -> dict[str, Any]:
-    prompt = str(payload.get("prompt") or "")
-    completed = runner(
-        [command, "-p"],
-        input=prompt,
-        text=True,
-        capture_output=True,
-        timeout=timeout_seconds,
-        check=False,
-    )
+    del command, runner, timeout_seconds
     metadata = {
         "bridge": "claude_code",
-        "command": f"{command} -p",
-        "returncode": completed.returncode,
-        "stderr": completed.stderr or "",
+        "command": "disabled",
+        "returncode": None,
+        "stderr": "",
         "role_id": (payload.get("role") or {}).get("id"),
         "step": payload.get("step"),
     }
-    if completed.returncode != 0:
-        return {
-            "text": f"Claude Code bridge failed with return code {completed.returncode}.",
-            "metadata": metadata,
-        }
-    return {"text": completed.stdout or "", "metadata": metadata}
+    return {"text": CLAUDE_PRINT_MODE_DISABLED_MESSAGE, "metadata": metadata}
 
 
 def serve_bridge(host: str, port: int, token: str | None, command: str) -> None:

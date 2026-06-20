@@ -2,10 +2,18 @@
 
 AgentsAssemble should support many providers without making the meeting runner know each provider's internal rules.
 
-The core boundary is:
+Current user-facing model: **Agent Session**.
+
+Provider, adapter, runner, bridge, delegate, MCP, one-shot, and baseline are
+internal or historical implementation terms. The product surface should expose
+one concept: an Agent Session attached to a room, with connection status,
+session identity, model, effort, sandbox/permission diagnostics, and joined,
+left, detached, kicked, or exported state.
+
+The legacy provider boundary remains useful internally:
 
 ```text
-Role profile -> Agent binding -> Provider config -> Adapter session -> Permission/capability snapshot
+Role profile -> Agent binding -> Provider config -> Agent Session -> Permission/capability snapshot
 ```
 
 ## Principles
@@ -128,49 +136,17 @@ Use these after `decision.md` exists and implementation is explicitly approved.
 
 These should eventually be separated into a `CodingAgentAdapter` or implementation-phase adapter rather than being treated as ordinary meeting chat providers.
 
-### Remote HTTP Bridge Providers
+### Disabled Claude Print-Mode Bridge
 
-Use `remote_http_bridge` when another person owns the AI session and wants that session to join a meeting without giving the host raw local access.
+The old Claude Code print-mode bridge is disabled and must fail closed. It must
+not run `claude -p`, must not be documented as a supported path, and must not
+fall back to an Anthropic API.
 
-The remote owner runs a bridge on their machine:
+The fail-closed message is:
 
-```bash
-python -m agentsassemble.bridges.claude_code_bridge --host 0.0.0.0 --port 8777 --token "$AGENTSASSEMBLE_BRIDGE_TOKEN"
+```text
+Claude print-mode bridge is disabled. AgentsAssemble requires resumable local Agent Sessions; do not use claude -p.
 ```
-
-The host config points a provider at that bridge:
-
-```json
-{
-  "id": "friend-claude-code",
-  "kind": "remote_http_bridge",
-  "display_name": "Friend Claude Code Bridge",
-  "endpoint": "http://100.64.0.10:8777",
-  "auth_ref": "env:AGENTSASSEMBLE_BRIDGE_TOKEN"
-}
-```
-
-Bridge requests go to `POST /agentsassemble/run` and include:
-
-- provider identity.
-- meeting id, agent id, owner id, join mode, and session id when available.
-- role, step, prompt, research depth, and public context.
-- an explicit meeting-read-only permission envelope.
-
-Bridge responses return:
-
-- `text`: JSON text requested by the meeting adapter.
-- `metadata`: optional bridge diagnostics. Public artifacts only retain safe scalar fields such as bridge label, role id, step, return code, and timeout state. Commands, headers, stderr, nested objects, and raw diagnostic payloads must stay out of public meeting artifacts.
-
-The bridge is a meeting adapter, not an implementation adapter. It instructs the remote Claude Code session to avoid shell commands, file reads, edits, credentials, commits, pushes, deploys, and implementation work during meeting turns.
-
-Bridge readiness has three verification levels:
-
-- Health readiness: `GET /agentsassemble/health` can verify bridge HTTP reachability and token acceptance without calling `POST /agentsassemble/run`, sending prompts, or executing Claude.
-- Local execution readiness: unit tests and a local smoke server can verify token auth, `POST /agentsassemble/run`, prompt delivery, command execution, response parsing, lobby messages, research, rounds, and synthesis envelopes.
-- Real friend readiness: only a real remote machine can verify the friend's Claude Code login state, reachable Tailscale/LAN/port-forward address, firewall rules, token sharing, latency, and whether the friend's live model follows the read-only meeting contract.
-
-Do not report a friend bridge as fully verified unless the health probe, local execution readiness, and real friend readiness have all been checked.
 
 ### Native Remote Room Clients
 

@@ -2047,7 +2047,7 @@ export default function App() {
       memberRoles: nextRoles ?? roomMemberRoles[roomSettingsKey(room)] ?? {},
       channelSettings: nextChannels ?? roomChannelSettings[roomSettingsKey(room)] ?? {},
       conversationMode:
-        nextConversationMode ?? roomConversationModes[roomSettingsKey(room)] ?? "quiet",
+        nextConversationMode ?? roomConversationModes[roomSettingsKey(room)] ?? "ordered",
     }).catch(() => {
       // Saving is reflected again by the next explicit settings read; keep the optimistic UI state.
     });
@@ -2208,7 +2208,7 @@ export default function App() {
             roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
           )}
           channelSettings={roomChannelSettings[roomSettingsKey(settingsModalRoom)] || {}}
-          conversationMode={roomConversationModes[roomSettingsKey(settingsModalRoom)] || "quiet"}
+          conversationMode={roomConversationModes[roomSettingsKey(settingsModalRoom)] || "ordered"}
           canInvite={!guestLocked}
           onClose={() => setSettingsModal(null)}
           onInvite={() => {

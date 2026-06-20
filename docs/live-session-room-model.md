@@ -2,6 +2,14 @@
 
 AgentsAssemble must model a shared council room, not a survey runner that interviews agents one at a time.
 
+Current supported product surface: **turn-based Agent Sessions**.
+
+An Agent Session is a real local/resumable AI CLI session attached to a room,
+with persisted identity, model, effort, sandbox/permission settings, joined or
+detached state, and one ordered room event stream. UI and docs should use this
+name instead of exposing runner, bridge, adapter, delegate, one-shot, MCP, or
+baseline as user-facing choices.
+
 Core invariant:
 
 > Agents do not receive isolated interview prompts; they join a shared room and respond to the same ordered event stream.
@@ -14,6 +22,8 @@ Events should be append-only records such as:
 
 - room created
 - participant joined
+- participant left, kicked, exported, or detached
+- session attached, resumed, or detached
 - human lobby message
 - agent readiness message
 - official meeting turn
@@ -25,6 +35,23 @@ Events should be append-only records such as:
 - participant returned to workspace
 
 This keeps a meeting auditable. A later agent should be able to read the room log and understand what happened without trusting hidden orchestration state.
+
+The active room source of truth is separate from meeting artifacts:
+
+```text
+.agentsassemble/
+  rooms/<room_id>/
+    room.json
+    participants.json
+    sessions.json
+    events.jsonl
+    media/
+    handoffs/
+```
+
+`room.json`, `participants.json`, and `sessions.json` define current state.
+`events.jsonl` is append-only ordered history. Meeting files under
+`.agentsassemble/meetings` remain archives/snapshots, not active roster state.
 
 Roster visibility and private operational signals are separate. Room
 participants may see which humans and AI agents are present, their public names,
@@ -200,6 +227,11 @@ Official turns and informal chat must stay separate.
 ## Engagement Modes
 
 Engagement mode means when a participant should react to room messages.
+
+For the current Agent Session product path, free/silent/quiet room modes are
+disabled. The only supported server behavior is turn-based: the room calls one
+agent, sends the ordered room event stream plus supported media references, and
+records the resulting turn back into the same stream.
 
 - `manual`: does not auto-react.
 - `mentioned`: can answer when called by name or agent id in free chat; partial prefix/suffix matches do not count as a call.

@@ -100,21 +100,15 @@ def public_room_settings(value: object, *, room_id: str) -> dict[str, object]:
     }
 
 
-# One honest knob for "who talks when":
-#   quiet   — agents speak only when @mentioned (token-cheap default)
-#   free    — every agent reacts to everything (free-for-all, no floor)
-#   ordered — every agent wants to react, but a deterministic floor algorithm
-#             (fairness + no double-speak + human-priority) decides who speaks
-#             next; the AI never decides turns, the algorithm does.
-# (Replaces the old turn/free + 7 raw engagement modes as the user-facing choice.)
-CONVERSATION_MODES = {"quiet", "free", "ordered"}
+# Turn-based is the only supported user-facing room mode for now. Legacy quiet,
+# silent, free, and flow labels normalize here so old saved settings cannot
+# resurrect removed modes in the frontend.
+CONVERSATION_MODES = {"ordered"}
 
 
 def clean_conversation_mode(value: object) -> str:
     mode = str(value or "").strip().lower()
-    if mode == "turn":  # legacy label for the quiet default
-        return "quiet"
-    return mode if mode in CONVERSATION_MODES else "quiet"
+    return mode if mode in CONVERSATION_MODES else "ordered"
 
 
 def clean_room_id(value: object, *, required: bool) -> str:

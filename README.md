@@ -123,11 +123,42 @@ The GUI has four tabs:
 
 ## Live Room Status
 
-The live-room branch now has a local GUI room, file-backed event streams,
-live-agent roster and presence records, supervised resident process groups,
-moderator-controlled official turns, session start/resume/restart/recover/stop
-commands, credential-free smoke checks, shared meeting memory artifacts, and an
-experimental Codex CLI resident path based on `codex exec resume`.
+The supported product concept is now **Agent Session**.
+
+An Agent Session is a resumable local AI CLI session attached to one room, with
+persisted participant/session identity, model, effort, sandbox/permission
+settings, and one ordered room event stream. The room is turn-based for now:
+when an agent is called, it receives the ordered room conversation and appends
+its result back to that same room event stream.
+
+Active room state is separate from archived meeting artifacts. New room/session
+state lives under:
+
+```text
+.agentsassemble/
+  rooms/
+    <room_id>/
+      room.json
+      participants.json
+      sessions.json
+      events.jsonl
+      media/
+      handoffs/
+```
+
+Free/silent room modes are intentionally disabled for now. The frontend should
+show turn-based Agent Sessions only; old saved `quiet`, `free`, or `turn`
+settings normalize to `ordered`.
+
+Claude Code print-mode bridging is disabled. AgentsAssemble must not invoke
+`claude -p` or silently fall back to an Anthropic API path for room
+participation.
+
+The live-room branch also has a local GUI room, legacy file-backed lobby/live
+streams, supervised resident process groups, moderator-controlled official
+turns, session start/resume/restart/recover/stop commands, credential-free smoke
+checks, shared meeting memory artifacts, and an experimental Codex CLI resident
+path based on `codex exec resume`.
 
 This is not yet the final native multi-provider room. Codex remains the most
 advanced resident path, Kiro has an experimental `kiro chat --resume-id`
@@ -136,10 +167,11 @@ resident path with one approved start/probe/stop room smoke, and Grok has a
 narrower experimental JSON stdout `grok --resume` continuity path with deeper
 official-turn/restart smoke evidence. The native Claude Code/Antigravity/
 Hermes/OpenClaw integrations are not complete, and non-Codex local CLI read-only is not a hard OS sandbox.
-Ordinary `local_cli` is a stateless delegate path, not a provider-owned resident
-session. `terminal_session`, `self_service`, and remote bridge participants
-still rely on policy, approval, and audit metadata unless a real sandboxed
-launcher is added and verified.
+Legacy provider/runner/bridge labels may still appear in internal code while
+the migration finishes, but they are not the user-facing product model.
+`terminal_session`, `self_service`, and remote bridge participants still rely on
+policy, approval, and audit metadata unless a real sandboxed launcher is added
+and verified.
 No-Tailscale multi-host is still a separate product axis: the current Phase 5
 slice adds only a LAN invite token PoC for a future
 `native_remote_room_client`, documented in `docs/no-tailscale-multi-host.md`.

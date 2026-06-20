@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from agentsassemble.agent_sessions import merge_room_store_members
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_friends import room_friend_type_for_agent
@@ -190,6 +191,7 @@ def room_members_payload(
     roster = _collapse_stale_invite_duplicates(
         list(by_key.values()), live_keys=live_session_keys | live_agent_keys
     )
+    roster = merge_room_store_members(output_root, room_id, roster)
     members = sorted(
         roster,
         key=lambda item: (

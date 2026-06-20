@@ -1618,6 +1618,39 @@ def build_parser() -> argparse.ArgumentParser:
     live_session_runs_wait.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
     live_session_runs_wait.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable wait result.")
 
+    room = subparsers.add_parser("room", help="Work with turn-based Agent Sessions in a room.")
+    room_subparsers = room.add_subparsers(dest="room_command", required=True)
+    room_server = argparse.ArgumentParser(add_help=False)
+    room_server.add_argument("--server", default="http://127.0.0.1:8765")
+
+    room_list = room_subparsers.add_parser("list", parents=[room_server], help="List persisted rooms.")
+    room_list.add_argument("--include-archived", action="store_true")
+    room_list.add_argument("--json", action="store_true", dest="as_json")
+
+    room_status = room_subparsers.add_parser("status", parents=[room_server], help="Show one room's persisted state.")
+    room_status.add_argument("room_id")
+    room_status.add_argument("--json", action="store_true", dest="as_json")
+
+    for room_command in ("join", "resume"):
+        room_join = room_subparsers.add_parser(
+            room_command,
+            parents=[room_server],
+            help=f"{room_command.title()} an Agent Session using the room backend.",
+        )
+        room_join.add_argument("room_id")
+        room_join.add_argument("--agent", required=True)
+        room_join.add_argument("--session", default="")
+        room_join.add_argument("--model", default="")
+        room_join.add_argument("--effort", default="")
+        room_join.add_argument("--sandbox", default="")
+        room_join.add_argument("--permissions", default="")
+        room_join.add_argument("--json", action="store_true", dest="as_json")
+
+    room_leave = room_subparsers.add_parser("leave", parents=[room_server], help="Leave a room as an Agent Session participant.")
+    room_leave.add_argument("room_id")
+    room_leave.add_argument("--agent", required=True)
+    room_leave.add_argument("--json", action="store_true", dest="as_json")
+
     sessions = subparsers.add_parser("sessions", help="Inspect and invite Codex CLI live sessions.")
     session_subparsers = sessions.add_subparsers(dest="sessions_command", required=True)
 
@@ -1707,6 +1740,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_mcp_command(args)
     if args.command == "sessions":
         return run_sessions_command(args)
+    if args.command == "room":
+        return run_room_command(args)
 
     return 1
 
@@ -8280,6 +8315,69 @@ def run_sessions_command(args: argparse.Namespace) -> int:
             print(f"Wrote {output_path}")
             print("Next preflight: " + shlex.join(next_commands["preflight"]))
             print("Next ensure-session: " + shlex.join(next_commands["ensure_session"]))
+        return 0
+    return 1
+
+
+def run_room_command(args: argparse.Namespace) -> int:
+    if args.room_command == "list":
+        query = urllib.parse.urlencode({"include_archived": "true"} if args.include_archived else {})
+        path = "/api/rooms" + (f"?{query}" if query else "")
+        payload = _request_json(_server_url(args.server, path))
+        if args.as_json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            rooms = payload.get("rooms") if isinstance(payload.get("rooms"), list) else []
+            if not rooms:
+                print("no rooms")
+            for room in rooms:
+                print(
+                    f"{room.get('room_id')}: {room.get('status') or ('archived' if room.get('archived') else 'active')}"
+                )
+        return 0
+    if args.room_command == "status":
+        query = urllib.parse.urlencode({"room_id": args.room_id})
+        payload = _request_json(_server_url(args.server, f"/api/rooms/state?{query}"))
+        if args.as_json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            room = payload.get("room") if isinstance(payload.get("room"), dict) else {}
+            participants = payload.get("active_participants") if isinstance(payload.get("active_participants"), list) else []
+            print(f"{room.get('room_id') or args.room_id}: {room.get('status') or 'unknown'}")
+            print(f"active participants: {len(participants)}")
+        return 0
+    if args.room_command in {"join", "resume"}:
+        payload = {
+            "room_id": args.room_id,
+            "agent_id": args.agent,
+            "session_id": args.session or args.agent,
+            "model": args.model,
+            "effort": args.effort,
+            "sandbox": args.sandbox,
+            "permissions": args.permissions,
+        }
+        response = _request_json(
+            _server_url(args.server, "/api/agent-sessions/resume"),
+            method="POST",
+            payload=payload,
+        )
+        if args.as_json:
+            print(json.dumps(response, ensure_ascii=False, indent=2))
+        else:
+            participant = response.get("participant") if isinstance(response.get("participant"), dict) else {}
+            print(f"resumed Agent Session {participant.get('participant_id') or args.agent} in {args.room_id}")
+        return 0
+    if args.room_command == "leave":
+        payload = {"room_id": args.room_id, "participant_id": args.agent}
+        response = _request_json(
+            _server_url(args.server, "/api/room-participants/leave"),
+            method="POST",
+            payload=payload,
+        )
+        if args.as_json:
+            print(json.dumps(response, ensure_ascii=False, indent=2))
+        else:
+            print(f"left {args.room_id}: {args.agent}")
         return 0
     return 1
 

@@ -21,7 +21,7 @@ export interface LobbyAttachmentRef {
   download_url: string;
 }
 
-export type ConversationMode = "quiet" | "free" | "ordered";
+export type ConversationMode = "ordered";
 
 export interface RoomSettings {
   roomId: string;
@@ -31,8 +31,7 @@ export interface RoomSettings {
   appearance: RoomAppearance;
   memberRoles: Record<string, string>;
   channelSettings: Record<string, ChannelSettings>;
-  // quiet: agents speak only when @mentioned. free: everyone reacts to everything.
-  // ordered: everyone reacts, but a deterministic floor algorithm spaces them out.
+  // ordered: turn-based Agent Sessions are the only supported room mode for now.
   conversationMode: ConversationMode;
 }
 
@@ -41,6 +40,7 @@ export interface ServerRoom {
   label: string;
   last_active_at: string;
   archived: boolean;
+  status?: "active" | "closed" | "archived" | string;
   origin: string;
 }
 
@@ -314,6 +314,18 @@ export interface MeetingLiveEvent {
   [key: string]: unknown;
 }
 
+export interface RoomEvent {
+  id: string;
+  created_at: string;
+  room_id: string;
+  type: string;
+  participant_id?: string;
+  session_id?: string;
+  actor_id?: string;
+  content?: string;
+  media?: LobbyAttachmentRef | Record<string, unknown>;
+}
+
 export interface LiveAgent {
   agent_id: string;
   display_name: string;
@@ -410,6 +422,15 @@ export interface LiveAgentSessionActionResponse {
   agent?: LiveAgent;
   last_error?: string;
   summary?: string;
+}
+
+export interface AgentSessionActionResponse {
+  status: string;
+  room?: ServerRoom | Record<string, unknown>;
+  participant?: Record<string, unknown>;
+  session?: Record<string, unknown>;
+  participants?: Array<Record<string, unknown>>;
+  sessions?: Array<Record<string, unknown>>;
 }
 
 export interface LiveAgentCreateOption {
@@ -1006,12 +1027,7 @@ function normalizeRoomSettings(payload: ApiRoomSettings | undefined, fallbackRoo
     },
     memberRoles: payload?.member_roles && typeof payload.member_roles === "object" ? payload.member_roles : {},
     channelSettings: normalizeChannelSettings(payload?.channel_settings),
-    conversationMode:
-      payload?.conversation_mode === "free"
-        ? "free"
-        : payload?.conversation_mode === "ordered"
-          ? "ordered"
-          : "quiet",
+    conversationMode: "ordered",
   };
 }
 
@@ -1234,6 +1250,40 @@ export function resumeLiveAgentSessionAgent({
     group_id: groupId,
     agent_id: agentId,
     live_agent_config_path: liveAgentConfigPath || "",
+  });
+}
+
+export function resumeAgentSession({
+  roomId,
+  agentId,
+  sessionId,
+  displayName,
+  providerKind,
+  model,
+  effort,
+  sandbox,
+  permissions,
+}: {
+  roomId: string;
+  agentId: string;
+  sessionId?: string;
+  displayName?: string;
+  providerKind?: string;
+  model?: string;
+  effort?: string;
+  sandbox?: string;
+  permissions?: string;
+}) {
+  return postJson<AgentSessionActionResponse>("/api/agent-sessions/resume", {
+    room_id: roomId,
+    agent_id: agentId,
+    session_id: sessionId || agentId,
+    display_name: displayName || agentId,
+    provider_kind: providerKind || "",
+    model: model || "",
+    effort: effort || "",
+    sandbox: sandbox || "",
+    permissions: permissions || "",
   });
 }
 
@@ -2247,6 +2297,38 @@ export function subscribeSideChat(
 
   source.addEventListener("side_chat", (event) => handleData((event as MessageEvent).data));
   source.onmessage = (event) => handleData(event.data);
+  if (onError) source.onerror = onError;
+  return () => source.close();
+}
+
+export function subscribeRoomEvents(
+  roomId: string,
+  cursor: string,
+  onEvent: (event: RoomEvent) => void,
+  onHeartbeat?: () => void,
+  onError?: (err: Event) => void
+): () => void {
+  const source = new EventSource(`/api/room-events/stream${queryString({ room_id: roomId, cursor })}`);
+
+  function handleData(raw: string) {
+    try {
+      const payload = JSON.parse(raw) as RoomEvent;
+      if (payload && payload.id && payload.type) onEvent(payload);
+    } catch {
+      // Ignore malformed frames; the stream is append-only and the next event can recover.
+    }
+  }
+
+  source.addEventListener("heartbeat", () => onHeartbeat?.());
+  source.onmessage = (event) => handleData(event.data);
+  source.addEventListener("message_final", (event) => handleData((event as MessageEvent).data));
+  source.addEventListener("message_delta", (event) => handleData((event as MessageEvent).data));
+  source.addEventListener("thinking_delta", (event) => handleData((event as MessageEvent).data));
+  source.addEventListener("session_resumed", (event) => handleData((event as MessageEvent).data));
+  source.addEventListener("participant_joined", (event) => handleData((event as MessageEvent).data));
+  source.addEventListener("participant_left", (event) => handleData((event as MessageEvent).data));
+  source.addEventListener("participant_kicked", (event) => handleData((event as MessageEvent).data));
+  source.addEventListener("participant_exported", (event) => handleData((event as MessageEvent).data));
   if (onError) source.onerror = onError;
   return () => source.close();
 }

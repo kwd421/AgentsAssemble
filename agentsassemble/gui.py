@@ -195,6 +195,7 @@ from agentsassemble.room_users import (
     user_for_participant,
 )
 from agentsassemble.room_settings import room_settings_payload, update_room_settings
+from agentsassemble.agent_sessions import room_sse_frames_after_cursor
 from agentsassemble.user_profile import read_user_profile, update_user_profile
 from agentsassemble.room_invite import (
     active_sessions_summary,
@@ -11632,6 +11633,41 @@ def _make_handler(
                 except (BrokenPipeError, ConnectionResetError):
                     return
 
+        def _send_room_events_sse_stream(self, *, room_id: str, cursor: str | None = None) -> None:
+            self.close_connection = True
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
+            self._send_public_invite_cors_headers()
+            self.end_headers()
+            current_cursor = cursor or ""
+            last_write_at = 0.0
+            while True:
+                try:
+                    frames = room_sse_frames_after_cursor(output_root, room_id, cursor=current_cursor)
+                    for frame in frames:
+                        self.wfile.write(frame.encode("utf-8"))
+                        event_id = _sse_frame_id(frame)
+                        if event_id:
+                            current_cursor = event_id
+                    self.wfile.flush()
+                    last_write_at = time.monotonic()
+                    time.sleep(SSE_EVENT_POLL_INTERVAL_SECONDS)
+                    if time.monotonic() - last_write_at >= SSE_KEEPALIVE_INTERVAL_SECONDS:
+                        self.wfile.write(b"event: heartbeat\ndata: {}\n\n")
+                        self.wfile.flush()
+                        last_write_at = time.monotonic()
+                except (ValueError, FileNotFoundError) as error:
+                    try:
+                        self.wfile.write(_sse_event("error", _sse_stream_error_payload("room_events", error, meeting_id=room_id)))
+                        self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError):
+                        return
+                    return
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+
         def _operation_json_payload(
             self,
             *,
@@ -11721,6 +11757,13 @@ def _last_payload_event_id(payload: dict[str, object]) -> str | None:
         return None
     event_id = latest.get("id")
     return event_id if isinstance(event_id, str) and event_id else None
+
+
+def _sse_frame_id(frame: str) -> str:
+    for line in frame.splitlines():
+        if line.startswith("id:"):
+            return line.removeprefix("id:").strip()
+    return ""
 
 
 def _payload_signature(payload: dict[str, object]) -> str | None:

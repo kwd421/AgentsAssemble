@@ -18,9 +18,6 @@ import MemberList, { type RoleId } from "./MemberList";
 
 const ROOM_FLOW_MODES = [
   { id: "turn_based_floor", label: "Turn-Based Floor" },
-  { id: "round_robin", label: "Round Robin" },
-  { id: "free_interval", label: "Free Interval" },
-  { id: "quiet", label: "Quiet Call" },
 ];
 
 // duration 0 = 무제한: 백엔드가 deadline을 잡지 않아 중지할 때까지 계속됩니다.
@@ -82,11 +79,7 @@ function mutedChannelCount(
   return Object.values(channelNotifications || {}).filter((setting) => setting.notifications === "mute").length;
 }
 
-function flowPolicyLabel(policy?: string): string {
-  if (policy === "turn_based_floor" || policy === "natural") return "Turn-Based Floor";
-  if (policy === "round_robin") return "Round Robin";
-  if (policy === "free_interval") return "Free Interval";
-  if (policy === "quiet") return "Quiet Call";
+function flowPolicyLabel(_policy?: string): string {
   return "Turn-Based Floor";
 }
 

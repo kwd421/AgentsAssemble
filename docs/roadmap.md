@@ -26,6 +26,16 @@ The near-term product is not a polished chat app. It is a reliable local council
 
 ## Current Implemented State
 
+- The current supported live-room product concept is **Agent Session**: a
+  turn-based local/resumable AI CLI session attached to a room event stream.
+  Active room state is now separated from historical meeting artifacts through
+  file-backed `rooms/<room_id>/room.json`, `participants.json`,
+  `sessions.json`, `events.jsonl`, `media/`, and handoff packet files.
+- Free/silent/quiet room modes are intentionally disabled for now; legacy saved
+  values normalize to the turn-based `ordered` mode.
+- The old Claude Code print-mode bridge is disabled and fails closed instead of
+  invoking `claude -p` or introducing hidden API billing risk.
+
 - `assemble demo` runs a canned three-agent council.
 - Roles are loaded from config with Korean display names and stable English ids.
 - Mock adapter supports deterministic local demos.
