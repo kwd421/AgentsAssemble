@@ -116,7 +116,9 @@ Queue wait time and backpressure counts still require a later server/fanout
 slice and remain out of scope. Treat the output as operator evidence for
 comparing local changes on the same machine, not as a service-level objective.
 
-Play Mode `turn_based_floor` fairness is a runner-side silent yield. Before a resident calls
+Historical Play Mode `turn_based_floor` fairness is disabled for the current
+Agent Session product surface. If this internal flow code is re-enabled later,
+it must remain a runner-side silent yield. Before a resident calls
 its provider, it compares its own speaking count against the current active
 `flow` participants in the same meeting. The default guard looks at the last 24
 speaking events, blocks an immediate repeat with a one-speaking-turn `min_gap`,
@@ -145,7 +147,10 @@ Live room infrastructure handles presence, share links, real-time delivery, CLI 
 
 Council workflow handles agenda, moderator-controlled official turns, evidence, Decision Gate status, `decision.md`, assigned tasks, return packets, and memory. This is the product boundary that should keep AgentsAssemble distinct.
 
-Free chat is part of the room, but it is informal by default. Official meeting turns must be typed separately so a side comment cannot silently become evidence or a decision.
+Free chat / free-flow room mode is not currently a supported user-facing path.
+The supported room behavior is ordered Agent Session turns. If informal chat is
+reintroduced later, official meeting turns must still be typed separately so a
+side comment cannot silently become evidence or a decision.
 Selected lobby text can enter the official record only through
 `assemble lobby promote`, which writes a `promoted_context` official event and
 the sanitized `lobby.promote_to_official` operation. Play Mode chatter is not
@@ -228,10 +233,10 @@ Official turns and informal chat must stay separate.
 
 Engagement mode means when a participant should react to room messages.
 
-For the current Agent Session product path, free/silent/quiet room modes are
-disabled. The only supported server behavior is turn-based: the room calls one
-agent, sends the ordered room event stream plus supported media references, and
-records the resulting turn back into the same stream.
+For the current Agent Session product path, free/silent/quiet/free-chat/flow
+room modes are disabled. The only supported server behavior is turn-based: the
+room calls one agent, sends the ordered room event stream plus supported media
+references, and records the resulting turn back into the same stream.
 
 - `manual`: does not auto-react.
 - `mentioned`: can answer when called by name or agent id in free chat; partial prefix/suffix matches do not count as a call.

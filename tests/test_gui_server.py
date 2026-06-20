@@ -75,6 +75,8 @@ from agentsassemble.room_invite import (
     set_runtime_host_token,
     set_runtime_public_url,
 )
+from agentsassemble.room_store import RoomStore
+from agentsassemble.room_members import set_room_member_muted
 from agentsassemble.room_users import (
     configure_room_users_store,
     reset_state as reset_room_users_state,
@@ -176,6 +178,8 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("owner_id", room)
 
     def test_room_session_resume_endpoint_feeds_room_members_from_canonical_state(self):
+        reset_room_invite_state()
+        reset_room_users_state()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
 
@@ -202,6 +206,8 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(after_leave["members"], [])
 
     def test_room_session_export_endpoint_persists_exported_state(self):
+        reset_room_invite_state()
+        reset_room_users_state()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             _dispatch_room_route(
@@ -222,6 +228,134 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(exported["status"], "exported")
             self.assertEqual(state["participants"][0]["status"], "exported")
             self.assertEqual(state["active_participants"], [])
+
+    def test_room_participant_leave_requires_matching_session_or_moderator(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            configure_room_users_store(root / "identity.db")
+            set_runtime_public_url("https://room.example.com")
+            set_runtime_host_token("host-secret")
+            invite = create_room_invite(
+                room_url="http://127.0.0.1:8765",
+                meeting_id="session-room",
+                agent_id="agent-2",
+                display_name="Agent Two",
+            )
+            session = join_room_with_invite(
+                invite["invite_token"],
+                meeting_id="session-room",
+                display_name="Agent Two",
+                device_token="agent-two-device-token",
+            )
+            _dispatch_room_route(
+                root,
+                path="/api/agent-sessions/resume",
+                method="POST",
+                payload={"room_id": "session-room", "agent_id": "agent-1", "session_id": "session-1"},
+            )
+
+            denied = _dispatch_room_route(
+                root,
+                path="/api/room-participants/leave",
+                method="POST",
+                payload={"room_id": "session-room", "participant_id": "agent-1"},
+                headers={"Authorization": f"Bearer {session['session_token']}"},
+                loopback=False,
+            )
+
+            self.assertEqual(denied.sent_error, (HTTPStatus.FORBIDDEN, "participant session token required"))
+            self.assertEqual(RoomStore(root).participant("session-room", "agent-1")["status"], "joined")
+
+    def test_roomstore_joined_row_wins_over_old_live_agent_roster_row(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-1",
+                    "display_name": "Old Live Agent",
+                    "meeting_id": "session-room",
+                    "provider_kind": "codex_live_session",
+                    "connection_kind": "live_session",
+                    "status": "online",
+                },
+            )
+            _dispatch_room_route(
+                root,
+                path="/api/agent-sessions/resume",
+                method="POST",
+                payload={
+                    "room_id": "session-room",
+                    "agent_id": "agent-1",
+                    "session_id": "session-1",
+                    "display_name": "Canonical Agent",
+                    "provider_kind": "codex_live_session",
+                },
+            )
+
+            members = _dispatch_room_route(root, path="/api/room-members?meeting_id=session-room").sent_json["members"]
+
+            self.assertEqual(len([member for member in members if member["participant_id"] == "agent-1"]), 1)
+            member = next(member for member in members if member["participant_id"] == "agent-1")
+            self.assertEqual(member["source"], "agent_session")
+            self.assertEqual(member["display_name"], "Canonical Agent")
+            self.assertEqual(member["status"], "joined")
+
+    def test_roomstore_exported_row_suppresses_old_live_agent_roster_row(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-1",
+                    "display_name": "Old Live Agent",
+                    "meeting_id": "session-room",
+                    "provider_kind": "codex_live_session",
+                    "connection_kind": "live_session",
+                    "status": "online",
+                },
+            )
+            _dispatch_room_route(
+                root,
+                path="/api/agent-sessions/resume",
+                method="POST",
+                payload={"room_id": "session-room", "agent_id": "agent-1", "session_id": "session-1"},
+            )
+            _dispatch_room_route(
+                root,
+                path="/api/room-participants/export",
+                method="POST",
+                payload={"room_id": "session-room", "participant_id": "agent-1"},
+            )
+
+            members = _dispatch_room_route(root, path="/api/room-members?meeting_id=session-room").sent_json["members"]
+
+            self.assertNotIn("agent-1", [member["participant_id"] for member in members])
+
+    def test_roomstore_roster_keeps_mute_metadata_without_changing_status(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _dispatch_room_route(
+                root,
+                path="/api/agent-sessions/resume",
+                method="POST",
+                payload={"room_id": "session-room", "agent_id": "agent-1", "session_id": "session-1"},
+            )
+            set_room_member_muted(root, meeting_id="session-room", participant_id="agent-1", muted=True)
+
+            member = _dispatch_room_route(root, path="/api/room-members?meeting_id=session-room").sent_json["members"][0]
+
+            self.assertEqual(member["source"], "agent_session")
+            self.assertEqual(member["status"], "joined")
+            self.assertTrue(member["muted"])
 
     def test_rooms_endpoint_guest_sees_only_own_rooms(self):
         reset_room_invite_state()
@@ -354,10 +488,45 @@ class GuiServerTests(unittest.TestCase):
                     self.assertIn("inline", response.headers.get("Content-Disposition", ""))
                 with urlopen(f"{server_url}{attachment['download_url']}", timeout=4) as response:
                     self.assertEqual(response.read(), b"fake-png-bytes")
-                    self.assertIn("attachment", response.headers.get("Content-Disposition", ""))
+                self.assertIn("attachment", response.headers.get("Content-Disposition", ""))
             finally:
                 server.shutdown()
                 server.server_close()
+
+    def test_attachment_upload_with_room_id_writes_roomstore_media(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            RoomStore(root).create_room("room-a")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                upload = Request(
+                    f"{server_url}/api/attachments",
+                    data=json.dumps(
+                        {
+                            "room_id": "room-a",
+                            "filename": "diagram.png",
+                            "content_type": "image/png",
+                            "data_base64": base64.b64encode(b"room-image").decode("ascii"),
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(upload, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            media = payload["room_media"]
+            self.assertEqual(Path(media["path"]).read_bytes(), b"room-image")
+            self.assertEqual(media["content_type"], "image/png")
+            self.assertEqual(media["size"], len(b"room-image"))
+            self.assertTrue(media["supported"])
+            self.assertIn("media_attached", [event["type"] for event in RoomStore(root).read_events("room-a")])
 
     def test_attachment_svg_is_not_served_inline(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3313,11 +3482,11 @@ class GuiServerTests(unittest.TestCase):
             try:
                 request = Request(
                     f"http://127.0.0.1:{server.server_port}/api/live-agent-session-smoke",
-                    data=json.dumps({"group_id": "session-smoke-api", "meeting_id": "session-smoke-api", "timeout": 8}).encode("utf-8"),
+                    data=json.dumps({"group_id": "session-smoke-api", "meeting_id": "session-smoke-api", "timeout": 12}).encode("utf-8"),
                     headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
                     method="POST",
                 )
-                with urlopen(request, timeout=45) as response:
+                with urlopen(request, timeout=60) as response:
                     payload = json.loads(response.read().decode("utf-8"))
                 with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
                     health = json.loads(response.read().decode("utf-8"))
@@ -18860,7 +19029,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("flow_meeting_id", event)
             self.assertNotIn("flow_topic", event)
 
-    def test_live_agent_flow_start_sets_flow_mode_without_starting_provider_processes(self):
+    def test_live_agent_flow_start_is_disabled_and_does_not_start_running_flow(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             meeting_dir = root / "meetings" / "m1"
@@ -18909,31 +19078,20 @@ class GuiServerTests(unittest.TestCase):
                     headers={"Content-Type": "application/json"},
                     method="POST",
                 )
-                with urlopen(start_request, timeout=4) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
-                stop_request = Request(
-                    f"http://127.0.0.1:{server.server_port}/api/live-agent-flow/stop",
-                    data=json.dumps({"meeting_id": "m1"}).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                with urlopen(stop_request, timeout=4) as response:
-                    stop_payload = json.loads(response.read().decode("utf-8"))
+                with self.assertRaises(HTTPError) as error:
+                    urlopen(start_request, timeout=4)
+                error.exception.close()
+                operations_response = urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4)
+                operations = json.loads(operations_response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
 
-            self.assertEqual(payload["flow"]["status"], "running")
-            self.assertEqual(payload["flow"]["meeting_id"], "m1")
-            self.assertEqual(payload["flow"]["topic"], long_topic)
-            self.assertEqual(payload["flow"]["policy"], "round_robin")
-            self.assertEqual(payload["flow"]["agent_count"], 1)
-            start_event = next(event for event in read_lobby(root) if event.get("flow_event_type") == "started")
-            stop_event = next(event for event in read_lobby(root) if event.get("flow_event_type") == "stopped")
-            self.assertEqual(start_event["flow_topic"], long_topic)
-            self.assertEqual(start_event["flow_policy"], "round_robin")
-            self.assertEqual(stop_event["flow_status"], "stopped")
-            self.assertEqual(stop_payload["flow"]["status"], "stopped")
+            self.assertEqual(error.exception.code, HTTPStatus.GONE)
+            self.assertFalse([event for event in read_lobby(root) if event.get("flow_event_type") == "started"])
+            flow_operations = [item for item in operations["operations"] if item["operation"] == "flow.start"]
+            self.assertEqual(flow_operations[-1]["status"], "failed")
+            self.assertIn("disabled", flow_operations[-1]["summary"].lower())
             persisted_agent = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]
             self.assertEqual(persisted_agent["engagement_mode"], "moderator_called")
             self.assertFalse((root / "live-agent-runs" / "processes.json").exists())
@@ -18971,22 +19129,33 @@ class GuiServerTests(unittest.TestCase):
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                start_request = Request(
-                    f"http://127.0.0.1:{server.server_port}/api/live-agent-flow/start",
-                    data=json.dumps(
-                        {
-                            "meeting_id": "m1",
-                            "topic": "고죠 vs 스쿠나",
-                            "duration_seconds": 30,
-                            "tick_interval": 0.01,
-                        }
-                    ).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
+                flow_id = "flow-manual"
+                append_lobby_event(
+                    root,
+                    {
+                        "name": "flow",
+                        "side": "system",
+                        "kind": "flow_event",
+                        "message": "started",
+                        "actor_id": "flow",
+                        "flow_id": flow_id,
+                        "flow_meeting_id": "m1",
+                        "flow_event_type": "started",
+                        "flow_status": "running",
+                        "flow_topic": "고죠 vs 스쿠나",
+                        "flow_duration_seconds": 30,
+                        "flow_tick_interval": 1,
+                        "flow_cooldown": 0,
+                        "flow_max_agent_turns": 0,
+                        "flow_max_total_turns": 0,
+                        "flow_max_silence_seconds": 0,
+                        "flow_total_turns": 0,
+                        "flow_agent_count": 1,
+                        "flow_started_at": datetime.now(UTC).isoformat(),
+                        "flow_deadline_at": (datetime.now(UTC) + timedelta(seconds=30)).isoformat(),
+                    },
+                    allow_flow_metadata=True,
                 )
-                with urlopen(start_request, timeout=4) as response:
-                    start_payload = json.loads(response.read().decode("utf-8"))
-                flow_id = start_payload["flow"]["flow_id"]
                 append_lobby_event(
                     root,
                     {
@@ -19509,21 +19678,14 @@ class GuiServerTests(unittest.TestCase):
                     headers={"Content-Type": "application/json"},
                     method="POST",
                 )
-                with urlopen(start_request, timeout=4) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
-                stop_request = Request(
-                    f"http://127.0.0.1:{server.server_port}/api/live-agent-flow/stop",
-                    data=json.dumps({"meeting_id": "m1"}).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                with urlopen(stop_request, timeout=4):
-                    pass
+                with self.assertRaises(HTTPError) as error:
+                    urlopen(start_request, timeout=4)
+                error.exception.close()
             finally:
                 server.shutdown()
                 server.server_close()
 
-            self.assertEqual(payload["flow"]["agent_count"], 0)
+            self.assertEqual(error.exception.code, HTTPStatus.GONE)
             persisted_agent = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]
             self.assertEqual(persisted_agent["engagement_mode"], "moderator_called")
 

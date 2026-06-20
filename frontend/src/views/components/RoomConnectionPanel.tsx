@@ -150,11 +150,14 @@ export default function RoomConnectionPanel({
   const [busy, setBusy] = useState(false);
   const [playError, setPlayError] = useState("");
   const isFlowRunning = flow.status === "running";
+  const conversationFlowDisabled = selectedActivityId === "conversation";
   const readyAgents = agents.filter((agent) => isActivePresence(agent.status));
   const selectedActivity =
     PLAY_ACTIVITIES.find((activity) => activity.id === selectedActivityId) || PLAY_ACTIVITIES[0];
 
   async function handleStartConversation() {
+    setPlayError("Free/play flow is disabled. Use ordered Agent Sessions.");
+    return;
     if (!room.meetingId.trim()) {
       setPlayError("회의 ID가 없습니다.");
       return;
@@ -238,9 +241,9 @@ export default function RoomConnectionPanel({
         </div>
       )}
       {!guestLocked && (
-        <section className="dc-room-play-panel" aria-label="플레이 모드">
+        <section className="dc-room-play-panel" aria-label="Agent Session">
           <div className="dc-room-play-header">
-            <span className="dc-room-play-title">플레이 모드</span>
+            <span className="dc-room-play-title">Agent Session</span>
             <span className={`dc-room-play-state ${isFlowRunning ? "running" : ""}`}>
               {isFlowRunning ? "진행 중" : "대기"}
             </span>
@@ -282,7 +285,7 @@ export default function RoomConnectionPanel({
               {selectedActivityId === "conversation" && (
                 <>
                   <label className="dc-room-play-label" htmlFor="room-flow-mode">
-                    대화 방식
+                    Turn mode
                   </label>
                   <select
                     id="room-flow-mode"
@@ -298,7 +301,7 @@ export default function RoomConnectionPanel({
                     ))}
                   </select>
                   <label className="dc-room-play-label" htmlFor="room-flow-duration">
-                    시간 제한
+                    Duration
                   </label>
                   <select
                     id="room-flow-duration"
@@ -318,9 +321,10 @@ export default function RoomConnectionPanel({
               <button
                 type="button"
                 onClick={handleStartSelectedActivity}
-                disabled={busy}
+                disabled={busy || conversationFlowDisabled}
                 className="dc-room-play-primary"
                 aria-label={`${selectedActivity.label} 시작`}
+                title={conversationFlowDisabled ? "Free/play flow is disabled. Use ordered Agent Sessions." : undefined}
               >
                 {selectedActivityId === "mafia" ? <Gamepad2 size={15} /> : <Zap size={15} />}
                 시작

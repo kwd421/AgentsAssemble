@@ -173,7 +173,7 @@ def _helper_actions(line: str, helper_name: str) -> list[str]:
 
 
 def _handler_form(path: str) -> str:
-    if path in {"/api/events/lobby", "/api/events/side-chat", "/api/events/roster"}:
+    if path in {"/api/events/lobby", "/api/events/side-chat", "/api/events/roster", "/api/room-events/stream"}:
         return "sse"
     return "exact"
 

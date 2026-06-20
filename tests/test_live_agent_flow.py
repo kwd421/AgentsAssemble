@@ -1,7 +1,7 @@
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import UTC, datetime, timedelta
 from io import StringIO
 from pathlib import Path
@@ -365,7 +365,7 @@ class LiveAgentFlowCliTests(unittest.TestCase):
         self.assertEqual(options.max_agent_turns, 0)
         self.assertEqual(options.max_total_turns, 0)
 
-    def test_flow_cli_writes_resource_report_from_public_command_path(self):
+    def test_flow_cli_is_disabled_and_does_not_write_resource_report(self):
         calls = []
 
         def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
@@ -394,7 +394,8 @@ class LiveAgentFlowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             report_path = Path(temp_dir) / "flow-resources.json"
             stdout = StringIO()
-            with patch("agentsassemble.cli._request_json", side_effect=request_json), redirect_stdout(stdout):
+            stderr = StringIO()
+            with patch("agentsassemble.cli._request_json", side_effect=request_json), redirect_stdout(stdout), redirect_stderr(stderr):
                 exit_code = main(
                     [
                         "live-agent",
@@ -416,16 +417,12 @@ class LiveAgentFlowCliTests(unittest.TestCase):
                     ]
                 )
 
-            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertFalse(report_path.exists())
 
-        self.assertEqual(exit_code, 0)
-        self.assertTrue(any(url.endswith("/api/live-agent-flow/start") for url, _, _ in calls))
-        self.assertTrue(any(url.endswith("/api/local-resources") for url, _, _ in calls))
-        self.assertIn("Resource report:", stdout.getvalue())
-        self.assertEqual(report["schema"], "agentsassemble.flow_resource_report.v1")
-        self.assertEqual(report["runtime_mode"], "runtime_managed_room_turn")
-        self.assertEqual(report["sample_count"], 3)
-        self.assertEqual(report["summary"]["peak_supervised_rss_kb"], 12288)
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(calls, [])
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("Play/free flow is disabled", stderr.getvalue())
 
 
 class LiveAgentFlowClientTests(unittest.TestCase):

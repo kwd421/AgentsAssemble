@@ -244,6 +244,8 @@ class FrontendLiveAgentProcessControlTests(unittest.TestCase):
             assert.equal(calls[0].body.provider_kind, "codex_live_session");
             assert.equal(calls[0].body.sandbox, "read-only");
             assert.equal(calls[0].body.permissions, "workspace-write");
+            assert.equal(calls[0].body.start, false);
+            assert.equal(calls[0].body.dry_run, false);
             assert.equal(calls[1].url, "/api/live-agent-sessions/resume-agent");
             assert.equal(calls[1].options.method, "POST");
             assert.equal(calls[1].body.meeting_id, "resident-m1");

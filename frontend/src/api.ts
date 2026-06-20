@@ -426,6 +426,10 @@ export interface LiveAgentSessionActionResponse {
 
 export interface AgentSessionActionResponse {
   status: string;
+  state_status?: string;
+  process_status?: "not_started" | "launched" | "resumed" | "unsupported" | "failed" | string;
+  launch_plan?: Record<string, unknown>;
+  diagnostics?: Array<Record<string, unknown>>;
   room?: ServerRoom | Record<string, unknown>;
   participant?: Record<string, unknown>;
   session?: Record<string, unknown>;
@@ -1263,6 +1267,8 @@ export function resumeAgentSession({
   effort,
   sandbox,
   permissions,
+  start = false,
+  dryRun = false,
 }: {
   roomId: string;
   agentId: string;
@@ -1273,6 +1279,8 @@ export function resumeAgentSession({
   effort?: string;
   sandbox?: string;
   permissions?: string;
+  start?: boolean;
+  dryRun?: boolean;
 }) {
   return postJson<AgentSessionActionResponse>("/api/agent-sessions/resume", {
     room_id: roomId,
@@ -1284,6 +1292,8 @@ export function resumeAgentSession({
     effort: effort || "",
     sandbox: sandbox || "",
     permissions: permissions || "",
+    start,
+    dry_run: dryRun,
   });
 }
 
@@ -1589,9 +1599,10 @@ export function saveUserProfile(profile: UserProfile): Promise<UserProfile> {
   );
 }
 
-export function uploadLobbyAttachment(file: File): Promise<LobbyAttachmentRef> {
+export function uploadLobbyAttachment(file: File, roomId = ""): Promise<LobbyAttachmentRef> {
   return fileToBase64(file).then((dataBase64) => {
     return postJson<{ attachment: LobbyAttachmentRef }>("/api/attachments", {
+      room_id: roomId,
       filename: file.name || "attachment.bin",
       content_type: file.type || "application/octet-stream",
       data_base64: dataBase64,

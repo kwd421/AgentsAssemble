@@ -229,6 +229,7 @@ from agentsassemble.meeting_events import (
     read_side_chat_events_after,
     write_live_state,
 )
+from agentsassemble.room_store import RoomStore
 from agentsassemble.adapters import default_provider_registry
 from agentsassemble.models import ProviderConfig, Role
 from agentsassemble.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS, SSE_KEEPALIVE_INTERVAL_SECONDS
@@ -8831,7 +8832,23 @@ def _make_handler(
                 except AttachmentError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
-                self._send_json({"attachment": attachment})
+                response = {"attachment": attachment}
+                room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
+                if room_id:
+                    try:
+                        _metadata, file_path = read_attachment_file(output_root, str(attachment.get("id") or ""))
+                        media = RoomStore(output_root).attach_media(
+                            room_id,
+                            filename=str(attachment.get("filename") or ""),
+                            content_type=str(attachment.get("content_type") or ""),
+                            data=file_path.read_bytes(),
+                            supported=str(attachment.get("content_type") or "") in INLINE_SAFE_IMAGE_TYPES,
+                        )
+                        response["room_media"] = media
+                    except (AttachmentError, OSError, ValueError) as error:
+                        self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                        return
+                self._send_json(response)
                 return
             if parsed.path == "/api/lobby/promote":
                 payload = self._operation_json_payload(operation=LOBBY_PROMOTION_OPERATION)
@@ -9077,37 +9094,18 @@ def _make_handler(
                 payload = self._operation_json_payload(operation="flow.start", target_id="")
                 if payload is None:
                     return
-                try:
-                    result = live_agent_flow_supervisor.start(payload)
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="flow.start",
-                        status="failed",
-                        target_id=clean_lobby_text(payload.get("meeting_id"), limit=128),
-                        error=str(error),
-                        details={
-                            "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
-                            "topic": clean_lobby_text(payload.get("topic"), limit=ROOM_TOPIC_LIMIT),
-                        },
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                flow = result.get("flow") if isinstance(result.get("flow"), dict) else {}
                 record_live_agent_operation(
                     output_root,
                     operation="flow.start",
-                    status="success",
-                    target_id=clean_lobby_text(flow.get("meeting_id"), limit=128),
-                    summary="started Play Mode flow",
+                    status="failed",
+                    target_id=clean_lobby_text(payload.get("meeting_id"), limit=128),
+                    summary="Play/free flow is disabled; use turn-based Agent Sessions.",
                     details={
-                        "meeting_id": clean_lobby_text(flow.get("meeting_id"), limit=128),
-                        "flow_id": clean_lobby_text(flow.get("flow_id"), limit=128),
-                        "agent_count": _payload_nonnegative_int(flow.get("agent_count"), 0),
-                        "duration_seconds": _payload_nonnegative_float(flow.get("duration_seconds"), 0.0),
+                        "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
+                        "topic": clean_lobby_text(payload.get("topic"), limit=ROOM_TOPIC_LIMIT),
                     },
                 )
-                self._send_json(result)
+                self._send_error(HTTPStatus.GONE, "Play/free flow is disabled; use turn-based Agent Sessions.")
                 return
             if parsed.path == "/api/live-agent-flow/stop":
                 payload = self._operation_json_payload(operation="flow.stop", target_id="")

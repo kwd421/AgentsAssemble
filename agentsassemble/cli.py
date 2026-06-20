@@ -17,7 +17,8 @@ import urllib.request
 from pathlib import Path
 
 from agentsassemble.frontend_runtime import frontend_dist_status
-from agentsassemble.bridges.claude_code_bridge import serve_bridge
+from agentsassemble.bridges.claude_code_bridge import CLAUDE_PRINT_MODE_DISABLED_MESSAGE, serve_bridge
+from agentsassemble.agent_sessions import clean_agent_session_provider_kind
 from agentsassemble.antigravity_resident import AntigravityResidentCommandRunner
 from agentsassemble.codex_resident import CodexResidentCommandRunner
 from agentsassemble.cursor_resident import (
@@ -218,9 +219,16 @@ def _add_session_finalize_after_rounds_arg(parser: argparse.ArgumentParser) -> N
     )
 
 
+def _hide_subparser_from_help(subparsers: argparse._SubParsersAction, name: str) -> None:
+    subparsers._choices_actions = [
+        action for action in subparsers._choices_actions if getattr(action, "dest", "") != name
+    ]
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="assemble")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.metavar = "{demo,gui,frontend-info,lobby,release-health,providers,api-call,memory-capsule,persona,room,sessions}"
 
     demo = subparsers.add_parser("demo", help="Run the canned v0 council demo.")
     demo.add_argument("--adapter", choices=["mock", "codex", "codex-live"], default="mock")
@@ -237,9 +245,9 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--agent-config", default=None, help="Optional JSON file with host-approved providers, permissions, and agent bindings.")
     demo.add_argument(
         "--meeting-mode",
-        choices=["debate", "free-chat"],
+        choices=["debate"],
         default=None,
-        help="Run a moderated debate or a non-official free-chat room.",
+        help="Run the moderated turn-based council demo.",
     )
     demo.add_argument(
         "--moderator",
@@ -346,7 +354,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output root used with --save-report.",
     )
 
-    bridge = subparsers.add_parser("claude-bridge", help="Run a friend-owned Claude Code bridge.")
+    bridge = subparsers.add_parser("claude-bridge", help=argparse.SUPPRESS)
+    _hide_subparser_from_help(subparsers, "claude-bridge")
     bridge.add_argument("--host", default="127.0.0.1")
     bridge.add_argument("--port", type=int, default=8777)
     bridge.add_argument("--token", required=True)
@@ -406,7 +415,8 @@ def build_parser() -> argparse.ArgumentParser:
     memory_capsule_gate.add_argument("--path", required=True, help="Memory capsule directory path.")
     memory_capsule_gate.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable gate report.")
 
-    mcp = subparsers.add_parser("mcp", help="Expose AgentsAssemble room tools through MCP stdio.")
+    mcp = subparsers.add_parser("mcp", help=argparse.SUPPRESS)
+    _hide_subparser_from_help(subparsers, "mcp")
     mcp_subparsers = mcp.add_subparsers(dest="mcp_command", required=True)
     mcp_serve = mcp_subparsers.add_parser(
         "serve",
@@ -429,7 +439,8 @@ def build_parser() -> argparse.ArgumentParser:
     live_server = argparse.ArgumentParser(add_help=False)
     live_server.add_argument("--server", default="http://127.0.0.1:8765", help="AgentsAssemble GUI server URL.")
 
-    live_agent = subparsers.add_parser("live-agent", help="Connect an external live agent to a GUI room.")
+    live_agent = subparsers.add_parser("live-agent", help=argparse.SUPPRESS)
+    _hide_subparser_from_help(subparsers, "live-agent")
     live_agent_subparsers = live_agent.add_subparsers(dest="live_agent_command", required=True)
 
     live_register = live_agent_subparsers.add_parser("register", parents=[live_server], help="Register a live agent.")
@@ -1644,6 +1655,10 @@ def build_parser() -> argparse.ArgumentParser:
         room_join.add_argument("--effort", default="")
         room_join.add_argument("--sandbox", default="")
         room_join.add_argument("--permissions", default="")
+        room_join.add_argument("--provider", default="", help="User-facing provider alias, such as codex.")
+        room_join.add_argument("--provider-kind", default="", help="Internal provider kind for legacy scripts.")
+        room_join.add_argument("--start", action="store_true", help="Opt in to launching/resuming the provider process.")
+        room_join.add_argument("--dry-run", action="store_true", help="Return the launch plan without starting the provider.")
         room_join.add_argument("--json", action="store_true", dest="as_json")
 
     room_leave = room_subparsers.add_parser("leave", parents=[room_server], help="Leave a room as an Agent Session participant.")
@@ -1724,8 +1739,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "release-health":
         return run_release_health_command(args)
     if args.command == "claude-bridge":
-        serve_bridge(host=args.host, port=args.port, token=args.token, command=args.bridge_command)
-        return 0
+        print(CLAUDE_PRINT_MODE_DISABLED_MESSAGE, file=sys.stderr)
+        return 2
     if args.command == "live-agent":
         return run_live_agent_command(args)
     if args.command == "providers":
@@ -2815,6 +2830,8 @@ def _run_live_agent_call_preset(args: argparse.Namespace) -> int:
 
 
 def _run_live_agent_flow(args: argparse.Namespace) -> int:
+    print("Play/free flow is disabled; use turn-based Agent Sessions.", file=sys.stderr)
+    return 2
     options = FlowOptions(
         duration_seconds=float(args.duration_seconds),
         tick_interval=float(args.tick_interval),
@@ -8355,6 +8372,9 @@ def run_room_command(args: argparse.Namespace) -> int:
             "effort": args.effort,
             "sandbox": args.sandbox,
             "permissions": args.permissions,
+            "provider_kind": clean_agent_session_provider_kind(args.provider_kind or args.provider),
+            "start": bool(args.start),
+            "dry_run": bool(args.dry_run),
         }
         response = _request_json(
             _server_url(args.server, "/api/agent-sessions/resume"),
@@ -8365,7 +8385,11 @@ def run_room_command(args: argparse.Namespace) -> int:
             print(json.dumps(response, ensure_ascii=False, indent=2))
         else:
             participant = response.get("participant") if isinstance(response.get("participant"), dict) else {}
-            print(f"resumed Agent Session {participant.get('participant_id') or args.agent} in {args.room_id}")
+            process_status = response.get("process_status") or "unknown"
+            print(
+                f"attached Agent Session {participant.get('participant_id') or args.agent} "
+                f"in {args.room_id} · process: {process_status}"
+            )
         return 0
     if args.room_command == "leave":
         payload = {"room_id": args.room_id, "participant_id": args.agent}

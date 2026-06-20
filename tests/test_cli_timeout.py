@@ -12,7 +12,7 @@ import urllib.error
 import urllib.parse
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from unittest.mock import patch
 
@@ -275,20 +275,28 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("local resources: degraded", stdout.getvalue())
 
-    def test_demo_accepts_meeting_mode_and_moderator_options(self):
-        args = build_parser().parse_args(["demo", "--meeting-mode", "free-chat", "--moderator", "off"])
+    def test_demo_rejects_disabled_free_chat_meeting_mode(self):
+        stderr = StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            build_parser().parse_args(["demo", "--meeting-mode", "free-chat", "--moderator", "off"])
 
-        self.assertEqual(args.meeting_mode, "free-chat")
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("invalid choice: 'free-chat'", stderr.getvalue())
+
+    def test_demo_accepts_supported_meeting_mode_and_moderator_options(self):
+        args = build_parser().parse_args(["demo", "--meeting-mode", "debate", "--moderator", "off"])
+
+        self.assertEqual(args.meeting_mode, "debate")
         self.assertEqual(args.moderator, "off")
 
     def test_demo_passes_meeting_mode_and_moderator_to_runner(self):
         with patch("agentsassemble.cli.run_demo_meeting") as run_demo:
-            exit_code = main(["demo", "--meeting-mode", "free-chat", "--moderator", "off", "--output-root", "out"])
+            exit_code = main(["demo", "--meeting-mode", "debate", "--moderator", "off", "--output-root", "out"])
 
         self.assertEqual(exit_code, 0)
         run_demo.assert_called_once()
         kwargs = run_demo.call_args.kwargs
-        self.assertEqual(kwargs["meeting_mode"], "free_chat")
+        self.assertEqual(kwargs["meeting_mode"], "debate")
         self.assertFalse(kwargs["moderator_enabled"])
         self.assertEqual(kwargs["output_root"], Path("out"))
 

@@ -65,6 +65,7 @@ export default function AgentCreateModal({
   );
   const modelOptions = selectedProvider?.model_options || [];
   const effortOptions = selectedProvider?.effort_options || [];
+  const speedOptions = selectedProvider?.speed_options || [];
   const permissionOptions = selectedProvider?.permission_options || [];
   // Fast toggle only where the CLI has one: codex (--enable fast_mode), claude (/fast).
   const supportsFast =
@@ -278,6 +279,18 @@ export default function AgentCreateModal({
               <select value={effort} onChange={(event) => setEffort(event.currentTarget.value)}>
                 {effortOptions.map((option) => (
                   <option key={`${providerId}:effort:${option.id || "default"}`} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {speedOptions.length > 0 && (
+            <label>
+              <span>응답 속도</span>
+              <select value={speed} onChange={(event) => setSpeed(event.currentTarget.value)}>
+                {speedOptions.map((option) => (
+                  <option key={`${providerId}:speed:${option.id || "default"}`} value={option.id}>
                     {option.label}
                   </option>
                 ))}

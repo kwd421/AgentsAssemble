@@ -248,20 +248,29 @@ class RoomStore:
         *,
         filename: str,
         content_type: str,
-        size: int,
+        size: int = 0,
         supported: bool,
+        data: bytes = b"",
     ) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
         media_id = uuid4().hex[:12]
+        safe_filename = _safe_media_filename(filename) or media_id
+        media_dir = self._media_dir(clean_room_id) / media_id
+        media_path = media_dir / safe_filename
+        if data:
+            media_dir.mkdir(parents=True, exist_ok=True)
+            media_path.write_bytes(data)
+            size = len(data)
+        else:
+            media_dir.mkdir(parents=True, exist_ok=True)
         media = {
             "id": media_id,
-            "filename": clean_lobby_text(filename, limit=256) or media_id,
+            "filename": safe_filename,
             "content_type": clean_lobby_text(content_type, limit=128) or "application/octet-stream",
             "size": max(0, int(size or 0)),
-            "path": str(self._media_dir(clean_room_id) / media_id),
+            "path": str(media_path),
             "supported": bool(supported),
         }
-        self._media_dir(clean_room_id).mkdir(parents=True, exist_ok=True)
         self.append_event(
             clean_room_id,
             "media_attached" if supported else "unsupported_media",
@@ -374,6 +383,13 @@ def _clean_event_type(value: object) -> str:
     if not event_type:
         raise ValueError("event type is required.")
     return event_type
+
+
+def _safe_media_filename(value: object) -> str:
+    name = Path(clean_lobby_text(value, limit=256)).name
+    if name in {"", ".", ".."}:
+        return ""
+    return name.replace("/", "_").replace("\\", "_")
 
 
 def _room_status(value: object) -> str:

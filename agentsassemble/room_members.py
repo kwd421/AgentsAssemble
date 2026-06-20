@@ -192,6 +192,10 @@ def room_members_payload(
         list(by_key.values()), live_keys=live_session_keys | live_agent_keys
     )
     roster = merge_room_store_members(output_root, room_id, roster)
+    for member in roster:
+        key = _member_key(member)
+        if key in muted_by_key:
+            member["muted"] = muted_by_key[key]
     members = sorted(
         roster,
         key=lambda item: (

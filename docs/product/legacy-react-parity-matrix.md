@@ -101,6 +101,9 @@ surface rather than silently counted as React parity.
 | `/api/room/vote` | GET | exact | `fetchRoomVote()` | yes | Poll standings for invited guests (session token), same aggregation as the console route. |
 | `/api/rooms` | GET | exact | `fetchRooms()` | yes | React room dock merges server-known room metadata with localStorage cache; archived rooms are included only when requested. |
 | `/api/rooms/archive` | POST | exact | `archiveRoom()` | yes | Moderation endpoint that hides archived rooms from default room lists while preserving file-backed room data. |
+| `/api/rooms/state` | GET | exact | `-` | no | RoomStore state projection endpoint; not wrapped by React preview yet. |
+| `/api/rooms/close` | POST | exact | `-` | no | RoomStore close endpoint; not wrapped by React preview yet. |
+| `/api/agent-sessions/resume` | POST | exact | `resumeAgentSession()` | yes | React member detail panel attaches canonical Agent Session state and reports process status separately; process launch remains explicit. |
 | `/api/live-agent-discovery` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-flow` | GET | exact | `fetchLiveAgentFlow()` | yes | React Play Mode status surface. |
 | `/api/live-agent-flow/start` | POST | exact | `startFlow()` | yes | React Play Mode start control; does not start providers. |
@@ -200,6 +203,11 @@ surface rather than silently counted as React parity.
 | `/api/room-members` | POST | exact | `upsertRoomMember()` | yes | React writes saved-friend invitations into selected-room member state; this does not start providers or send external Discord invites. |
 | `/api/room-members/mute` | POST | exact | `muteRoomMember()` | yes | Moderation (host token or operator session): toggles a participant's muted flag from the member panel context menu. |
 | `/api/room-members/kick` | POST | exact | `kickRoomMember()` | yes | Moderation (host token or operator session): revokes the participant's sessions, removes the roster row, and expels a bound live agent. |
+| `/api/room-participants/leave` | POST | exact | `-` | no | Agent Session participant leave endpoint with participant-token or moderator authorization; not wrapped by React preview yet. |
+| `/api/room-participants/kick` | POST | exact | `-` | no | Agent Session participant kick endpoint with moderator authorization; not wrapped by React preview yet. |
+| `/api/room-participants/export` | POST | exact | `-` | no | Agent Session participant export endpoint with moderator authorization; not wrapped by React preview yet. |
+| `/api/provider-sessions` | GET | exact | `fetchProviderSessions()` | yes | React agent-create modal lists local provider-owned sessions so the operator can choose an existing Agent Session handle without exposing it in roster UI. |
+| `/api/room-events/stream` | GET | sse | `subscribeRoomEvents()` | yes | React can subscribe to the ordered room event stream for Agent Session state updates. |
 | `/api/host/claim` | POST | exact | `claimHostDevice()` | yes | Host-token gated: binds this device's stable identity to the operator account so its sessions moderate from any entrance. |
 | `/api/live-agent-create/options` | GET | exact | `fetchLiveAgentCreateOptions()` | yes | React agent-create modal loads provider/options metadata. |
 | `/api/live-agent-create` | POST | exact | `createFrontendLiveAgent()` | yes | React agent-create modal provisions a frontend-created live agent config. |
@@ -207,7 +215,10 @@ surface rather than silently counted as React parity.
 | `/api/live-agent-create/login` | POST | exact | `startFrontendLiveAgentLogin()` | yes | React agent-create modal starts a provider login flow when required. |
 | `/api/live-agent-room/expel` | POST | exact | `expelLiveAgentFromRoom()` | yes | Member panel removes an agent from the room while keeping its saved session config. |
 | `/api/live-agent-room/delete-session` | POST | exact | `deleteLiveAgentSession()` | yes | Member panel deletes an agent session (room binding, record, and saved config). |
+| `/api/live-agent-room/stop-self-managed` | POST | exact | `stopSelfManagedAgent()` | yes | Member detail panel can stop a self-managed process only when the agent advertised verifiable local stop evidence. |
+| `/api/live-agent-room/resume-self-managed` | POST | exact | `resumeSelfManagedAgent()` | yes | Member detail panel can resume a self-managed process only when the agent advertised verifiable local relaunch evidence. |
 | `/api/live-agent-sessions/agent-timing` | POST | exact | `updateLiveAgentSessionAgentTiming()` | yes | Member detail modal saves per-agent poll interval and cooldown. |
+| `/api/live-agent-sessions/agent-options` | POST | exact | `updateLiveAgentSessionAgentOptions()` | yes | Member detail modal saves provider-native permission and fast-mode preferences for future starts/restarts. |
 | `/api/side-chat` | GET | exact | `fetchSideChat()` | yes | React side-chat read/write. |
 | `/api/side-chat` | POST | exact | `postSideChatMessage()` | yes | React side-chat read/write. |
 | `/api/room-invite/create` | POST | exact | `createRoomInvite()` | yes | React invite modal creates scoped browser/remote-client invite links and AI entry packets without starting providers. |

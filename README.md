@@ -154,96 +154,28 @@ Claude Code print-mode bridging is disabled. AgentsAssemble must not invoke
 `claude -p` or silently fall back to an Anthropic API path for room
 participation.
 
-The live-room branch also has a local GUI room, legacy file-backed lobby/live
-streams, supervised resident process groups, moderator-controlled official
-turns, session start/resume/restart/recover/stop commands, credential-free smoke
-checks, shared meeting memory artifacts, and an experimental Codex CLI resident
-path based on `codex exec resume`.
+Current implemented scope:
 
-This is not yet the final native multi-provider room. Codex remains the most
-advanced resident path, Kiro has an experimental `kiro chat --resume-id`
-resident path, Cursor has a narrow `cursor-agent create-chat` plus `--resume`
-resident path with one approved start/probe/stop room smoke, and Grok has a
-narrower experimental JSON stdout `grok --resume` continuity path with deeper
-official-turn/restart smoke evidence. The native Claude Code/Antigravity/
-Hermes/OpenClaw integrations are not complete, and non-Codex local CLI read-only is not a hard OS sandbox.
-Legacy provider/runner/bridge labels may still appear in internal code while
-the migration finishes, but they are not the user-facing product model.
-`terminal_session`, `self_service`, and remote bridge participants still rely on
-policy, approval, and audit metadata unless a real sandboxed launcher is added
-and verified.
-No-Tailscale multi-host is still a separate product axis: the current Phase 5
-slice adds only a LAN invite token PoC for a future
-`native_remote_room_client`, documented in `docs/no-tailscale-multi-host.md`.
-It does not open the room to the internet, start provider CLIs, or make
-relay/WebRTC ready.
-Public room surfaces now expose `sandbox_enforcement` alongside join semantics
-and context durability. The shared `SandboxLauncher` mapping reports
-`codex_readonly` for Codex `codex exec --sandbox read-only --ignore-rules`,
-`advisory` for generic local CLI/PTY/self-service/remote bridge paths, and
-`os_sandboxed` only for a future provider launched through a verified OS-level
-sandbox.
+- file-backed RoomStore state
+- turn-based ordered rooms only
+- canonical Agent Session roster state
+- state-only Agent Session attach/resume by default
+- Codex launch-plan dry-run for an explicit process-resume path
+- leave/kick/export persisted in room state
 
-Safe fake resident session quickstart:
-
-Terminal 1:
+The primary CLI path is:
 
 ```bash
-python3 -m agentsassemble.cli gui --host 127.0.0.1 --port 8765 --output-root .agentsassemble
+assemble room resume <room-id> --agent <agent-id> --session <session-id> --provider codex --dry-run
 ```
 
-Terminal 2:
+By default this attaches state only and reports `process_status: not_started`.
+Use explicit process execution only after reviewing the returned launch plan.
 
-```bash
-python3 -m agentsassemble.cli live-agent preflight --config configs/live-agents.start-session.example.json
-python3 -m agentsassemble.cli live-agent start-session \
-  --server http://127.0.0.1:8765 \
-  --meeting-id resident-fake-demo \
-  --group-id resident-fake-demo \
-  --council-config configs/demo-council.json \
-  --agent-config configs/agents.start-session.example.json \
-  --live-agent-config configs/live-agents.start-session.example.json \
-  --connect-timeout 5 \
-  --run-remaining-rounds \
-  --round-timeout 8 \
-  --max-rounds 2 \
-  --finalize-after-rounds \
-  --wait-ready
-python3 -m agentsassemble.cli live-agent stop-session \
-  --server http://127.0.0.1:8765 \
-  --meeting-id resident-fake-demo \
-  --group-id resident-fake-demo
-```
-
-`live-agent session-smoke --server http://127.0.0.1:8765 --json` remains the
-stronger diagnostic path for local fake transports, restart/recover, cleanup,
-and the same finalization evidence.
-
-Experimental Codex live session quickstart:
-
-```bash
-python3 -m agentsassemble.cli live-agent preflight --config configs/live-agents.codex-session.example.json
-python3 -m agentsassemble.cli live-agent start-session \
-  --server http://127.0.0.1:8765 \
-  --council-config configs/demo-council.json \
-  --agent-config configs/codex-live-session.example.json \
-  --live-agent-config configs/live-agents.codex-session.example.json \
-  --meeting-id codex-live-demo \
-  --group-id codex-live-demo \
-  --wait-ready
-```
-
-The Codex example configs intentionally use three fresh `moderator_called`
-residents and no checked-in real session ids. To attach an existing Codex CLI
-session, use the GUI/CLI Codex invite or join flow so the local generated config
-records the current session id outside the checked-in examples.
-
-The no-model fake Codex lifecycle regression covers the same checked-in Codex
-configs with a temporary `codex` executable. It proves the control plane can
-start three Codex residents, run one official round, restart the resident group,
-resume from the captured session ids for the remaining round, finalize, and stop
-offline without making real model calls. A real Codex smoke still requires an
-explicit operator run.
+Not yet supported as user-facing product paths: free/silent rooms, MCP as a
+normal connection path, Claude print-mode bridging, generic hard provider
+sandboxing, and provider media viewing unless the provider can consume the
+room media manifest.
 
 ## Codex Adapter
 

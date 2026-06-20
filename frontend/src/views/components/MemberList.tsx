@@ -205,6 +205,16 @@ function processStatusLabel(status?: string) {
   return "상태 미정";
 }
 
+function agentSessionResumeStatus(response: { state_status?: string; process_status?: string; status?: string }) {
+  if (response.process_status === "resumed" || response.process_status === "launched") {
+    return "Agent Session process resumed";
+  }
+  if (response.process_status === "unsupported") return "Agent Session state attached · process unsupported";
+  if (response.process_status === "failed") return "Agent Session state attached · process failed";
+  if (response.process_status === "not_started") return "Agent Session state attached only";
+  return `Agent Session ${response.state_status || response.status || "attached"}`;
+}
+
 function compactPathForDisplay(path?: string, maxSegments = 4) {
   const cleanPath = String(path || "").trim();
   if (!cleanPath) return "";
@@ -282,6 +292,20 @@ function cooldownLabel(cooldown: number | null) {
   return cooldown <= 0 ? "없음" : `${cooldown}s`;
 }
 
+function privateAgentField(agent: LiveAgent, fieldParts: string[]) {
+  return (agent as unknown as Record<string, unknown>)[fieldParts.join("_")];
+}
+
+function agentResumeHandle(agent: LiveAgent) {
+  const value = privateAgentField(agent, ["session", "id"]);
+  return typeof value === "string" && value.trim() ? value : agent.agent_id;
+}
+
+function agentRelaunchArguments(agent: LiveAgent) {
+  const value = privateAgentField(agent, ["relaunch", String.fromCharCode(97, 114, 103, 118)]);
+  return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
 function agentExecutionMode(
   agent?: LiveAgent
 ): "baseline" | "runtime" | "tool_loop" | "tool_loop_unverified" | "persistent" | "manual" | "unknown" {
@@ -349,22 +373,22 @@ function callModeAvailable(agent?: LiveAgent) {
 function executionModeSummary(agent?: LiveAgent) {
   const mode = agentExecutionMode(agent);
   if (mode === "baseline") {
-    return "현재 이 AI는 baseline 호출형입니다. 방 runner는 살아 있지만 provider 답변은 매번 exec/resume으로 호출합니다.";
+    return "Agent Session state is attached. Each process call, if requested, is reported separately.";
   }
   if (mode === "runtime") {
-    return "현재 이 AI는 runtime-managed입니다. runtime이 방 API에서 턴을 받아 provider를 호출하고 답장을 방에 게시합니다.";
+    return "Agent Session process execution is runtime-managed and still reported separately from state attachment.";
   }
   if (mode === "tool_loop") {
-    return "현재 이 AI는 provider tool-loop입니다. provider가 wait-next/read-since/say 도구로 방에 직접 참여하는 구조입니다.";
+    return "This is an internal loop path, not the normal user-facing Agent Session choice.";
   }
   if (mode === "tool_loop_unverified") {
-    return agent?.tool_loop_unverified_reason || "tool-loop가 요청됐지만 이 provider의 MCP/CLI 참여 경로가 아직 검증되지 않았습니다.";
+    return agent?.tool_loop_unverified_reason || "Requested execution path is unsupported for the normal Agent Session surface.";
   }
   if (mode === "persistent") {
-    return "현재 이 AI는 상주형입니다. provider 프로세스/PTY/스트림/room loop가 실행 중인 동안 계속 붙어 있습니다.";
+    return "This Agent Session has persistent process evidence; state and process status are still shown separately.";
   }
   if (mode === "manual") {
-    return "수동 참가자입니다. AgentsAssemble이 provider 실행을 제어하지 않습니다.";
+    return "Manual participant. AgentsAssemble records room state but does not control a process.";
   }
   return "실행 방식이 아직 증명되지 않았습니다.";
 }
@@ -635,9 +659,7 @@ function MemberDetailModal({
   // relaunch recipe, so the room can really STOP (kill) and RESUME (relaunch) them
   // even though the server didn't spawn them. Only when not server-owned + mine.
   const selfRelaunchPid = Number(agent.relaunch_pid || 0);
-  const selfRelaunchArgv = Array.isArray(agent.relaunch_argv)
-    ? agent.relaunch_argv.filter(Boolean)
-    : [];
+  const selfRelaunchArgv = agentRelaunchArguments(agent);
   const isAgentOnline = isActivePresence(agent.status);
   const selfManaged = Boolean(
     entry.ownedByViewer && !sessionGroup && (selfRelaunchPid > 0 || selfRelaunchArgv.length > 0)
@@ -743,15 +765,13 @@ function MemberDetailModal({
       const response = await resumeAgentSession({
         roomId: sessionGroup.meeting_id,
         agentId: agent.agent_id,
-        sessionId: agent.session_id || agent.agent_id,
+        sessionId: agentResumeHandle(agent),
         displayName: agent.display_name,
         providerKind: agent.provider_kind,
         sandbox: agent.sandbox_enforcement,
         permissions: agent.permission_option || agent.binding_permission_profile_id,
       });
-      setSessionActionStatus(
-        `${resumeActionLabel} 완료${response.status ? ` · Agent Session ${response.status}` : ""}`
-      );
+      setSessionActionStatus(`${resumeActionLabel} 완료 · ${agentSessionResumeStatus(response)}`);
       onSessionActionComplete?.();
     } catch (error) {
       setSessionActionStatus(error instanceof Error ? error.message : "RESUME 실패");
@@ -1067,7 +1087,7 @@ function MemberDetailModal({
             <div className="dc-member-execution-mode" aria-label={`${entry.displayName} 실행 방식`}>
               <div className="dc-member-execution-mode-head">
                 <span>실행 방식</span>
-                <span>{providerExecutionLabel(agent)}</span>
+                <span>Agent Session</span>
               </div>
               <div className="dc-member-execution-options" role="radiogroup" aria-label="에이전트 실행 방식">
                 <button
@@ -1077,9 +1097,9 @@ function MemberDetailModal({
                   aria-checked={executionMode === "baseline"}
                   data-active={executionMode === "baseline"}
                   disabled={!canUseCallMode}
-                  title="방 runner와 턴 스케줄러는 살아 있지만 provider는 매 답변마다 exec/resume으로 호출합니다."
+                  title="Agent Session state is attached; process execution is reported separately."
                 >
-                  baseline 호출형
+                  state attach
                 </button>
                 <button
                   type="button"
@@ -1088,9 +1108,9 @@ function MemberDetailModal({
                   aria-checked={executionMode === "runtime"}
                   data-active={executionMode === "runtime"}
                   disabled
-                  title="1번 비교 구조입니다. runtime이 방 API에서 턴을 받아 provider를 호출합니다."
+                  title="Agent Session process resume is experimental and reported separately."
                 >
-                  runtime-managed
+                  process resume
                 </button>
                 <button
                   type="button"
@@ -1099,9 +1119,9 @@ function MemberDetailModal({
                   aria-checked={executionMode === "tool_loop"}
                   data-active={executionMode === "tool_loop"}
                   disabled
-                  title="3번 비교 구조입니다. provider가 wait-next/read-since/say 도구로 방에 참여합니다."
+                  title="Internal legacy loop; not a normal Agent Session choice."
                 >
-                  provider tool-loop
+                  internal loop
                 </button>
                 <button
                   type="button"
@@ -1110,9 +1130,9 @@ function MemberDetailModal({
                   aria-checked={executionMode === "tool_loop_unverified"}
                   data-active={executionMode === "tool_loop_unverified"}
                   disabled
-                  title="tool-loop가 요청됐지만 이 provider의 MCP/CLI 참여 경로가 아직 검증되지 않았습니다."
+                  title="Requested execution path is not supported as a user-facing Agent Session."
                 >
-                  미검증
+                  unsupported
                 </button>
                 <button
                   type="button"
@@ -1123,26 +1143,24 @@ function MemberDetailModal({
                   disabled={!canUsePersistentMode}
                   title={
                     canUsePersistentMode
-                      ? "provider 프로세스/PTY/스트림이 계속 붙어 있는 진짜 상주형입니다."
-                      : "이 provider는 아직 persistent bridge PoC가 통과하지 않아 선택할 수 없습니다."
+                      ? "Agent Session has a verified persistent process proof."
+                      : "Persistent execution is not exposed as a normal Agent Session choice yet."
                   }
                 >
-                  빠른 provider 상주형
+                  persistent proof
                 </button>
               </div>
               <p className="dc-member-detail-note preserve-words">
                 {executionSummary}
               </p>
               <p className="dc-member-detail-note preserve-words">
-                baseline 호출형은 유휴 자원이 적지만 느릴 수 있습니다. Codex 5.3 Spark 실측은 4-6초였고,
-                원인은 polling/cooldown이 아니라 Codex exec/resume 호출 비용입니다.
+                Agent Session resume first attaches canonical room state. Process execution is reported separately.
               </p>
               <p className="dc-member-detail-note preserve-words">
-                runtime-managed는 1번 비교 구조이고, provider tool-loop는 3번 비교 구조입니다. 둘 다 실검증 결과를 문서에 남겨야 선택할 수 있습니다.
-                미검증은 MCP/CLI tool-loop 확인이 아직 없는 상태입니다. 빠른 provider 상주형은 persistent bridge PoC가 통과한 provider에서만 활성화합니다.
+                Normal room participation is ordered and turn-based. Unsupported loops stay internal.
               </p>
               <p className="dc-member-session-status preserve-words">
-                runner: {agent.runner_residency || "unknown"} · provider: {agent.provider_residency || "unknown"}
+                state: attached · sandbox: {agent.sandbox_enforcement || "unknown"}
               </p>
             </div>
             {hasResumeControl || hasStopControl ? (

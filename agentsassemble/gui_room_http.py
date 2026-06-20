@@ -335,15 +335,27 @@ def register_room_routes(router: Router) -> None:
         return ctx.require_moderator()
 
     def _participant_action(ctx: RequestContext, action: str) -> None:
-        if action in {"kick", "export"} and not _loopback_or_moderator(ctx):
-            return
         payload = ctx.read_json_body()
         if payload is None:
+            return
+        if action in {"kick", "export"} and not _loopback_or_moderator(ctx):
+            return
+        if action == "leave" and not _leave_allowed(ctx, payload):
+            ctx.send_error(HTTPStatus.FORBIDDEN, "participant session token required")
             return
         try:
             ctx.send_json(room_action_payload(ctx.deps.output_root, payload, action))
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+
+    def _leave_allowed(ctx: RequestContext, payload: dict[str, object]) -> bool:
+        if ctx.handler._request_uses_loopback_host() or ctx.is_host() or ctx.is_operator_session():
+            return True
+        session = ctx.session()
+        if not session:
+            return False
+        requested = clean_lobby_text(payload.get("participant_id") or payload.get("agent_id"), limit=128)
+        return requested and requested == clean_lobby_text(session.get("agent_id"), limit=128)
 
     @router.post("/api/room-participants/leave")
     def room_participants_leave(ctx: RequestContext) -> None:

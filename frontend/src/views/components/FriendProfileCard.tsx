@@ -18,6 +18,16 @@ function friendInitial(friend: RoomFriend) {
   return (friend.display_name || friend.handle || "?").slice(0, 1).toUpperCase();
 }
 
+function agentSessionResumeStatus(response: { state_status?: string; process_status?: string; status?: string }) {
+  if (response.process_status === "resumed" || response.process_status === "launched") {
+    return "Agent Session process resumed";
+  }
+  if (response.process_status === "unsupported") return "Agent Session state attached · process unsupported";
+  if (response.process_status === "failed") return "Agent Session state attached · process failed";
+  if (response.process_status === "not_started") return "Agent Session state attached only";
+  return `Agent Session ${response.state_status || response.status || "attached"}`;
+}
+
 export default function FriendProfileCard({
   friend,
   onStartDm,
@@ -72,8 +82,7 @@ export default function FriendProfileCard({
   const facts = [
     ["타입", meta.label],
     ["상태", presenceStatusLabel(friend.status)],
-    ["Provider", friend.provider_kind || "미지정"],
-    ["연결", friend.connection_kind || "미지정"],
+    ["Agent Session", friend.source_agent_id || friend.agent_id || "미지정"],
     ["최근 방", friend.last_meeting_id || "기록 없음"],
   ];
 
@@ -89,7 +98,7 @@ export default function FriendProfileCard({
         displayName: activeFriend.display_name,
         providerKind: activeFriend.provider_kind,
       });
-      setSessionActionStatus(`RESUME 완료${response.status ? ` · Agent Session ${response.status}` : ""}`);
+      setSessionActionStatus(`RESUME 완료 · ${agentSessionResumeStatus(response)}`);
       onSessionActionComplete?.();
     } catch (error) {
       setSessionActionStatus(error instanceof Error ? error.message : "RESUME 실패");

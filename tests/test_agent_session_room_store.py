@@ -7,6 +7,7 @@ from agentsassemble.agent_sessions import (
     build_room_turn_packet,
     resume_agent_session_payload,
     room_sse_frames_after_cursor,
+    stream_room_sse_frames,
 )
 from agentsassemble.room_store import RoomStore
 
@@ -166,6 +167,146 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertIn('model_reasoning_effort="high"', codex["command"])
         self.assertEqual(unsupported["permission_enforcement"], "unsupported")
         self.assertTrue(unsupported["diagnostics"])
+
+    def test_resume_defaults_to_state_only_and_returns_launch_diagnostics(self):
+        result = resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+                "model": "gpt-5.5",
+                "effort": "high",
+                "sandbox": "read-only",
+            },
+        )
+
+        self.assertEqual(result["state_status"], "resumed")
+        self.assertEqual(result["process_status"], "not_started")
+        self.assertEqual(result["launch_plan"]["provider_kind"], "codex_live_session")
+        self.assertIn("codex", result["launch_plan"]["command"])
+        self.assertTrue(any(item["status"] == "not_started" for item in result["diagnostics"]))
+
+    def test_resume_can_dry_run_or_fake_launch_without_running_real_provider(self):
+        dry_run = resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+                "model": "gpt-5.5",
+                "effort": "high",
+                "sandbox": "read-only",
+                "start": True,
+                "dry_run": True,
+            },
+        )
+        calls: list[list[str]] = []
+
+        launched = resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+                "start": True,
+            },
+            command_runner=lambda command: calls.append(command) or {"returncode": 0},
+        )
+
+        self.assertEqual(dry_run["process_status"], "not_started")
+        self.assertEqual(dry_run["launch_plan"]["command"][:3], ["codex", "exec", "resume"])
+        self.assertEqual(launched["process_status"], "resumed")
+        self.assertEqual(calls[0][:3], ["codex", "exec", "resume"])
+
+    def test_new_session_without_provider_is_state_only_and_not_launchable(self):
+        result = resume_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-1", "session_id": "session-1"},
+        )
+
+        self.assertEqual(result["state_status"], "resumed")
+        self.assertEqual(result["process_status"], "not_started")
+        self.assertEqual(result["launch_plan"]["permission_enforcement"], "unsupported")
+        self.assertTrue(any("provider" in item["message"].lower() for item in result["diagnostics"]))
+
+    def test_reresume_without_provider_reuses_persisted_provider_kind(self):
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+            },
+        )
+
+        result = resume_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-1", "session_id": "session-1"},
+        )
+
+        self.assertEqual(result["session"]["provider_kind"], "codex_live_session")
+        self.assertEqual(result["launch_plan"]["provider_kind"], "codex_live_session")
+
+    def test_attach_media_writes_bytes_and_reports_unsupported_media(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        media = store.attach_media(
+            "room-a",
+            filename="../diagram.svg",
+            content_type="image/svg+xml",
+            data=b"<svg></svg>",
+            supported=False,
+        )
+        result = resume_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-1", "session_id": "session-1"},
+        )
+
+        packet = build_room_turn_packet(
+            self.output_root,
+            room_id="room-a",
+            participant_id=result["participant"]["participant_id"],
+            session_id="session-1",
+            instruction="Describe attached media.",
+        )
+
+        media_path = Path(media["path"])
+        self.assertTrue(media_path.exists())
+        self.assertEqual(media_path.read_bytes(), b"<svg></svg>")
+        self.assertEqual(packet["media_manifest"][0]["path"], str(media_path))
+        self.assertEqual(packet["media_manifest"][0]["size"], len(b"<svg></svg>"))
+        self.assertFalse(packet["media_manifest"][0]["supported"])
+        self.assertIn("unsupported_media", [event["type"] for event in store.read_events("room-a")])
+        self.assertNotIn(str(Path.cwd()), str(packet))
+
+    def test_sse_stream_yields_new_appended_event_after_idle_heartbeat(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        cursor = store.read_events("room-a")[-1]["id"]
+        polls = {"count": 0}
+
+        def wait_once() -> None:
+            polls["count"] += 1
+            if polls["count"] == 1:
+                store.append_event("room-a", "message_final", content="after connect")
+
+        frames = list(
+            stream_room_sse_frames(
+                self.output_root,
+                "room-a",
+                cursor=cursor,
+                max_iterations=2,
+                wait=wait_once,
+            )
+        )
+
+        self.assertIn("event: heartbeat", frames[0])
+        self.assertTrue(any("event: message_final" in frame for frame in frames))
 
 
 if __name__ == "__main__":
