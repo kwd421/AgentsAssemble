@@ -61,7 +61,6 @@ import {
   meetingLiveEventsToTimelineEvents,
   meetingStreamStateForActiveMeeting,
   subscribeMeetingEvents,
-  subscribeSideChat,
   type FlowResponse,
   type LiveAgentsResponse,
   type MeetingStreamState,
@@ -521,24 +520,43 @@ export default function App() {
     },
     [guestExpired, guestJoinPending, guestMeetingId, guestSession?.sessionToken]
   );
-  const [flowData, , flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
+  const [flowData, setFlowData] = useState<FlowResponse | null>(null);
+  const [flowError, setFlowError] = useState<Error | null>(null);
+  const refreshFlow = useCallback(() => {
+    flowFetcher()
+      .then((payload) => {
+        setFlowData(payload);
+        setFlowError(null);
+      })
+      .catch((errorValue) => {
+        setFlowError(errorValue instanceof Error ? errorValue : new Error("Flow unavailable"));
+      });
+  }, [flowFetcher]);
   const flow = flowData?.flow ?? { status: "idle" };
   const liveAgentsFetcher = useCallback((): Promise<LiveAgentsResponse> => {
     if (guestLocked) return Promise.resolve({ agents: [] });
     return fetchLiveAgents();
   }, [guestLocked]);
-  const [liveAgentsData, , , refreshLiveAgents] = usePoll<LiveAgentsResponse>(
-    liveAgentsFetcher,
-    5000
-  );
+  const [liveAgentsData, setLiveAgentsData] = useState<LiveAgentsResponse | null>(null);
+  const refreshLiveAgents = useCallback(() => {
+    liveAgentsFetcher()
+      .then((payload) => setLiveAgentsData(payload))
+      .catch(() => {
+        // Live-agent registry refresh is best-effort for the member overlay.
+      });
+  }, [liveAgentsFetcher]);
   const processFetcher = useCallback((): Promise<LiveAgentProcessesResponse> => {
     if (guestLocked) return Promise.resolve({ groups: [] });
     return fetchLiveAgentProcesses();
   }, [guestLocked]);
-  const [processData, , , refreshProcesses] = usePoll<LiveAgentProcessesResponse>(
-    processFetcher,
-    5000
-  );
+  const [processData, setProcessData] = useState<LiveAgentProcessesResponse | null>(null);
+  const refreshProcesses = useCallback(() => {
+    processFetcher()
+      .then((payload) => setProcessData(payload))
+      .catch(() => {
+        // Process status is best-effort for the connection panel.
+      });
+  }, [processFetcher]);
   const lifecycleFetcher = useCallback((): Promise<MeetingLifecycleResponse> => {
     if (!flow.meeting_id) return Promise.resolve({ meeting_id: "", lifecycle: null });
     return fetchMeetingLifecycle(flow.meeting_id);
@@ -559,11 +577,20 @@ export default function App() {
   const ensuredMeetingsRef = useRef<Set<string>>(new Set());
   const [roomSocket, setRoomSocket] = useState<RoomSocketHandle | null>(null);
   const lobbyStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
+  const flowStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
   const bindLobbyStream = useCallback((receive: (events: LobbyEvent[]) => void) => {
     lobbyStreamRef.current = receive;
     return () => {
       if (lobbyStreamRef.current === receive) {
         lobbyStreamRef.current = null;
+      }
+    };
+  }, []);
+  const bindFlowLobbyStream = useCallback((receive: (events: LobbyEvent[]) => void) => {
+    flowStreamRef.current = receive;
+    return () => {
+      if (flowStreamRef.current === receive) {
+        flowStreamRef.current = null;
       }
     };
   }, []);
@@ -900,20 +927,8 @@ export default function App() {
           setSideChatError(errorValue instanceof Error ? errorValue : new Error("Side chat unavailable"));
         }
       });
-    const unsubscribe = subscribeSideChat(
-      activeSideChatMeetingId,
-      (incoming) => {
-        if (cancelled) return;
-        setSideChatError(null);
-        setSideChatEvents((previous) => mergeSideChatEvents(previous, incoming));
-      },
-      () => {
-        if (!cancelled) setSideChatError(new Error("Side chat stream disconnected"));
-      }
-    );
     return () => {
       cancelled = true;
-      unsubscribe();
     };
   }, [activeSideChatMeetingId]);
 
@@ -1951,6 +1966,16 @@ export default function App() {
   }, [activeRoom.meetingId, activeRoomKey]);
 
   useEffect(() => {
+    refreshFlow();
+  }, [refreshFlow, activeRoom.meetingId]);
+
+  useEffect(() => {
+    if (guestLocked) return;
+    refreshLiveAgents();
+    refreshProcesses();
+  }, [guestLocked, refreshLiveAgents, refreshProcesses, activeRoom.meetingId]);
+
+  useEffect(() => {
     refreshMembers();
     if (!activeRoom.meetingId) return undefined;
     const guestToken = guestLocked ? guestSession?.sessionToken || "" : "";
@@ -1960,33 +1985,44 @@ export default function App() {
         ? undefined
         : ({ kind: "host" as const, meetingId: activeRoom.meetingId });
     if (!auth) return undefined;
-    // One governed WebSocket per room client: lobby + roster push (host via
-    // ws-ticket + meeting_id; guests via invite session token).
-    const socket = openRoomSocket(auth, ["lobby", "roster"], {
+    const socket = openRoomSocket(auth, ["lobby", "roster", "side_chat"], {
       onLobby: (events) => {
         lobbyStreamRef.current?.(events);
+        flowStreamRef.current?.(events);
       },
       onRoster: (members) => {
         setRoomMembersByRoom((previous) => ({
           ...previous,
           [activeRoomKey]: members,
         }));
+        if (!guestLocked) {
+          refreshLiveAgents();
+          refreshProcesses();
+        }
+      },
+      onSideChat: (incoming) => {
+        setSideChatError(null);
+        setSideChatEvents((previous) => mergeSideChatEvents(previous, incoming));
+      },
+      onError: (errorValue) => {
+        if (errorValue instanceof Error && errorValue.message.includes("Side chat")) {
+          setSideChatError(errorValue);
+        }
       },
     });
     setRoomSocket(socket);
-    const subscribed = !guestLocked;
-    const intervalId = window.setInterval(refreshMembers, subscribed ? 30_000 : 10_000);
     return () => {
       socket.close();
       setRoomSocket(null);
-      window.clearInterval(intervalId);
     };
   }, [
     activeRoom.meetingId,
     activeRoomKey,
     guestLocked,
     guestSession?.sessionToken,
+    refreshLiveAgents,
     refreshMembers,
+    refreshProcesses,
   ]);
 
   function updateRoom(roomId: string, updates: Partial<RoomDockItem>) {
@@ -2581,6 +2617,7 @@ export default function App() {
             mafiaGame={scopedMafiaGame}
             refreshMafia={refreshMafia}
             streamError={activeRoomFlowVisible ? meetingStreamError : null}
+            bindFlowLobbyStream={bindFlowLobbyStream}
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
             headerActions={channelHeaderActions("live")}

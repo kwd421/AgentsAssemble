@@ -442,10 +442,8 @@ export default function LobbyView({
         });
     }
     refreshLobby();
-    const refreshId = window.setInterval(refreshLobby, 15_000);
     return () => {
       cancelled = true;
-      window.clearInterval(refreshId);
     };
   }, [activeRoom.meetingId, onGuestSessionExpired, roomSessionToken]);
 

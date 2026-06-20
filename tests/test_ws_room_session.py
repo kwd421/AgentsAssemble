@@ -81,6 +81,7 @@ class FakeDeps:
         return WsRoomDeps(
             read_lobby_after=self._read_lobby_after,
             read_roster=lambda meeting_id: self.roster,
+            read_side_chat_after=lambda meeting_id, after_id: ([], after_id),
             post_say=self._post_say,
             is_muted=lambda meeting_id, agent_id: self.muted,
             set_thinking=lambda identity, on: self.statuses.append((identity, on)),

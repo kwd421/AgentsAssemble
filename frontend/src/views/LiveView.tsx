@@ -13,7 +13,6 @@ import {
   castMafiaVote,
   resolveMafiaPhase,
   sendMafiaChat,
-  subscribeLobby,
   type FlowState,
   type LiveAgent,
   type LobbyEvent,
@@ -374,6 +373,7 @@ export default function LiveView({
   headerActions,
   onOpenMobileSidebar,
   onOpenMobileInfo,
+  bindFlowLobbyStream,
 }: {
   flow: FlowState;
   flowEvents: LobbyEvent[];
@@ -387,6 +387,7 @@ export default function LiveView({
   headerActions?: ChannelHeaderActions;
   onOpenMobileSidebar?: () => void;
   onOpenMobileInfo?: () => void;
+  bindFlowLobbyStream?: (receive: (events: LobbyEvent[]) => void) => () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToLatestRef = useRef(true);
@@ -484,7 +485,10 @@ export default function LiveView({
     [activeFlowId, activeMeetingId, updatePinnedToLatest]
   );
 
-  useEffect(() => subscribeLobby(mergeFlowEvents), [mergeFlowEvents]);
+  useEffect(() => {
+    if (!bindFlowLobbyStream) return undefined;
+    return bindFlowLobbyStream(mergeFlowEvents);
+  }, [bindFlowLobbyStream, mergeFlowEvents]);
 
   if (mafiaGame) {
     return (

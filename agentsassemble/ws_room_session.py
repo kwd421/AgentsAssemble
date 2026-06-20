@@ -134,6 +134,7 @@ class WsRoomDeps:
 
     read_lobby_after: Callable[[str, str], tuple[list, str]]
     read_roster: Callable[[str], tuple[list, str]]
+    read_side_chat_after: Callable[[str, str], tuple[list, str]]
     post_say: Callable[[dict, dict], dict]
     is_muted: Callable[[str, str], bool]
     set_thinking: Callable[[dict, bool], None]
@@ -209,7 +210,7 @@ class WsRoomSession:
         streams = [s for s in requested if s in WS_STREAMS]
         self.subscribed = set(streams)
         for stream in streams:
-            resume = str(msg.get("resume_from_id") or "") if stream == "lobby" else ""
+            resume = str(msg.get("resume_from_id") or "") if stream in {"lobby", "side_chat"} else ""
             self._cursors[stream] = resume
         frames = [encode_text(json.dumps({"op": "subscribed", "streams": sorted(self.subscribed)}))]
         frames.extend(self.poll(snapshot=True))  # immediate snapshot after subscribe
@@ -275,6 +276,24 @@ class WsRoomSession:
             if signature != self._roster_sig:
                 self._roster_sig = signature
                 frames.append(encode_text(json.dumps({"op": "event", "stream": "roster", "members": members})))
+        if "side_chat" in self.subscribed:
+            events, latest = self.deps.read_side_chat_after(
+                self.meeting_id,
+                self._cursors.get("side_chat", ""),
+            )
+            if events:
+                self._cursors["side_chat"] = latest or self._cursors.get("side_chat", "")
+                message = {"op": "event", "stream": "side_chat", "events": events}
+                if snapshot:
+                    message["snapshot"] = True
+                frames.append(encode_text(json.dumps(message)))
+            elif snapshot:
+                frames.append(encode_text(json.dumps({
+                    "op": "event",
+                    "stream": "side_chat",
+                    "events": [],
+                    "snapshot": True,
+                })))
         return frames
 
     def _session_is_active(self) -> bool:

@@ -2265,6 +2265,7 @@ interface WsTicketResponse {
 export interface RoomSocketHandlers {
   onLobby?: (events: LobbyEvent[]) => void;
   onRoster?: (members: RoomMember[]) => void;
+  onSideChat?: (events: SideChatEvent[]) => void;
   onOpen?: () => void;
   onError?: (err: Event | Error) => void;
 }
@@ -2378,6 +2379,8 @@ export function openRoomSocket(
       handlers.onLobby?.(msg.events);
     } else if (msg.op === "event" && msg.stream === "roster" && Array.isArray(msg.members)) {
       handlers.onRoster?.(msg.members);
+    } else if (msg.op === "event" && msg.stream === "side_chat" && Array.isArray(msg.events)) {
+      handlers.onSideChat?.(msg.events as SideChatEvent[]);
     }
   }
 

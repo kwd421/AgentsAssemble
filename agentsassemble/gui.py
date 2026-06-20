@@ -8307,6 +8307,13 @@ def _make_handler(
             payload = _stream_snapshot_payload(output_root, "roster", meeting_id=meeting_id, last_event_id=None)
             return list(payload.get("members", [])), str(_payload_signature(payload) or "")
 
+        def read_side_chat_after(meeting_id: str, after_id: str) -> tuple[list, str]:
+            payload = _stream_snapshot_payload(
+                output_root, "side_chat", meeting_id=meeting_id, last_event_id=after_id or None
+            )
+            events = list(payload.get("events", []))
+            return events, (_last_payload_event_id(payload) or after_id)
+
         def post_say(identity: dict, payload: dict) -> dict:
             try:
                 resolved = lobby_payload_with_attachments(output_root, dict(payload))
@@ -8336,6 +8343,7 @@ def _make_handler(
         return WsRoomDeps(
             read_lobby_after=read_lobby_after,
             read_roster=read_roster,
+            read_side_chat_after=read_side_chat_after,
             post_say=post_say,
             is_muted=lambda meeting_id, agent_id: is_room_member_muted(output_root, meeting_id, agent_id),
             set_thinking=set_thinking,
