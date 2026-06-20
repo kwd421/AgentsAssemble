@@ -74,8 +74,8 @@ class WsEndpointTests(unittest.TestCase):
         self._servers: list[ThreadingHTTPServer] = []
 
     def tearDown(self):
-        for server in self._servers:
-            server.shutdown()
+        for server in list(self._servers):
+            self._stop_server(server)
         reset_state()
 
     def _start_server(self, root: Path) -> ThreadingHTTPServer:
@@ -83,6 +83,12 @@ class WsEndpointTests(unittest.TestCase):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self._servers.append(server)
         return server
+
+    def _stop_server(self, server: ThreadingHTTPServer) -> None:
+        if server in self._servers:
+            self._servers.remove(server)
+        server.shutdown()
+        server.server_close()
 
     def _session_token(self, base: str) -> str:
         invite = create_room_invite(
@@ -135,58 +141,67 @@ class WsEndpointTests(unittest.TestCase):
     def test_ws_ticket_handshake_and_subscribe_roundtrip(self):
         with tempfile.TemporaryDirectory() as tmp:
             server = self._start_server(Path(tmp))
-            host, port = server.server_address
-            base = f"http://{host}:{port}"
-
-            token = self._session_token(base)
-            ticket = self._ws_ticket(base, token)
-            self.assertTrue(ticket.startswith("wst_"))
-
-            sock = self._handshake(host, port, ticket)
             try:
-                sock.sendall(_client_text_frame(json.dumps({"op": "subscribe", "streams": ["lobby"]})))
-                msg = _recv_server_text(sock)
-                self.assertEqual(msg["op"], "subscribed")
-                self.assertEqual(msg["streams"], ["lobby"])
+                host, port = server.server_address
+                base = f"http://{host}:{port}"
+
+                token = self._session_token(base)
+                ticket = self._ws_ticket(base, token)
+                self.assertTrue(ticket.startswith("wst_"))
+
+                sock = self._handshake(host, port, ticket)
+                try:
+                    sock.sendall(_client_text_frame(json.dumps({"op": "subscribe", "streams": ["lobby"]})))
+                    msg = _recv_server_text(sock)
+                    self.assertEqual(msg["op"], "subscribed")
+                    self.assertEqual(msg["streams"], ["lobby"])
+                finally:
+                    sock.close()
             finally:
-                sock.close()
+                self._stop_server(server)
 
     def test_say_over_ws_appends_and_acks(self):
         with tempfile.TemporaryDirectory() as tmp:
             server = self._start_server(Path(tmp))
-            host, port = server.server_address
-            base = f"http://{host}:{port}"
-            token = self._session_token(base)
-            ticket = self._ws_ticket(base, token)
-            sock = self._handshake(host, port, ticket)
             try:
-                sock.sendall(_client_text_frame(json.dumps({"op": "say", "message": "안녕 WS"})))
-                msg = _recv_server_text(sock)
-                self.assertEqual(msg["op"], "ack")
-                self.assertEqual(msg["event"]["message"], "안녕 WS")
-                # server-injected identity, not client-supplied
-                self.assertEqual(msg["event"]["actor_id"], "guest-1")
+                host, port = server.server_address
+                base = f"http://{host}:{port}"
+                token = self._session_token(base)
+                ticket = self._ws_ticket(base, token)
+                sock = self._handshake(host, port, ticket)
+                try:
+                    sock.sendall(_client_text_frame(json.dumps({"op": "say", "message": "안녕 WS"})))
+                    msg = _recv_server_text(sock)
+                    self.assertEqual(msg["op"], "ack")
+                    self.assertEqual(msg["event"]["message"], "안녕 WS")
+                    # server-injected identity, not client-supplied
+                    self.assertEqual(msg["event"]["actor_id"], "guest-1")
+                finally:
+                    sock.close()
             finally:
-                sock.close()
+                self._stop_server(server)
 
     def test_existing_ws_rejects_say_after_session_leave(self):
         with tempfile.TemporaryDirectory() as tmp:
             server = self._start_server(Path(tmp))
-            host, port = server.server_address
-            base = f"http://{host}:{port}"
-            token = self._session_token(base)
-            ticket = self._ws_ticket(base, token)
-            sock = self._handshake(host, port, ticket)
             try:
-                leave = self._leave(base, token)
-                self.assertEqual(leave["status"], "left")
+                host, port = server.server_address
+                base = f"http://{host}:{port}"
+                token = self._session_token(base)
+                ticket = self._ws_ticket(base, token)
+                sock = self._handshake(host, port, ticket)
+                try:
+                    leave = self._leave(base, token)
+                    self.assertEqual(leave["status"], "left")
 
-                sock.sendall(_client_text_frame(json.dumps({"op": "say", "message": "after leave"})))
-                msg = _recv_server_text(sock)
-                self.assertEqual(msg["op"], "error")
-                self.assertEqual(msg["category"], WS_SESSION_REVOKED_CATEGORY)
+                    sock.sendall(_client_text_frame(json.dumps({"op": "say", "message": "after leave"})))
+                    msg = _recv_server_text(sock)
+                    self.assertEqual(msg["op"], "error")
+                    self.assertEqual(msg["category"], WS_SESSION_REVOKED_CATEGORY)
+                finally:
+                    sock.close()
             finally:
-                sock.close()
+                self._stop_server(server)
 
     def _host_ws_ticket(self, base: str, meeting_id: str) -> str:
         req = Request(
@@ -201,42 +216,50 @@ class WsEndpointTests(unittest.TestCase):
     def test_host_ws_ticket_on_loopback_subscribes_lobby_and_roster(self):
         with tempfile.TemporaryDirectory() as tmp:
             server = self._start_server(Path(tmp))
-            host, port = server.server_address
-            base = f"http://{host}:{port}"
-
-            ticket = self._host_ws_ticket(base, "room-host-ws")
-            self.assertTrue(ticket.startswith("wst_"))
-
-            sock = self._handshake(host, port, ticket)
             try:
-                sock.sendall(
-                    _client_text_frame(
-                        json.dumps({"op": "subscribe", "streams": ["lobby", "roster"]})
+                host, port = server.server_address
+                base = f"http://{host}:{port}"
+
+                ticket = self._host_ws_ticket(base, "room-host-ws")
+                self.assertTrue(ticket.startswith("wst_"))
+
+                sock = self._handshake(host, port, ticket)
+                try:
+                    sock.sendall(
+                        _client_text_frame(
+                            json.dumps({"op": "subscribe", "streams": ["lobby", "roster"]})
+                        )
                     )
-                )
-                msg = _recv_server_text(sock)
-                self.assertEqual(msg["op"], "subscribed")
-                self.assertEqual(msg["streams"], ["lobby", "roster"])
+                    msg = _recv_server_text(sock)
+                    self.assertEqual(msg["op"], "subscribed")
+                    self.assertEqual(msg["streams"], ["lobby", "roster"])
+                finally:
+                    sock.close()
             finally:
-                sock.close()
+                self._stop_server(server)
 
     def test_ws_rejects_missing_or_used_ticket(self):
         with tempfile.TemporaryDirectory() as tmp:
             server = self._start_server(Path(tmp))
-            host, port = server.server_address
-            # no ticket → 401, no upgrade
-            sock = socket.create_connection((host, port), timeout=4)
-            sock.sendall(
-                f"GET /ws HTTP/1.1\r\nHost: {host}:{port}\r\nUpgrade: websocket\r\n"
-                f"Connection: Upgrade\r\nSec-WebSocket-Key: {base64.b64encode(b'0123456789abcdef').decode()}\r\n"
-                "Sec-WebSocket-Version: 13\r\n\r\n".encode("ascii")
-            )
-            sock.settimeout(4)
-            head = b""
-            while b"\r\n\r\n" not in head:
-                head += sock.recv(4096)
-            self.assertIn(b"401", head.split(b"\r\n", 1)[0])
-            sock.close()
+            try:
+                host, port = server.server_address
+                # no ticket → 401, no upgrade
+                sock = socket.create_connection((host, port), timeout=4)
+                try:
+                    sock.sendall(
+                        f"GET /ws HTTP/1.1\r\nHost: {host}:{port}\r\nUpgrade: websocket\r\n"
+                        f"Connection: Upgrade\r\nSec-WebSocket-Key: {base64.b64encode(b'0123456789abcdef').decode()}\r\n"
+                        "Sec-WebSocket-Version: 13\r\n\r\n".encode("ascii")
+                    )
+                    sock.settimeout(4)
+                    head = b""
+                    while b"\r\n\r\n" not in head:
+                        head += sock.recv(4096)
+                    self.assertIn(b"401", head.split(b"\r\n", 1)[0])
+                finally:
+                    sock.close()
+            finally:
+                self._stop_server(server)
 
 
 if __name__ == "__main__":

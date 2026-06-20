@@ -6,6 +6,8 @@ from pathlib import Path
 from agentsassemble.live_agents import delete_live_agent, detach_live_agent_from_meeting, read_live_agents
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.meeting_events import clean_lobby_text, write_live_state
+from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
+from agentsassemble.room_invite import revoke_sessions_for_participant
 
 
 def expel_live_agent_from_room_payload(
@@ -17,6 +19,7 @@ def expel_live_agent_from_room_payload(
     agent_id = _clean_existing_agent_id(payload.get("agent_id"))
     requested_group_id = _clean_optional_group_id(payload.get("group_id"))
     agent = _live_agent_entry(output_root, agent_id)
+    revoked_sessions = revoke_sessions_for_participant(meeting_id, agent_id)
     group = _find_agent_process_group(
         process_supervisor,
         meeting_id=meeting_id,
@@ -31,14 +34,15 @@ def expel_live_agent_from_room_payload(
     )
     meeting_dir = _existing_meeting_dir(output_root, meeting_id)
     meeting = _read_meeting(meeting_dir)
-    updated_meeting, removed = _meeting_without_agent(meeting, agent_id)
+    updated_meeting, removed = _meeting_without_agent(meeting, agent_id, require_binding=False)
     write_live_state(meeting_dir, updated_meeting)
-    detached_agent = detach_live_agent_from_meeting(output_root, agent_id, meeting_id)
+    detached_agent = _remove_or_detach_expelled_agent(output_root, agent, agent_id=agent_id, meeting_id=meeting_id)
     return {
         "status": "expelled",
         "meeting_id": meeting_id,
         "agent_id": agent_id,
         "removed": removed,
+        "revoked_sessions": revoked_sessions,
         "agent": detached_agent,
         "stopped_group": stopped_group,
     }
@@ -136,10 +140,15 @@ def _live_agent_entry(output_root: Path, agent_id: str) -> dict[str, object]:
     raise ValueError(f"Live agent {agent_id} was not found.")
 
 
-def _meeting_without_agent(meeting: dict[str, object], agent_id: str) -> tuple[dict[str, object], dict[str, object]]:
+def _meeting_without_agent(
+    meeting: dict[str, object],
+    agent_id: str,
+    *,
+    require_binding: bool = True,
+) -> tuple[dict[str, object], dict[str, object]]:
     bindings = _as_dict_list(meeting.get("agent_bindings"))
     removed_bindings = [binding for binding in bindings if str(binding.get("agent_id") or "") == agent_id]
-    if not removed_bindings:
+    if require_binding and not removed_bindings:
         raise ValueError(f"Meeting has no bound live agent {agent_id}.")
     remaining_bindings = [binding for binding in bindings if str(binding.get("agent_id") or "") != agent_id]
     removed_role_ids = {str(binding.get("role_id") or "") for binding in removed_bindings if str(binding.get("role_id") or "")}
@@ -167,6 +176,26 @@ def _meeting_without_agent(meeting: dict[str, object], agent_id: str) -> tuple[d
         "role_ids": sorted(removed_role_ids),
         "provider_ids": sorted(removed_provider_ids),
     }
+
+
+def _remove_or_detach_expelled_agent(
+    output_root: Path,
+    agent: dict[str, object],
+    *,
+    agent_id: str,
+    meeting_id: str,
+) -> dict[str, object]:
+    if _is_invite_only_remote_agent(agent):
+        return delete_live_agent(output_root, agent_id)
+    return detach_live_agent_from_meeting(output_root, agent_id, meeting_id)
+
+
+def _is_invite_only_remote_agent(agent: dict[str, object]) -> bool:
+    return (
+        str(agent.get("connection_kind") or "") == NATIVE_REMOTE_ROOM_CLIENT_KIND
+        and not clean_lobby_text(agent.get("live_agent_config_path"), limit=2048)
+        and not clean_lobby_text(agent.get("process_group_id"), limit=128)
+    )
 
 
 def _find_agent_process_group(

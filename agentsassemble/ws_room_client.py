@@ -199,9 +199,13 @@ def join_room_session(
     participant_type: str = "agent",
     device_token: str = "",
     timeout: float = 5.0,
-) -> str:
-    """POST /api/room-invite/join → session token. Lets a one-command WS launch
-    turn an invite token into the session a ws-ticket needs."""
+) -> dict[str, object]:
+    """POST /api/room-invite/join and return the server-admitted session.
+
+    The session token opens the WebSocket; the rest of the payload is just as
+    important because the server may choose the real participant id/display name
+    for reusable invites and stable device identities.
+    """
     body = {
         "invite_token": invite_token,
         "display_name": display_name,
@@ -219,7 +223,7 @@ def join_room_session(
     token = str(payload.get("session_token") or "")
     if not token:
         raise WebSocketProtocolError("Join did not return a session token.")
-    return token
+    return payload
 
 
 def meeting_id_from_invite_token(invite_token: str) -> str:
@@ -275,6 +279,8 @@ def connect_room_ws(
     if parsed.scheme == "https":
         sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
     client = WsRoomClient(sock, host=f"{host}:{port}")
-    client.open(f"/ws?ticket={ticket}")
+    prefix = parsed.path.rstrip("/")
+    ws_path = f"{prefix}/ws" if prefix else "/ws"
+    client.open(f"{ws_path}?ticket={ticket}")
     client.subscribe(streams)
     return client

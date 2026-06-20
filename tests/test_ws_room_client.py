@@ -20,7 +20,7 @@ from agentsassemble.room_websocket import (
     encode_text,
     parse_frame,
 )
-from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws
+from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws, join_room_session
 
 
 class FakeSocket:
@@ -198,6 +198,30 @@ class LiveRoundTripTests(unittest.TestCase):
             finally:
                 client.close()
 
+    def test_join_room_session_returns_admitted_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._start(Path(tmp))
+            invite = create_room_invite(
+                room_url=base,
+                meeting_id="room-join",
+                agent_id="runner",
+                display_name="Runner",
+                max_uses=1,
+            )
+
+            joined = join_room_session(
+                base,
+                str(invite["invite_token"]),
+                display_name="runner",
+                participant_type="agent",
+            )
+
+            self.assertIsInstance(joined, dict)
+            self.assertTrue(str(joined.get("session_token") or "").startswith("aas1."))
+            self.assertEqual(joined.get("agent_id"), "runner")
+            self.assertEqual(joined.get("display_name"), "runner")
+            self.assertEqual(joined.get("meeting_id"), "room-join")
+
 
 class ConnectRoomWsTests(unittest.TestCase):
     def test_https_room_wraps_socket_with_tls(self):
@@ -228,6 +252,20 @@ class ConnectRoomWsTests(unittest.TestCase):
         try:
             self.assertEqual(context.wrapped, [(sock, "room.example")])
             self.assertIn(b"GET /ws?ticket=ticket HTTP/1.1", sock.sent)
+        finally:
+            client.close()
+
+    def test_connect_room_ws_preserves_public_url_path_prefix(self):
+        sock = FakeSocket()
+
+        with (
+            patch("agentsassemble.ws_room_client.request_ws_ticket", return_value="ticket"),
+            patch("agentsassemble.ws_room_client.socket_module.create_connection", return_value=sock),
+        ):
+            client = connect_room_ws("http://room.example/aa", "session-token", ["lobby"])
+
+        try:
+            self.assertIn(b"GET /aa/ws?ticket=ticket HTTP/1.1", sock.sent)
         finally:
             client.close()
 

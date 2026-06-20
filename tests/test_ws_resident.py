@@ -638,12 +638,28 @@ class WsLaunchWiringTests(unittest.TestCase):
         args = self._args("--invite-token", "inv-xyz")
         config = config_from_args(args)
         with mock.patch("agentsassemble.ws_room_client.fetch_room_conversation_mode", lambda *a, **k: "quiet"), \
-             mock.patch("agentsassemble.ws_room_client.join_room_session", lambda *a, **k: "tok-from-invite") as _j, \
+             mock.patch(
+                 "agentsassemble.ws_room_client.join_room_session",
+                 lambda *a, **k: {
+                     "session_token": "tok-from-invite",
+                     "agent_id": "guest-from-join",
+                     "display_name": "Runner From Join",
+                     "meeting_id": "room-from-join",
+                 },
+             ) as _j, \
              mock.patch("agentsassemble.ws_resident.run_provider_ws_resident",
                         lambda server, token, cfg, runner, *, max_replies=0, engagement_mode=None, use_floor=False:
-                        seen.update(token=token) or 0):
+                        seen.update(
+                            token=token,
+                            agent_id=cfg.agent_id,
+                            display_name=cfg.display_name,
+                            meeting_id=cfg.meeting_id,
+                        ) or 0):
             cli._run_ws_resident_command(args, config)
         self.assertEqual(seen["token"], "tok-from-invite")
+        self.assertEqual(seen["agent_id"], "guest-from-join")
+        self.assertEqual(seen["display_name"], "Runner From Join")
+        self.assertEqual(seen["meeting_id"], "room-from-join")
 
     def test_requires_token_or_invite(self):
         import agentsassemble.cli as cli

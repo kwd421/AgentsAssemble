@@ -8,7 +8,9 @@ from agentsassemble.live_agent_room_admin import (
     delete_live_agent_session_payload,
     expel_live_agent_from_room_payload,
 )
-from agentsassemble.live_agents import read_live_agents
+from agentsassemble.live_agents import connect_live_agent, read_live_agents
+from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
+from agentsassemble.room_invite import create_room_invite, join_room_with_invite, reset_state, verify_session_token
 
 from tests.test_live_agent_frontend_create import FakeSupervisor, write_meeting
 
@@ -61,6 +63,9 @@ class AdminSupervisor(FakeSupervisor):
 
 
 class LiveAgentRoomAdminTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        reset_state()
+
     def test_expel_removes_agent_from_room_but_keeps_saved_session_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "aa"
@@ -99,6 +104,50 @@ class LiveAgentRoomAdminTests(unittest.TestCase):
             agents = read_live_agents(root)
             self.assertEqual(agents[0]["agent_id"], created["agent"]["agent_id"])
             self.assertEqual(agents[0]["meeting_id"], "")
+
+    def test_expel_native_remote_invite_participant_revokes_session_without_room_binding(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "aa"
+            write_meeting(root)
+            invite = create_room_invite(
+                room_url="http://192.168.1.10:8765",
+                meeting_id="room-a",
+                agent_id="remote-runner",
+                display_name="Remote Runner",
+                max_uses=1,
+            )
+            joined = join_room_with_invite(
+                str(invite["invite_token"]),
+                meeting_id="room-a",
+                participant_type="agent",
+            )
+            session_token = str(joined["session_token"])
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": joined["agent_id"],
+                    "display_name": joined["display_name"],
+                    "provider_kind": "manual",
+                    "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
+                    "meeting_id": joined["meeting_id"],
+                    "status": "online",
+                },
+            )
+
+            result = expel_live_agent_from_room_payload(
+                root,
+                AdminSupervisor(),
+                {
+                    "meeting_id": "room-a",
+                    "agent_id": joined["agent_id"],
+                },
+            )
+
+            self.assertEqual(result["status"], "expelled")
+            self.assertEqual(result["removed"]["binding_count"], 0)
+            self.assertEqual(result["revoked_sessions"], 1)
+            self.assertIsNone(verify_session_token(session_token))
+            self.assertEqual(read_live_agents(root), [])
 
     def test_delete_removes_room_binding_live_agent_record_config_and_process_record(self):
         with tempfile.TemporaryDirectory() as temp_dir:
