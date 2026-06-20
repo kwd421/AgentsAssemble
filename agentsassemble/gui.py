@@ -184,6 +184,7 @@ from agentsassemble.ws_room_session import (
     WsSayRejected,
     WsRoomSession,
     WsTicketStore,
+    host_browser_ws_session,
 )
 from agentsassemble.room_users import (
     configure_room_users_store,
@@ -8775,10 +8776,28 @@ def _make_handler(
                 return
             if parsed.path == "/api/ws-ticket":
                 ctx = RequestContext(self, route_deps, parsed, parse_qs(parsed.query))
-                session = ctx.require_session()
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(body, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                session = ctx.session()
+                session_token = ctx.bearer_token()
                 if session is None:
-                    return  # require_session already sent 401
-                ticket = ws_ticket_store.issue(session, session_token=ctx.bearer_token())
+                    if not (ctx.is_host() or self._request_is_local_operator()):
+                        self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+                        return
+                    try:
+                        session = host_browser_ws_session(str(body.get("meeting_id") or ""))
+                    except ValueError as error:
+                        self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                        return
+                    session_token = ""
+                ticket = ws_ticket_store.issue(session, session_token=session_token)
                 self._send_json({"ticket": ticket, "ttl_seconds": WS_TICKET_TTL_SECONDS})
                 return
             if parsed.path == "/api/demo":

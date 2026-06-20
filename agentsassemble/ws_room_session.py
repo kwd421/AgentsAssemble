@@ -60,6 +60,28 @@ WS_SAY_METADATA_FIELDS = {
 }
 WS_SESSION_TOKEN_KEY = "_ws_session_token"
 WS_SESSION_REVOKED_CATEGORY = "session_revoked"
+HOST_BROWSER_PARTICIPANT_ID = "operator-local"
+HOST_BROWSER_DISPLAY_DEFAULT = "호스트"
+
+
+def host_browser_ws_session(meeting_id: str) -> dict[str, object]:
+    """Synthetic invite session for the local host browser over WebSocket.
+
+    Mirrors the trusted local operator identity used by /api/lobby so the host
+    console can subscribe without a guest invite session token.
+    """
+    clean_meeting_id = str(meeting_id or "").strip()
+    if not clean_meeting_id:
+        raise ValueError("meeting_id is required for host WebSocket access.")
+    return {
+        "agent_id": HOST_BROWSER_PARTICIPANT_ID,
+        "display_name": HOST_BROWSER_DISPLAY_DEFAULT,
+        "participant_type": "human",
+        "client_type": "browser",
+        "invite_scope": "read_write",
+        "meeting_id": clean_meeting_id,
+        "operator": True,
+    }
 
 
 class WsTicketStore:

@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { Bot, ChevronDown, ChevronRight, Hash, MessageCircle, MoreHorizontal, Zap } from "lucide-react";
 import {
-  connectRoomSocket,
   fetchLobby,
   fetchRoomLobby,
   mergeLobbyEvents,
-  subscribeLobby,
   type LiveAgent,
   type LobbyEvent,
 } from "../api";
@@ -280,6 +278,7 @@ export default function LobbyView({
   roomSessionToken = "",
   localDisplayName = "",
   typingNames = [],
+  bindLobbyStream,
 }: {
   activeRoom: RoomDockItem;
   agents: LiveAgent[];
@@ -300,6 +299,7 @@ export default function LobbyView({
   threadSummaries?: Record<string, LobbyThreadSummary>;
   roomSessionToken?: string;
   localDisplayName?: string;
+  bindLobbyStream?: (receive: (events: LobbyEvent[]) => void) => () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const voterName = useMemo(() => {
@@ -460,18 +460,11 @@ export default function LobbyView({
     });
   }, []);
 
+  // App owns one room WebSocket (lobby + roster). Register our merge handler here.
   useEffect(() => {
-    if (roomSessionToken) return undefined;
-    return subscribeLobby(handleSSE, undefined, activeRoom.meetingId);
-  }, [activeRoom.meetingId, handleSSE, roomSessionToken]);
-
-  // Guests can't auth EventSource, so they get lobby PUSH over the WebSocket
-  // (WS 전환, WS-5). Additive + idempotent (mergeLobbyEvents dedups by id); the
-  // 15s poll above remains the fallback if the socket never opens.
-  useEffect(() => {
-    if (!roomSessionToken) return undefined;
-    return connectRoomSocket(roomSessionToken, ["lobby"], { onLobby: handleSSE });
-  }, [activeRoom.meetingId, handleSSE, roomSessionToken]);
+    if (!bindLobbyStream) return undefined;
+    return bindLobbyStream(handleSSE);
+  }, [bindLobbyStream, handleSSE]);
 
   const handleLobbyPosted = useCallback((postedEvents: LobbyEvent[]) => {
     setEvents((previous) => mergeLobbyEvents(previous, postedEvents));

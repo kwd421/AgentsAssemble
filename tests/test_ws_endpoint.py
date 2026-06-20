@@ -188,6 +188,38 @@ class WsEndpointTests(unittest.TestCase):
             finally:
                 sock.close()
 
+    def _host_ws_ticket(self, base: str, meeting_id: str) -> str:
+        req = Request(
+            f"{base}/api/ws-ticket",
+            data=json.dumps({"meeting_id": meeting_id}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(req, timeout=4) as resp:
+            return json.loads(resp.read().decode("utf-8"))["ticket"]
+
+    def test_host_ws_ticket_on_loopback_subscribes_lobby_and_roster(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            server = self._start_server(Path(tmp))
+            host, port = server.server_address
+            base = f"http://{host}:{port}"
+
+            ticket = self._host_ws_ticket(base, "room-host-ws")
+            self.assertTrue(ticket.startswith("wst_"))
+
+            sock = self._handshake(host, port, ticket)
+            try:
+                sock.sendall(
+                    _client_text_frame(
+                        json.dumps({"op": "subscribe", "streams": ["lobby", "roster"]})
+                    )
+                )
+                msg = _recv_server_text(sock)
+                self.assertEqual(msg["op"], "subscribed")
+                self.assertEqual(msg["streams"], ["lobby", "roster"])
+            finally:
+                sock.close()
+
     def test_ws_rejects_missing_or_used_ticket(self):
         with tempfile.TemporaryDirectory() as tmp:
             server = self._start_server(Path(tmp))

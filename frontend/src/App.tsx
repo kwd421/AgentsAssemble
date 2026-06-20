@@ -60,7 +60,6 @@ import {
   meetingLiveEventsToTimelineEvents,
   meetingStreamStateForActiveMeeting,
   subscribeMeetingEvents,
-  subscribeRoster,
   subscribeSideChat,
   type FlowResponse,
   type LiveAgentsResponse,
@@ -556,6 +555,15 @@ export default function App() {
   // server-backed meeting (idempotent) so adding agents / roster / lobby always
   // have a real meeting to bind to instead of failing with "Meeting not found".
   const ensuredMeetingsRef = useRef<Set<string>>(new Set());
+  const lobbyStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
+  const bindLobbyStream = useCallback((receive: (events: LobbyEvent[]) => void) => {
+    lobbyStreamRef.current = receive;
+    return () => {
+      if (lobbyStreamRef.current === receive) {
+        lobbyStreamRef.current = null;
+      }
+    };
+  }, []);
   useEffect(() => {
     const meetingId = activeRoom.meetingId || "";
     if (!meetingId || meetingId === "pending-join" || guestLocked) return;
@@ -1941,37 +1949,31 @@ export default function App() {
 
   useEffect(() => {
     refreshMembers();
-    // Roster freshness (R6): the local console rides the roster SSE stream —
-    // joins/leaves/kicks push instantly — with a slow poll as the safety net.
-    // Guests can't attach EventSource auth headers, so they keep polling.
-    const subscribed = !guestLocked && activeRoom.meetingId;
-    const unsubscribe = subscribed
-      ? subscribeRoster(activeRoom.meetingId, (members) => {
-          setRoomMembersByRoom((previous) => ({
-            ...previous,
-            [activeRoomKey]: members,
-          }));
-        })
-      : undefined;
-    // Guests can't attach auth to EventSource, so they get roster PUSH over the
-    // WebSocket instead (WS 전환, WS-5). Additive + idempotent: the snapshot
-    // replaces the roster; if the socket never opens, the poll below covers it.
-    const guestToken =
-      guestLocked && activeRoom.meetingId ? guestSession?.sessionToken || "" : "";
-    const wsUnsubscribe = guestToken
-      ? connectRoomSocket(guestToken, ["roster"], {
-          onRoster: (members) => {
-            setRoomMembersByRoom((previous) => ({
-              ...previous,
-              [activeRoomKey]: members,
-            }));
-          },
-        })
-      : undefined;
+    if (!activeRoom.meetingId) return undefined;
+    const guestToken = guestLocked ? guestSession?.sessionToken || "" : "";
+    const auth = guestToken
+      ? ({ kind: "session" as const, sessionToken: guestToken })
+      : guestLocked
+        ? undefined
+        : ({ kind: "host" as const, meetingId: activeRoom.meetingId });
+    if (!auth) return undefined;
+    // One governed WebSocket per room client: lobby + roster push (host via
+    // ws-ticket + meeting_id; guests via invite session token).
+    const wsUnsubscribe = connectRoomSocket(auth, ["lobby", "roster"], {
+      onLobby: (events) => {
+        lobbyStreamRef.current?.(events);
+      },
+      onRoster: (members) => {
+        setRoomMembersByRoom((previous) => ({
+          ...previous,
+          [activeRoomKey]: members,
+        }));
+      },
+    });
+    const subscribed = !guestLocked;
     const intervalId = window.setInterval(refreshMembers, subscribed ? 30_000 : 10_000);
     return () => {
-      unsubscribe?.();
-      wsUnsubscribe?.();
+      wsUnsubscribe();
       window.clearInterval(intervalId);
     };
   }, [
@@ -2546,6 +2548,7 @@ export default function App() {
             activeRoom={activeRoom}
             agents={scopedAgents}
             mentionables={scopedMentionables}
+            bindLobbyStream={bindLobbyStream}
             roomSessionToken={lobbyPostingState.sessionToken}
             localDisplayName={guestSession?.displayName || ""}
             canManageRoom={!guestLocked}

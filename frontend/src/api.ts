@@ -2274,8 +2274,16 @@ function wsBaseUrl(): string {
   return `${proto}//${window.location.host}`;
 }
 
-export function getWsTicket(sessionToken: string): Promise<string> {
-  return postJsonWithToken<WsTicketResponse>("/api/ws-ticket", {}, sessionToken).then(
+export type RoomSocketAuth =
+  | { kind: "session"; sessionToken: string }
+  | { kind: "host"; meetingId: string };
+
+export function getWsTicket(auth: RoomSocketAuth): Promise<string> {
+  const body = auth.kind === "host" ? { meeting_id: auth.meetingId } : {};
+  if (auth.kind === "host") {
+    return postJsonHost<WsTicketResponse>("/api/ws-ticket", body).then((res) => res.ticket);
+  }
+  return postJsonWithToken<WsTicketResponse>("/api/ws-ticket", body, auth.sessionToken).then(
     (res) => res.ticket
   );
 }
@@ -2287,7 +2295,7 @@ export function getWsTicket(sessionToken: string): Promise<string> {
  * this is the faster receive path.
  */
 export function connectRoomSocket(
-  sessionToken: string,
+  auth: RoomSocketAuth,
   streams: string[],
   handlers: RoomSocketHandlers
 ): () => void {
@@ -2296,7 +2304,7 @@ export function connectRoomSocket(
 
   (async () => {
     try {
-      const ticket = await getWsTicket(sessionToken);
+      const ticket = await getWsTicket(auth);
       if (closed) return;
       socket = new WebSocket(`${wsBaseUrl()}/ws?ticket=${encodeURIComponent(ticket)}`);
       socket.onopen = () => {
