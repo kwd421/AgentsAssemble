@@ -130,6 +130,8 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
             self.assertEqual(config["agents"][0]["workspace_path"], str(workspace.resolve()))
             self.assertEqual(config["agents"][0]["meeting_id"], "room-a")
             self.assertEqual(config["agents"][0]["provider_kind"], "cursor_live_session")
+            self.assertEqual(config.get("transport"), "ws")
+            self.assertTrue(str(config["agents"][0].get("invite_token") or "").startswith("aai1."))
 
             meeting = json.loads((root / "meetings" / "room-a" / "live_state.json").read_text(encoding="utf-8"))
             binding = meeting["agent_bindings"][0]
