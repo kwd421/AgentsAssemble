@@ -16,6 +16,7 @@ from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payl
 from agentsassemble.agent_sessions import (
     AgentSessionProcessService,
     resume_agent_session_payload,
+    run_agent_session_turn_payload,
     room_action_payload,
     room_lifecycle_payload,
     room_status_payload,
@@ -110,6 +111,21 @@ def _local_agent_session_command_runner(command: list[str]) -> dict[str, object]
         start_new_session=True,
     )
     return {"returncode": 0, "pid": process.pid}
+
+
+def _local_agent_session_turn_command_runner(
+    command: list[str],
+    prompt: str,
+    timeout_seconds: float,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(part) for part in command],
+        input=prompt,
+        text=True,
+        capture_output=True,
+        timeout=timeout_seconds,
+        check=False,
+    )
 
 
 def register_room_routes(router: Router) -> None:
@@ -346,6 +362,25 @@ def register_room_routes(router: Router) -> None:
                     ctx.deps.output_root,
                     payload,
                     process_service=_agent_session_process_service(ctx, payload),
+                )
+            )
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+
+    @router.post("/api/agent-sessions/turn")
+    def agent_sessions_turn(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        if not _process_start_allowed(ctx):
+            ctx.send_error(HTTPStatus.FORBIDDEN, "Agent Session turn requires local operator or host authorization")
+            return
+        try:
+            ctx.send_json(
+                run_agent_session_turn_payload(
+                    ctx.deps.output_root,
+                    payload,
+                    turn_command_runner=None if bool(payload.get("dry_run")) else _local_agent_session_turn_command_runner,
                 )
             )
         except ValueError as error:

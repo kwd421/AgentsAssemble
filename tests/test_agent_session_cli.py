@@ -142,6 +142,41 @@ class AgentSessionCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(request_json.call_args.kwargs["payload"]["provider_kind"], "codex_live_session")
 
+    def test_room_turn_uses_agent_session_turn_endpoint(self):
+        args = build_parser().parse_args(
+            [
+                "room",
+                "turn",
+                "room-a",
+                "--agent",
+                "agent-1",
+                "--session",
+                "session-1",
+                "--server",
+                "http://127.0.0.1:8765",
+                "--json",
+                "Answer from room context.",
+            ]
+        )
+
+        with patch("agentsassemble.cli._request_json") as request_json, patch("builtins.print"):
+            request_json.return_value = {"status": "finished", "turn_status": "finished", "turn_id": "turn-1"}
+            exit_code = run_room_command(args)
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(request_json.call_args.args[0], "http://127.0.0.1:8765/api/agent-sessions/turn")
+        self.assertEqual(request_json.call_args.kwargs["method"], "POST")
+        self.assertEqual(
+            request_json.call_args.kwargs["payload"],
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "instruction": "Answer from room context.",
+                "dry_run": False,
+            },
+        )
+
     def test_room_leave_uses_persisted_participant_endpoint(self):
         args = argparse.Namespace(
             room_command="leave",

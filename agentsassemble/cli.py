@@ -1672,6 +1672,14 @@ def build_parser() -> argparse.ArgumentParser:
         room_join.add_argument("--dry-run", action="store_true", help="Return the launch plan without starting the provider.")
         room_join.add_argument("--json", action="store_true", dest="as_json")
 
+    room_turn = room_subparsers.add_parser("turn", parents=[room_server], help="Run one Agent Session turn from room state.")
+    room_turn.add_argument("room_id")
+    room_turn.add_argument("--agent", required=True)
+    room_turn.add_argument("--session", default="")
+    room_turn.add_argument("--dry-run", action="store_true", help="Build the turn packet without running the provider.")
+    room_turn.add_argument("--json", action="store_true", dest="as_json")
+    room_turn.add_argument("instruction")
+
     room_leave = room_subparsers.add_parser("leave", parents=[room_server], help="Leave a room as an Agent Session participant.")
     room_leave.add_argument("room_id")
     room_leave.add_argument("--agent", required=True)
@@ -8417,6 +8425,24 @@ def run_room_command(args: argparse.Namespace) -> int:
                 f"attached Agent Session {participant.get('participant_id') or args.agent} "
                 f"in {args.room_id} · process: {process_status}"
             )
+        return 0
+    if args.room_command == "turn":
+        payload = {
+            "room_id": args.room_id,
+            "agent_id": args.agent,
+            "session_id": args.session or args.agent,
+            "instruction": args.instruction,
+            "dry_run": bool(args.dry_run),
+        }
+        response = _request_json(
+            _server_url(args.server, "/api/agent-sessions/turn"),
+            method="POST",
+            payload=payload,
+        )
+        if args.as_json:
+            print(json.dumps(response, ensure_ascii=False, indent=2))
+        else:
+            print(f"ran Agent Session turn {response.get('turn_id') or ''} in {args.room_id}: {response.get('turn_status') or response.get('status')}")
         return 0
     if args.room_command == "leave":
         payload = {"room_id": args.room_id, "participant_id": args.agent}

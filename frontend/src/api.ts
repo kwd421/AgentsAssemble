@@ -321,6 +321,7 @@ export interface RoomEvent {
   type: string;
   participant_id?: string;
   session_id?: string;
+  turn_id?: string;
   actor_id?: string;
   content?: string;
   media?: LobbyAttachmentRef | Record<string, unknown>;
@@ -2335,6 +2336,9 @@ export function subscribeRoomEvents(
   source.addEventListener("message_final", (event) => handleData((event as MessageEvent).data));
   source.addEventListener("message_delta", (event) => handleData((event as MessageEvent).data));
   source.addEventListener("thinking_delta", (event) => handleData((event as MessageEvent).data));
+  source.addEventListener("turn_started", (event) => handleData((event as MessageEvent).data));
+  source.addEventListener("turn_finished", (event) => handleData((event as MessageEvent).data));
+  source.addEventListener("error", (event) => handleData((event as MessageEvent).data));
   source.addEventListener("session_resumed", (event) => handleData((event as MessageEvent).data));
   source.addEventListener("participant_joined", (event) => handleData((event as MessageEvent).data));
   source.addEventListener("participant_left", (event) => handleData((event as MessageEvent).data));

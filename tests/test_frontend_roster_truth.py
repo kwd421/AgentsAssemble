@@ -101,3 +101,15 @@ class FrontendRosterTruthTests(unittest.TestCase):
         self.assertIn("const agents: LiveAgent[] = mergeLiveAgentRosters(flowData?.agents, liveAgentsData?.agents);", app)
         self.assertIn("refreshLiveAgents();", app)
         self.assertIn("[refreshFlow, refreshLiveAgents, refreshProcesses]", app)
+
+    def test_active_agent_session_room_events_feed_live_view_without_flow(self):
+        app = frontend_file("App.tsx")
+        api = frontend_file("api.ts")
+
+        self.assertIn("subscribeRoomEvents(", app)
+        self.assertIn("const roomId = activeRoom.meetingId || \"\";", app)
+        self.assertIn("flow_event_type: \"agent_session_turn\"", app)
+        self.assertIn("flow_meeting_id: event.room_id", app)
+        self.assertIn("flow_id: String(event.turn_id || \"\")", app)
+        self.assertIn("source.addEventListener(\"turn_started\"", api)
+        self.assertIn("source.addEventListener(\"turn_finished\"", api)

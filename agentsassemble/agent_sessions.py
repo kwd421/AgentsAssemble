@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
+from uuid import uuid4
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_store import RoomStore
 
 CommandRunner = Callable[[list[str]], dict[str, object] | subprocess.CompletedProcess[str] | None]
+AgentTurnChunk = dict[str, object]
+AgentTurnRunner = Callable[[dict[str, object]], Iterable[AgentTurnChunk]]
+AgentTurnCommandRunner = Callable[[list[str], str, float], subprocess.CompletedProcess[str]]
+DEFAULT_AGENT_TURN_TIMEOUT_SECONDS = 600.0
 
 
 def resume_agent_session_payload(
@@ -88,8 +93,16 @@ def resume_agent_session_payload(
 class AgentSessionProcessService:
     """Owns Agent Session state/process separation for CLI and HTTP callers."""
 
-    def __init__(self, *, command_runner: CommandRunner | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        command_runner: CommandRunner | None = None,
+        turn_runner: AgentTurnRunner | None = None,
+        turn_command_runner: AgentTurnCommandRunner | None = None,
+    ) -> None:
         self.command_runner = command_runner
+        self.turn_runner = turn_runner
+        self.turn_command_runner = turn_command_runner
 
     def resume(
         self,
@@ -107,6 +120,282 @@ class AgentSessionProcessService:
             payload,
             command_runner=self.command_runner,
         )
+
+    def run_turn(
+        self,
+        output_root: Path,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        return run_agent_session_turn_payload(
+            output_root,
+            payload,
+            turn_runner=self.turn_runner,
+            turn_command_runner=self.turn_command_runner,
+        )
+
+
+def run_agent_session_turn_payload(
+    output_root: Path,
+    payload: dict[str, object],
+    *,
+    turn_runner: AgentTurnRunner | None = None,
+    turn_command_runner: AgentTurnCommandRunner | None = None,
+) -> dict[str, object]:
+    store = RoomStore(output_root)
+    room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
+    agent_id = clean_lobby_text(payload.get("agent_id") or payload.get("agent") or payload.get("participant_id"), limit=128)
+    session_id = clean_lobby_text(payload.get("session_id") or payload.get("session"), limit=128) or agent_id
+    instruction = clean_lobby_text(payload.get("instruction"), limit=2000)
+    if not room_id:
+        raise ValueError("room_id is required.")
+    if not agent_id:
+        raise ValueError("agent_id is required.")
+    if not session_id:
+        raise ValueError("session_id is required.")
+    if not instruction:
+        raise ValueError("instruction is required.")
+    session = store.session(room_id, session_id)
+    if not session:
+        raise ValueError(f"Session {session_id} was not found.")
+    if clean_lobby_text(session.get("participant_id"), limit=128) != agent_id:
+        raise ValueError("session does not belong to participant.")
+
+    packet = build_room_turn_packet(
+        output_root,
+        room_id=room_id,
+        participant_id=agent_id,
+        session_id=session_id,
+        instruction=instruction,
+    )
+    turn_id = clean_lobby_text(payload.get("turn_id"), limit=128) or f"turn-{uuid4().hex[:12]}"
+    provider_kind = clean_lobby_text(session.get("provider_kind"), limit=64)
+    if bool(payload.get("dry_run")):
+        return {
+            "status": "dry_run",
+            "turn_status": "not_started",
+            "turn_id": turn_id,
+            "packet": packet,
+            "events": [],
+            "diagnostics": [
+                {
+                    "setting": "dry_run",
+                    "status": "not_started",
+                    "message": "Dry run built the Agent Session turn packet without running the provider.",
+                }
+            ],
+        }
+    if turn_runner is None and turn_command_runner is not None:
+        turn_runner = agent_session_command_turn_runner(
+            session,
+            command_runner=turn_command_runner,
+            timeout_seconds=_agent_turn_timeout_seconds(payload.get("timeout_seconds")),
+        )
+    if turn_runner is None:
+        return {
+            "status": "not_started",
+            "turn_status": "not_started",
+            "turn_id": turn_id,
+            "packet": packet,
+            "events": [],
+            "diagnostics": [
+                {
+                    "setting": "turn_runner",
+                    "status": "not_started",
+                    "message": "No Agent Session turn runner was provided; provider execution is opt-in.",
+                }
+            ],
+        }
+
+    appended: list[dict[str, object]] = [
+        store.append_event(
+            room_id,
+            "turn_started",
+            participant_id=agent_id,
+            session_id=session_id,
+            provider_kind=provider_kind,
+            turn_id=turn_id,
+        )
+    ]
+    try:
+        for chunk in turn_runner(packet):
+            if not isinstance(chunk, dict):
+                continue
+            event_type = clean_lobby_text(chunk.get("type") or chunk.get("kind"), limit=64)
+            if event_type not in {"thinking_delta", "message_delta", "message_final", "error"}:
+                continue
+            content = clean_lobby_text(chunk.get("content") or chunk.get("text") or chunk.get("message"), limit=8000)
+            diagnostics = chunk.get("diagnostics") if isinstance(chunk.get("diagnostics"), list) else []
+            appended.append(
+                store.append_event(
+                    room_id,
+                    event_type,
+                    participant_id=agent_id,
+                    session_id=session_id,
+                    provider_kind=provider_kind,
+                    turn_id=turn_id,
+                    content=content,
+                    diagnostics=diagnostics,
+                )
+            )
+            if event_type == "error":
+                return {
+                    "status": "error",
+                    "turn_status": "error",
+                    "turn_id": turn_id,
+                    "packet": packet,
+                    "events": appended,
+                    "diagnostics": diagnostics,
+                }
+    except Exception as error:  # pragma: no cover - defensive for injected runners
+        appended.append(
+            store.append_event(
+                room_id,
+                "error",
+                participant_id=agent_id,
+                session_id=session_id,
+                provider_kind=provider_kind,
+                turn_id=turn_id,
+                diagnostics=[{"setting": "turn_runner", "status": "failed", "message": str(error)}],
+            )
+        )
+        return {"status": "error", "turn_status": "error", "turn_id": turn_id, "packet": packet, "events": appended}
+    appended.append(
+        store.append_event(
+            room_id,
+            "turn_finished",
+            participant_id=agent_id,
+            session_id=session_id,
+            provider_kind=provider_kind,
+            turn_id=turn_id,
+        )
+    )
+    return {"status": "finished", "turn_status": "finished", "turn_id": turn_id, "packet": packet, "events": appended}
+
+
+def agent_session_command_turn_runner(
+    session: dict[str, object],
+    *,
+    command_runner: AgentTurnCommandRunner | None = None,
+    timeout_seconds: float = DEFAULT_AGENT_TURN_TIMEOUT_SECONDS,
+) -> AgentTurnRunner:
+    command = build_agent_session_turn_command(session)
+    runner = command_runner or _default_agent_turn_command_runner
+
+    def run(packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
+        if not command:
+            yield {
+                "type": "error",
+                "diagnostics": [
+                    {
+                        "setting": "turn_command",
+                        "status": "unsupported",
+                        "message": "This Agent Session provider has no verified turn command mapping yet.",
+                    }
+                ],
+            }
+            return
+        prompt = _agent_turn_prompt(packet)
+        try:
+            completed = runner(command, prompt, float(timeout_seconds))
+        except subprocess.TimeoutExpired:
+            yield {
+                "type": "error",
+                "diagnostics": [
+                    {
+                        "setting": "turn_command",
+                        "status": "timeout",
+                        "message": f"provider command timed out after {float(timeout_seconds):g}s",
+                    }
+                ],
+            }
+            return
+        except Exception as error:  # pragma: no cover - defensive for injected runners
+            yield {
+                "type": "error",
+                "diagnostics": [{"setting": "turn_command", "status": "failed", "message": str(error)}],
+            }
+            return
+        if completed.returncode != 0:
+            yield {
+                "type": "error",
+                "diagnostics": [
+                    {
+                        "setting": "turn_command",
+                        "status": "failed",
+                        "message": f"provider command exited {completed.returncode}",
+                    },
+                    *_stderr_diagnostics(completed.stderr),
+                ],
+            }
+            return
+        message = clean_lobby_text(completed.stdout, limit=8000)
+        if message:
+            yield {"type": "message_final", "content": message}
+            return
+        yield {
+            "type": "error",
+            "diagnostics": [
+                {
+                    "setting": "turn_command",
+                    "status": "empty",
+                    "message": "provider command completed without a room-visible reply",
+                }
+            ],
+        }
+
+    return run
+
+
+def build_agent_session_turn_command(session: dict[str, object]) -> list[str]:
+    launch = build_agent_session_launch_plan(session)
+    if launch.get("permission_enforcement") == "unsupported":
+        return []
+    command = [str(part) for part in launch.get("command", []) if str(part)]
+    if not command:
+        return []
+    return [*command, "-"]
+
+
+def _agent_turn_prompt(packet: dict[str, object]) -> str:
+    return (
+        "You are answering one AgentsAssemble room turn. Read the JSON packet, "
+        "use only the room-visible context and supported media manifest, follow "
+        "the explicit non-goals, and return one room-visible answer.\n\n"
+        + json.dumps(packet, ensure_ascii=False, sort_keys=True)
+        + "\n"
+    )
+
+
+def _default_agent_turn_command_runner(
+    command: list[str],
+    prompt: str,
+    timeout_seconds: float,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(part) for part in command],
+        input=prompt,
+        text=True,
+        capture_output=True,
+        timeout=timeout_seconds,
+        check=False,
+    )
+
+
+def _stderr_diagnostics(stderr: str | None) -> list[dict[str, str]]:
+    safe = clean_lobby_text(stderr, limit=1000)
+    if not safe:
+        return []
+    return [{"setting": "stderr", "status": "captured", "message": safe}]
+
+
+def _agent_turn_timeout_seconds(value: object) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_AGENT_TURN_TIMEOUT_SECONDS
+    if parsed <= 0:
+        return DEFAULT_AGENT_TURN_TIMEOUT_SECONDS
+    return min(parsed, DEFAULT_AGENT_TURN_TIMEOUT_SECONDS)
 
 
 def build_room_turn_packet(

@@ -167,6 +167,7 @@ Current implemented scope:
 - state-only Agent Session attach/resume by default
 - Codex launch-plan dry-run for an explicit process-resume path
 - HTTP/CLI resume through one Agent Session process service
+- HTTP/CLI Agent Session turns through the same service path
 - room SSE at `/api/room-events/stream?room_id=...&cursor=...`
 - room media manifests under `rooms/<room_id>/media/`
 - leave/kick/export persisted in room state
@@ -175,9 +176,20 @@ The primary CLI path is:
 
 ```bash
 assemble room resume <room-id> --agent <agent-id> --session <session-id> --provider codex --dry-run
+assemble room turn <room-id> --agent <agent-id> --session <session-id> "Answer from the room context."
 ```
 
 By default this attaches state only and reports `process_status: not_started`.
+Turn execution builds the ordered room packet, including media manifest and
+unsupported-media audit notes, then sends that packet to the configured Agent
+Session turn runner. The Codex command path appends `-` to
+`codex exec resume ...` and passes the JSON packet through stdin, capturing
+stdout/stderr instead of discarding them. Without an explicit runner, turn
+execution reports a safe not-started diagnostic instead of claiming the provider
+answered. When a runner does answer, the server appends `turn_started`,
+optional `thinking_delta` / `message_delta`, `message_final`, and
+`turn_finished` or `error` events to `events.jsonl`; the React room sees them
+through `/api/room-events/stream`.
 Dry-run returns the deterministic launch plan without starting a provider.
 Process start requires `start: true` and local operator or host authorization;
 public/untrusted sessions cannot start local provider commands. Media support

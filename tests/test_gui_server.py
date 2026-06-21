@@ -58,6 +58,7 @@ from agentsassemble.gui import (
 )
 from agentsassemble.gui_room_http import register_room_routes
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.agent_sessions import room_sse_frames_after_cursor
 from agentsassemble.meeting_events import append_live_event, read_live_events, write_live_state
 from agentsassemble.meeting_events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after
 from agentsassemble.meeting import run_demo_meeting
@@ -318,6 +319,101 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(resumed["process_status"], "resumed")
             self.assertEqual(calls[0][:3], ["codex", "exec", "resume"])
+
+    def test_agent_session_http_turn_requires_authorized_runner(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _dispatch_room_route(
+                root,
+                path="/api/agent-sessions/resume",
+                method="POST",
+                payload={
+                    "room_id": "session-room",
+                    "agent_id": "agent-1",
+                    "session_id": "session-1",
+                    "provider_kind": "codex_live_session",
+                },
+            )
+            denied = _dispatch_room_route(
+                root,
+                path="/api/agent-sessions/turn",
+                method="POST",
+                payload={
+                    "room_id": "session-room",
+                    "agent_id": "agent-1",
+                    "session_id": "session-1",
+                    "instruction": "Answer.",
+                },
+                loopback=False,
+            )
+
+            self.assertEqual(
+                denied.sent_error,
+                (HTTPStatus.FORBIDDEN, "Agent Session turn requires local operator or host authorization"),
+            )
+            self.assertNotIn("message_final", [event["type"] for event in RoomStore(root).read_events("session-room")])
+
+    def test_agent_session_http_turn_uses_fake_runner_and_appends_room_events(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        packets: list[dict[str, object]] = []
+
+        class Completed:
+            returncode = 0
+            stdout = "Answer from fake runner"
+            stderr = ""
+
+        def fake_turn_command_runner(command, prompt, timeout_seconds):
+            packets.append({"command": command, "prompt": prompt, "timeout_seconds": timeout_seconds})
+            return Completed()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = RoomStore(root)
+            store.create_room("session-room")
+            cursor = store.read_events("session-room")[-1]["id"]
+            store.append_event("session-room", "message_final", actor_id="human-1", content="Question")
+            _dispatch_room_route(
+                root,
+                path="/api/agent-sessions/resume",
+                method="POST",
+                payload={
+                    "room_id": "session-room",
+                    "agent_id": "agent-1",
+                    "session_id": "session-1",
+                    "provider_kind": "codex_live_session",
+                },
+            )
+
+            with patch(
+                "agentsassemble.gui_room_http._local_agent_session_turn_command_runner",
+                side_effect=fake_turn_command_runner,
+            ):
+                turned = _dispatch_room_route(
+                    root,
+                    path="/api/agent-sessions/turn",
+                    method="POST",
+                    payload={
+                        "room_id": "session-room",
+                        "agent_id": "agent-1",
+                        "session_id": "session-1",
+                        "instruction": "Answer now.",
+                    },
+                ).sent_json
+
+            self.assertEqual(turned["turn_status"], "finished")
+            self.assertEqual(packets[0]["command"][-1], "-")
+            self.assertIn('"current_turn_instruction": "Answer now."', packets[0]["prompt"])
+            event_types = [event["type"] for event in RoomStore(root).read_events("session-room")]
+            self.assertIn("turn_started", event_types)
+            self.assertIn("message_final", event_types)
+            self.assertIn("turn_finished", event_types)
+            frames = "".join(room_sse_frames_after_cursor(root, "session-room", cursor=cursor))
+            self.assertIn("event: turn_started", frames)
+            self.assertIn("event: message_final", frames)
+            self.assertIn("Answer from fake runner", frames)
 
     def test_room_events_stream_route_replays_missed_event_as_sse(self):
         with tempfile.TemporaryDirectory() as temp_dir:

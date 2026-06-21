@@ -598,15 +598,36 @@ export default function App() {
     };
   }, []);
   const roomEventToLobbyEvent = useCallback((event: RoomEvent): LobbyEvent | null => {
-    if (!event.id || !event.type.startsWith("message_")) return null;
+    if (!event.id) return null;
+    const visibleTurnEvents = new Set([
+      "turn_started",
+      "thinking_delta",
+      "message_delta",
+      "message_final",
+      "turn_finished",
+      "error",
+    ]);
+    if (!visibleTurnEvents.has(event.type)) return null;
+    const statusMessage =
+      event.type === "turn_started"
+        ? "Turn started."
+        : event.type === "turn_finished"
+          ? "Turn finished."
+          : event.type === "error"
+            ? "Turn failed."
+            : "";
     return {
       id: event.id,
       created_at: event.created_at,
       name: String(event.participant_id || event.actor_id || "Agent Session"),
       side: "other",
       kind: "message",
-      message: String(event.content || ""),
+      message: String(event.content || statusMessage),
       actor_id: String(event.participant_id || event.actor_id || ""),
+      flow_event_type: "agent_session_turn",
+      flow_action: event.type,
+      flow_meeting_id: event.room_id,
+      flow_id: String(event.turn_id || ""),
     };
   }, []);
   useEffect(() => {

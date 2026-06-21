@@ -152,6 +152,16 @@ and the server-side flow start path fails closed. The supported room behavior is
 ordered Agent Session turns. If informal chat is reintroduced later, official
 meeting turns must still be typed separately so a side comment cannot silently
 become evidence or a decision.
+
+An Agent Session turn is the active runtime path. The host calls
+`POST /api/agent-sessions/turn` or `assemble room turn`; the server builds the
+room turn packet from `events.jsonl`, room media manifests, unsupported-media
+audit notes, persisted session settings, the current instruction, and explicit
+non-goals. The packet is delivered to the configured Agent Session turn runner.
+The runner may expose `thinking_delta`, `message_delta`, `message_final`, or
+`error`; the server records those as room events bracketed by `turn_started`
+and `turn_finished` when successful. If no runner is configured, the turn
+returns a not-started diagnostic and does not invent a provider reply.
 Selected lobby text can enter the official record only through
 `assemble lobby promote`, which writes a `promoted_context` official event and
 the sanitized `lobby.promote_to_official` operation. Play Mode chatter is not

@@ -4,9 +4,12 @@ from pathlib import Path
 
 from agentsassemble.agent_sessions import (
     AgentSessionProcessService,
+    agent_session_command_turn_runner,
     build_agent_session_launch_plan,
+    build_agent_session_turn_command,
     build_room_turn_packet,
     resume_agent_session_payload,
+    run_agent_session_turn_payload,
     room_sse_frames_after_cursor,
     stream_room_sse_frames,
 )
@@ -137,6 +140,194 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertIn("event: message_final", frames[0])
         self.assertIn("data:", frames[0])
         self.assertEqual(heartbeat, ["event: heartbeat\ndata: {}\n\n"])
+
+    def test_fake_turn_runner_receives_packet_and_appends_turn_events(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        store.append_event("room-a", "message_final", actor_id="human-1", content="Please inspect the media.")
+        supported = store.attach_media(
+            "room-a",
+            filename="diagram.png",
+            content_type="image/png",
+            data=b"image",
+            supported=True,
+        )
+        unsupported = store.attach_media(
+            "room-a",
+            filename="notes.bin",
+            content_type="application/octet-stream",
+            data=b"binary",
+            supported=False,
+        )
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+            },
+        )
+        packets = []
+
+        def fake_runner(packet):
+            packets.append(packet)
+            yield {"type": "thinking_delta", "content": "checking context"}
+            yield {"type": "message_delta", "content": "draft"}
+            yield {"type": "message_final", "content": "Final answer"}
+
+        result = run_agent_session_turn_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "instruction": "Answer now.",
+            },
+            turn_runner=fake_runner,
+        )
+
+        self.assertEqual(result["turn_status"], "finished")
+        self.assertEqual(packets[0]["current_turn_instruction"], "Answer now.")
+        self.assertEqual([event["type"] for event in packets[0]["events"]][:4], [
+            "room_created",
+            "message_final",
+            "media_attached",
+            "unsupported_media",
+        ])
+        self.assertEqual([media["id"] for media in packets[0]["media_manifest"]], [supported["id"], unsupported["id"]])
+        self.assertIn("Unsupported media", packets[0]["media_notes"][0])
+        self.assertNotIn(str(Path.cwd()), str(packets[0]))
+        events = store.read_events("room-a")
+        event_types = [event["type"] for event in events]
+        self.assertIn("turn_started", event_types)
+        self.assertIn("thinking_delta", event_types)
+        self.assertIn("message_delta", event_types)
+        self.assertIn("message_final", event_types)
+        self.assertIn("turn_finished", event_types)
+        self.assertEqual(events[-2]["content"], "Final answer")
+
+    def test_resume_without_turn_and_turn_dry_run_do_not_append_message_final(self):
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+            },
+        )
+        store = RoomStore(self.output_root)
+        before = [event["type"] for event in store.read_events("room-a")]
+        self.assertNotIn("message_final", before)
+
+        result = run_agent_session_turn_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "instruction": "Dry run.",
+                "dry_run": True,
+            },
+            turn_runner=lambda packet: [{"type": "message_final", "content": "not appended"}],
+        )
+
+        self.assertEqual(result["turn_status"], "not_started")
+        self.assertNotIn("message_final", [event["type"] for event in store.read_events("room-a")])
+
+    def test_process_service_turn_uses_same_runtime_path(self):
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+            },
+        )
+        service = AgentSessionProcessService(
+            turn_runner=lambda packet: [{"type": "message_final", "content": "via service"}]
+        )
+
+        result = service.run_turn(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "instruction": "Use shared service.",
+            },
+        )
+
+        self.assertEqual(result["turn_status"], "finished")
+        self.assertEqual(RoomStore(self.output_root).read_events("room-a")[-2]["content"], "via service")
+
+    def test_command_turn_runner_passes_packet_through_stdin_and_captures_stdout(self):
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+                "sandbox": "read-only",
+            },
+        )
+        calls = []
+
+        class Completed:
+            returncode = 0
+            stdout = "command answer"
+            stderr = ""
+
+        def fake_command_runner(command, prompt, timeout_seconds):
+            calls.append((command, prompt, timeout_seconds))
+            return Completed()
+
+        result = run_agent_session_turn_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "instruction": "Use command.",
+                "timeout_seconds": 12,
+            },
+            turn_command_runner=fake_command_runner,
+        )
+
+        self.assertEqual(result["turn_status"], "finished")
+        command, prompt, timeout_seconds = calls[0]
+        self.assertEqual(command[-1], "-")
+        self.assertIn("codex", command[0])
+        self.assertIn('"current_turn_instruction": "Use command."', prompt)
+        self.assertEqual(timeout_seconds, 12)
+        self.assertEqual(RoomStore(self.output_root).read_events("room-a")[-2]["content"], "command answer")
+
+    def test_command_turn_runner_reports_nonzero_without_final_message(self):
+        session = {
+            "provider_kind": "codex_live_session",
+            "session_id": "session-1",
+            "sandbox": "read-only",
+        }
+
+        class Completed:
+            returncode = 7
+            stdout = "ignored"
+            stderr = "safe stderr"
+
+        runner = agent_session_command_turn_runner(
+            session,
+            command_runner=lambda command, prompt, timeout_seconds: Completed(),
+        )
+
+        chunks = list(runner({"room_id": "room-a", "current_turn_instruction": "x"}))
+
+        self.assertEqual(chunks[0]["type"], "error")
+        self.assertIn("provider command exited 7", str(chunks[0]["diagnostics"]))
+        self.assertIn("safe stderr", str(chunks[0]["diagnostics"]))
+        self.assertEqual(build_agent_session_turn_command(session)[-1], "-")
 
     def test_session_settings_flow_to_supported_command_or_diagnostics(self):
         codex = build_agent_session_launch_plan(

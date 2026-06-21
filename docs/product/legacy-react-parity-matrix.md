@@ -104,6 +104,7 @@ surface rather than silently counted as React parity.
 | `/api/rooms/state` | GET | exact | `-` | no | RoomStore state projection endpoint; not wrapped by React preview yet. |
 | `/api/rooms/close` | POST | exact | `-` | no | RoomStore close endpoint; not wrapped by React preview yet. |
 | `/api/agent-sessions/resume` | POST | exact | `resumeAgentSession()` | yes | React member detail panel attaches canonical Agent Session state and reports process status separately; process launch remains explicit. |
+| `/api/agent-sessions/turn` | POST | exact | `-` | no | Host/operator Agent Session turn execution endpoint; active room results are consumed through RoomStore SSE rather than a direct React command wrapper. |
 | `/api/live-agent-discovery` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-flow` | GET | exact | `fetchLiveAgentFlow()` | yes | React Play Mode status surface. |
 | `/api/live-agent-flow/start` | POST | exact | `startFlow()` | yes | React Play Mode start control; does not start providers. |
