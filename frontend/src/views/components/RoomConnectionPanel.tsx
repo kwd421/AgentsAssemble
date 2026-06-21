@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Bot, Copy, Gamepad2, Plus, Square, Zap } from "lucide-react";
 import {
+  runAgentSessionTurn,
   startFlow,
   startMafiaGame,
   stopFlow,
@@ -67,6 +68,7 @@ type RoomConnectionPanelProps = {
   channelNotifications?: Record<string, { notifications: ChannelNotificationSetting; lastReadAt?: string }>;
   processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
+  onSessionTurnComplete?: () => void;
   quotaViewer?: AgentQuotaVisibilityViewer;
   onStartAddAgent?: () => void;
   memberSearchQuery?: string;
@@ -138,6 +140,7 @@ export default function RoomConnectionPanel({
   channelNotifications,
   processGroups = [],
   onSessionActionComplete,
+  onSessionTurnComplete,
   quotaViewer,
   onStartAddAgent,
   memberSearchQuery,
@@ -149,9 +152,20 @@ export default function RoomConnectionPanel({
   const [selectedActivityId, setSelectedActivityId] = useState<PlayActivityId>("conversation");
   const [busy, setBusy] = useState(false);
   const [playError, setPlayError] = useState("");
+  const [turnAgentId, setTurnAgentId] = useState("");
+  const [turnInstruction, setTurnInstruction] = useState("");
+  const [turnDryRun, setTurnDryRun] = useState(false);
+  const [turnStatus, setTurnStatus] = useState("");
   const isFlowRunning = flow.status === "running";
   const conversationFlowDisabled = selectedActivityId === "conversation";
   const readyAgents = agents.filter((agent) => isActivePresence(agent.status));
+  const callableAgents = agents.length
+    ? agents
+    : members.filter((member) => member.role === "agent" || member.participant_type !== "human").map((member) => ({
+        agent_id: member.participant_id,
+        display_name: member.display_name || member.participant_id,
+        session_id: member.participant_id,
+      } as LiveAgent));
   const selectedActivity =
     PLAY_ACTIVITIES.find((activity) => activity.id === selectedActivityId) || PLAY_ACTIVITIES[0];
 
@@ -229,6 +243,42 @@ export default function RoomConnectionPanel({
     }
   }
 
+  async function handleCallAgentSessionTurn() {
+    const agentId = turnAgentId || callableAgents[0]?.agent_id || "";
+    if (!room.meetingId.trim() || !agentId || !turnInstruction.trim()) {
+      setPlayError("방, 에이전트, 지시문이 필요합니다.");
+      return;
+    }
+    const agent = callableAgents.find((item) => item.agent_id === agentId);
+    setBusy(true);
+    setPlayError("");
+    setTurnStatus("");
+    try {
+      const result = await runAgentSessionTurn({
+        roomId: room.meetingId.trim(),
+        agentId,
+        sessionId: agent?.session_id || agentId,
+        instruction: turnInstruction.trim(),
+        dryRun: turnDryRun,
+      });
+      const packet = result.packet || {};
+      const media = Array.isArray(packet.media_manifest) ? packet.media_manifest as Array<Record<string, unknown>> : [];
+      const supported = media.filter((item) => item.supported).length;
+      const unsupported = media.length - supported;
+      const warning = unsupported > 0
+        ? " Unsupported media is listed for audit only; do not claim you viewed unsupported files."
+        : "";
+      setTurnStatus(
+        `turn ${result.turn_status || result.status} · media ${supported} supported / ${unsupported} unsupported.${warning}`
+      );
+      onSessionTurnComplete?.();
+    } catch (errorValue) {
+      setPlayError(playErrorMessage(errorValue, "Agent Session turn 실패"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="dc-room-connection-panel">
       {!guestLocked && onStartAddAgent && (
@@ -249,6 +299,45 @@ export default function RoomConnectionPanel({
             </span>
           </div>
           {playError && <p className="dc-room-play-error preserve-words">{playError}</p>}
+          <div className="dc-room-play-activity-list" aria-label="Agent Session 호출">
+            <select
+              value={turnAgentId || callableAgents[0]?.agent_id || ""}
+              onChange={(event) => setTurnAgentId(event.target.value)}
+              className="dc-room-play-select"
+              aria-label="Agent Session 참가자"
+            >
+              {callableAgents.map((agent) => (
+                <option key={agent.agent_id} value={agent.agent_id}>
+                  {agent.display_name || agent.agent_id}
+                </option>
+              ))}
+            </select>
+            <textarea
+              className="dc-room-play-select min-h-[72px] resize-y"
+              value={turnInstruction}
+              onChange={(event) => setTurnInstruction(event.target.value)}
+              placeholder="이 방의 이벤트 스트림을 보고 답하세요."
+              aria-label="Agent Session turn instruction"
+            />
+            <label className="flex items-center gap-2 text-[11px] font-bold text-text-muted">
+              <input
+                type="checkbox"
+                checked={turnDryRun}
+                onChange={(event) => setTurnDryRun(event.target.checked)}
+              />
+              dry-run
+            </label>
+            <button
+              type="button"
+              onClick={handleCallAgentSessionTurn}
+              disabled={busy || callableAgents.length === 0 || !turnInstruction.trim()}
+              className="dc-room-play-primary"
+            >
+              <Bot size={15} />
+              호출
+            </button>
+          </div>
+          {turnStatus && <p className="dc-room-connection-note preserve-words">{turnStatus}</p>}
           {isFlowRunning ? (
             <div className="dc-room-play-running">
               <span className="min-w-0 truncate text-text-secondary preserve-words">

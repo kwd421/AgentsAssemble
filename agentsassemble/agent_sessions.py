@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import select
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Callable, Iterable
 from uuid import uuid4
@@ -13,6 +15,7 @@ CommandRunner = Callable[[list[str]], dict[str, object] | subprocess.CompletedPr
 AgentTurnChunk = dict[str, object]
 AgentTurnRunner = Callable[[dict[str, object]], Iterable[AgentTurnChunk]]
 AgentTurnCommandRunner = Callable[[list[str], str, float], subprocess.CompletedProcess[str]]
+AgentTurnCommandStreamer = Callable[[list[str], str, float], Iterable[AgentTurnChunk]]
 DEFAULT_AGENT_TURN_TIMEOUT_SECONDS = 600.0
 
 
@@ -99,10 +102,12 @@ class AgentSessionProcessService:
         command_runner: CommandRunner | None = None,
         turn_runner: AgentTurnRunner | None = None,
         turn_command_runner: AgentTurnCommandRunner | None = None,
+        turn_command_streamer: AgentTurnCommandStreamer | None = None,
     ) -> None:
         self.command_runner = command_runner
         self.turn_runner = turn_runner
         self.turn_command_runner = turn_command_runner
+        self.turn_command_streamer = turn_command_streamer
 
     def resume(
         self,
@@ -131,6 +136,7 @@ class AgentSessionProcessService:
             payload,
             turn_runner=self.turn_runner,
             turn_command_runner=self.turn_command_runner,
+            turn_command_streamer=self.turn_command_streamer,
         )
 
 
@@ -140,6 +146,7 @@ def run_agent_session_turn_payload(
     *,
     turn_runner: AgentTurnRunner | None = None,
     turn_command_runner: AgentTurnCommandRunner | None = None,
+    turn_command_streamer: AgentTurnCommandStreamer | None = None,
 ) -> dict[str, object]:
     store = RoomStore(output_root)
     room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
@@ -184,11 +191,23 @@ def run_agent_session_turn_payload(
                 }
             ],
         }
+    runner_kind = "fake" if turn_runner is not None else ""
+    streaming = False
+    timeout_seconds = _agent_turn_timeout_seconds(payload.get("timeout_seconds"))
+    if turn_runner is None and turn_command_streamer is not None:
+        runner_kind = "streaming_command"
+        streaming = True
+        turn_runner = agent_session_streaming_command_turn_runner(
+            session,
+            command_streamer=turn_command_streamer,
+            timeout_seconds=timeout_seconds,
+        )
     if turn_runner is None and turn_command_runner is not None:
+        runner_kind = "final_command"
         turn_runner = agent_session_command_turn_runner(
             session,
             command_runner=turn_command_runner,
-            timeout_seconds=_agent_turn_timeout_seconds(payload.get("timeout_seconds")),
+            timeout_seconds=timeout_seconds,
         )
     if turn_runner is None:
         return {
@@ -205,6 +224,11 @@ def run_agent_session_turn_payload(
                 }
             ],
         }
+    runtime_diagnostics = [
+        {"setting": "runner_kind", "status": runner_kind or "unknown", "message": runner_kind or "custom"},
+        {"setting": "streaming", "status": str(bool(streaming)).lower(), "message": str(bool(streaming)).lower()},
+        {"setting": "timeout_seconds", "status": "configured", "message": f"{timeout_seconds:g}"},
+    ]
 
     appended: list[dict[str, object]] = [
         store.append_event(
@@ -214,6 +238,7 @@ def run_agent_session_turn_payload(
             session_id=session_id,
             provider_kind=provider_kind,
             turn_id=turn_id,
+            diagnostics=runtime_diagnostics,
         )
     ]
     try:
@@ -244,7 +269,7 @@ def run_agent_session_turn_payload(
                     "turn_id": turn_id,
                     "packet": packet,
                     "events": appended,
-                    "diagnostics": diagnostics,
+                    "diagnostics": [*runtime_diagnostics, *diagnostics],
                 }
     except Exception as error:  # pragma: no cover - defensive for injected runners
         appended.append(
@@ -258,7 +283,14 @@ def run_agent_session_turn_payload(
                 diagnostics=[{"setting": "turn_runner", "status": "failed", "message": str(error)}],
             )
         )
-        return {"status": "error", "turn_status": "error", "turn_id": turn_id, "packet": packet, "events": appended}
+        return {
+            "status": "error",
+            "turn_status": "error",
+            "turn_id": turn_id,
+            "packet": packet,
+            "events": appended,
+            "diagnostics": runtime_diagnostics,
+        }
     appended.append(
         store.append_event(
             room_id,
@@ -269,7 +301,42 @@ def run_agent_session_turn_payload(
             turn_id=turn_id,
         )
     )
-    return {"status": "finished", "turn_status": "finished", "turn_id": turn_id, "packet": packet, "events": appended}
+    return {
+        "status": "finished",
+        "turn_status": "finished",
+        "turn_id": turn_id,
+        "packet": packet,
+        "events": appended,
+        "diagnostics": runtime_diagnostics,
+    }
+
+
+def agent_session_streaming_command_turn_runner(
+    session: dict[str, object],
+    *,
+    command_streamer: AgentTurnCommandStreamer | None = None,
+    timeout_seconds: float = DEFAULT_AGENT_TURN_TIMEOUT_SECONDS,
+) -> AgentTurnRunner:
+    command = build_agent_session_turn_command(session)
+    streamer = command_streamer or _default_agent_turn_command_streamer
+
+    def run(packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
+        if not command:
+            yield {
+                "type": "error",
+                "diagnostics": [
+                    {
+                        "setting": "turn_command",
+                        "status": "unsupported",
+                        "message": "This Agent Session provider has no verified turn command mapping yet.",
+                    }
+                ],
+            }
+            return
+        prompt = _agent_turn_prompt(packet)
+        yield from streamer(command, prompt, float(timeout_seconds))
+
+    return run
 
 
 def agent_session_command_turn_runner(
@@ -381,6 +448,98 @@ def _default_agent_turn_command_runner(
     )
 
 
+def _default_agent_turn_command_streamer(
+    command: list[str],
+    prompt: str,
+    timeout_seconds: float,
+) -> Iterable[AgentTurnChunk]:
+    process = subprocess.Popen(
+        [str(part) for part in command],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+    assert process.stdin is not None
+    assert process.stdout is not None
+    assert process.stderr is not None
+    process.stdin.write(prompt)
+    process.stdin.close()
+    started_at = time.monotonic()
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+    streams = [process.stdout, process.stderr]
+    while streams:
+        if time.monotonic() - started_at > timeout_seconds:
+            process.kill()
+            yield {
+                "type": "error",
+                "diagnostics": [
+                    {
+                        "setting": "turn_command",
+                        "status": "timeout",
+                        "message": f"provider command timed out after {timeout_seconds:g}s",
+                    }
+                ],
+            }
+            return
+        readable, _, _ = select.select(streams, [], [], 0.1)
+        if not readable and process.poll() is not None:
+            readable = list(streams)
+        for stream in readable:
+            line = stream.readline()
+            if line == "":
+                streams.remove(stream)
+                continue
+            if stream is process.stderr:
+                stderr_parts.append(line)
+                chunk = _stderr_progress_chunk(line)
+                if chunk is not None:
+                    yield chunk
+                continue
+            stdout_parts.append(line)
+            yield {"type": "message_delta", "content": line}
+    returncode = process.wait(timeout=1)
+    if returncode != 0:
+        yield {
+            "type": "error",
+            "diagnostics": [
+                {
+                    "setting": "turn_command",
+                    "status": "failed",
+                    "message": f"provider command exited {returncode}",
+                },
+                *_stderr_diagnostics("".join(stderr_parts)),
+            ],
+        }
+        return
+    message = clean_lobby_text("".join(stdout_parts), limit=8000)
+    if message:
+        yield {"type": "message_final", "content": message}
+        return
+    yield {
+        "type": "error",
+        "diagnostics": [
+            {
+                "setting": "turn_command",
+                "status": "empty",
+                "message": "provider command completed without a room-visible reply",
+            }
+        ],
+    }
+
+
+def _stderr_progress_chunk(line: str) -> AgentTurnChunk | None:
+    safe = clean_lobby_text(line, limit=1000)
+    lower = safe.lower()
+    if not safe:
+        return None
+    if lower.startswith(("progress:", "thinking:", "status:")):
+        return {"type": "thinking_delta", "content": safe.split(":", 1)[1].strip() or safe}
+    return None
+
+
 def _stderr_diagnostics(stderr: str | None) -> list[dict[str, str]]:
     safe = clean_lobby_text(stderr, limit=1000)
     if not safe:
@@ -488,16 +647,17 @@ def build_agent_session_launch_plan(session: dict[str, object]) -> dict[str, obj
     session_id = clean_lobby_text(session.get("session_id"), limit=128)
     if provider_kind == "codex_live_session":
         # Deterministic Codex CLI shape, verified in tests with a fake runner:
-        # codex exec resume --model <model> -c model_reasoning_effort="<effort>"
-        #   --sandbox read-only --ignore-rules --skip-git-repo-check <session_id>
+        # codex exec --model <model> -c model_reasoning_effort="<effort>"
+        #   --sandbox read-only --ignore-rules --skip-git-repo-check resume <session_id>
         # `--ignore-rules` prevents repo rules from mutating this read-only
         # launch path. Codex owns actual sandbox enforcement.
-        command = ["codex", "exec", "resume"]
+        command = ["codex", "exec"]
         if model:
             command.extend(["--model", model])
         if effort:
             command.extend(["-c", f'model_reasoning_effort="{effort}"'])
         command.extend(["--sandbox", sandbox, "--ignore-rules", "--skip-git-repo-check"])
+        command.append("resume")
         if session_id:
             command.append(session_id)
         return {

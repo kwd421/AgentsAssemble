@@ -128,6 +128,16 @@ def _local_agent_session_turn_command_runner(
     )
 
 
+def _local_agent_session_turn_command_streamer(
+    command: list[str],
+    prompt: str,
+    timeout_seconds: float,
+):
+    from agentsassemble.agent_sessions import _default_agent_turn_command_streamer
+
+    yield from _default_agent_turn_command_streamer(command, prompt, timeout_seconds)
+
+
 def register_room_routes(router: Router) -> None:
     """Attach the room-domain routes to the server's route table."""
 
@@ -380,7 +390,12 @@ def register_room_routes(router: Router) -> None:
                 run_agent_session_turn_payload(
                     ctx.deps.output_root,
                     payload,
-                    turn_command_runner=None if bool(payload.get("dry_run")) else _local_agent_session_turn_command_runner,
+                    turn_command_runner=None
+                    if bool(payload.get("dry_run")) or payload.get("stream") is not False
+                    else _local_agent_session_turn_command_runner,
+                    turn_command_streamer=None
+                    if bool(payload.get("dry_run")) or payload.get("stream") is False
+                    else _local_agent_session_turn_command_streamer,
                 )
             )
         except ValueError as error:

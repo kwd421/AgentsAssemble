@@ -429,6 +429,10 @@ export interface AgentSessionActionResponse {
   status: string;
   state_status?: string;
   process_status?: "not_started" | "launched" | "resumed" | "unsupported" | "failed" | string;
+  turn_status?: "not_started" | "finished" | "error" | string;
+  turn_id?: string;
+  packet?: Record<string, unknown>;
+  events?: RoomEvent[];
   launch_plan?: Record<string, unknown>;
   diagnostics?: Array<Record<string, unknown>>;
   room?: ServerRoom | Record<string, unknown>;
@@ -1294,6 +1298,28 @@ export function resumeAgentSession({
     sandbox: sandbox || "",
     permissions: permissions || "",
     start,
+    dry_run: dryRun,
+  });
+}
+
+export function runAgentSessionTurn({
+  roomId,
+  agentId,
+  sessionId,
+  instruction,
+  dryRun = false,
+}: {
+  roomId: string;
+  agentId: string;
+  sessionId?: string;
+  instruction: string;
+  dryRun?: boolean;
+}) {
+  return postJson<AgentSessionActionResponse>("/api/agent-sessions/turn", {
+    room_id: roomId,
+    agent_id: agentId,
+    session_id: sessionId || agentId,
+    instruction,
     dry_run: dryRun,
   });
 }

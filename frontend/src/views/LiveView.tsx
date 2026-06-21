@@ -368,6 +368,7 @@ export default function LiveView({
   mafiaGame,
   refreshMafia,
   streamError,
+  agentSessionProgress,
   membersOpen,
   onToggleMembers,
   headerActions,
@@ -382,6 +383,7 @@ export default function LiveView({
   mafiaGame: MafiaGame | null;
   refreshMafia: () => void;
   streamError: Error | null;
+  agentSessionProgress?: { participantId: string; displayName: string; message: string; turnId: string } | null;
   membersOpen?: boolean;
   onToggleMembers?: () => void;
   headerActions?: ChannelHeaderActions;
@@ -526,7 +528,17 @@ export default function LiveView({
           </span>
         )}
         {streamError && <span className="text-[11px] font-bold text-idle">연결 재시도 중</span>}
+        {agentSessionProgress && (
+          <span className="text-[11px] font-bold text-accent preserve-words">
+            {agentSessionProgress.displayName} thinking/progress
+          </span>
+        )}
       </ChannelHeader>
+      {agentSessionProgress && (
+        <div className="border-b border-border-subtle px-4 py-2 text-[12px] text-text-muted preserve-words">
+          {agentSessionProgress.message}
+        </div>
+      )}
 
       <div
         ref={scrollRef}

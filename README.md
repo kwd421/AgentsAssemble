@@ -168,6 +168,7 @@ Current implemented scope:
 - Codex launch-plan dry-run for an explicit process-resume path
 - HTTP/CLI resume through one Agent Session process service
 - HTTP/CLI Agent Session turns through the same service path
+- streaming Agent Session command output with final-output fallback
 - room SSE at `/api/room-events/stream?room_id=...&cursor=...`
 - room media manifests under `rooms/<room_id>/media/`
 - leave/kick/export persisted in room state
@@ -184,12 +185,18 @@ Turn execution builds the ordered room packet, including media manifest and
 unsupported-media audit notes, then sends that packet to the configured Agent
 Session turn runner. The Codex command path appends `-` to
 `codex exec resume ...` and passes the JSON packet through stdin, capturing
-stdout/stderr instead of discarding them. Without an explicit runner, turn
-execution reports a safe not-started diagnostic instead of claiming the provider
-answered. When a runner does answer, the server appends `turn_started`,
-optional `thinking_delta` / `message_delta`, `message_final`, and
-`turn_finished` or `error` events to `events.jsonl`; the React room sees them
-through `/api/room-events/stream`.
+stdout/stderr instead of discarding them. The live path uses a streaming
+command runner where available: incremental stdout becomes `message_delta`,
+conservative explicit stderr progress such as `progress:` can become
+`thinking_delta`, and the accumulated stdout becomes `message_final`. The final
+stdout runner remains available as a non-streaming fallback. Without an
+explicit runner, turn execution reports a safe not-started diagnostic instead
+of claiming the provider answered. When a runner does answer, the server
+appends `turn_started`, optional `thinking_delta` / `message_delta`,
+`message_final`, and `turn_finished` or `error` events to `events.jsonl`; the
+React room sees them through `/api/room-events/stream`. The room info panel can
+call an Agent Session turn by selecting an attached participant and entering one
+instruction; it does not expose provider, runner, bridge, MCP, or flow choices.
 Dry-run returns the deterministic launch plan without starting a provider.
 Process start requires `start: true` and local operator or host authorization;
 public/untrusted sessions cannot start local provider commands. Media support

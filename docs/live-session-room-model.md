@@ -158,10 +158,15 @@ An Agent Session turn is the active runtime path. The host calls
 room turn packet from `events.jsonl`, room media manifests, unsupported-media
 audit notes, persisted session settings, the current instruction, and explicit
 non-goals. The packet is delivered to the configured Agent Session turn runner.
-The runner may expose `thinking_delta`, `message_delta`, `message_final`, or
-`error`; the server records those as room events bracketed by `turn_started`
-and `turn_finished` when successful. If no runner is configured, the turn
-returns a not-started diagnostic and does not invent a provider reply.
+The live command runner streams stdout/stderr when possible: plain stdout is
+recorded incrementally as `message_delta` and finally as `message_final`; only
+explicit, conservative progress lines such as `progress:` or `thinking:` may
+become `thinking_delta`, and they are displayed as progress rather than final
+assistant speech. The final stdout runner remains a fallback for environments
+without streaming. The server records turn output as room events bracketed by
+`turn_started` and `turn_finished` when successful, or `error` on failure. If
+no runner is configured, the turn returns a not-started diagnostic and does not
+invent a provider reply.
 Selected lobby text can enter the official record only through
 `assemble lobby promote`, which writes a `promoted_context` official event and
 the sanitized `lobby.promote_to_official` operation. Play Mode chatter is not

@@ -185,6 +185,13 @@ type ChannelMenuState = {
   y: number;
 } | null;
 
+type AgentSessionProgress = {
+  participantId: string;
+  displayName: string;
+  message: string;
+  turnId: string;
+};
+
 type SidebarResizeState = {
   startWidth: number;
   startX: number;
@@ -581,6 +588,8 @@ export default function App() {
   const lobbyStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
   const flowStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
   const roomEventCursorRef = useRef("");
+  const [roomEventsByRoom, setRoomEventsByRoom] = useState<Record<string, RoomEvent[]>>({});
+  const [agentSessionProgressByRoom, setAgentSessionProgressByRoom] = useState<Record<string, AgentSessionProgress | null>>({});
   const bindLobbyStream = useCallback((receive: (events: LobbyEvent[]) => void) => {
     lobbyStreamRef.current = receive;
     return () => {
@@ -616,12 +625,13 @@ export default function App() {
           : event.type === "error"
             ? "Turn failed."
             : "";
+    const isFinalSpeech = event.type === "message_delta" || event.type === "message_final";
     return {
       id: event.id,
       created_at: event.created_at,
       name: String(event.participant_id || event.actor_id || "Agent Session"),
       side: "other",
-      kind: "message",
+      kind: isFinalSpeech ? "message" : "system",
       message: String(event.content || statusMessage),
       actor_id: String(event.participant_id || event.actor_id || ""),
       flow_event_type: "agent_session_turn",
@@ -629,6 +639,21 @@ export default function App() {
       flow_meeting_id: event.room_id,
       flow_id: String(event.turn_id || ""),
     };
+  }, []);
+  const roomEventProgress = useCallback((event: RoomEvent): AgentSessionProgress | null | undefined => {
+    if (event.type === "thinking_delta") {
+      const participantId = String(event.participant_id || event.actor_id || "");
+      return {
+        participantId,
+        displayName: participantId || "Agent Session",
+        message: String(event.content || "Thinking..."),
+        turnId: String(event.turn_id || ""),
+      };
+    }
+    if (event.type === "turn_finished" || event.type === "message_final" || event.type === "error") {
+      return null;
+    }
+    return undefined;
   }, []);
   useEffect(() => {
     const meetingId = activeRoom.meetingId || "";
@@ -1015,6 +1040,11 @@ export default function App() {
   const mafiaGame = mafiaData?.game ?? null;
   const scopedMafiaGame = mafiaGame?.game_id === activeRoom.meetingId ? mafiaGame : null;
   const activeRoomFlowVisible = Boolean(flow.meeting_id && flow.meeting_id === activeRoom.meetingId);
+  const activeRoomEvents = roomEventsByRoom[activeRoom.meetingId || ""] || [];
+  const activeRoomTimelineEvents = activeRoomEvents
+    .map(roomEventToLobbyEvent)
+    .filter(Boolean) as LobbyEvent[];
+  const activeAgentSessionProgress = agentSessionProgressByRoom[activeRoom.meetingId || ""] || null;
   const scopedFlow = activeRoomFlowVisible
     ? flow
     : {
@@ -1022,8 +1052,14 @@ export default function App() {
         meeting_id: activeRoom.meetingId,
         topic: activeRoom.topic,
       };
-  const scopedLiveTimelineEvents = activeRoomFlowVisible ? liveTimelineEvents : [];
-  const scopedTimelineSource = activeRoomFlowVisible
+  const scopedLiveTimelineEvents = activeRoomTimelineEvents.length
+    ? activeRoomTimelineEvents
+    : activeRoomFlowVisible
+      ? liveTimelineEvents
+      : [];
+  const scopedTimelineSource = activeRoomTimelineEvents.length
+    ? "flow"
+    : activeRoomFlowVisible
     ? flowEvents.length
       ? "flow"
       : "official"
@@ -2070,6 +2106,15 @@ export default function App() {
       roomEventCursorRef.current,
       (event) => {
         roomEventCursorRef.current = event.id;
+        setRoomEventsByRoom((previous) => {
+          const existing = previous[roomId] || [];
+          if (existing.some((item) => item.id === event.id)) return previous;
+          return { ...previous, [roomId]: [...existing, event] };
+        });
+        const progress = roomEventProgress(event);
+        if (progress !== undefined) {
+          setAgentSessionProgressByRoom((previous) => ({ ...previous, [roomId]: progress }));
+        }
         const lobbyEvent = roomEventToLobbyEvent(event);
         if (!lobbyEvent) {
           refreshMembers();
@@ -2083,7 +2128,7 @@ export default function App() {
         // The room socket and HTTP refresh path remain available as fallback.
       }
     );
-  }, [activeRoom.meetingId, refreshMembers, roomEventToLobbyEvent]);
+  }, [activeRoom.meetingId, refreshMembers, roomEventProgress, roomEventToLobbyEvent]);
 
   function updateRoom(roomId: string, updates: Partial<RoomDockItem>) {
     setRooms((previous) =>
@@ -2677,6 +2722,7 @@ export default function App() {
             mafiaGame={scopedMafiaGame}
             refreshMafia={refreshMafia}
             streamError={activeRoomFlowVisible ? meetingStreamError : null}
+            agentSessionProgress={activeAgentSessionProgress}
             bindFlowLobbyStream={bindFlowLobbyStream}
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
@@ -2824,6 +2870,7 @@ export default function App() {
                 onSessionActionComplete={refreshSessionAndMembers}
                 quotaViewer={quotaViewer}
                 onStartAddAgent={openAgentCreate}
+                onSessionTurnComplete={refreshMembers}
                 memberSearchQuery={rightPanelSearchQuery}
                 onMemberSearchQueryChange={setRightPanelSearchQuery}
               />

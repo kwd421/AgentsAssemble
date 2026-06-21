@@ -318,7 +318,8 @@ class GuiServerTests(unittest.TestCase):
                 ).sent_json
 
             self.assertEqual(resumed["process_status"], "resumed")
-            self.assertEqual(calls[0][:3], ["codex", "exec", "resume"])
+            self.assertEqual(calls[0][:2], ["codex", "exec"])
+            self.assertLess(calls[0].index("--sandbox"), calls[0].index("resume"))
 
     def test_agent_session_http_turn_requires_authorized_runner(self):
         reset_room_invite_state()
@@ -360,14 +361,10 @@ class GuiServerTests(unittest.TestCase):
         reset_room_users_state()
         packets: list[dict[str, object]] = []
 
-        class Completed:
-            returncode = 0
-            stdout = "Answer from fake runner"
-            stderr = ""
-
-        def fake_turn_command_runner(command, prompt, timeout_seconds):
+        def fake_turn_command_streamer(command, prompt, timeout_seconds):
             packets.append({"command": command, "prompt": prompt, "timeout_seconds": timeout_seconds})
-            return Completed()
+            yield {"type": "message_delta", "content": "Answer "}
+            yield {"type": "message_final", "content": "Answer from fake runner"}
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -388,8 +385,8 @@ class GuiServerTests(unittest.TestCase):
             )
 
             with patch(
-                "agentsassemble.gui_room_http._local_agent_session_turn_command_runner",
-                side_effect=fake_turn_command_runner,
+                "agentsassemble.gui_room_http._local_agent_session_turn_command_streamer",
+                side_effect=fake_turn_command_streamer,
             ):
                 turned = _dispatch_room_route(
                     root,
@@ -408,6 +405,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertIn('"current_turn_instruction": "Answer now."', packets[0]["prompt"])
             event_types = [event["type"] for event in RoomStore(root).read_events("session-room")]
             self.assertIn("turn_started", event_types)
+            self.assertIn("message_delta", event_types)
             self.assertIn("message_final", event_types)
             self.assertIn("turn_finished", event_types)
             frames = "".join(room_sse_frames_after_cursor(root, "session-room", cursor=cursor))

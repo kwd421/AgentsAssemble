@@ -5,6 +5,7 @@ from pathlib import Path
 from agentsassemble.agent_sessions import (
     AgentSessionProcessService,
     agent_session_command_turn_runner,
+    agent_session_streaming_command_turn_runner,
     build_agent_session_launch_plan,
     build_agent_session_turn_command,
     build_room_turn_packet,
@@ -329,6 +330,117 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertIn("safe stderr", str(chunks[0]["diagnostics"]))
         self.assertEqual(build_agent_session_turn_command(session)[-1], "-")
 
+    def test_streaming_command_runner_appends_message_delta_before_final(self):
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+            },
+        )
+
+        def fake_streamer(command, prompt, timeout_seconds):
+            self.assertEqual(command[-1], "-")
+            self.assertIn('"current_turn_instruction": "Stream."', prompt)
+            yield {"type": "message_delta", "content": "hello "}
+            yield {"type": "message_delta", "content": "world"}
+            yield {"type": "message_final", "content": "hello world"}
+
+        result = run_agent_session_turn_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "instruction": "Stream.",
+            },
+            turn_command_streamer=fake_streamer,
+        )
+
+        events = RoomStore(self.output_root).read_events("room-a")
+        self.assertEqual(result["turn_status"], "finished")
+        self.assertIn("streaming_command", str(result["diagnostics"]))
+        self.assertEqual([event["type"] for event in events][-4:], [
+            "message_delta",
+            "message_delta",
+            "message_final",
+            "turn_finished",
+        ])
+
+    def test_streaming_command_runner_yields_safe_thinking_delta(self):
+        session = {"provider_kind": "codex_live_session", "session_id": "session-1"}
+        runner = agent_session_streaming_command_turn_runner(
+            session,
+            command_streamer=lambda command, prompt, timeout_seconds: [
+                {"type": "thinking_delta", "content": "reading room events"},
+                {"type": "message_final", "content": "done"},
+            ],
+        )
+
+        chunks = list(runner({"room_id": "room-a", "current_turn_instruction": "x"}))
+
+        self.assertEqual(chunks[0]["type"], "thinking_delta")
+        self.assertEqual(chunks[1]["type"], "message_final")
+
+    def test_streaming_command_error_does_not_append_message_final(self):
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+            },
+        )
+
+        result = run_agent_session_turn_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "instruction": "Fail.",
+            },
+            turn_command_streamer=lambda command, prompt, timeout_seconds: [
+                {"type": "error", "diagnostics": [{"setting": "turn_command", "status": "failed", "message": "provider command exited 7"}]}
+            ],
+        )
+
+        event_types = [event["type"] for event in RoomStore(self.output_root).read_events("room-a")]
+        self.assertEqual(result["turn_status"], "error")
+        self.assertIn("error", event_types)
+        self.assertNotIn("turn_finished", event_types)
+        self.assertNotIn("message_final", event_types)
+
+    def test_streaming_timeout_produces_error_event(self):
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+            },
+        )
+
+        result = run_agent_session_turn_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "instruction": "Timeout.",
+            },
+            turn_command_streamer=lambda command, prompt, timeout_seconds: [
+                {"type": "error", "diagnostics": [{"setting": "turn_command", "status": "timeout", "message": "provider command timed out"}]}
+            ],
+        )
+
+        self.assertEqual(result["turn_status"], "error")
+        self.assertIn("timeout", str(result["diagnostics"]))
+
     def test_session_settings_flow_to_supported_command_or_diagnostics(self):
         codex = build_agent_session_launch_plan(
             {
@@ -412,9 +524,14 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         )
 
         self.assertEqual(dry_run["process_status"], "not_started")
-        self.assertEqual(dry_run["launch_plan"]["command"][:3], ["codex", "exec", "resume"])
+        self.assertEqual(dry_run["launch_plan"]["command"][:2], ["codex", "exec"])
+        self.assertLess(
+            dry_run["launch_plan"]["command"].index("--sandbox"),
+            dry_run["launch_plan"]["command"].index("resume"),
+        )
         self.assertEqual(launched["process_status"], "resumed")
-        self.assertEqual(calls[0][:3], ["codex", "exec", "resume"])
+        self.assertEqual(calls[0][:2], ["codex", "exec"])
+        self.assertLess(calls[0].index("--sandbox"), calls[0].index("resume"))
 
     def test_process_service_fake_runner_records_resumed(self):
         calls: list[list[str]] = []
@@ -433,7 +550,8 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         )
 
         self.assertEqual(result["process_status"], "resumed")
-        self.assertEqual(calls[0][:3], ["codex", "exec", "resume"])
+        self.assertEqual(calls[0][:2], ["codex", "exec"])
+        self.assertLess(calls[0].index("--sandbox"), calls[0].index("resume"))
 
     def test_new_session_without_provider_is_state_only_and_not_launchable(self):
         result = resume_agent_session_payload(
