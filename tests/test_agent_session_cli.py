@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 from io import StringIO
 
-from agentsassemble.cli import build_parser, run_room_command
+from agentsassemble.cli import build_parser, main, run_room_command
 
 
 class AgentSessionCliTests(unittest.TestCase):
@@ -20,6 +20,42 @@ class AgentSessionCliTests(unittest.TestCase):
         self.assertNotIn("mcp", help_text)
         self.assertNotIn("live-agent", help_text)
         self.assertNotIn("claude-bridge", help_text)
+        self.assertNotIn("sessions", help_text)
+
+    def test_mcp_serve_without_internal_flag_is_disabled(self):
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            exit_code = main(["mcp", "serve", "--profile", "participant"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("legacy/internal", stderr.getvalue())
+
+    def test_live_agent_flow_without_internal_flag_is_disabled_before_http(self):
+        stderr = StringIO()
+        with patch("sys.stderr", stderr), patch("agentsassemble.cli._request_json") as request_json:
+            exit_code = main(["live-agent", "flow", "--meeting-id", "m1", "--topic", "t"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("legacy/internal", stderr.getvalue())
+        request_json.assert_not_called()
+
+    def test_live_agent_session_resume_without_internal_flag_is_disabled(self):
+        stderr = StringIO()
+        with patch("sys.stderr", stderr), patch("agentsassemble.cli._request_json") as request_json:
+            exit_code = main(
+                [
+                    "live-agent",
+                    "resume-session",
+                    "--meeting-id",
+                    "m1",
+                    "--live-agent-config",
+                    "agents.json",
+                ]
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("legacy/internal", stderr.getvalue())
+        request_json.assert_not_called()
 
     def test_readme_quickstart_does_not_instruct_legacy_connection_choices(self):
         readme = Path("README.md").read_text(encoding="utf-8")

@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.agent_sessions import (
+    AgentSessionProcessService,
     build_agent_session_launch_plan,
     build_room_turn_packet,
     resume_agent_session_payload,
@@ -159,11 +160,13 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(codex["permission_enforcement"], "enforced")
+        self.assertEqual(codex["permission_enforcement"], "codex_readonly")
         self.assertIn("--model", codex["command"])
         self.assertIn("gpt-5.5", codex["command"])
         self.assertIn("--sandbox", codex["command"])
         self.assertIn("read-only", codex["command"])
+        self.assertEqual(codex["command"].count("--sandbox"), 1)
+        self.assertIn("--ignore-rules", codex["command"])
         self.assertIn('model_reasoning_effort="high"', codex["command"])
         self.assertEqual(unsupported["permission_enforcement"], "unsupported")
         self.assertTrue(unsupported["diagnostics"])
@@ -220,6 +223,25 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertEqual(dry_run["process_status"], "not_started")
         self.assertEqual(dry_run["launch_plan"]["command"][:3], ["codex", "exec", "resume"])
         self.assertEqual(launched["process_status"], "resumed")
+        self.assertEqual(calls[0][:3], ["codex", "exec", "resume"])
+
+    def test_process_service_fake_runner_records_resumed(self):
+        calls: list[list[str]] = []
+        result = resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+                "start": True,
+            },
+            process_service=AgentSessionProcessService(
+                command_runner=lambda command: calls.append(command) or {"returncode": 0}
+            ),
+        )
+
+        self.assertEqual(result["process_status"], "resumed")
         self.assertEqual(calls[0][:3], ["codex", "exec", "resume"])
 
     def test_new_session_without_provider_is_state_only_and_not_launchable(self):
@@ -281,6 +303,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertEqual(packet["media_manifest"][0]["path"], str(media_path))
         self.assertEqual(packet["media_manifest"][0]["size"], len(b"<svg></svg>"))
         self.assertFalse(packet["media_manifest"][0]["supported"])
+        self.assertIn("Unsupported media", packet["media_notes"][0])
         self.assertIn("unsupported_media", [event["type"] for event in store.read_events("room-a")])
         self.assertNotIn(str(Path.cwd()), str(packet))
 

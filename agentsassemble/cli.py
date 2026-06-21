@@ -141,6 +141,15 @@ MAX_READINESS_PROBE_AGENTS = 10
 SESSION_BOUND_PROBE_HTTP_WINDOWS = 25
 MAX_LIVE_AGENT_SEQUENCE_TURNS = 12
 MAX_LIVE_AGENT_ROUND_BATCH = 8
+LEGACY_LIVE_AGENT_RUNNABLE_COMMANDS = {
+    "flow",
+    "start-session",
+    "resume-session",
+    "restart-session",
+    "recover-session",
+    "ensure-session",
+    "run-group",
+}
 
 
 def parse_codex_timeout(value: str) -> int | None:
@@ -228,7 +237,7 @@ def _hide_subparser_from_help(subparsers: argparse._SubParsersAction, name: str)
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="assemble")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.metavar = "{demo,gui,frontend-info,lobby,release-health,providers,api-call,memory-capsule,persona,room,sessions}"
+    subparsers.metavar = "{demo,gui,frontend-info,lobby,release-health,providers,api-call,memory-capsule,persona,room}"
 
     demo = subparsers.add_parser("demo", help="Run the canned v0 council demo.")
     demo.add_argument("--adapter", choices=["mock", "codex", "codex-live"], default="mock")
@@ -417,6 +426,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     mcp = subparsers.add_parser("mcp", help=argparse.SUPPRESS)
     _hide_subparser_from_help(subparsers, "mcp")
+    mcp.add_argument("--legacy-internal", action="store_true", help=argparse.SUPPRESS)
     mcp_subparsers = mcp.add_subparsers(dest="mcp_command", required=True)
     mcp_serve = mcp_subparsers.add_parser(
         "serve",
@@ -441,6 +451,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     live_agent = subparsers.add_parser("live-agent", help=argparse.SUPPRESS)
     _hide_subparser_from_help(subparsers, "live-agent")
+    live_agent.add_argument("--legacy-internal", action="store_true", help=argparse.SUPPRESS)
     live_agent_subparsers = live_agent.add_subparsers(dest="live_agent_command", required=True)
 
     live_register = live_agent_subparsers.add_parser("register", parents=[live_server], help="Register a live agent.")
@@ -1667,6 +1678,8 @@ def build_parser() -> argparse.ArgumentParser:
     room_leave.add_argument("--json", action="store_true", dest="as_json")
 
     sessions = subparsers.add_parser("sessions", help="Inspect and invite Codex CLI live sessions.")
+    _hide_subparser_from_help(subparsers, "sessions")
+    sessions.add_argument("--legacy-internal", action="store_true", help=argparse.SUPPRESS)
     session_subparsers = sessions.add_subparsers(dest="sessions_command", required=True)
 
     session_list = session_subparsers.add_parser("list", help="List recent Codex CLI sessions.")
@@ -2131,6 +2144,9 @@ def run_memory_capsule_command(args: argparse.Namespace) -> int:
 
 
 def run_mcp_command(args: argparse.Namespace) -> int:
+    if not bool(getattr(args, "legacy_internal", False)):
+        print("MCP is a legacy/internal room adapter; use Agent Session room commands instead.", file=sys.stderr)
+        return 2
     try:
         if args.mcp_command == "serve":
             from agentsassemble.mcp_server import serve_mcp
@@ -2153,6 +2169,13 @@ def run_mcp_command(args: argparse.Namespace) -> int:
 
 
 def run_live_agent_command(args: argparse.Namespace) -> int:
+    if (
+        str(getattr(args, "live_agent_command", "")) in LEGACY_LIVE_AGENT_RUNNABLE_COMMANDS
+        and not bool(getattr(args, "legacy_internal", False))
+        and os.environ.get("AGENTSASSEMBLE_LEGACY_INTERNAL") != "1"
+    ):
+        print("live-agent commands are legacy/internal; use Agent Session room commands instead.", file=sys.stderr)
+        return 2
     try:
         if args.live_agent_command == "register":
             payload = {
@@ -7767,6 +7790,7 @@ def _self_service_process_env(config: ResidentAgentConfig) -> dict[str, str]:
             "AGENTSASSEMBLE_MAX_CHAIN_DEPTH": str(config.max_chain_depth),
             "AGENTSASSEMBLE_POLL_INTERVAL": str(config.poll_interval),
             "AGENTSASSEMBLE_HEARTBEAT_INTERVAL": str(config.heartbeat_interval),
+            "AGENTSASSEMBLE_LEGACY_INTERNAL": "1",
         }
     )
     env.update(command_env)
@@ -7774,7 +7798,7 @@ def _self_service_process_env(config: ResidentAgentConfig) -> dict[str, str]:
 
 
 def _self_service_room_command_env(config: ResidentAgentConfig) -> dict[str, str]:
-    base = [sys.executable, "-m", "agentsassemble.cli", "live-agent"]
+    base = [sys.executable, "-m", "agentsassemble.cli", "live-agent", "--legacy-internal"]
     identity = ["--server", config.server, "--agent-id", config.agent_id]
     return {
         "AGENTSASSEMBLE_ROOM_COMMAND": shlex.join([*base, "room", *identity]),
@@ -8261,6 +8285,9 @@ def _http_error_message(error: urllib.error.HTTPError) -> str:
 
 
 def run_sessions_command(args: argparse.Namespace) -> int:
+    if not bool(getattr(args, "legacy_internal", False)):
+        print("sessions is a legacy/internal Codex discovery path; use assemble room resume for Agent Sessions.", file=sys.stderr)
+        return 2
     if args.sessions_command == "list":
         sessions = list_codex_sessions(limit=args.limit)
         if args.as_json:
@@ -8419,6 +8446,7 @@ def _codex_live_agent_config_next_commands(
         "-m",
         "agentsassemble.cli",
         "live-agent",
+        "--legacy-internal",
         "ensure-session",
         "--server",
         server,
@@ -8440,6 +8468,7 @@ def _codex_live_agent_config_next_commands(
             "-m",
             "agentsassemble.cli",
             "live-agent",
+            "--legacy-internal",
             "preflight",
             "--config",
             output_path,

@@ -207,10 +207,10 @@ or recover provider CLIs. Flow decisions are provider-owned replies to the room
 snapshot, while AgentsAssemble records only the visible lobby message and safe
 metadata needed for cursors, cooldown, chain-depth, and audit.
 
-Local stdio MCP is an internal/legacy adapter over the same room contract, not
-the current user-facing Agent Session connection model. It is not part of the
-normal quickstart path and should not be presented as a provider choice for
-joining a room. Its historical participant tools write through existing GUI HTTP
+Local stdio MCP is a disabled internal/legacy adapter over the same room
+contract, not the current user-facing Agent Session connection model. It is not
+part of the normal quickstart path and should not be presented as a provider
+choice for joining a room. Its historical participant tools write through existing GUI HTTP
 endpoints; `dm_reply` writes only to the saved-friend direct DM log for the
 triggering event and does not write lobby or official meeting records.
 The participant identity comes from the server startup command (`--agent-id`,

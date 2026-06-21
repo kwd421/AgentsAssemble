@@ -268,6 +268,82 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(denied.sent_error, (HTTPStatus.FORBIDDEN, "participant session token required"))
             self.assertEqual(RoomStore(root).participant("session-room", "agent-1")["status"], "joined")
 
+    def test_agent_session_http_resume_start_requires_authorized_runner(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            denied = _dispatch_room_route(
+                root,
+                path="/api/agent-sessions/resume",
+                method="POST",
+                payload={
+                    "room_id": "session-room",
+                    "agent_id": "agent-1",
+                    "session_id": "session-1",
+                    "provider_kind": "codex_live_session",
+                    "start": True,
+                },
+                loopback=False,
+            )
+
+            self.assertEqual(
+                denied.sent_error,
+                (HTTPStatus.FORBIDDEN, "Agent Session process start requires local operator or host authorization"),
+            )
+            self.assertEqual(RoomStore(root).participants("session-room"), [])
+
+    def test_agent_session_http_resume_start_uses_process_service_runner(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        calls: list[list[str]] = []
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with patch(
+                "agentsassemble.gui_room_http._local_agent_session_command_runner",
+                side_effect=lambda command: calls.append(command) or {"returncode": 0},
+            ):
+                resumed = _dispatch_room_route(
+                    root,
+                    path="/api/agent-sessions/resume",
+                    method="POST",
+                    payload={
+                        "room_id": "session-room",
+                        "agent_id": "agent-1",
+                        "session_id": "session-1",
+                        "provider_kind": "codex_live_session",
+                        "start": True,
+                    },
+                ).sent_json
+
+            self.assertEqual(resumed["process_status"], "resumed")
+            self.assertEqual(calls[0][:3], ["codex", "exec", "resume"])
+
+    def test_room_events_stream_route_replays_missed_event_as_sse(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = RoomStore(root)
+            store.create_room("session-room")
+            cursor = store.read_events("session-room")[-1]["id"]
+            store.append_event("session-room", "message_final", content="hello")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/room-events/stream?room_id=session-room&cursor={cursor}",
+                    timeout=4,
+                ) as response:
+                    frame = _read_sse_frame(response)
+                    content_type = response.headers.get_content_type()
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(content_type, "text/event-stream")
+            self.assertIn("event: message_final", frame)
+            self.assertIn('"content": "hello"', frame)
+
     def test_roomstore_joined_row_wins_over_old_live_agent_roster_row(self):
         reset_room_invite_state()
         reset_room_users_state()
@@ -19546,7 +19622,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertGreater(payload["flow"]["remaining_seconds"], 0)
             self.assertEqual([event.get("flow_event_type") or event.get("flow_action") for event in payload["flow_events"]], ["started", "speak"])
 
-    def test_live_agent_flow_silence_timer_does_not_post_visible_nudges(self):
+    def test_live_agent_flow_supervisor_start_is_disabled(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             meeting_dir = root / "meetings" / "m1"
@@ -19564,36 +19640,14 @@ class GuiServerTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            connect_live_agent_payload(
-                root,
-                {
-                    "agent_id": "agent-a",
-                    "display_name": "Agent A",
-                    "meeting_id": "m1",
-                    "provider_kind": "local_cli",
-                    "engagement_mode": "moderator_called",
-                    "status": "online",
-                },
-            )
             supervisor = LiveAgentFlowSupervisor(root)
 
-            supervisor.start(
-                {
-                    "meeting_id": "m1",
-                    "topic": "고죠 vs 스쿠나",
-                    "duration_seconds": 1,
-                    "tick_interval": 0.01,
-                    "max_silence_seconds": 0.01,
-                }
-            )
-            time.sleep(0.05)
-            supervisor.stop({"meeting_id": "m1"})
+            with self.assertRaisesRegex(RuntimeError, "disabled"):
+                supervisor.start({"meeting_id": "m1", "topic": "고죠 vs 스쿠나"})
 
-            flow_events = [event for event in read_lobby(root) if event.get("flow_event_type")]
-            self.assertEqual([event["flow_event_type"] for event in flow_events], ["started", "stopped"])
-            self.assertNotIn("열린 쟁점", json.dumps(flow_events, ensure_ascii=False))
+            self.assertFalse([event for event in read_lobby(root) if event.get("flow_event_type") == "started"])
 
-    def test_live_agent_flow_tick_failure_finishes_and_restores_modes(self):
+    def test_live_agent_flow_supervisor_start_does_not_restore_or_mutate_modes(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             meeting_dir = root / "meetings" / "m1"
@@ -19623,19 +19677,9 @@ class GuiServerTests(unittest.TestCase):
             )
             supervisor = LiveAgentFlowSupervisor(root)
 
-            def boom(run):
-                raise RuntimeError("tick failed")
+            with self.assertRaisesRegex(RuntimeError, "disabled"):
+                supervisor.start({"meeting_id": "m1", "topic": "t", "duration_seconds": 5})
 
-            supervisor._mark_silence_check_locked = boom
-            supervisor.start(
-                {"meeting_id": "m1", "topic": "t", "duration_seconds": 5, "tick_interval": 0.01}
-            )
-            for _ in range(200):
-                if supervisor.status(meeting_id="m1")["flow"]["status"] != "running":
-                    break
-                time.sleep(0.01)
-
-            self.assertEqual(supervisor.status(meeting_id="m1")["flow"]["status"], "stopped")
             restored = {agent["agent_id"]: agent.get("engagement_mode") for agent in read_live_agents(root)}
             self.assertEqual(restored.get("agent-a"), "moderator_called")
 

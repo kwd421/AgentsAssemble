@@ -410,7 +410,7 @@ class CliTimeoutTests(unittest.TestCase):
             stdout = StringIO()
 
             with patch.dict("os.environ", {"CODEX_HOME": str(codex_home)}), patch("sys.stdout", stdout):
-                exit_code = main(["sessions", "list", "--json"])
+                exit_code = main(["sessions", "--legacy-internal", "list", "--json"])
 
             self.assertEqual(exit_code, 0)
             payload = json.loads(stdout.getvalue())
@@ -426,6 +426,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "sessions",
+                        "--legacy-internal",
                         "invite",
                         "019e3038-39cc-76a2-a746-5ba8c0f3b408",
                         "--role",
@@ -460,6 +461,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "sessions",
+                        "--legacy-internal",
                         "invite",
                         "019e3038-39cc-76a2-a746-5ba8c0f3b408",
                         "--role",
@@ -493,6 +495,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "sessions",
+                        "--legacy-internal",
                         "invite",
                         "019e3038-39cc-76a2-a746-5ba8c0f3b408",
                         "--role",
@@ -513,6 +516,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "sessions",
+                        "--legacy-internal",
                         "invite",
                         "019e3038-39cc-76a2-a746-5ba8c0f3b408",
                         "--role",
@@ -552,6 +556,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "sessions",
+                        "--legacy-internal",
                         "live-agent-config",
                         "--input",
                         str(invite_path),
@@ -585,6 +590,7 @@ class CliTimeoutTests(unittest.TestCase):
                     "-m",
                     "agentsassemble.cli",
                     "live-agent",
+                    "--legacy-internal",
                     "preflight",
                     "--config",
                     str(output_path),
@@ -597,6 +603,7 @@ class CliTimeoutTests(unittest.TestCase):
                     "-m",
                     "agentsassemble.cli",
                     "live-agent",
+                    "--legacy-internal",
                     "ensure-session",
                     "--server",
                     "http://room.local",
@@ -637,6 +644,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "sessions",
+                        "--legacy-internal",
                         "live-agent-config",
                         "--input",
                         str(invite_path),
@@ -651,7 +659,10 @@ class CliTimeoutTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 0)
             output = stdout.getvalue()
-            self.assertIn("Next preflight: python3 -m agentsassemble.cli live-agent preflight --config", output)
+            self.assertIn(
+                "Next preflight: python3 -m agentsassemble.cli live-agent --legacy-internal preflight --config",
+                output,
+            )
             self.assertIn(f"'{output_path}'", output)
             self.assertIn(f"'{invite_path}'", output)
             self.assertIn("'http://room.local/with space'", output)
@@ -6877,6 +6888,7 @@ class CliTimeoutTests(unittest.TestCase):
         args = build_parser().parse_args(
             [
                 "live-agent",
+                "--legacy-internal",
                 "start-session",
                 "--server",
                 "http://room.local",
@@ -6925,6 +6937,7 @@ class CliTimeoutTests(unittest.TestCase):
         args = build_parser().parse_args(
             [
                 "live-agent",
+                "--legacy-internal",
                 "start-session",
                 "--live-agent-config",
                 "configs/live-agents.example.json",
@@ -6944,6 +6957,7 @@ class CliTimeoutTests(unittest.TestCase):
         args = build_parser().parse_args(
             [
                 "live-agent",
+                "--legacy-internal",
                 "start-session",
                 "--live-agent-config",
                 "configs/live-agents.example.json",
@@ -6978,6 +6992,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "start-session",
                         "--server",
                         "http://room.local",
@@ -7047,6 +7062,7 @@ class CliTimeoutTests(unittest.TestCase):
                     exit_code = main(
                         [
                             "live-agent",
+                            "--legacy-internal",
                             "start-session",
                             "--server",
                             "http://room.local",
@@ -7114,6 +7130,7 @@ class CliTimeoutTests(unittest.TestCase):
                         exit_code = main(
                             [
                                 "live-agent",
+                                "--legacy-internal",
                                 "start-session",
                                 "--server",
                                 "http://room.local",
@@ -7155,6 +7172,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "start-session",
                         "--server",
                         "http://room.local",
@@ -7195,6 +7213,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "start-session",
                         "--server",
                         "http://room.local",
@@ -7232,6 +7251,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "start-session",
                         "--server",
                         "http://room.local",
@@ -7274,6 +7294,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "start-session",
                         "--server",
                         "http://room.local",
@@ -7349,6 +7370,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "start-session",
                         "--server",
                         "http://room.local",
@@ -7409,6 +7431,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "start-session",
                         "--server",
                         "http://room.local",
@@ -7444,6 +7467,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "start-session",
                         "--server",
                         "http://room.local",
@@ -7508,6 +7532,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "start-session",
                         "--server",
                         "http://room.local",
@@ -7527,6 +7552,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "start-session",
                         "--live-agent-config",
                         "configs/live-agents.example.json",
@@ -7544,6 +7570,7 @@ class CliTimeoutTests(unittest.TestCase):
         args = build_parser().parse_args(
             [
                 "live-agent",
+                "--legacy-internal",
                 "resume-session",
                 "--server",
                 "http://room.local",
@@ -7594,6 +7621,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "resume-session",
                         "--server",
                         "http://room.local",
@@ -7649,6 +7677,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "resume-session",
                         "--server",
                         "http://room.local",
@@ -8089,6 +8118,7 @@ class CliTimeoutTests(unittest.TestCase):
         args = build_parser().parse_args(
             [
                 "live-agent",
+                "--legacy-internal",
                 "restart-session",
                 "--server",
                 "http://room.local",
@@ -8144,6 +8174,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "restart-session",
                         "--server",
                         "http://room.local",
@@ -8203,6 +8234,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "restart-session",
                         "--server",
                         "http://room.local",
@@ -8253,6 +8285,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "restart-session",
                         "--server",
                         "http://room.local",
@@ -8294,6 +8327,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "restart-session",
                         "--server",
                         "http://room.local",
@@ -8313,6 +8347,7 @@ class CliTimeoutTests(unittest.TestCase):
         args = build_parser().parse_args(
             [
                 "live-agent",
+                "--legacy-internal",
                 "recover-session",
                 "--server",
                 "http://room.local",
@@ -8362,6 +8397,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "recover-session",
                         "--server",
                         "http://room.local",
@@ -8404,6 +8440,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "recover-session",
                         "--server",
                         "http://room.local",
@@ -8423,6 +8460,7 @@ class CliTimeoutTests(unittest.TestCase):
         args = build_parser().parse_args(
             [
                 "live-agent",
+                "--legacy-internal",
                 "ensure-session",
                 "--server",
                 "http://room.local",
@@ -8498,6 +8536,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "ensure-session",
                         "--server",
                         "http://room.local",
@@ -8565,6 +8604,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "ensure-session",
                         "--server",
                         "http://room.local",
@@ -8611,6 +8651,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "ensure-session",
                         "--server",
                         "http://room.local",
@@ -8690,6 +8731,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "ensure-session",
                         "--server",
                         "http://room.local",
@@ -8761,6 +8803,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "ensure-session",
                         "--server",
                         "http://room.local",
@@ -8823,6 +8866,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "ensure-session",
                         "--server",
                         "http://room.local",
@@ -8896,6 +8940,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "ensure-session",
                         "--server",
                         "http://room.local",
@@ -8967,6 +9012,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "ensure-session",
                         "--server",
                         "http://room.local",
@@ -9015,6 +9061,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "ensure-session",
                         "--server",
                         "http://room.local",
@@ -9097,6 +9144,7 @@ class CliTimeoutTests(unittest.TestCase):
                         exit_code = main(
                             [
                                 "live-agent",
+                                "--legacy-internal",
                                 "ensure-session",
                                 "--server",
                                 "http://room.local",
@@ -9167,6 +9215,7 @@ class CliTimeoutTests(unittest.TestCase):
                     exit_code = main(
                         [
                             "live-agent",
+                            "--legacy-internal",
                             "ensure-session",
                             "--server",
                             "http://room.local",
@@ -9207,6 +9256,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "ensure-session",
                         "--server",
                         "http://room.local",
@@ -9255,6 +9305,7 @@ class CliTimeoutTests(unittest.TestCase):
                     exit_code = main(
                         [
                             "live-agent",
+                            "--legacy-internal",
                             "start-session",
                             "--server",
                             f"http://127.0.0.1:{server.server_port}",
@@ -13792,7 +13843,7 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", StringIO()),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json"])
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(len(popen_calls), 1)
@@ -13815,7 +13866,7 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", StringIO()),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json"])
 
         self.assertEqual(exit_code, 2)
         heartbeat_payloads = [
@@ -14169,7 +14220,7 @@ class CliTimeoutTests(unittest.TestCase):
 
     def test_live_agent_run_group_accepts_config_path_and_tick_bound(self):
         args = build_parser().parse_args(
-            ["live-agent", "run-group", "--config", "configs/live-agents.example.json", "--max-ticks", "2"]
+            ["live-agent", "--legacy-internal", "run-group", "--config", "configs/live-agents.example.json", "--max-ticks", "2"]
         )
 
         self.assertEqual(args.live_agent_command, "run-group")
@@ -14181,7 +14232,7 @@ class CliTimeoutTests(unittest.TestCase):
         with patch("sys.stderr", stderr):
             with self.assertRaises(SystemExit) as raised:
                 build_parser().parse_args(
-                    ["live-agent", "run-group", "--config", "configs/live-agents.example.json", "--max-ticks", "-1"]
+                    ["live-agent", "--legacy-internal", "run-group", "--config", "configs/live-agents.example.json", "--max-ticks", "-1"]
                 )
 
         self.assertEqual(raised.exception.code, 2)
@@ -14191,6 +14242,7 @@ class CliTimeoutTests(unittest.TestCase):
         args = build_parser().parse_args(
             [
                 "live-agent",
+                "--legacy-internal",
                 "run-group",
                 "--config",
                 "configs/live-agents.example.json",
@@ -14209,6 +14261,7 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(
                     [
                         "live-agent",
+                        "--legacy-internal",
                         "run-group",
                         "--config",
                         "configs/live-agents.example.json",
@@ -14594,7 +14647,7 @@ class CliTimeoutTests(unittest.TestCase):
                 )
                 stdout = StringIO()
                 with patch("sys.stdout", stdout):
-                    exit_code = main(["live-agent", "run-group", "--config", str(config_path), "--max-ticks", "1"])
+                    exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", str(config_path), "--max-ticks", "1"])
             finally:
                 server.shutdown()
                 server.server_close()
@@ -14632,7 +14685,7 @@ class CliTimeoutTests(unittest.TestCase):
             stderr = StringIO()
 
             with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
-                exit_code = main(["live-agent", "run-group", "--config", str(config_path), "--max-ticks", "1"])
+                exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", str(config_path), "--max-ticks", "1"])
 
             self.assertEqual(exit_code, 2)
             self.assertIn("friend-bridge", stderr.getvalue())
@@ -14697,7 +14750,7 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", stdout),
             patch("sys.stderr", stderr),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json"])
 
         self.assertEqual(exit_code, 2)
         self.assertEqual(constructed, [])
@@ -14753,7 +14806,7 @@ class CliTimeoutTests(unittest.TestCase):
                     patch("sys.stdout", stdout),
                     patch("sys.stderr", stderr),
                 ):
-                    exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+                    exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json"])
             finally:
                 os.chdir(previous_cwd)
 
@@ -14806,7 +14859,7 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", stdout),
             patch("sys.stderr", stderr),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json"])
 
         self.assertEqual(exit_code, 2)
         self.assertEqual(constructed, [])
@@ -14853,7 +14906,7 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", stdout),
             patch("sys.stderr", stderr),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json"])
 
         self.assertEqual(exit_code, 2)
         self.assertEqual(constructed, [])
@@ -14918,7 +14971,7 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", stderr),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json"])
 
         self.assertEqual(exit_code, 2)
         self.assertEqual(constructed, [])
@@ -14982,7 +15035,7 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", stderr),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json"])
 
         self.assertEqual(exit_code, 2)
         self.assertEqual(constructed, [])
@@ -15465,7 +15518,7 @@ class CliTimeoutTests(unittest.TestCase):
         ):
             # stagger 0: this test asserts concurrent-runtime sibling/shutdown
             # semantics, not staggered startup ordering.
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json", "--launch-stagger-seconds", "0"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json", "--launch-stagger-seconds", "0"])
 
         self.assertEqual(exit_code, 0)
         self.assertTrue(sibling_closed_while_running.is_set())
@@ -15534,7 +15587,7 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", stderr),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json"])
 
         self.assertEqual(exit_code, 0)
         self.assertNotIn("secondary closed during shutdown", stderr.getvalue())
@@ -15578,7 +15631,7 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", stderr),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json"])
 
         self.assertEqual(exit_code, 2)
         self.assertIn("exiting-agent: runner exited unexpectedly", stderr.getvalue())
@@ -15627,7 +15680,7 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", stderr),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json"])
 
         self.assertEqual(exit_code, 2)
         self.assertIn("crashing-agent", stderr.getvalue())
@@ -15686,7 +15739,7 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", StringIO()),
         ):
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json"])
 
         self.assertEqual(exit_code, 2)
         heartbeat_requests = [
@@ -15789,7 +15842,7 @@ class CliTimeoutTests(unittest.TestCase):
         ):
             # stagger 0: this test asserts concurrent-runtime sibling/shutdown
             # semantics, not staggered startup ordering.
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json", "--launch-stagger-seconds", "0"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json", "--launch-stagger-seconds", "0"])
 
         self.assertEqual(exit_code, 0)
         self.assertTrue(sibling_closed_while_running.is_set())
@@ -15854,7 +15907,7 @@ class CliTimeoutTests(unittest.TestCase):
         ):
             # A large stagger would block for 30s if the shutdown were ignored;
             # the test returns promptly because stop_event interrupts the wait.
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json", "--launch-stagger-seconds", "30"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json", "--launch-stagger-seconds", "30"])
 
         self.assertTrue(first_started.is_set())
         self.assertEqual(exit_code, 0)
@@ -15952,7 +16005,7 @@ class CliTimeoutTests(unittest.TestCase):
         ):
             # stagger 0: this test asserts concurrent-runtime sibling/shutdown
             # semantics, not staggered startup ordering.
-            exit_code = main(["live-agent", "run-group", "--config", "ignored.json", "--launch-stagger-seconds", "0"])
+            exit_code = main(["live-agent", "--legacy-internal", "run-group", "--config", "ignored.json", "--launch-stagger-seconds", "0"])
 
         self.assertEqual(exit_code, 2)
         self.assertIn("primary-error: primary boom", stderr.getvalue())

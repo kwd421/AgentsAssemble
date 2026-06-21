@@ -1,12 +1,16 @@
 # AgentsAssemble
 
-AgentsAssemble is a local-first multi-agent council orchestrator for AI coding agents.
+AgentsAssemble is a local-first room for turn-based AI **Agent Sessions**.
 
-The v0 prototype is a terminal-first council engine with a simple local browser GUI for inspection. It runs a small council where three isolated roles research and debate a question, then writes Markdown and JSON artifacts to disk.
+The current product surface is the local browser room plus room commands. Agent
+Sessions attach resumable local AI CLI state to a shared room event stream. Old
+free-flow, silent/free-chat, MCP, and resident live-agent command paths are
+legacy/internal and fail closed unless an explicit internal regression flag is
+used.
 
 ## Current Demo
 
-Run the mock council:
+Run the mock council artifact demo:
 
 ```bash
 python3 -m agentsassemble.cli demo --adapter mock
@@ -146,9 +150,10 @@ state lives under:
       handoffs/
 ```
 
-Free/silent room modes are intentionally disabled for now. The frontend should
-show turn-based Agent Sessions only; old saved `quiet`, `free`, or `turn`
-settings normalize to `ordered`.
+Free/silent/free-chat/flow room modes are disabled. The frontend should show
+turn-based Agent Sessions only; old saved `quiet`, `free`, or `turn` settings
+normalize to `ordered`. `/api/live-agent-flow/start` returns HTTP 410 and the
+server-side flow supervisor cannot create a running flow.
 
 Claude Code print-mode bridging is disabled. AgentsAssemble must not invoke
 `claude -p` or silently fall back to an Anthropic API path for room
@@ -161,6 +166,9 @@ Current implemented scope:
 - canonical Agent Session roster state
 - state-only Agent Session attach/resume by default
 - Codex launch-plan dry-run for an explicit process-resume path
+- HTTP/CLI resume through one Agent Session process service
+- room SSE at `/api/room-events/stream?room_id=...&cursor=...`
+- room media manifests under `rooms/<room_id>/media/`
 - leave/kick/export persisted in room state
 
 The primary CLI path is:
@@ -170,12 +178,16 @@ assemble room resume <room-id> --agent <agent-id> --session <session-id> --provi
 ```
 
 By default this attaches state only and reports `process_status: not_started`.
-Use explicit process execution only after reviewing the returned launch plan.
+Dry-run returns the deterministic launch plan without starting a provider.
+Process start requires `start: true` and local operator or host authorization;
+public/untrusted sessions cannot start local provider commands. Media support
+means the turn packet includes file path, mime, size, and support metadata.
+Whether the provider can actually view a file depends on that provider.
 
-Not yet supported as user-facing product paths: free/silent rooms, MCP as a
-normal connection path, Claude print-mode bridging, generic hard provider
-sandboxing, and provider media viewing unless the provider can consume the
-room media manifest.
+Not supported as normal user-facing product paths: free/silent/free-chat/flow
+rooms, MCP, top-level session discovery, legacy resident runners, Claude
+print-mode bridging, generic hard provider sandboxing, and provider media
+viewing unless the provider can consume the room media manifest.
 
 ## Codex Adapter
 

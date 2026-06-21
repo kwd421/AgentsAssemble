@@ -422,7 +422,7 @@ class LiveAgentFlowCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 2)
         self.assertEqual(calls, [])
         self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("Play/free flow is disabled", stderr.getvalue())
+        self.assertIn("legacy/internal", stderr.getvalue())
 
 
 class LiveAgentFlowClientTests(unittest.TestCase):

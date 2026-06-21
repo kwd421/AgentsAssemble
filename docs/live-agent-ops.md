@@ -1,6 +1,9 @@
 # Live Agent Ops
 
-This is the local operator checklist for the current AgentsAssemble resident live-agent slice. It uses the local GUI room as the control plane and local CLI, JSONL session, and explicitly configured remote HTTP bridge participants as resident agents.
+This is a historical operator checklist for the legacy resident live-agent
+slice. The normal product path is now turn-based Agent Sessions through the
+room UI and `assemble room ...`. Legacy runnable commands are hidden/disabled
+unless an explicit internal regression flag is supplied.
 
 ## Start The GUI Room
 
@@ -29,9 +32,9 @@ provider CLI. The completed default-route flip is tracked in
 `docs/product/legacy-react-parity-matrix.md`.
 
 The lobby is the public room surface and should read first as a staging room,
-similar to a pick room before the live client opens. The default "상주 실행"
-surface keeps the current meeting id, Play Mode free-conversation controls,
-participant readiness, and recent preparation evidence in view. Session
+similar to a pick room before the live client opens. Play/free flow controls are
+not a supported runtime path; Agent Session attach/resume is the normal
+connection path. Session
 startup, ensure, resume, restart, recover, stop, diagnostics, smoke checks,
 discovery, and auto-join controls remain available under `고급 운영` for the
 operator instead of dominating the default lobby. The default group config path
@@ -74,7 +77,8 @@ file for this fallback. This prevents the bad state where the process panel says
 events without making STOP(KILL) target unrelated processes whose configs were
 edited after launch.
 
-Play Mode room flow has four non-game speaking policies:
+Legacy Play Mode room flow previously had four non-game speaking policies, but
+that runtime path is currently disabled:
 
 - `Turn-Based Floor · 턴제 발화`: default hybrid free-speaking mode. Agents avoid
   immediate repeat turns, keep rough rolling turn balance, and may answer a

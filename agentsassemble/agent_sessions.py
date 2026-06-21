@@ -16,6 +16,7 @@ def resume_agent_session_payload(
     payload: dict[str, object],
     *,
     command_runner: CommandRunner | None = None,
+    process_service: "AgentSessionProcessService | None" = None,
 ) -> dict[str, object]:
     store = RoomStore(output_root)
     room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
@@ -70,7 +71,8 @@ def resume_agent_session_payload(
     if session_created or previous_session.get("status") not in {"attached", ""}:
         store.append_event(room_id, "session_attached", participant_id=agent_id, session_id=session_id)
     store.append_event(room_id, "session_resumed", participant_id=agent_id, session_id=session_id)
-    launch = _agent_session_process_result(store, room_id, agent_id, session, payload, command_runner=command_runner)
+    service = process_service or AgentSessionProcessService(command_runner=command_runner)
+    launch = service.resume(store, room_id, agent_id, session, payload)
     return {
         "status": "resumed",
         "state_status": "resumed",
@@ -81,6 +83,30 @@ def resume_agent_session_payload(
         "participants": store.participants(room_id),
         "sessions": store.sessions(room_id),
     }
+
+
+class AgentSessionProcessService:
+    """Owns Agent Session state/process separation for CLI and HTTP callers."""
+
+    def __init__(self, *, command_runner: CommandRunner | None = None) -> None:
+        self.command_runner = command_runner
+
+    def resume(
+        self,
+        store: RoomStore,
+        room_id: str,
+        agent_id: str,
+        session: dict[str, object],
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        return _agent_session_process_result(
+            store,
+            room_id,
+            agent_id,
+            session,
+            payload,
+            command_runner=self.command_runner,
+        )
 
 
 def build_room_turn_packet(
@@ -99,12 +125,18 @@ def build_room_turn_packet(
         media = event.get("media")
         if isinstance(media, dict):
             media_manifest.append(dict(media))
+    unsupported_media = [media for media in media_manifest if not bool(media.get("supported"))]
     return {
         "room_id": room_id,
         "participant_id": participant_id,
         "session_id": session_id,
         "events": events,
         "media_manifest": media_manifest,
+        "media_notes": [
+            "Unsupported media is listed for audit only; do not claim you viewed unsupported files."
+        ]
+        if unsupported_media
+        else [],
         "current_turn_instruction": clean_lobby_text(instruction, limit=2000),
         "settings": {
             "model": session.get("model", ""),
@@ -166,18 +198,23 @@ def build_agent_session_launch_plan(session: dict[str, object]) -> dict[str, obj
     sandbox = clean_lobby_text(session.get("sandbox") or session.get("permissions"), limit=64) or "read-only"
     session_id = clean_lobby_text(session.get("session_id"), limit=128)
     if provider_kind == "codex_live_session":
+        # Deterministic Codex CLI shape, verified in tests with a fake runner:
+        # codex exec resume --model <model> -c model_reasoning_effort="<effort>"
+        #   --sandbox read-only --ignore-rules --skip-git-repo-check <session_id>
+        # `--ignore-rules` prevents repo rules from mutating this read-only
+        # launch path. Codex owns actual sandbox enforcement.
         command = ["codex", "exec", "resume"]
         if model:
             command.extend(["--model", model])
         if effort:
             command.extend(["-c", f'model_reasoning_effort="{effort}"'])
-        command.extend(["--sandbox", sandbox, "--skip-git-repo-check"])
+        command.extend(["--sandbox", sandbox, "--ignore-rules", "--skip-git-repo-check"])
         if session_id:
             command.append(session_id)
         return {
             "provider_kind": provider_kind,
             "command": command,
-            "permission_enforcement": "enforced" if sandbox == "read-only" else "advisory",
+            "permission_enforcement": "codex_readonly" if sandbox == "read-only" else "advisory",
             "diagnostics": [],
         }
     return {

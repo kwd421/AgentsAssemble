@@ -61,6 +61,7 @@ import {
   meetingLiveEventsToTimelineEvents,
   meetingStreamStateForActiveMeeting,
   subscribeMeetingEvents,
+  subscribeRoomEvents,
   type FlowResponse,
   type LiveAgentsResponse,
   type MeetingStreamState,
@@ -72,6 +73,7 @@ import {
   type MafiaGame,
   type MafiaGameResponse,
   type LobbyEvent,
+  type RoomEvent,
   type SideChatEvent,
   type ChannelNotificationSetting,
   type ChannelSettings,
@@ -578,6 +580,7 @@ export default function App() {
   const [roomSocket, setRoomSocket] = useState<RoomSocketHandle | null>(null);
   const lobbyStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
   const flowStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
+  const roomEventCursorRef = useRef("");
   const bindLobbyStream = useCallback((receive: (events: LobbyEvent[]) => void) => {
     lobbyStreamRef.current = receive;
     return () => {
@@ -592,6 +595,18 @@ export default function App() {
       if (flowStreamRef.current === receive) {
         flowStreamRef.current = null;
       }
+    };
+  }, []);
+  const roomEventToLobbyEvent = useCallback((event: RoomEvent): LobbyEvent | null => {
+    if (!event.id || !event.type.startsWith("message_")) return null;
+    return {
+      id: event.id,
+      created_at: event.created_at,
+      name: String(event.participant_id || event.actor_id || "Agent Session"),
+      side: "other",
+      kind: "message",
+      message: String(event.content || ""),
+      actor_id: String(event.participant_id || event.actor_id || ""),
     };
   }, []);
   useEffect(() => {
@@ -2024,6 +2039,30 @@ export default function App() {
     refreshMembers,
     refreshProcesses,
   ]);
+
+  useEffect(() => {
+    const roomId = activeRoom.meetingId || "";
+    if (!roomId) return undefined;
+    roomEventCursorRef.current = "";
+    return subscribeRoomEvents(
+      roomId,
+      roomEventCursorRef.current,
+      (event) => {
+        roomEventCursorRef.current = event.id;
+        const lobbyEvent = roomEventToLobbyEvent(event);
+        if (!lobbyEvent) {
+          refreshMembers();
+          return;
+        }
+        lobbyStreamRef.current?.([lobbyEvent]);
+        flowStreamRef.current?.([lobbyEvent]);
+      },
+      undefined,
+      () => {
+        // The room socket and HTTP refresh path remain available as fallback.
+      }
+    );
+  }, [activeRoom.meetingId, refreshMembers, roomEventToLobbyEvent]);
 
   function updateRoom(roomId: string, updates: Partial<RoomDockItem>) {
     setRooms((previous) =>

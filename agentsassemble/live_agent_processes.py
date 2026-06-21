@@ -414,6 +414,7 @@ class LiveAgentProcessSupervisor:
             "-m",
             "agentsassemble.cli",
             "live-agent",
+            "--legacy-internal",
             "run-group",
             "--config",
             str(config_path),

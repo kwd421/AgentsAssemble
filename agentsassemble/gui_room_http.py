@@ -7,12 +7,14 @@ reach server-scoped helpers through ctx.deps.
 """
 from __future__ import annotations
 
+import subprocess
 import threading
 from http import HTTPStatus
 
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payload
 from agentsassemble.agent_sessions import (
+    AgentSessionProcessService,
     resume_agent_session_payload,
     room_action_payload,
     room_lifecycle_payload,
@@ -97,6 +99,17 @@ def _speech_rejection_status(category: str) -> HTTPStatus:
     if category in {"read_only", "muted"}:
         return HTTPStatus.FORBIDDEN
     return HTTPStatus.BAD_REQUEST
+
+
+def _local_agent_session_command_runner(command: list[str]) -> dict[str, object]:
+    process = subprocess.Popen(
+        [str(part) for part in command],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    return {"returncode": 0, "pid": process.pid}
 
 
 def register_room_routes(router: Router) -> None:
@@ -324,10 +337,33 @@ def register_room_routes(router: Router) -> None:
         payload = ctx.read_json_body()
         if payload is None:
             return
+        if bool(payload.get("start")) and not _process_start_allowed(ctx):
+            ctx.send_error(HTTPStatus.FORBIDDEN, "Agent Session process start requires local operator or host authorization")
+            return
         try:
-            ctx.send_json(resume_agent_session_payload(ctx.deps.output_root, payload))
+            ctx.send_json(
+                resume_agent_session_payload(
+                    ctx.deps.output_root,
+                    payload,
+                    process_service=_agent_session_process_service(ctx, payload),
+                )
+            )
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+
+    def _process_start_allowed(ctx: RequestContext) -> bool:
+        has_host_token = bool(ctx.provided_host_token())
+        return ctx.handler._request_uses_loopback_host() or (has_host_token and ctx.is_host()) or ctx.is_operator_session()
+
+    def _agent_session_process_service(
+        ctx: RequestContext,
+        payload: dict[str, object],
+    ) -> AgentSessionProcessService:
+        if not bool(payload.get("start")) or bool(payload.get("dry_run")):
+            return AgentSessionProcessService()
+        if not _process_start_allowed(ctx):
+            return AgentSessionProcessService()
+        return AgentSessionProcessService(command_runner=_local_agent_session_command_runner)
 
     def _loopback_or_moderator(ctx: RequestContext) -> bool:
         if ctx.handler._request_uses_loopback_host():
