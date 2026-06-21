@@ -2044,7 +2044,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('channel !== "live"', app_source)
         self.assertIn("update.meetingId && update.meetingId !== meetingId", app_source)
         self.assertIn("flowEvents.length ? flowEvents : officialTimelineEvents", app_source)
-        self.assertIn("const activeRoomTimelineEvents = activeRoomEvents", app_source)
+        self.assertIn("const activeRoomTimelineEvents = roomEventsToTimelineEvents(activeRoomEvents)", app_source)
         self.assertIn("const scopedTimelineSource = activeRoomTimelineEvents.length", app_source)
         self.assertIn("timelineSource={scopedTimelineSource}", app_source)
         self.assertIn("flow_id", live_source)

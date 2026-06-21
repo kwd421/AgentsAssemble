@@ -154,18 +154,21 @@ meeting turns must still be typed separately so a side comment cannot silently
 become evidence or a decision.
 
 An Agent Session turn is the active runtime path. The host calls
-`POST /api/agent-sessions/turn` or `assemble room turn`; the server builds the
-room turn packet from `events.jsonl`, room media manifests, unsupported-media
-audit notes, persisted session settings, the current instruction, and explicit
+`POST /api/agent-sessions/turn` or `assemble room turn`; the server builds a
+bounded room turn packet from the room summary, recent `events.jsonl` entries,
+events after the session cursor, room media manifests, unsupported-media audit
+notes, persisted session settings, the current instruction, and explicit
 non-goals. The packet is delivered to the configured Agent Session turn runner.
-The live command runner streams stdout/stderr when possible: plain stdout is
-recorded incrementally as `message_delta` and finally as `message_final`; only
-explicit, conservative progress lines such as `progress:` or `thinking:` may
-become `thinking_delta`, and they are displayed as progress rather than final
-assistant speech. The final stdout runner remains a fallback for environments
-without streaming. The server records turn output as room events bracketed by
-`turn_started` and `turn_finished` when successful, or `error` on failure. If
-no runner is configured, the turn returns a not-started diagnostic and does not
+Codex turns use JSONL stdout as the primary command path: fresh turns use
+`codex exec --json --ephemeral ... -`, explicit provider sessions use
+`codex exec --json ... resume <provider_session_id> -`, and `resume --last` is
+forbidden because it is not a per-agent identity. Provider-visible message
+items become `message_delta` and `message_final`; only explicit conservative
+progress may become `thinking_delta`, displayed as progress rather than final
+assistant speech. Plain stdout streaming remains a fallback. The server records
+turn output as room events bracketed by `turn_started` and `turn_finished` when
+successful, or `error` on failure, with timing/usage/context diagnostics. If no
+runner is configured, the turn returns a not-started diagnostic and does not
 invent a provider reply.
 Selected lobby text can enter the official record only through
 `assemble lobby promote`, which writes a `promoted_context` official event and

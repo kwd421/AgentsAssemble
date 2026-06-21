@@ -108,6 +108,7 @@ class AgentSessionCliTests(unittest.TestCase):
                 "room_id": "room-a",
                 "agent_id": "agent-1",
                 "session_id": "session-1",
+                "provider_session_id": "",
                 "model": "gpt-5.5",
                 "effort": "high",
                 "sandbox": "read-only",

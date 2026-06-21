@@ -5,6 +5,7 @@ from pathlib import Path
 from agentsassemble.agent_sessions import (
     AgentSessionProcessService,
     agent_session_command_turn_runner,
+    agent_session_codex_jsonl_turn_runner,
     agent_session_streaming_command_turn_runner,
     build_agent_session_launch_plan,
     build_agent_session_turn_command,
@@ -361,7 +362,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         events = RoomStore(self.output_root).read_events("room-a")
         self.assertEqual(result["turn_status"], "finished")
-        self.assertIn("streaming_command", str(result["diagnostics"]))
+        self.assertIn("codex_jsonl_command", str(result["diagnostics"]))
         self.assertEqual([event["type"] for event in events][-4:], [
             "message_delta",
             "message_delta",
@@ -446,6 +447,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             {
                 "provider_kind": "codex_live_session",
                 "session_id": "codex-session",
+                "provider_session_id": "codex-provider-session",
                 "model": "gpt-5.5",
                 "effort": "high",
                 "sandbox": "read-only",
@@ -464,6 +466,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         )
 
         self.assertEqual(codex["permission_enforcement"], "codex_readonly")
+        self.assertIn("--json", codex["command"])
         self.assertIn("--model", codex["command"])
         self.assertIn("gpt-5.5", codex["command"])
         self.assertIn("--sandbox", codex["command"])
@@ -471,8 +474,98 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertEqual(codex["command"].count("--sandbox"), 1)
         self.assertIn("--ignore-rules", codex["command"])
         self.assertIn('model_reasoning_effort="high"', codex["command"])
+        self.assertIn("resume", codex["command"])
+        self.assertIn("codex-provider-session", codex["command"])
+        self.assertNotIn("--last", codex["command"])
         self.assertEqual(unsupported["permission_enforcement"], "unsupported")
         self.assertTrue(unsupported["diagnostics"])
+
+    def test_missing_provider_session_id_uses_fresh_ephemeral_not_last(self):
+        codex = build_agent_session_launch_plan(
+            {
+                "provider_kind": "codex_live_session",
+                "session_id": "room-session",
+                "model": "gpt-5.3-codex-spark",
+                "sandbox": "read-only",
+            }
+        )
+        forbidden = build_agent_session_launch_plan(
+            {
+                "provider_kind": "codex_live_session",
+                "session_id": "room-session",
+                "provider_session_id": "--last",
+            }
+        )
+
+        self.assertIn("--ephemeral", codex["command"])
+        self.assertNotIn("resume", codex["command"])
+        self.assertNotIn("--last", codex["command"])
+        self.assertNotIn("--last", forbidden["command"])
+        self.assertEqual(forbidden["resume_mode"], "last_forbidden")
+
+    def test_two_agents_keep_distinct_provider_session_ids(self):
+        first = resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+                "provider_session_id": "provider-a",
+            },
+        )
+        second = resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-2",
+                "session_id": "session-2",
+                "provider_kind": "codex_live_session",
+                "provider_session_id": "provider-b",
+            },
+        )
+
+        self.assertEqual(first["session"]["provider_session_id"], "provider-a")
+        self.assertEqual(second["session"]["provider_session_id"], "provider-b")
+        self.assertNotEqual(first["session"]["provider_session_id"], second["session"]["provider_session_id"])
+
+    def test_codex_jsonl_runner_captures_provider_session_and_final_message(self):
+        lines = [
+            {"type": "thread.started", "thread_id": "thread-123"},
+            {"type": "item.completed", "item": {"type": "error", "message": "Skill descriptions were shortened."}},
+            {"type": "item.completed", "item": {"type": "agent_message", "text": "hello"}},
+            {"type": "turn.completed", "usage": {"input_tokens": 10, "cached_input_tokens": 2, "output_tokens": 3, "reasoning_output_tokens": 1}},
+        ]
+        runner = agent_session_codex_jsonl_turn_runner(
+            {"provider_kind": "codex_live_session", "session_id": "session-1"},
+            command_streamer=lambda command, prompt, timeout_seconds: [
+                {"type": "jsonl_line", "content": json_line} for json_line in [__import__("json").dumps(item) for item in lines]
+            ],
+        )
+
+        chunks = list(runner({"room_id": "room-a", "current_turn_instruction": "x"}))
+
+        self.assertEqual(chunks[0]["type"], "provider_session")
+        self.assertEqual(chunks[0]["provider_session_id"], "thread-123")
+        self.assertEqual(chunks[1]["type"], "message_delta")
+        self.assertNotIn("Skill descriptions", str(chunks))
+        self.assertEqual(chunks[-1]["type"], "message_final")
+        self.assertIn("usage", str(chunks))
+
+    def test_codex_jsonl_error_and_malformed_line_are_diagnostics(self):
+        runner = agent_session_codex_jsonl_turn_runner(
+            {"provider_kind": "codex_live_session", "session_id": "session-1"},
+            command_streamer=lambda command, prompt, timeout_seconds: [
+                {"type": "jsonl_line", "content": "{not-json"},
+                {"type": "jsonl_line", "content": "{\"type\":\"turn.failed\",\"message\":\"bad\"}"},
+            ],
+        )
+
+        chunks = list(runner({"room_id": "room-a", "current_turn_instruction": "x"}))
+
+        self.assertEqual(chunks[0]["type"], "diagnostics")
+        self.assertEqual(chunks[1]["type"], "error")
+        self.assertNotIn("message_final", [chunk["type"] for chunk in chunks])
 
     def test_resume_defaults_to_state_only_and_returns_launch_diagnostics(self):
         result = resume_agent_session_payload(
@@ -525,13 +618,10 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         self.assertEqual(dry_run["process_status"], "not_started")
         self.assertEqual(dry_run["launch_plan"]["command"][:2], ["codex", "exec"])
-        self.assertLess(
-            dry_run["launch_plan"]["command"].index("--sandbox"),
-            dry_run["launch_plan"]["command"].index("resume"),
-        )
+        self.assertIn("--ephemeral", dry_run["launch_plan"]["command"])
         self.assertEqual(launched["process_status"], "resumed")
         self.assertEqual(calls[0][:2], ["codex", "exec"])
-        self.assertLess(calls[0].index("--sandbox"), calls[0].index("resume"))
+        self.assertNotIn("--last", calls[0])
 
     def test_process_service_fake_runner_records_resumed(self):
         calls: list[list[str]] = []
@@ -551,7 +641,33 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         self.assertEqual(result["process_status"], "resumed")
         self.assertEqual(calls[0][:2], ["codex", "exec"])
-        self.assertLess(calls[0].index("--sandbox"), calls[0].index("resume"))
+        self.assertNotIn("--last", calls[0])
+
+    def test_room_turn_packet_is_bounded_and_keeps_instruction_and_media_warning(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        for index in range(15):
+            store.append_event("room-a", "message_final", actor_id="human", content=f"event {index} " + ("x" * 200))
+        store.attach_media("room-a", filename="notes.bin", content_type="application/octet-stream", data=b"data", supported=False)
+        result = resume_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-1", "session_id": "session-1", "provider_kind": "codex_live_session"},
+        )
+
+        packet = build_room_turn_packet(
+            self.output_root,
+            room_id="room-a",
+            participant_id=result["participant"]["participant_id"],
+            session_id="session-1",
+            instruction="Important current instruction.",
+            max_recent_events=20,
+            max_prompt_chars=2500,
+        )
+
+        self.assertLessEqual(len(str(packet)), 3000)
+        self.assertIn("Important current instruction.", packet["current_turn_instruction"])
+        self.assertIn("Unsupported media", packet["media_notes"][0])
+        self.assertNotIn(str(Path.cwd()), str(packet))
 
     def test_new_session_without_provider_is_state_only_and_not_launchable(self):
         result = resume_agent_session_payload(

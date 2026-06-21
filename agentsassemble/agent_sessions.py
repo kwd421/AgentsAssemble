@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import select
 import subprocess
 import time
@@ -17,6 +18,9 @@ AgentTurnRunner = Callable[[dict[str, object]], Iterable[AgentTurnChunk]]
 AgentTurnCommandRunner = Callable[[list[str], str, float], subprocess.CompletedProcess[str]]
 AgentTurnCommandStreamer = Callable[[list[str], str, float], Iterable[AgentTurnChunk]]
 DEFAULT_AGENT_TURN_TIMEOUT_SECONDS = 600.0
+DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS = 40
+DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS = 20000
+UNSUPPORTED_MEDIA_AUDIT_NOTE = "Unsupported media is listed for audit only; do not claim you viewed unsupported files."
 
 
 def resume_agent_session_payload(
@@ -64,6 +68,9 @@ def resume_agent_session_payload(
         {
             "session_id": session_id,
             "participant_id": agent_id,
+            "provider_session_id": clean_provider_session_id(
+                payload.get("provider_session_id") or payload.get("codex_session_id") or previous_session.get("provider_session_id")
+            ),
             "display_name": participant["display_name"],
             "status": "attached",
             "provider_kind": provider_kind,
@@ -173,6 +180,8 @@ def run_agent_session_turn_payload(
         participant_id=agent_id,
         session_id=session_id,
         instruction=instruction,
+        max_recent_events=payload.get("max_recent_events"),
+        max_prompt_chars=payload.get("max_prompt_chars"),
     )
     turn_id = clean_lobby_text(payload.get("turn_id"), limit=128) or f"turn-{uuid4().hex[:12]}"
     provider_kind = clean_lobby_text(session.get("provider_kind"), limit=64)
@@ -195,9 +204,9 @@ def run_agent_session_turn_payload(
     streaming = False
     timeout_seconds = _agent_turn_timeout_seconds(payload.get("timeout_seconds"))
     if turn_runner is None and turn_command_streamer is not None:
-        runner_kind = "streaming_command"
+        runner_kind = "codex_jsonl_command"
         streaming = True
-        turn_runner = agent_session_streaming_command_turn_runner(
+        turn_runner = agent_session_codex_jsonl_turn_runner(
             session,
             command_streamer=turn_command_streamer,
             timeout_seconds=timeout_seconds,
@@ -224,11 +233,35 @@ def run_agent_session_turn_payload(
                 }
             ],
         }
-    runtime_diagnostics = [
-        {"setting": "runner_kind", "status": runner_kind or "unknown", "message": runner_kind or "custom"},
-        {"setting": "streaming", "status": str(bool(streaming)).lower(), "message": str(bool(streaming)).lower()},
-        {"setting": "timeout_seconds", "status": "configured", "message": f"{timeout_seconds:g}"},
-    ]
+    command = build_agent_session_turn_command(session)
+    started_monotonic = time.monotonic()
+    started_at = _now_iso()
+    runtime_state: dict[str, object] = {
+        "turn_id": turn_id,
+        "room_id": room_id,
+        "participant_id": agent_id,
+        "session_id": session_id,
+        "provider_session_id": clean_provider_session_id(session.get("provider_session_id")),
+        "provider_kind": provider_kind,
+        "runner_kind": runner_kind or "custom",
+        "command_shape_hash": _command_shape_hash(command),
+        "prompt_chars": len(_agent_turn_prompt(packet)),
+        "prompt_bytes": len(_agent_turn_prompt(packet).encode("utf-8")),
+        "event_count_in_packet": len(packet.get("events") if isinstance(packet.get("events"), list) else []),
+        "recent_event_count": packet.get("recent_event_count", 0),
+        "summary_checkpoint_id": packet.get("summary_checkpoint_id", ""),
+        "media_supported_count": packet.get("media_supported_count", 0),
+        "media_unsupported_count": packet.get("media_unsupported_count", 0),
+        "started_at": started_at,
+        "resume_mode": _agent_session_resume_mode(session),
+        "context_error_detected": False,
+        "timeout_seconds": timeout_seconds,
+        "streaming": bool(streaming),
+        "stderr_tail": [],
+        "stdout_bytes": 0,
+        "message_final_chars": 0,
+    }
+    runtime_diagnostics = _diagnostic_items(runtime_state)
 
     appended: list[dict[str, object]] = [
         store.append_event(
@@ -246,9 +279,26 @@ def run_agent_session_turn_payload(
             if not isinstance(chunk, dict):
                 continue
             event_type = clean_lobby_text(chunk.get("type") or chunk.get("kind"), limit=64)
+            if event_type == "provider_session":
+                provider_session_id = clean_provider_session_id(chunk.get("provider_session_id") or chunk.get("thread_id"))
+                if provider_session_id:
+                    runtime_state["provider_session_id"] = provider_session_id
+                    store.upsert_session(room_id, {**session, "provider_session_id": provider_session_id})
+                continue
+            if event_type == "diagnostics":
+                _merge_runtime_diagnostics(runtime_state, chunk)
+                continue
             if event_type not in {"thinking_delta", "message_delta", "message_final", "error"}:
                 continue
             content = clean_lobby_text(chunk.get("content") or chunk.get("text") or chunk.get("message"), limit=8000)
+            if event_type in {"message_delta", "message_final"} and content:
+                runtime_state["time_to_first_message_delta_ms"] = runtime_state.get("time_to_first_message_delta_ms") or _elapsed_ms(started_monotonic)
+                runtime_state["stdout_bytes"] = int(runtime_state.get("stdout_bytes") or 0) + len(content.encode("utf-8"))
+            if event_type == "thinking_delta" and content:
+                runtime_state["time_to_first_thinking_delta_ms"] = runtime_state.get("time_to_first_thinking_delta_ms") or _elapsed_ms(started_monotonic)
+            if event_type == "message_final":
+                runtime_state["message_final_chars"] = len(content)
+            _merge_runtime_diagnostics(runtime_state, chunk)
             diagnostics = chunk.get("diagnostics") if isinstance(chunk.get("diagnostics"), list) else []
             appended.append(
                 store.append_event(
@@ -263,13 +313,14 @@ def run_agent_session_turn_payload(
                 )
             )
             if event_type == "error":
+                runtime_state["context_error_detected"] = _context_error_detected([*diagnostics, content])
                 return {
                     "status": "error",
                     "turn_status": "error",
                     "turn_id": turn_id,
                     "packet": packet,
                     "events": appended,
-                    "diagnostics": [*runtime_diagnostics, *diagnostics],
+                    "diagnostics": [*_diagnostic_items(runtime_state), *diagnostics],
                 }
     except Exception as error:  # pragma: no cover - defensive for injected runners
         appended.append(
@@ -299,16 +350,103 @@ def run_agent_session_turn_payload(
             session_id=session_id,
             provider_kind=provider_kind,
             turn_id=turn_id,
+            diagnostics=_diagnostic_items({**runtime_state, "turn_finished_ms": _elapsed_ms(started_monotonic)}),
         )
     )
+    packet_events = packet.get("events") if isinstance(packet.get("events"), list) else []
+    if packet_events:
+        store.upsert_session(room_id, {**store.session(room_id, session_id), "last_seen_event_id": packet_events[-1].get("id")})
     return {
         "status": "finished",
         "turn_status": "finished",
         "turn_id": turn_id,
         "packet": packet,
         "events": appended,
-        "diagnostics": runtime_diagnostics,
+        "diagnostics": _diagnostic_items(runtime_state),
     }
+
+
+def agent_session_codex_jsonl_turn_runner(
+    session: dict[str, object],
+    *,
+    command_streamer: AgentTurnCommandStreamer | None = None,
+    timeout_seconds: float = DEFAULT_AGENT_TURN_TIMEOUT_SECONDS,
+) -> AgentTurnRunner:
+    command = build_agent_session_turn_command(session)
+    streamer = command_streamer or _default_agent_turn_jsonl_streamer
+
+    def run(packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
+        if not command:
+            yield {
+                "type": "error",
+                "diagnostics": [
+                    {
+                        "setting": "turn_command",
+                        "status": "unsupported",
+                        "message": "This Agent Session provider has no verified turn command mapping yet.",
+                    }
+                ],
+            }
+            return
+        prompt = _agent_turn_prompt(packet)
+        final_parts: list[str] = []
+        for chunk in streamer(command, prompt, float(timeout_seconds)):
+            if isinstance(chunk, dict) and str(chunk.get("type") or "") in {
+                "thinking_delta",
+                "message_delta",
+                "message_final",
+                "error",
+                "diagnostics",
+                "provider_session",
+            }:
+                yield chunk
+                continue
+            line = str(chunk.get("content") if isinstance(chunk, dict) else chunk or "").strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                yield {
+                    "type": "diagnostics",
+                    "diagnostics": [{"setting": "jsonl", "status": "malformed", "message": clean_lobby_text(line, limit=500)}],
+                }
+                continue
+            event_type = clean_lobby_text(item.get("type") or item.get("event") or item.get("kind"), limit=128)
+            if event_type == "thread.started":
+                thread_id = clean_provider_session_id(item.get("thread_id") or item.get("id") or item.get("session_id"))
+                if thread_id:
+                    yield {"type": "provider_session", "provider_session_id": thread_id}
+                continue
+            if event_type in {"turn.failed", "error"}:
+                yield {
+                    "type": "error",
+                    "diagnostics": [
+                        {
+                            "setting": "codex_jsonl",
+                            "status": "failed",
+                            "message": clean_lobby_text(item.get("message") or item.get("error") or str(item), limit=1000),
+                        }
+                    ],
+                }
+                return
+            if event_type == "turn.completed":
+                usage = item.get("usage") if isinstance(item.get("usage"), dict) else {}
+                if usage:
+                    yield {"type": "diagnostics", "usage": usage}
+                if final_parts:
+                    yield {"type": "message_final", "content": clean_lobby_text("".join(final_parts), limit=8000)}
+                continue
+            text = _codex_jsonl_visible_message_text(item)
+            if text and _codex_jsonl_is_agent_message(item, event_type):
+                final_parts.append(text)
+                yield {"type": "message_delta", "content": text}
+                continue
+            progress = _codex_jsonl_progress_text(item, event_type)
+            if progress:
+                yield {"type": "thinking_delta", "content": progress}
+
+    return run
 
 
 def agent_session_streaming_command_turn_runner(
@@ -317,7 +455,7 @@ def agent_session_streaming_command_turn_runner(
     command_streamer: AgentTurnCommandStreamer | None = None,
     timeout_seconds: float = DEFAULT_AGENT_TURN_TIMEOUT_SECONDS,
 ) -> AgentTurnRunner:
-    command = build_agent_session_turn_command(session)
+    command = build_agent_session_plain_turn_command(session)
     streamer = command_streamer or _default_agent_turn_command_streamer
 
     def run(packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
@@ -345,7 +483,7 @@ def agent_session_command_turn_runner(
     command_runner: AgentTurnCommandRunner | None = None,
     timeout_seconds: float = DEFAULT_AGENT_TURN_TIMEOUT_SECONDS,
 ) -> AgentTurnRunner:
-    command = build_agent_session_turn_command(session)
+    command = build_agent_session_plain_turn_command(session)
     runner = command_runner or _default_agent_turn_command_runner
 
     def run(packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
@@ -421,6 +559,11 @@ def build_agent_session_turn_command(session: dict[str, object]) -> list[str]:
     if not command:
         return []
     return [*command, "-"]
+
+
+def build_agent_session_plain_turn_command(session: dict[str, object]) -> list[str]:
+    command = build_agent_session_turn_command(session)
+    return [part for part in command if part != "--json"]
 
 
 def _agent_turn_prompt(packet: dict[str, object]) -> str:
@@ -530,6 +673,73 @@ def _default_agent_turn_command_streamer(
     }
 
 
+def _default_agent_turn_jsonl_streamer(
+    command: list[str],
+    prompt: str,
+    timeout_seconds: float,
+) -> Iterable[AgentTurnChunk]:
+    process = subprocess.Popen(
+        [str(part) for part in command],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+    assert process.stdin is not None
+    assert process.stdout is not None
+    assert process.stderr is not None
+    process.stdin.write(prompt)
+    process.stdin.close()
+    started_at = time.monotonic()
+    stderr_tail: list[str] = []
+    streams = [process.stdout, process.stderr]
+    while streams:
+        if time.monotonic() - started_at > timeout_seconds:
+            process.kill()
+            yield {
+                "type": "error",
+                "diagnostics": [
+                    {
+                        "setting": "turn_command",
+                        "status": "timeout",
+                        "message": f"provider command timed out after {timeout_seconds:g}s",
+                    }
+                ],
+            }
+            return
+        readable, _, _ = select.select(streams, [], [], 0.1)
+        if not readable and process.poll() is not None:
+            readable = list(streams)
+        for stream in readable:
+            line = stream.readline()
+            if line == "":
+                streams.remove(stream)
+                continue
+            if stream is process.stderr:
+                stderr_tail = [*stderr_tail, clean_lobby_text(line, limit=500)][-8:]
+                chunk = _stderr_progress_chunk(line)
+                if chunk is not None:
+                    yield chunk
+                continue
+            yield {"type": "jsonl_line", "content": line}
+    returncode = process.wait(timeout=1)
+    if returncode != 0:
+        diagnostics = [
+            {
+                "setting": "turn_command",
+                "status": "failed",
+                "message": f"provider command exited {returncode}",
+            },
+            {"setting": "stderr_tail", "status": "captured", "message": "\n".join(stderr_tail)},
+        ]
+        if _context_error_detected(diagnostics):
+            diagnostics.append({"setting": "context_error_detected", "status": "true", "message": "true"})
+        yield {"type": "error", "diagnostics": diagnostics}
+        return
+    yield {"type": "diagnostics", "stderr_tail": stderr_tail, "exit_code": returncode}
+
+
 def _stderr_progress_chunk(line: str) -> AgentTurnChunk | None:
     safe = clean_lobby_text(line, limit=1000)
     lower = safe.lower()
@@ -557,6 +767,110 @@ def _agent_turn_timeout_seconds(value: object) -> float:
     return min(parsed, DEFAULT_AGENT_TURN_TIMEOUT_SECONDS)
 
 
+def _now_iso() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).isoformat()
+
+
+def _elapsed_ms(started_monotonic: float) -> int:
+    return int((time.monotonic() - started_monotonic) * 1000)
+
+
+def _command_shape_hash(command: list[str]) -> str:
+    redacted = ["<id>" if index and command[index - 1] == "resume" else part for index, part in enumerate(command)]
+    return hashlib.sha256(json.dumps(redacted, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+
+
+def _diagnostic_items(state: dict[str, object]) -> list[dict[str, str]]:
+    items: list[dict[str, str]] = []
+    for key, value in state.items():
+        if value in (None, "", [], {}):
+            continue
+        items.append({"setting": str(key), "status": str(value), "message": str(value)})
+    return items
+
+
+def _merge_runtime_diagnostics(state: dict[str, object], chunk: dict[str, object]) -> None:
+    for key in (
+        "time_to_process_spawn_ms",
+        "time_to_first_stdout_ms",
+        "time_to_first_json_event_ms",
+        "process_exit_ms",
+        "exit_code",
+        "stdout_bytes",
+        "stderr_tail",
+    ):
+        if key in chunk:
+            state[key] = chunk[key]
+    usage = chunk.get("usage")
+    if isinstance(usage, dict):
+        for key in ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens"):
+            if key in usage:
+                state[f"usage.{key}"] = usage[key]
+    diagnostics = chunk.get("diagnostics") if isinstance(chunk.get("diagnostics"), list) else []
+    if _context_error_detected(diagnostics):
+        state["context_error_detected"] = True
+
+
+def _context_error_detected(values: object) -> bool:
+    text = str(values).lower()
+    return "context window" in text or "ran out of room" in text or "context_length" in text
+
+
+def clean_provider_session_id(value: object) -> str:
+    provider_session_id = clean_lobby_text(value, limit=200)
+    if provider_session_id == "--last":
+        return ""
+    return provider_session_id
+
+
+def _agent_session_resume_mode(session: dict[str, object]) -> str:
+    raw = clean_lobby_text(session.get("provider_session_id") or session.get("codex_session_id"), limit=200)
+    if raw == "--last":
+        return "last_forbidden"
+    return "explicit_session_id" if clean_provider_session_id(raw) else "none"
+
+
+def _codex_jsonl_visible_message_text(item: dict[str, object]) -> str:
+    candidates: list[object] = [item.get("text"), item.get("content"), item.get("message")]
+    payload = item.get("item") if isinstance(item.get("item"), dict) else {}
+    candidates.extend([payload.get("text"), payload.get("content"), payload.get("message")])
+    for candidate in candidates:
+        if isinstance(candidate, str):
+            text = clean_lobby_text(candidate, limit=8000)
+            if text:
+                return text
+        if isinstance(candidate, list):
+            parts = []
+            for entry in candidate:
+                if isinstance(entry, dict):
+                    parts.append(str(entry.get("text") or entry.get("content") or ""))
+                elif isinstance(entry, str):
+                    parts.append(entry)
+            text = clean_lobby_text("".join(parts), limit=8000)
+            if text:
+                return text
+    return ""
+
+
+def _codex_jsonl_is_agent_message(item: dict[str, object], event_type: str) -> bool:
+    role = clean_lobby_text(item.get("role") or (item.get("item") or {}).get("role") if isinstance(item.get("item"), dict) else "", limit=64)
+    item_type = clean_lobby_text(item.get("item_type") or (item.get("item") or {}).get("type") if isinstance(item.get("item"), dict) else "", limit=64)
+    if not event_type.startswith("item."):
+        return False
+    if item_type:
+        return item_type in {"agent_message", "assistant_message", "message"}
+    return role in {"assistant", "agent"}
+
+
+def _codex_jsonl_progress_text(item: dict[str, object], event_type: str) -> str:
+    if "reasoning" not in event_type:
+        return ""
+    text = clean_lobby_text(item.get("summary") or item.get("progress"), limit=1000)
+    return text
+
+
 def build_room_turn_packet(
     output_root: Path,
     *,
@@ -564,9 +878,18 @@ def build_room_turn_packet(
     participant_id: str,
     session_id: str,
     instruction: str,
+    max_recent_events: object = None,
+    max_prompt_chars: object = None,
 ) -> dict[str, object]:
     store = RoomStore(output_root)
-    events = store.read_events(room_id)
+    session = store.session(room_id, session_id)
+    last_seen_event_id = clean_lobby_text(session.get("last_seen_event_id"), limit=128)
+    events_after_seen = store.read_events(room_id, after=last_seen_event_id) if last_seen_event_id else store.read_events(room_id)
+    all_events = store.read_events(room_id)
+    recent_limit = _positive_int(max_recent_events, DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS)
+    prompt_limit = _positive_int(max_prompt_chars, DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS)
+    recent_events = all_events[-recent_limit:]
+    events = _dedupe_events([*events_after_seen, *recent_events])
     session = store.session(room_id, session_id)
     media_manifest = []
     for event in events:
@@ -574,17 +897,24 @@ def build_room_turn_packet(
         if isinstance(media, dict):
             media_manifest.append(dict(media))
     unsupported_media = [media for media in media_manifest if not bool(media.get("supported"))]
-    return {
+    summary = session.get("summary") if isinstance(session.get("summary"), dict) else {}
+    packet = {
         "room_id": room_id,
         "participant_id": participant_id,
         "session_id": session_id,
+        "provider_session_id": clean_provider_session_id(session.get("provider_session_id")),
+        "summary": summary,
+        "include_summary": bool(summary),
+        "summary_checkpoint_id": clean_lobby_text(summary.get("up_to_event_id") if isinstance(summary, dict) else "", limit=128),
+        "after_event_id": last_seen_event_id,
         "events": events,
+        "recent_event_count": len(recent_events),
+        "max_recent_events": recent_limit,
+        "max_prompt_chars": prompt_limit,
         "media_manifest": media_manifest,
-        "media_notes": [
-            "Unsupported media is listed for audit only; do not claim you viewed unsupported files."
-        ]
-        if unsupported_media
-        else [],
+        "media_supported_count": len([media for media in media_manifest if bool(media.get("supported"))]),
+        "media_unsupported_count": len(unsupported_media),
+        "media_notes": [UNSUPPORTED_MEDIA_AUDIT_NOTE] if unsupported_media else [],
         "current_turn_instruction": clean_lobby_text(instruction, limit=2000),
         "settings": {
             "model": session.get("model", ""),
@@ -598,6 +928,35 @@ def build_room_turn_packet(
         ],
         "expected_reply_style": "Append one room-visible reply for this turn.",
     }
+    return _bound_room_turn_packet(packet, prompt_limit)
+
+
+def _positive_int(value: object, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _dedupe_events(events: list[dict[str, object]]) -> list[dict[str, object]]:
+    seen: set[str] = set()
+    deduped = []
+    for event in events:
+        event_id = str(event.get("id") or "")
+        key = event_id or json.dumps(event, sort_keys=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(event)
+    return deduped
+
+
+def _bound_room_turn_packet(packet: dict[str, object], prompt_limit: int) -> dict[str, object]:
+    events = list(packet.get("events") if isinstance(packet.get("events"), list) else [])
+    while events and len(_agent_turn_prompt({**packet, "events": events})) > prompt_limit:
+        events.pop(0)
+    return {**packet, "events": events, "event_count_in_packet": len(events)}
 
 
 def room_sse_frames_after_cursor(output_root: Path, room_id: str, *, cursor: str = "") -> list[str]:
@@ -644,27 +1003,40 @@ def build_agent_session_launch_plan(session: dict[str, object]) -> dict[str, obj
     model = clean_lobby_text(session.get("model") or session.get("model_id"), limit=128)
     effort = clean_lobby_text(session.get("effort"), limit=64)
     sandbox = clean_lobby_text(session.get("sandbox") or session.get("permissions"), limit=64) or "read-only"
-    session_id = clean_lobby_text(session.get("session_id"), limit=128)
+    provider_session_id_raw = clean_lobby_text(session.get("provider_session_id") or session.get("codex_session_id"), limit=200)
+    provider_session_id = clean_provider_session_id(provider_session_id_raw)
     if provider_kind == "codex_live_session":
         # Deterministic Codex CLI shape, verified in tests with a fake runner:
-        # codex exec --model <model> -c model_reasoning_effort="<effort>"
-        #   --sandbox read-only --ignore-rules --skip-git-repo-check resume <session_id>
+        # fresh:  codex exec --json --ephemeral --model <model> ... -
+        # resume: codex exec --json --model <model> ... resume <provider_session_id> -
         # `--ignore-rules` prevents repo rules from mutating this read-only
         # launch path. Codex owns actual sandbox enforcement.
-        command = ["codex", "exec"]
+        diagnostics = []
+        if provider_session_id_raw == "--last":
+            diagnostics.append(
+                {
+                    "setting": "resume_mode",
+                    "status": "last_forbidden",
+                    "message": "Agent Session runtime forbids Codex resume --last; attach an explicit provider_session_id or use fresh mode.",
+                }
+            )
+        command = ["codex", "exec", "--json"]
+        if not provider_session_id:
+            command.append("--ephemeral")
         if model:
             command.extend(["--model", model])
         if effort:
             command.extend(["-c", f'model_reasoning_effort="{effort}"'])
         command.extend(["--sandbox", sandbox, "--ignore-rules", "--skip-git-repo-check"])
-        command.append("resume")
-        if session_id:
-            command.append(session_id)
+        if provider_session_id:
+            command.extend(["resume", provider_session_id])
         return {
             "provider_kind": provider_kind,
             "command": command,
             "permission_enforcement": "codex_readonly" if sandbox == "read-only" else "advisory",
-            "diagnostics": [],
+            "resume_mode": "explicit_session_id" if provider_session_id else ("last_forbidden" if provider_session_id_raw == "--last" else "none"),
+            "provider_session_id": provider_session_id,
+            "diagnostics": diagnostics,
         }
     return {
         "provider_kind": provider_kind,

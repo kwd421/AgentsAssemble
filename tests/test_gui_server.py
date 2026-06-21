@@ -319,7 +319,8 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(resumed["process_status"], "resumed")
             self.assertEqual(calls[0][:2], ["codex", "exec"])
-            self.assertLess(calls[0].index("--sandbox"), calls[0].index("resume"))
+            self.assertIn("--ephemeral", calls[0])
+            self.assertNotIn("--last", calls[0])
 
     def test_agent_session_http_turn_requires_authorized_runner(self):
         reset_room_invite_state()

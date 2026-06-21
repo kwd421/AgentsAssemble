@@ -133,9 +133,9 @@ def _local_agent_session_turn_command_streamer(
     prompt: str,
     timeout_seconds: float,
 ):
-    from agentsassemble.agent_sessions import _default_agent_turn_command_streamer
+    from agentsassemble.agent_sessions import _default_agent_turn_jsonl_streamer
 
-    yield from _default_agent_turn_command_streamer(command, prompt, timeout_seconds)
+    yield from _default_agent_turn_jsonl_streamer(command, prompt, timeout_seconds)
 
 
 def register_room_routes(router: Router) -> None:

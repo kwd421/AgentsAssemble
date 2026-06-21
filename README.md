@@ -181,15 +181,17 @@ assemble room turn <room-id> --agent <agent-id> --session <session-id> "Answer f
 ```
 
 By default this attaches state only and reports `process_status: not_started`.
-Turn execution builds the ordered room packet, including media manifest and
-unsupported-media audit notes, then sends that packet to the configured Agent
-Session turn runner. The Codex command path appends `-` to
-`codex exec resume ...` and passes the JSON packet through stdin, capturing
-stdout/stderr instead of discarding them. The live path uses a streaming
-command runner where available: incremental stdout becomes `message_delta`,
-conservative explicit stderr progress such as `progress:` can become
-`thinking_delta`, and the accumulated stdout becomes `message_final`. The final
-stdout runner remains available as a non-streaming fallback. Without an
+Turn execution builds a bounded ordered room packet, including media manifest
+and unsupported-media audit notes, then sends that packet to the configured
+Agent Session turn runner. The Codex command path appends `-` to either
+`codex exec --json --ephemeral ...` for fresh stateless turns or
+`codex exec --json ... resume <provider_session_id>` for explicit provider
+sessions. Agent Session runtime never falls back to `resume --last`; the
+RoomStore `session_id` and provider-owned `provider_session_id` are stored
+separately. The live path treats Codex JSONL stdout as primary: provider-visible
+message items become `message_delta` and `message_final`, explicit safe progress
+can become `thinking_delta`, and usage/session diagnostics are recorded. Plain
+stdout streaming remains a fallback. Without an
 explicit runner, turn execution reports a safe not-started diagnostic instead
 of claiming the provider answered. When a runner does answer, the server
 appends `turn_started`, optional `thinking_delta` / `message_delta`,
@@ -215,7 +217,7 @@ The Codex adapter has a first smoke path through `codex exec`.
 The current implementation:
 
 - uses the shared local Codex authentication/config
-- invokes `codex exec --sandbox read-only --ignore-rules --skip-git-repo-check`
+- invokes `codex exec --json --ephemeral --sandbox read-only --ignore-rules --skip-git-repo-check`
 - writes each call's final response with `--output-last-message`
 - records Codex command metadata and session id when available
 - keeps role files, history files, and research artifacts isolated by role

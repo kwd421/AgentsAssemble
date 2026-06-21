@@ -640,6 +640,65 @@ export default function App() {
       flow_id: String(event.turn_id || ""),
     };
   }, []);
+  const roomEventsToTimelineEvents = useCallback((events: RoomEvent[]): LobbyEvent[] => {
+    const timeline: LobbyEvent[] = [];
+    const turnIndex = new Map<string, number>();
+    events.forEach((event) => {
+      if (!event.id) return;
+      const turnId = String(event.turn_id || event.id);
+      const speaker = String(event.participant_id || event.actor_id || "Agent Session");
+      if (event.type === "message_delta" || event.type === "message_final") {
+        const existingIndex = turnIndex.get(turnId);
+        const existing = existingIndex === undefined ? null : timeline[existingIndex];
+        const message =
+          event.type === "message_final"
+            ? String(event.content || "")
+            : `${existing?.message || ""}${event.content || ""}`;
+        const lobbyEvent: LobbyEvent = {
+          id: turnId,
+          created_at: event.created_at,
+          name: speaker,
+          side: "other",
+          kind: "message",
+          message,
+          actor_id: speaker,
+          flow_event_type: "agent_session_turn",
+          flow_action: event.type,
+          flow_meeting_id: event.room_id,
+          flow_id: turnId,
+        };
+        if (existingIndex === undefined) {
+          turnIndex.set(turnId, timeline.length);
+          timeline.push(lobbyEvent);
+        } else {
+          timeline[existingIndex] = lobbyEvent;
+        }
+        return;
+      }
+      if (event.type === "thinking_delta") return;
+      if (event.type === "error") {
+        if (turnIndex.has(`${turnId}:error`)) return;
+        turnIndex.set(`${turnId}:error`, timeline.length);
+        timeline.push({
+          id: `${turnId}:error`,
+          created_at: event.created_at,
+          name: speaker,
+          side: "other",
+          kind: "system",
+          message: String(event.content || "Turn failed."),
+          actor_id: speaker,
+          flow_event_type: "agent_session_turn",
+          flow_action: event.type,
+          flow_meeting_id: event.room_id,
+          flow_id: turnId,
+        });
+        return;
+      }
+      const lobbyEvent = roomEventToLobbyEvent(event);
+      if (lobbyEvent) timeline.push(lobbyEvent);
+    });
+    return timeline;
+  }, [roomEventToLobbyEvent]);
   const roomEventProgress = useCallback((event: RoomEvent): AgentSessionProgress | null | undefined => {
     if (event.type === "thinking_delta") {
       const participantId = String(event.participant_id || event.actor_id || "");
@@ -1041,9 +1100,7 @@ export default function App() {
   const scopedMafiaGame = mafiaGame?.game_id === activeRoom.meetingId ? mafiaGame : null;
   const activeRoomFlowVisible = Boolean(flow.meeting_id && flow.meeting_id === activeRoom.meetingId);
   const activeRoomEvents = roomEventsByRoom[activeRoom.meetingId || ""] || [];
-  const activeRoomTimelineEvents = activeRoomEvents
-    .map(roomEventToLobbyEvent)
-    .filter(Boolean) as LobbyEvent[];
+  const activeRoomTimelineEvents = roomEventsToTimelineEvents(activeRoomEvents);
   const activeAgentSessionProgress = agentSessionProgressByRoom[activeRoom.meetingId || ""] || null;
   const scopedFlow = activeRoomFlowVisible
     ? flow
@@ -2115,7 +2172,9 @@ export default function App() {
         if (progress !== undefined) {
           setAgentSessionProgressByRoom((previous) => ({ ...previous, [roomId]: progress }));
         }
-        const lobbyEvent = roomEventToLobbyEvent(event);
+        const lobbyEvent = event.type === "message_delta" || event.type === "thinking_delta" || event.type === "message_final"
+          ? null
+          : roomEventToLobbyEvent(event);
         if (!lobbyEvent) {
           refreshMembers();
           return;

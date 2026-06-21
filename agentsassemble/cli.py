@@ -1662,6 +1662,7 @@ def build_parser() -> argparse.ArgumentParser:
         room_join.add_argument("room_id")
         room_join.add_argument("--agent", required=True)
         room_join.add_argument("--session", default="")
+        room_join.add_argument("--provider-session-id", default="", help="Explicit provider-owned session id for Codex resume; never use --last.")
         room_join.add_argument("--model", default="")
         room_join.add_argument("--effort", default="")
         room_join.add_argument("--sandbox", default="")
@@ -1679,6 +1680,18 @@ def build_parser() -> argparse.ArgumentParser:
     room_turn.add_argument("--dry-run", action="store_true", help="Build the turn packet without running the provider.")
     room_turn.add_argument("--json", action="store_true", dest="as_json")
     room_turn.add_argument("instruction")
+
+    room_smoke = room_subparsers.add_parser("smoke", help="Run opt-in Agent Session Codex smoke checks.")
+    room_smoke_subparsers = room_smoke.add_subparsers(dest="room_smoke_command", required=True)
+    for smoke_command in (
+        "fresh-codex",
+        "explicit-session-codex",
+        "two-agent-codex",
+        "context-recovery-codex",
+    ):
+        smoke = room_smoke_subparsers.add_parser(smoke_command, help=f"Run {smoke_command} smoke check.")
+        smoke.add_argument("--approve-real-provider", action="store_true")
+        smoke.add_argument("--json", action="store_true", dest="as_json")
 
     room_leave = room_subparsers.add_parser("leave", parents=[room_server], help="Leave a room as an Agent Session participant.")
     room_leave.add_argument("room_id")
@@ -8403,6 +8416,7 @@ def run_room_command(args: argparse.Namespace) -> int:
             "room_id": args.room_id,
             "agent_id": args.agent,
             "session_id": args.session or args.agent,
+            "provider_session_id": args.provider_session_id,
             "model": args.model,
             "effort": args.effort,
             "sandbox": args.sandbox,
@@ -8425,6 +8439,30 @@ def run_room_command(args: argparse.Namespace) -> int:
                 f"attached Agent Session {participant.get('participant_id') or args.agent} "
                 f"in {args.room_id} · process: {process_status}"
             )
+        return 0
+    if args.room_command == "smoke":
+        payload = {
+            "status": "skipped" if not args.approve_real_provider else "not_run",
+            "smoke": args.room_smoke_command,
+            "requires_approval": True,
+            "approved": bool(args.approve_real_provider),
+            "metrics": {
+                "p50_time_to_first_json_event": None,
+                "p95_time_to_first_json_event": None,
+                "p50_time_to_first_message_delta": None,
+                "p95_time_to_first_message_delta": None,
+                "p50_turn_finished": None,
+                "p95_turn_finished": None,
+                "prompt_chars": [],
+                "token_usage": [],
+                "context_failures": 0,
+                "distinct_provider_session_id": None,
+            },
+        }
+        if args.as_json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"{payload['smoke']}: {payload['status']} (real provider smoke is opt-in and not run by unit tests)")
         return 0
     if args.room_command == "turn":
         payload = {
