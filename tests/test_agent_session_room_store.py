@@ -4,9 +4,12 @@ from pathlib import Path
 
 from agentsassemble.agent_sessions import (
     AgentSessionProcessService,
+    CodexAppServerRuntime,
     agent_session_command_turn_runner,
     agent_session_codex_jsonl_turn_runner,
     agent_session_streaming_command_turn_runner,
+    build_provider_recovery_input,
+    build_provider_turn_input,
     build_agent_session_launch_plan,
     build_agent_session_turn_command,
     build_room_turn_packet,
@@ -124,10 +127,10 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         )
 
         self.assertEqual(packet["room_id"], "room-a")
-        self.assertEqual([event["type"] for event in packet["events"]], ["room_created", "message_final", "media_attached", "participant_joined", "session_attached", "session_resumed"])
+        self.assertEqual([event["type"] for event in packet["events"]], ["message_final"])
         self.assertEqual(packet["media_manifest"][0]["id"], media["id"])
         self.assertNotIn(str(Path.cwd()), str(packet))
-        self.assertIn("Do not inspect or edit the project", packet["explicit_non_goals"][0])
+        self.assertIn("Do not inspect or edit the project", packet["provider_input"])
 
     def test_sse_replays_missed_events_and_emits_heartbeat_when_idle(self):
         store = RoomStore(self.output_root)
@@ -191,14 +194,10 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         self.assertEqual(result["turn_status"], "finished")
         self.assertEqual(packets[0]["current_turn_instruction"], "Answer now.")
-        self.assertEqual([event["type"] for event in packets[0]["events"]][:4], [
-            "room_created",
-            "message_final",
-            "media_attached",
-            "unsupported_media",
-        ])
+        self.assertEqual([event["type"] for event in packets[0]["events"]], ["message_final"])
         self.assertEqual([media["id"] for media in packets[0]["media_manifest"]], [supported["id"], unsupported["id"]])
         self.assertIn("Unsupported media", packets[0]["media_notes"][0])
+        self.assertIn("Unsupported media", packets[0]["provider_input"])
         self.assertNotIn(str(Path.cwd()), str(packets[0]))
         events = store.read_events("room-a")
         event_types = [event["type"] for event in events]
@@ -552,6 +551,284 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertEqual(chunks[-1]["type"], "message_final")
         self.assertIn("usage", str(chunks))
 
+    def test_ephemeral_jsonl_thread_id_is_diagnostic_not_persisted_provider_session(self):
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+            },
+        )
+
+        result = run_agent_session_turn_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "instruction": "Answer.",
+            },
+            turn_command_streamer=lambda command, prompt, timeout_seconds: [
+                {"type": "jsonl_line", "content": __import__("json").dumps({"type": "thread.started", "thread_id": "ephemeral-thread"})},
+                {"type": "jsonl_line", "content": __import__("json").dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "ok"}})},
+                {"type": "jsonl_line", "content": __import__("json").dumps({"type": "turn.completed"})},
+            ],
+        )
+
+        session = RoomStore(self.output_root).session("room-a", "session-1")
+        self.assertEqual(result["turn_status"], "finished")
+        self.assertNotEqual(session.get("provider_session_id"), "ephemeral-thread")
+        self.assertIn("ephemeral_thread_id", str(result["diagnostics"]))
+
+    def test_explicit_resume_keeps_provider_session_id(self):
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+                "provider_session_id": "resumable-thread",
+            },
+        )
+
+        result = run_agent_session_turn_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "instruction": "Answer.",
+            },
+            turn_command_streamer=lambda command, prompt, timeout_seconds: [
+                {"type": "jsonl_line", "content": __import__("json").dumps({"type": "thread.started", "thread_id": "resumable-thread"})},
+                {"type": "jsonl_line", "content": __import__("json").dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "ok"}})},
+                {"type": "jsonl_line", "content": __import__("json").dumps({"type": "turn.completed"})},
+            ],
+        )
+
+        session = RoomStore(self.output_root).session("room-a", "session-1")
+        self.assertEqual(result["turn_status"], "finished")
+        self.assertEqual(session.get("provider_session_id"), "resumable-thread")
+
+    def test_codex_app_server_runtime_maps_notifications(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+        class FakeProcess:
+            pid = 123
+
+            def __init__(self):
+                self.stdin = Pipe()
+                self.stdout = Pipe(
+                    [
+                        '{"jsonrpc":"2.0","id":1,"result":{}}\n',
+                        '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"}}}\n',
+                        '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-a","itemId":"item-a","delta":"hello"}}\n',
+                        '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-1","turnId":"turn-a","completedAtMs":1,"item":{"id":"item-a","type":"agentMessage","text":"hello"}}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
+                    ]
+                )
+
+        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+        chunks = list(runtime.send_turn({"provider_session_id": ""}, {"room_id": "room-a", "current_turn_instruction": "x"}))
+
+        self.assertEqual(chunks[0]["type"], "provider_session")
+        self.assertEqual(chunks[0]["provider_thread_id"], "thread-1")
+        self.assertIn("message_delta", [chunk["type"] for chunk in chunks])
+        self.assertIn("message_final", [chunk["type"] for chunk in chunks])
+        process = runtime.process
+        self.assertIsNotNone(process)
+        writes = "".join(process.stdin.writes)
+        self.assertIn('"method": "initialize"', writes)
+        self.assertIn('"method": "initialized"', writes)
+        self.assertIn('"method": "thread/start"', writes)
+        self.assertIn('"method": "turn/start"', writes)
+        self.assertIn('"input": [{"type": "text"', writes)
+        self.assertNotIn('"provider_session_id"', writes)
+
+    def test_app_server_provider_session_is_persisted_as_resumable(self):
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+            },
+        )
+
+        result = run_agent_session_turn_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "instruction": "Answer.",
+            },
+            turn_adapter=lambda session, packet: [
+                {"type": "provider_session", "provider_session_id": "app-thread", "provider_thread_id": "app-thread"},
+                {"type": "message_delta", "content": "ok"},
+                {"type": "message_final", "content": "ok"},
+            ],
+        )
+
+        session = RoomStore(self.output_root).session("room-a", "session-1")
+        self.assertEqual(result["turn_status"], "finished")
+        self.assertEqual(session.get("provider_session_id"), "app-thread")
+        self.assertEqual(session.get("provider_thread_id"), "app-thread")
+
+    def test_app_server_turn_sends_provider_input_not_debug_packet(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+        class FakeProcess:
+            pid = 125
+
+            def __init__(self):
+                self.stdin = Pipe()
+                self.stdout = Pipe(
+                    [
+                        '{"jsonrpc":"2.0","id":1,"result":{}}\n',
+                        '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"}}}\n',
+                        '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-1","turnId":"turn-a","completedAtMs":1,"item":{"id":"item-a","type":"agentMessage","text":"ok"}}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
+                    ]
+                )
+
+        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+        list(
+            runtime.send_turn(
+                {},
+                {
+                    "provider_input": "[Your turn]\nShort input.\n",
+                    "room_id": "room-a",
+                    "current_turn_instruction": "Short input.",
+                    "diagnostics": [{"setting": "must_not", "status": "leak"}],
+                },
+            )
+        )
+
+        writes = "".join(runtime.process.stdin.writes)
+        self.assertIn("Short input.", writes)
+        self.assertNotIn("must_not", writes)
+        self.assertNotIn("current_turn_instruction", writes)
+
+    def test_codex_app_server_approval_and_context_error_surface(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+        class FakeProcess:
+            pid = 124
+
+            def __init__(self):
+                self.stdin = Pipe()
+                self.stdout = Pipe(
+                    [
+                        '{"jsonrpc":"2.0","id":1,"result":{}}\n',
+                        '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-2"}}}\n',
+                        '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"command_execution/request_approval","params":{"threadId":"thread-2","turnId":"turn-a"}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/error","params":{"message":"contextWindowExceeded"}}\n',
+                    ]
+                )
+
+        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+        chunks = list(runtime.send_turn({}, {"room_id": "room-a", "current_turn_instruction": "x"}))
+
+        self.assertIn("approval_requested", [chunk["type"] for chunk in chunks])
+        self.assertEqual(chunks[-1]["type"], "error")
+
+    def test_codex_app_server_surfaces_safe_reasoning_and_tool_progress(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+        class FakeProcess:
+            pid = 126
+
+            def __init__(self):
+                self.stdin = Pipe()
+                self.stdout = Pipe(
+                    [
+                        '{"jsonrpc":"2.0","id":1,"result":{}}\n',
+                        '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-3"}}}\n',
+                        '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-3","turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thread-3","turnId":"turn-a","startedAtMs":1,"item":{"id":"r","type":"reasoning"}}}\n',
+                        '{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thread-3","turnId":"turn-a","startedAtMs":2,"item":{"id":"c","type":"commandExecution","command":"pwd"}}}\n',
+                        '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-3","turnId":"turn-a","completedAtMs":3,"item":{"id":"c","type":"commandExecution","command":"pwd"}}}\n',
+                        '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-3","turnId":"turn-a","completedAtMs":4,"item":{"id":"a","type":"agentMessage","text":"ok"}}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-3","turn":{"id":"turn-a"}}}\n',
+                    ]
+                )
+
+        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+        chunks = list(runtime.send_turn({}, {"provider_input": "[Your turn]\nAnswer.\n"}))
+        thinking = [chunk.get("content") for chunk in chunks if chunk.get("type") == "thinking_delta"]
+
+        self.assertIn("Thinking.", thinking)
+        self.assertIn("Using tool: pwd", thinking)
+        self.assertIn("Tool finished: pwd", thinking)
+        self.assertIn("message_final", [chunk["type"] for chunk in chunks])
+
     def test_codex_jsonl_error_and_malformed_line_are_diagnostics(self):
         runner = agent_session_codex_jsonl_turn_runner(
             {"provider_kind": "codex_live_session", "session_id": "session-1"},
@@ -664,10 +941,103 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             max_prompt_chars=2500,
         )
 
-        self.assertLessEqual(len(str(packet)), 3000)
+        self.assertLessEqual(packet["provider_visible_chars"], 2500)
         self.assertIn("Important current instruction.", packet["current_turn_instruction"])
         self.assertIn("Unsupported media", packet["media_notes"][0])
         self.assertNotIn(str(Path.cwd()), str(packet))
+
+    def test_room_turn_packet_excludes_internal_runtime_events(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        store.append_event("room-a", "turn_started", participant_id="agent-1", diagnostics=[{"setting": "secret", "status": "x", "message": "x"}])
+        store.append_event("room-a", "message_delta", participant_id="agent-1", content="partial")
+        store.append_event("room-a", "message_final", participant_id="agent-1", content="final answer")
+        store.append_event("room-a", "turn_finished", participant_id="agent-1", diagnostics=[{"setting": "timing", "status": "slow", "message": "slow"}])
+        result = resume_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-1", "session_id": "session-1", "provider_kind": "codex_live_session"},
+        )
+
+        packet = build_room_turn_packet(
+            self.output_root,
+            room_id="room-a",
+            participant_id=result["participant"]["participant_id"],
+            session_id="session-1",
+            instruction="Continue.",
+        )
+
+        self.assertEqual([event["type"] for event in packet["events"]], [])
+        self.assertNotIn("diagnostics", str(packet))
+        self.assertNotIn("partial", str(packet))
+
+    def test_provider_turn_input_includes_other_public_delta_not_own_prior_message(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        resume_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-a", "session_id": "session-a", "provider_kind": "codex_live_session"},
+        )
+        store.append_event("room-a", "message_final", participant_id="agent-a", content="my previous answer")
+        store.append_event("room-a", "message_final", participant_id="agent-b", content="other agent update")
+        store.upsert_session("room-a", {**store.session("room-a", "session-a"), "bootstrap_done": True})
+
+        packet = build_room_turn_packet(
+            self.output_root,
+            room_id="room-a",
+            participant_id="agent-a",
+            session_id="session-a",
+            instruction="Reply briefly.",
+        )
+
+        self.assertEqual(packet["input_mode"], "delta")
+        self.assertIn("other agent update", packet["provider_input"])
+        self.assertNotIn("my previous answer", packet["provider_input"])
+        self.assertNotIn("provider_session_id", packet["provider_input"])
+        self.assertNotIn("diagnostics", packet["provider_input"])
+
+    def test_provider_sync_cursor_advances_after_success_and_not_after_failure(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        store.append_event("room-a", "message_final", participant_id="human", content="hello")
+        resume_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-a", "session_id": "session-a", "provider_kind": "codex_live_session"},
+        )
+
+        success = run_agent_session_turn_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-a", "session_id": "session-a", "instruction": "Answer."},
+            turn_runner=lambda packet: [{"type": "message_final", "content": "ok"}],
+        )
+
+        session_after_success = RoomStore(self.output_root).session("room-a", "session-a")
+        self.assertEqual(success["turn_status"], "finished")
+        self.assertTrue(session_after_success.get("bootstrap_done"))
+        self.assertEqual(session_after_success.get("last_spoke_event_id"), success["events"][-2]["id"])
+        cursor_after_success = session_after_success.get("last_provider_sync_event_id")
+        self.assertEqual(cursor_after_success, success["events"][-2]["id"])
+
+        store = RoomStore(self.output_root)
+        store.append_event("room-a", "message_final", participant_id="human", content="new human update")
+        failed = run_agent_session_turn_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-a", "session_id": "session-a", "instruction": "Fail."},
+            turn_runner=lambda packet: [{"type": "error", "diagnostics": [{"setting": "x", "status": "failed", "message": "boom"}]}],
+        )
+
+        self.assertEqual(failed["turn_status"], "error")
+        self.assertEqual(RoomStore(self.output_root).session("room-a", "session-a").get("last_provider_sync_event_id"), cursor_after_success)
+
+    def test_normal_provider_input_omits_summary_but_recovery_includes_it(self):
+        normal = build_provider_turn_input(instruction="Answer.", room_delta="")
+        recovery = build_provider_recovery_input(
+            instruction="Answer.",
+            room_memory={"summary": "Known room summary.", "decisions": ["Ship app-server"], "open_questions": [], "up_to_event_id": "evt-1"},
+        )
+
+        self.assertNotIn("Known room summary", normal)
+        self.assertIn("Known room summary", recovery)
+        self.assertIn("Ship app-server", recovery)
 
     def test_new_session_without_provider_is_state_only_and_not_launchable(self):
         result = resume_agent_session_payload(

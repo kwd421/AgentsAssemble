@@ -398,6 +398,7 @@ class GuiServerTests(unittest.TestCase):
                         "agent_id": "agent-1",
                         "session_id": "session-1",
                         "instruction": "Answer now.",
+                        "runtime_mode": "exec_jsonl_fallback",
                     },
                 ).sent_json
 

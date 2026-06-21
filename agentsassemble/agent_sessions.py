@@ -6,7 +6,7 @@ import select
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Protocol
 from uuid import uuid4
 
 from agentsassemble.meeting_events import clean_lobby_text
@@ -17,10 +17,18 @@ AgentTurnChunk = dict[str, object]
 AgentTurnRunner = Callable[[dict[str, object]], Iterable[AgentTurnChunk]]
 AgentTurnCommandRunner = Callable[[list[str], str, float], subprocess.CompletedProcess[str]]
 AgentTurnCommandStreamer = Callable[[list[str], str, float], Iterable[AgentTurnChunk]]
+AgentTurnAdapter = Callable[[dict[str, object], dict[str, object]], Iterable[AgentTurnChunk]]
 DEFAULT_AGENT_TURN_TIMEOUT_SECONDS = 600.0
 DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS = 40
 DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS = 20000
 UNSUPPORTED_MEDIA_AUDIT_NOTE = "Unsupported media is listed for audit only; do not claim you viewed unsupported files."
+ROOM_MEMORY_EMPTY = {
+    "summary": "",
+    "decisions": [],
+    "open_questions": [],
+    "up_to_event_id": "",
+    "compacted_at": "",
+}
 
 
 def resume_agent_session_payload(
@@ -110,11 +118,13 @@ class AgentSessionProcessService:
         turn_runner: AgentTurnRunner | None = None,
         turn_command_runner: AgentTurnCommandRunner | None = None,
         turn_command_streamer: AgentTurnCommandStreamer | None = None,
+        turn_adapter: AgentTurnAdapter | None = None,
     ) -> None:
         self.command_runner = command_runner
         self.turn_runner = turn_runner
         self.turn_command_runner = turn_command_runner
         self.turn_command_streamer = turn_command_streamer
+        self.turn_adapter = turn_adapter
 
     def resume(
         self,
@@ -144,6 +154,7 @@ class AgentSessionProcessService:
             turn_runner=self.turn_runner,
             turn_command_runner=self.turn_command_runner,
             turn_command_streamer=self.turn_command_streamer,
+            turn_adapter=self.turn_adapter,
         )
 
 
@@ -154,6 +165,7 @@ def run_agent_session_turn_payload(
     turn_runner: AgentTurnRunner | None = None,
     turn_command_runner: AgentTurnCommandRunner | None = None,
     turn_command_streamer: AgentTurnCommandStreamer | None = None,
+    turn_adapter: AgentTurnAdapter | None = None,
 ) -> dict[str, object]:
     store = RoomStore(output_root)
     room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
@@ -201,10 +213,21 @@ def run_agent_session_turn_payload(
             ],
         }
     runner_kind = "fake" if turn_runner is not None else ""
+    runtime_mode = "fake" if turn_runner is not None else ""
     streaming = False
     timeout_seconds = _agent_turn_timeout_seconds(payload.get("timeout_seconds"))
+    if turn_runner is None and turn_adapter is not None:
+        runner_kind = "agent_session_adapter"
+        runtime_mode = "app_server"
+        streaming = True
+
+        def run_adapter(packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
+            yield from turn_adapter(session, packet)
+
+        turn_runner = run_adapter
     if turn_runner is None and turn_command_streamer is not None:
         runner_kind = "codex_jsonl_command"
+        runtime_mode = "exec_jsonl_fallback"
         streaming = True
         turn_runner = agent_session_codex_jsonl_turn_runner(
             session,
@@ -213,6 +236,7 @@ def run_agent_session_turn_payload(
         )
     if turn_runner is None and turn_command_runner is not None:
         runner_kind = "final_command"
+        runtime_mode = "exec_plain_fallback"
         turn_runner = agent_session_command_turn_runner(
             session,
             command_runner=turn_command_runner,
@@ -244,9 +268,20 @@ def run_agent_session_turn_payload(
         "provider_session_id": clean_provider_session_id(session.get("provider_session_id")),
         "provider_kind": provider_kind,
         "runner_kind": runner_kind or "custom",
+        "runtime_mode": runtime_mode or "custom",
         "command_shape_hash": _command_shape_hash(command),
         "prompt_chars": len(_agent_turn_prompt(packet)),
         "prompt_bytes": len(_agent_turn_prompt(packet).encode("utf-8")),
+        "input_mode": packet.get("input_mode", ""),
+        "provider_visible_chars": packet.get("provider_visible_chars", 0),
+        "provider_visible_event_count": packet.get("provider_visible_event_count", 0),
+        "filtered_internal_event_count": packet.get("filtered_internal_event_count", 0),
+        "filtered_message_delta_count": packet.get("filtered_message_delta_count", 0),
+        "last_provider_sync_event_id_before": packet.get("last_provider_sync_event_id_before", ""),
+        "last_provider_sync_event_id_after": packet.get("last_provider_sync_event_id_after", ""),
+        "bootstrap_included": bool(packet.get("bootstrap_included")),
+        "room_delta_included": bool(packet.get("room_delta_included")),
+        "recovery_summary_included": bool(packet.get("recovery_summary_included")),
         "event_count_in_packet": len(packet.get("events") if isinstance(packet.get("events"), list) else []),
         "recent_event_count": packet.get("recent_event_count", 0),
         "summary_checkpoint_id": packet.get("summary_checkpoint_id", ""),
@@ -282,13 +317,31 @@ def run_agent_session_turn_payload(
             if event_type == "provider_session":
                 provider_session_id = clean_provider_session_id(chunk.get("provider_session_id") or chunk.get("thread_id"))
                 if provider_session_id:
-                    runtime_state["provider_session_id"] = provider_session_id
-                    store.upsert_session(room_id, {**session, "provider_session_id": provider_session_id})
+                    if runtime_state.get("resume_mode") == "explicit_session_id" or runtime_state.get("runtime_mode") == "app_server":
+                        runtime_state["provider_session_id"] = provider_session_id
+                        store.upsert_session(room_id, {**store.session(room_id, session_id), "provider_session_id": provider_session_id})
+                    else:
+                        runtime_state["ephemeral_thread_id"] = provider_session_id
+                        runtime_state["resume_capability"] = "none"
+                provider_thread_id = clean_lobby_text(chunk.get("provider_thread_id"), limit=200)
+                if provider_thread_id:
+                    runtime_state["provider_thread_id"] = provider_thread_id
+                    if runtime_state.get("runtime_mode") == "app_server":
+                        store.upsert_session(room_id, {**store.session(room_id, session_id), "provider_thread_id": provider_thread_id})
                 continue
             if event_type == "diagnostics":
                 _merge_runtime_diagnostics(runtime_state, chunk)
                 continue
-            if event_type not in {"thinking_delta", "message_delta", "message_final", "error"}:
+            if event_type not in {
+                "thinking_delta",
+                "message_delta",
+                "message_final",
+                "error",
+                "approval_requested",
+                "approval_resolved",
+                "context_compaction_started",
+                "context_compaction_finished",
+            }:
                 continue
             content = clean_lobby_text(chunk.get("content") or chunk.get("text") or chunk.get("message"), limit=8000)
             if event_type in {"message_delta", "message_final"} and content:
@@ -314,6 +367,8 @@ def run_agent_session_turn_payload(
             )
             if event_type == "error":
                 runtime_state["context_error_detected"] = _context_error_detected([*diagnostics, content])
+                if runtime_state["context_error_detected"]:
+                    runtime_state["recovery_required"] = True
                 return {
                     "status": "error",
                     "turn_status": "error",
@@ -354,8 +409,18 @@ def run_agent_session_turn_payload(
         )
     )
     packet_events = packet.get("events") if isinstance(packet.get("events"), list) else []
+    latest_public_event_id = _latest_public_event_id(store.read_events(room_id))
+    last_spoke_event_id = _latest_own_message_event_id(store.read_events(room_id), agent_id)
+    session_update = {
+        **store.session(room_id, session_id),
+        "bootstrap_done": True,
+        "last_provider_sync_event_id": latest_public_event_id,
+    }
+    if last_spoke_event_id:
+        session_update["last_spoke_event_id"] = last_spoke_event_id
     if packet_events:
-        store.upsert_session(room_id, {**store.session(room_id, session_id), "last_seen_event_id": packet_events[-1].get("id")})
+        session_update["last_seen_event_id"] = packet_events[-1].get("id")
+    store.upsert_session(room_id, session_update)
     return {
         "status": "finished",
         "turn_status": "finished",
@@ -447,6 +512,239 @@ def agent_session_codex_jsonl_turn_runner(
                 yield {"type": "thinking_delta", "content": progress}
 
     return run
+
+
+class AgentSessionAdapter(Protocol):
+    def start(self, config: dict[str, object]) -> dict[str, object]: ...
+
+    def attach(self, ids: dict[str, object]) -> dict[str, object]: ...
+
+    def send_turn(self, handle: dict[str, object], packet: dict[str, object]) -> Iterable[AgentTurnChunk]: ...
+
+    def compact(self, handle: dict[str, object], policy: dict[str, object]) -> Iterable[AgentTurnChunk]: ...
+
+    def detach(self, handle: dict[str, object]) -> None: ...
+
+    def diagnose(self, handle: dict[str, object]) -> dict[str, object]: ...
+
+
+class CodexAppServerRuntime:
+    """Codex app-server adapter for low-latency Agent Sessions.
+
+    This is provider-facing plumbing only; UI remains "Agent Session".
+    """
+
+    def __init__(
+        self,
+        *,
+        process_factory: Callable[[], object] | None = None,
+        command: list[str] | None = None,
+    ) -> None:
+        self.process_factory = process_factory
+        self.command = command or ["codex", "app-server", "--stdio"]
+        self.process: object | None = None
+        self._next_id = 1
+        self._initialized = False
+        self.diagnostics: dict[str, object] = {
+            "runtime_mode": "app_server",
+            "transport": "stdio_jsonl",
+            "runtime_reused": False,
+        }
+
+    def start(self, config: dict[str, object]) -> dict[str, object]:
+        started = time.monotonic()
+        if self.process is None:
+            self.process = self._spawn_process()
+            self.diagnostics["app_server_pid"] = getattr(self.process, "pid", "")
+        else:
+            self.diagnostics["runtime_reused"] = True
+            self.diagnostics["app_server_reused"] = True
+        if not self._initialized:
+            self._send_request("initialize", {"clientInfo": {"name": "AgentsAssemble", "version": "0"}})
+            self._send_notification("initialized", {})
+            self._initialized = True
+        self.diagnostics["app_server_initialize_ms"] = _elapsed_ms(started)
+        return {"runtime_mode": "app_server", "transport": "stdio_jsonl", **config}
+
+    def attach(self, ids: dict[str, object]) -> dict[str, object]:
+        self.start({})
+        provider_session_id = clean_provider_session_id(ids.get("provider_session_id"))
+        started = time.monotonic()
+        if provider_session_id:
+            response = self._send_request("thread/resume", {"threadId": provider_session_id})
+            self.diagnostics["thread_resume_ms"] = _elapsed_ms(started)
+            thread_id = clean_provider_session_id(_nested_get(response, "result.thread.id") or provider_session_id)
+        else:
+            response = self._send_request("thread/start", {})
+            self.diagnostics["thread_start_ms"] = _elapsed_ms(started)
+            thread_id = clean_provider_session_id(
+                _nested_get(response, "result.thread.id")
+                or _nested_get(response, "result.threadId")
+                or _nested_get(response, "params.thread.id")
+            )
+        return {
+            "runtime_mode": "app_server",
+            "transport": "stdio_jsonl",
+            "provider_thread_id": thread_id,
+            "provider_session_id": thread_id,
+        }
+
+    def send_turn(self, handle: dict[str, object], packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
+        attached = self.attach(handle)
+        thread_id = clean_provider_session_id(attached.get("provider_thread_id") or handle.get("provider_session_id"))
+        if thread_id:
+            yield {"type": "provider_session", "provider_session_id": thread_id, "provider_thread_id": thread_id}
+        started = time.monotonic()
+        self._send_request(
+            "turn/start",
+            {
+                "threadId": thread_id,
+                "input": [{"type": "text", "text": str(packet.get("provider_input") or _agent_turn_prompt(packet))}],
+                "metadata": {"source": "agentsassemble_agent_session"},
+            },
+        )
+        self.diagnostics["turn_start_request_ms"] = _elapsed_ms(started)
+        self.diagnostics["time_to_turn_start_ack_ms"] = self.diagnostics["turn_start_request_ms"]
+        first_notification = False
+        first_agent_item = False
+        first_text_delta = False
+        for message in self._read_messages_until_turn_done():
+            method = clean_lobby_text(message.get("method"), limit=128)
+            params = message.get("params") if isinstance(message.get("params"), dict) else {}
+            if not first_notification:
+                self.diagnostics["time_to_first_notification_ms"] = _elapsed_ms(started)
+                first_notification = True
+            if method in {"turn/started"}:
+                yield {"type": "diagnostics", **self.diagnostics}
+                continue
+            if method in {"item/started", "item/completed"}:
+                progress = _app_server_progress_text(params, completed=method == "item/completed")
+                if progress:
+                    yield {"type": "thinking_delta", "content": progress}
+                    continue
+            if method in {"agent_message/delta", "agent-message/delta", "item/agent_message/delta", "item/agentMessage/delta"}:
+                if not first_agent_item:
+                    self.diagnostics["time_to_first_agent_item_ms"] = _elapsed_ms(started)
+                    self.diagnostics["time_to_first_item_event_ms"] = self.diagnostics["time_to_first_agent_item_ms"]
+                    first_agent_item = True
+                if not first_text_delta:
+                    self.diagnostics["time_to_first_agent_text_delta_ms"] = _elapsed_ms(started)
+                    self.diagnostics["time_to_first_agent_delta_ms"] = self.diagnostics["time_to_first_agent_text_delta_ms"]
+                    first_text_delta = True
+                yield {"type": "message_delta", "content": clean_lobby_text(params.get("delta") or params.get("text"), limit=8000)}
+                continue
+            if method in {"agent_message/completed", "agent-message/completed", "item/agent_message/completed", "item/completed"}:
+                item = params.get("item") if isinstance(params.get("item"), dict) else {}
+                if method == "item/completed" and clean_lobby_text(item.get("type"), limit=64) != "agentMessage":
+                    continue
+                self.diagnostics["time_to_message_final_ms"] = _elapsed_ms(started)
+                yield {
+                    "type": "message_final",
+                    "content": clean_lobby_text(params.get("text") or params.get("content") or item.get("text"), limit=8000),
+                }
+                continue
+            if method in {"turn/completed"}:
+                self.diagnostics["turn_completed_ms"] = _elapsed_ms(started)
+                yield {"type": "diagnostics", **self.diagnostics}
+                return
+            if method in {"command_execution/request_approval", "file_change/request_approval", "permissions/request_approval"}:
+                yield {"type": "approval_requested", "diagnostics": [{"setting": "approval", "status": "requested", "message": method}]}
+                continue
+            if method in {"context/compaction_started"}:
+                self.diagnostics["compaction_started_ms"] = _elapsed_ms(started)
+                yield {"type": "context_compaction_started"}
+                continue
+            if method in {"context/compaction_finished"}:
+                self.diagnostics["compaction_completed_ms"] = _elapsed_ms(started)
+                yield {"type": "context_compaction_finished"}
+                continue
+            if method in {"turn/error", "error"} or _context_error_detected(message):
+                yield {
+                    "type": "error",
+                    "diagnostics": [
+                        {"setting": "app_server", "status": "failed", "message": clean_lobby_text(params.get("message") or str(message), limit=1000)}
+                    ],
+                }
+                return
+
+    def compact(self, handle: dict[str, object], policy: dict[str, object]) -> Iterable[AgentTurnChunk]:
+        self._send_notification("thread/compact", {"threadId": handle.get("provider_thread_id"), "policy": policy})
+        return []
+
+    def detach(self, handle: dict[str, object]) -> None:
+        if self.process is not None and hasattr(self.process, "terminate"):
+            self.process.terminate()
+            if hasattr(self.process, "wait"):
+                try:
+                    self.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    if hasattr(self.process, "kill"):
+                        self.process.kill()
+                        self.process.wait(timeout=5)
+            self.process = None
+            self._initialized = False
+
+    def diagnose(self, handle: dict[str, object]) -> dict[str, object]:
+        return dict(self.diagnostics)
+
+    def _spawn_process(self) -> object:
+        if self.process_factory is not None:
+            return self.process_factory()
+        return subprocess.Popen(
+            self.command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+
+    def _send_request(self, method: str, params: dict[str, object]) -> dict[str, object]:
+        request_id = self._next_id
+        self._next_id += 1
+        self._write_json({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+        return self._read_response(request_id)
+
+    def _send_notification(self, method: str, params: dict[str, object]) -> None:
+        self._write_json({"jsonrpc": "2.0", "method": method, "params": params})
+
+    def _write_json(self, payload: dict[str, object]) -> None:
+        assert self.process is not None
+        stdin = getattr(self.process, "stdin", None)
+        if stdin is None:
+            raise RuntimeError("Codex app-server stdin is unavailable.")
+        stdin.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        if hasattr(stdin, "flush"):
+            stdin.flush()
+
+    def _read_response(self, request_id: int) -> dict[str, object]:
+        while True:
+            message = self._read_json_line()
+            if message.get("id") == request_id:
+                return message
+
+    def _read_messages_until_turn_done(self) -> Iterable[dict[str, object]]:
+        while True:
+            message = self._read_json_line()
+            yield message
+            if clean_lobby_text(message.get("method"), limit=128) in {"turn/completed", "turn/error", "error"}:
+                return
+
+    def _read_json_line(self) -> dict[str, object]:
+        assert self.process is not None
+        stdout = getattr(self.process, "stdout", None)
+        if stdout is None:
+            raise RuntimeError("Codex app-server stdout is unavailable.")
+        line = stdout.readline()
+        if line == "":
+            raise RuntimeError("Codex app-server stopped before completing the request.")
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise RuntimeError(f"Codex app-server emitted malformed JSON: {error}") from error
+        if "error" in message and not message.get("method"):
+            raise RuntimeError(clean_lobby_text(message.get("error"), limit=1000) or "Codex app-server request failed.")
+        return message
 
 
 def agent_session_streaming_command_turn_runner(
@@ -793,6 +1091,39 @@ def _diagnostic_items(state: dict[str, object]) -> list[dict[str, str]]:
 
 def _merge_runtime_diagnostics(state: dict[str, object], chunk: dict[str, object]) -> None:
     for key in (
+        "runtime_mode",
+        "transport",
+        "app_server_pid",
+        "provider_thread_id",
+        "ephemeral_thread_id",
+        "resume_capability",
+        "input_mode",
+        "provider_visible_chars",
+        "provider_visible_event_count",
+        "filtered_internal_event_count",
+        "filtered_message_delta_count",
+        "last_provider_sync_event_id_before",
+        "last_provider_sync_event_id_after",
+        "bootstrap_included",
+        "room_delta_included",
+        "recovery_summary_included",
+        "recovery_required",
+        "runtime_reused",
+        "app_server_reused",
+        "app_server_initialize_ms",
+        "thread_start_ms",
+        "thread_resume_ms",
+        "turn_start_request_ms",
+        "time_to_turn_start_ack_ms",
+        "time_to_first_notification_ms",
+        "time_to_first_agent_item_ms",
+        "time_to_first_item_event_ms",
+        "time_to_first_agent_text_delta_ms",
+        "time_to_first_agent_delta_ms",
+        "time_to_message_final_ms",
+        "turn_completed_ms",
+        "compaction_started_ms",
+        "compaction_completed_ms",
         "time_to_process_spawn_ms",
         "time_to_first_stdout_ms",
         "time_to_first_json_event_ms",
@@ -818,6 +1149,24 @@ def _context_error_detected(values: object) -> bool:
     return "context window" in text or "ran out of room" in text or "context_length" in text
 
 
+def _app_server_progress_text(params: dict[str, object], *, completed: bool) -> str:
+    item = params.get("item") if isinstance(params.get("item"), dict) else {}
+    item_type = clean_lobby_text(item.get("type"), limit=64)
+    if item_type == "reasoning":
+        return "Thinking finished." if completed else "Thinking."
+    if item_type in {"commandExecution", "command"}:
+        command = clean_lobby_text(item.get("command") or item.get("cmd") or item.get("name"), limit=200)
+        if command:
+            return f"Tool finished: {command}" if completed else f"Using tool: {command}"
+        return "Tool finished." if completed else "Using tool."
+    if item_type in {"mcpToolCall", "toolCall"}:
+        name = clean_lobby_text(item.get("name") or item.get("toolName"), limit=120)
+        if name:
+            return f"Tool finished: {name}" if completed else f"Using tool: {name}"
+        return "Tool finished." if completed else "Using tool."
+    return ""
+
+
 def clean_provider_session_id(value: object) -> str:
     provider_session_id = clean_lobby_text(value, limit=200)
     if provider_session_id == "--last":
@@ -830,6 +1179,15 @@ def _agent_session_resume_mode(session: dict[str, object]) -> str:
     if raw == "--last":
         return "last_forbidden"
     return "explicit_session_id" if clean_provider_session_id(raw) else "none"
+
+
+def _nested_get(value: object, path: str) -> object:
+    current = value
+    for part in path.split("."):
+        if not isinstance(current, dict):
+            return ""
+        current = current.get(part)
+    return current
 
 
 def _codex_jsonl_visible_message_text(item: dict[str, object]) -> str:
@@ -884,30 +1242,84 @@ def build_room_turn_packet(
     store = RoomStore(output_root)
     session = store.session(room_id, session_id)
     last_seen_event_id = clean_lobby_text(session.get("last_seen_event_id"), limit=128)
+    last_provider_sync_event_id = clean_lobby_text(session.get("last_provider_sync_event_id"), limit=128)
     events_after_seen = store.read_events(room_id, after=last_seen_event_id) if last_seen_event_id else store.read_events(room_id)
     all_events = store.read_events(room_id)
     recent_limit = _positive_int(max_recent_events, DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS)
     prompt_limit = _positive_int(max_prompt_chars, DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS)
     recent_events = all_events[-recent_limit:]
     events = _dedupe_events([*events_after_seen, *recent_events])
+    provider_projection = _provider_room_delta(
+        all_events,
+        participant_id=participant_id,
+        after_event_id=last_provider_sync_event_id,
+    )
+    provider_events = provider_projection["events"]
     session = store.session(room_id, session_id)
+    current_turn_events = store.read_events(room_id, after=last_provider_sync_event_id) if last_provider_sync_event_id else events
     media_manifest = []
-    for event in events:
+    for event in current_turn_events:
         media = event.get("media")
         if isinstance(media, dict):
             media_manifest.append(dict(media))
     unsupported_media = [media for media in media_manifest if not bool(media.get("supported"))]
-    summary = session.get("summary") if isinstance(session.get("summary"), dict) else {}
+    room_memory = room_memory_from_session(session)
+    summary = dict(room_memory)
+    bootstrap_done = bool(session.get("bootstrap_done"))
+    recovery_required = bool(session.get("recovery_required"))
+    if recovery_required:
+        provider_input = build_provider_recovery_input(
+            instruction=instruction,
+            room_memory=room_memory,
+            room_delta=provider_projection["text"],
+            media_manifest=media_manifest,
+            unsupported_media=unsupported_media,
+        )
+        input_mode = "recovery"
+        bootstrap_included = False
+        recovery_summary_included = True
+    elif not bootstrap_done:
+        provider_input = build_provider_bootstrap_input(
+            instruction=instruction,
+            room_memory=room_memory,
+            room_delta=provider_projection["text"],
+            media_manifest=media_manifest,
+            unsupported_media=unsupported_media,
+        )
+        input_mode = "bootstrap"
+        bootstrap_included = True
+        recovery_summary_included = bool(room_memory.get("summary") or room_memory.get("decisions") or room_memory.get("open_questions"))
+    else:
+        provider_input = build_provider_turn_input(
+            instruction=instruction,
+            room_delta=provider_projection["text"],
+            media_manifest=media_manifest,
+            unsupported_media=unsupported_media,
+        )
+        input_mode = "delta" if provider_projection["text"] else "current_only"
+        bootstrap_included = False
+        recovery_summary_included = False
+    latest_delta_event_id = clean_lobby_text(provider_projection.get("latest_event_id"), limit=128)
     packet = {
         "room_id": room_id,
         "participant_id": participant_id,
         "session_id": session_id,
-        "provider_session_id": clean_provider_session_id(session.get("provider_session_id")),
         "summary": summary,
-        "include_summary": bool(summary),
+        "include_summary": bool(recovery_summary_included),
         "summary_checkpoint_id": clean_lobby_text(summary.get("up_to_event_id") if isinstance(summary, dict) else "", limit=128),
         "after_event_id": last_seen_event_id,
-        "events": events,
+        "events": provider_events,
+        "provider_input": provider_input,
+        "input_mode": input_mode,
+        "provider_visible_chars": len(provider_input),
+        "provider_visible_event_count": len(provider_events),
+        "filtered_internal_event_count": provider_projection["filtered_internal_event_count"],
+        "filtered_message_delta_count": provider_projection["filtered_message_delta_count"],
+        "last_provider_sync_event_id_before": last_provider_sync_event_id,
+        "last_provider_sync_event_id_after": latest_delta_event_id or last_provider_sync_event_id,
+        "bootstrap_included": bootstrap_included,
+        "room_delta_included": bool(provider_projection["text"]),
+        "recovery_summary_included": recovery_summary_included,
         "recent_event_count": len(recent_events),
         "max_recent_events": recent_limit,
         "max_prompt_chars": prompt_limit,
@@ -931,6 +1343,82 @@ def build_room_turn_packet(
     return _bound_room_turn_packet(packet, prompt_limit)
 
 
+def build_provider_bootstrap_input(
+    *,
+    instruction: str,
+    room_memory: dict[str, object] | None = None,
+    room_delta: str = "",
+    media_manifest: list[dict[str, object]] | None = None,
+    unsupported_media: list[dict[str, object]] | None = None,
+) -> str:
+    parts = [
+        "[Agent Session bootstrap]",
+        "You are participating in a shared AgentsAssemble room. Reply only with room-visible text.",
+        "Do not inspect or edit the project unless the current room instruction explicitly asks for it.",
+        "Do not reveal internal runtime data, process ids, tokens, or hidden chain-of-thought.",
+    ]
+    memory_text = _room_memory_text(room_memory or {})
+    if memory_text:
+        parts.extend(["", "[Room memory]", memory_text])
+    if room_delta:
+        parts.extend(["", "[Room update since your last sync]", room_delta])
+    media_text = _provider_media_text(media_manifest or [], unsupported_media or [])
+    if media_text:
+        parts.extend(["", media_text])
+    parts.extend(["", "[Your turn]", clean_lobby_text(instruction, limit=2000)])
+    return "\n".join(parts).strip() + "\n"
+
+
+def build_provider_turn_input(
+    *,
+    instruction: str,
+    room_delta: str = "",
+    media_manifest: list[dict[str, object]] | None = None,
+    unsupported_media: list[dict[str, object]] | None = None,
+) -> str:
+    parts = []
+    if room_delta:
+        parts.extend(["[Room update since your last turn]", room_delta, ""])
+    media_text = _provider_media_text(media_manifest or [], unsupported_media or [])
+    if media_text:
+        parts.extend([media_text, ""])
+    parts.extend(["[Your turn]", clean_lobby_text(instruction, limit=2000)])
+    return "\n".join(parts).strip() + "\n"
+
+
+def build_provider_recovery_input(
+    *,
+    instruction: str,
+    room_memory: dict[str, object],
+    room_delta: str = "",
+    media_manifest: list[dict[str, object]] | None = None,
+    unsupported_media: list[dict[str, object]] | None = None,
+) -> str:
+    parts = ["[Agent Session recovery]", "Use this compact room memory to continue the same room-visible conversation."]
+    memory_text = _room_memory_text(room_memory)
+    if memory_text:
+        parts.extend(["", "[Room memory]", memory_text])
+    if room_delta:
+        parts.extend(["", "[Room update since recovery point]", room_delta])
+    media_text = _provider_media_text(media_manifest or [], unsupported_media or [])
+    if media_text:
+        parts.extend(["", media_text])
+    parts.extend(["", "[Your turn]", clean_lobby_text(instruction, limit=2000)])
+    return "\n".join(parts).strip() + "\n"
+
+
+def room_memory_from_session(session: dict[str, object]) -> dict[str, object]:
+    memory = session.get("room_memory") if isinstance(session.get("room_memory"), dict) else {}
+    legacy_summary = session.get("summary") if isinstance(session.get("summary"), dict) else {}
+    return {
+        "summary": clean_lobby_text(memory.get("summary") or legacy_summary.get("summary") or legacy_summary.get("text"), limit=4000),
+        "decisions": _clean_text_list(memory.get("decisions") or legacy_summary.get("decisions"), limit=1200),
+        "open_questions": _clean_text_list(memory.get("open_questions") or legacy_summary.get("open_questions"), limit=1200),
+        "up_to_event_id": clean_lobby_text(memory.get("up_to_event_id") or legacy_summary.get("up_to_event_id"), limit=128),
+        "compacted_at": clean_lobby_text(memory.get("compacted_at") or legacy_summary.get("compacted_at"), limit=128),
+    }
+
+
 def _positive_int(value: object, default: int) -> int:
     try:
         parsed = int(value)
@@ -950,6 +1438,170 @@ def _dedupe_events(events: list[dict[str, object]]) -> list[dict[str, object]]:
         seen.add(key)
         deduped.append(event)
     return deduped
+
+
+def _provider_visible_room_events(events: list[dict[str, object]]) -> list[dict[str, object]]:
+    visible = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        event_type = clean_lobby_text(event.get("type"), limit=64)
+        if event_type in {
+            "turn_started",
+            "turn_finished",
+            "message_delta",
+            "thinking_delta",
+            "approval_requested",
+            "approval_resolved",
+            "context_compaction_started",
+            "context_compaction_finished",
+            "error",
+        }:
+            continue
+        if "content" not in event and "media" not in event:
+            continue
+        clean_event = {
+            key: event[key]
+            for key in (
+                "id",
+                "created_at",
+                "type",
+                "participant_id",
+                "actor_id",
+                "display_name",
+                "content",
+                "media",
+            )
+            if key in event and event[key] not in (None, "", [], {})
+        }
+        if clean_event:
+            visible.append(clean_event)
+    return visible
+
+
+def _provider_room_delta(events: list[dict[str, object]], *, participant_id: str, after_event_id: str = "") -> dict[str, object]:
+    source = _events_after_id(events, after_event_id) if after_event_id else list(events)
+    max_events = 6
+    max_chars = 1200
+    visible: list[dict[str, object]] = []
+    lines: list[str] = []
+    filtered_internal = 0
+    filtered_delta = 0
+    latest_event_id = after_event_id
+    for event in source:
+        event_type = clean_lobby_text(event.get("type"), limit=64)
+        if event_type == "message_delta":
+            filtered_delta += 1
+            continue
+        if event_type in {
+            "turn_started",
+            "turn_finished",
+            "thinking_delta",
+            "approval_requested",
+            "approval_resolved",
+            "context_compaction_started",
+            "context_compaction_finished",
+            "error",
+            "session_resumed",
+            "session_attached",
+            "participant_joined",
+            "room_created",
+        }:
+            filtered_internal += 1
+            continue
+        if event_type != "message_final":
+            continue
+        if clean_lobby_text(event.get("participant_id"), limit=128) == participant_id:
+            continue
+        content = clean_lobby_text(event.get("content"), limit=1000)
+        if not content:
+            continue
+        speaker = clean_lobby_text(event.get("display_name") or event.get("participant_id") or event.get("actor_id"), limit=64) or "room"
+        clean_event = {
+            key: event[key]
+            for key in ("id", "created_at", "type", "participant_id", "actor_id", "display_name", "content")
+            if key in event and event[key] not in (None, "", [], {})
+        }
+        line = f"- {speaker}: {content}"
+        if lines and len("\n".join([*lines, line])) > max_chars:
+            continue
+        visible.append(clean_event)
+        lines.append(line)
+        latest_event_id = clean_lobby_text(event.get("id"), limit=128) or latest_event_id
+        if len(visible) >= max_events:
+            break
+    return {
+        "events": visible,
+        "text": "\n".join(lines),
+        "latest_event_id": latest_event_id,
+        "filtered_internal_event_count": filtered_internal,
+        "filtered_message_delta_count": filtered_delta,
+    }
+
+
+def _events_after_id(events: list[dict[str, object]], event_id: str) -> list[dict[str, object]]:
+    if not event_id:
+        return list(events)
+    for index, event in enumerate(events):
+        if clean_lobby_text(event.get("id"), limit=128) == event_id:
+            return events[index + 1 :]
+    return list(events)
+
+
+def _latest_public_event_id(events: list[dict[str, object]]) -> str:
+    for event in reversed(events):
+        if clean_lobby_text(event.get("type"), limit=64) == "message_final":
+            return clean_lobby_text(event.get("id"), limit=128)
+    return ""
+
+
+def _latest_own_message_event_id(events: list[dict[str, object]], participant_id: str) -> str:
+    clean_participant = clean_lobby_text(participant_id, limit=128)
+    for event in reversed(events):
+        if clean_lobby_text(event.get("type"), limit=64) != "message_final":
+            continue
+        if clean_lobby_text(event.get("participant_id"), limit=128) == clean_participant:
+            return clean_lobby_text(event.get("id"), limit=128)
+    return ""
+
+
+def _room_memory_text(memory: dict[str, object]) -> str:
+    parts: list[str] = []
+    summary = clean_lobby_text(memory.get("summary"), limit=4000)
+    if summary:
+        parts.append(f"Summary: {summary}")
+    decisions = _clean_text_list(memory.get("decisions"), limit=1200)
+    if decisions:
+        parts.append("Decisions: " + "; ".join(decisions))
+    questions = _clean_text_list(memory.get("open_questions"), limit=1200)
+    if questions:
+        parts.append("Open questions: " + "; ".join(questions))
+    return "\n".join(parts)
+
+
+def _provider_media_text(media_manifest: list[dict[str, object]], unsupported_media: list[dict[str, object]]) -> str:
+    if not media_manifest:
+        return ""
+    lines = ["[Current turn media]"]
+    for media in media_manifest[:10]:
+        media_id = clean_lobby_text(media.get("id"), limit=128)
+        filename = clean_lobby_text(media.get("filename"), limit=200)
+        supported = "supported" if bool(media.get("supported")) else "unsupported"
+        lines.append(f"- {filename or media_id}: {supported}")
+    if unsupported_media:
+        lines.append(UNSUPPORTED_MEDIA_AUDIT_NOTE)
+    return "\n".join(lines)
+
+
+def _clean_text_list(value: object, *, limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    cleaned = []
+    for item in value:
+        text = clean_lobby_text(item, limit=limit)
+        if text:
+            cleaned.append(text)
+    return cleaned
 
 
 def _bound_room_turn_packet(packet: dict[str, object], prompt_limit: int) -> dict[str, object]:

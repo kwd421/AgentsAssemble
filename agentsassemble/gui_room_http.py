@@ -15,6 +15,7 @@ from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payload
 from agentsassemble.agent_sessions import (
     AgentSessionProcessService,
+    CodexAppServerRuntime,
     resume_agent_session_payload,
     run_agent_session_turn_payload,
     room_action_payload,
@@ -90,6 +91,7 @@ _CHANNEL_LOBBY_LOCK = threading.Lock()
 # trusted to name itself. A stable id keeps its voice presence + messages coherent.
 _LOCAL_OPERATOR_PARTICIPANT_ID = "operator-local"
 _LOCAL_OPERATOR_DISPLAY_DEFAULT = "호스트"
+_CODEX_APP_SERVER_RUNTIME: CodexAppServerRuntime | None = None
 
 
 def _speech_rejection_status(category: str) -> HTTPStatus:
@@ -136,6 +138,13 @@ def _local_agent_session_turn_command_streamer(
     from agentsassemble.agent_sessions import _default_agent_turn_jsonl_streamer
 
     yield from _default_agent_turn_jsonl_streamer(command, prompt, timeout_seconds)
+
+
+def _local_agent_session_turn_adapter(session: dict[str, object], packet: dict[str, object]):
+    global _CODEX_APP_SERVER_RUNTIME
+    if _CODEX_APP_SERVER_RUNTIME is None:
+        _CODEX_APP_SERVER_RUNTIME = CodexAppServerRuntime()
+    yield from _CODEX_APP_SERVER_RUNTIME.send_turn(session, packet)
 
 
 def register_room_routes(router: Router) -> None:
@@ -390,11 +399,14 @@ def register_room_routes(router: Router) -> None:
                 run_agent_session_turn_payload(
                     ctx.deps.output_root,
                     payload,
+                    turn_adapter=None
+                    if bool(payload.get("dry_run")) or payload.get("runtime_mode") in {"exec_jsonl_fallback", "exec_plain_fallback"}
+                    else _local_agent_session_turn_adapter,
                     turn_command_runner=None
-                    if bool(payload.get("dry_run")) or payload.get("stream") is not False
+                    if bool(payload.get("dry_run")) or payload.get("runtime_mode") != "exec_plain_fallback"
                     else _local_agent_session_turn_command_runner,
                     turn_command_streamer=None
-                    if bool(payload.get("dry_run")) or payload.get("stream") is False
+                    if bool(payload.get("dry_run")) or payload.get("runtime_mode") not in {"exec_jsonl_fallback"}
                     else _local_agent_session_turn_command_streamer,
                 )
             )

@@ -168,6 +168,7 @@ Current implemented scope:
 - Codex launch-plan dry-run for an explicit process-resume path
 - HTTP/CLI resume through one Agent Session process service
 - HTTP/CLI Agent Session turns through the same service path
+- Codex app-server Agent Session runtime with short provider-visible turn input
 - streaming Agent Session command output with final-output fallback
 - room SSE at `/api/room-events/stream?room_id=...&cursor=...`
 - room media manifests under `rooms/<room_id>/media/`
@@ -181,24 +182,34 @@ assemble room turn <room-id> --agent <agent-id> --session <session-id> "Answer f
 ```
 
 By default this attaches state only and reports `process_status: not_started`.
-Turn execution builds a bounded ordered room packet, including media manifest
-and unsupported-media audit notes, then sends that packet to the configured
-Agent Session turn runner. The Codex command path appends `-` to either
-`codex exec --json --ephemeral ...` for fresh stateless turns or
+Live Codex turns use `codex app-server` as the primary runtime when available:
+the first turn bootstraps the provider thread with a small room contract, and
+later turns send only a short provider-visible input containing the current
+instruction plus any new public room delta since that agent's provider sync
+cursor. RoomStore remains the UI, audit, SSE, and recovery source; diagnostics,
+provider ids, timing, stdout/stderr, token usage, lifecycle events, and
+`message_delta` fragments are never provider-visible prompt content. The bounded
+JSON room packet remains available for dry-run/debug, exec fallback, and
+recovery seed paths.
+
+The Codex fallback command path appends `-` to either
+`codex exec --json --ephemeral ...` for fresh fallback turns or
 `codex exec --json ... resume <provider_session_id>` for explicit provider
 sessions. Agent Session runtime never falls back to `resume --last`; the
-RoomStore `session_id` and provider-owned `provider_session_id` are stored
-separately. The live path treats Codex JSONL stdout as primary: provider-visible
-message items become `message_delta` and `message_final`, explicit safe progress
-can become `thinking_delta`, and usage/session diagnostics are recorded. Plain
-stdout streaming remains a fallback. Without an
-explicit runner, turn execution reports a safe not-started diagnostic instead
-of claiming the provider answered. When a runner does answer, the server
-appends `turn_started`, optional `thinking_delta` / `message_delta`,
-`message_final`, and `turn_finished` or `error` events to `events.jsonl`; the
-React room sees them through `/api/room-events/stream`. The room info panel can
-call an Agent Session turn by selecting an attached participant and entering one
-instruction; it does not expose provider, runner, bridge, MCP, or flow choices.
+RoomStore `session_id`, provider-owned `provider_thread_id`, and resumable
+`provider_session_id` are stored separately. `--ephemeral` thread ids are
+diagnostics only and are not persisted as resumable provider sessions.
+Provider-visible message items become `message_delta` and `message_final`,
+explicit safe progress can become `thinking_delta`, and usage/session
+diagnostics are recorded outside the provider input. Plain stdout streaming
+remains a legacy fallback. Without an explicit runner, turn execution reports a
+safe not-started diagnostic instead of claiming the provider answered. When a
+runner does answer, the server appends `turn_started`, optional
+`thinking_delta` / `message_delta`, `message_final`, and `turn_finished` or
+`error` events to `events.jsonl`; the React room sees them through
+`/api/room-events/stream`. The room info panel can call an Agent Session turn by
+selecting an attached participant and entering one instruction; it does not
+expose provider, runner, bridge, MCP, or flow choices.
 Dry-run returns the deterministic launch plan without starting a provider.
 Process start requires `start: true` and local operator or host authorization;
 public/untrusted sessions cannot start local provider commands. Media support
