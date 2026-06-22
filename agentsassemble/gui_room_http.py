@@ -15,7 +15,7 @@ from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payload
 from agentsassemble.agent_sessions import (
     AgentSessionProcessService,
-    CodexAppServerRuntime,
+    CodexAppServerRuntimeManager,
     resume_agent_session_payload,
     run_agent_session_turn_payload,
     room_action_payload,
@@ -91,7 +91,7 @@ _CHANNEL_LOBBY_LOCK = threading.Lock()
 # trusted to name itself. A stable id keeps its voice presence + messages coherent.
 _LOCAL_OPERATOR_PARTICIPANT_ID = "operator-local"
 _LOCAL_OPERATOR_DISPLAY_DEFAULT = "호스트"
-_CODEX_APP_SERVER_RUNTIME: CodexAppServerRuntime | None = None
+_CODEX_APP_SERVER_RUNTIMES = CodexAppServerRuntimeManager()
 
 
 def _speech_rejection_status(category: str) -> HTTPStatus:
@@ -141,10 +141,7 @@ def _local_agent_session_turn_command_streamer(
 
 
 def _local_agent_session_turn_adapter(session: dict[str, object], packet: dict[str, object]):
-    global _CODEX_APP_SERVER_RUNTIME
-    if _CODEX_APP_SERVER_RUNTIME is None:
-        _CODEX_APP_SERVER_RUNTIME = CodexAppServerRuntime()
-    yield from _CODEX_APP_SERVER_RUNTIME.send_turn(session, packet)
+    yield from _CODEX_APP_SERVER_RUNTIMES.send_turn(session, packet)
 
 
 def register_room_routes(router: Router) -> None:

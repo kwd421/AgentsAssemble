@@ -18,9 +18,12 @@ AgentTurnRunner = Callable[[dict[str, object]], Iterable[AgentTurnChunk]]
 AgentTurnCommandRunner = Callable[[list[str], str, float], subprocess.CompletedProcess[str]]
 AgentTurnCommandStreamer = Callable[[list[str], str, float], Iterable[AgentTurnChunk]]
 AgentTurnAdapter = Callable[[dict[str, object], dict[str, object]], Iterable[AgentTurnChunk]]
+ProcessFactory = Callable[[], object]
 DEFAULT_AGENT_TURN_TIMEOUT_SECONDS = 600.0
 DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS = 40
 DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS = 20000
+PROVIDER_ROOM_DELTA_MAX_EVENTS = 6
+PROVIDER_ROOM_DELTA_MAX_CHARS = 1200
 UNSUPPORTED_MEDIA_AUDIT_NOTE = "Unsupported media is listed for audit only; do not claim you viewed unsupported files."
 ROOM_MEMORY_EMPTY = {
     "summary": "",
@@ -194,6 +197,7 @@ def run_agent_session_turn_payload(
         instruction=instruction,
         max_recent_events=payload.get("max_recent_events"),
         max_prompt_chars=payload.get("max_prompt_chars"),
+        media_ids=payload.get("media_ids") or payload.get("current_turn_media_ids"),
     )
     turn_id = clean_lobby_text(payload.get("turn_id"), limit=128) or f"turn-{uuid4().hex[:12]}"
     provider_kind = clean_lobby_text(session.get("provider_kind"), limit=64)
@@ -222,7 +226,7 @@ def run_agent_session_turn_payload(
         streaming = True
 
         def run_adapter(packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
-            yield from turn_adapter(session, packet)
+            yield from turn_adapter(session, _provider_adapter_input(packet))
 
         turn_runner = run_adapter
     if turn_runner is None and turn_command_streamer is not None:
@@ -528,6 +532,68 @@ class AgentSessionAdapter(Protocol):
     def diagnose(self, handle: dict[str, object]) -> dict[str, object]: ...
 
 
+class UnsupportedAgentSessionAdapter:
+    provider_name = "unsupported"
+    reason = "Provider Agent Session adapter is not configured yet."
+
+    def start(self, config: dict[str, object]) -> dict[str, object]:
+        return {
+            "provider_kind": self.provider_name,
+            "status": "unsupported",
+            "resumable": False,
+            "reason": self.reason,
+        }
+
+    def attach(self, ids: dict[str, object]) -> dict[str, object]:
+        return {
+            "provider_kind": self.provider_name,
+            "status": "unsupported",
+            "resumable": False,
+            "reason": self.reason,
+        }
+
+    def send_turn(self, handle: dict[str, object], packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
+        yield {
+            "type": "error",
+            "diagnostics": [
+                {
+                    "setting": f"{self.provider_name}_adapter",
+                    "status": "unsupported",
+                    "message": self.reason,
+                }
+            ],
+        }
+
+    def compact(self, handle: dict[str, object], policy: dict[str, object]) -> Iterable[AgentTurnChunk]:
+        yield from self.send_turn(handle, {})
+
+    def detach(self, handle: dict[str, object]) -> None:
+        return None
+
+    def diagnose(self, handle: dict[str, object]) -> dict[str, object]:
+        return {
+            "provider_kind": self.provider_name,
+            "status": "unsupported",
+            "resumable": False,
+            "reason": self.reason,
+        }
+
+
+class GrokAgentSessionAdapter(UnsupportedAgentSessionAdapter):
+    provider_name = "grok"
+    reason = "Grok Agent Session adapter scaffolding exists, but the resident session protocol is not wired yet."
+
+
+class ClaudeAgentSessionAdapter(UnsupportedAgentSessionAdapter):
+    provider_name = "claude"
+    reason = "Claude Agent Session adapter scaffolding exists; claude -p is intentionally forbidden for Agent Sessions."
+
+
+class AgyAgentSessionAdapter(UnsupportedAgentSessionAdapter):
+    provider_name = "agy"
+    reason = "AGY Agent Session adapter scaffolding exists, but the runtime protocol is not wired yet."
+
+
 class CodexAppServerRuntime:
     """Codex app-server adapter for low-latency Agent Sessions.
 
@@ -537,19 +603,27 @@ class CodexAppServerRuntime:
     def __init__(
         self,
         *,
-        process_factory: Callable[[], object] | None = None,
+        process_factory: ProcessFactory | None = None,
         command: list[str] | None = None,
+        runtime_profile_key: str = "",
+        profile_settings: dict[str, object] | None = None,
     ) -> None:
         self.process_factory = process_factory
         self.command = command or ["codex", "app-server", "--stdio"]
+        self.runtime_profile_key = runtime_profile_key
+        self.profile_settings = profile_settings or {}
         self.process: object | None = None
         self._next_id = 1
         self._initialized = False
+        self._pending_messages: list[dict[str, object]] = []
+        self._thread_handles: dict[str, dict[str, object]] = {}
         self.diagnostics: dict[str, object] = {
             "runtime_mode": "app_server",
             "transport": "stdio_jsonl",
             "runtime_reused": False,
+            "runtime_profile_key": runtime_profile_key,
         }
+        self.diagnostics.update(self.profile_settings)
 
     def start(self, config: dict[str, object]) -> dict[str, object]:
         started = time.monotonic()
@@ -569,11 +643,20 @@ class CodexAppServerRuntime:
     def attach(self, ids: dict[str, object]) -> dict[str, object]:
         self.start({})
         provider_session_id = clean_provider_session_id(ids.get("provider_session_id"))
+        provider_thread_id = clean_provider_session_id(ids.get("provider_thread_id"))
+        session_id = clean_lobby_text(ids.get("session_id"), limit=128)
+        cached = self._cached_thread(provider_session_id=provider_session_id, provider_thread_id=provider_thread_id, session_id=session_id)
+        if cached:
+            self.diagnostics["thread_reused"] = True
+            self.diagnostics["thread_resume_skipped"] = True
+            return cached
         started = time.monotonic()
-        if provider_session_id:
-            response = self._send_request("thread/resume", {"threadId": provider_session_id})
+        if provider_thread_id or provider_session_id:
+            response = self._send_request("thread/resume", {"threadId": provider_thread_id or provider_session_id})
             self.diagnostics["thread_resume_ms"] = _elapsed_ms(started)
-            thread_id = clean_provider_session_id(_nested_get(response, "result.thread.id") or provider_session_id)
+            thread_id = clean_provider_session_id(_nested_get(response, "result.thread.id") or provider_thread_id or provider_session_id)
+            self.diagnostics["thread_reused"] = False
+            self.diagnostics["thread_resume_skipped"] = False
         else:
             response = self._send_request("thread/start", {})
             self.diagnostics["thread_start_ms"] = _elapsed_ms(started)
@@ -582,12 +665,18 @@ class CodexAppServerRuntime:
                 or _nested_get(response, "result.threadId")
                 or _nested_get(response, "params.thread.id")
             )
-        return {
+            self.diagnostics["thread_reused"] = False
+            self.diagnostics["thread_resume_skipped"] = False
+        handle = {
             "runtime_mode": "app_server",
             "transport": "stdio_jsonl",
             "provider_thread_id": thread_id,
             "provider_session_id": thread_id,
         }
+        if session_id:
+            handle["session_id"] = session_id
+        self._cache_thread(handle)
+        return handle
 
     def send_turn(self, handle: dict[str, object], packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
         attached = self.attach(handle)
@@ -672,6 +761,7 @@ class CodexAppServerRuntime:
         return []
 
     def detach(self, handle: dict[str, object]) -> None:
+        self.release_thread(handle)
         if self.process is not None and hasattr(self.process, "terminate"):
             self.process.terminate()
             if hasattr(self.process, "wait"):
@@ -683,9 +773,20 @@ class CodexAppServerRuntime:
                         self.process.wait(timeout=5)
             self.process = None
             self._initialized = False
+            self._pending_messages.clear()
+            self._thread_handles.clear()
 
     def diagnose(self, handle: dict[str, object]) -> dict[str, object]:
         return dict(self.diagnostics)
+
+    def release_thread(self, handle: dict[str, object]) -> None:
+        for key in (
+            clean_provider_session_id(handle.get("provider_session_id")),
+            clean_provider_session_id(handle.get("provider_thread_id")),
+            clean_lobby_text(handle.get("session_id"), limit=128),
+        ):
+            if key:
+                self._thread_handles.pop(key, None)
 
     def _spawn_process(self) -> object:
         if self.process_factory is not None:
@@ -722,10 +823,11 @@ class CodexAppServerRuntime:
             message = self._read_json_line()
             if message.get("id") == request_id:
                 return message
+            self._pending_messages.append(message)
 
     def _read_messages_until_turn_done(self) -> Iterable[dict[str, object]]:
         while True:
-            message = self._read_json_line()
+            message = self._pending_messages.pop(0) if self._pending_messages else self._read_json_line()
             yield message
             if clean_lobby_text(message.get("method"), limit=128) in {"turn/completed", "turn/error", "error"}:
                 return
@@ -745,6 +847,131 @@ class CodexAppServerRuntime:
         if "error" in message and not message.get("method"):
             raise RuntimeError(clean_lobby_text(message.get("error"), limit=1000) or "Codex app-server request failed.")
         return message
+
+    def _cached_thread(self, *, provider_session_id: str, provider_thread_id: str, session_id: str) -> dict[str, object]:
+        for key in (provider_thread_id, provider_session_id, session_id):
+            if key and key in self._thread_handles:
+                return dict(self._thread_handles[key])
+        return {}
+
+    def _cache_thread(self, handle: dict[str, object]) -> None:
+        for key in (
+            clean_provider_session_id(handle.get("provider_session_id")),
+            clean_provider_session_id(handle.get("provider_thread_id")),
+            clean_lobby_text(handle.get("session_id"), limit=128),
+        ):
+            if key:
+                self._thread_handles[key] = dict(handle)
+
+
+class CodexAppServerRuntimeManager:
+    def __init__(self, *, process_factory: ProcessFactory | None = None) -> None:
+        self.process_factory = process_factory
+        self._runtimes: dict[str, CodexAppServerRuntime] = {}
+        self._session_refs: dict[str, set[str]] = {}
+        self._session_keys: dict[str, str] = {}
+
+    def runtime_for(self, session: dict[str, object], packet: dict[str, object] | None = None) -> CodexAppServerRuntime:
+        packet = packet or {}
+        key = runtime_profile_key(session, packet)
+        if key not in self._runtimes:
+            profile_settings = runtime_profile_settings(session, packet)
+            self._runtimes[key] = CodexAppServerRuntime(
+                process_factory=self.process_factory,
+                command=codex_app_server_runtime_command(profile_settings),
+                runtime_profile_key=key,
+                profile_settings=profile_settings,
+            )
+            self._session_refs[key] = set()
+        session_id = clean_lobby_text(session.get("session_id"), limit=128)
+        if session_id:
+            self._session_refs.setdefault(key, set()).add(session_id)
+            self._session_keys[session_id] = key
+        return self._runtimes[key]
+
+    def send_turn(self, session: dict[str, object], packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
+        runtime = self.runtime_for(session, packet)
+        yield from runtime.send_turn(session, packet)
+
+    def detach_session(self, session: dict[str, object], *, shutdown_unused: bool = True) -> None:
+        session_id = clean_lobby_text(session.get("session_id"), limit=128)
+        key = self._session_keys.get(session_id) or runtime_profile_key(session, {})
+        runtime = self._runtimes.get(key)
+        if runtime is None:
+            return
+        runtime.release_thread(session)
+        refs = self._session_refs.setdefault(key, set())
+        refs.discard(session_id)
+        self._session_keys.pop(session_id, None)
+        if shutdown_unused and not refs:
+            runtime.detach({})
+            self._runtimes.pop(key, None)
+            self._session_refs.pop(key, None)
+
+    def shutdown_unused(self) -> None:
+        for key in list(self._runtimes):
+            if not self._session_refs.get(key):
+                self._runtimes[key].detach({})
+                self._runtimes.pop(key, None)
+                self._session_refs.pop(key, None)
+        live_keys = set(self._runtimes)
+        self._session_keys = {session_id: key for session_id, key in self._session_keys.items() if key in live_keys}
+
+    def shutdown_all(self) -> None:
+        for runtime in list(self._runtimes.values()):
+            runtime.detach({})
+        self._runtimes.clear()
+        self._session_refs.clear()
+        self._session_keys.clear()
+
+
+def runtime_profile_key(session: dict[str, object], packet: dict[str, object] | None = None) -> str:
+    parts = runtime_profile_settings(session, packet)
+    return "|".join(f"{key}={value}" for key, value in sorted(parts.items()))
+
+
+def runtime_profile_settings(session: dict[str, object], packet: dict[str, object] | None = None) -> dict[str, str]:
+    settings = packet.get("settings") if isinstance(packet, dict) and isinstance(packet.get("settings"), dict) else {}
+    return {
+        "provider_kind": clean_agent_session_provider_kind(session.get("provider_kind")),
+        "workspace": clean_lobby_text((packet or {}).get("workspace") or session.get("workspace") or session.get("cwd") or "", limit=300),
+        "model": clean_lobby_text(settings.get("model") or session.get("model"), limit=128),
+        "effort": clean_lobby_text(settings.get("effort") or session.get("effort"), limit=64),
+        "sandbox": clean_lobby_text(settings.get("sandbox") or session.get("sandbox"), limit=64),
+        "permissions": clean_lobby_text(settings.get("permissions") or session.get("permissions"), limit=64),
+        "codex_home": clean_lobby_text(session.get("codex_home") or session.get("config_profile"), limit=200),
+    }
+
+
+def codex_app_server_runtime_command(profile_settings: dict[str, object]) -> list[str]:
+    command = ["codex", "app-server"]
+    model = clean_lobby_text(profile_settings.get("model"), limit=128)
+    effort = clean_lobby_text(profile_settings.get("effort"), limit=64)
+    sandbox = clean_lobby_text(profile_settings.get("sandbox"), limit=64)
+    approval_policy = _codex_approval_policy(profile_settings.get("permissions"))
+    if model:
+        command.extend(["-c", _codex_toml_string_config("model", model)])
+    if effort:
+        command.extend(["-c", _codex_toml_string_config("model_reasoning_effort", effort)])
+    if sandbox in {"read-only", "workspace-write", "danger-full-access"}:
+        command.extend(["-c", _codex_toml_string_config("sandbox_mode", sandbox)])
+    if approval_policy:
+        command.extend(["-c", _codex_toml_string_config("approval_policy", approval_policy)])
+    command.append("--stdio")
+    return command
+
+
+def _codex_approval_policy(value: object) -> str:
+    permissions = clean_lobby_text(value, limit=64)
+    if permissions in {"untrusted", "on-failure", "on-request", "never"}:
+        return permissions
+    if permissions == "prompt":
+        return "on-request"
+    return ""
+
+
+def _codex_toml_string_config(key: str, value: str) -> str:
+    return f"{key}={json.dumps(value, ensure_ascii=True)}"
 
 
 def agent_session_streaming_command_turn_runner(
@@ -1110,6 +1337,9 @@ def _merge_runtime_diagnostics(state: dict[str, object], chunk: dict[str, object
         "recovery_required",
         "runtime_reused",
         "app_server_reused",
+        "runtime_profile_key",
+        "thread_reused",
+        "thread_resume_skipped",
         "app_server_initialize_ms",
         "thread_start_ms",
         "thread_resume_ms",
@@ -1142,6 +1372,19 @@ def _merge_runtime_diagnostics(state: dict[str, object], chunk: dict[str, object
     diagnostics = chunk.get("diagnostics") if isinstance(chunk.get("diagnostics"), list) else []
     if _context_error_detected(diagnostics):
         state["context_error_detected"] = True
+
+
+def _provider_adapter_input(packet: dict[str, object]) -> dict[str, object]:
+    return {
+        "provider_input": str(packet.get("provider_input") or ""),
+        "input_mode": packet.get("input_mode", ""),
+        "provider_visible_chars": packet.get("provider_visible_chars", 0),
+        "provider_visible_event_count": packet.get("provider_visible_event_count", 0),
+        "media_manifest": packet.get("media_manifest") if isinstance(packet.get("media_manifest"), list) else [],
+        "media_supported_count": packet.get("media_supported_count", 0),
+        "media_unsupported_count": packet.get("media_unsupported_count", 0),
+        "media_notes": packet.get("media_notes") if isinstance(packet.get("media_notes"), list) else [],
+    }
 
 
 def _context_error_detected(values: object) -> bool:
@@ -1236,6 +1479,7 @@ def build_room_turn_packet(
     participant_id: str,
     session_id: str,
     instruction: str,
+    media_ids: object = None,
     max_recent_events: object = None,
     max_prompt_chars: object = None,
 ) -> dict[str, object]:
@@ -1255,13 +1499,7 @@ def build_room_turn_packet(
         after_event_id=last_provider_sync_event_id,
     )
     provider_events = provider_projection["events"]
-    session = store.session(room_id, session_id)
-    current_turn_events = store.read_events(room_id, after=last_provider_sync_event_id) if last_provider_sync_event_id else events
-    media_manifest = []
-    for event in current_turn_events:
-        media = event.get("media")
-        if isinstance(media, dict):
-            media_manifest.append(dict(media))
+    media_manifest = _selected_media_manifest(all_events, media_ids=media_ids, room_delta_text=provider_projection["text"])
     unsupported_media = [media for media in media_manifest if not bool(media.get("supported"))]
     room_memory = room_memory_from_session(session)
     summary = dict(room_memory)
@@ -1481,12 +1719,11 @@ def _provider_visible_room_events(events: list[dict[str, object]]) -> list[dict[
 
 def _provider_room_delta(events: list[dict[str, object]], *, participant_id: str, after_event_id: str = "") -> dict[str, object]:
     source = _events_after_id(events, after_event_id) if after_event_id else list(events)
-    max_events = 6
-    max_chars = 1200
     visible: list[dict[str, object]] = []
     lines: list[str] = []
     filtered_internal = 0
     filtered_delta = 0
+    omitted = 0
     latest_event_id = after_event_id
     for event in source:
         event_type = clean_lobby_text(event.get("type"), limit=64)
@@ -1513,23 +1750,31 @@ def _provider_room_delta(events: list[dict[str, object]], *, participant_id: str
             continue
         if clean_lobby_text(event.get("participant_id"), limit=128) == participant_id:
             continue
-        content = clean_lobby_text(event.get("content"), limit=1000)
+        latest_event_id = clean_lobby_text(event.get("id"), limit=128) or latest_event_id
+        content = clean_lobby_text(event.get("content"), limit=4000)
         if not content:
             continue
+        if len(content) > 500:
+            content = content[:500].rstrip() + " [truncated]"
         speaker = clean_lobby_text(event.get("display_name") or event.get("participant_id") or event.get("actor_id"), limit=64) or "room"
         clean_event = {
             key: event[key]
             for key in ("id", "created_at", "type", "participant_id", "actor_id", "display_name", "content")
             if key in event and event[key] not in (None, "", [], {})
         }
+        clean_event["content"] = content
         line = f"- {speaker}: {content}"
-        if lines and len("\n".join([*lines, line])) > max_chars:
+        if len(visible) >= PROVIDER_ROOM_DELTA_MAX_EVENTS or (
+            lines and len("\n".join([*lines, line])) > PROVIDER_ROOM_DELTA_MAX_CHARS
+        ):
+            omitted += 1
             continue
         visible.append(clean_event)
         lines.append(line)
-        latest_event_id = clean_lobby_text(event.get("id"), limit=128) or latest_event_id
-        if len(visible) >= max_events:
-            break
+    if omitted:
+        summary = f"- [omitted {omitted} additional room update(s)]"
+        if not lines or len("\n".join([*lines, summary])) <= PROVIDER_ROOM_DELTA_MAX_CHARS:
+            lines.append(summary)
     return {
         "events": visible,
         "text": "\n".join(lines),
@@ -1537,6 +1782,39 @@ def _provider_room_delta(events: list[dict[str, object]], *, participant_id: str
         "filtered_internal_event_count": filtered_internal,
         "filtered_message_delta_count": filtered_delta,
     }
+
+
+def _selected_media_manifest(
+    events: list[dict[str, object]],
+    *,
+    media_ids: object = None,
+    room_delta_text: str = "",
+) -> list[dict[str, object]]:
+    manifest_by_id: dict[str, dict[str, object]] = {}
+    ordered: list[dict[str, object]] = []
+    for event in events:
+        media = event.get("media")
+        if not isinstance(media, dict):
+            continue
+        media_id = clean_lobby_text(media.get("id"), limit=128)
+        if not media_id:
+            continue
+        item = dict(media)
+        manifest_by_id[media_id] = item
+        ordered.append(item)
+    selected_ids = _clean_text_list(media_ids, limit=128)
+    if selected_ids:
+        return [manifest_by_id[media_id] for media_id in selected_ids if media_id in manifest_by_id]
+    referenced_text = clean_lobby_text(room_delta_text, limit=4000).lower()
+    if not referenced_text:
+        return []
+    referenced = []
+    for media in ordered:
+        media_id = clean_lobby_text(media.get("id"), limit=128).lower()
+        filename = clean_lobby_text(media.get("filename"), limit=256).lower()
+        if (media_id and media_id in referenced_text) or (filename and filename in referenced_text):
+            referenced.append(media)
+    return referenced
 
 
 def _events_after_id(events: list[dict[str, object]], event_id: str) -> list[dict[str, object]]:

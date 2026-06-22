@@ -3,8 +3,12 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.agent_sessions import (
+    AgyAgentSessionAdapter,
     AgentSessionProcessService,
+    ClaudeAgentSessionAdapter,
     CodexAppServerRuntime,
+    CodexAppServerRuntimeManager,
+    GrokAgentSessionAdapter,
     agent_session_command_turn_runner,
     agent_session_codex_jsonl_turn_runner,
     agent_session_streaming_command_turn_runner,
@@ -14,6 +18,7 @@ from agentsassemble.agent_sessions import (
     build_agent_session_turn_command,
     build_room_turn_packet,
     resume_agent_session_payload,
+    runtime_profile_key,
     run_agent_session_turn_payload,
     room_sse_frames_after_cursor,
     stream_room_sse_frames,
@@ -124,6 +129,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             participant_id=session_result["participant"]["participant_id"],
             session_id="session-1",
             instruction="It is your turn.",
+            media_ids=[media["id"]],
         )
 
         self.assertEqual(packet["room_id"], "room-a")
@@ -188,6 +194,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
                 "agent_id": "agent-1",
                 "session_id": "session-1",
                 "instruction": "Answer now.",
+                "media_ids": [supported["id"], unsupported["id"]],
             },
             turn_runner=fake_runner,
         )
@@ -746,6 +753,209 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertNotIn("must_not", writes)
         self.assertNotIn("current_turn_instruction", writes)
 
+    def test_app_server_reuses_attached_thread_without_resume(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+        class FakeProcess:
+            pid = 127
+
+            def __init__(self):
+                self.stdin = Pipe()
+                self.stdout = Pipe(
+                    [
+                        '{"jsonrpc":"2.0","id":1,"result":{}}\n',
+                        '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"}}}\n',
+                        '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","id":4,"result":{"turn":{"id":"turn-b"}}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-b"}}}\n',
+                    ]
+                )
+
+        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+        list(runtime.send_turn({"session_id": "session-1"}, {"provider_input": "first"}))
+        list(runtime.send_turn({"session_id": "session-1"}, {"provider_input": "second"}))
+
+        writes = "".join(runtime.process.stdin.writes)
+        self.assertEqual(writes.count('"method": "thread/start"'), 1)
+        self.assertNotIn('"method": "thread/resume"', writes)
+        self.assertEqual(writes.count('"method": "turn/start"'), 2)
+        self.assertTrue(runtime.diagnostics["thread_reused"])
+        self.assertTrue(runtime.diagnostics["thread_resume_skipped"])
+
+    def test_app_server_pending_notifications_survive_request_response_wait(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+        class FakeProcess:
+            pid = 128
+
+            def __init__(self):
+                self.stdin = Pipe()
+                self.stdout = Pipe(
+                    [
+                        '{"jsonrpc":"2.0","id":1,"result":{}}\n',
+                        '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"}}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"delta":"early"}}\n',
+                        '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"item/completed","params":{"item":{"type":"agentMessage","text":"early final"}}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
+                    ]
+                )
+
+        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+        chunks = list(runtime.send_turn({}, {"provider_input": "answer"}))
+
+        self.assertIn("message_delta", [chunk["type"] for chunk in chunks])
+        self.assertEqual([chunk.get("content") for chunk in chunks if chunk.get("type") == "message_delta"], ["early"])
+        self.assertIn("message_final", [chunk["type"] for chunk in chunks])
+
+    def test_app_server_restart_resumes_existing_provider_thread(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+        class FakeProcess:
+            pid = 129
+
+            def __init__(self):
+                self.stdin = Pipe()
+                self.stdout = Pipe(
+                    [
+                        '{"jsonrpc":"2.0","id":1,"result":{}}\n',
+                        '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"}}}\n',
+                        '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
+                    ]
+                )
+
+        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+        list(runtime.send_turn({"provider_session_id": "thread-1"}, {"provider_input": "resume"}))
+
+        writes = "".join(runtime.process.stdin.writes)
+        self.assertIn('"method": "thread/resume"', writes)
+        self.assertFalse(runtime.diagnostics["thread_reused"])
+        self.assertFalse(runtime.diagnostics["thread_resume_skipped"])
+
+    def test_app_server_crash_becomes_room_error_event(self):
+        resume_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-1", "session_id": "session-1", "provider_kind": "codex_live_session"},
+        )
+
+        result = run_agent_session_turn_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-1", "session_id": "session-1", "instruction": "Answer."},
+            turn_adapter=lambda session, packet: (_ for _ in ()).throw(RuntimeError("Codex app-server stopped before completing the request.")),
+        )
+
+        events = RoomStore(self.output_root).read_events("room-a")
+        self.assertEqual(result["turn_status"], "error")
+        self.assertIn("error", [event["type"] for event in events])
+        self.assertIn("stopped before completing", str(events[-1].get("diagnostics")))
+
+    def test_runtime_manager_separates_profiles_and_shuts_down_unused(self):
+        manager = CodexAppServerRuntimeManager()
+        session_a = {"session_id": "a", "provider_kind": "codex_live_session", "model": "gpt-5.3", "sandbox": "read-only"}
+        session_b = {"session_id": "b", "provider_kind": "codex_live_session", "model": "gpt-5.3", "sandbox": "read-only"}
+        session_c = {"session_id": "c", "provider_kind": "codex_live_session", "model": "gpt-5.3", "sandbox": "workspace-write"}
+
+        runtime_a = manager.runtime_for(session_a, {})
+        runtime_b = manager.runtime_for(session_b, {})
+        runtime_c = manager.runtime_for(session_c, {})
+
+        self.assertIs(runtime_a, runtime_b)
+        self.assertIsNot(runtime_a, runtime_c)
+        self.assertEqual(runtime_profile_key(session_a, {}), runtime_a.runtime_profile_key)
+        manager.detach_session(session_a)
+        self.assertIn(runtime_profile_key(session_b, {}), manager._runtimes)
+        manager.detach_session(session_b)
+        self.assertNotIn(runtime_profile_key(session_b, {}), manager._runtimes)
+
+    def test_app_server_runtime_command_uses_session_settings(self):
+        manager = CodexAppServerRuntimeManager()
+        session = {
+            "session_id": "spark-a",
+            "provider_kind": "codex_live_session",
+            "model": "gpt-5.3-codex-spark",
+            "effort": "low",
+            "sandbox": "read-only",
+            "permissions": "never",
+        }
+
+        runtime = manager.runtime_for(session, {"settings": {"effort": "medium"}})
+
+        self.assertEqual(
+            runtime.command,
+            [
+                "codex",
+                "app-server",
+                "-c",
+                'model="gpt-5.3-codex-spark"',
+                "-c",
+                'model_reasoning_effort="medium"',
+                "-c",
+                'sandbox_mode="read-only"',
+                "-c",
+                'approval_policy="never"',
+                "--stdio",
+            ],
+        )
+        self.assertEqual(runtime.diagnostics["model"], "gpt-5.3-codex-spark")
+        self.assertEqual(runtime.diagnostics["effort"], "medium")
+        self.assertEqual(runtime.diagnostics["sandbox"], "read-only")
+        self.assertEqual(runtime.diagnostics["permissions"], "never")
+
+    def test_non_codex_provider_adapters_are_explicitly_unsupported(self):
+        for adapter in (GrokAgentSessionAdapter(), ClaudeAgentSessionAdapter(), AgyAgentSessionAdapter()):
+            handle = adapter.attach({"session_id": "session-1"})
+            chunks = list(adapter.send_turn(handle, {"provider_input": "hello"}))
+            self.assertFalse(handle["resumable"])
+            self.assertEqual(chunks[0]["type"], "error")
+            self.assertNotIn("provider_session_id", handle)
+        self.assertIn("claude -p", str(ClaudeAgentSessionAdapter().diagnose({})))
+        self.assertNotIn("command", ClaudeAgentSessionAdapter().diagnose({}))
+
     def test_codex_app_server_approval_and_context_error_surface(self):
         class Pipe:
             def __init__(self, lines=None):
@@ -925,7 +1135,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         store.create_room("room-a")
         for index in range(15):
             store.append_event("room-a", "message_final", actor_id="human", content=f"event {index} " + ("x" * 200))
-        store.attach_media("room-a", filename="notes.bin", content_type="application/octet-stream", data=b"data", supported=False)
+        media = store.attach_media("room-a", filename="notes.bin", content_type="application/octet-stream", data=b"data", supported=False)
         result = resume_agent_session_payload(
             self.output_root,
             {"room_id": "room-a", "agent_id": "agent-1", "session_id": "session-1", "provider_kind": "codex_live_session"},
@@ -937,6 +1147,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             participant_id=result["participant"]["participant_id"],
             session_id="session-1",
             instruction="Important current instruction.",
+            media_ids=[media["id"]],
             max_recent_events=20,
             max_prompt_chars=2500,
         )
@@ -994,6 +1205,58 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertNotIn("my previous answer", packet["provider_input"])
         self.assertNotIn("provider_session_id", packet["provider_input"])
         self.assertNotIn("diagnostics", packet["provider_input"])
+
+    def test_provider_delta_truncates_long_message_and_advances_cursor(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        store.append_event("room-a", "message_final", participant_id="agent-b", content="x" * 5000)
+        final_id = store.read_events("room-a")[-1]["id"]
+        resume_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-a", "session_id": "session-a", "provider_kind": "codex_live_session"},
+        )
+        store.upsert_session("room-a", {**store.session("room-a", "session-a"), "bootstrap_done": True})
+
+        packet = build_room_turn_packet(
+            self.output_root,
+            room_id="room-a",
+            participant_id="agent-a",
+            session_id="session-a",
+            instruction="Reply.",
+        )
+
+        self.assertIn("[truncated]", packet["provider_input"])
+        self.assertEqual(packet["last_provider_sync_event_id_after"], final_id)
+        self.assertLessEqual(packet["provider_visible_chars"], 20000)
+
+    def test_media_is_not_implicitly_sent_without_selection_or_room_reference(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        store.append_event("room-a", "message_final", participant_id="human", content="hello")
+        media = store.attach_media("room-a", filename="diagram.png", content_type="image/png", data=b"image", supported=True)
+        result = resume_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-a", "session_id": "session-a", "provider_kind": "codex_live_session"},
+        )
+
+        packet = build_room_turn_packet(
+            self.output_root,
+            room_id="room-a",
+            participant_id=result["participant"]["participant_id"],
+            session_id="session-a",
+            instruction="Reply.",
+        )
+        selected_packet = build_room_turn_packet(
+            self.output_root,
+            room_id="room-a",
+            participant_id=result["participant"]["participant_id"],
+            session_id="session-a",
+            instruction="Reply.",
+            media_ids=[media["id"]],
+        )
+
+        self.assertEqual(packet["media_manifest"], [])
+        self.assertEqual([item["id"] for item in selected_packet["media_manifest"]], [media["id"]])
 
     def test_provider_sync_cursor_advances_after_success_and_not_after_failure(self):
         store = RoomStore(self.output_root)
@@ -1090,6 +1353,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             participant_id=result["participant"]["participant_id"],
             session_id="session-1",
             instruction="Describe attached media.",
+            media_ids=[media["id"]],
         )
 
         media_path = Path(media["path"])
