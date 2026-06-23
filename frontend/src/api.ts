@@ -340,6 +340,9 @@ export interface LiveAgent {
   engagement_mode: string;
   meeting_id: string;
   session_id?: string;
+  model_id?: string;
+  effort?: string;
+  speed?: string;
   process_group_id?: string;
   live_agent_config_path?: string;
   workspace_path?: string;

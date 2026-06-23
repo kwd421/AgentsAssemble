@@ -924,7 +924,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertIn("error", [event["type"] for event in events])
         self.assertIn("stopped before completing", str(events[-1].get("diagnostics")))
 
-    def test_runtime_manager_separates_profiles_and_shuts_down_unused(self):
+    def test_runtime_manager_uses_isolated_session_by_default_and_shuts_down_unused(self):
         manager = CodexAppServerRuntimeManager()
         session_a = {"session_id": "a", "provider_kind": "codex_live_session", "model": "gpt-5.3", "sandbox": "read-only"}
         session_b = {"session_id": "b", "provider_kind": "codex_live_session", "model": "gpt-5.3", "sandbox": "read-only"}
@@ -934,13 +934,42 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         runtime_b = manager.runtime_for(session_b, {})
         runtime_c = manager.runtime_for(session_c, {})
 
-        self.assertIs(runtime_a, runtime_b)
+        self.assertIsNot(runtime_a, runtime_b)
         self.assertIsNot(runtime_a, runtime_c)
         self.assertEqual(runtime_profile_key(session_a, {}), runtime_a.runtime_profile_key)
         manager.detach_session(session_a)
         self.assertIn(runtime_profile_key(session_b, {}), manager._runtimes)
+        self.assertNotIn(runtime_profile_key(session_a, {}), manager._runtimes)
         manager.detach_session(session_b)
         self.assertNotIn(runtime_profile_key(session_b, {}), manager._runtimes)
+
+    def test_runtime_manager_shared_profile_policy_reuses_runtime(self):
+        manager = CodexAppServerRuntimeManager()
+        session_a = {
+            "session_id": "a",
+            "provider_kind": "codex_live_session",
+            "model": "gpt-5.3",
+            "sandbox": "read-only",
+            "runtime_sharing_policy": "shared_profile",
+        }
+        session_b = {**session_a, "session_id": "b"}
+
+        runtime_a = manager.runtime_for(session_a, {})
+        runtime_b = manager.runtime_for(session_b, {})
+
+        self.assertIs(runtime_a, runtime_b)
+        self.assertIn("runtime_sharing_policy=shared_profile", runtime_a.runtime_profile_key)
+
+    def test_same_session_reuses_isolated_runtime(self):
+        manager = CodexAppServerRuntimeManager()
+        session = {"session_id": "a", "provider_kind": "codex_live_session", "model": "gpt-5.3", "sandbox": "read-only"}
+
+        runtime_a = manager.runtime_for(session, {})
+        runtime_b = manager.runtime_for(session, {})
+
+        self.assertIs(runtime_a, runtime_b)
+        self.assertIn("runtime_sharing_policy=isolated_session", runtime_a.runtime_profile_key)
+        self.assertIn("session_id=a", runtime_a.runtime_profile_key)
 
     def test_runtime_profile_key_includes_workspace_permissions_and_codex_home(self):
         base = {
@@ -957,6 +986,11 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertNotEqual(runtime_profile_key(base, {}), runtime_profile_key({**base, "workspace": "/tmp/work-b"}, {}))
         self.assertNotEqual(runtime_profile_key(base, {}), runtime_profile_key({**base, "permissions": "on-request"}, {}))
         self.assertNotEqual(runtime_profile_key(base, {}), runtime_profile_key({**base, "codex_home": "/tmp/codex-home-b"}, {}))
+        self.assertNotEqual(runtime_profile_key(base, {}), runtime_profile_key({**base, "session_id": "b"}, {}))
+        self.assertEqual(
+            runtime_profile_key({**base, "runtime_sharing_policy": "shared_profile"}, {}),
+            runtime_profile_key({**base, "session_id": "b", "runtime_sharing_policy": "shared_profile"}, {}),
+        )
 
     def test_resume_persists_profile_isolation_fields_on_session(self):
         result = resume_agent_session_payload(
@@ -972,6 +1006,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
                 "permissions": "never",
                 "workspace": "/tmp/work-a",
                 "codex_home": "/tmp/codex-home-a",
+                "runtime_sharing_policy": "shared_profile_serial",
             },
         )
 
@@ -980,8 +1015,10 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         self.assertEqual(session["workspace"], "/tmp/work-a")
         self.assertEqual(session["codex_home"], "/tmp/codex-home-a")
+        self.assertEqual(session["runtime_sharing_policy"], "shared_profile_serial")
         self.assertIn("workspace=/tmp/work-a", key)
         self.assertIn("codex_home=/tmp/codex-home-a", key)
+        self.assertIn("runtime_sharing_policy=shared_profile_serial", key)
 
     def test_app_server_runtime_command_uses_session_settings(self):
         manager = CodexAppServerRuntimeManager()
@@ -1169,6 +1206,132 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertNotIn("turn_completed_ms", error_settings)
         self.assertNotIn("time_to_first_agent_delta_ms", error_settings)
         self.assertIn("app_server", error_settings)
+
+    def test_app_server_buffers_unmatched_thread_and_turn_notifications(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+        class FakeProcess:
+            pid = 132
+
+            def __init__(self):
+                self.stdin = Pipe()
+                self.stdout = Pipe(
+                    [
+                        json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "id": 2, "result": {"thread": {"id": "thread-current"}}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "id": 3, "result": {"turn": {"id": "turn-current"}}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "method": "turn/completed", "params": {"threadId": "thread-other", "turnId": "turn-other"}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "method": "agent_message/delta", "params": {"threadId": "thread-current", "turnId": "turn-old", "delta": "old"}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "method": "agent_message/delta", "params": {"threadId": "thread-current", "turnId": "turn-current", "delta": "current"}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "method": "turn/completed", "params": {"threadId": "thread-current", "turnId": "turn-current"}}) + "\n",
+                    ]
+                )
+                self.stderr = Pipe()
+
+        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+
+        chunks = list(runtime.send_turn({}, {"provider_input": "answer"}))
+        diagnostics = runtime.diagnose({})
+
+        self.assertIn({"type": "message_delta", "content": "current"}, chunks)
+        self.assertNotIn({"type": "message_delta", "content": "old"}, chunks)
+        self.assertEqual(diagnostics.get("unmatched_notification_count"), 2)
+        self.assertEqual(diagnostics.get("pending_notification_count"), 2)
+        self.assertIn("turn/completed", diagnostics.get("app_server_method_tail", ""))
+        self.assertEqual(diagnostics.get("provider_turn_id"), "turn-current")
+        self.assertEqual(diagnostics.get("provider_thread_id"), "thread-current")
+
+    def test_app_server_turns_on_same_runtime_are_serialized(self):
+        class SerialRuntime(CodexAppServerRuntime):
+            def __init__(self):
+                super().__init__()
+                self.active_turns = 0
+                self.max_active_turns = 0
+                self.starts: list[str] = []
+
+            def attach(self, ids):
+                return {"provider_thread_id": str(ids.get("session_id") or "thread")}
+
+            def _send_request(self, method, params, *, timeout_deadline=None):
+                if method != "turn/start":
+                    return {"result": {}}
+                self.active_turns += 1
+                self.max_active_turns = max(self.max_active_turns, self.active_turns)
+                self.starts.append(str(params.get("threadId")))
+                time.sleep(0.05)
+                return {"result": {"turn": {"id": f"turn-{params.get('threadId')}"}}}
+
+            def _read_messages_until_turn_done(self, *, thread_id="", turn_id="", timeout_deadline=None):
+                try:
+                    time.sleep(0.05)
+                    yield {"method": "turn/completed", "params": {"threadId": self.starts[-1], "turnId": f"turn-{self.starts[-1]}"}}
+                finally:
+                    self.active_turns -= 1
+
+        runtime = SerialRuntime()
+        results: list[list[dict[str, object]]] = []
+        threads = [
+            threading.Thread(target=lambda sid=sid: results.append(list(runtime.send_turn({"session_id": sid}, {"provider_input": sid}))))
+            for sid in ("a", "b")
+        ]
+
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(runtime.max_active_turns, 1)
+        self.assertEqual(len(results), 2)
+
+    def test_app_server_timeout_reports_method_tail_and_status(self):
+        class TimeoutRuntime(CodexAppServerRuntime):
+            def attach(self, ids):
+                return {"provider_thread_id": "thread-1"}
+
+            def _send_request(self, method, params, *, timeout_deadline=None):
+                return {"result": {"turn": {"id": "turn-1"}}}
+
+            def _read_json_line(self, *, timeout_deadline=None):
+                if not hasattr(self, "_sent_status"):
+                    self._sent_status = True
+                    return {
+                        "method": "thread/status/changed",
+                        "params": {
+                            "threadId": "thread-1",
+                            "turnId": "turn-1",
+                            "thread": {"status": "busy"},
+                            "turn": {"status": "running"},
+                        },
+                    }
+                raise TimeoutError("Codex app-server timed out before completing the request.")
+
+        runtime = TimeoutRuntime()
+
+        chunks = list(runtime.send_turn({}, {"provider_input": "answer"}))
+        diagnostics = chunks[-1]["diagnostics"]
+        settings = {item["setting"]: item["status"] for item in diagnostics if isinstance(item, dict)}
+
+        self.assertEqual(chunks[-1]["type"], "error")
+        self.assertEqual(settings["app_server_last_method"], "thread/status/changed")
+        self.assertEqual(settings["app_server_last_thread_status"], "busy")
+        self.assertEqual(settings["app_server_last_turn_status"], "running")
+        self.assertIn("thread/status/changed", settings["app_server_method_tail"])
+        self.assertEqual(settings["provider_thread_id"], "thread-1")
+        self.assertEqual(settings["provider_turn_id"], "turn-1")
 
     def test_diagnostics_snapshot_is_consistent_while_stderr_updates(self):
         runtime = CodexAppServerRuntime()
@@ -1445,6 +1608,34 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertTrue(session["recovery_required"])
         self.assertIn("resume", str(result["diagnostics"]).lower())
         self.assertIn("warning resume failed", str(result["diagnostics"]))
+
+    def test_smoke_result_classifies_provider_unsupported_separately(self):
+        from agentsassemble import agent_sessions
+
+        diagnostics = [
+            {
+                "setting": "app_server",
+                "status": "failed",
+                "message": "The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account.",
+            }
+        ]
+
+        self.assertEqual(agent_sessions._codex_app_server_smoke_turn_failure_kind(diagnostics), "provider_unsupported")
+        self.assertFalse(agent_sessions._diagnostics_indicate_timeout(diagnostics))
+
+    def test_smoke_summary_counts_provider_unsupported_and_context_errors(self):
+        from agentsassemble import agent_sessions
+
+        metrics = agent_sessions._empty_codex_app_server_smoke_metrics()
+        metrics["turn_status"] = ["finished", "provider_unsupported", "error"]
+        metrics["failure_kind"] = ["provider_unsupported", "context_error"]
+
+        summary = agent_sessions._finalize_codex_app_server_smoke_metrics(metrics, total_turns=3)
+
+        self.assertEqual(summary["finished_turns"], 1)
+        self.assertEqual(summary["provider_unsupported_count"], 1)
+        self.assertEqual(summary["context_error_count"], 1)
+        self.assertEqual(summary["timeout_count"], 0)
 
     def test_codex_app_server_approval_and_context_error_surface(self):
         class Pipe:

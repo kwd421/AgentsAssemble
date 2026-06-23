@@ -29,6 +29,9 @@ DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS = 40
 DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS = 20000
 CODEX_APP_SERVER_STDERR_TAIL_LINES = 50
 CODEX_APP_SERVER_STDERR_TAIL_CHARS = 16000
+CODEX_APP_SERVER_METHOD_TAIL_LENGTH = 50
+DEFAULT_CODEX_APP_SERVER_RUNTIME_SHARING_POLICY = "isolated_session"
+CODEX_APP_SERVER_RUNTIME_SHARING_POLICIES = {"isolated_session", "shared_profile", "shared_profile_serial"}
 PROVIDER_ROOM_DELTA_MAX_EVENTS = 6
 PROVIDER_ROOM_DELTA_MAX_CHARS = 1200
 CODEX_APP_SERVER_SMOKE_COMMANDS = {
@@ -89,6 +92,7 @@ def resume_agent_session_payload(
             "permissions": clean_lobby_text(payload.get("permissions") or payload.get("permission_option"), limit=64),
             "workspace": clean_lobby_text(payload.get("workspace") or payload.get("cwd"), limit=300),
             "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
+            "runtime_sharing_policy": clean_codex_app_server_runtime_sharing_policy(payload.get("runtime_sharing_policy")),
         },
     )
     session, session_created = store.upsert_session(
@@ -108,6 +112,7 @@ def resume_agent_session_payload(
             "permissions": clean_lobby_text(payload.get("permissions") or payload.get("permission_option"), limit=64),
             "workspace": clean_lobby_text(payload.get("workspace") or payload.get("cwd"), limit=300),
             "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
+            "runtime_sharing_policy": clean_codex_app_server_runtime_sharing_policy(payload.get("runtime_sharing_policy") or previous_session.get("runtime_sharing_policy")),
             "diagnostics": payload.get("diagnostics") if isinstance(payload.get("diagnostics"), list) else [],
         },
     )
@@ -659,13 +664,16 @@ class CodexAppServerRuntime:
         self._thread_handles: dict[str, dict[str, object]] = {}
         self._stderr_lock = threading.Lock()
         self._diagnostics_lock = threading.RLock()
+        self._turn_lock = threading.RLock()
         self._stderr_tail: deque[str] = deque()
+        self._app_server_method_tail: deque[str] = deque(maxlen=CODEX_APP_SERVER_METHOD_TAIL_LENGTH)
         self._stderr_thread: threading.Thread | None = None
         self._stderr_line_count = 0
         self._stderr_byte_count = 0
         self._stderr_warning_count = 0
         self._stderr_tail_truncated = False
         self._stderr_last_line_at = ""
+        self._unmatched_notification_count = 0
         self.diagnostics: dict[str, object] = {
             "runtime_mode": "app_server",
             "transport": "stdio_jsonl",
@@ -744,6 +752,13 @@ class CodexAppServerRuntime:
         thread_id = clean_provider_session_id(attached.get("provider_thread_id") or handle.get("provider_session_id"))
         if thread_id:
             yield {"type": "provider_session", "provider_session_id": thread_id, "provider_thread_id": thread_id}
+        yield from self._send_turn_attached(thread_id, packet)
+
+    def _send_turn_attached(self, thread_id: str, packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
+        with self._turn_lock:
+            yield from self._send_turn_attached_locked(thread_id, packet)
+
+    def _send_turn_attached_locked(self, thread_id: str, packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
         started = time.monotonic()
         turn_params = {
             "threadId": thread_id,
@@ -754,7 +769,7 @@ class CodexAppServerRuntime:
         timeout_seconds = _agent_turn_timeout_seconds(packet.get("timeout_seconds"))
         timeout_deadline = started + timeout_seconds
         try:
-            self._send_request("turn/start", turn_params, timeout_deadline=timeout_deadline)
+            turn_response = self._send_request("turn/start", turn_params, timeout_deadline=timeout_deadline)
         except Exception as error:
             self._handle_process_failure(error)
             yield {
@@ -762,9 +777,17 @@ class CodexAppServerRuntime:
                 "diagnostics": self._error_diagnostics(error, status="turn_start_failed", recovery_required=bool(thread_id)),
             }
             return
+        provider_turn_id = clean_provider_session_id(
+            _nested_get(turn_response, "result.turn.id")
+            or _nested_get(turn_response, "result.turnId")
+            or _nested_get(turn_response, "params.turn.id")
+            or _nested_get(turn_response, "params.turnId")
+        )
         turn_start_request_ms = _elapsed_ms(started)
         self._update_diagnostics(
             {
+                "provider_thread_id": thread_id,
+                "provider_turn_id": provider_turn_id,
                 "turn_start_request_ms": turn_start_request_ms,
                 "time_to_turn_start_ack_ms": turn_start_request_ms,
             }
@@ -774,17 +797,15 @@ class CodexAppServerRuntime:
         first_text_delta = False
         turn_event_count = 0
         try:
-            messages = self._read_messages_until_turn_done(timeout_deadline=timeout_deadline)
+            messages = self._read_messages_until_turn_done(
+                thread_id=thread_id,
+                turn_id=provider_turn_id,
+                timeout_deadline=timeout_deadline,
+            )
             for message in messages:
                 method = clean_lobby_text(message.get("method"), limit=128)
                 turn_event_count += 1
-                self._update_diagnostics(
-                    {
-                        "app_server_last_method": method,
-                        "app_server_last_event_at": _now_iso(),
-                        "app_server_turn_event_count": turn_event_count,
-                    }
-                )
+                self._record_app_server_message(message, turn_event_count=turn_event_count)
                 params = message.get("params") if isinstance(message.get("params"), dict) else {}
                 if not first_notification:
                     self._update_diagnostics({"time_to_first_notification_ms": _elapsed_ms(started)})
@@ -1042,7 +1063,14 @@ class CodexAppServerRuntime:
                 "thread_reused": "",
                 "app_server_last_event_at": "",
                 "app_server_last_method": "",
+                "app_server_last_thread_status": "",
+                "app_server_last_turn_status": "",
+                "app_server_method_tail": "",
                 "app_server_turn_event_count": "",
+                "provider_thread_id": "",
+                "provider_turn_id": "",
+                "pending_notification_count": "",
+                "unmatched_notification_count": "",
                 "time_to_first_agent_delta_ms": "",
                 "time_to_first_agent_item_ms": "",
                 "time_to_first_agent_text_delta_ms": "",
@@ -1054,6 +1082,8 @@ class CodexAppServerRuntime:
                 "turn_start_request_ms": "",
             }
         )
+        self._app_server_method_tail.clear()
+        self._unmatched_notification_count = 0
 
     def _handle_process_failure(self, error: Exception) -> None:
         self._update_diagnostics(
@@ -1117,13 +1147,78 @@ class CodexAppServerRuntime:
             if message.get("id") == request_id:
                 return message
             self._pending_messages.append(message)
+            self._publish_pending_notification_count()
 
-    def _read_messages_until_turn_done(self, *, timeout_deadline: float | None = None) -> Iterable[dict[str, object]]:
+    def _read_messages_until_turn_done(
+        self,
+        *,
+        thread_id: str = "",
+        turn_id: str = "",
+        timeout_deadline: float | None = None,
+    ) -> Iterable[dict[str, object]]:
         while True:
-            message = self._pending_messages.pop(0) if self._pending_messages else self._read_json_line(timeout_deadline=timeout_deadline)
+            message = self._pop_matching_pending_message(thread_id=thread_id, turn_id=turn_id)
+            if message is None:
+                message = self._read_json_line(timeout_deadline=timeout_deadline)
+                if not self._message_matches_active_turn(message, thread_id=thread_id, turn_id=turn_id):
+                    self._buffer_unmatched_notification(message)
+                    continue
             yield message
             if clean_lobby_text(message.get("method"), limit=128) in {"turn/completed", "turn/error", "error"}:
                 return
+
+    def _pop_matching_pending_message(self, *, thread_id: str, turn_id: str) -> dict[str, object] | None:
+        for index, message in enumerate(self._pending_messages):
+            if self._message_matches_active_turn(message, thread_id=thread_id, turn_id=turn_id):
+                matched = self._pending_messages.pop(index)
+                self._publish_pending_notification_count()
+                return matched
+        return None
+
+    def _buffer_unmatched_notification(self, message: dict[str, object]) -> None:
+        self._pending_messages.append(message)
+        self._unmatched_notification_count += 1
+        self._publish_pending_notification_count()
+
+    def _publish_pending_notification_count(self) -> None:
+        self._update_diagnostics(
+            {
+                "pending_notification_count": len(self._pending_messages),
+                "unmatched_notification_count": self._unmatched_notification_count,
+            }
+        )
+
+    def _message_matches_active_turn(self, message: dict[str, object], *, thread_id: str, turn_id: str) -> bool:
+        method = clean_lobby_text(message.get("method"), limit=128)
+        if not method:
+            return True
+        message_thread_id = _app_server_message_thread_id(message)
+        message_turn_id = _app_server_message_turn_id(message)
+        if message_thread_id and thread_id and message_thread_id != thread_id:
+            return False
+        if message_turn_id and turn_id and message_turn_id != turn_id:
+            return False
+        return True
+
+    def _record_app_server_message(self, message: dict[str, object], *, turn_event_count: int) -> None:
+        method = clean_lobby_text(message.get("method"), limit=128)
+        if method:
+            self._app_server_method_tail.append(method)
+        updates: dict[str, object] = {
+            "app_server_last_method": method,
+            "app_server_last_event_at": _now_iso(),
+            "app_server_method_tail": " -> ".join(self._app_server_method_tail),
+            "app_server_turn_event_count": turn_event_count,
+            "pending_notification_count": len(self._pending_messages),
+            "unmatched_notification_count": self._unmatched_notification_count,
+        }
+        thread_status = _app_server_message_thread_status(message)
+        turn_status = _app_server_message_turn_status(message)
+        if thread_status:
+            updates["app_server_last_thread_status"] = thread_status
+        if turn_status:
+            updates["app_server_last_turn_status"] = turn_status
+        self._update_diagnostics(updates)
 
     def _read_json_line(self, *, timeout_deadline: float | None = None) -> dict[str, object]:
         assert self.process is not None
@@ -1260,6 +1355,7 @@ def run_codex_app_server_smoke(
         store.create_room(room_id, label=clean_smoke)
         metrics: dict[str, object] = _empty_codex_app_server_smoke_metrics()
         errors: list[str] = []
+        blocking_errors: list[str] = []
         timeout_count = 0
         context_error_detected = False
         sessions = _codex_app_server_smoke_sessions(clean_smoke, workspace=str(workspace))
@@ -1277,6 +1373,7 @@ def run_codex_app_server_smoke(
                     "sandbox": session["sandbox"],
                     "permissions": session["permissions"],
                     "workspace": session["workspace"],
+                    "runtime_sharing_policy": session.get("runtime_sharing_policy", DEFAULT_CODEX_APP_SERVER_RUNTIME_SHARING_POLICY),
                 },
             )
         started_at = time.monotonic()
@@ -1304,9 +1401,16 @@ def run_codex_app_server_smoke(
                 _record_codex_app_server_smoke_turn(metrics, result, packet, turn_diagnostics)
                 context_error_detected = context_error_detected or _context_error_detected(turn_diagnostics)
                 if result.get("turn_status") != "finished":
-                    errors.append(f"{session['session_id']} turn {index + 1}: {result.get('turn_status') or result.get('status')}")
+                    failure_kind = _codex_app_server_smoke_turn_failure_kind(turn_diagnostics)
+                    metrics["failure_kind"].append(failure_kind)
+                    if failure_kind == "provider_unsupported":
+                        metrics["turn_status"][-1] = "provider_unsupported"
+                    error_label = f"{session['session_id']} turn {index + 1}: {failure_kind}"
+                    errors.append(error_label)
+                    if failure_kind != "provider_unsupported":
+                        blocking_errors.append(error_label)
                     metrics["error_diagnostics"].append(_diagnostics_sample(turn_diagnostics))
-                    if _diagnostics_indicate_timeout(turn_diagnostics):
+                    if failure_kind == "timeout":
                         timeout_count += 1
                     if clean_smoke != "codex-app-server-profile-isolation":
                         break
@@ -1336,12 +1440,17 @@ def run_codex_app_server_smoke(
         metrics["context_error_detected"] = context_error_detected
         metrics["timeout_count"] = timeout_count
         metrics["alive_after_detach"] = alive_after_detach
-        metrics["finished_turns"] = len([status for status in metrics["turn_status"] if status == "finished"])
-        metrics["total_turns"] = len(turn_plan)
+        _finalize_codex_app_server_smoke_metrics(metrics, total_turns=len(turn_plan))
         metrics["distinct_runtime_profile_key_count"] = len(set(str(value) for value in metrics["runtime_profile_key"] if value))
         metrics["elapsed_ms"] = _elapsed_ms(started_at)
+        if blocking_errors or alive_after_detach:
+            status = "failed"
+        elif metrics.get("provider_unsupported_count") and clean_smoke != "codex-app-server-profile-isolation":
+            status = "provider_unsupported"
+        else:
+            status = "ok"
         return {
-            "status": "ok" if not errors and not alive_after_detach else "failed",
+            "status": status,
             "smoke": clean_smoke,
             "requires_approval": True,
             "approved": True,
@@ -1363,6 +1472,7 @@ def _codex_app_server_smoke_skipped(smoke: str) -> dict[str, object]:
 def _empty_codex_app_server_smoke_metrics() -> dict[str, object]:
     return {
         "runtime_profile_key": [],
+        "runtime_sharing_policy": [],
         "runtime_reused": [],
         "thread_reused": [],
         "app_server_pid": [],
@@ -1376,12 +1486,15 @@ def _empty_codex_app_server_smoke_metrics() -> dict[str, object]:
         "stderr_warning_count": [],
         "stderr_tail": [],
         "error_diagnostics": [],
+        "failure_kind": [],
         "turn_status": [],
         "rss_kb_start": 0,
         "rss_kb_end": 0,
         "rss_kb_delta": 0,
         "context_error_detected": False,
         "timeout_count": 0,
+        "provider_unsupported_count": 0,
+        "context_error_count": 0,
         "alive_after_detach": None,
     }
 
@@ -1408,6 +1521,11 @@ def _codex_app_server_smoke_sessions(smoke: str, *, workspace: str) -> list[dict
                 "permissions": "on-request",
             },
         ]
+    if smoke == "codex-app-server-same-profile":
+        return [
+            {**base, "participant_id": "spark-a", "session_id": "spark-a", "display_name": "Spark A", "runtime_sharing_policy": "shared_profile"},
+            {**base, "participant_id": "spark-b", "session_id": "spark-b", "display_name": "Spark B", "runtime_sharing_policy": "shared_profile"},
+        ]
     return [
         {**base, "participant_id": "spark-a", "session_id": "spark-a", "display_name": "Spark A"},
         {**base, "participant_id": "spark-b", "session_id": "spark-b", "display_name": "Spark B"},
@@ -1417,7 +1535,9 @@ def _codex_app_server_smoke_sessions(smoke: str, *, workspace: str) -> list[dict
 def _codex_app_server_smoke_turn_plan(smoke: str, sessions: list[dict[str, str]]) -> list[dict[str, str]]:
     if smoke == "codex-app-server-stderr-backpressure":
         return [sessions[index % 2] for index in range(30)]
-    if smoke in {"codex-app-server-same-profile", "codex-app-server-warm", "codex-app-server-two-agent"}:
+    if smoke == "codex-app-server-two-agent":
+        return [sessions[index % 2] for index in range(30)]
+    if smoke in {"codex-app-server-same-profile", "codex-app-server-warm"}:
         return [sessions[0], sessions[1]]
     if smoke == "codex-app-server-restart-recovery":
         return [sessions[0], sessions[0]]
@@ -1438,6 +1558,7 @@ def _record_codex_app_server_smoke_turn(
     metrics["provider_visible_chars"].append(int(packet.get("provider_visible_chars") or 0))
     for key in (
         "runtime_profile_key",
+        "runtime_sharing_policy",
         "runtime_reused",
         "thread_reused",
         "app_server_pid",
@@ -1458,6 +1579,7 @@ def _record_codex_app_server_smoke_turn(
 def _record_codex_app_server_smoke_diagnostics(metrics: dict[str, object], diagnostics: dict[str, object]) -> None:
     for key in (
         "runtime_profile_key",
+        "runtime_sharing_policy",
         "runtime_reused",
         "thread_reused",
         "app_server_pid",
@@ -1487,6 +1609,27 @@ def _diagnostics_indicate_timeout(diagnostics: list[dict[str, object]]) -> bool:
         if "timeout" in status or "timed out" in message or "before timeout" in message:
             return True
     return False
+
+
+def _codex_app_server_smoke_turn_failure_kind(diagnostics: list[dict[str, object]]) -> str:
+    text = str(diagnostics).lower()
+    if "not supported" in text and "model" in text:
+        return "provider_unsupported"
+    if _context_error_detected(diagnostics):
+        return "context_error"
+    if _diagnostics_indicate_timeout(diagnostics):
+        return "timeout"
+    return "error"
+
+
+def _finalize_codex_app_server_smoke_metrics(metrics: dict[str, object], *, total_turns: int) -> dict[str, object]:
+    failure_kinds = [str(value) for value in metrics.get("failure_kind", []) if value]
+    metrics["finished_turns"] = len([status for status in metrics.get("turn_status", []) if status == "finished"])
+    metrics["total_turns"] = total_turns
+    metrics["provider_unsupported_count"] = failure_kinds.count("provider_unsupported")
+    metrics["context_error_count"] = failure_kinds.count("context_error")
+    metrics["timeout_count"] = failure_kinds.count("timeout") if failure_kinds else int(metrics.get("timeout_count") or 0)
+    return metrics
 
 
 def _diagnostics_sample(diagnostics: list[dict[str, object]]) -> str:
@@ -1609,7 +1752,12 @@ def runtime_profile_key(session: dict[str, object], packet: dict[str, object] | 
 
 def runtime_profile_settings(session: dict[str, object], packet: dict[str, object] | None = None) -> dict[str, str]:
     settings = packet.get("settings") if isinstance(packet, dict) and isinstance(packet.get("settings"), dict) else {}
-    return {
+    runtime_sharing_policy = clean_codex_app_server_runtime_sharing_policy(
+        (packet or {}).get("runtime_sharing_policy")
+        or settings.get("runtime_sharing_policy")
+        or session.get("runtime_sharing_policy")
+    )
+    profile = {
         "provider_kind": clean_agent_session_provider_kind(session.get("provider_kind")),
         "workspace": clean_lobby_text((packet or {}).get("workspace") or session.get("workspace") or session.get("cwd") or "", limit=300),
         "model": clean_lobby_text(settings.get("model") or session.get("model"), limit=128),
@@ -1617,7 +1765,18 @@ def runtime_profile_settings(session: dict[str, object], packet: dict[str, objec
         "sandbox": clean_lobby_text(settings.get("sandbox") or session.get("sandbox"), limit=64),
         "permissions": clean_lobby_text(settings.get("permissions") or session.get("permissions"), limit=64),
         "codex_home": clean_lobby_text(session.get("codex_home") or session.get("config_profile"), limit=200),
+        "runtime_sharing_policy": runtime_sharing_policy,
     }
+    if runtime_sharing_policy == "isolated_session":
+        profile["session_id"] = clean_lobby_text(session.get("session_id") or session.get("participant_id"), limit=128)
+    return profile
+
+
+def clean_codex_app_server_runtime_sharing_policy(value: object) -> str:
+    policy = clean_lobby_text(value, limit=64)
+    if policy in CODEX_APP_SERVER_RUNTIME_SHARING_POLICIES:
+        return policy
+    return DEFAULT_CODEX_APP_SERVER_RUNTIME_SHARING_POLICY
 
 
 def codex_app_server_runtime_command(profile_settings: dict[str, object]) -> list[str]:
@@ -2184,6 +2343,41 @@ def clean_provider_session_id(value: object) -> str:
     if provider_session_id == "--last":
         return ""
     return provider_session_id
+
+
+def _app_server_message_thread_id(message: dict[str, object]) -> str:
+    return clean_provider_session_id(
+        _nested_get(message, "params.threadId")
+        or _nested_get(message, "params.thread.id")
+        or _nested_get(message, "params.thread_id")
+        or _nested_get(message, "params.item.threadId")
+    )
+
+
+def _app_server_message_turn_id(message: dict[str, object]) -> str:
+    return clean_provider_session_id(
+        _nested_get(message, "params.turnId")
+        or _nested_get(message, "params.turn.id")
+        or _nested_get(message, "params.turn_id")
+        or _nested_get(message, "params.item.turnId")
+    )
+
+
+def _app_server_message_thread_status(message: dict[str, object]) -> str:
+    return clean_lobby_text(
+        _nested_get(message, "params.thread.status")
+        or _nested_get(message, "params.status")
+        or _nested_get(message, "params.threadStatus"),
+        limit=128,
+    )
+
+
+def _app_server_message_turn_status(message: dict[str, object]) -> str:
+    return clean_lobby_text(
+        _nested_get(message, "params.turn.status")
+        or _nested_get(message, "params.turnStatus"),
+        limit=128,
+    )
 
 
 def _agent_session_resume_mode(session: dict[str, object]) -> str:

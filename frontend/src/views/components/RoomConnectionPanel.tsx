@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Bot, Copy, Gamepad2, Plus, Square, Zap } from "lucide-react";
 import {
+  resumeAgentSession,
   runAgentSessionTurn,
   startFlow,
   startMafiaGame,
@@ -47,6 +48,7 @@ type AgentSessionDiagnosticRow = {
 const AGENT_SESSION_DIAGNOSTIC_FIELDS = [
   ["runtime_mode", "runtime mode"],
   ["runtime_profile_key", "runtime profile"],
+  ["runtime_sharing_policy", "sharing policy"],
   ["thread_reused", "thread reused"],
   ["time_to_first_agent_delta_ms", "first delta"],
   ["turn_completed_ms", "turn completed"],
@@ -139,6 +141,12 @@ function agentSessionDiagnosticsSummary(
   return AGENT_SESSION_DIAGNOSTIC_FIELDS
     .map(([setting, label]) => ({ label, value: diagnosticValue(source, setting) }))
     .filter((row) => row.value);
+}
+
+function agentSessionSandbox(agent?: LiveAgent): string {
+  const value = String(agent?.sandbox_enforcement || "").trim();
+  if (value === "codex_readonly") return "read-only";
+  return value;
 }
 
 function mafiaPlayersFromAgents(agents: LiveAgent[]) {
@@ -292,6 +300,17 @@ export default function RoomConnectionPanel({
     setTurnStatus("");
     setTurnDiagnostics([]);
     try {
+      await resumeAgentSession({
+        roomId: room.meetingId.trim(),
+        agentId,
+        sessionId: agent?.session_id || agentId,
+        displayName: agent?.display_name || agentId,
+        providerKind: agent?.provider_kind || "",
+        model: agent?.model_id || "",
+        effort: agent?.effort || "",
+        sandbox: agentSessionSandbox(agent),
+        permissions: agent?.permission_option || agent?.binding_permission_profile_id || "",
+      });
       const result = await runAgentSessionTurn({
         roomId: room.meetingId.trim(),
         agentId,
