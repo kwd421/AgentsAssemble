@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections import deque
 import json
 import hashlib
 import select
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Iterable, Protocol
@@ -22,6 +24,8 @@ ProcessFactory = Callable[[], object]
 DEFAULT_AGENT_TURN_TIMEOUT_SECONDS = 600.0
 DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS = 40
 DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS = 20000
+CODEX_APP_SERVER_STDERR_TAIL_LINES = 8
+CODEX_APP_SERVER_STDERR_TAIL_CHARS = 4000
 PROVIDER_ROOM_DELTA_MAX_EVENTS = 6
 PROVIDER_ROOM_DELTA_MAX_CHARS = 1200
 UNSUPPORTED_MEDIA_AUDIT_NOTE = "Unsupported media is listed for audit only; do not claim you viewed unsupported files."
@@ -617,6 +621,14 @@ class CodexAppServerRuntime:
         self._initialized = False
         self._pending_messages: list[dict[str, object]] = []
         self._thread_handles: dict[str, dict[str, object]] = {}
+        self._stderr_lock = threading.Lock()
+        self._stderr_tail: deque[str] = deque()
+        self._stderr_thread: threading.Thread | None = None
+        self._stderr_line_count = 0
+        self._stderr_byte_count = 0
+        self._stderr_warning_count = 0
+        self._stderr_tail_truncated = False
+        self._stderr_last_line_at = ""
         self.diagnostics: dict[str, object] = {
             "runtime_mode": "app_server",
             "transport": "stdio_jsonl",
@@ -628,8 +640,10 @@ class CodexAppServerRuntime:
     def start(self, config: dict[str, object]) -> dict[str, object]:
         started = time.monotonic()
         if self.process is None:
+            self._reset_stderr_drain_state()
             self.process = self._spawn_process()
             self.diagnostics["app_server_pid"] = getattr(self.process, "pid", "")
+            self._start_stderr_drain()
         else:
             self.diagnostics["runtime_reused"] = True
             self.diagnostics["app_server_reused"] = True
@@ -658,7 +672,7 @@ class CodexAppServerRuntime:
             self.diagnostics["thread_reused"] = False
             self.diagnostics["thread_resume_skipped"] = False
         else:
-            response = self._send_request("thread/start", {})
+            response = self._send_request("thread/start", _codex_app_server_thread_start_settings(self.profile_settings))
             self.diagnostics["thread_start_ms"] = _elapsed_ms(started)
             thread_id = clean_provider_session_id(
                 _nested_get(response, "result.thread.id")
@@ -684,14 +698,13 @@ class CodexAppServerRuntime:
         if thread_id:
             yield {"type": "provider_session", "provider_session_id": thread_id, "provider_thread_id": thread_id}
         started = time.monotonic()
-        self._send_request(
-            "turn/start",
-            {
-                "threadId": thread_id,
-                "input": [{"type": "text", "text": str(packet.get("provider_input") or _agent_turn_prompt(packet))}],
-                "metadata": {"source": "agentsassemble_agent_session"},
-            },
-        )
+        turn_params = {
+            "threadId": thread_id,
+            "input": [{"type": "text", "text": str(packet.get("provider_input") or _agent_turn_prompt(packet))}],
+            "metadata": {"source": "agentsassemble_agent_session"},
+            **_codex_app_server_turn_start_settings(self.profile_settings),
+        }
+        self._send_request("turn/start", turn_params)
         self.diagnostics["turn_start_request_ms"] = _elapsed_ms(started)
         self.diagnostics["time_to_turn_start_ack_ms"] = self.diagnostics["turn_start_request_ms"]
         first_notification = False
@@ -762,19 +775,28 @@ class CodexAppServerRuntime:
 
     def detach(self, handle: dict[str, object]) -> None:
         self.release_thread(handle)
-        if self.process is not None and hasattr(self.process, "terminate"):
-            self.process.terminate()
-            if hasattr(self.process, "wait"):
+        process = self.process
+        if process is not None:
+            if hasattr(process, "terminate"):
                 try:
-                    self.process.wait(timeout=5)
+                    process.terminate()
+                except ProcessLookupError:
+                    pass
+            if hasattr(process, "wait"):
+                try:
+                    process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    if hasattr(self.process, "kill"):
-                        self.process.kill()
-                        self.process.wait(timeout=5)
+                    if hasattr(process, "kill"):
+                        process.kill()
+                        process.wait(timeout=5)
+                except ProcessLookupError:
+                    pass
+            self._close_process_streams(process)
+            self._join_stderr_drain()
             self.process = None
-            self._initialized = False
-            self._pending_messages.clear()
-            self._thread_handles.clear()
+        self._initialized = False
+        self._pending_messages.clear()
+        self._thread_handles.clear()
 
     def diagnose(self, handle: dict[str, object]) -> dict[str, object]:
         return dict(self.diagnostics)
@@ -797,8 +819,102 @@ class CodexAppServerRuntime:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            errors="replace",
             bufsize=1,
         )
+
+    def _reset_stderr_drain_state(self) -> None:
+        with self._stderr_lock:
+            self._stderr_tail.clear()
+            self._stderr_line_count = 0
+            self._stderr_byte_count = 0
+            self._stderr_warning_count = 0
+            self._stderr_tail_truncated = False
+            self._stderr_last_line_at = ""
+        self._publish_stderr_diagnostics(drained=False)
+
+    def _start_stderr_drain(self) -> None:
+        if self.process is None:
+            return
+        stderr = getattr(self.process, "stderr", None)
+        if stderr is None:
+            self._publish_stderr_diagnostics(drained=False)
+            return
+        self._publish_stderr_diagnostics(drained=True)
+        self._stderr_thread = threading.Thread(
+            target=self._drain_stderr,
+            args=(stderr,),
+            name="codex-app-server-stderr-drain",
+            daemon=True,
+        )
+        self._stderr_thread.start()
+
+    def _drain_stderr(self, stderr: object) -> None:
+        while True:
+            try:
+                line = stderr.readline()
+            except Exception as error:  # pragma: no cover - defensive for real subprocess streams
+                self._record_stderr_line(f"stderr drain failed: {error}\n")
+                return
+            if line in {"", b""}:
+                return
+            if isinstance(line, bytes):
+                line = line.decode("utf-8", errors="replace")
+            self._record_stderr_line(str(line))
+
+    def _record_stderr_line(self, line: str) -> None:
+        safe_line = clean_lobby_text(line.rstrip("\r\n"), limit=1000)
+        byte_count = len(line.encode("utf-8", errors="replace"))
+        with self._stderr_lock:
+            self._stderr_line_count += 1
+            self._stderr_byte_count += byte_count
+            lowered = safe_line.lower()
+            if "warn" in lowered or "warning" in lowered:
+                self._stderr_warning_count += 1
+            if len(self._stderr_tail) >= CODEX_APP_SERVER_STDERR_TAIL_LINES:
+                self._stderr_tail_truncated = True
+            self._stderr_tail.append(safe_line)
+            while len(self._stderr_tail) > CODEX_APP_SERVER_STDERR_TAIL_LINES:
+                self._stderr_tail.popleft()
+                self._stderr_tail_truncated = True
+            while len("\n".join(self._stderr_tail)) > CODEX_APP_SERVER_STDERR_TAIL_CHARS and self._stderr_tail:
+                self._stderr_tail.popleft()
+                self._stderr_tail_truncated = True
+            self._stderr_last_line_at = _now_iso()
+        self._publish_stderr_diagnostics(drained=True)
+
+    def _stderr_diagnostics_snapshot(self, *, drained: bool | None = None) -> dict[str, object]:
+        with self._stderr_lock:
+            snapshot = {
+                "stderr_drained": drained if drained is not None else self.diagnostics.get("stderr_drained", False),
+                "stderr_line_count": self._stderr_line_count,
+                "stderr_byte_count": self._stderr_byte_count,
+                "stderr_tail": "\n".join(self._stderr_tail),
+                "stderr_tail_truncated": self._stderr_tail_truncated,
+                "stderr_warning_count": self._stderr_warning_count,
+            }
+            if self._stderr_last_line_at:
+                snapshot["stderr_last_line_at"] = self._stderr_last_line_at
+            return snapshot
+
+    def _publish_stderr_diagnostics(self, *, drained: bool | None = None) -> None:
+        self.diagnostics.update(self._stderr_diagnostics_snapshot(drained=drained))
+
+    def _join_stderr_drain(self) -> None:
+        thread = self._stderr_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=1)
+        self._stderr_thread = None
+        self._publish_stderr_diagnostics()
+
+    def _close_process_streams(self, process: object) -> None:
+        for stream_name in ("stdin", "stdout", "stderr"):
+            stream = getattr(process, stream_name, None)
+            if stream is not None and hasattr(stream, "close"):
+                try:
+                    stream.close()
+                except Exception:
+                    pass
 
     def _send_request(self, method: str, params: dict[str, object]) -> dict[str, object]:
         request_id = self._next_id
@@ -959,6 +1075,54 @@ def codex_app_server_runtime_command(profile_settings: dict[str, object]) -> lis
         command.extend(["-c", _codex_toml_string_config("approval_policy", approval_policy)])
     command.append("--stdio")
     return command
+
+
+def _codex_app_server_thread_start_settings(profile_settings: dict[str, object]) -> dict[str, object]:
+    params: dict[str, object] = {}
+    workspace = clean_lobby_text(profile_settings.get("workspace"), limit=300)
+    model = clean_lobby_text(profile_settings.get("model"), limit=128)
+    sandbox = clean_lobby_text(profile_settings.get("sandbox"), limit=64)
+    approval_policy = _codex_approval_policy(profile_settings.get("permissions"))
+    if workspace:
+        params["cwd"] = workspace
+    if model:
+        params["model"] = model
+    if approval_policy:
+        params["approvalPolicy"] = approval_policy
+    if sandbox in {"read-only", "workspace-write", "danger-full-access"}:
+        params["sandbox"] = sandbox
+    return params
+
+
+def _codex_app_server_turn_start_settings(profile_settings: dict[str, object]) -> dict[str, object]:
+    params: dict[str, object] = {}
+    workspace = clean_lobby_text(profile_settings.get("workspace"), limit=300)
+    model = clean_lobby_text(profile_settings.get("model"), limit=128)
+    effort = clean_lobby_text(profile_settings.get("effort"), limit=64)
+    approval_policy = _codex_approval_policy(profile_settings.get("permissions"))
+    sandbox_policy = _codex_app_server_sandbox_policy(profile_settings.get("sandbox"))
+    if workspace:
+        params["cwd"] = workspace
+    if model:
+        params["model"] = model
+    if effort:
+        params["effort"] = effort
+    if approval_policy:
+        params["approvalPolicy"] = approval_policy
+    if sandbox_policy:
+        params["sandboxPolicy"] = sandbox_policy
+    return params
+
+
+def _codex_app_server_sandbox_policy(value: object) -> dict[str, object]:
+    sandbox = clean_lobby_text(value, limit=64)
+    if sandbox == "read-only":
+        return {"type": "readOnly", "networkAccess": False}
+    if sandbox == "workspace-write":
+        return {"type": "workspaceWrite", "networkAccess": False, "writableRoots": []}
+    if sandbox == "danger-full-access":
+        return {"type": "dangerFullAccess"}
+    return {}
 
 
 def _codex_approval_policy(value: object) -> str:
@@ -1360,7 +1524,13 @@ def _merge_runtime_diagnostics(state: dict[str, object], chunk: dict[str, object
         "process_exit_ms",
         "exit_code",
         "stdout_bytes",
+        "stderr_drained",
+        "stderr_line_count",
+        "stderr_byte_count",
         "stderr_tail",
+        "stderr_tail_truncated",
+        "stderr_last_line_at",
+        "stderr_warning_count",
     ):
         if key in chunk:
             state[key] = chunk[key]

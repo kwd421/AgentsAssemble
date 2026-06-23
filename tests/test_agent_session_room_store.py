@@ -1,4 +1,5 @@
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -945,6 +946,145 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertEqual(runtime.diagnostics["effort"], "medium")
         self.assertEqual(runtime.diagnostics["sandbox"], "read-only")
         self.assertEqual(runtime.diagnostics["permissions"], "never")
+
+    def test_codex_app_server_drains_stderr_and_reports_bounded_tail(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+                self.closed = False
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+            def close(self):
+                self.closed = True
+
+        class FakeProcess:
+            pid = 130
+
+            def __init__(self):
+                self.stdin = Pipe()
+                self.stdout = Pipe(
+                    [
+                        '{"jsonrpc":"2.0","id":1,"result":{}}\n',
+                        '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"}}}\n',
+                        '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
+                    ]
+                )
+                self.stderr = Pipe([f"warning {index}\n" for index in range(12)])
+                self.terminated = False
+                self.waited = False
+
+            def terminate(self):
+                self.terminated = True
+
+            def wait(self, timeout=None):
+                self.waited = True
+                return 0
+
+        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+        chunks = list(runtime.send_turn({}, {"provider_input": "answer"}))
+        for _ in range(20):
+            if runtime.diagnostics.get("stderr_line_count") == 12:
+                break
+            time.sleep(0.01)
+
+        self.assertIn("provider_session", [chunk["type"] for chunk in chunks])
+        self.assertEqual(runtime.diagnostics.get("stderr_drained"), True)
+        self.assertEqual(runtime.diagnostics.get("stderr_line_count"), 12)
+        self.assertGreater(runtime.diagnostics.get("stderr_byte_count") or 0, 0)
+        self.assertEqual(runtime.diagnostics.get("stderr_tail_truncated"), True)
+        self.assertEqual(runtime.diagnostics.get("stderr_warning_count"), 12)
+        self.assertEqual(
+            runtime.diagnostics.get("stderr_tail", "").splitlines(),
+            ["warning 4", "warning 5", "warning 6", "warning 7", "warning 8", "warning 9", "warning 10", "warning 11"],
+        )
+
+        process = runtime.process
+        runtime.detach({})
+
+        self.assertTrue(process.terminated)
+        self.assertTrue(process.waited)
+        self.assertTrue(process.stdin.closed)
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
+        self.assertIsNone(runtime.process)
+        self.assertEqual(runtime.diagnostics["stderr_line_count"], 12)
+        self.assertIsNone(runtime._stderr_thread)
+
+        runtime.detach({})
+        self.assertIsNone(runtime.process)
+
+    def test_app_server_passes_runtime_settings_to_thread_and_turn_start(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+        class FakeProcess:
+            pid = 131
+
+            def __init__(self):
+                self.stdin = Pipe()
+                self.stdout = Pipe(
+                    [
+                        '{"jsonrpc":"2.0","id":1,"result":{}}\n',
+                        '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"}}}\n',
+                        '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
+                    ]
+                )
+                self.stderr = Pipe()
+
+        runtime = CodexAppServerRuntime(
+            process_factory=FakeProcess,
+            runtime_profile_key="profile",
+            profile_settings={
+                "provider_kind": "codex_live_session",
+                "workspace": "/tmp/agentsassemble-workspace",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "sandbox": "read-only",
+                "permissions": "never",
+                "codex_home": "",
+            },
+        )
+        list(runtime.send_turn({}, {"provider_input": "answer"}))
+
+        requests = [__import__("json").loads(line) for line in runtime.process.stdin.writes]
+        thread_start = next(request for request in requests if request.get("method") == "thread/start")
+        turn_start = next(request for request in requests if request.get("method") == "turn/start")
+
+        self.assertEqual(thread_start["params"].get("cwd"), "/tmp/agentsassemble-workspace")
+        self.assertEqual(thread_start["params"].get("model"), "gpt-5.3-codex-spark")
+        self.assertEqual(thread_start["params"].get("approvalPolicy"), "never")
+        self.assertEqual(thread_start["params"].get("sandbox"), "read-only")
+        self.assertEqual(turn_start["params"].get("cwd"), "/tmp/agentsassemble-workspace")
+        self.assertEqual(turn_start["params"].get("model"), "gpt-5.3-codex-spark")
+        self.assertEqual(turn_start["params"].get("effort"), "medium")
+        self.assertEqual(turn_start["params"].get("approvalPolicy"), "never")
+        self.assertEqual(turn_start["params"].get("sandboxPolicy"), {"type": "readOnly", "networkAccess": False})
 
     def test_non_codex_provider_adapters_are_explicitly_unsupported(self):
         for adapter in (GrokAgentSessionAdapter(), ClaudeAgentSessionAdapter(), AgyAgentSessionAdapter()):
