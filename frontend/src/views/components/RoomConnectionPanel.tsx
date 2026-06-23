@@ -39,6 +39,23 @@ const PLAY_ACTIVITIES = [
 
 type PlayActivityId = (typeof PLAY_ACTIVITIES)[number]["id"];
 
+type AgentSessionDiagnosticRow = {
+  label: string;
+  value: string;
+};
+
+const AGENT_SESSION_DIAGNOSTIC_FIELDS = [
+  ["runtime_mode", "runtime mode"],
+  ["runtime_profile_key", "runtime profile"],
+  ["thread_reused", "thread reused"],
+  ["time_to_first_agent_delta_ms", "first delta"],
+  ["turn_completed_ms", "turn completed"],
+  ["stderr_byte_count", "stderr bytes"],
+  ["stderr_warning_count", "stderr warnings"],
+  ["provider_visible_chars", "provider visible chars"],
+  ["context_error_detected", "context error"],
+] as const;
+
 type RoomSummary = {
   id: string;
   label: string;
@@ -105,6 +122,25 @@ function playErrorMessage(errorValue: unknown, fallback: string): string {
   return message || fallback;
 }
 
+function diagnosticValue(diagnostics: Array<Record<string, unknown>>, setting: string): string {
+  for (let index = diagnostics.length - 1; index >= 0; index -= 1) {
+    const item = diagnostics[index];
+    if (String(item.setting || "") !== setting) continue;
+    const value = item.status ?? item.message ?? "";
+    return String(value || "");
+  }
+  return "";
+}
+
+function agentSessionDiagnosticsSummary(
+  diagnostics?: Array<Record<string, unknown>>
+): AgentSessionDiagnosticRow[] {
+  const source = Array.isArray(diagnostics) ? diagnostics : [];
+  return AGENT_SESSION_DIAGNOSTIC_FIELDS
+    .map(([setting, label]) => ({ label, value: diagnosticValue(source, setting) }))
+    .filter((row) => row.value);
+}
+
 function mafiaPlayersFromAgents(agents: LiveAgent[]) {
   const candidates = agents.length
     ? agents
@@ -156,6 +192,7 @@ export default function RoomConnectionPanel({
   const [turnInstruction, setTurnInstruction] = useState("");
   const [turnDryRun, setTurnDryRun] = useState(false);
   const [turnStatus, setTurnStatus] = useState("");
+  const [turnDiagnostics, setTurnDiagnostics] = useState<AgentSessionDiagnosticRow[]>([]);
   const isFlowRunning = flow.status === "running";
   const conversationFlowDisabled = selectedActivityId === "conversation";
   const readyAgents = agents.filter((agent) => isActivePresence(agent.status));
@@ -253,6 +290,7 @@ export default function RoomConnectionPanel({
     setBusy(true);
     setPlayError("");
     setTurnStatus("");
+    setTurnDiagnostics([]);
     try {
       const result = await runAgentSessionTurn({
         roomId: room.meetingId.trim(),
@@ -271,6 +309,7 @@ export default function RoomConnectionPanel({
       setTurnStatus(
         `turn ${result.turn_status || result.status} · media ${supported} supported / ${unsupported} unsupported.${warning}`
       );
+      setTurnDiagnostics(agentSessionDiagnosticsSummary(result.diagnostics));
       onSessionTurnComplete?.();
     } catch (errorValue) {
       setPlayError(playErrorMessage(errorValue, "Agent Session turn 실패"));
@@ -338,6 +377,19 @@ export default function RoomConnectionPanel({
             </button>
           </div>
           {turnStatus && <p className="dc-room-connection-note preserve-words">{turnStatus}</p>}
+          {turnDiagnostics.length > 0 && (
+            <details className="dc-room-connection-note preserve-words">
+              <summary>고급 진단</summary>
+              <dl className="mt-2 grid gap-1">
+                {turnDiagnostics.map((item) => (
+                  <div key={item.label} className="grid grid-cols-[minmax(96px,auto)_1fr] gap-2">
+                    <dt className="text-text-muted">{item.label}</dt>
+                    <dd className="min-w-0 break-words">{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
+          )}
           {isFlowRunning ? (
             <div className="dc-room-play-running">
               <span className="min-w-0 truncate text-text-secondary preserve-words">

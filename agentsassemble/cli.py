@@ -18,7 +18,11 @@ from pathlib import Path
 
 from agentsassemble.frontend_runtime import frontend_dist_status
 from agentsassemble.bridges.claude_code_bridge import CLAUDE_PRINT_MODE_DISABLED_MESSAGE, serve_bridge
-from agentsassemble.agent_sessions import clean_agent_session_provider_kind
+from agentsassemble.agent_sessions import (
+    CODEX_APP_SERVER_SMOKE_COMMANDS,
+    clean_agent_session_provider_kind,
+    run_codex_app_server_smoke,
+)
 from agentsassemble.antigravity_resident import AntigravityResidentCommandRunner
 from agentsassemble.codex_resident import CodexResidentCommandRunner
 from agentsassemble.cursor_resident import (
@@ -1688,9 +1692,12 @@ def build_parser() -> argparse.ArgumentParser:
         "explicit-session-codex",
         "two-agent-codex",
         "context-recovery-codex",
+        "codex-app-server-same-profile",
         "codex-app-server-warm",
         "codex-app-server-two-agent",
         "codex-app-server-profile-isolation",
+        "codex-app-server-restart-recovery",
+        "codex-app-server-stderr-backpressure",
         "codex-exec-jsonl-fallback",
     ):
         smoke = room_smoke_subparsers.add_parser(smoke_command, help=f"Run {smoke_command} smoke check.")
@@ -8445,32 +8452,38 @@ def run_room_command(args: argparse.Namespace) -> int:
             )
         return 0
     if args.room_command == "smoke":
-        payload = {
-            "status": "skipped" if not args.approve_real_provider else "not_run",
-            "smoke": args.room_smoke_command,
-            "requires_approval": True,
-            "approved": bool(args.approve_real_provider),
-            "metrics": {
-                "cold_start_ms": None,
-                "warm_turn_ms": [],
-                "time_to_turn_start_ack_ms": [],
-                "time_to_first_notification_ms": [],
-                "time_to_first_agent_delta_ms": [],
-                "time_to_message_final_ms": [],
-                "turn_completed_ms": [],
-                "provider_visible_chars": [],
-                "thread_reused": [],
-                "runtime_reused": [],
-                "runtime_profile_key": [],
-                "rss_kb_start": None,
-                "rss_kb_end": None,
-                "rss_kb_delta": None,
-                "token_usage": [],
-                "context_failures": 0,
-                "errors": [],
-                "distinct_provider_session_id": None,
-            },
-        }
+        if bool(args.approve_real_provider) and args.room_smoke_command in CODEX_APP_SERVER_SMOKE_COMMANDS:
+            payload = run_codex_app_server_smoke(
+                args.room_smoke_command,
+                approve_real_provider=True,
+            )
+        else:
+            payload = {
+                "status": "skipped" if not args.approve_real_provider else "not_run",
+                "smoke": args.room_smoke_command,
+                "requires_approval": True,
+                "approved": bool(args.approve_real_provider),
+                "metrics": {
+                    "cold_start_ms": None,
+                    "warm_turn_ms": [],
+                    "time_to_turn_start_ack_ms": [],
+                    "time_to_first_notification_ms": [],
+                    "time_to_first_agent_delta_ms": [],
+                    "time_to_message_final_ms": [],
+                    "turn_completed_ms": [],
+                    "provider_visible_chars": [],
+                    "thread_reused": [],
+                    "runtime_reused": [],
+                    "runtime_profile_key": [],
+                    "rss_kb_start": None,
+                    "rss_kb_end": None,
+                    "rss_kb_delta": None,
+                    "token_usage": [],
+                    "context_failures": 0,
+                    "errors": [],
+                    "distinct_provider_session_id": None,
+                },
+            }
         if args.as_json:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:

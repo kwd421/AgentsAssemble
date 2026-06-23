@@ -1,4 +1,6 @@
+import json
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -703,6 +705,33 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertEqual(session.get("provider_session_id"), "app-thread")
         self.assertEqual(session.get("provider_thread_id"), "app-thread")
 
+    def test_app_server_adapter_input_preserves_turn_timeout(self):
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+            },
+        )
+        packets = []
+
+        result = run_agent_session_turn_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "instruction": "Answer.",
+                "timeout_seconds": 12,
+            },
+            turn_adapter=lambda session, packet: packets.append(packet) or [{"type": "message_final", "content": "ok"}],
+        )
+
+        self.assertEqual(result["turn_status"], "finished")
+        self.assertEqual(packets[0]["timeout_seconds"], 12)
+
     def test_app_server_turn_sends_provider_input_not_debug_packet(self):
         class Pipe:
             def __init__(self, lines=None):
@@ -913,6 +942,47 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         manager.detach_session(session_b)
         self.assertNotIn(runtime_profile_key(session_b, {}), manager._runtimes)
 
+    def test_runtime_profile_key_includes_workspace_permissions_and_codex_home(self):
+        base = {
+            "session_id": "a",
+            "provider_kind": "codex_live_session",
+            "model": "gpt-5.3-codex-spark",
+            "effort": "medium",
+            "sandbox": "read-only",
+            "permissions": "never",
+            "workspace": "/tmp/work-a",
+            "codex_home": "/tmp/codex-home-a",
+        }
+
+        self.assertNotEqual(runtime_profile_key(base, {}), runtime_profile_key({**base, "workspace": "/tmp/work-b"}, {}))
+        self.assertNotEqual(runtime_profile_key(base, {}), runtime_profile_key({**base, "permissions": "on-request"}, {}))
+        self.assertNotEqual(runtime_profile_key(base, {}), runtime_profile_key({**base, "codex_home": "/tmp/codex-home-b"}, {}))
+
+    def test_resume_persists_profile_isolation_fields_on_session(self):
+        result = resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "spark-a",
+                "session_id": "spark-a",
+                "provider_kind": "codex_live_session",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "sandbox": "read-only",
+                "permissions": "never",
+                "workspace": "/tmp/work-a",
+                "codex_home": "/tmp/codex-home-a",
+            },
+        )
+
+        session = result["session"]
+        key = runtime_profile_key(session, {})
+
+        self.assertEqual(session["workspace"], "/tmp/work-a")
+        self.assertEqual(session["codex_home"], "/tmp/codex-home-a")
+        self.assertIn("workspace=/tmp/work-a", key)
+        self.assertIn("codex_home=/tmp/codex-home-a", key)
+
     def test_app_server_runtime_command_uses_session_settings(self):
         manager = CodexAppServerRuntimeManager()
         session = {
@@ -968,6 +1038,8 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             def close(self):
                 self.closed = True
 
+        warning_lines = [f"warning {index} " + ("x" * 80) + "\n" for index in range(1000)]
+
         class FakeProcess:
             pid = 130
 
@@ -981,7 +1053,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
                         '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
                     ]
                 )
-                self.stderr = Pipe([f"warning {index}\n" for index in range(12)])
+                self.stderr = Pipe(warning_lines)
                 self.terminated = False
                 self.waited = False
 
@@ -994,21 +1066,20 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         runtime = CodexAppServerRuntime(process_factory=FakeProcess)
         chunks = list(runtime.send_turn({}, {"provider_input": "answer"}))
-        for _ in range(20):
-            if runtime.diagnostics.get("stderr_line_count") == 12:
+        for _ in range(100):
+            if runtime.diagnose({}).get("stderr_line_count") == len(warning_lines):
                 break
             time.sleep(0.01)
 
+        diagnostics = runtime.diagnose({})
         self.assertIn("provider_session", [chunk["type"] for chunk in chunks])
-        self.assertEqual(runtime.diagnostics.get("stderr_drained"), True)
-        self.assertEqual(runtime.diagnostics.get("stderr_line_count"), 12)
-        self.assertGreater(runtime.diagnostics.get("stderr_byte_count") or 0, 0)
-        self.assertEqual(runtime.diagnostics.get("stderr_tail_truncated"), True)
-        self.assertEqual(runtime.diagnostics.get("stderr_warning_count"), 12)
-        self.assertEqual(
-            runtime.diagnostics.get("stderr_tail", "").splitlines(),
-            ["warning 4", "warning 5", "warning 6", "warning 7", "warning 8", "warning 9", "warning 10", "warning 11"],
-        )
+        self.assertEqual(diagnostics.get("stderr_drained"), True)
+        self.assertEqual(diagnostics.get("stderr_line_count"), len(warning_lines))
+        self.assertGreater(diagnostics.get("stderr_byte_count") or 0, 64000)
+        self.assertEqual(diagnostics.get("stderr_tail_truncated"), True)
+        self.assertEqual(diagnostics.get("stderr_warning_count"), len(warning_lines))
+        self.assertEqual(len(diagnostics.get("stderr_tail", "").splitlines()), 50)
+        self.assertTrue(diagnostics.get("stderr_tail", "").splitlines()[0].startswith("warning 950"))
 
         process = runtime.process
         runtime.detach({})
@@ -1019,11 +1090,120 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertTrue(process.stdout.closed)
         self.assertTrue(process.stderr.closed)
         self.assertIsNone(runtime.process)
-        self.assertEqual(runtime.diagnostics["stderr_line_count"], 12)
+        self.assertEqual(runtime.diagnose({})["stderr_line_count"], len(warning_lines))
         self.assertIsNone(runtime._stderr_thread)
 
         runtime.detach({})
         self.assertIsNone(runtime.process)
+
+    def test_stderr_tail_truncates_by_char_and_counts_non_warning_lines(self):
+        runtime = CodexAppServerRuntime()
+
+        for index in range(40):
+            prefix = "warning" if index % 2 == 0 else "info"
+            runtime._record_stderr_line(f"{prefix} {index} " + ("x" * 900) + "\n")
+
+        diagnostics = runtime.diagnose({})
+
+        self.assertEqual(diagnostics["stderr_line_count"], 40)
+        self.assertGreater(diagnostics["stderr_byte_count"], 0)
+        self.assertEqual(diagnostics["stderr_warning_count"], 20)
+        self.assertLessEqual(len(diagnostics["stderr_tail"]), 16000)
+        self.assertLess(len(diagnostics["stderr_tail"].splitlines()), 40)
+        self.assertTrue(diagnostics["stderr_tail_truncated"])
+
+    def test_app_server_turn_diagnostics_do_not_reuse_previous_completion_latency(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+            def close(self):
+                return None
+
+        class FakeProcess:
+            pid = 131
+
+            def __init__(self):
+                self.stdin = Pipe()
+                self.stdout = Pipe(
+                    [
+                        json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "id": 2, "result": {"thread": {"id": "thread-1"}}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "id": 3, "result": {"turn": {"id": "turn-a"}}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "method": "turn/completed", "params": {"threadId": "thread-1"}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "id": 4, "result": {"turn": {"id": "turn-b"}}}) + "\n",
+                    ]
+                )
+                self.stderr = Pipe()
+
+            def terminate(self):
+                return None
+
+            def wait(self, timeout=None):
+                return 0
+
+        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+
+        first = list(runtime.send_turn({"session_id": "session-1"}, {"provider_input": "first"}))
+        second = list(runtime.send_turn({"session_id": "session-1"}, {"provider_input": "second"}))
+        error_chunk = next(chunk for chunk in second if chunk["type"] == "error")
+        error_settings = {
+            item.get("setting")
+            for item in error_chunk["diagnostics"]
+            if isinstance(item, dict) and item.get("status") not in ("", None)
+        }
+
+        self.assertIn("diagnostics", [chunk["type"] for chunk in first])
+        self.assertNotIn("turn_completed_ms", error_settings)
+        self.assertNotIn("time_to_first_agent_delta_ms", error_settings)
+        self.assertIn("app_server", error_settings)
+
+    def test_diagnostics_snapshot_is_consistent_while_stderr_updates(self):
+        runtime = CodexAppServerRuntime()
+        errors: list[Exception] = []
+
+        def write_stderr() -> None:
+            try:
+                for index in range(250):
+                    runtime._record_stderr_line(f"warn concurrent {index}\n")
+            except Exception as error:  # pragma: no cover - assertion records thread failures
+                errors.append(error)
+
+        def read_diagnostics() -> None:
+            try:
+                previous_lines = 0
+                for _ in range(250):
+                    snapshot = runtime.diagnose({})
+                    line_count = int(snapshot.get("stderr_line_count") or 0)
+                    byte_count = int(snapshot.get("stderr_byte_count") or 0)
+                    self.assertGreaterEqual(line_count, previous_lines)
+                    self.assertGreaterEqual(byte_count, line_count)
+                    previous_lines = line_count
+            except Exception as error:  # pragma: no cover - assertion records thread failures
+                errors.append(error)
+
+        threads = [threading.Thread(target=write_stderr), threading.Thread(target=read_diagnostics)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        snapshot = runtime.diagnose({})
+        self.assertEqual(snapshot["stderr_line_count"], 250)
+        self.assertEqual(snapshot["stderr_warning_count"], 250)
 
     def test_app_server_passes_runtime_settings_to_thread_and_turn_start(self):
         class Pipe:
@@ -1093,8 +1273,178 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             self.assertFalse(handle["resumable"])
             self.assertEqual(chunks[0]["type"], "error")
             self.assertNotIn("provider_session_id", handle)
+        self.assertIn("not wired into Agent Session runtime yet", str(GrokAgentSessionAdapter().diagnose({})))
+        self.assertIn("Agent SDK only", str(ClaudeAgentSessionAdapter().diagnose({})))
         self.assertIn("claude -p", str(ClaudeAgentSessionAdapter().diagnose({})))
         self.assertNotIn("command", ClaudeAgentSessionAdapter().diagnose({}))
+        self.assertIn("unavailable until protocol verified", str(AgyAgentSessionAdapter().diagnose({})))
+
+    def test_app_server_crash_marks_session_error_and_next_turn_restarts_with_recovery_memory(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+                self.closed = False
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+            def close(self):
+                self.closed = True
+
+        class FakeProcess:
+            def __init__(self, pid, stdout_lines, stderr_lines=None):
+                self.pid = pid
+                self.stdin = Pipe()
+                self.stdout = Pipe(stdout_lines)
+                self.stderr = Pipe(stderr_lines or [])
+                self.terminated = False
+
+            def terminate(self):
+                self.terminated = True
+
+            def wait(self, timeout=None):
+                return 0
+
+            def poll(self):
+                return None
+
+        processes = []
+
+        def process_factory():
+            if not processes:
+                process = FakeProcess(
+                    201,
+                    [
+                        json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "id": 2, "result": {"thread": {"id": "thread-1"}}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "id": 3, "result": {"turn": {"id": "turn-a"}}}) + "\n",
+                    ],
+                    ["warning crash tail\n"],
+                )
+            else:
+                process = FakeProcess(
+                    202,
+                    [
+                        json.dumps({"jsonrpc": "2.0", "id": 4, "result": {}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "id": 5, "result": {"thread": {"id": "thread-1"}}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "id": 6, "result": {"turn": {"id": "turn-b"}}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "method": "item/agentMessage/delta", "params": {"delta": "recovered"}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "method": "item/completed", "params": {"item": {"type": "agentMessage", "text": "recovered"}}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "method": "turn/completed", "params": {"threadId": "thread-1"}}) + "\n",
+                    ],
+                )
+            processes.append(process)
+            return process
+
+        runtime = CodexAppServerRuntime(process_factory=process_factory)
+        resume_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-1", "session_id": "session-1", "provider_kind": "codex_live_session"},
+        )
+        store = RoomStore(self.output_root)
+        store.upsert_session(
+            "room-a",
+            {
+                **store.session("room-a", "session-1"),
+                "room_memory": {"summary": "Recovered room summary.", "decisions": ["Keep stderr bounded"], "up_to_event_id": "evt-1"},
+            },
+        )
+
+        first = run_agent_session_turn_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-1", "session_id": "session-1", "instruction": "First."},
+            turn_adapter=lambda session, packet: runtime.send_turn(session, packet),
+        )
+        failed_session = RoomStore(self.output_root).session("room-a", "session-1")
+        captured_packets = []
+        second = run_agent_session_turn_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-1", "session_id": "session-1", "instruction": "Recover."},
+            turn_adapter=lambda session, packet: captured_packets.append(packet) or runtime.send_turn(session, packet),
+        )
+
+        self.assertEqual(first["turn_status"], "error")
+        self.assertEqual(failed_session["status"], "error")
+        self.assertTrue(failed_session["recovery_required"])
+        self.assertIn("warning crash tail", str(first["diagnostics"]))
+        self.assertEqual(second["turn_status"], "finished")
+        self.assertEqual(len(processes), 2)
+        self.assertIn('"method": "thread/resume"', "".join(processes[1].stdin.writes))
+        self.assertEqual(captured_packets[0]["input_mode"], "recovery")
+        self.assertIn("Recovered room summary.", captured_packets[0]["provider_input"])
+        self.assertIn("Keep stderr bounded", captured_packets[0]["provider_input"])
+        self.assertNotIn("provider_session_id", captured_packets[0]["provider_input"])
+        self.assertNotIn("diagnostics", captured_packets[0]["provider_input"])
+
+    def test_app_server_resume_failure_marks_recovery_required(self):
+        class Pipe:
+            def __init__(self, lines=None):
+                self.lines = list(lines or [])
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                return None
+
+            def readline(self):
+                if not self.lines:
+                    return ""
+                return self.lines.pop(0)
+
+        class FakeProcess:
+            pid = 203
+
+            def __init__(self):
+                self.stdin = Pipe()
+                self.stdout = Pipe(
+                    [
+                        json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}}) + "\n",
+                        json.dumps({"jsonrpc": "2.0", "id": 2, "error": {"message": "thread missing"}}) + "\n",
+                    ]
+                )
+                self.stderr = Pipe(["warning resume failed\n"])
+
+            def wait(self, timeout=None):
+                return 0
+
+            def terminate(self):
+                return None
+
+        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+                "provider_session_id": "missing-thread",
+            },
+        )
+
+        result = run_agent_session_turn_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-1", "session_id": "session-1", "instruction": "Resume."},
+            turn_adapter=lambda session, packet: runtime.send_turn(session, packet),
+        )
+
+        session = RoomStore(self.output_root).session("room-a", "session-1")
+        self.assertEqual(result["turn_status"], "error")
+        self.assertEqual(session["status"], "error")
+        self.assertTrue(session["recovery_required"])
+        self.assertIn("resume", str(result["diagnostics"]).lower())
+        self.assertIn("warning resume failed", str(result["diagnostics"]))
 
     def test_codex_app_server_approval_and_context_error_surface(self):
         class Pipe:

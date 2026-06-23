@@ -199,6 +199,67 @@ class AgentSessionCliTests(unittest.TestCase):
             {"room_id": "room-a", "participant_id": "agent-1"},
         )
 
+    def test_room_smoke_profile_matrix_commands_are_opt_in(self):
+        parser = build_parser()
+        for smoke_name in (
+            "codex-app-server-same-profile",
+            "codex-app-server-profile-isolation",
+            "codex-app-server-restart-recovery",
+            "codex-app-server-stderr-backpressure",
+        ):
+            with self.subTest(smoke_name=smoke_name):
+                args = parser.parse_args(["room", "smoke", smoke_name, "--json"])
+                stdout = StringIO()
+                with patch("sys.stdout", stdout), patch("agentsassemble.cli.run_codex_app_server_smoke") as smoke_runner:
+                    exit_code = run_room_command(args)
+
+                self.assertEqual(exit_code, 0)
+                smoke_runner.assert_not_called()
+                self.assertIn('"status": "skipped"', stdout.getvalue())
+
+    def test_room_smoke_profile_matrix_dispatches_approved_runner(self):
+        args = build_parser().parse_args(
+            [
+                "room",
+                "smoke",
+                "codex-app-server-same-profile",
+                "--approve-real-provider",
+                "--json",
+            ]
+        )
+
+        stdout = StringIO()
+        with patch("sys.stdout", stdout), patch("agentsassemble.cli.run_codex_app_server_smoke") as smoke_runner:
+            smoke_runner.return_value = {
+                "status": "ok",
+                "smoke": "codex-app-server-same-profile",
+                "metrics": {"runtime_profile_key": ["profile-a"]},
+            }
+            exit_code = run_room_command(args)
+
+        self.assertEqual(exit_code, 0)
+        smoke_runner.assert_called_once_with("codex-app-server-same-profile", approve_real_provider=True)
+        self.assertIn('"status": "ok"', stdout.getvalue())
+
+    def test_room_smoke_legacy_approved_stub_does_not_dispatch_app_server_runner(self):
+        args = build_parser().parse_args(
+            [
+                "room",
+                "smoke",
+                "fresh-codex",
+                "--approve-real-provider",
+                "--json",
+            ]
+        )
+
+        stdout = StringIO()
+        with patch("sys.stdout", stdout), patch("agentsassemble.cli.run_codex_app_server_smoke") as smoke_runner:
+            exit_code = run_room_command(args)
+
+        self.assertEqual(exit_code, 0)
+        smoke_runner.assert_not_called()
+        self.assertIn('"status": "not_run"', stdout.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

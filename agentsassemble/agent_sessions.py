@@ -3,8 +3,11 @@ from __future__ import annotations
 from collections import deque
 import json
 import hashlib
+import os
 import select
+import statistics
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -24,10 +27,18 @@ ProcessFactory = Callable[[], object]
 DEFAULT_AGENT_TURN_TIMEOUT_SECONDS = 600.0
 DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS = 40
 DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS = 20000
-CODEX_APP_SERVER_STDERR_TAIL_LINES = 8
-CODEX_APP_SERVER_STDERR_TAIL_CHARS = 4000
+CODEX_APP_SERVER_STDERR_TAIL_LINES = 50
+CODEX_APP_SERVER_STDERR_TAIL_CHARS = 16000
 PROVIDER_ROOM_DELTA_MAX_EVENTS = 6
 PROVIDER_ROOM_DELTA_MAX_CHARS = 1200
+CODEX_APP_SERVER_SMOKE_COMMANDS = {
+    "codex-app-server-same-profile",
+    "codex-app-server-profile-isolation",
+    "codex-app-server-restart-recovery",
+    "codex-app-server-stderr-backpressure",
+    "codex-app-server-warm",
+    "codex-app-server-two-agent",
+}
 UNSUPPORTED_MEDIA_AUDIT_NOTE = "Unsupported media is listed for audit only; do not claim you viewed unsupported files."
 ROOM_MEMORY_EMPTY = {
     "summary": "",
@@ -76,6 +87,8 @@ def resume_agent_session_payload(
             "effort": clean_lobby_text(payload.get("effort"), limit=64),
             "sandbox": clean_lobby_text(payload.get("sandbox") or payload.get("codex_sandbox"), limit=64),
             "permissions": clean_lobby_text(payload.get("permissions") or payload.get("permission_option"), limit=64),
+            "workspace": clean_lobby_text(payload.get("workspace") or payload.get("cwd"), limit=300),
+            "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
         },
     )
     session, session_created = store.upsert_session(
@@ -93,6 +106,8 @@ def resume_agent_session_payload(
             "effort": clean_lobby_text(payload.get("effort"), limit=64),
             "sandbox": clean_lobby_text(payload.get("sandbox") or payload.get("codex_sandbox"), limit=64),
             "permissions": clean_lobby_text(payload.get("permissions") or payload.get("permission_option"), limit=64),
+            "workspace": clean_lobby_text(payload.get("workspace") or payload.get("cwd"), limit=300),
+            "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
             "diagnostics": payload.get("diagnostics") if isinstance(payload.get("diagnostics"), list) else [],
         },
     )
@@ -205,6 +220,8 @@ def run_agent_session_turn_payload(
     )
     turn_id = clean_lobby_text(payload.get("turn_id"), limit=128) or f"turn-{uuid4().hex[:12]}"
     provider_kind = clean_lobby_text(session.get("provider_kind"), limit=64)
+    timeout_seconds = _agent_turn_timeout_seconds(payload.get("timeout_seconds"))
+    packet["timeout_seconds"] = timeout_seconds
     if bool(payload.get("dry_run")):
         return {
             "status": "dry_run",
@@ -223,7 +240,6 @@ def run_agent_session_turn_payload(
     runner_kind = "fake" if turn_runner is not None else ""
     runtime_mode = "fake" if turn_runner is not None else ""
     streaming = False
-    timeout_seconds = _agent_turn_timeout_seconds(payload.get("timeout_seconds"))
     if turn_runner is None and turn_adapter is not None:
         runner_kind = "agent_session_adapter"
         runtime_mode = "app_server"
@@ -375,8 +391,15 @@ def run_agent_session_turn_payload(
             )
             if event_type == "error":
                 runtime_state["context_error_detected"] = _context_error_detected([*diagnostics, content])
-                if runtime_state["context_error_detected"]:
+                if runtime_state["context_error_detected"] or _agent_session_error_requires_recovery(runtime_state, diagnostics):
                     runtime_state["recovery_required"] = True
+                _mark_agent_session_turn_error(
+                    store,
+                    room_id,
+                    session_id,
+                    diagnostics=[*_diagnostic_items(runtime_state), *diagnostics],
+                    recovery_required=bool(runtime_state.get("recovery_required")),
+                )
                 return {
                     "status": "error",
                     "turn_status": "error",
@@ -386,6 +409,10 @@ def run_agent_session_turn_payload(
                     "diagnostics": [*_diagnostic_items(runtime_state), *diagnostics],
                 }
     except Exception as error:  # pragma: no cover - defensive for injected runners
+        diagnostics = [{"setting": "turn_runner", "status": "failed", "message": str(error)}]
+        runtime_state["context_error_detected"] = _context_error_detected(diagnostics)
+        if runtime_state.get("runtime_mode") == "app_server" or runtime_state["context_error_detected"]:
+            runtime_state["recovery_required"] = True
         appended.append(
             store.append_event(
                 room_id,
@@ -394,8 +421,15 @@ def run_agent_session_turn_payload(
                 session_id=session_id,
                 provider_kind=provider_kind,
                 turn_id=turn_id,
-                diagnostics=[{"setting": "turn_runner", "status": "failed", "message": str(error)}],
+                diagnostics=diagnostics,
             )
+        )
+        _mark_agent_session_turn_error(
+            store,
+            room_id,
+            session_id,
+            diagnostics=[*_diagnostic_items(runtime_state), *diagnostics],
+            recovery_required=bool(runtime_state.get("recovery_required")),
         )
         return {
             "status": "error",
@@ -403,7 +437,7 @@ def run_agent_session_turn_payload(
             "turn_id": turn_id,
             "packet": packet,
             "events": appended,
-            "diagnostics": runtime_diagnostics,
+            "diagnostics": [*_diagnostic_items(runtime_state), *diagnostics],
         }
     appended.append(
         store.append_event(
@@ -421,7 +455,9 @@ def run_agent_session_turn_payload(
     last_spoke_event_id = _latest_own_message_event_id(store.read_events(room_id), agent_id)
     session_update = {
         **store.session(room_id, session_id),
+        "status": "attached",
         "bootstrap_done": True,
+        "recovery_required": False,
         "last_provider_sync_event_id": latest_public_event_id,
     }
     if last_spoke_event_id:
@@ -585,17 +621,17 @@ class UnsupportedAgentSessionAdapter:
 
 class GrokAgentSessionAdapter(UnsupportedAgentSessionAdapter):
     provider_name = "grok"
-    reason = "Grok Agent Session adapter scaffolding exists, but the resident session protocol is not wired yet."
+    reason = "Grok is not wired into Agent Session runtime yet."
 
 
 class ClaudeAgentSessionAdapter(UnsupportedAgentSessionAdapter):
     provider_name = "claude"
-    reason = "Claude Agent Session adapter scaffolding exists; claude -p is intentionally forbidden for Agent Sessions."
+    reason = "Claude Agent Session runtime is Agent SDK only; claude -p is intentionally forbidden."
 
 
 class AgyAgentSessionAdapter(UnsupportedAgentSessionAdapter):
     provider_name = "agy"
-    reason = "AGY Agent Session adapter scaffolding exists, but the runtime protocol is not wired yet."
+    reason = "AGY is unavailable until protocol verified."
 
 
 class CodexAppServerRuntime:
@@ -622,6 +658,7 @@ class CodexAppServerRuntime:
         self._pending_messages: list[dict[str, object]] = []
         self._thread_handles: dict[str, dict[str, object]] = {}
         self._stderr_lock = threading.Lock()
+        self._diagnostics_lock = threading.RLock()
         self._stderr_tail: deque[str] = deque()
         self._stderr_thread: threading.Thread | None = None
         self._stderr_line_count = 0
@@ -635,23 +672,22 @@ class CodexAppServerRuntime:
             "runtime_reused": False,
             "runtime_profile_key": runtime_profile_key,
         }
-        self.diagnostics.update(self.profile_settings)
+        self._update_diagnostics(self.profile_settings)
 
     def start(self, config: dict[str, object]) -> dict[str, object]:
         started = time.monotonic()
         if self.process is None:
             self._reset_stderr_drain_state()
             self.process = self._spawn_process()
-            self.diagnostics["app_server_pid"] = getattr(self.process, "pid", "")
+            self._update_diagnostics({"app_server_pid": getattr(self.process, "pid", "")})
             self._start_stderr_drain()
         else:
-            self.diagnostics["runtime_reused"] = True
-            self.diagnostics["app_server_reused"] = True
+            self._update_diagnostics({"runtime_reused": True, "app_server_reused": True})
         if not self._initialized:
             self._send_request("initialize", {"clientInfo": {"name": "AgentsAssemble", "version": "0"}})
             self._send_notification("initialized", {})
             self._initialized = True
-        self.diagnostics["app_server_initialize_ms"] = _elapsed_ms(started)
+        self._update_diagnostics({"app_server_initialize_ms": _elapsed_ms(started)})
         return {"runtime_mode": "app_server", "transport": "stdio_jsonl", **config}
 
     def attach(self, ids: dict[str, object]) -> dict[str, object]:
@@ -661,26 +697,23 @@ class CodexAppServerRuntime:
         session_id = clean_lobby_text(ids.get("session_id"), limit=128)
         cached = self._cached_thread(provider_session_id=provider_session_id, provider_thread_id=provider_thread_id, session_id=session_id)
         if cached:
-            self.diagnostics["thread_reused"] = True
-            self.diagnostics["thread_resume_skipped"] = True
+            self._update_diagnostics({"thread_reused": True, "thread_resume_skipped": True})
             return cached
         started = time.monotonic()
         if provider_thread_id or provider_session_id:
             response = self._send_request("thread/resume", {"threadId": provider_thread_id or provider_session_id})
-            self.diagnostics["thread_resume_ms"] = _elapsed_ms(started)
+            self._update_diagnostics({"thread_resume_ms": _elapsed_ms(started)})
             thread_id = clean_provider_session_id(_nested_get(response, "result.thread.id") or provider_thread_id or provider_session_id)
-            self.diagnostics["thread_reused"] = False
-            self.diagnostics["thread_resume_skipped"] = False
+            self._update_diagnostics({"thread_reused": False, "thread_resume_skipped": False})
         else:
             response = self._send_request("thread/start", _codex_app_server_thread_start_settings(self.profile_settings))
-            self.diagnostics["thread_start_ms"] = _elapsed_ms(started)
+            self._update_diagnostics({"thread_start_ms": _elapsed_ms(started)})
             thread_id = clean_provider_session_id(
                 _nested_get(response, "result.thread.id")
                 or _nested_get(response, "result.threadId")
                 or _nested_get(response, "params.thread.id")
             )
-            self.diagnostics["thread_reused"] = False
-            self.diagnostics["thread_resume_skipped"] = False
+            self._update_diagnostics({"thread_reused": False, "thread_resume_skipped": False})
         handle = {
             "runtime_mode": "app_server",
             "transport": "stdio_jsonl",
@@ -693,7 +726,21 @@ class CodexAppServerRuntime:
         return handle
 
     def send_turn(self, handle: dict[str, object], packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
-        attached = self.attach(handle)
+        self._reset_turn_diagnostics()
+        try:
+            attached = self.attach(handle)
+        except Exception as error:
+            had_resume_id = bool(clean_provider_session_id(handle.get("provider_thread_id") or handle.get("provider_session_id")))
+            self._handle_process_failure(error)
+            yield {
+                "type": "error",
+                "diagnostics": self._error_diagnostics(
+                    error,
+                    status="resume_failed" if had_resume_id else "start_failed",
+                    recovery_required=had_resume_id,
+                ),
+            }
+            return
         thread_id = clean_provider_session_id(attached.get("provider_thread_id") or handle.get("provider_session_id"))
         if thread_id:
             yield {"type": "provider_session", "provider_session_id": thread_id, "provider_thread_id": thread_id}
@@ -704,70 +751,118 @@ class CodexAppServerRuntime:
             "metadata": {"source": "agentsassemble_agent_session"},
             **_codex_app_server_turn_start_settings(self.profile_settings),
         }
-        self._send_request("turn/start", turn_params)
-        self.diagnostics["turn_start_request_ms"] = _elapsed_ms(started)
-        self.diagnostics["time_to_turn_start_ack_ms"] = self.diagnostics["turn_start_request_ms"]
+        timeout_seconds = _agent_turn_timeout_seconds(packet.get("timeout_seconds"))
+        timeout_deadline = started + timeout_seconds
+        try:
+            self._send_request("turn/start", turn_params, timeout_deadline=timeout_deadline)
+        except Exception as error:
+            self._handle_process_failure(error)
+            yield {
+                "type": "error",
+                "diagnostics": self._error_diagnostics(error, status="turn_start_failed", recovery_required=bool(thread_id)),
+            }
+            return
+        turn_start_request_ms = _elapsed_ms(started)
+        self._update_diagnostics(
+            {
+                "turn_start_request_ms": turn_start_request_ms,
+                "time_to_turn_start_ack_ms": turn_start_request_ms,
+            }
+        )
         first_notification = False
         first_agent_item = False
         first_text_delta = False
-        for message in self._read_messages_until_turn_done():
-            method = clean_lobby_text(message.get("method"), limit=128)
-            params = message.get("params") if isinstance(message.get("params"), dict) else {}
-            if not first_notification:
-                self.diagnostics["time_to_first_notification_ms"] = _elapsed_ms(started)
-                first_notification = True
-            if method in {"turn/started"}:
-                yield {"type": "diagnostics", **self.diagnostics}
-                continue
-            if method in {"item/started", "item/completed"}:
-                progress = _app_server_progress_text(params, completed=method == "item/completed")
-                if progress:
-                    yield {"type": "thinking_delta", "content": progress}
+        turn_event_count = 0
+        try:
+            messages = self._read_messages_until_turn_done(timeout_deadline=timeout_deadline)
+            for message in messages:
+                method = clean_lobby_text(message.get("method"), limit=128)
+                turn_event_count += 1
+                self._update_diagnostics(
+                    {
+                        "app_server_last_method": method,
+                        "app_server_last_event_at": _now_iso(),
+                        "app_server_turn_event_count": turn_event_count,
+                    }
+                )
+                params = message.get("params") if isinstance(message.get("params"), dict) else {}
+                if not first_notification:
+                    self._update_diagnostics({"time_to_first_notification_ms": _elapsed_ms(started)})
+                    first_notification = True
+                if method in {"turn/started"}:
+                    yield {"type": "diagnostics", **self._diagnostics_snapshot()}
                     continue
-            if method in {"agent_message/delta", "agent-message/delta", "item/agent_message/delta", "item/agentMessage/delta"}:
-                if not first_agent_item:
-                    self.diagnostics["time_to_first_agent_item_ms"] = _elapsed_ms(started)
-                    self.diagnostics["time_to_first_item_event_ms"] = self.diagnostics["time_to_first_agent_item_ms"]
-                    first_agent_item = True
-                if not first_text_delta:
-                    self.diagnostics["time_to_first_agent_text_delta_ms"] = _elapsed_ms(started)
-                    self.diagnostics["time_to_first_agent_delta_ms"] = self.diagnostics["time_to_first_agent_text_delta_ms"]
-                    first_text_delta = True
-                yield {"type": "message_delta", "content": clean_lobby_text(params.get("delta") or params.get("text"), limit=8000)}
-                continue
-            if method in {"agent_message/completed", "agent-message/completed", "item/agent_message/completed", "item/completed"}:
-                item = params.get("item") if isinstance(params.get("item"), dict) else {}
-                if method == "item/completed" and clean_lobby_text(item.get("type"), limit=64) != "agentMessage":
+                if method in {"item/started", "item/completed"}:
+                    progress = _app_server_progress_text(params, completed=method == "item/completed")
+                    if progress:
+                        yield {"type": "thinking_delta", "content": progress}
+                        continue
+                if method in {"agent_message/delta", "agent-message/delta", "item/agent_message/delta", "item/agentMessage/delta"}:
+                    if not first_agent_item:
+                        first_item_ms = _elapsed_ms(started)
+                        self._update_diagnostics(
+                            {
+                                "time_to_first_agent_item_ms": first_item_ms,
+                                "time_to_first_item_event_ms": first_item_ms,
+                            }
+                        )
+                        first_agent_item = True
+                    if not first_text_delta:
+                        first_delta_ms = _elapsed_ms(started)
+                        self._update_diagnostics(
+                            {
+                                "time_to_first_agent_text_delta_ms": first_delta_ms,
+                                "time_to_first_agent_delta_ms": first_delta_ms,
+                            }
+                        )
+                        first_text_delta = True
+                    yield {"type": "message_delta", "content": clean_lobby_text(params.get("delta") or params.get("text"), limit=8000)}
                     continue
-                self.diagnostics["time_to_message_final_ms"] = _elapsed_ms(started)
-                yield {
-                    "type": "message_final",
-                    "content": clean_lobby_text(params.get("text") or params.get("content") or item.get("text"), limit=8000),
-                }
-                continue
-            if method in {"turn/completed"}:
-                self.diagnostics["turn_completed_ms"] = _elapsed_ms(started)
-                yield {"type": "diagnostics", **self.diagnostics}
-                return
-            if method in {"command_execution/request_approval", "file_change/request_approval", "permissions/request_approval"}:
-                yield {"type": "approval_requested", "diagnostics": [{"setting": "approval", "status": "requested", "message": method}]}
-                continue
-            if method in {"context/compaction_started"}:
-                self.diagnostics["compaction_started_ms"] = _elapsed_ms(started)
-                yield {"type": "context_compaction_started"}
-                continue
-            if method in {"context/compaction_finished"}:
-                self.diagnostics["compaction_completed_ms"] = _elapsed_ms(started)
-                yield {"type": "context_compaction_finished"}
-                continue
-            if method in {"turn/error", "error"} or _context_error_detected(message):
-                yield {
-                    "type": "error",
-                    "diagnostics": [
-                        {"setting": "app_server", "status": "failed", "message": clean_lobby_text(params.get("message") or str(message), limit=1000)}
-                    ],
-                }
-                return
+                if method in {"agent_message/completed", "agent-message/completed", "item/agent_message/completed", "item/completed"}:
+                    item = params.get("item") if isinstance(params.get("item"), dict) else {}
+                    if method == "item/completed" and clean_lobby_text(item.get("type"), limit=64) != "agentMessage":
+                        continue
+                    self._update_diagnostics({"time_to_message_final_ms": _elapsed_ms(started)})
+                    yield {
+                        "type": "message_final",
+                        "content": clean_lobby_text(params.get("text") or params.get("content") or item.get("text"), limit=8000),
+                    }
+                    continue
+                if method in {"turn/completed"}:
+                    self._update_diagnostics({"turn_completed_ms": _elapsed_ms(started)})
+                    yield {"type": "diagnostics", **self._diagnostics_snapshot()}
+                    return
+                if method in {"command_execution/request_approval", "file_change/request_approval", "permissions/request_approval"}:
+                    yield {"type": "approval_requested", "diagnostics": [{"setting": "approval", "status": "requested", "message": method}]}
+                    continue
+                if method in {"context/compaction_started"}:
+                    self._update_diagnostics({"compaction_started_ms": _elapsed_ms(started)})
+                    yield {"type": "context_compaction_started"}
+                    continue
+                if method in {"context/compaction_finished"}:
+                    self._update_diagnostics({"compaction_completed_ms": _elapsed_ms(started)})
+                    yield {"type": "context_compaction_finished"}
+                    continue
+                if method in {"turn/error", "error"} or _context_error_detected(message):
+                    yield {
+                        "type": "error",
+                        "diagnostics": [
+                            {
+                                "setting": "app_server",
+                                "status": "failed",
+                                "message": clean_lobby_text(params.get("message") or str(message), limit=1000),
+                            },
+                            *self._diagnostic_snapshot_items(),
+                        ],
+                    }
+                    return
+        except Exception as error:
+            self._handle_process_failure(error)
+            yield {
+                "type": "error",
+                "diagnostics": self._error_diagnostics(error, status="stopped", recovery_required=bool(thread_id)),
+            }
+            return
 
     def compact(self, handle: dict[str, object], policy: dict[str, object]) -> Iterable[AgentTurnChunk]:
         self._send_notification("thread/compact", {"threadId": handle.get("provider_thread_id"), "policy": policy})
@@ -799,7 +894,7 @@ class CodexAppServerRuntime:
         self._thread_handles.clear()
 
     def diagnose(self, handle: dict[str, object]) -> dict[str, object]:
-        return dict(self.diagnostics)
+        return self._diagnostics_snapshot()
 
     def release_thread(self, handle: dict[str, object]) -> None:
         for key in (
@@ -886,7 +981,7 @@ class CodexAppServerRuntime:
     def _stderr_diagnostics_snapshot(self, *, drained: bool | None = None) -> dict[str, object]:
         with self._stderr_lock:
             snapshot = {
-                "stderr_drained": drained if drained is not None else self.diagnostics.get("stderr_drained", False),
+                "stderr_drained": drained if drained is not None else self._diagnostics_snapshot().get("stderr_drained", False),
                 "stderr_line_count": self._stderr_line_count,
                 "stderr_byte_count": self._stderr_byte_count,
                 "stderr_tail": "\n".join(self._stderr_tail),
@@ -898,7 +993,83 @@ class CodexAppServerRuntime:
             return snapshot
 
     def _publish_stderr_diagnostics(self, *, drained: bool | None = None) -> None:
-        self.diagnostics.update(self._stderr_diagnostics_snapshot(drained=drained))
+        self._update_diagnostics(self._stderr_diagnostics_snapshot(drained=drained))
+
+    def _update_diagnostics(self, updates: dict[str, object]) -> None:
+        if not updates:
+            return
+        with self._diagnostics_lock:
+            self.diagnostics.update(updates)
+
+    def _diagnostics_snapshot(self) -> dict[str, object]:
+        with self._diagnostics_lock:
+            return dict(self.diagnostics)
+
+    def _diagnostic_snapshot_items(self) -> list[dict[str, str]]:
+        return _diagnostic_items(self._diagnostics_snapshot())
+
+    def _error_diagnostics(
+        self,
+        error: Exception,
+        *,
+        status: str,
+        recovery_required: bool,
+    ) -> list[dict[str, str]]:
+        diagnostics = self._diagnostic_snapshot_items()
+        diagnostics.append(
+            {
+                "setting": "app_server",
+                "status": status,
+                "message": clean_lobby_text(str(error), limit=1000) or error.__class__.__name__,
+            }
+        )
+        if recovery_required:
+            diagnostics.append(
+                {
+                    "setting": "recovery_required",
+                    "status": "true",
+                    "message": "Provider thread could not complete; restart the runtime and seed the next turn from RoomMemory.",
+                }
+            )
+        return diagnostics
+
+    def _reset_turn_diagnostics(self) -> None:
+        self._update_diagnostics(
+            {
+                "app_server_error": "",
+                "compaction_completed_ms": "",
+                "compaction_started_ms": "",
+                "thread_reused": "",
+                "app_server_last_event_at": "",
+                "app_server_last_method": "",
+                "app_server_turn_event_count": "",
+                "time_to_first_agent_delta_ms": "",
+                "time_to_first_agent_item_ms": "",
+                "time_to_first_agent_text_delta_ms": "",
+                "time_to_first_item_event_ms": "",
+                "time_to_first_notification_ms": "",
+                "time_to_message_final_ms": "",
+                "time_to_turn_start_ack_ms": "",
+                "turn_completed_ms": "",
+                "turn_start_request_ms": "",
+            }
+        )
+
+    def _handle_process_failure(self, error: Exception) -> None:
+        self._update_diagnostics(
+            {
+                "app_server_error": clean_lobby_text(str(error), limit=1000) or error.__class__.__name__,
+                "app_server_alive": False,
+            }
+        )
+        process = self.process
+        if process is not None:
+            self._close_process_streams(process)
+            self._join_stderr_drain()
+        self.process = None
+        self._initialized = False
+        self._pending_messages.clear()
+        self._thread_handles.clear()
 
     def _join_stderr_drain(self) -> None:
         thread = self._stderr_thread
@@ -916,11 +1087,17 @@ class CodexAppServerRuntime:
                 except Exception:
                     pass
 
-    def _send_request(self, method: str, params: dict[str, object]) -> dict[str, object]:
+    def _send_request(
+        self,
+        method: str,
+        params: dict[str, object],
+        *,
+        timeout_deadline: float | None = None,
+    ) -> dict[str, object]:
         request_id = self._next_id
         self._next_id += 1
         self._write_json({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
-        return self._read_response(request_id)
+        return self._read_response(request_id, timeout_deadline=timeout_deadline)
 
     def _send_notification(self, method: str, params: dict[str, object]) -> None:
         self._write_json({"jsonrpc": "2.0", "method": method, "params": params})
@@ -934,25 +1111,27 @@ class CodexAppServerRuntime:
         if hasattr(stdin, "flush"):
             stdin.flush()
 
-    def _read_response(self, request_id: int) -> dict[str, object]:
+    def _read_response(self, request_id: int, *, timeout_deadline: float | None = None) -> dict[str, object]:
         while True:
-            message = self._read_json_line()
+            message = self._read_json_line(timeout_deadline=timeout_deadline)
             if message.get("id") == request_id:
                 return message
             self._pending_messages.append(message)
 
-    def _read_messages_until_turn_done(self) -> Iterable[dict[str, object]]:
+    def _read_messages_until_turn_done(self, *, timeout_deadline: float | None = None) -> Iterable[dict[str, object]]:
         while True:
-            message = self._pending_messages.pop(0) if self._pending_messages else self._read_json_line()
+            message = self._pending_messages.pop(0) if self._pending_messages else self._read_json_line(timeout_deadline=timeout_deadline)
             yield message
             if clean_lobby_text(message.get("method"), limit=128) in {"turn/completed", "turn/error", "error"}:
                 return
 
-    def _read_json_line(self) -> dict[str, object]:
+    def _read_json_line(self, *, timeout_deadline: float | None = None) -> dict[str, object]:
         assert self.process is not None
         stdout = getattr(self.process, "stdout", None)
         if stdout is None:
             raise RuntimeError("Codex app-server stdout is unavailable.")
+        if timeout_deadline is not None and hasattr(stdout, "fileno"):
+            self._wait_for_stdout(stdout, timeout_deadline)
         line = stdout.readline()
         if line == "":
             raise RuntimeError("Codex app-server stopped before completing the request.")
@@ -963,6 +1142,25 @@ class CodexAppServerRuntime:
         if "error" in message and not message.get("method"):
             raise RuntimeError(clean_lobby_text(message.get("error"), limit=1000) or "Codex app-server request failed.")
         return message
+
+    def _wait_for_stdout(self, stdout: object, timeout_deadline: float) -> None:
+        while True:
+            remaining = timeout_deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Codex app-server timed out before completing the request.")
+            try:
+                readable, _, _ = select.select([stdout], [], [], min(remaining, 0.25))
+            except (OSError, ValueError):
+                return
+            if readable:
+                return
+            process = self.process
+            if process is not None and hasattr(process, "poll"):
+                try:
+                    if process.poll() is not None:
+                        return
+                except Exception:
+                    return
 
     def _cached_thread(self, *, provider_session_id: str, provider_thread_id: str, session_id: str) -> dict[str, object]:
         for key in (provider_thread_id, provider_session_id, session_id):
@@ -1039,6 +1237,369 @@ class CodexAppServerRuntimeManager:
         self._runtimes.clear()
         self._session_refs.clear()
         self._session_keys.clear()
+
+
+def run_codex_app_server_smoke(
+    smoke: str,
+    *,
+    approve_real_provider: bool = False,
+) -> dict[str, object]:
+    clean_smoke = clean_lobby_text(smoke, limit=128)
+    if clean_smoke not in CODEX_APP_SERVER_SMOKE_COMMANDS:
+        raise ValueError(f"unsupported Codex app-server smoke: {clean_smoke}")
+    if not approve_real_provider:
+        return _codex_app_server_smoke_skipped(clean_smoke)
+
+    with tempfile.TemporaryDirectory(prefix="agentsassemble-codex-app-server-smoke-") as tmp:
+        output_root = Path(tmp)
+        workspace = output_root / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        room_id = f"{clean_smoke}-{uuid4().hex[:8]}"
+        manager = CodexAppServerRuntimeManager()
+        store = RoomStore(output_root)
+        store.create_room(room_id, label=clean_smoke)
+        metrics: dict[str, object] = _empty_codex_app_server_smoke_metrics()
+        errors: list[str] = []
+        timeout_count = 0
+        context_error_detected = False
+        sessions = _codex_app_server_smoke_sessions(clean_smoke, workspace=str(workspace))
+        for session in sessions:
+            resume_agent_session_payload(
+                output_root,
+                {
+                    "room_id": room_id,
+                    "agent_id": session["participant_id"],
+                    "session_id": session["session_id"],
+                    "display_name": session["display_name"],
+                    "provider_kind": session["provider_kind"],
+                    "model": session["model"],
+                    "effort": session["effort"],
+                    "sandbox": session["sandbox"],
+                    "permissions": session["permissions"],
+                    "workspace": session["workspace"],
+                },
+            )
+        started_at = time.monotonic()
+        rss_start = 0
+        turn_plan = _codex_app_server_smoke_turn_plan(clean_smoke, sessions)
+        try:
+            for index, session in enumerate(turn_plan):
+                instruction = f"Turn {index + 1}. Reply with one short sentence and do not inspect files."
+                result = run_agent_session_turn_payload(
+                    output_root,
+                    {
+                        "room_id": room_id,
+                        "agent_id": session["participant_id"],
+                        "session_id": session["session_id"],
+                        "instruction": instruction,
+                        "timeout_seconds": _codex_app_server_smoke_timeout_seconds(clean_smoke),
+                    },
+                    turn_adapter=lambda runtime_session, packet: manager.send_turn(runtime_session, packet),
+                )
+                if clean_smoke == "codex-app-server-restart-recovery" and index == 0:
+                    persisted = RoomStore(output_root).session(room_id, session["session_id"])
+                    manager.detach_session(persisted, shutdown_unused=True)
+                turn_diagnostics = result.get("diagnostics") if isinstance(result.get("diagnostics"), list) else []
+                packet = result.get("packet") if isinstance(result.get("packet"), dict) else {}
+                _record_codex_app_server_smoke_turn(metrics, result, packet, turn_diagnostics)
+                context_error_detected = context_error_detected or _context_error_detected(turn_diagnostics)
+                if result.get("turn_status") != "finished":
+                    errors.append(f"{session['session_id']} turn {index + 1}: {result.get('turn_status') or result.get('status')}")
+                    metrics["error_diagnostics"].append(_diagnostics_sample(turn_diagnostics))
+                    if _diagnostics_indicate_timeout(turn_diagnostics):
+                        timeout_count += 1
+                    if clean_smoke != "codex-app-server-profile-isolation":
+                        break
+                pids = [int(pid) for pid in metrics["app_server_pid"] if str(pid).isdigit()]
+                if pids and not rss_start:
+                    rss_start = sum(_process_rss_kb(pid) for pid in sorted(set(pids)))
+        finally:
+            runtime_snapshots = [runtime.diagnose({}) for runtime in manager._runtimes.values()]
+            for snapshot in runtime_snapshots:
+                _record_codex_app_server_smoke_diagnostics(metrics, snapshot)
+            pids_before_detach = sorted({int(pid) for pid in metrics["app_server_pid"] if str(pid).isdigit()})
+            rss_end = sum(_process_rss_kb(pid) for pid in pids_before_detach)
+            manager.shutdown_all()
+        alive_after_detach = any(_process_alive(pid) for pid in pids_before_detach)
+        metrics["rss_kb_start"] = rss_start
+        metrics["rss_kb_end"] = rss_end
+        metrics["rss_kb_delta"] = rss_end - rss_start if rss_start or rss_end else 0
+        metrics["p50_time_to_first_agent_delta_ms"] = _p50(metrics["time_to_first_agent_delta_ms"])
+        metrics["p95_time_to_first_agent_delta_ms"] = _p95(metrics["time_to_first_agent_delta_ms"])
+        metrics["p50_turn_completed_ms"] = _p50(metrics["turn_completed_ms"])
+        metrics["p95_turn_completed_ms"] = _p95(metrics["turn_completed_ms"])
+        metrics["stderr_byte_count"] = max([0, *[int(value) for value in metrics["stderr_byte_count"]]])
+        metrics["stderr_warning_count"] = max([0, *[int(value) for value in metrics["stderr_warning_count"]]])
+        metrics["stderr_line_count"] = max([0, *[int(value) for value in metrics["stderr_line_count"]]])
+        metrics["stderr_tail_sample"] = _last_text(metrics["stderr_tail"])
+        metrics["stderr_tail"] = [metrics["stderr_tail_sample"]] if metrics["stderr_tail_sample"] else []
+        metrics["context_error_detected"] = context_error_detected
+        metrics["timeout_count"] = timeout_count
+        metrics["alive_after_detach"] = alive_after_detach
+        metrics["finished_turns"] = len([status for status in metrics["turn_status"] if status == "finished"])
+        metrics["total_turns"] = len(turn_plan)
+        metrics["distinct_runtime_profile_key_count"] = len(set(str(value) for value in metrics["runtime_profile_key"] if value))
+        metrics["elapsed_ms"] = _elapsed_ms(started_at)
+        return {
+            "status": "ok" if not errors and not alive_after_detach else "failed",
+            "smoke": clean_smoke,
+            "requires_approval": True,
+            "approved": True,
+            "metrics": metrics,
+            "errors": errors,
+        }
+
+
+def _codex_app_server_smoke_skipped(smoke: str) -> dict[str, object]:
+    return {
+        "status": "skipped",
+        "smoke": smoke,
+        "requires_approval": True,
+        "approved": False,
+        "metrics": _empty_codex_app_server_smoke_metrics(),
+    }
+
+
+def _empty_codex_app_server_smoke_metrics() -> dict[str, object]:
+    return {
+        "runtime_profile_key": [],
+        "runtime_reused": [],
+        "thread_reused": [],
+        "app_server_pid": [],
+        "provider_thread_id": [],
+        "provider_session_id": [],
+        "provider_visible_chars": [],
+        "time_to_first_agent_delta_ms": [],
+        "turn_completed_ms": [],
+        "stderr_byte_count": [],
+        "stderr_line_count": [],
+        "stderr_warning_count": [],
+        "stderr_tail": [],
+        "error_diagnostics": [],
+        "turn_status": [],
+        "rss_kb_start": 0,
+        "rss_kb_end": 0,
+        "rss_kb_delta": 0,
+        "context_error_detected": False,
+        "timeout_count": 0,
+        "alive_after_detach": None,
+    }
+
+
+def _codex_app_server_smoke_sessions(smoke: str, *, workspace: str) -> list[dict[str, str]]:
+    base = {
+        "provider_kind": "codex_live_session",
+        "model": "gpt-5.3-codex-spark",
+        "effort": "medium",
+        "sandbox": "read-only",
+        "permissions": "never",
+        "workspace": workspace,
+    }
+    if smoke == "codex-app-server-profile-isolation":
+        return [
+            {**base, "participant_id": "spark-a", "session_id": "spark-a", "display_name": "Spark A"},
+            {**base, "participant_id": "spark-model-b", "session_id": "spark-model-b", "display_name": "Spark Model B", "model": "gpt-5.3-codex"},
+            {
+                **base,
+                "participant_id": "spark-sandbox-c",
+                "session_id": "spark-sandbox-c",
+                "display_name": "Spark Sandbox C",
+                "sandbox": "workspace-write",
+                "permissions": "on-request",
+            },
+        ]
+    return [
+        {**base, "participant_id": "spark-a", "session_id": "spark-a", "display_name": "Spark A"},
+        {**base, "participant_id": "spark-b", "session_id": "spark-b", "display_name": "Spark B"},
+    ]
+
+
+def _codex_app_server_smoke_turn_plan(smoke: str, sessions: list[dict[str, str]]) -> list[dict[str, str]]:
+    if smoke == "codex-app-server-stderr-backpressure":
+        return [sessions[index % 2] for index in range(30)]
+    if smoke in {"codex-app-server-same-profile", "codex-app-server-warm", "codex-app-server-two-agent"}:
+        return [sessions[0], sessions[1]]
+    if smoke == "codex-app-server-restart-recovery":
+        return [sessions[0], sessions[0]]
+    return list(sessions)
+
+
+def _codex_app_server_smoke_timeout_seconds(smoke: str) -> int:
+    return 180
+
+
+def _record_codex_app_server_smoke_turn(
+    metrics: dict[str, object],
+    result: dict[str, object],
+    packet: dict[str, object],
+    diagnostics: list[dict[str, object]],
+) -> None:
+    metrics["turn_status"].append(str(result.get("turn_status") or result.get("status") or "unknown"))
+    metrics["provider_visible_chars"].append(int(packet.get("provider_visible_chars") or 0))
+    for key in (
+        "runtime_profile_key",
+        "runtime_reused",
+        "thread_reused",
+        "app_server_pid",
+        "provider_thread_id",
+        "provider_session_id",
+        "time_to_first_agent_delta_ms",
+        "turn_completed_ms",
+        "stderr_byte_count",
+        "stderr_line_count",
+        "stderr_warning_count",
+        "stderr_tail",
+    ):
+        value = _diagnostic_value(diagnostics, key)
+        if value not in ("", None):
+            metrics[key].append(value)
+
+
+def _record_codex_app_server_smoke_diagnostics(metrics: dict[str, object], diagnostics: dict[str, object]) -> None:
+    for key in (
+        "runtime_profile_key",
+        "runtime_reused",
+        "thread_reused",
+        "app_server_pid",
+        "stderr_byte_count",
+        "stderr_line_count",
+        "stderr_warning_count",
+        "stderr_tail",
+    ):
+        value = diagnostics.get(key)
+        if value not in ("", None):
+            metrics[key].append(value)
+
+
+def _diagnostic_value(diagnostics: list[dict[str, object]], key: str) -> object:
+    for item in reversed(diagnostics):
+        if isinstance(item, dict) and item.get("setting") == key:
+            return item.get("status")
+    return ""
+
+
+def _diagnostics_indicate_timeout(diagnostics: list[dict[str, object]]) -> bool:
+    for item in diagnostics:
+        if not isinstance(item, dict):
+            continue
+        status = clean_lobby_text(item.get("status"), limit=128).lower()
+        message = clean_lobby_text(item.get("message"), limit=1000).lower()
+        if "timeout" in status or "timed out" in message or "before timeout" in message:
+            return True
+    return False
+
+
+def _diagnostics_sample(diagnostics: list[dict[str, object]]) -> str:
+    interesting: list[dict[str, object]] = []
+    for item in diagnostics:
+        if not isinstance(item, dict):
+            continue
+        setting = clean_lobby_text(item.get("setting"), limit=128).lower()
+        status = clean_lobby_text(item.get("status"), limit=128).lower()
+        message = clean_lobby_text(item.get("message"), limit=1000).lower()
+        if (
+            setting
+            in {
+                "app_server",
+                "app_server_error",
+                "app_server_last_event_at",
+                "app_server_last_method",
+                "app_server_turn_event_count",
+                "context_error_detected",
+                "recovery_required",
+                "stderr_warning_count",
+                "turn_runner",
+            }
+            or "error" in setting
+            or status in {"error", "failed", "stopped", "timeout"}
+            or "error" in message
+            or "failed" in message
+            or "stopped" in message
+            or "timeout" in message
+        ):
+            interesting.append(_diagnostics_sample_item(item))
+    selected = interesting[-12:] or [_diagnostics_sample_item(item) for item in diagnostics[-12:] if isinstance(item, dict)]
+    return clean_lobby_text(json.dumps(selected, ensure_ascii=True), limit=4000)
+
+
+def _diagnostics_sample_item(item: dict[str, object]) -> dict[str, str]:
+    setting = clean_lobby_text(item.get("setting"), limit=128)
+    status_limit = 800 if setting == "stderr_tail" else 1200
+    message_limit = 800 if setting == "stderr_tail" else 1200
+    return {
+        "setting": setting,
+        "status": _sample_text(item.get("status"), limit=status_limit),
+        "message": _sample_text(item.get("message"), limit=message_limit),
+    }
+
+
+def _sample_text(value: object, *, limit: int) -> str:
+    text = str(value or "").replace("\n", " ").replace("\r", " ").strip()
+    if len(text) <= limit:
+        return text
+    return text[-limit:].strip()
+
+
+def _numeric_values(values: object) -> list[int]:
+    if not isinstance(values, list):
+        return []
+    numbers = []
+    for value in values:
+        try:
+            numbers.append(int(float(str(value))))
+        except (TypeError, ValueError):
+            continue
+    return numbers
+
+
+def _p50(values: object) -> int | None:
+    numbers = _numeric_values(values)
+    if not numbers:
+        return None
+    return int(statistics.median(numbers))
+
+
+def _p95(values: object) -> int | None:
+    numbers = sorted(_numeric_values(values))
+    if not numbers:
+        return None
+    index = min(len(numbers) - 1, int((len(numbers) * 0.95) + 0.999999) - 1)
+    return numbers[index]
+
+
+def _last_text(values: object) -> str:
+    if not isinstance(values, list):
+        return ""
+    for value in reversed(values):
+        text = str(value or "")
+        if text:
+            return clean_lobby_text(text, limit=2000)
+    return ""
+
+
+def _process_rss_kb(pid: int) -> int:
+    try:
+        completed = subprocess.run(
+            ["ps", "-o", "rss=", "-p", str(pid)],
+            text=True,
+            capture_output=True,
+            timeout=2,
+            check=False,
+        )
+    except Exception:
+        return 0
+    try:
+        return int((completed.stdout or "").strip().splitlines()[0])
+    except (IndexError, ValueError):
+        return 0
+
+
+def _process_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
 
 
 def runtime_profile_key(session: dict[str, object], packet: dict[str, object] | None = None) -> str:
@@ -1544,6 +2105,43 @@ def _merge_runtime_diagnostics(state: dict[str, object], chunk: dict[str, object
         state["context_error_detected"] = True
 
 
+def _agent_session_error_requires_recovery(
+    runtime_state: dict[str, object],
+    diagnostics: list[dict[str, object]],
+) -> bool:
+    if runtime_state.get("runtime_mode") == "app_server":
+        return True
+    for item in diagnostics:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("setting") or "") == "recovery_required":
+            return True
+        if str(item.get("status") or "") in {"resume_failed", "stopped", "turn_start_failed"}:
+            return True
+    return False
+
+
+def _mark_agent_session_turn_error(
+    store: RoomStore,
+    room_id: str,
+    session_id: str,
+    *,
+    diagnostics: list[dict[str, object]],
+    recovery_required: bool,
+) -> None:
+    session = store.session(room_id, session_id)
+    if not session:
+        return
+    update = {
+        **session,
+        "status": "error",
+        "diagnostics": diagnostics,
+    }
+    if recovery_required:
+        update["recovery_required"] = True
+    store.upsert_session(room_id, update)
+
+
 def _provider_adapter_input(packet: dict[str, object]) -> dict[str, object]:
     return {
         "provider_input": str(packet.get("provider_input") or ""),
@@ -1554,6 +2152,7 @@ def _provider_adapter_input(packet: dict[str, object]) -> dict[str, object]:
         "media_supported_count": packet.get("media_supported_count", 0),
         "media_unsupported_count": packet.get("media_unsupported_count", 0),
         "media_notes": packet.get("media_notes") if isinstance(packet.get("media_notes"), list) else [],
+        "timeout_seconds": packet.get("timeout_seconds", DEFAULT_AGENT_TURN_TIMEOUT_SECONDS),
     }
 
 
