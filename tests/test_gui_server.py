@@ -206,6 +206,35 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(left["status"], "left")
             self.assertEqual(after_leave["members"], [])
 
+    def test_agent_session_create_endpoint_feeds_room_members_from_canonical_state(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            created = _dispatch_room_route(
+                root,
+                path="/api/agent-sessions",
+                method="POST",
+                payload={
+                    "room_id": "session-room",
+                    "agent_id": "agent-1",
+                    "display_name": "Agent One",
+                    "provider_kind": "codex_live_session",
+                    "model": "gpt-5.3-codex-spark",
+                    "runtime_sharing_policy": "isolated_session",
+                },
+            ).sent_json
+            members = _dispatch_room_route(root, path="/api/room-members?meeting_id=session-room").sent_json
+
+            self.assertEqual(created["status"], "created")
+            self.assertEqual(members["members"][0]["participant_id"], "agent-1")
+            self.assertEqual(members["members"][0]["source"], "agent_session")
+            self.assertEqual(members["members"][0]["connection_kind"], "agent_session")
+            self.assertEqual(members["members"][0]["execution_mode"], "agent_session_app_server")
+            self.assertEqual(members["members"][0]["owner_id"], "operator-local")
+            self.assertEqual(members["members"][0]["model_id"], "gpt-5.3-codex-spark")
+
     def test_room_session_export_endpoint_persists_exported_state(self):
         reset_room_invite_state()
         reset_room_users_state()
@@ -414,6 +443,135 @@ class GuiServerTests(unittest.TestCase):
             self.assertIn("event: turn_started", frames)
             self.assertIn("event: message_final", frames)
             self.assertIn("Answer from fake runner", frames)
+
+    def test_agent_session_http_next_turn_uses_latest_room_message_and_ordered_agent(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        packets: list[dict[str, object]] = []
+
+        def fake_turn_command_streamer(command, prompt, timeout_seconds):
+            packets.append({"command": command, "prompt": prompt, "timeout_seconds": timeout_seconds})
+            yield {"type": "message_final", "content": "Ordered reply"}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = RoomStore(root)
+            store.create_room("session-room")
+            first_message = store.append_event("session-room", "message_final", actor_id="human-1", content="첫 질문")
+            _dispatch_room_route(
+                root,
+                path="/api/agent-sessions",
+                method="POST",
+                payload={
+                    "room_id": "session-room",
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "codex_live_session",
+                },
+            )
+            _dispatch_room_route(
+                root,
+                path="/api/agent-sessions",
+                method="POST",
+                payload={
+                    "room_id": "session-room",
+                    "agent_id": "agent-b",
+                    "display_name": "Agent B",
+                    "provider_kind": "codex_live_session",
+                },
+            )
+
+            with patch(
+                "agentsassemble.gui_room_http._local_agent_session_turn_command_streamer",
+                side_effect=fake_turn_command_streamer,
+            ):
+                first = _dispatch_room_route(
+                    root,
+                    path="/api/agent-sessions/next-turn",
+                    method="POST",
+                    payload={
+                        "room_id": "session-room",
+                        "trigger_event_id": first_message["id"],
+                        "runtime_mode": "exec_jsonl_fallback",
+                    },
+                ).sent_json
+                second_message = store.append_event("session-room", "message_final", actor_id="human-1", content="둘째 질문")
+                second = _dispatch_room_route(
+                    root,
+                    path="/api/agent-sessions/next-turn",
+                    method="POST",
+                    payload={
+                        "room_id": "session-room",
+                        "trigger_event_id": second_message["id"],
+                        "runtime_mode": "exec_jsonl_fallback",
+                    },
+                ).sent_json
+
+            self.assertEqual(first["participant_id"], "agent-a")
+            self.assertEqual(second["participant_id"], "agent-b")
+            self.assertIn('"current_turn_instruction": "Respond to the latest room message."', packets[0]["prompt"])
+            self.assertIn("첫 질문", packets[0]["prompt"])
+            event_types = [event["type"] for event in RoomStore(root).read_events("session-room")]
+            self.assertIn("turn_queued", event_types)
+            self.assertIn("turn_assigned", event_types)
+            self.assertIn("turn_finished", event_types)
+
+    def test_lobby_message_auto_starts_agent_session_turn_without_manual_call(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+
+        def fake_turn_adapter(session, packet):
+            yield {"type": "message_final", "content": "자동 Agent Session 응답"}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _dispatch_room_route(
+                root,
+                path="/api/agent-sessions",
+                method="POST",
+                payload={
+                    "room_id": "session-room",
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "codex_live_session",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch("agentsassemble.gui._local_agent_session_turn_adapter", side_effect=fake_turn_adapter):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/lobby",
+                        data=json.dumps(
+                            {
+                                "name": "나",
+                                "side": "mine",
+                                "kind": "message",
+                                "message": "방 메시지에 자동으로 답해줘.",
+                                "flow_meeting_id": "session-room",
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    with urlopen(request, timeout=4) as response:
+                        posted = json.loads(response.read().decode("utf-8"))
+
+                    deadline = time.time() + 4
+                    events = []
+                    while time.time() < deadline:
+                        events = RoomStore(root).read_events("session-room")
+                        if any(event.get("content") == "자동 Agent Session 응답" for event in events):
+                            break
+                        time.sleep(0.02)
+
+                self.assertEqual(posted["event"]["message"], "방 메시지에 자동으로 답해줘.")
+                self.assertIn("turn_queued", [event["type"] for event in events])
+                self.assertIn("turn_assigned", [event["type"] for event in events])
+                self.assertTrue(any(event.get("content") == "자동 Agent Session 응답" for event in events))
+            finally:
+                server.shutdown()
+                server.server_close()
 
     def test_room_events_stream_route_replays_missed_event_as_sse(self):
         with tempfile.TemporaryDirectory() as temp_dir:

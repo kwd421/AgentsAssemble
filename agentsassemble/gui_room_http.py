@@ -16,7 +16,10 @@ from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payl
 from agentsassemble.agent_sessions import (
     AgentSessionProcessService,
     CodexAppServerRuntimeManager,
+    create_agent_session_payload,
+    enqueue_agent_session_auto_turn_for_lobby_event,
     resume_agent_session_payload,
+    run_next_agent_session_turn_payload,
     run_agent_session_turn_payload,
     room_action_payload,
     room_lifecycle_payload,
@@ -292,6 +295,12 @@ def register_room_routes(router: Router) -> None:
         except GovernedLobbySayRejected as rejected:
             ctx.send_error(_speech_rejection_status(rejected.category), str(rejected))
             return
+        if _process_start_allowed(ctx):
+            enqueue_agent_session_auto_turn_for_lobby_event(
+                ctx.deps.output_root,
+                event,
+                turn_adapter=_local_agent_session_turn_adapter,
+            )
         ctx.send_json({"event": event})
 
     # -- polls (/vote) ---------------------------------------------------------
@@ -383,6 +392,29 @@ def register_room_routes(router: Router) -> None:
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
 
+    @router.post("/api/agent-sessions")
+    def agent_sessions_create(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        if bool(payload.get("start")) and not _process_start_allowed(ctx):
+            ctx.send_error(HTTPStatus.FORBIDDEN, "Agent Session process start requires local operator or host authorization")
+            return
+        try:
+            ctx.send_json(
+                create_agent_session_payload(
+                    ctx.deps.output_root,
+                    {
+                        **payload,
+                        "owner_id": payload.get("owner_id") or operator_user_id(),
+                        "created_by": payload.get("created_by") or operator_user_id(),
+                    },
+                    process_service=_agent_session_process_service(ctx, payload),
+                )
+            )
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+
     @router.post("/api/agent-sessions/turn")
     def agent_sessions_turn(ctx: RequestContext) -> None:
         payload = ctx.read_json_body()
@@ -394,6 +426,33 @@ def register_room_routes(router: Router) -> None:
         try:
             ctx.send_json(
                 run_agent_session_turn_payload(
+                    ctx.deps.output_root,
+                    payload,
+                    turn_adapter=None
+                    if bool(payload.get("dry_run")) or payload.get("runtime_mode") in {"exec_jsonl_fallback", "exec_plain_fallback"}
+                    else _local_agent_session_turn_adapter,
+                    turn_command_runner=None
+                    if bool(payload.get("dry_run")) or payload.get("runtime_mode") != "exec_plain_fallback"
+                    else _local_agent_session_turn_command_runner,
+                    turn_command_streamer=None
+                    if bool(payload.get("dry_run")) or payload.get("runtime_mode") not in {"exec_jsonl_fallback"}
+                    else _local_agent_session_turn_command_streamer,
+                )
+            )
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+
+    @router.post("/api/agent-sessions/next-turn")
+    def agent_sessions_next_turn(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        if not _process_start_allowed(ctx):
+            ctx.send_error(HTTPStatus.FORBIDDEN, "Agent Session turn requires local operator or host authorization")
+            return
+        try:
+            ctx.send_json(
+                run_next_agent_session_turn_payload(
                     ctx.deps.output_root,
                     payload,
                     turn_adapter=None
@@ -815,6 +874,12 @@ def register_room_routes(router: Router) -> None:
         except GovernedLobbySayRejected as rejected:
             ctx.send_error(_speech_rejection_status(rejected.category), str(rejected))
             return
+        if _process_start_allowed(ctx):
+            enqueue_agent_session_auto_turn_for_lobby_event(
+                ctx.deps.output_root,
+                event,
+                turn_adapter=_local_agent_session_turn_adapter,
+            )
         ctx.send_json({"event": event, "channel_id": channel_id})
 
     # -- voice channels (presence only; audio streaming deferred) -----------

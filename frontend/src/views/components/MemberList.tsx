@@ -1377,7 +1377,8 @@ export default function MemberList({
       const role = effectiveRoleOverrides[agent.agent_id] || inferredRole;
       const profile = agentProfileSettings[agent.agent_id] || {};
       const canViewQuotaForAgent = canViewAgentQuota(agent, quotaViewer);
-      const ownerDisplayName = String(agent.owner_display_name || (canViewQuotaForAgent ? "SeiNel" : "다른 사람")).trim();
+      const ownedByViewer = canViewQuotaForAgent || String(agent.owner_id || "") === "operator-local" || (!agent.owner_id && canEditRoles);
+      const ownerDisplayName = String(agent.owner_display_name || (ownedByViewer ? "나" : "다른 사람")).trim();
       const agentDisplayName = String(profile.displayName || agent.display_name || agent.agent_id).trim();
       const agentPanelDisplayName = `${ownerDisplayName}'s ${agentDisplayName}`;
       return {
@@ -1391,7 +1392,7 @@ export default function MemberList({
         muted: mutedById.get(agent.agent_id) ?? false,
         meetingId: String(agent.meeting_id || ""),
         canViewQuota: canViewQuotaForAgent,
-        ownedByViewer: canViewQuotaForAgent,
+        ownedByViewer,
         ownerDisplayName,
         agentDisplayName,
         agentProfile: profile,
@@ -1439,7 +1440,7 @@ export default function MemberList({
         } satisfies MemberEntry;
       });
     return [human, ...agentEntries, ...invitedEntries];
-  }, [agentProfileSettings, agents, effectiveRoleOverrides, members, quotaViewer]);
+  }, [agentProfileSettings, agents, canEditRoles, effectiveRoleOverrides, members, quotaViewer]);
   const visibleEntries = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return entries;

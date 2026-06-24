@@ -76,6 +76,18 @@ export interface RoomMember {
   participant_type: ParticipantType;
   provider_kind: string;
   connection_kind: string;
+  session_id?: string;
+  owner_id?: string;
+  created_by?: string;
+  model_id?: string;
+  effort?: string;
+  sandbox_enforcement?: string;
+  permission_option?: string;
+  runtime_sharing_policy?: string;
+  engagement_mode?: string;
+  execution_mode?: string;
+  join_semantics?: string;
+  session_status?: string;
   thinking?: boolean;
   status: string;
   muted?: boolean;
@@ -331,6 +343,8 @@ export interface LiveAgent {
   agent_id: string;
   display_name: string;
   avatar_image_url?: string;
+  owner_id?: string;
+  created_by?: string;
   owner_display_name?: string;
   owner_participant_id?: string;
   owner_session_id?: string;
@@ -444,6 +458,9 @@ export interface AgentSessionActionResponse {
   participants?: Array<Record<string, unknown>>;
   sessions?: Array<Record<string, unknown>>;
 }
+
+// agentSessions is the normal room UI creation path; legacy live-agent create
+// endpoints stay internal/compatibility-only.
 
 export interface LiveAgentCreateOption {
   id: string;
@@ -584,10 +601,6 @@ export interface FlowResponse {
   agents: LiveAgent[];
   events: LobbyEvent[];
   flow_events: LobbyEvent[];
-}
-
-export interface LiveAgentsResponse {
-  agents: LiveAgent[];
 }
 
 export interface LifecycleRoleHint {
@@ -1201,6 +1214,33 @@ export function createFrontendLiveAgent(request: FrontendLiveAgentCreateRequest)
   return postJson<FrontendLiveAgentCreateResponse>("/api/live-agent-create", frontendLiveAgentCreatePayload(request));
 }
 
+function agentIdFromCreateRequest(request: FrontendLiveAgentCreateRequest) {
+  return `${request.providerId || "agent"}-${request.displayName || "session"}`
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 96) || "agent-session";
+}
+
+export function createAgentSession(request: FrontendLiveAgentCreateRequest) {
+  const agentId = agentIdFromCreateRequest(request);
+  return postJson<AgentSessionActionResponse>("/api/agent-sessions", {
+    room_id: request.meetingId,
+    agent_id: agentId,
+    session_id: request.sessionId || agentId,
+    display_name: request.displayName,
+    provider_kind: request.providerId === "codex" ? "codex_live_session" : request.providerId,
+    model: request.modelId || "",
+    effort: request.effort || "",
+    sandbox: request.permissionOption || "",
+    permissions: request.permissionOption || "",
+    workspace: request.workspacePath || "",
+    runtime_sharing_policy: "isolated_session",
+    start: Boolean(request.startNow),
+  });
+}
+
 // Promote a localStorage room to a server-backed meeting (rooms-as-server-objects).
 // Idempotent; called when a room becomes active so its meeting always exists.
 export function ensureRoomMeeting(meetingId: string, label = "") {
@@ -1323,6 +1363,22 @@ export function runAgentSessionTurn({
     agent_id: agentId,
     session_id: sessionId || agentId,
     instruction,
+    dry_run: dryRun,
+  });
+}
+
+export function runNextAgentSessionTurn({
+  roomId,
+  triggerEventId = "",
+  dryRun = false,
+}: {
+  roomId: string;
+  triggerEventId?: string;
+  dryRun?: boolean;
+}) {
+  return postJson<AgentSessionActionResponse>("/api/agent-sessions/next-turn", {
+    room_id: roomId,
+    trigger_event_id: triggerEventId,
     dry_run: dryRun,
   });
 }
@@ -1942,10 +1998,6 @@ export function createLiveAgentJoinBrief(params: LiveAgentJoinBriefRequest) {
 export function fetchLiveAgentFlow(meetingId = "", sessionToken = "") {
   const url = `/api/live-agent-flow${queryString({ meeting_id: meetingId })}`;
   return sessionToken ? fetchJsonWithToken<FlowResponse>(url, sessionToken) : fetchJson<FlowResponse>(url);
-}
-
-export function fetchLiveAgents() {
-  return fetchJson<LiveAgentsResponse>("/api/live-agents");
 }
 
 export function fetchMeetings() {

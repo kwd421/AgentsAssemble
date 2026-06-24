@@ -42,6 +42,7 @@ CODEX_APP_SERVER_SMOKE_COMMANDS = {
     "codex-app-server-warm",
     "codex-app-server-two-agent",
 }
+AGENT_SESSION_AUTO_TURN_QUEUE_LIMIT = 20
 UNSUPPORTED_MEDIA_AUDIT_NOTE = "Unsupported media is listed for audit only; do not claim you viewed unsupported files."
 ROOM_MEMORY_EMPTY = {
     "summary": "",
@@ -50,6 +51,9 @@ ROOM_MEMORY_EMPTY = {
     "up_to_event_id": "",
     "compacted_at": "",
 }
+_AUTO_TURN_QUEUE_LOCK = threading.Lock()
+_AUTO_TURN_QUEUES: dict[str, deque[dict[str, object]]] = {}
+_AUTO_TURN_WORKERS: set[str] = set()
 
 
 def resume_agent_session_payload(
@@ -126,6 +130,107 @@ def resume_agent_session_payload(
     return {
         "status": "resumed",
         "state_status": "resumed",
+        **launch,
+        "room": room,
+        "participant": participant,
+        "session": session,
+        "participants": store.participants(room_id),
+        "sessions": store.sessions(room_id),
+    }
+
+
+def create_agent_session_payload(
+    output_root: Path,
+    payload: dict[str, object],
+    *,
+    command_runner: CommandRunner | None = None,
+    process_service: "AgentSessionProcessService | None" = None,
+) -> dict[str, object]:
+    store = RoomStore(output_root)
+    room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
+    agent_id = clean_lobby_text(payload.get("agent_id") or payload.get("agent"), limit=128)
+    session_id = clean_lobby_text(payload.get("session_id") or payload.get("session"), limit=128) or agent_id
+    if not room_id:
+        raise ValueError("room_id is required.")
+    if not agent_id:
+        raise ValueError("agent_id is required.")
+    if not session_id:
+        raise ValueError("session_id is required.")
+
+    owner_id = clean_lobby_text(payload.get("owner_id") or payload.get("created_by"), limit=128) or "operator-local"
+    created_by = clean_lobby_text(payload.get("created_by") or owner_id, limit=128) or owner_id
+    previous_participant = store.participant(room_id, agent_id)
+    previous_session = store.session(room_id, session_id)
+    provider_kind = clean_agent_session_provider_kind(
+        payload.get("provider_kind") or payload.get("provider") or previous_session.get("provider_kind")
+    )
+    runtime_sharing_policy = clean_codex_app_server_runtime_sharing_policy(
+        payload.get("runtime_sharing_policy") or previous_session.get("runtime_sharing_policy")
+    )
+    room = store.create_room(room_id, label=clean_lobby_text(payload.get("label"), limit=128))
+    participant, participant_created = store.upsert_participant(
+        room_id,
+        {
+            "participant_id": agent_id,
+            "display_name": clean_lobby_text(payload.get("display_name"), limit=64) or agent_id,
+            "role": "agent",
+            "participant_type": "local",
+            "status": "joined",
+            "session_id": session_id,
+            "owner_id": owner_id,
+            "created_by": created_by,
+            "provider_kind": provider_kind,
+            "model": clean_lobby_text(payload.get("model") or payload.get("model_id"), limit=128),
+            "effort": clean_lobby_text(payload.get("effort"), limit=64),
+            "sandbox": clean_lobby_text(payload.get("sandbox") or payload.get("codex_sandbox"), limit=64),
+            "permissions": clean_lobby_text(payload.get("permissions") or payload.get("permission_option"), limit=64),
+            "workspace": clean_lobby_text(payload.get("workspace") or payload.get("cwd"), limit=300),
+            "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
+            "runtime_sharing_policy": runtime_sharing_policy,
+        },
+    )
+    session, session_created = store.upsert_session(
+        room_id,
+        {
+            "session_id": session_id,
+            "participant_id": agent_id,
+            "provider_session_id": clean_provider_session_id(
+                payload.get("provider_session_id") or payload.get("codex_session_id") or previous_session.get("provider_session_id")
+            ),
+            "display_name": participant["display_name"],
+            "status": "attached",
+            "owner_id": owner_id,
+            "created_by": created_by,
+            "provider_kind": provider_kind,
+            "model": clean_lobby_text(payload.get("model") or payload.get("model_id"), limit=128),
+            "effort": clean_lobby_text(payload.get("effort"), limit=64),
+            "sandbox": clean_lobby_text(payload.get("sandbox") or payload.get("codex_sandbox"), limit=64),
+            "permissions": clean_lobby_text(payload.get("permissions") or payload.get("permission_option"), limit=64),
+            "workspace": clean_lobby_text(payload.get("workspace") or payload.get("cwd"), limit=300),
+            "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
+            "runtime_sharing_policy": runtime_sharing_policy,
+            "diagnostics": payload.get("diagnostics") if isinstance(payload.get("diagnostics"), list) else [],
+        },
+    )
+    if participant_created or previous_participant.get("status") != "joined":
+        store.append_event(room_id, "participant_joined", participant_id=agent_id, session_id=session_id)
+    if session_created or previous_session.get("status") not in {"attached", ""}:
+        store.append_event(room_id, "session_attached", participant_id=agent_id, session_id=session_id)
+    store.append_event(
+        room_id,
+        "agent_session_created",
+        participant_id=agent_id,
+        session_id=session_id,
+        owner_id=owner_id,
+        created_by=created_by,
+    )
+    launch = {"process_status": "not_started", "diagnostics": []}
+    if bool(payload.get("start")):
+        service = process_service or AgentSessionProcessService(command_runner=command_runner)
+        launch = service.resume(store, room_id, agent_id, session, payload)
+    return {
+        "status": "created" if participant_created or session_created else "updated",
+        "state_status": "created" if participant_created or session_created else "updated",
         **launch,
         "room": room,
         "participant": participant,
@@ -478,6 +583,176 @@ def run_agent_session_turn_payload(
         "events": appended,
         "diagnostics": _diagnostic_items(runtime_state),
     }
+
+
+def run_next_agent_session_turn_payload(
+    output_root: Path,
+    payload: dict[str, object],
+    *,
+    turn_runner: AgentTurnRunner | None = None,
+    turn_command_runner: AgentTurnCommandRunner | None = None,
+    turn_command_streamer: AgentTurnCommandStreamer | None = None,
+    turn_adapter: AgentTurnAdapter | None = None,
+) -> dict[str, object]:
+    store = RoomStore(output_root)
+    room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
+    if not room_id:
+        raise ValueError("room_id is required.")
+    trigger_event_id = clean_lobby_text(payload.get("trigger_event_id"), limit=128)
+    trigger_event = _agent_session_trigger_event(store.read_events(room_id), trigger_event_id)
+    if not trigger_event:
+        raise ValueError("No public room message is available for the next Agent Session turn.")
+    candidates = _ordered_agent_session_candidates(store, room_id)
+    if not candidates:
+        raise ValueError("No active Agent Session participant is available.")
+    participant, session = _next_ordered_agent_session(store.read_events(room_id), candidates)
+    turn_id = clean_lobby_text(payload.get("turn_id"), limit=128) or f"turn-{uuid4().hex[:12]}"
+    queued = store.append_event(
+        room_id,
+        "turn_queued",
+        participant_id=participant["participant_id"],
+        session_id=session["session_id"],
+        trigger_event_id=trigger_event["id"],
+        turn_id=turn_id,
+    )
+    assigned = store.append_event(
+        room_id,
+        "turn_assigned",
+        participant_id=participant["participant_id"],
+        session_id=session["session_id"],
+        trigger_event_id=trigger_event["id"],
+        turn_id=turn_id,
+    )
+    result = run_agent_session_turn_payload(
+        output_root,
+        {
+            **payload,
+            "room_id": room_id,
+            "agent_id": participant["participant_id"],
+            "session_id": session["session_id"],
+            "instruction": "Respond to the latest room message.",
+            "turn_id": turn_id,
+        },
+        turn_runner=turn_runner,
+        turn_command_runner=turn_command_runner,
+        turn_command_streamer=turn_command_streamer,
+        turn_adapter=turn_adapter,
+    )
+    return {
+        **result,
+        "participant_id": participant["participant_id"],
+        "session_id": session["session_id"],
+        "trigger_event_id": trigger_event["id"],
+        "events": [queued, assigned, *(result.get("events") if isinstance(result.get("events"), list) else [])],
+    }
+
+
+def enqueue_agent_session_auto_turn_for_lobby_event(
+    output_root: Path,
+    lobby_event: dict[str, object],
+    *,
+    turn_runner: AgentTurnRunner | None = None,
+    turn_command_runner: AgentTurnCommandRunner | None = None,
+    turn_command_streamer: AgentTurnCommandStreamer | None = None,
+    turn_adapter: AgentTurnAdapter | None = None,
+    run_background: bool = True,
+) -> dict[str, object]:
+    room_message = _room_store_message_from_lobby_event(lobby_event)
+    if not room_message:
+        return {"status": "ignored", "reason": "not_human_room_message"}
+    store = RoomStore(output_root)
+    room_id = str(room_message["room_id"])
+    store.create_room(room_id)
+    room_event = store.append_event(
+        room_id,
+        "message_final",
+        actor_id=room_message.get("actor_id", ""),
+        actor_type=room_message.get("actor_type", "human"),
+        content=room_message["content"],
+        lobby_event_id=room_message.get("lobby_event_id", ""),
+    )
+    if not _ordered_agent_session_candidates(store, room_id):
+        return {"status": "no_agent_session", "room_event": room_event}
+    job = {
+        "output_root": output_root,
+        "room_id": room_id,
+        "trigger_event_id": room_event["id"],
+        "turn_runner": turn_runner,
+        "turn_command_runner": turn_command_runner,
+        "turn_command_streamer": turn_command_streamer,
+        "turn_adapter": turn_adapter,
+    }
+    if not run_background:
+        result = _run_agent_session_auto_turn_job(job)
+        return {**result, "room_event": room_event}
+    queued = _queue_agent_session_auto_turn_job(job)
+    return {**queued, "room_event": room_event}
+
+
+def _queue_agent_session_auto_turn_job(job: dict[str, object]) -> dict[str, object]:
+    room_id = str(job["room_id"])
+    with _AUTO_TURN_QUEUE_LOCK:
+        queue = _AUTO_TURN_QUEUES.setdefault(room_id, deque())
+        if len(queue) >= AGENT_SESSION_AUTO_TURN_QUEUE_LIMIT:
+            RoomStore(Path(job["output_root"])).append_event(
+                room_id,
+                "error",
+                actor_id="agent_session_auto_turn",
+                content="Agent Session auto-turn queue is full.",
+                trigger_event_id=job.get("trigger_event_id", ""),
+            )
+            return {"status": "queue_full", "trigger_event_id": job.get("trigger_event_id", "")}
+        queue.append(job)
+        should_start = room_id not in _AUTO_TURN_WORKERS
+        if should_start:
+            _AUTO_TURN_WORKERS.add(room_id)
+    if should_start:
+        thread = threading.Thread(
+            target=_drain_agent_session_auto_turn_queue,
+            args=(room_id,),
+            daemon=True,
+            name=f"agent-session-auto-turn-{room_id}",
+        )
+        thread.start()
+    return {"status": "queued", "trigger_event_id": job.get("trigger_event_id", "")}
+
+
+def _drain_agent_session_auto_turn_queue(room_id: str) -> None:
+    while True:
+        with _AUTO_TURN_QUEUE_LOCK:
+            queue = _AUTO_TURN_QUEUES.get(room_id)
+            if not queue:
+                _AUTO_TURN_WORKERS.discard(room_id)
+                _AUTO_TURN_QUEUES.pop(room_id, None)
+                return
+            job = queue.popleft()
+        _run_agent_session_auto_turn_job(job)
+
+
+def _run_agent_session_auto_turn_job(job: dict[str, object]) -> dict[str, object]:
+    output_root = Path(job["output_root"])
+    room_id = str(job["room_id"])
+    try:
+        return run_next_agent_session_turn_payload(
+            output_root,
+            {
+                "room_id": room_id,
+                "trigger_event_id": job.get("trigger_event_id", ""),
+            },
+            turn_runner=job.get("turn_runner"),  # type: ignore[arg-type]
+            turn_command_runner=job.get("turn_command_runner"),  # type: ignore[arg-type]
+            turn_command_streamer=job.get("turn_command_streamer"),  # type: ignore[arg-type]
+            turn_adapter=job.get("turn_adapter"),  # type: ignore[arg-type]
+        )
+    except Exception as error:  # pragma: no cover - defensive for background worker
+        RoomStore(output_root).append_event(
+            room_id,
+            "error",
+            actor_id="agent_session_auto_turn",
+            content=clean_lobby_text(str(error), limit=1000),
+            trigger_event_id=job.get("trigger_event_id", ""),
+        )
+        return {"status": "error", "turn_status": "error", "message": str(error)}
 
 
 def agent_session_codex_jsonl_turn_runner(
@@ -2796,6 +3071,76 @@ def _latest_public_event_id(events: list[dict[str, object]]) -> str:
     return ""
 
 
+def _agent_session_trigger_event(events: list[dict[str, object]], trigger_event_id: str) -> dict[str, object]:
+    public_messages = [
+        event
+        for event in events
+        if clean_lobby_text(event.get("type"), limit=64) == "message_final"
+        and not clean_lobby_text(event.get("participant_id"), limit=128)
+    ]
+    if trigger_event_id:
+        for event in public_messages:
+            if clean_lobby_text(event.get("id"), limit=128) == trigger_event_id:
+                return event
+        return {}
+    return public_messages[-1] if public_messages else {}
+
+
+def _room_store_message_from_lobby_event(event: dict[str, object]) -> dict[str, object]:
+    kind = clean_lobby_text(event.get("kind"), limit=64) or "message"
+    room_id = clean_lobby_text(event.get("flow_meeting_id") or event.get("room_id") or event.get("meeting_id"), limit=128)
+    content = clean_lobby_text(event.get("message") or event.get("content"), limit=8000)
+    actor_type = clean_lobby_text(event.get("actor_type"), limit=64)
+    if kind != "message" or not room_id or not content:
+        return {}
+    if actor_type == "agent" or bool(event.get("live_agent_endpoint")):
+        return {}
+    return {
+        "room_id": room_id,
+        "content": content,
+        "actor_id": clean_lobby_text(event.get("actor_id") or event.get("name"), limit=128),
+        "actor_type": actor_type or "human",
+        "lobby_event_id": clean_lobby_text(event.get("id"), limit=128),
+    }
+
+
+def _ordered_agent_session_candidates(
+    store: RoomStore,
+    room_id: str,
+) -> list[tuple[dict[str, object], dict[str, object]]]:
+    sessions_by_participant = {
+        clean_lobby_text(session.get("participant_id"), limit=128): session
+        for session in store.sessions(room_id)
+        if clean_lobby_text(session.get("status"), limit=64) in {"attached", "available"}
+    }
+    candidates: list[tuple[dict[str, object], dict[str, object]]] = []
+    for participant in store.active_participants(room_id):
+        if clean_lobby_text(participant.get("role"), limit=64) != "agent":
+            continue
+        participant_id = clean_lobby_text(participant.get("participant_id"), limit=128)
+        session = sessions_by_participant.get(participant_id)
+        if session:
+            candidates.append((participant, session))
+    return candidates
+
+
+def _next_ordered_agent_session(
+    events: list[dict[str, object]],
+    candidates: list[tuple[dict[str, object], dict[str, object]]],
+) -> tuple[dict[str, object], dict[str, object]]:
+    candidate_ids = [clean_lobby_text(participant.get("participant_id"), limit=128) for participant, _ in candidates]
+    if not candidate_ids:
+        raise ValueError("No active Agent Session participant is available.")
+    for event in reversed(events):
+        if clean_lobby_text(event.get("type"), limit=64) != "turn_assigned":
+            continue
+        participant_id = clean_lobby_text(event.get("participant_id"), limit=128)
+        if participant_id not in candidate_ids:
+            continue
+        return candidates[(candidate_ids.index(participant_id) + 1) % len(candidates)]
+    return candidates[0]
+
+
 def _latest_own_message_event_id(events: list[dict[str, object]], participant_id: str) -> str:
     clean_participant = clean_lobby_text(participant_id, limit=128)
     for event in reversed(events):
@@ -3081,6 +3426,7 @@ def merge_room_store_members(output_root: Path, meeting_id: str, existing_member
     }
     for participant in active:
         participant_id = str(participant.get("participant_id") or "")
+        session = store.session(meeting_id, str(participant.get("session_id") or participant_id))
         existing = next(
             (
                 member
@@ -3098,6 +3444,18 @@ def merge_room_store_members(output_root: Path, meeting_id: str, existing_member
             "provider_kind": participant.get("provider_kind", ""),
             "connection_kind": "agent_session",
             "status": participant.get("status", ""),
+            "session_id": participant.get("session_id", ""),
+            "owner_id": participant.get("owner_id", ""),
+            "created_by": participant.get("created_by", ""),
+            "model_id": participant.get("model", ""),
+            "effort": participant.get("effort", ""),
+            "sandbox_enforcement": participant.get("sandbox", ""),
+            "permission_option": participant.get("permissions", ""),
+            "runtime_sharing_policy": participant.get("runtime_sharing_policy", ""),
+            "execution_mode": "agent_session_app_server",
+            "engagement_mode": "agent_session",
+            "join_semantics": "agent_session",
+            "session_status": session.get("status", ""),
             "source": "agent_session",
             "muted": bool(existing.get("muted", False)),
             "created_at": participant.get("created_at", ""),

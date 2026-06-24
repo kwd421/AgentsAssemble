@@ -147,6 +147,8 @@ export function providerExecutionLabel(
   agent: Pick<LiveAgent, "provider_kind" | "connection_kind" | "engagement_mode" | "join_semantics" | "execution_mode">
 ): string {
   const executionMode = String(agent.execution_mode || "").trim();
+  const connection = String(agent.connection_kind || "").trim();
+  if (connection === "agent_session" || executionMode === "agent_session_app_server") return "Agent Session";
   if (["baseline_call_resume", "call", "call_resume"].includes(executionMode)) return "baseline 호출형";
   if (executionMode === "runtime_managed_room_turn") return "runtime-managed";
   if (executionMode === "provider_tool_loop") return "provider tool-loop";
@@ -176,7 +178,6 @@ export function providerExecutionLabel(
   }
 
   const provider = String(agent.provider_kind || "").trim();
-  const connection = String(agent.connection_kind || "").trim();
   const pair = `${provider}/${connection}`;
   if (PROVIDER_EXECUTION_LABELS[pair]) return PROVIDER_EXECUTION_LABELS[pair];
   if (agent.engagement_mode === "self_service" && provider) return "Self-service";

@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Bot, CheckCircle2, Folder, LogIn, Play, Plus, X } from "lucide-react";
 import {
   checkFrontendLiveAgent,
-  createFrontendLiveAgent,
+  createAgentSession,
   fetchLiveAgentCreateOptions,
   fetchProviderSessions,
   startFrontendLiveAgentLogin,
+  type AgentSessionActionResponse,
   type FrontendLiveAgentCreateResponse,
   type FrontendLiveAgentCheckResponse,
   type LiveAgentCreateProvider,
@@ -17,7 +18,7 @@ type AgentCreateModalProps = {
   meetingId: string;
   roomLabel: string;
   onClose: () => void;
-  onCreated?: (result: FrontendLiveAgentCreateResponse) => void;
+  onCreated?: (result: AgentSessionActionResponse | FrontendLiveAgentCreateResponse) => void;
 };
 
 export default function AgentCreateModal({
@@ -181,7 +182,7 @@ export default function AgentCreateModal({
     setBusy("create");
     setStatus(effectiveStartNow ? "에이전트 시작 중..." : "에이전트 추가 중...");
     try {
-      const result = await createFrontendLiveAgent({
+      const result = await createAgentSession({
         meetingId,
         providerId,
         displayName,
@@ -195,7 +196,7 @@ export default function AgentCreateModal({
         sessionId,
         startNow: effectiveStartNow,
       });
-      setStatus(result.status === "starting" ? "시작 요청 완료" : "추가됨");
+      setStatus(result.process_status === "resumed" || result.process_status === "launched" ? "시작 요청 완료" : "추가됨");
       onCreated?.(result);
       onClose();
     } catch (error) {

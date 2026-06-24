@@ -26,7 +26,6 @@ import {
   createCompanionRoomInvite,
   createRoomInvite,
   configurePublicInvitePublicUrl,
-  fetchLiveAgents,
   fetchLiveAgentFlow,
   fetchLiveAgentProcesses,
   fetchPublicInviteStatus,
@@ -63,7 +62,6 @@ import {
   subscribeMeetingEvents,
   subscribeRoomEvents,
   type FlowResponse,
-  type LiveAgentsResponse,
   type MeetingStreamState,
   type MeetingLifecycleResponse,
   type LiveAgent,
@@ -366,15 +364,29 @@ function channelForActiveRoom(
   return channelConfig;
 }
 
-function mergeLiveAgentRosters(...rosters: Array<LiveAgent[] | undefined>): LiveAgent[] {
-  const byId = new Map<string, LiveAgent>();
-  rosters.forEach((roster) => {
-    (roster || []).forEach((agent) => {
-      if (!agent.agent_id) return;
-      byId.set(agent.agent_id, agent);
-    });
-  });
-  return Array.from(byId.values());
+function agentSessionMemberToLiveAgent(member: RoomMember): LiveAgent {
+  return {
+    agent_id: member.participant_id,
+    display_name: member.display_name || member.participant_id,
+    avatar_image_url: member.avatar_image_url,
+    owner_id: member.owner_id,
+    created_by: member.created_by,
+    status: member.thinking ? "working" : member.status || member.session_status || "online",
+    provider_kind: member.provider_kind || "agent_session",
+    connection_kind: member.connection_kind || "agent_session",
+    engagement_mode: member.engagement_mode || "agent_session",
+    meeting_id: member.meeting_id,
+    session_id: member.session_id || member.participant_id,
+    model_id: member.model_id,
+    effort: member.effort,
+    permission_option: member.permission_option,
+    sandbox_enforcement: member.sandbox_enforcement || "",
+    join_semantics: member.join_semantics || "agent_session",
+    execution_mode: member.execution_mode || "agent_session_app_server",
+    last_seen_at: member.last_seen_at || member.updated_at,
+    last_reply_at: member.updated_at,
+    capabilities: [],
+  };
 }
 
 function mobileViewportMatches() {
@@ -542,18 +554,6 @@ export default function App() {
       });
   }, [flowFetcher]);
   const flow = flowData?.flow ?? { status: "idle" };
-  const liveAgentsFetcher = useCallback((): Promise<LiveAgentsResponse> => {
-    if (guestLocked) return Promise.resolve({ agents: [] });
-    return fetchLiveAgents();
-  }, [guestLocked]);
-  const [liveAgentsData, setLiveAgentsData] = useState<LiveAgentsResponse | null>(null);
-  const refreshLiveAgents = useCallback(() => {
-    liveAgentsFetcher()
-      .then((payload) => setLiveAgentsData(payload))
-      .catch(() => {
-        // Live-agent registry refresh is best-effort for the member overlay.
-      });
-  }, [liveAgentsFetcher]);
   const processFetcher = useCallback((): Promise<LiveAgentProcessesResponse> => {
     if (guestLocked) return Promise.resolve({ groups: [] });
     return fetchLiveAgentProcesses();
@@ -738,7 +738,11 @@ export default function App() {
   }, [activeMafiaGameId]);
   const [mafiaData, , , refreshMafia] = usePoll<MafiaGameResponse>(mafiaFetcher, 3500);
 
-  const agents: LiveAgent[] = mergeLiveAgentRosters(flowData?.agents, liveAgentsData?.agents);
+  const activeRoomKey = roomSettingsKey(activeRoom);
+  const activeRoomMembers = roomMembersByRoom[activeRoomKey] || [];
+  const agents: LiveAgent[] = activeRoomMembers
+    .filter((member) => member.source === "agent_session")
+    .map(agentSessionMemberToLiveAgent);
   const activeProcessGroups = useMemo(
     () =>
       (processData?.groups || []).filter(
@@ -768,12 +772,6 @@ export default function App() {
     }),
     [guestLocked, guestOwnedAgentIds, localProcessAgentIds]
   );
-  const refreshSessionSurfaces = useCallback(() => {
-    refreshProcesses();
-    refreshFlow();
-    refreshLiveAgents();
-  }, [refreshFlow, refreshLiveAgents, refreshProcesses]);
-
   const expireGuestSession = useCallback(() => {
     persistRoomGuestSession(null);
     setGuestSession(null);
@@ -1122,8 +1120,6 @@ export default function App() {
       : "official"
     : "flow";
   const scopedAgents = agents.filter((agent) => roomHasAgent(activeRoom, agent));
-  const activeRoomKey = roomSettingsKey(activeRoom);
-  const activeRoomMembers = roomMembersByRoom[activeRoomKey] || [];
   const refreshMembers = useCallback(() => {
     if (!activeRoom.meetingId) return;
     // Through the public entrance the roster endpoint requires the guest
@@ -1139,6 +1135,11 @@ export default function App() {
         // Roster refresh is best-effort; a transient miss should not blank the room.
       });
   }, [activeRoom.meetingId, activeRoomKey, guestSession?.sessionToken]);
+  const refreshSessionSurfaces = useCallback(() => {
+    refreshProcesses();
+    refreshFlow();
+    refreshMembers();
+  }, [refreshFlow, refreshMembers, refreshProcesses]);
   const refreshSessionAndMembers = useCallback(() => {
     refreshSessionSurfaces();
     refreshMembers();
@@ -2100,9 +2101,8 @@ export default function App() {
 
   useEffect(() => {
     if (guestLocked) return;
-    refreshLiveAgents();
     refreshProcesses();
-  }, [guestLocked, refreshLiveAgents, refreshProcesses, activeRoom.meetingId]);
+  }, [guestLocked, refreshProcesses, activeRoom.meetingId]);
 
   useEffect(() => {
     refreshMembers();
@@ -2125,7 +2125,7 @@ export default function App() {
           [activeRoomKey]: members,
         }));
         if (!guestLocked) {
-          refreshLiveAgents();
+          refreshMembers();
           refreshProcesses();
         }
       },
@@ -2149,7 +2149,6 @@ export default function App() {
     activeRoomKey,
     guestLocked,
     guestSession?.sessionToken,
-    refreshLiveAgents,
     refreshMembers,
     refreshProcesses,
   ]);
@@ -2929,7 +2928,6 @@ export default function App() {
                 onSessionActionComplete={refreshSessionAndMembers}
                 quotaViewer={quotaViewer}
                 onStartAddAgent={openAgentCreate}
-                onSessionTurnComplete={refreshMembers}
                 memberSearchQuery={rightPanelSearchQuery}
                 onMemberSearchQueryChange={setRightPanelSearchQuery}
               />

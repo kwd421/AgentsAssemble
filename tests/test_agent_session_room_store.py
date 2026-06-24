@@ -20,8 +20,11 @@ from agentsassemble.agent_sessions import (
     build_agent_session_launch_plan,
     build_agent_session_turn_command,
     build_room_turn_packet,
+    create_agent_session_payload,
+    enqueue_agent_session_auto_turn_for_lobby_event,
     resume_agent_session_payload,
     runtime_profile_key,
+    run_next_agent_session_turn_payload,
     run_agent_session_turn_payload,
     room_sse_frames_after_cursor,
     stream_room_sse_frames,
@@ -93,6 +96,131 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             [event["type"] for event in store.read_events("room-a")].count("session_resumed"),
             2,
         )
+
+    def test_create_agent_session_payload_is_roomstore_source_of_truth(self):
+        result = create_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "display_name": "Agent One",
+                "owner_id": "user-local",
+                "created_by": "user-local",
+                "provider_kind": "codex_live_session",
+                "model": "gpt-5.3-codex-spark",
+                "effort": "medium",
+                "sandbox": "read-only",
+                "permissions": "never",
+                "runtime_sharing_policy": "isolated_session",
+            },
+        )
+
+        store = RoomStore(self.output_root)
+        participant = store.participant("room-a", "agent-1")
+        session = store.session("room-a", "agent-1")
+
+        self.assertEqual(result["status"], "created")
+        self.assertEqual(participant["owner_id"], "user-local")
+        self.assertEqual(participant["created_by"], "user-local")
+        self.assertEqual(participant["display_name"], "Agent One")
+        self.assertEqual(session["provider_kind"], "codex_live_session")
+        self.assertEqual(session["model"], "gpt-5.3-codex-spark")
+        self.assertEqual(session["runtime_sharing_policy"], "isolated_session")
+        self.assertIn("agent_session_created", [event["type"] for event in store.read_events("room-a")])
+
+    def test_room_message_schedules_next_agent_session_turn_without_side_instruction(self):
+        store = RoomStore(self.output_root)
+        create_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-a", "display_name": "Agent A"},
+        )
+        create_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-b", "display_name": "Agent B"},
+        )
+        user_event = store.append_event("room-a", "message_final", actor_id="human-1", content="방 메시지에 답해줘.")
+        seen_packets: list[dict[str, object]] = []
+
+        def fake_runner(packet: dict[str, object]):
+            seen_packets.append(packet)
+            yield {"type": "message_final", "content": "Agent reply"}
+
+        result = run_next_agent_session_turn_payload(
+            self.output_root,
+            {"room_id": "room-a", "trigger_event_id": user_event["id"]},
+            turn_runner=fake_runner,
+        )
+
+        events = store.read_events("room-a")
+        self.assertEqual(result["turn_status"], "finished")
+        self.assertEqual(result["participant_id"], "agent-a")
+        self.assertEqual(seen_packets[0]["current_turn_instruction"], "Respond to the latest room message.")
+        self.assertIn("방 메시지에 답해줘.", seen_packets[0]["provider_input"])
+        self.assertIn("turn_queued", [event["type"] for event in events])
+        self.assertIn("turn_assigned", [event["type"] for event in events])
+
+        second_user_event = store.append_event("room-a", "message_final", actor_id="human-1", content="다음 응답.")
+        second = run_next_agent_session_turn_payload(
+            self.output_root,
+            {"room_id": "room-a", "trigger_event_id": second_user_event["id"]},
+            turn_runner=fake_runner,
+        )
+        self.assertEqual(second["participant_id"], "agent-b")
+
+    def test_human_lobby_event_auto_enqueues_agent_session_turn(self):
+        create_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-a", "display_name": "Agent A"},
+        )
+        seen_packets: list[dict[str, object]] = []
+
+        def fake_runner(packet: dict[str, object]):
+            seen_packets.append(packet)
+            yield {"type": "message_final", "content": "자동 응답"}
+
+        result = enqueue_agent_session_auto_turn_for_lobby_event(
+            self.output_root,
+            {
+                "id": "lobby-1",
+                "kind": "message",
+                "message": "방에 쓴 말에 답해줘.",
+                "flow_meeting_id": "room-a",
+                "actor_id": "human-1",
+                "actor_type": "human",
+            },
+            turn_runner=fake_runner,
+            run_background=False,
+        )
+
+        events = RoomStore(self.output_root).read_events("room-a")
+        self.assertEqual(result["status"], "finished")
+        self.assertEqual(result["participant_id"], "agent-a")
+        self.assertEqual(result["room_event"]["type"], "message_final")
+        self.assertIn("방에 쓴 말에 답해줘.", seen_packets[0]["provider_input"])
+        self.assertIn("turn_queued", [event["type"] for event in events])
+        self.assertEqual(events[-2]["content"], "자동 응답")
+
+    def test_agent_lobby_event_does_not_auto_chain_agent_session_turn(self):
+        create_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-a", "display_name": "Agent A"},
+        )
+
+        result = enqueue_agent_session_auto_turn_for_lobby_event(
+            self.output_root,
+            {
+                "id": "lobby-agent",
+                "kind": "message",
+                "message": "agent reply",
+                "flow_meeting_id": "room-a",
+                "actor_id": "agent-a",
+                "actor_type": "agent",
+            },
+            run_background=False,
+        )
+
+        self.assertEqual(result["status"], "ignored")
+        self.assertNotIn("turn_queued", [event["type"] for event in RoomStore(self.output_root).read_events("room-a")])
 
     def test_export_marks_participant_and_session_and_writes_handoff_packet(self):
         resume_agent_session_payload(

@@ -103,6 +103,8 @@ surface rather than silently counted as React parity.
 | `/api/rooms/archive` | POST | exact | `archiveRoom()` | yes | Moderation endpoint that hides archived rooms from default room lists while preserving file-backed room data. |
 | `/api/rooms/state` | GET | exact | `-` | no | RoomStore state projection endpoint; not wrapped by React preview yet. |
 | `/api/rooms/close` | POST | exact | `-` | no | RoomStore close endpoint; not wrapped by React preview yet. |
+| `/api/agent-sessions` | POST | exact | `createAgentSession()` | yes | React Add Agent creates RoomStore-backed Agent Session participants/sessions as the canonical room roster source; legacy live-agent creation is compatibility-only. |
+| `/api/agent-sessions/next-turn` | POST | exact | `runNextAgentSessionTurn()` | yes | React Agent Session call control asks the ordered RoomTurnScheduler to pick the next active Agent Session from the latest public room message. |
 | `/api/agent-sessions/resume` | POST | exact | `resumeAgentSession()` | yes | React member detail panel attaches canonical Agent Session state and reports process status separately; process launch remains explicit. |
 | `/api/agent-sessions/turn` | POST | exact | `runAgentSessionTurn()` | yes | Host/operator Agent Session turn execution endpoint; active room results are consumed through RoomStore SSE after the direct operator call. |
 | `/api/live-agent-discovery` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
@@ -146,7 +148,7 @@ surface rather than silently counted as React parity.
 | `/api/live-agent-sessions/stop` | POST | exact | `stopLiveAgentSession()` | yes | React member detail panel can stop an existing provider session group. |
 | `/api/live-agent-sessions/stop-agent` | POST | exact | `stopLiveAgentSessionAgent()` | yes | React member detail panel can stop one running agent-owned process group when the supervisor can prove single-agent ownership; multi-agent groups stay grouped. |
 | `/api/live-agent-smoke` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
-| `/api/live-agents` | GET | exact | `fetchLiveAgents()` | yes | React polls the live-agent registry for the member panel roster overlay (5s). |
+| `/api/live-agents` | GET | exact | `-` | no | Vanilla/admin/operator compatibility endpoint; normal React room roster uses `/api/room-members` plus RoomStore Agent Session rows instead. |
 | `/api/live-agents` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agents/{agent_id}/engagement` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agents/{agent_id}/heartbeat` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |

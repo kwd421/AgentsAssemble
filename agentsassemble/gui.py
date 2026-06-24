@@ -53,7 +53,7 @@ from agentsassemble.live_agent_frontend_create import (
     frontend_live_agent_options_payload,
 )
 from agentsassemble.provider_sessions import list_provider_sessions
-from agentsassemble.gui_room_http import register_room_routes
+from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
 from agentsassemble.live_agent_room_admin import (
@@ -195,7 +195,7 @@ from agentsassemble.room_users import (
     user_for_participant,
 )
 from agentsassemble.room_settings import room_settings_payload, update_room_settings
-from agentsassemble.agent_sessions import room_sse_frames_after_cursor
+from agentsassemble.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
 from agentsassemble.user_profile import read_user_profile, update_user_profile
 from agentsassemble.room_invite import (
     active_sessions_summary,
@@ -8248,7 +8248,7 @@ def _make_handler(
             except AttachmentError as error:
                 raise WsSayRejected(str(error), category="bad_message") from error
             try:
-                return governed_lobby_say(
+                event = governed_lobby_say(
                     output_root,
                     identity=ActorIdentity.from_mapping(identity),
                     payload=resolved,
@@ -8256,6 +8256,12 @@ def _make_handler(
                     public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
                     is_muted=is_room_member_muted,
                 )
+                enqueue_agent_session_auto_turn_for_lobby_event(
+                    output_root,
+                    event,
+                    turn_adapter=_local_agent_session_turn_adapter,
+                )
+                return event
             except GovernedLobbySayRejected as rejected:
                 raise WsSayRejected(str(rejected), category=rejected.category) from rejected
 
@@ -8822,6 +8828,11 @@ def _make_handler(
                     output_root,
                     payload,
                     allow_flow_metadata=_public_lobby_allows_room_scope(payload),
+                )
+                enqueue_agent_session_auto_turn_for_lobby_event(
+                    output_root,
+                    event,
+                    turn_adapter=_local_agent_session_turn_adapter,
                 )
                 self._send_json(
                     {
