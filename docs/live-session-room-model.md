@@ -2,7 +2,20 @@
 
 AgentsAssemble must model a shared council room, not a survey runner that interviews agents one at a time.
 
-Current supported product surface: **turn-based Agent Sessions**.
+Current new MVP surface: **local interactive CLI-first #general MVP**.
+
+The active implementation direction is one `#general` room where persistent
+local CLI sessions read only events after their last cursor and write terminal
+output back as room events. The first runtime boundary is `AgentRuntime`, with
+`LiveCliRuntime` as the primary implementation for Codex CLI, Claude Code CLI,
+Gemini CLI, and similar terminal-first agents. API runtime is later
+compatibility and must implement the same event contract; it must not lower the
+interface to complete(prompt) -> text.
+
+The previous turn-based Agent Session and meeting/research/decision/archive
+pipeline stays legacy for this MVP. It may remain available for historical
+tests and smoke checks, but it is not the product center for the new `#general`
+room.
 
 An Agent Session is a real local/resumable AI CLI session attached to a room,
 with persisted identity, model, effort, sandbox/permission settings, joined or

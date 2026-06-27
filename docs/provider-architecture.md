@@ -2,7 +2,21 @@
 
 AgentsAssemble should support many providers without making the meeting runner know each provider's internal rules.
 
-Current user-facing model: **Agent Session**.
+Current new MVP model: **local interactive CLI-first #general MVP**.
+
+The primary provider boundary is now `AgentRuntime`: `start()`,
+`deliver(events)`, `read_output()`, `interrupt()`, `stop()`, `health()`, plus a
+per-runtime `last_seen_event_id` cursor. `LiveCliRuntime` is the default path
+for Codex CLI, Claude Code CLI, Gemini CLI, and similar local terminal agents.
+It keeps one real CLI process alive through PTY/tmux/expect-style interaction,
+delivers only new room events, and streams terminal output back to `#general`.
+The meeting/research/decision/archive pipeline stays legacy for this MVP.
+
+API runtime is later compatibility. API providers must implement the same
+AgentRuntime room-event contract before joining the room, and API convenience
+must not lower the interface to complete(prompt) -> text.
+
+Legacy user-facing model: **Agent Session**.
 
 Provider, adapter, runner, bridge, delegate, MCP, one-shot, and baseline are
 internal or historical implementation terms. The product surface should expose

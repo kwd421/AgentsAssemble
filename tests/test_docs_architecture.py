@@ -179,6 +179,20 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("codex_readonly", doc)
         self.assertIn("os_sandboxed", doc)
 
+    def test_docs_record_cli_first_general_room_mvp_direction(self):
+        operating_model = (ROOT / "docs" / "product" / "OPERATING_MODEL.md").read_text(encoding="utf-8")
+        live_session_model = (ROOT / "docs" / "live-session-room-model.md").read_text(encoding="utf-8")
+        provider_architecture = (ROOT / "docs" / "provider-architecture.md").read_text(encoding="utf-8")
+        combined = "\n".join([operating_model, live_session_model, provider_architecture])
+
+        self.assertIn("local interactive CLI-first #general MVP", combined)
+        self.assertIn("Codex CLI, Claude Code CLI, Gemini CLI", combined)
+        self.assertIn("AgentRuntime", combined)
+        self.assertIn("LiveCliRuntime", combined)
+        self.assertIn("API runtime is later compatibility", combined)
+        self.assertIn("must not lower the interface to complete(prompt) -> text", combined)
+        self.assertIn("meeting/research/decision/archive pipeline stays legacy", combined)
+
     def test_roadmap_mentions_room_event_log_and_live_session_adapter(self):
         doc = (ROOT / "docs" / "roadmap.md").read_text(encoding="utf-8")
 

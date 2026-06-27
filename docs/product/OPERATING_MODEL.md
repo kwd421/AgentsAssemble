@@ -16,6 +16,21 @@ practice.
 
 AgentsAssemble has two related but different product modes.
 
+New MVP direction:
+- The new MVP is a local interactive CLI-first #general MVP.
+- The goal is not an API-first multi-agent meeting runner. The goal is that
+  Codex CLI, Claude Code CLI, Gemini CLI, and similar real local CLIs stay
+  alive as long-running sessions and talk in one shared `#general` room like a
+  person talking to the CLI in a terminal.
+- The server watches room events and delivers only new events after each
+  agent's cursor. AgentsAssemble must not make the AI poll for work and must
+  not paste the full room transcript into every turn.
+- The meeting/research/decision/archive pipeline stays legacy for this MVP and
+  must not be silently connected to the new `#general` path.
+- API runtime is later compatibility: an API provider may join only by
+  implementing the same AgentRuntime room-event contract. API convenience must
+  not lower the interface to complete(prompt) -> text.
+
 Work Mode:
 - Runs auditable council meetings.
 - Keeps official turns, evidence, decisions, action items, and handoff packets.
