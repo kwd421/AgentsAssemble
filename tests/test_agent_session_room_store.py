@@ -860,6 +860,39 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertEqual(result["turn_status"], "finished")
         self.assertEqual(packets[0]["timeout_seconds"], 12)
 
+    def test_app_server_completion_signal_is_recorded_in_turn_diagnostics(self):
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "provider_kind": "codex_live_session",
+            },
+        )
+
+        result = run_agent_session_turn_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "instruction": "Answer.",
+            },
+            turn_adapter=lambda session, packet: [
+                {
+                    "type": "diagnostics",
+                    "app_server_completion_signal": "agent_message_final_thread_idle",
+                    "app_server_completion_inferred": True,
+                },
+                {"type": "message_final", "content": "ok"},
+            ],
+        )
+
+        diagnostics = {item["setting"]: item["status"] for item in result["diagnostics"] if isinstance(item, dict)}
+        self.assertEqual(diagnostics.get("app_server_completion_signal"), "agent_message_final_thread_idle")
+        self.assertEqual(diagnostics.get("app_server_completion_inferred"), "True")
+
     def test_app_server_turn_sends_provider_input_not_debug_packet(self):
         class Pipe:
             def __init__(self, lines=None):
@@ -1460,6 +1493,55 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertIn("thread/status/changed", settings["app_server_method_tail"])
         self.assertEqual(settings["provider_thread_id"], "thread-1")
         self.assertEqual(settings["provider_turn_id"], "turn-1")
+
+    def test_app_server_infers_turn_completion_from_final_agent_message_and_idle_thread(self):
+        class IdleAfterFinalRuntime(CodexAppServerRuntime):
+            def __init__(self):
+                super().__init__()
+                self.messages = [
+                    {
+                        "method": "turn/started",
+                        "params": {"threadId": "thread-1", "turnId": "turn-1", "turn": {"status": "inProgress"}},
+                    },
+                    {
+                        "method": "item/agentMessage/delta",
+                        "params": {"threadId": "thread-1", "turnId": "turn-1", "delta": "ok"},
+                    },
+                    {
+                        "method": "item/completed",
+                        "params": {
+                            "threadId": "thread-1",
+                            "turnId": "turn-1",
+                            "item": {"type": "agentMessage", "text": "ok"},
+                        },
+                    },
+                    {
+                        "method": "thread/status/changed",
+                        "params": {"threadId": "thread-1", "thread": {"status": {"type": "idle"}}},
+                    },
+                ]
+
+            def attach(self, ids):
+                return {"provider_thread_id": "thread-1"}
+
+            def _send_request(self, method, params, *, timeout_deadline=None):
+                return {"result": {"turn": {"id": "turn-1"}}}
+
+            def _read_json_line(self, *, timeout_deadline=None):
+                if self.messages:
+                    return self.messages.pop(0)
+                raise TimeoutError("quiet after final agent message and idle thread")
+
+        runtime = IdleAfterFinalRuntime()
+
+        chunks = list(runtime.send_turn({}, {"provider_input": "answer"}))
+        diagnostics = runtime.diagnose({})
+
+        self.assertIn({"type": "message_final", "content": "ok"}, chunks)
+        self.assertNotIn("error", [chunk.get("type") for chunk in chunks])
+        self.assertEqual(diagnostics.get("app_server_completion_signal"), "agent_message_final_thread_idle")
+        self.assertTrue(diagnostics.get("app_server_completion_inferred"))
+        self.assertEqual(diagnostics.get("turn_completed_ms"), 0)
 
     def test_diagnostics_snapshot_is_consistent_while_stderr_updates(self):
         runtime = CodexAppServerRuntime()

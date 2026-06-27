@@ -30,6 +30,8 @@ DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS = 20000
 CODEX_APP_SERVER_STDERR_TAIL_LINES = 50
 CODEX_APP_SERVER_STDERR_TAIL_CHARS = 16000
 CODEX_APP_SERVER_METHOD_TAIL_LENGTH = 50
+CODEX_APP_SERVER_IDLE_COMPLETION_GRACE_SECONDS = 1.0
+CODEX_APP_SERVER_INFERRED_TURN_COMPLETED_METHOD = "agentsassemble/turn_inferred_completed"
 DEFAULT_CODEX_APP_SERVER_RUNTIME_SHARING_POLICY = "isolated_session"
 CODEX_APP_SERVER_RUNTIME_SHARING_POLICIES = {"isolated_session", "shared_profile", "shared_profile_serial"}
 PROVIDER_ROOM_DELTA_MAX_EVENTS = 6
@@ -1124,8 +1126,18 @@ class CodexAppServerRuntime:
                         "content": clean_lobby_text(params.get("text") or params.get("content") or item.get("text"), limit=8000),
                     }
                     continue
-                if method in {"turn/completed"}:
-                    self._update_diagnostics({"turn_completed_ms": _elapsed_ms(started)})
+                if method in {"turn/completed", CODEX_APP_SERVER_INFERRED_TURN_COMPLETED_METHOD}:
+                    updates: dict[str, object] = {"turn_completed_ms": _elapsed_ms(started)}
+                    if method == CODEX_APP_SERVER_INFERRED_TURN_COMPLETED_METHOD:
+                        updates.update(
+                            {
+                                "app_server_completion_signal": "agent_message_final_thread_idle",
+                                "app_server_completion_inferred": True,
+                            }
+                        )
+                    else:
+                        updates.update({"app_server_completion_signal": "turn_completed", "app_server_completion_inferred": False})
+                    self._update_diagnostics(updates)
                     yield {"type": "diagnostics", **self._diagnostics_snapshot()}
                     return
                 if method in {"command_execution/request_approval", "file_change/request_approval", "permissions/request_approval"}:
@@ -1333,6 +1345,8 @@ class CodexAppServerRuntime:
         self._update_diagnostics(
             {
                 "app_server_error": "",
+                "app_server_completion_signal": "",
+                "app_server_completion_inferred": "",
                 "compaction_completed_ms": "",
                 "compaction_started_ms": "",
                 "thread_reused": "",
@@ -1431,16 +1445,48 @@ class CodexAppServerRuntime:
         turn_id: str = "",
         timeout_deadline: float | None = None,
     ) -> Iterable[dict[str, object]]:
+        agent_message_completed = False
+        thread_idle_after_agent_message = False
+        inferred_completion_deadline: float | None = None
         while True:
-            message = self._pop_matching_pending_message(thread_id=thread_id, turn_id=turn_id)
-            if message is None:
-                message = self._read_json_line(timeout_deadline=timeout_deadline)
-                if not self._message_matches_active_turn(message, thread_id=thread_id, turn_id=turn_id):
-                    self._buffer_unmatched_notification(message)
-                    continue
+            try:
+                message = self._pop_matching_pending_message(thread_id=thread_id, turn_id=turn_id)
+                if message is None:
+                    read_deadline = _earlier_deadline(timeout_deadline, inferred_completion_deadline)
+                    message = self._read_json_line(timeout_deadline=read_deadline)
+                    if not self._message_matches_active_turn(message, thread_id=thread_id, turn_id=turn_id):
+                        self._buffer_unmatched_notification(message)
+                        continue
+            except TimeoutError:
+                if inferred_completion_deadline is not None:
+                    self._update_diagnostics(
+                        {
+                            "app_server_completion_signal": "agent_message_final_thread_idle",
+                            "app_server_completion_inferred": True,
+                        }
+                    )
+                    yield {
+                        "method": CODEX_APP_SERVER_INFERRED_TURN_COMPLETED_METHOD,
+                        "params": {
+                            "threadId": thread_id,
+                            "turnId": turn_id,
+                            "turn": {"id": turn_id, "status": "completed"},
+                            "completionSignal": "agent_message_final_thread_idle",
+                            "inferred": True,
+                        },
+                    }
+                    return
+                raise
             yield message
-            if clean_lobby_text(message.get("method"), limit=128) in {"turn/completed", "turn/error", "error"}:
+            method = clean_lobby_text(message.get("method"), limit=128)
+            if method in {"turn/completed", "turn/error", "error"}:
                 return
+            if _app_server_agent_message_completed(message):
+                agent_message_completed = True
+            if agent_message_completed and _app_server_thread_idle(message):
+                thread_idle_after_agent_message = True
+            if thread_idle_after_agent_message and inferred_completion_deadline is None:
+                inferred_completion_deadline = time.monotonic() + CODEX_APP_SERVER_IDLE_COMPLETION_GRACE_SECONDS
 
     def _pop_matching_pending_message(self, *, thread_id: str, turn_id: str) -> dict[str, object] | None:
         for index, message in enumerate(self._pending_messages):
@@ -2461,6 +2507,11 @@ def _elapsed_ms(started_monotonic: float) -> int:
     return int((time.monotonic() - started_monotonic) * 1000)
 
 
+def _earlier_deadline(*deadlines: float | None) -> float | None:
+    active = [deadline for deadline in deadlines if deadline is not None]
+    return min(active) if active else None
+
+
 def _command_shape_hash(command: list[str]) -> str:
     redacted = ["<id>" if index and command[index - 1] == "resume" else part for index, part in enumerate(command)]
     return hashlib.sha256(json.dumps(redacted, sort_keys=True).encode("utf-8")).hexdigest()[:16]
@@ -2500,6 +2551,8 @@ def _merge_runtime_diagnostics(state: dict[str, object], chunk: dict[str, object
         "thread_reused",
         "thread_resume_skipped",
         "app_server_initialize_ms",
+        "app_server_completion_signal",
+        "app_server_completion_inferred",
         "thread_start_ms",
         "thread_resume_ms",
         "turn_start_request_ms",
@@ -2653,6 +2706,29 @@ def _app_server_message_turn_status(message: dict[str, object]) -> str:
         or _nested_get(message, "params.turnStatus"),
         limit=128,
     )
+
+
+def _app_server_agent_message_completed(message: dict[str, object]) -> bool:
+    method = clean_lobby_text(message.get("method"), limit=128)
+    if method not in {
+        "agent_message/completed",
+        "agent-message/completed",
+        "item/agent_message/completed",
+        "item/completed",
+    }:
+        return False
+    if method == "item/completed":
+        return clean_lobby_text(_nested_get(message, "params.item.type"), limit=64) == "agentMessage"
+    return True
+
+
+def _app_server_thread_idle(message: dict[str, object]) -> bool:
+    if clean_lobby_text(message.get("method"), limit=128) != "thread/status/changed":
+        return False
+    status = _nested_get(message, "params.thread.status") or _nested_get(message, "params.status")
+    if isinstance(status, dict):
+        return clean_lobby_text(status.get("type"), limit=64) == "idle"
+    return clean_lobby_text(status, limit=128) == "idle"
 
 
 def _agent_session_resume_mode(session: dict[str, object]) -> str:
