@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.live_cli import live_cli_supported
-from agentsassemble.live_cli_smoke import run_live_cli_smoke
+from agentsassemble.live_cli_smoke import _marker_recalled, run_live_cli_smoke
 
 
 def _fake_cli_script(path: Path) -> None:
@@ -30,7 +30,30 @@ def _fake_cli_script(path: Path) -> None:
     )
 
 
+def _forgetful_cli_script(path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "import sys",
+                "for line in sys.stdin:",
+                "    text = line.strip()",
+                "    if not text:",
+                "        continue",
+                "    print('no marker here', flush=True)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 class LiveCliSmokeTests(unittest.TestCase):
+    def test_marker_recall_tolerates_terminal_layout_splitting(self):
+        self.assertTrue(_marker_recalled("grok-001", "Responding... grok-        001"))
+        self.assertTrue(_marker_recalled("antigravity-001", "antigravity Generating... 001"))
+        self.assertTrue(_marker_recalled("grok-001", "grok status text grok- 001"))
+        self.assertTrue(_marker_recalled("codex-001", "codex-001"))
+        self.assertFalse(_marker_recalled("grok-001", "grok-002"))
+
     def test_missing_command_is_unavailable_and_writes_result(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -82,6 +105,8 @@ class LiveCliSmokeTests(unittest.TestCase):
                                 "display_name": "Fake CLI",
                                 "command": [sys.executable, "-u", str(fake)],
                                 "cwd": str(root),
+                                "input_mode": "bracketed_paste",
+                                "submit_newline": "\r",
                                 "session_probe_prompt": (
                                     "AGENTSASSEMBLE_SESSION_MARKER=fake-001 를 기억해줘."
                                 ),
@@ -109,3 +134,43 @@ class LiveCliSmokeTests(unittest.TestCase):
         self.assertEqual(provider["pid_first_turn"], provider["pid_second_turn"])
         self.assertGreaterEqual(provider["ttfo_ms"][0], 0)
         self.assertGreaterEqual(provider["total_turn_ms"][1], 0)
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_marker_recall_failure_is_not_reported_as_ok(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            fake = root / "forgetful_cli.py"
+            _forgetful_cli_script(fake)
+            config = root / "providers.json"
+            config.write_text(
+                json.dumps(
+                    {
+                        "providers": [
+                            {
+                                "id": "forgetful",
+                                "kind": "live_cli",
+                                "display_name": "Forgetful CLI",
+                                "command": [sys.executable, "-u", str(fake)],
+                                "cwd": str(root),
+                                "session_probe_prompt": "AGENTSASSEMBLE_SESSION_MARKER=forgetful-001 를 기억해줘.",
+                                "memory_check_prompt": "아까 marker 값 뭐였지?",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_live_cli_smoke(
+                config_path=config,
+                output_root=root,
+                providers=["forgetful"],
+                approve_real_provider=True,
+                timeout_seconds=3,
+            )
+
+        provider = result["providers"][0]
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(provider["status"], "error")
+        self.assertFalse(provider["memory_marker_recalled"])
+        self.assertIn("memory marker", provider["last_error"])

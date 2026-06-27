@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import threading
 import time
+import fcntl
+import struct
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -242,6 +244,9 @@ class LiveCliRuntime:
         popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
         idle_quiet_seconds: float = 0.35,
         submit_newline: str = "\n",
+        input_mode: str = "line",
+        terminal_rows: int = 40,
+        terminal_columns: int = 120,
         max_output_bytes: int = 256_000,
     ) -> None:
         if not command:
@@ -255,6 +260,11 @@ class LiveCliRuntime:
         self._popen_factory = popen_factory
         self.idle_quiet_seconds = max(0.01, float(idle_quiet_seconds))
         self.submit_newline = submit_newline or "\n"
+        self.input_mode = clean_lobby_text(input_mode, limit=64) or "line"
+        if self.input_mode not in {"line", "bracketed_paste"}:
+            raise ValueError("input_mode must be line or bracketed_paste.")
+        self.terminal_rows = max(10, int(terminal_rows or 40))
+        self.terminal_columns = max(40, int(terminal_columns or 120))
         self.max_output_bytes = max(1, int(max_output_bytes))
         self.last_seen_event_id = ""
         self._lock = threading.RLock()
@@ -278,9 +288,14 @@ class LiveCliRuntime:
             assert pty is not None
             master_fd, slave_fd = pty.openpty()
             try:
-                _configure_slave_terminal(slave_fd)
+                _configure_slave_terminal(slave_fd, rows=self.terminal_rows, columns=self.terminal_columns)
                 process_env = os.environ.copy()
                 process_env.update(self.env)
+                if not process_env.get("TERM") or process_env.get("TERM") == "dumb":
+                    process_env["TERM"] = "xterm-256color"
+                process_env.setdefault("COLORTERM", "truecolor")
+                process_env.setdefault("COLUMNS", str(self.terminal_columns))
+                process_env.setdefault("LINES", str(self.terminal_rows))
                 process = self._popen_factory(
                     self.command,
                     stdin=slave_fd,
@@ -317,6 +332,18 @@ class LiveCliRuntime:
             event_id = clean_lobby_text(event.get("event_id"), limit=128)
             if event_id:
                 self.last_seen_event_id = event_id
+
+    def send(self, text: str) -> None:
+        self.start()
+        self._send_line(text)
+
+    def send_keys(self, sequence: str) -> None:
+        self.start()
+        process, fd = self._state_snapshot()
+        del process
+        data = str(sequence or "").encode("utf-8")
+        if data:
+            os.write(fd, data)
 
     def read_output(
         self,
@@ -427,6 +454,9 @@ class LiveCliRuntime:
             "pty": True,
             "transport": "pty",
             "is_one_shot": False,
+            "input_mode": self.input_mode,
+            "terminal_rows": self.terminal_rows,
+            "terminal_columns": self.terminal_columns,
             "running": running,
             "stopped": not running,
             "pid": process.pid if process is not None else None,
@@ -441,9 +471,7 @@ class LiveCliRuntime:
         process, fd = self._state_snapshot()
         del process
         payload = str(text or "")
-        if not payload.endswith(self.submit_newline):
-            payload += self.submit_newline
-        data = payload.encode("utf-8")
+        data = _terminal_input_bytes(payload, input_mode=self.input_mode, submit_newline=self.submit_newline)
         offset = 0
         while offset < len(data):
             writable = _select_writable(fd, 5.0)
@@ -888,7 +916,8 @@ def _mentions(content: str) -> set[str]:
     return {match.casefold() for match in re.findall(r"@([A-Za-z0-9_.-]+)", content or "")}
 
 
-def _configure_slave_terminal(fd: int) -> None:
+def _configure_slave_terminal(fd: int, *, rows: int = 40, columns: int = 120) -> None:
+    _set_terminal_window_size(fd, rows=rows, columns=columns)
     if termios is None:
         return
     attrs = termios.tcgetattr(fd)
@@ -896,6 +925,25 @@ def _configure_slave_terminal(fd: int) -> None:
     attrs[6][termios.VMIN] = 1
     attrs[6][termios.VTIME] = 0
     termios.tcsetattr(fd, termios.TCSANOW, attrs)
+
+
+def _set_terminal_window_size(fd: int, *, rows: int, columns: int) -> None:
+    if termios is None:
+        return
+    try:
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", int(rows), int(columns), 0, 0))
+    except OSError:
+        return
+
+
+def _terminal_input_bytes(text: str, *, input_mode: str, submit_newline: str) -> bytes:
+    payload = str(text or "")
+    newline = submit_newline or "\n"
+    if clean_lobby_text(input_mode, limit=64) == "bracketed_paste":
+        return f"\x1b[200~{payload}\x1b[201~{newline}".encode("utf-8")
+    if not payload.endswith(newline):
+        payload += newline
+    return payload.encode("utf-8")
 
 
 def _clean_terminal_text(response: bytes) -> str:

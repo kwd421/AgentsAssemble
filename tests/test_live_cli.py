@@ -56,6 +56,41 @@ class LiveCliRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime.last_seen_event_id, "evt-2")
 
     @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_live_cli_runtime_can_send_bracketed_paste_to_tui(self):
+        runtime = LiveCliRuntime(
+            "alpha",
+            [sys.executable, "-u", "-c", _fake_cli_script()],
+            idle_quiet_seconds=0.05,
+            input_mode="bracketed_paste",
+            submit_newline="\r",
+            terminal_columns=100,
+            terminal_rows=30,
+        )
+        try:
+            runtime.start()
+            runtime.deliver(
+                [
+                    {
+                        "event_id": "evt-1",
+                        "actor_id": "human",
+                        "actor_type": "user",
+                        "kind": "user_message",
+                        "content": "first",
+                    }
+                ]
+            )
+            first = runtime.read_output(timeout_seconds=2)
+            health = runtime.health()
+        finally:
+            runtime.stop()
+
+        self.assertIn("reply 1:", first["content"])
+        self.assertIn("#general human: first", first["content"])
+        self.assertEqual(health["input_mode"], "bracketed_paste")
+        self.assertEqual(health["terminal_columns"], 100)
+        self.assertEqual(health["terminal_rows"], 30)
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
     def test_live_cli_restart_replaces_process_after_stop(self):
         runtime = LiveCliRuntime("alpha", [sys.executable, "-u", "-c", _fake_cli_script()], idle_quiet_seconds=0.05)
         try:

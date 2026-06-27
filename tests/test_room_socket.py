@@ -3,7 +3,11 @@ import time
 import unittest
 from pathlib import Path
 
-from agentsassemble.live_cli_control import GeneralRoomController, LiveCliProviderSpec
+from agentsassemble.live_cli_control import (
+    DEFAULT_LIVE_CLI_PROVIDER_SPECS,
+    GeneralRoomController,
+    LiveCliProviderSpec,
+)
 from agentsassemble.room_socket import GeneralRoomSocketHub
 
 
@@ -80,6 +84,15 @@ def _wait_for_message(sent: list[dict[str, object]], message_type: str) -> dict[
 
 
 class GeneralRoomSocketHubTests(unittest.TestCase):
+    def test_default_live_cli_provider_specs_use_real_tui_commands(self):
+        by_id = {spec.agent_id: spec for spec in DEFAULT_LIVE_CLI_PROVIDER_SPECS}
+
+        self.assertEqual(by_id["codex"].command[:2], ["codex", "--no-alt-screen"])
+        self.assertEqual(by_id["codex"].input_mode, "bracketed_paste")
+        self.assertEqual(by_id["antigravity"].command[0], "agy")
+        self.assertEqual(by_id["antigravity"].input_mode, "bracketed_paste")
+        self.assertEqual(by_id["grok"].command[:2], ["grok", "--no-alt-screen"])
+
     def test_hello_sends_snapshot_with_backfill_after_cursor(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

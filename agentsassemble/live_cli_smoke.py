@@ -89,8 +89,10 @@ def _run_provider_smoke(
     reporter: Callable[[dict[str, object]], None] | None,
 ) -> dict[str, object]:
     agent_id = clean_lobby_text(spec.get("id"), limit=128)
-    command = [str(item) for item in spec.get("command", [])] if isinstance(spec.get("command"), list) else []
     display_name = clean_lobby_text(spec.get("display_name"), limit=128) or agent_id
+    first_prompt = str(spec.get("session_probe_prompt") or f"AGENTSASSEMBLE_SESSION_MARKER={agent_id}-001 를 기억해줘. 짧게 확인만 해.")
+    second_prompt = str(spec.get("memory_check_prompt") or "아까 내가 준 AGENTSASSEMBLE_SESSION_MARKER 값을 말해줘.")
+    command = _command_for_prompt(spec, first_prompt)
     base = {
         "agent_id": agent_id,
         "display_name": display_name,
@@ -110,6 +112,7 @@ def _run_provider_smoke(
         "memory_marker_recalled": False,
         "ttfo_ms": [],
         "total_turn_ms": [],
+        "output_tail": "",
         "alive_after_stop": False,
     }
     _report(reporter, {"type": "smoke_progress", "provider": agent_id, "phase": "resolve", "status": "running"})
@@ -126,18 +129,27 @@ def _run_provider_smoke(
         command,
         cwd=cwd,
         idle_quiet_seconds=float(spec.get("quiet_seconds") or 0.35),
+        submit_newline=str(spec.get("submit_newline") or "\r"),
+        input_mode=str(spec.get("input_mode") or "line"),
+        terminal_rows=int(spec.get("terminal_rows") or 40),
+        terminal_columns=int(spec.get("terminal_columns") or 120),
     )
-    first_prompt = str(spec.get("session_probe_prompt") or f"AGENTSASSEMBLE_SESSION_MARKER={agent_id}-001 를 기억해줘. 짧게 확인만 해.")
-    second_prompt = str(spec.get("memory_check_prompt") or "아까 내가 준 AGENTSASSEMBLE_SESSION_MARKER 값을 말해줘.")
     base["memory_marker"] = _marker_from_prompt(first_prompt)
     try:
         _report(reporter, {"type": "smoke_progress", "provider": agent_id, "phase": "start", "status": "running"})
         runtime.start()
         base.update(_runtime_provenance(runtime.health()))
-        first = _run_turn(runtime, "smoke_probe", first_prompt, timeout_seconds)
+        startup = _handle_startup(runtime, spec, timeout_seconds=min(10.0, timeout_seconds))
+        if startup:
+            base["startup_tail"] = startup[-4000:]
+        if _uses_initial_prompt_args(spec):
+            first = _read_turn(runtime, timeout_seconds=timeout_seconds)
+        else:
+            first = _run_turn(runtime, "smoke_probe", first_prompt, timeout_seconds)
         base["pid_first_turn"] = runtime.health().get("pid")
         base["ttfo_ms"].append(first["ttfo_ms"])  # type: ignore[union-attr]
         base["total_turn_ms"].append(first["total_turn_ms"])  # type: ignore[union-attr]
+        base["output_tail"] = str(first.get("content") or "")[-4000:]
         _report(reporter, {"type": "smoke_progress", "provider": agent_id, "phase": "memory_check", "status": "running"})
         second = _run_turn(runtime, "smoke_memory", second_prompt, timeout_seconds)
         base["pid_second_turn"] = runtime.health().get("pid")
@@ -145,7 +157,12 @@ def _run_provider_smoke(
         base["total_turn_ms"].append(second["total_turn_ms"])  # type: ignore[union-attr]
         base["same_pid_over_turns"] = bool(base["pid_first_turn"] and base["pid_first_turn"] == base["pid_second_turn"])
         marker = str(base["memory_marker"] or "")
-        base["memory_marker_recalled"] = bool(marker and marker in str(second.get("content") or ""))
+        base["memory_marker_recalled"] = _marker_recalled(marker, str(second.get("content") or ""))
+        base["output_tail"] = str(second.get("content") or "")[-4000:]
+        if not base["same_pid_over_turns"]:
+            raise RuntimeError("live CLI process pid changed between smoke turns")
+        if marker and not base["memory_marker_recalled"]:
+            raise RuntimeError("live CLI memory marker was not recalled")
         base["status"] = "ok"
         _report(reporter, {"type": "smoke_progress", "provider": agent_id, "phase": "complete", "status": "ok"})
     except Exception as error:
@@ -187,6 +204,52 @@ def _run_turn(runtime: LiveCliRuntime, event_id: str, prompt: str, timeout_secon
     }
 
 
+def _read_turn(runtime: LiveCliRuntime, *, timeout_seconds: float) -> dict[str, object]:
+    first_output_at: float | None = None
+    queued_at = time.monotonic()
+
+    def on_delta(_delta: str) -> None:
+        nonlocal first_output_at
+        if first_output_at is None:
+            first_output_at = time.monotonic()
+
+    output = runtime.read_output(timeout_seconds=timeout_seconds, on_delta=on_delta)
+    completed_at = time.monotonic()
+    return {
+        "content": str(output.get("content") or ""),
+        "ttfo_ms": _elapsed_ms(first_output_at or completed_at, queued_at),
+        "total_turn_ms": _elapsed_ms(completed_at, queued_at),
+    }
+
+
+def _command_for_prompt(spec: dict[str, object], first_prompt: str) -> list[str]:
+    command = [str(item) for item in spec.get("command", [])] if isinstance(spec.get("command"), list) else []
+    if not _uses_initial_prompt_args(spec):
+        return command
+    raw_args = spec.get("initial_prompt_args")
+    args = [str(item) for item in raw_args] if isinstance(raw_args, list) else ["{prompt}"]
+    return command + [arg.replace("{prompt}", first_prompt) for arg in args]
+
+
+def _uses_initial_prompt_args(spec: dict[str, object]) -> bool:
+    return bool(spec.get("initial_prompt_args") or spec.get("append_initial_prompt"))
+
+
+def _handle_startup(runtime: LiveCliRuntime, spec: dict[str, object], *, timeout_seconds: float) -> str:
+    startup_wait = float(spec.get("startup_wait_seconds") or 0)
+    if startup_wait > 0:
+        time.sleep(min(startup_wait, timeout_seconds))
+    output = runtime.read_available(timeout_seconds=0.5)
+    text = str(output.get("content") or "")
+    accept_contains = str(spec.get("startup_accept_contains") or "")
+    if accept_contains and accept_contains in text:
+        runtime.send_keys(str(spec.get("startup_accept_keys") or "\r"))
+        time.sleep(float(spec.get("startup_after_accept_wait_seconds") or 1.0))
+        output = runtime.read_available(timeout_seconds=0.5)
+        text += str(output.get("content") or "")
+    return text
+
+
 def _runtime_provenance(health: dict[str, object]) -> dict[str, object]:
     return {
         "resolved_executable": str(health.get("resolved_executable") or ""),
@@ -210,6 +273,27 @@ def _resolve_command(command: list[str]) -> str:
 def _marker_from_prompt(prompt: str) -> str:
     match = re.search(r"AGENTSASSEMBLE_SESSION_MARKER=([A-Za-z0-9_.-]+)", prompt)
     return match.group(1) if match else ""
+
+
+def _marker_recalled(marker: str, content: str) -> bool:
+    if not marker:
+        return False
+    if marker in content:
+        return True
+    compact_marker = re.sub(r"[^A-Za-z0-9]+", "", marker).casefold()
+    compact_content = re.sub(r"[^A-Za-z0-9]+", "", content).casefold()
+    if compact_marker and compact_marker in compact_content:
+        return True
+    marker_parts = [part for part in re.split(r"[^A-Za-z0-9]+", marker) if part]
+    if len(marker_parts) < 2:
+        return False
+    search_from = 0
+    for part in marker_parts:
+        index = compact_content.find(part.casefold(), search_from)
+        if index < 0:
+            return False
+        search_from = index + len(part)
+    return True
 
 
 def _overall_status(provider_results: list[object]) -> str:

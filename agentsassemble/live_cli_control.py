@@ -24,12 +24,33 @@ class LiveCliProviderSpec:
     cwd: str = ""
     default_responder: bool = True
     quiet_seconds: float = 0.35
+    input_mode: str = "line"
+    submit_newline: str = "\r"
+    terminal_rows: int = 40
+    terminal_columns: int = 120
 
 
 DEFAULT_LIVE_CLI_PROVIDER_SPECS = [
-    LiveCliProviderSpec(agent_id="codex", display_name="Codex CLI", command=["codex"]),
-    LiveCliProviderSpec(agent_id="antigravity", display_name="Antigravity CLI", command=["antigravity"]),
-    LiveCliProviderSpec(agent_id="grok", display_name="Grok CLI", command=["grok"]),
+    LiveCliProviderSpec(
+        agent_id="codex",
+        display_name="Codex CLI",
+        command=["codex", "--no-alt-screen", "--ask-for-approval", "never", "--sandbox", "read-only", "-C", "."],
+        input_mode="bracketed_paste",
+        quiet_seconds=4.0,
+    ),
+    LiveCliProviderSpec(
+        agent_id="antigravity",
+        display_name="Antigravity CLI",
+        command=["agy", "--dangerously-skip-permissions"],
+        input_mode="bracketed_paste",
+        quiet_seconds=4.0,
+    ),
+    LiveCliProviderSpec(
+        agent_id="grok",
+        display_name="Grok CLI",
+        command=["grok", "--no-alt-screen", "--always-approve", "--cwd", "."],
+        quiet_seconds=4.0,
+    ),
 ]
 
 
@@ -60,6 +81,10 @@ class GeneralRoomController:
                     spec.command,
                     cwd=spec.cwd or None,
                     idle_quiet_seconds=spec.quiet_seconds,
+                    input_mode=spec.input_mode,
+                    submit_newline=spec.submit_newline,
+                    terminal_rows=spec.terminal_rows,
+                    terminal_columns=spec.terminal_columns,
                 )
             )
         self.scheduler = RoomScheduler(
