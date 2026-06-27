@@ -75,19 +75,23 @@ class _JsonlOffsetMessageSource:
         self.home = Path(home or Path.home())
         self.cwd = Path(cwd).expanduser() if cwd else None
         self._offsets: dict[str, int] = {}
+        self._ignored_existing_paths: set[str] = set()
+        self._active_paths: set[str] = set()
 
     def prepare_start(self) -> None:
         self._offsets = {}
+        self._active_paths = set()
+        self._ignored_existing_paths = {str(path) for path in self._candidate_paths()}
 
     def begin_turn(self) -> None:
         self._offsets = {}
-        for path in self._candidate_paths():
+        for path in self._visible_candidate_paths():
             self._offsets[str(path)] = _safe_size(path)
 
     def poll(self, terminal_output: bytes, *, quiet: bool = False) -> LiveCliMessageSnapshot:
         del terminal_output, quiet
         latest = LiveCliMessageSnapshot(source_kind=self.source_kind)
-        for path in self._candidate_paths():
+        for path in self._visible_candidate_paths():
             path_key = str(path)
             start = self._offsets.get(path_key, 0)
             text, next_offset = _read_from_offset(path, start)
@@ -96,6 +100,7 @@ class _JsonlOffsetMessageSource:
                 continue
             snapshot = self._extract_from_text(text, source=str(path))
             if snapshot.content:
+                self._active_paths.add(path_key)
                 latest = snapshot
         return latest
 
@@ -107,6 +112,15 @@ class _JsonlOffsetMessageSource:
 
     def _candidate_paths(self) -> list[Path]:
         raise NotImplementedError
+
+    def _visible_candidate_paths(self) -> list[Path]:
+        paths: list[Path] = []
+        for path in self._candidate_paths():
+            key = str(path)
+            if key in self._ignored_existing_paths and key not in self._active_paths:
+                continue
+            paths.append(path)
+        return paths
 
     def _extract_from_text(self, text: str, *, source: str) -> LiveCliMessageSnapshot:
         raise NotImplementedError

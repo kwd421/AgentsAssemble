@@ -54,14 +54,20 @@ import {
   upsertRoomMember,
   applyMeetingStreamUpdate,
   initialMeetingStreamState,
+  openGeneralRoomSocket,
   openRoomSocket,
   type RoomSocketHandle,
+  mergeLobbyEvents,
   mergeSideChatEvents,
   meetingLiveEventsToTimelineEvents,
   meetingStreamStateForActiveMeeting,
   subscribeMeetingEvents,
   subscribeRoomEvents,
   type FlowResponse,
+  type GeneralRoomAgent,
+  type GeneralRoomEvent,
+  type GeneralRoomSocketHandle,
+  type GeneralRoomSocketServerMessage,
   type MeetingStreamState,
   type MeetingLifecycleResponse,
   type LiveAgent,
@@ -241,6 +247,113 @@ function appendAgentMentionables(names: string[], seen: Set<string>, agent: Live
 function appendMemberMentionables(names: string[], seen: Set<string>, member: RoomMember) {
   appendMentionableName(names, seen, member.display_name);
   appendMentionableName(names, seen, member.participant_id);
+}
+
+function generalRoomMetadataString(event: GeneralRoomEvent, key: string) {
+  const value = event.metadata?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function generalRoomTurnKey(event: GeneralRoomEvent) {
+  const sourceEventId = generalRoomMetadataString(event, "source_event_id");
+  if (!sourceEventId) return "";
+  return `${event.actor_id}:${sourceEventId}`;
+}
+
+function generalRoomLobbyId(event: GeneralRoomEvent) {
+  const turnKey = generalRoomTurnKey(event);
+  if (turnKey && ["agent_delta", "agent_message"].includes(event.kind)) {
+    return `live-cli:${turnKey}`;
+  }
+  return `live-cli:${event.event_id}`;
+}
+
+function generalRoomActorName(
+  event: GeneralRoomEvent,
+  agentsById: Record<string, GeneralRoomAgent>
+) {
+  if (event.actor_type === "user" && event.actor_id === "human") return "나";
+  const agent = agentsById[event.actor_id];
+  return agent?.display_name || event.actor_id || "system";
+}
+
+function generalRoomEventToLobbyEvent(
+  event: GeneralRoomEvent,
+  options: {
+    meetingId: string;
+    agentsById: Record<string, GeneralRoomAgent>;
+    streamingByTurnKey: Map<string, string>;
+  }
+): LobbyEvent | null {
+  const kind = String(event.kind || "");
+  const actorName = generalRoomActorName(event, options.agentsById);
+  const base = {
+    created_at: event.created_at,
+    name: actorName,
+    actor_id: event.actor_id,
+    actor_type: event.actor_type,
+    flow_event_type: "live_cli_room",
+    flow_meeting_id: options.meetingId,
+    channel: "lobby",
+  };
+  if (kind === "user_message") {
+    return {
+      ...base,
+      id: generalRoomLobbyId(event),
+      kind: "message",
+      side: event.actor_type === "user" ? "mine" : "other",
+      message: event.content,
+      flow_action: kind,
+    };
+  }
+  if (kind === "agent_delta") {
+    const turnKey = generalRoomTurnKey(event);
+    if (!turnKey || !event.content) return null;
+    const next = `${options.streamingByTurnKey.get(turnKey) || ""}${event.content}`.slice(-12000);
+    options.streamingByTurnKey.set(turnKey, next);
+    if (!next.trim()) return null;
+    return {
+      ...base,
+      id: `live-cli:${turnKey}`,
+      kind: "message",
+      side: "other",
+      message: next,
+      flow_action: kind,
+    };
+  }
+  if (kind === "agent_message") {
+    const turnKey = generalRoomTurnKey(event);
+    if (turnKey) options.streamingByTurnKey.set(turnKey, event.content);
+    return {
+      ...base,
+      id: generalRoomLobbyId(event),
+      kind: "message",
+      side: "other",
+      message: event.content,
+      flow_action: kind,
+    };
+  }
+  if (kind === "agent_error") {
+    return {
+      ...base,
+      id: generalRoomLobbyId(event),
+      kind: "system",
+      side: "other",
+      message: event.content || "Agent Session failed.",
+      flow_action: kind,
+    };
+  }
+  if (kind === "system") {
+    return {
+      ...base,
+      id: generalRoomLobbyId(event),
+      kind: "system",
+      side: "other",
+      message: event.content,
+      flow_action: kind,
+    };
+  }
+  return null;
 }
 
 const CHANNELS: ChannelConfig[] = [
@@ -587,11 +700,29 @@ export default function App() {
   const [roomSocket, setRoomSocket] = useState<RoomSocketHandle | null>(null);
   const lobbyStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
   const flowStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
+  const generalRoomSocketRef = useRef<GeneralRoomSocketHandle | null>(null);
+  const generalRoomLastEventIdRef = useRef("");
+  const generalRoomSeenInitialSnapshotRef = useRef(false);
+  const generalRoomLobbyEventsRef = useRef<LobbyEvent[]>([]);
+  const generalRoomStreamingByTurnKeyRef = useRef<Map<string, string>>(new Map());
+  const generalRoomAgentsByIdRef = useRef<Record<string, GeneralRoomAgent>>({});
+  const [generalRoomAgentsById, setGeneralRoomAgentsById] = useState<Record<string, GeneralRoomAgent>>({});
   const roomEventCursorRef = useRef("");
   const [roomEventsByRoom, setRoomEventsByRoom] = useState<Record<string, RoomEvent[]>>({});
   const [agentSessionProgressByRoom, setAgentSessionProgressByRoom] = useState<Record<string, AgentSessionProgress | null>>({});
+  const rememberGeneralRoomLobbyEvents = useCallback((incoming: LobbyEvent[]) => {
+    if (!incoming.length) return;
+    generalRoomLobbyEventsRef.current = mergeLobbyEvents(
+      generalRoomLobbyEventsRef.current,
+      incoming
+    );
+    lobbyStreamRef.current?.(incoming);
+  }, []);
   const bindLobbyStream = useCallback((receive: (events: LobbyEvent[]) => void) => {
     lobbyStreamRef.current = receive;
+    if (generalRoomLobbyEventsRef.current.length) {
+      receive(generalRoomLobbyEventsRef.current);
+    }
     return () => {
       if (lobbyStreamRef.current === receive) {
         lobbyStreamRef.current = null;
@@ -713,6 +844,75 @@ export default function App() {
       return null;
     }
     return undefined;
+  }, []);
+  const applyGeneralRoomAgents = useCallback((agents: GeneralRoomAgent[]) => {
+    const byId: Record<string, GeneralRoomAgent> = {};
+    agents.forEach((agent) => {
+      if (agent.agent_id) byId[agent.agent_id] = agent;
+    });
+    generalRoomAgentsByIdRef.current = byId;
+    setGeneralRoomAgentsById(byId);
+  }, []);
+  const applyGeneralRoomEvents = useCallback(
+    (events: GeneralRoomEvent[]) => {
+      if (!events.length) return;
+      const nextLobbyEvents: LobbyEvent[] = [];
+      events.forEach((event) => {
+        if (event.event_id) generalRoomLastEventIdRef.current = event.event_id;
+        const lobbyEvent = generalRoomEventToLobbyEvent(event, {
+          meetingId: activeRoom.meetingId,
+          agentsById: generalRoomAgentsByIdRef.current,
+          streamingByTurnKey: generalRoomStreamingByTurnKeyRef.current,
+        });
+        if (lobbyEvent) nextLobbyEvents.push(lobbyEvent);
+      });
+      rememberGeneralRoomLobbyEvents(nextLobbyEvents);
+    },
+    [activeRoom.meetingId, rememberGeneralRoomLobbyEvents]
+  );
+  const applyGeneralRoomServerMessage = useCallback(
+    (message: GeneralRoomSocketServerMessage) => {
+      if (message.type === "snapshot") {
+        applyGeneralRoomAgents(message.agents || []);
+        if (!generalRoomSeenInitialSnapshotRef.current) {
+          generalRoomSeenInitialSnapshotRef.current = true;
+          const lastEvent = message.events?.[message.events.length - 1];
+          if (lastEvent?.event_id) generalRoomLastEventIdRef.current = lastEvent.event_id;
+          return;
+        }
+        applyGeneralRoomEvents(message.events || []);
+        return;
+      }
+      if (message.type === "agent_state") {
+        const agent = message.agent;
+        setGeneralRoomAgentsById((previous) => {
+          const next = { ...previous, [agent.agent_id]: agent };
+          generalRoomAgentsByIdRef.current = next;
+          return next;
+        });
+        return;
+      }
+      if (message.type === "agent_delta" && message.event) {
+        applyGeneralRoomEvents([message.event]);
+        return;
+      }
+      if ((message.type === "room_event" || message.type === "agent_message") && message.event) {
+        applyGeneralRoomEvents([message.event]);
+        return;
+      }
+      if (message.type === "error" && message.event) {
+        applyGeneralRoomEvents([message.event]);
+      }
+    },
+    [applyGeneralRoomAgents, applyGeneralRoomEvents]
+  );
+  const submitGeneralRoomMessage = useCallback(async (message: string): Promise<LobbyEvent[]> => {
+    const socket = generalRoomSocketRef.current;
+    if (!socket?.ready()) {
+      throw new Error("Live CLI room socket is not connected.");
+    }
+    socket.send({ type: "user_message", content: message, actor_id: "human" });
+    return [];
   }, []);
   useEffect(() => {
     const meetingId = activeRoom.meetingId || "";
@@ -1168,10 +1368,14 @@ export default function App() {
       const names: string[] = [];
       appendMentionableName(names, seen, "나");
       scopedAgents.forEach((agent) => appendAgentMentionables(names, seen, agent));
+      Object.values(generalRoomAgentsById).forEach((agent) => {
+        appendMentionableName(names, seen, agent.display_name);
+        appendMentionableName(names, seen, agent.agent_id);
+      });
       activeRoomMembers.forEach((member) => appendMemberMentionables(names, seen, member));
       return names;
     },
-    [activeRoomMembers, scopedAgents]
+    [activeRoomMembers, generalRoomAgentsById, scopedAgents]
   );
   const scopedOnlineCount = scopedAgents.filter((agent) => isActivePresence(agent.status)).length;
   // Participants currently generating a reply (status "working") — drives the
@@ -1190,11 +1394,16 @@ export default function App() {
     scopedAgents.forEach((agent) => {
       if (agent.status === "working") add(agent.display_name || agent.agent_id);
     });
+    Object.values(generalRoomAgentsById).forEach((agent) => {
+      if (agent.status === "busy" || agent.status === "starting") {
+        add(agent.display_name || agent.agent_id);
+      }
+    });
     activeRoomMembers.forEach((member) => {
       if (member.thinking) add(member.display_name || member.participant_id);
     });
     return names;
-  }, [scopedAgents, activeRoomMembers]);
+  }, [scopedAgents, generalRoomAgentsById, activeRoomMembers]);
   const activeChannelSettings = roomChannelSettings[activeRoomKey] || {};
   const activeCustomChannels = roomCustomChannels[activeRoomKey] || [];
   const activeCustomChannel = activeCustomChannels.find((item) => item.id === channel) || null;
@@ -2154,6 +2363,21 @@ export default function App() {
   ]);
 
   useEffect(() => {
+    if (guestLocked) return undefined;
+    const socket = openGeneralRoomSocket({
+      afterEventId: generalRoomLastEventIdRef.current,
+      onMessage: applyGeneralRoomServerMessage,
+    });
+    generalRoomSocketRef.current = socket;
+    return () => {
+      if (generalRoomSocketRef.current === socket) {
+        generalRoomSocketRef.current = null;
+      }
+      socket.close();
+    };
+  }, [applyGeneralRoomServerMessage, guestLocked]);
+
+  useEffect(() => {
     const roomId = activeRoom.meetingId || "";
     if (!roomId) return undefined;
     roomEventCursorRef.current = "";
@@ -2754,6 +2978,7 @@ export default function App() {
             agents={scopedAgents}
             mentionables={scopedMentionables}
             bindLobbyStream={bindLobbyStream}
+            submitMessage={!guestLocked ? submitGeneralRoomMessage : undefined}
             roomSessionToken={lobbyPostingState.sessionToken}
             localDisplayName={guestSession?.displayName || ""}
             canManageRoom={!guestLocked}

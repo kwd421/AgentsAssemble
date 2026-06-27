@@ -8,6 +8,7 @@ from agentsassemble.live_cli_control import (
     GeneralRoomController,
     LiveCliProviderSpec,
 )
+from agentsassemble.live_cli import GeneralRoomEventStore
 from agentsassemble.room_socket import GeneralRoomSocketHub
 
 
@@ -134,6 +135,25 @@ class GeneralRoomSocketHubTests(unittest.TestCase):
         self.assertEqual(_wait_for_message(sent, "latency")["agent_id"], "codex")
         self.assertIn("busy", [message.get("agent", {}).get("status") for message in sent])
         self.assertIn("idle", [message.get("agent", {}).get("status") for message in sent])
+
+    def test_controller_starts_runtime_cursors_at_existing_log_tail(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = GeneralRoomEventStore(root)
+            stale = store.append_user_message("human", "@codex stale")
+            runtimes = {"codex": FakeRuntime("codex")}
+            controller = _controller(root, runtimes)
+            sent: list[dict[str, object]] = []
+            hub = GeneralRoomSocketHub(controller)
+            connection = hub.connect(sent.append)
+
+            hub.handle_message(connection, {"type": "user_message", "content": "@codex fresh"})
+            controller.wait_for_idle(timeout_seconds=3)
+
+        self.assertEqual(len(runtimes["codex"].delivered), 1)
+        delivered = runtimes["codex"].delivered[0]
+        self.assertEqual([event["content"] for event in delivered], ["@codex fresh"])
+        self.assertNotEqual(delivered[0]["event_id"], stale["event_id"])
 
     def test_agent_control_start_stop_resume_interrupt_pushes_state(self):
         with tempfile.TemporaryDirectory() as temp_dir:

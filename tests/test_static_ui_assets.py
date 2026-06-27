@@ -42,6 +42,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("<HomeSidebar", app_source)
         self.assertIn("<LobbyView", app_source)
         self.assertIn('label: "general"', app_source)
+        self.assertIn("openGeneralRoomSocket", app_source)
+        self.assertIn("generalRoomEventToLobbyEvent", app_source)
+        self.assertIn("submitGeneralRoomMessage", app_source)
+        self.assertIn("submitMessage={!guestLocked ? submitGeneralRoomMessage : undefined}", app_source)
         self.assertIn("export function openGeneralRoomSocket", api_source)
         self.assertIn('"/ws/rooms/general"', api_source)
         self.assertIn('"type": "hello"', api_source)
@@ -1181,10 +1185,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("setError(restored.error);", composer_source)
         self.assertIn("message: draftMessage", model_source)
         self.assertIn("pendingAttachments: draftAttachments", model_source)
-        self.assertLess(
-            composer_source.index("const payload = roomSocket?.ready()"),
-            composer_source.rindex("lobbySubmitSuccessDraft"),
-        )
+        self.assertIn("submitMessage && sayRequest.kind === \"message\"", composer_source)
+        self.assertLess(composer_source.index("const payload ="), composer_source.rindex("lobbySubmitSuccessDraft"))
         self.assertLess(composer_source.index("catch (errorValue)"), composer_source.rindex("lobbySubmitFailureDraft"))
 
     def test_react_lobby_composer_caps_pending_attachments_at_eight(self):

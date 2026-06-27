@@ -279,6 +279,7 @@ export default function LobbyView({
   localDisplayName = "",
   typingNames = [],
   bindLobbyStream,
+  submitMessage,
 }: {
   activeRoom: RoomDockItem;
   agents: LiveAgent[];
@@ -300,6 +301,7 @@ export default function LobbyView({
   roomSessionToken?: string;
   localDisplayName?: string;
   bindLobbyStream?: (receive: (events: LobbyEvent[]) => void) => () => void;
+  submitMessage?: (message: string) => Promise<LobbyEvent[]>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const voterName = useMemo(() => {
@@ -584,6 +586,7 @@ export default function LobbyView({
         <LobbyComposer
           meetingId={activeRoom.meetingId}
           onPosted={handleLobbyPosted}
+          submitMessage={submitMessage}
           mentionables={mentionables}
           roomSessionToken={roomSessionToken}
           postingMode={postingMode}

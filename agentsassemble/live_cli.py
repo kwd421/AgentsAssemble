@@ -237,6 +237,12 @@ class GeneralRoomEventStore:
                 return events[index + 1 :]
         return events
 
+    def latest_event_id(self) -> str:
+        events = self.read_events()
+        if not events:
+            return ""
+        return clean_lobby_text(events[-1].get("event_id"), limit=128)
+
 
 class LiveCliRuntime:
     """Persistent PTY-backed runtime for one local interactive CLI."""
@@ -254,6 +260,8 @@ class LiveCliRuntime:
         input_mode: str = "line",
         terminal_rows: int = 40,
         terminal_columns: int = 120,
+        startup_quiet_seconds: float = 0.0,
+        startup_timeout_seconds: float = 0.0,
         max_output_bytes: int = 256_000,
         message_source: LiveCliMessageSource | None = None,
     ) -> None:
@@ -273,6 +281,8 @@ class LiveCliRuntime:
             raise ValueError("input_mode must be line or bracketed_paste.")
         self.terminal_rows = max(10, int(terminal_rows or 40))
         self.terminal_columns = max(40, int(terminal_columns or 120))
+        self.startup_quiet_seconds = max(0.0, float(startup_quiet_seconds or 0.0))
+        self.startup_timeout_seconds = max(0.0, float(startup_timeout_seconds or 0.0))
         self.max_output_bytes = max(1, int(max_output_bytes))
         self._message_source = message_source or make_live_cli_message_source(
             self.agent_id,
@@ -288,6 +298,7 @@ class LiveCliRuntime:
         self._started_at = ""
         self._stopped_at = ""
         self._resolved_executable = ""
+        self._startup_drained = False
 
     def start(self) -> dict[str, object]:
         with self._lock:
@@ -337,12 +348,14 @@ class LiveCliRuntime:
             self._last_error = ""
             self._started_at = _now_iso()
             self._stopped_at = ""
+            self._startup_drained = False
             return self.health()
 
     def deliver(self, events: list[dict[str, object]]) -> None:
         if not events:
             return
         self.start()
+        self._drain_startup_output()
         self._message_source.begin_turn()
         self._message_turn_started = True
         for event in events:
@@ -509,6 +522,8 @@ class LiveCliRuntime:
             "input_mode": self.input_mode,
             "terminal_rows": self.terminal_rows,
             "terminal_columns": self.terminal_columns,
+            "startup_quiet_seconds": self.startup_quiet_seconds,
+            "startup_timeout_seconds": self.startup_timeout_seconds,
             **self._message_source.describe(),
             "running": running,
             "stopped": not running,
@@ -591,6 +606,30 @@ class LiveCliRuntime:
             assert self.process is not None
             assert self._master_fd is not None
             return self.process, self._master_fd
+
+    def _drain_startup_output(self) -> None:
+        if self._startup_drained:
+            return
+        if self.startup_timeout_seconds <= 0:
+            self._startup_drained = True
+            return
+        process, fd = self._state_snapshot()
+        deadline = time.monotonic() + self.startup_timeout_seconds
+        last_read_at: float | None = None
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise RuntimeError(f"Live CLI runtime exited with return code {process.returncode}.")
+            readable = _select_readable(fd, 0.1)
+            now = time.monotonic()
+            if readable:
+                _read_chunk(fd, process)
+                last_read_at = now
+                continue
+            if last_read_at is None:
+                continue
+            if self.startup_quiet_seconds <= 0 or now - last_read_at >= self.startup_quiet_seconds:
+                break
+        self._startup_drained = True
 
     def _fd_is_current(self, fd: int) -> bool:
         with self._lock:

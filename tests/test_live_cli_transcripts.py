@@ -122,6 +122,54 @@ class TranscriptMessageSourceTests(unittest.TestCase):
         self.assertFalse(snapshot.complete)
         self.assertEqual(snapshot.content, "")
 
+    def test_codex_source_ignores_same_workspace_session_that_predates_runtime_start(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            session_dir = root / ".codex" / "sessions" / "2026" / "06" / "27"
+            session_dir.mkdir(parents=True)
+            old_session = session_dir / "rollout-existing.jsonl"
+            old_session.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "session_meta", "payload": {"cwd": str(workspace)}}),
+                        json.dumps(
+                            {
+                                "type": "event_msg",
+                                "payload": {"type": "agent_message", "message": "wrong current session"},
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            source = CodexSessionMessageSource(home=root, cwd=workspace)
+            source.prepare_start()
+            source.begin_turn()
+            new_session = session_dir / "rollout-new-provider.jsonl"
+            new_session.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "session_meta", "payload": {"cwd": str(workspace)}}),
+                        json.dumps(
+                            {
+                                "type": "event_msg",
+                                "payload": {"type": "agent_message", "message": "clean provider session"},
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            snapshot = source.poll(b"", quiet=True)
+
+        self.assertTrue(snapshot.complete)
+        self.assertEqual(snapshot.content, "clean provider session")
+
     def test_grok_source_reads_assistant_content_from_chat_history(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

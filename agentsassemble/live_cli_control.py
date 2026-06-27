@@ -28,6 +28,8 @@ class LiveCliProviderSpec:
     submit_newline: str = "\r"
     terminal_rows: int = 40
     terminal_columns: int = 120
+    startup_quiet_seconds: float = 0.0
+    startup_timeout_seconds: float = 0.0
 
 
 DEFAULT_LIVE_CLI_PROVIDER_SPECS = [
@@ -37,6 +39,8 @@ DEFAULT_LIVE_CLI_PROVIDER_SPECS = [
         command=["codex", "--no-alt-screen", "--ask-for-approval", "never", "--sandbox", "read-only", "-C", "."],
         input_mode="bracketed_paste",
         quiet_seconds=4.0,
+        startup_quiet_seconds=1.0,
+        startup_timeout_seconds=20.0,
     ),
     LiveCliProviderSpec(
         agent_id="antigravity",
@@ -44,12 +48,16 @@ DEFAULT_LIVE_CLI_PROVIDER_SPECS = [
         command=["agy", "--dangerously-skip-permissions"],
         input_mode="bracketed_paste",
         quiet_seconds=4.0,
+        startup_quiet_seconds=1.0,
+        startup_timeout_seconds=20.0,
     ),
     LiveCliProviderSpec(
         agent_id="grok",
         display_name="Grok CLI",
         command=["grok", "--no-alt-screen", "--always-approve", "--cwd", "."],
         quiet_seconds=4.0,
+        startup_quiet_seconds=1.0,
+        startup_timeout_seconds=20.0,
     ),
 ]
 
@@ -85,8 +93,14 @@ class GeneralRoomController:
                     submit_newline=spec.submit_newline,
                     terminal_rows=spec.terminal_rows,
                     terminal_columns=spec.terminal_columns,
+                    startup_quiet_seconds=spec.startup_quiet_seconds,
+                    startup_timeout_seconds=spec.startup_timeout_seconds,
                 )
             )
+        startup_event_id = self.room.latest_event_id()
+        if startup_event_id:
+            for runtime in self.runtimes.values():
+                runtime.last_seen_event_id = startup_event_id
         self.scheduler = RoomScheduler(
             self.room,
             [

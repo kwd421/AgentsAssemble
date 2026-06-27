@@ -91,6 +91,47 @@ class LiveCliRuntimeTests(unittest.TestCase):
         self.assertEqual(health["terminal_rows"], 30)
 
     @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_live_cli_runtime_drains_startup_banner_before_first_input(self):
+        script = "\n".join(
+            [
+                "import sys, time",
+                "print('startup banner', flush=True)",
+                "time.sleep(0.05)",
+                "print('ready prompt', flush=True)",
+                "for line in sys.stdin:",
+                "    text = line.strip()",
+                "    if text:",
+                "        print('reply: ' + text, flush=True)",
+            ]
+        )
+        runtime = LiveCliRuntime(
+            "alpha",
+            [sys.executable, "-u", "-c", script],
+            idle_quiet_seconds=0.05,
+            startup_quiet_seconds=0.05,
+            startup_timeout_seconds=1.0,
+        )
+        try:
+            runtime.start()
+            runtime.deliver(
+                [
+                    {
+                        "event_id": "evt-1",
+                        "actor_id": "human",
+                        "actor_type": "user",
+                        "kind": "user_message",
+                        "content": "first",
+                    }
+                ]
+            )
+            output = runtime.read_output(timeout_seconds=2)
+        finally:
+            runtime.stop()
+
+        self.assertIn("reply: #general human: first", output["content"])
+        self.assertNotIn("startup banner", output["content"])
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
     def test_live_cli_restart_replaces_process_after_stop(self):
         runtime = LiveCliRuntime("alpha", [sys.executable, "-u", "-c", _fake_cli_script()], idle_quiet_seconds=0.05)
         try:

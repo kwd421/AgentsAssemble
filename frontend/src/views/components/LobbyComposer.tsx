@@ -76,6 +76,7 @@ function currentLobbyName() {
 export default function LobbyComposer({
   meetingId,
   onPosted,
+  submitMessage,
   mentionables = [],
   disabledReason,
   roomSessionToken = "",
@@ -84,6 +85,7 @@ export default function LobbyComposer({
 }: {
   meetingId: string;
   onPosted: (events: LobbyEvent[]) => void;
+  submitMessage?: (message: string) => Promise<LobbyEvent[]>;
   mentionables?: string[];
   disabledReason?: string;
   roomSessionToken?: string;
@@ -183,23 +185,26 @@ export default function LobbyComposer({
         voteQuestion: voteCommand?.question || "",
         voteOptions: voteCommand?.options || [],
       };
-      const payload = roomSocket?.ready()
-        ? await roomSocket.say(sayRequest)
-        : postingMode === "guest"
-          ? await postRoomSay({
-              sessionToken: roomSessionToken,
-              ...sayRequest,
-            })
-          : await postLobbyMessage({
-              name: currentLobbyName(),
-              side: "mine",
-              kind: sayRequest.kind,
-              message: sayRequest.message,
-              attachments: sayRequest.attachments,
-              meetingId,
-              voteQuestion: sayRequest.voteQuestion,
-              voteOptions: sayRequest.voteOptions,
-            });
+      const payload =
+        submitMessage && sayRequest.kind === "message" && sayRequest.attachments.length === 0
+          ? { events: await submitMessage(sayRequest.message) }
+          : roomSocket?.ready()
+            ? await roomSocket.say(sayRequest)
+            : postingMode === "guest"
+              ? await postRoomSay({
+                  sessionToken: roomSessionToken,
+                  ...sayRequest,
+                })
+              : await postLobbyMessage({
+                  name: currentLobbyName(),
+                  side: "mine",
+                  kind: sayRequest.kind,
+                  message: sayRequest.message,
+                  attachments: sayRequest.attachments,
+                  meetingId,
+                  voteQuestion: sayRequest.voteQuestion,
+                  voteOptions: sayRequest.voteOptions,
+                });
       const cleared = lobbySubmitSuccessDraft<LobbyAttachmentRef>();
       setMessage(cleared.message);
       setPendingAttachments(cleared.pendingAttachments);
