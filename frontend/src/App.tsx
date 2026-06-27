@@ -86,7 +86,6 @@ import { usePoll } from "./hooks";
 import AdminPanel from "./views/AdminPanel";
 import BoardView from "./views/BoardView";
 import FriendsView, { type FriendListFilter } from "./views/FriendsView";
-import GeneralRoomView from "./views/GeneralRoomView";
 import LiveView from "./views/LiveView";
 import CustomChannelView from "./views/CustomChannelView";
 import CreateChannelModal from "./views/components/CreateChannelModal";
@@ -398,10 +397,6 @@ function mobileViewportMatches() {
 }
 
 export default function App() {
-  return <GeneralRoomView />;
-}
-
-export function LegacyMeetingApp() {
   const [startupRoute] = useState(createStartupRoute);
   const guestInvite = startupRoute.guestInvite;
   const guestJoinToken = startupRoute.guestJoinToken;

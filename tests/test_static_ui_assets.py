@@ -30,13 +30,18 @@ def react_lobby_external_participation_surface() -> str:
 
 
 class StaticUiAssetTests(unittest.TestCase):
-    def test_react_default_surface_is_general_live_cli_room(self):
+    def test_react_default_surface_keeps_discord_room_shell(self):
         app_source = frontend_file("App.tsx")
         api_source = frontend_file("api.ts")
         general_source = frontend_file("views/GeneralRoomView.tsx")
 
-        self.assertIn('import GeneralRoomView from "./views/GeneralRoomView";', app_source)
-        self.assertIn("return <GeneralRoomView />;", app_source)
+        self.assertNotIn('import GeneralRoomView from "./views/GeneralRoomView";', app_source)
+        self.assertNotIn("return <GeneralRoomView />;", app_source)
+        self.assertIn("export default function App()", app_source)
+        self.assertIn("<RoomRail", app_source)
+        self.assertIn("<HomeSidebar", app_source)
+        self.assertIn("<LobbyView", app_source)
+        self.assertIn('label: "general"', app_source)
         self.assertIn("export function openGeneralRoomSocket", api_source)
         self.assertIn('"/ws/rooms/general"', api_source)
         self.assertIn('"type": "hello"', api_source)
