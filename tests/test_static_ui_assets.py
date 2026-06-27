@@ -30,6 +30,33 @@ def react_lobby_external_participation_surface() -> str:
 
 
 class StaticUiAssetTests(unittest.TestCase):
+    def test_react_default_surface_is_general_live_cli_room(self):
+        app_source = frontend_file("App.tsx")
+        api_source = frontend_file("api.ts")
+        general_source = frontend_file("views/GeneralRoomView.tsx")
+
+        self.assertIn('import GeneralRoomView from "./views/GeneralRoomView";', app_source)
+        self.assertIn("return <GeneralRoomView />;", app_source)
+        self.assertIn("export function openGeneralRoomSocket", api_source)
+        self.assertIn('"/ws/rooms/general"', api_source)
+        self.assertIn('"type": "hello"', api_source)
+        self.assertIn('type: "user_message"', api_source)
+        self.assertIn('type: "agent_control"', api_source)
+        self.assertNotIn('"/api/rooms/general/events"', api_source)
+        self.assertNotIn('"/api/rooms/general/agents"', api_source)
+        self.assertIn("AgentsAssemble #general", general_source)
+        self.assertIn("renderAgentStatus", general_source)
+        self.assertIn("renderLatency", general_source)
+        self.assertIn("openGeneralRoomSocket", general_source)
+        self.assertIn("agent_control", general_source)
+        self.assertIn("user_message", general_source)
+        self.assertIn("afterEventId", general_source)
+        self.assertNotIn("setInterval", general_source)
+        self.assertNotIn("fetchGeneralRoomEvents", general_source)
+        self.assertNotIn("/api/rooms/general", general_source)
+        self.assertIn('placeholder="@codex', general_source)
+        self.assertNotIn("lobby/live/board/archive", general_source)
+
     def test_retired_vanilla_static_console_is_not_packaged_or_tested(self):
         pyproject = PYPROJECT.read_text(encoding="utf-8")
 

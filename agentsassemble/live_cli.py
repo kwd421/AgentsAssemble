@@ -4,6 +4,7 @@ import json
 import os
 import re
 import signal
+import shutil
 import subprocess
 import threading
 import time
@@ -80,31 +81,52 @@ class GeneralRoomEventStore:
         self.output_root = Path(output_root)
         self.room_id = clean_room_id
         self._lock = threading.RLock()
+        self._listeners: list[Callable[[dict[str, object]], None]] = []
         self.events_path.parent.mkdir(parents=True, exist_ok=True)
 
     @property
     def events_path(self) -> Path:
         return self.output_root / "rooms" / self.room_id / "events.jsonl"
 
-    def append_user_message(self, actor_id: str, content: str) -> dict[str, object]:
-        return self.append_event("user_message", actor_id=actor_id, actor_type="user", content=content)
+    def append_user_message(
+        self,
+        actor_id: str,
+        content: str,
+        *,
+        metadata: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        return self.append_event("user_message", actor_id=actor_id, actor_type="user", content=content, metadata=metadata)
 
-    def append_agent_input(self, agent_id: str, content: str, *, source_event_id: str) -> dict[str, object]:
+    def append_agent_input(
+        self,
+        agent_id: str,
+        content: str,
+        *,
+        source_event_id: str,
+        metadata: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         return self.append_event(
             "agent_input",
             actor_id=agent_id,
             actor_type="agent",
             content=content,
-            source_event_id=source_event_id,
+            metadata={"source_event_id": source_event_id, **dict(metadata or {})},
         )
 
-    def append_agent_delta(self, agent_id: str, content: str, *, source_event_id: str) -> dict[str, object]:
+    def append_agent_delta(
+        self,
+        agent_id: str,
+        content: str,
+        *,
+        source_event_id: str,
+        metadata: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         return self.append_event(
             "agent_delta",
             actor_id=agent_id,
             actor_type="agent",
             content=content,
-            source_event_id=source_event_id,
+            metadata={"source_event_id": source_event_id, **dict(metadata or {})},
         )
 
     def append_agent_message(
@@ -114,27 +136,42 @@ class GeneralRoomEventStore:
         *,
         source_event_id: str,
         relay_depth: int = 0,
+        metadata: dict[str, object] | None = None,
     ) -> dict[str, object]:
         return self.append_event(
             "agent_message",
             actor_id=agent_id,
             actor_type="agent",
             content=content,
-            source_event_id=source_event_id,
-            relay_depth=max(0, int(relay_depth or 0)),
+            metadata={
+                "source_event_id": source_event_id,
+                "relay_depth": max(0, int(relay_depth or 0)),
+                **dict(metadata or {}),
+            },
         )
 
-    def append_agent_error(self, agent_id: str, message: str, *, source_event_id: str = "") -> dict[str, object]:
+    def append_agent_error(
+        self,
+        agent_id: str,
+        message: str,
+        *,
+        source_event_id: str = "",
+        metadata: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         return self.append_event(
             "agent_error",
             actor_id=agent_id,
             actor_type="agent",
             content=message,
-            source_event_id=source_event_id,
+            metadata={"source_event_id": source_event_id, **dict(metadata or {})},
         )
 
     def append_system(self, message: str) -> dict[str, object]:
         return self.append_event("system", actor_id="system", actor_type="system", content=message)
+
+    def add_listener(self, listener: Callable[[dict[str, object]], None]) -> None:
+        with self._lock:
+            self._listeners.append(listener)
 
     def append_event(
         self,
@@ -143,6 +180,7 @@ class GeneralRoomEventStore:
         actor_id: str,
         actor_type: str,
         content: str,
+        metadata: dict[str, object] | None = None,
         **extra: object,
     ) -> dict[str, object]:
         clean_kind = clean_lobby_text(kind, limit=64)
@@ -156,16 +194,17 @@ class GeneralRoomEventStore:
             "actor_type": clean_lobby_text(actor_type, limit=32),
             "kind": clean_kind,
             "content": clean_lobby_text(content, limit=12000),
+            "metadata": _clean_metadata({**dict(metadata or {}), **extra}),
         }
-        for key, value in extra.items():
-            if value in (None, "", [], {}):
+        with self._lock:
+            with self.events_path.open("a", encoding="utf-8") as file:
+                file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+            listeners = list(self._listeners)
+        for listener in listeners:
+            try:
+                listener(dict(event))
+            except Exception:
                 continue
-            if key in {"source_event_id"}:
-                event[key] = clean_lobby_text(value, limit=128)
-            else:
-                event[key] = value
-        with self._lock, self.events_path.open("a", encoding="utf-8") as file:
-            file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
         return event
 
     def read_events(self, *, after: str = "") -> list[dict[str, object]]:
@@ -222,6 +261,9 @@ class LiveCliRuntime:
         self._master_fd: int | None = None
         self.process: subprocess.Popen[bytes] | None = None
         self._last_error = ""
+        self._started_at = ""
+        self._stopped_at = ""
+        self._resolved_executable = ""
 
     def start(self) -> dict[str, object]:
         with self._lock:
@@ -229,6 +271,10 @@ class LiveCliRuntime:
                 return self.health()
             if not live_cli_supported():
                 raise RuntimeError("PTY live CLI sessions are not available on this host.")
+            self._resolved_executable = _resolve_executable(self.command)
+            if not self._resolved_executable:
+                self._last_error = "configured command missing"
+                raise FileNotFoundError(f"configured command missing: {self.command[0]}")
             assert pty is not None
             master_fd, slave_fd = pty.openpty()
             try:
@@ -257,6 +303,8 @@ class LiveCliRuntime:
             self.process = process
             self._master_fd = master_fd
             self._last_error = ""
+            self._started_at = _now_iso()
+            self._stopped_at = ""
             return self.health()
 
     def deliver(self, events: list[dict[str, object]]) -> None:
@@ -351,6 +399,8 @@ class LiveCliRuntime:
             if process.poll() is None:
                 _terminate_process(process, timeout_seconds=timeout_seconds)
             _terminate_process_group_children(process, timeout_seconds=timeout_seconds)
+        with self._lock:
+            self._stopped_at = _now_iso()
 
     def restart(self) -> dict[str, object]:
         self.stop()
@@ -360,16 +410,31 @@ class LiveCliRuntime:
         with self._lock:
             process = self.process
             last_error = self._last_error
+            started_at = self._started_at
+            stopped_at = self._stopped_at
+            resolved_executable = self._resolved_executable or _resolve_executable(self.command)
         returncode = process.poll() if process is not None else None
         running = process is not None and returncode is None
         return {
             "agent_id": self.agent_id,
+            "runtime_kind": "live_cli",
+            "command_configured": list(self.command),
+            "command_display": " ".join(self.command),
+            "resolved_executable": resolved_executable,
+            "cwd": str(self.cwd) if self.cwd is not None else "",
+            "workspace_dir": str(self.cwd) if self.cwd is not None else "",
+            "session_dir": "",
+            "pty": True,
+            "transport": "pty",
+            "is_one_shot": False,
             "running": running,
             "stopped": not running,
             "pid": process.pid if process is not None else None,
             "returncode": returncode,
             "last_error": last_error,
             "last_seen_event_id": self.last_seen_event_id,
+            "started_at": started_at,
+            "stopped_at": stopped_at,
         }
 
     def _send_line(self, text: str) -> None:
@@ -485,6 +550,8 @@ class RoomScheduler:
         max_agent_relay_depth: int = 1,
         max_replies_per_source: int = 1,
         agent_cooldown_seconds: float = 0.0,
+        agent_state_listener: Callable[[str, dict[str, object]], None] | None = None,
+        latency_listener: Callable[[str, dict[str, object]], None] | None = None,
     ) -> None:
         self.room = room
         self.agents = {clean_lobby_text(agent.agent_id, limit=128): agent for agent in agents}
@@ -497,9 +564,17 @@ class RoomScheduler:
         self._threads: list[threading.Thread] = []
         self._last_reply_at: dict[str, float] = {}
         self._reply_counts: dict[tuple[str, str], int] = {}
+        self._last_input_event_id: dict[str, str] = {}
+        self._last_output_event_id: dict[str, str] = {}
+        self._turn_counts: dict[str, int] = {}
+        self._last_errors: dict[str, str] = {}
+        self._latencies: dict[str, dict[str, object]] = {}
+        self.agent_state_listener = agent_state_listener
+        self.latency_listener = latency_listener
 
     def dispatch_new_events(self) -> list[dict[str, object]]:
         dispatched: list[dict[str, object]] = []
+        started_agents: list[str] = []
         with self._lock:
             for agent_id, binding in self.agents.items():
                 if agent_id in self._busy:
@@ -515,6 +590,9 @@ class RoomScheduler:
                 self._threads.append(thread)
                 dispatched.append(event)
                 thread.start()
+                started_agents.append(agent_id)
+        for agent_id in started_agents:
+            self._notify_agent_state(agent_id)
         return dispatched
 
     def wait_for_idle(self, *, timeout_seconds: float) -> bool:
@@ -543,9 +621,45 @@ class RoomScheduler:
         statuses: dict[str, dict[str, object]] = {}
         for agent_id, binding in self.agents.items():
             health = binding.runtime.health()
-            health["status"] = "busy" if agent_id in busy else ("idle" if health.get("running") else "disconnected")
+            last_error = self._last_errors.get(agent_id, "")
+            if agent_id in busy:
+                status = "busy"
+            elif last_error and not health.get("running"):
+                status = "error"
+            elif health.get("running"):
+                status = "idle"
+            else:
+                status = "stopped"
+            health["status"] = status
+            health["last_input_event_id"] = self._last_input_event_id.get(agent_id, "")
+            health["last_output_event_id"] = self._last_output_event_id.get(agent_id, "")
+            health["turn_count"] = self._turn_counts.get(agent_id, 0)
+            health["last_error"] = last_error or str(health.get("last_error") or "")
+            health["latency"] = dict(self._latencies.get(agent_id, {}))
             statuses[agent_id] = health
         return statuses
+
+    def latency_payload(self) -> dict[str, dict[str, object]]:
+        with self._lock:
+            return {agent_id: dict(latency) for agent_id, latency in self._latencies.items()}
+
+    def _notify_agent_state(self, agent_id: str) -> None:
+        if self.agent_state_listener is None:
+            return
+        try:
+            self.agent_state_listener(agent_id, dict(self.agent_statuses().get(agent_id, {})))
+        except Exception:
+            return
+
+    def _notify_latency(self, agent_id: str) -> None:
+        if self.latency_listener is None:
+            return
+        with self._lock:
+            latency = dict(self._latencies.get(agent_id, {}))
+        try:
+            self.latency_listener(agent_id, latency)
+        except Exception:
+            return
 
     def _next_actionable_event(self, binding: AgentRuntimeBinding) -> dict[str, object] | None:
         runtime = binding.runtime
@@ -572,7 +686,7 @@ class RoomScheduler:
             return False
         if actor_id == agent_id:
             return False
-        if _safe_int(event.get("relay_depth")) >= self.max_agent_relay_depth:
+        if _safe_int(_event_metadata(event).get("relay_depth")) >= self.max_agent_relay_depth:
             return False
         return "all" in mentions or agent_id.casefold() in mentions
 
@@ -596,24 +710,63 @@ class RoomScheduler:
         agent_id = clean_lobby_text(binding.agent_id, limit=128)
         runtime = binding.runtime
         source_event_id = clean_lobby_text(source_event.get("event_id"), limit=128)
-        relay_depth = _safe_int(source_event.get("relay_depth")) + 1
+        relay_depth = _safe_int(_event_metadata(source_event).get("relay_depth")) + 1
+        latency, latency_ticks = _new_latency(source_event)
         try:
             runtime.start()
             input_text = _room_input_text(source_event)
+            _mark_latency(latency, latency_ticks, "dispatch_started_at")
+            _mark_latency(latency, latency_ticks, "input_write_started_at")
             self.room.append_agent_input(agent_id, input_text, source_event_id=source_event_id)
+            with self._lock:
+                self._last_input_event_id[agent_id] = source_event_id
 
             def append_delta(delta: str) -> None:
+                if not latency.get("first_output_at"):
+                    _mark_latency(latency, latency_ticks, "first_output_at")
+                _mark_latency(latency, latency_ticks, "last_output_at")
                 self.room.append_agent_delta(agent_id, delta, source_event_id=source_event_id)
 
             runtime.deliver([source_event])
+            _mark_latency(latency, latency_ticks, "input_write_completed_at")
             output = runtime.read_output(timeout_seconds=self.read_timeout_seconds, on_delta=append_delta)
             content = clean_lobby_text(output.get("content"), limit=12000)
-            self.room.append_agent_message(agent_id, content, source_event_id=source_event_id, relay_depth=relay_depth)
+            if content and not latency.get("first_output_at"):
+                _mark_latency(latency, latency_ticks, "first_output_at")
+                _mark_latency(latency, latency_ticks, "last_output_at")
+            _mark_latency(latency, latency_ticks, "quiet_detected_at")
+            _mark_latency(latency, latency_ticks, "turn_completed_at")
+            _complete_latency(latency, latency_ticks)
+            output_event = self.room.append_agent_message(
+                agent_id,
+                content,
+                source_event_id=source_event_id,
+                relay_depth=relay_depth,
+                metadata={"latency": dict(latency)},
+            )
+            with self._lock:
+                self._last_output_event_id[agent_id] = clean_lobby_text(output_event.get("event_id"), limit=128)
+                self._turn_counts[agent_id] = self._turn_counts.get(agent_id, 0) + 1
+                self._last_errors[agent_id] = ""
+                self._latencies[agent_id] = dict(latency)
         except Exception as error:
-            self.room.append_agent_error(agent_id, str(error), source_event_id=source_event_id)
+            _mark_latency(latency, latency_ticks, "turn_completed_at")
+            _complete_latency(latency, latency_ticks)
+            error_event = self.room.append_agent_error(
+                agent_id,
+                str(error),
+                source_event_id=source_event_id,
+                metadata={"latency": dict(latency)},
+            )
+            with self._lock:
+                self._last_output_event_id[agent_id] = clean_lobby_text(error_event.get("event_id"), limit=128)
+                self._last_errors[agent_id] = str(error)
+                self._latencies[agent_id] = dict(latency)
         finally:
             with self._lock:
                 self._busy.discard(agent_id)
+            self._notify_agent_state(agent_id)
+            self._notify_latency(agent_id)
 
 
 def live_cli_supported() -> bool:
@@ -631,6 +784,104 @@ def _room_input_text(event: dict[str, object]) -> str:
     actor = clean_lobby_text(event.get("actor_id"), limit=128) or "unknown"
     content = clean_lobby_text(event.get("content"), limit=12000)
     return f"#general {actor}: {content}"
+
+
+def _event_metadata(event: dict[str, object]) -> dict[str, object]:
+    metadata = event.get("metadata")
+    return dict(metadata) if isinstance(metadata, dict) else {}
+
+
+def _clean_metadata(metadata: dict[str, object]) -> dict[str, object]:
+    clean: dict[str, object] = {}
+    for key, value in metadata.items():
+        if value in (None, "", [], {}):
+            continue
+        if key in {"source_event_id", "queued_at"}:
+            clean[key] = clean_lobby_text(value, limit=128)
+        elif key == "latency" and isinstance(value, dict):
+            clean[key] = {str(item_key): item_value for item_key, item_value in value.items()}
+        else:
+            clean[key] = value
+    return clean
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _new_latency(source_event: dict[str, object]) -> tuple[dict[str, object], dict[str, datetime]]:
+    metadata = _event_metadata(source_event)
+    queued_at = clean_lobby_text(metadata.get("queued_at"), limit=128) or clean_lobby_text(
+        source_event.get("created_at"), limit=128
+    )
+    if not queued_at:
+        queued_at = _now_iso()
+    latency: dict[str, object] = {
+        "queued_at": queued_at,
+        "dispatch_started_at": "",
+        "input_write_started_at": "",
+        "input_write_completed_at": "",
+        "first_output_at": "",
+        "last_output_at": "",
+        "quiet_detected_at": "",
+        "turn_completed_at": "",
+        "queue_delay_ms": 0,
+        "input_write_ms": 0,
+        "ttfo_ms": 0,
+        "stream_ms": 0,
+        "quiet_wait_ms": 0,
+        "total_turn_ms": 0,
+    }
+    queued_datetime = _parse_iso(queued_at) or datetime.now(UTC)
+    return latency, {"queued_at": queued_datetime}
+
+
+def _mark_latency(latency: dict[str, object], ticks: dict[str, datetime], key: str) -> None:
+    now = datetime.now(UTC)
+    ticks[key] = now
+    latency[key] = now.isoformat()
+
+
+def _complete_latency(latency: dict[str, object], ticks: dict[str, datetime]) -> None:
+    latency["queue_delay_ms"] = _duration_ms(ticks, "queued_at", "dispatch_started_at")
+    latency["input_write_ms"] = _duration_ms(ticks, "input_write_started_at", "input_write_completed_at")
+    latency["ttfo_ms"] = _duration_ms(ticks, "input_write_completed_at", "first_output_at")
+    latency["stream_ms"] = _duration_ms(ticks, "first_output_at", "last_output_at")
+    latency["quiet_wait_ms"] = _duration_ms(ticks, "last_output_at", "quiet_detected_at")
+    latency["total_turn_ms"] = _duration_ms(ticks, "queued_at", "turn_completed_at")
+
+
+def _duration_ms(ticks: dict[str, datetime], start: str, end: str) -> int:
+    start_time = ticks.get(start)
+    end_time = ticks.get(end)
+    if start_time is None or end_time is None:
+        return 0
+    return max(0, int((end_time - start_time).total_seconds() * 1000))
+
+
+def _parse_iso(value: object) -> datetime | None:
+    text = clean_lobby_text(value, limit=128)
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _resolve_executable(command: list[str]) -> str:
+    if not command:
+        return ""
+    executable = str(command[0] or "")
+    if not executable:
+        return ""
+    if "/" in executable or "\\" in executable:
+        path = Path(executable).expanduser()
+        return str(path.resolve()) if path.exists() else ""
+    return shutil.which(executable) or ""
 
 
 def _mentions(content: str) -> set[str]:

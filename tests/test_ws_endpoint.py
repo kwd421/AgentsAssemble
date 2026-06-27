@@ -117,11 +117,11 @@ class WsEndpointTests(unittest.TestCase):
         with urlopen(req, timeout=4) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
-    def _handshake(self, host: str, port: int, ticket: str) -> socket.socket:
+    def _handshake_path(self, host: str, port: int, path: str) -> socket.socket:
         sock = socket.create_connection((host, port), timeout=4)
         key = base64.b64encode(b"0123456789abcdef").decode("ascii")
         request = (
-            f"GET /ws?ticket={ticket} HTTP/1.1\r\n"
+            f"GET {path} HTTP/1.1\r\n"
             f"Host: {host}:{port}\r\n"
             "Upgrade: websocket\r\n"
             "Connection: Upgrade\r\n"
@@ -137,6 +137,26 @@ class WsEndpointTests(unittest.TestCase):
         self.assertIn(b"101", status_line, head)
         self.assertIn(f"Sec-WebSocket-Accept: {compute_accept_key(key)}".encode(), head)
         return sock
+
+    def _handshake(self, host: str, port: int, ticket: str) -> socket.socket:
+        return self._handshake_path(host, port, f"/ws?ticket={ticket}")
+
+    def test_general_room_ws_hello_snapshot_on_loopback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            server = self._start_server(Path(tmp))
+            try:
+                host, port = server.server_address
+                sock = self._handshake_path(host, port, "/ws/rooms/general")
+                try:
+                    sock.sendall(_client_text_frame(json.dumps({"type": "hello", "client_id": "browser-1"})))
+                    msg = _recv_server_text(sock)
+                    self.assertEqual(msg["type"], "snapshot")
+                    self.assertEqual(msg["room_id"], "general")
+                    self.assertIn("codex", [agent["agent_id"] for agent in msg["agents"]])
+                finally:
+                    sock.close()
+            finally:
+                self._stop_server(server)
 
     def test_ws_ticket_handshake_and_subscribe_roundtrip(self):
         with tempfile.TemporaryDirectory() as tmp:

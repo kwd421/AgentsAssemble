@@ -186,6 +186,107 @@ export interface RoomMembersResponse {
   roles: Array<{ id: string; label: string; description: string }>;
 }
 
+export interface GeneralRoomEvent {
+  event_id: string;
+  created_at: string;
+  room_id: string;
+  actor_id: string;
+  actor_type: "user" | "agent" | "system" | string;
+  kind: "user_message" | "agent_input" | "agent_delta" | "agent_message" | "agent_error" | "system" | string;
+  content: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface GeneralRoomLatency {
+  queued_at?: string;
+  dispatch_started_at?: string;
+  input_write_started_at?: string;
+  input_write_completed_at?: string;
+  first_output_at?: string;
+  last_output_at?: string;
+  quiet_detected_at?: string;
+  turn_completed_at?: string;
+  queue_delay_ms?: number;
+  input_write_ms?: number;
+  ttfo_ms?: number;
+  stream_ms?: number;
+  quiet_wait_ms?: number;
+  total_turn_ms?: number;
+}
+
+export interface GeneralRoomAgent {
+  agent_id: string;
+  display_name: string;
+  provider_label: string;
+  runtime_kind: string;
+  command_configured: string[];
+  command_display: string;
+  resolved_executable: string;
+  pid?: number | null;
+  status: "stopped" | "starting" | "idle" | "busy" | "stopping" | "error" | "disconnected" | string;
+  started_at: string;
+  stopped_at: string;
+  last_seen_event_id: string;
+  last_input_event_id: string;
+  last_output_event_id: string;
+  turn_count: number;
+  last_error: string;
+  latency: GeneralRoomLatency;
+  session_dir?: string;
+  workspace_dir?: string;
+  pty?: boolean;
+  transport?: string;
+  is_one_shot?: boolean;
+  resumed_process?: boolean;
+}
+
+export type GeneralRoomSocketClientMessage =
+  | { type: "hello"; client_id?: string; after_event_id?: string }
+  | { type: "user_message"; room_id?: "general"; content: string; actor_id?: string }
+  | {
+      type: "agent_control";
+      agent_id: string;
+      action: "start" | "stop" | "resume" | "interrupt";
+    }
+  | { type: "dispatch"; target?: string; after_event_id?: string }
+  | { type: "smoke_start"; providers?: string[] };
+
+export type GeneralRoomSocketServerMessage =
+  | {
+      type: "snapshot";
+      room_id: string;
+      events: GeneralRoomEvent[];
+      agents: GeneralRoomAgent[];
+      latency: Record<string, GeneralRoomLatency>;
+    }
+  | { type: "room_event"; event: GeneralRoomEvent }
+  | { type: "agent_state"; agent_id?: string; agent: GeneralRoomAgent }
+  | {
+      type: "agent_delta";
+      agent_id: string;
+      turn_id?: string;
+      delta: string;
+      event?: GeneralRoomEvent;
+    }
+  | { type: "agent_message"; event: GeneralRoomEvent }
+  | ({ type: "latency"; agent_id: string } & GeneralRoomLatency)
+  | { type: "smoke_progress"; run_id: string; provider?: string; phase: string; status: string }
+  | { type: "error"; message: string; recoverable?: boolean; event?: GeneralRoomEvent };
+
+export interface GeneralRoomSocketHandlers {
+  afterEventId?: string;
+  onMessage: (message: GeneralRoomSocketServerMessage) => void;
+  onOpen?: () => void;
+  onClose?: () => void;
+  onError?: (error: Event | Error) => void;
+}
+
+export interface GeneralRoomSocketHandle {
+  close: () => void;
+  ready: () => boolean;
+  send: (message: GeneralRoomSocketClientMessage) => void;
+}
+
 export type ChannelNotificationSetting = "default" | "all" | "mentions" | "mute";
 
 export type ChannelSettings = {
@@ -2453,6 +2554,8 @@ function wsBaseUrl(): string {
   return `${proto}//${window.location.host}`;
 }
 
+const GENERAL_ROOM_WS_PATH = "/ws/rooms/general";
+
 export type RoomSocketAuth =
   | { kind: "session"; sessionToken: string }
   | { kind: "host"; meetingId: string };
@@ -2465,6 +2568,50 @@ export function getWsTicket(auth: RoomSocketAuth): Promise<string> {
   return postJsonWithToken<WsTicketResponse>("/api/ws-ticket", body, auth.sessionToken).then(
     (res) => res.ticket
   );
+}
+
+export function openGeneralRoomSocket(handlers: GeneralRoomSocketHandlers): GeneralRoomSocketHandle {
+  let socket: WebSocket | null = null;
+  let closed = false;
+  const pending: GeneralRoomSocketClientMessage[] = [];
+
+  function rawSend(message: GeneralRoomSocketClientMessage) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      pending.push(message);
+      return;
+    }
+    socket.send(JSON.stringify(message));
+  }
+
+  socket = new WebSocket(`${wsBaseUrl()}${GENERAL_ROOM_WS_PATH}`);
+  socket.onopen = () => {
+    handlers.onOpen?.();
+    rawSend({ "type": "hello", after_event_id: handlers.afterEventId || "" });
+    while (pending.length && socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(pending.shift()));
+    }
+  };
+  socket.onmessage = (event) => {
+    try {
+      handlers.onMessage(JSON.parse(String(event.data)) as GeneralRoomSocketServerMessage);
+    } catch (error) {
+      handlers.onError?.(error as Error);
+    }
+  };
+  socket.onerror = (event) => handlers.onError?.(event);
+  socket.onclose = () => {
+    closed = true;
+    handlers.onClose?.();
+  };
+
+  return {
+    close: () => {
+      closed = true;
+      socket?.close();
+    },
+    ready: () => !closed && socket?.readyState === WebSocket.OPEN,
+    send: rawSend,
+  };
 }
 
 export interface RoomSayRequest {

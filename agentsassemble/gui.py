@@ -55,6 +55,8 @@ from agentsassemble.live_agent_frontend_create import (
 from agentsassemble.provider_sessions import list_provider_sessions
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.live_cli_control import GeneralRoomController
+from agentsassemble.room_socket import GeneralRoomSocketHub
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
 from agentsassemble.live_agent_room_admin import (
     delete_live_agent_session_payload,
@@ -170,11 +172,18 @@ from agentsassemble.room_speech import (
     governed_lobby_say,
 )
 from agentsassemble.room_websocket import (
+    CLOSE_NORMAL,
     CLOSE_PROTOCOL_ERROR,
     MessageAssembler,
+    OP_CLOSE,
+    OP_PING,
+    OP_PONG,
+    OP_TEXT,
     WebSocketProtocolError,
     compute_accept_key,
     encode_close,
+    encode_pong,
+    encode_text,
     is_websocket_upgrade,
 )
 from agentsassemble.ws_room_session import (
@@ -8220,6 +8229,8 @@ def _make_handler(
     # WS 전환 (WS-4): single-use tickets bind a verified session to a /ws open
     # (browsers can't set Authorization on `new WebSocket`).
     ws_ticket_store = WsTicketStore()
+    general_room_controller = GeneralRoomController(output_root)
+    general_room_socket_hub = GeneralRoomSocketHub(general_room_controller)
 
     def _ws_room_deps() -> WsRoomDeps:
         # Reuse the proven SSE snapshot machinery + the governed say append path,
@@ -8343,6 +8354,9 @@ def _make_handler(
             query = parse_qs(parsed.query)
             if not self._request_is_trusted(path=path, method="GET"):
                 self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
+                return
+            if path == "/ws/rooms/general":
+                self._handle_general_room_ws_upgrade()
                 return
             if path == "/ws":
                 self._handle_ws_upgrade(query)
@@ -11436,6 +11450,71 @@ def _make_handler(
             self._send_public_invite_cors_headers()
             self.end_headers()
             self.wfile.write(data)
+
+        def _handle_general_room_ws_upgrade(self) -> None:
+            """Upgrade /ws/rooms/general for the local CLI-first room transport."""
+            import select
+
+            if not self._request_is_local_operator():
+                self._send_error(HTTPStatus.FORBIDDEN, "local operator connection required")
+                return
+            if not is_websocket_upgrade(self.headers):
+                self._send_error(HTTPStatus.BAD_REQUEST, "WebSocket upgrade required")
+                return
+            key = str(self.headers.get("Sec-WebSocket-Key") or "")
+            if not key:
+                self._send_error(HTTPStatus.BAD_REQUEST, "missing Sec-WebSocket-Key")
+                return
+            self.close_connection = True
+            self.send_response(HTTPStatus.SWITCHING_PROTOCOLS)
+            self.send_header("Upgrade", "websocket")
+            self.send_header("Connection", "Upgrade")
+            self.send_header("Sec-WebSocket-Accept", compute_accept_key(key))
+            self.end_headers()
+            self.wfile.flush()
+
+            sock = self.connection
+            send_lock = threading.Lock()
+
+            def send_json(payload: dict[str, object]) -> None:
+                data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                with send_lock:
+                    sock.sendall(encode_text(data.decode("utf-8")))
+
+            connection = general_room_socket_hub.connect(send_json)
+            assembler = MessageAssembler()
+            try:
+                while not connection.closed:
+                    ready, _, _ = select.select([sock], [], [], SSE_EVENT_POLL_INTERVAL_SECONDS)
+                    if not ready:
+                        continue
+                    data = sock.recv(65536)
+                    if not data:
+                        break
+                    assembler.feed(data)
+                    for opcode, payload in assembler.messages():
+                        if opcode == OP_PING:
+                            with send_lock:
+                                sock.sendall(encode_pong(payload))
+                        elif opcode == OP_PONG:
+                            continue
+                        elif opcode == OP_CLOSE:
+                            with send_lock:
+                                sock.sendall(encode_close(CLOSE_NORMAL))
+                            connection.closed = True
+                            break
+                        elif opcode == OP_TEXT:
+                            general_room_socket_hub.handle_text(connection, payload)
+            except WebSocketProtocolError:
+                try:
+                    with send_lock:
+                        sock.sendall(encode_close(CLOSE_PROTOCOL_ERROR))
+                except OSError:
+                    pass
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            finally:
+                general_room_socket_hub.disconnect(connection)
 
         def _handle_ws_upgrade(self, query: dict) -> None:
             """WS 전환 (WS-4): upgrade /ws, bind the ticket's session as a fixed
