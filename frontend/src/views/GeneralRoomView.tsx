@@ -12,6 +12,12 @@ import {
 
 type AgentLatencyMap = Record<string, GeneralRoomLatency>;
 
+type GeneralRoomTimelineEvent = GeneralRoomEvent & {
+  deltaCount?: number;
+  streaming?: boolean;
+  timelineId?: string;
+};
+
 function mergeEvents(current: GeneralRoomEvent[], incoming: GeneralRoomEvent[]) {
   const byId = new Map<string, GeneralRoomEvent>();
   current.forEach((event) => byId.set(event.event_id, event));
@@ -21,9 +27,147 @@ function mergeEvents(current: GeneralRoomEvent[], incoming: GeneralRoomEvent[]) 
   );
 }
 
-function eventTone(event: GeneralRoomEvent) {
+function sourceEventId(event: GeneralRoomEvent) {
+  const value = event.metadata?.source_event_id;
+  return typeof value === "string" ? value : "";
+}
+
+function turnTimelineKey(event: GeneralRoomEvent) {
+  const sourceId = sourceEventId(event);
+  if (!sourceId) return "";
+  return `${event.actor_id}:${sourceId}`;
+}
+
+function appendStreamingContent(current: string, delta: string) {
+  const next = `${current}${delta}`;
+  return next.length > 12000 ? next.slice(next.length - 12000) : next;
+}
+
+function cleanTerminalChromeLine(value: string) {
+  let text = value;
+  text = text.replace(/›\s*Run \/review on my current changes.*$/i, "");
+  text = text.replace(/\bgpt-[^·\n]*·\s*~\/\S+/gi, "");
+  text = text.replace(/Grok Setup for #general[^…\n]*(?:Re…|grok)?/gi, "");
+  text = text.replace(/\b(?:gpt|Gemini|Grok)[A-Za-z0-9 ._-]*(?:\([^)]*\))?/gi, "");
+  text = text.replace(/\b(?:rating\s+for\s+)?\d+(?:\.\d+)?s,\s*\d+\s+tokens\b/gi, "");
+  text = text.replace(/\bTurn\s*completed\s*in\s*\S+/gi, "");
+  text = text.replace(/\b(?:Th)?ought\s+for\s*\S+/gi, "");
+  text = text.replace(/\d{1,2}:\d{2}(?:AM|PM)/g, "");
+  text = text.replace(
+    /\b(?:Working|Generating|Responding|Thinking)(?:\.\.\.)?(?:\s*[-–—]\s*[^…\n]*?(?:grok|Grok|Re…))*/gi,
+    ""
+  );
+  text = text.replace(/…\s*\d+(?:\.\d+)?s\d*/g, "");
+  text = text.replace(/[─━│╭╮╰╯┌┐└┘├┤┬┴┼]{3,}/g, " ");
+  text = text.replace(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣻⣽⣾⣷⣯⣟⡿⢿█❙]+/g, "");
+  text = text.replace(/AgentsAssemble/g, "");
+  text = text.replace(/esc to cancel|esc to interrupt/gi, "");
+  text = text.replace(/\.shortcuts|shortcuts/gi, "");
+  if (text.includes("•")) text = text.split("•").pop() || "";
+  text = text.replace(/(?<=[가-힣])\d+(?=[가-힣\s"“”])/g, "");
+  text = text.replace(/(?<=["“”])\d+(?=[가-힣])/g, "");
+  text = text.replace(/(?<=\s)\d+(?=[가-힣])/g, "");
+  text = text.replace(/(?<=[가-힣])\d+(?=[.,!?])/g, "");
+  return text
+    .replace(/\uFFFD/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim()
+    .replace(/^[\s·,\-:;]+|[\s·,\-:;]+$/g, "");
+}
+
+function isTerminalChromeLine(value: string) {
+  const text = value.trim();
+  if (!text) return true;
+  if (/^[›>?╭╰│]/.test(text)) return true;
+  if (/for shortcuts|esc to cancel|esc to interrupt|\.shortcuts|shortcuts/i.test(text)) return true;
+  if (/I need to|The topic is|translates to/i.test(text)) return true;
+  if (!/[A-Za-z가-힣]/.test(text)) return true;
+  return false;
+}
+
+export function filterLiveCliTerminalText(text: string) {
+  return String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map(cleanTerminalChromeLine)
+    .filter((line) => !isTerminalChromeLine(line))
+    .join("\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function displayEventContent(event: GeneralRoomTimelineEvent) {
+  if (event.actor_type !== "agent") return event.content;
+  if (event.kind === "agent_error") return event.content;
+  if (!["agent_delta", "agent_message"].includes(event.kind)) return event.content;
+  return filterLiveCliTerminalText(event.content);
+}
+
+export function projectGeneralRoomTimeline(events: GeneralRoomEvent[]): GeneralRoomTimelineEvent[] {
+  const sorted = [...events].sort((left, right) => left.created_at.localeCompare(right.created_at));
+  const finalTurnKeys = new Set<string>();
+  sorted.forEach((event) => {
+    if (event.kind !== "agent_message" && event.kind !== "agent_error") return;
+    const key = turnTimelineKey(event);
+    if (key) finalTurnKeys.add(key);
+  });
+
+  const timeline: GeneralRoomTimelineEvent[] = [];
+  const streamingByTurnKey = new Map<string, number>();
+
+  sorted.forEach((event) => {
+    if (event.kind === "agent_delta") {
+      const key = turnTimelineKey(event);
+      if (!key) return;
+      if (finalTurnKeys.has(key)) return;
+      const existingIndex = streamingByTurnKey.get(key);
+      if (existingIndex !== undefined) {
+        const existing = timeline[existingIndex];
+        timeline[existingIndex] = {
+          ...event,
+          content: appendStreamingContent(existing.content, event.content),
+          created_at: event.created_at,
+          deltaCount: (existing.deltaCount || 1) + 1,
+          streaming: true,
+          timelineId: existing.timelineId || `stream:${key}`,
+        };
+        return;
+      }
+      streamingByTurnKey.set(key, timeline.length);
+      timeline.push({
+        ...event,
+        deltaCount: 1,
+        streaming: true,
+        timelineId: `stream:${key}`,
+      });
+      return;
+    }
+
+    if (event.kind === "agent_message" || event.kind === "agent_error") {
+      const key = turnTimelineKey(event);
+      const existingIndex = key ? streamingByTurnKey.get(key) : undefined;
+      if (existingIndex !== undefined) {
+        timeline[existingIndex] = {
+          ...event,
+          timelineId: `stream:${key}`,
+        };
+        streamingByTurnKey.delete(key);
+        return;
+      }
+    }
+
+    timeline.push(event);
+  });
+
+  return timeline;
+}
+
+function eventTone(event: GeneralRoomTimelineEvent) {
   if (event.kind === "agent_error") return "border-danger/40 bg-danger/10";
-  if (event.kind === "agent_delta") return "border-accent/30 bg-accent/10";
+  if (event.streaming || event.kind === "agent_delta") return "border-accent/30 bg-accent/10";
   if (event.actor_type === "user") return "border-online/30 bg-online/10";
   return "border-panel-border bg-chat-hover";
 }
@@ -199,6 +343,8 @@ export default function GeneralRoomView() {
     socketRef.current?.send({ type: "agent_control", agent_id: agent.agent_id, action });
   }
 
+  const timelineEvents = projectGeneralRoomTimeline(events);
+
   return (
     <main className="flex h-full min-h-0 flex-col bg-chat-bg text-text-primary">
       <header className="flex items-center justify-between border-b border-panel-separator px-5 py-4">
@@ -232,25 +378,25 @@ export default function GeneralRoomView() {
       <section className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_360px]">
         <div className="flex min-h-0 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-            {events.length ? (
+            {timelineEvents.length ? (
               <div className="space-y-3">
-                {events.map((event) => (
+                {timelineEvents.map((event) => (
                   <article
-                    key={event.event_id}
+                    key={event.timelineId || event.event_id}
                     className={`rounded border px-4 py-3 ${eventTone(event)}`}
                   >
                     <div className="mb-1 flex items-center gap-2 text-[12px] text-text-muted">
                       <span className="font-semibold text-text-primary">{event.actor_id}</span>
                       <span>{event.kind}</span>
                       <span>{formatClock(event.created_at)}</span>
-                      {event.kind === "agent_delta" ? (
+                      {event.streaming || event.kind === "agent_delta" ? (
                         <span className="rounded bg-accent/20 px-2 py-0.5 text-accent">
-                          streaming...
+                          streaming{event.deltaCount ? ` x${event.deltaCount}` : ""}
                         </span>
                       ) : null}
                     </div>
                     <div className="whitespace-pre-wrap break-words text-[14px] leading-relaxed">
-                      {event.content}
+                      {displayEventContent(event)}
                     </div>
                   </article>
                 ))}

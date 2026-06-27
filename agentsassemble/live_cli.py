@@ -17,6 +17,13 @@ from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
+from agentsassemble.live_cli_output import extract_live_cli_terminal_message, strip_terminal_ansi
+from agentsassemble.live_cli_transcripts import (
+    LiveCliMessageExtractionError,
+    LiveCliMessageSource,
+    LiveCliMessageSnapshot,
+    make_live_cli_message_source,
+)
 from agentsassemble.meeting_events import clean_lobby_text
 
 try:
@@ -248,6 +255,7 @@ class LiveCliRuntime:
         terminal_rows: int = 40,
         terminal_columns: int = 120,
         max_output_bytes: int = 256_000,
+        message_source: LiveCliMessageSource | None = None,
     ) -> None:
         if not command:
             raise ValueError("Live CLI command is required.")
@@ -255,7 +263,7 @@ class LiveCliRuntime:
         if not self.agent_id:
             raise ValueError("agent_id is required.")
         self.command = list(command)
-        self.cwd = Path(cwd).expanduser() if cwd else None
+        self.cwd = Path(cwd).expanduser().resolve() if cwd else Path.cwd().resolve()
         self.env = dict(env or {})
         self._popen_factory = popen_factory
         self.idle_quiet_seconds = max(0.01, float(idle_quiet_seconds))
@@ -266,6 +274,12 @@ class LiveCliRuntime:
         self.terminal_rows = max(10, int(terminal_rows or 40))
         self.terminal_columns = max(40, int(terminal_columns or 120))
         self.max_output_bytes = max(1, int(max_output_bytes))
+        self._message_source = message_source or make_live_cli_message_source(
+            self.agent_id,
+            self.command,
+            cwd=self.cwd,
+        )
+        self._message_turn_started = False
         self.last_seen_event_id = ""
         self._lock = threading.RLock()
         self._master_fd: int | None = None
@@ -286,6 +300,9 @@ class LiveCliRuntime:
                 self._last_error = "configured command missing"
                 raise FileNotFoundError(f"configured command missing: {self.command[0]}")
             assert pty is not None
+            self._message_source.prepare_start()
+            self._message_source.begin_turn()
+            self._message_turn_started = True
             master_fd, slave_fd = pty.openpty()
             try:
                 _configure_slave_terminal(slave_fd, rows=self.terminal_rows, columns=self.terminal_columns)
@@ -304,7 +321,7 @@ class LiveCliRuntime:
                     bufsize=0,
                     close_fds=True,
                     start_new_session=_supports_process_groups(),
-                    cwd=str(self.cwd) if self.cwd is not None else None,
+                    cwd=str(self.cwd),
                     env=process_env,
                 )
             except Exception as error:
@@ -326,6 +343,8 @@ class LiveCliRuntime:
         if not events:
             return
         self.start()
+        self._message_source.begin_turn()
+        self._message_turn_started = True
         for event in events:
             line = _room_input_text(event)
             self._send_line(line)
@@ -357,6 +376,11 @@ class LiveCliRuntime:
         chunks: list[bytes] = []
         total_bytes = 0
         last_read_at: float | None = None
+        last_visible_content = ""
+        final_snapshot = LiveCliMessageSnapshot()
+        if not self._message_turn_started:
+            self._message_source.begin_turn()
+            self._message_turn_started = True
         while True:
             now = time.monotonic()
             if now >= deadline:
@@ -364,14 +388,33 @@ class LiveCliRuntime:
             wait_until = deadline
             if chunks and last_read_at is not None:
                 wait_until = min(deadline, last_read_at + quiet)
-            readable = _select_readable(fd, max(0.0, wait_until - now))
+            readable = _select_readable(fd, min(0.1, max(0.0, wait_until - now)))
             if not readable:
+                final_snapshot = self._poll_message_source(
+                    b"".join(chunks),
+                    quiet=bool(chunks and last_read_at is not None and time.monotonic() >= last_read_at + quiet),
+                    previous=final_snapshot,
+                    on_delta=on_delta,
+                    last_visible_content_ref=[last_visible_content],
+                )
+                if final_snapshot.complete:
+                    self._message_turn_started = False
+                    return self._output_message_from_snapshot(final_snapshot)
+                if final_snapshot.content:
+                    last_visible_content = final_snapshot.content
                 if not self._fd_is_current(fd):
                     raise RuntimeError("Live CLI runtime stopped while reading.")
                 if process.poll() is not None:
                     raise RuntimeError(f"Live CLI runtime exited with return code {process.returncode}.")
                 now = time.monotonic()
                 if chunks and last_read_at is not None and now >= last_read_at + quiet:
+                    if getattr(self._message_source, "strict", False):
+                        if getattr(self._message_source, "fail_on_quiet_without_message", False):
+                            raise LiveCliMessageExtractionError(
+                                f"{self.agent_id} did not expose a clean assistant message in its transcript."
+                            )
+                        continue
+                    self._message_turn_started = False
                     return self._output_message(b"".join(chunks))
                 continue
             chunk = _read_chunk(fd, process)
@@ -384,9 +427,18 @@ class LiveCliRuntime:
             chunks.append(chunk)
             total_bytes += len(chunk)
             last_read_at = time.monotonic()
-            delta = _clean_terminal_text(chunk)
-            if delta and on_delta is not None:
-                on_delta(delta)
+            final_snapshot = self._poll_message_source(
+                b"".join(chunks),
+                quiet=False,
+                previous=final_snapshot,
+                on_delta=on_delta,
+                last_visible_content_ref=[last_visible_content],
+            )
+            if final_snapshot.content:
+                last_visible_content = final_snapshot.content
+            if final_snapshot.complete:
+                self._message_turn_started = False
+                return self._output_message_from_snapshot(final_snapshot)
             if total_bytes > self.max_output_bytes:
                 raise ValueError(f"Live CLI output exceeded {self.max_output_bytes} bytes.")
 
@@ -407,7 +459,7 @@ class LiveCliRuntime:
             total_bytes += len(chunk)
             if total_bytes > self.max_output_bytes:
                 raise ValueError(f"Live CLI output exceeded {self.max_output_bytes} bytes.")
-        return self._output_message(b"".join(chunks))
+        return self._output_message(b"".join(chunks), message_only=False)
 
     def interrupt(self) -> None:
         process, fd = self._state_snapshot()
@@ -448,8 +500,8 @@ class LiveCliRuntime:
             "command_configured": list(self.command),
             "command_display": " ".join(self.command),
             "resolved_executable": resolved_executable,
-            "cwd": str(self.cwd) if self.cwd is not None else "",
-            "workspace_dir": str(self.cwd) if self.cwd is not None else "",
+            "cwd": str(self.cwd),
+            "workspace_dir": str(self.cwd),
             "session_dir": "",
             "pty": True,
             "transport": "pty",
@@ -457,6 +509,7 @@ class LiveCliRuntime:
             "input_mode": self.input_mode,
             "terminal_rows": self.terminal_rows,
             "terminal_columns": self.terminal_columns,
+            **self._message_source.describe(),
             "running": running,
             "stopped": not running,
             "pid": process.pid if process is not None else None,
@@ -485,12 +538,51 @@ class LiveCliRuntime:
                 raise RuntimeError("Live CLI runtime closed while writing.")
             offset += written
 
-    def _output_message(self, response: bytes) -> dict[str, object]:
+    def _output_message(self, response: bytes, *, message_only: bool = True) -> dict[str, object]:
         return {
             "actor_id": self.agent_id,
             "actor_type": "agent",
             "kind": "agent_message",
-            "content": _clean_terminal_text(response),
+            "content": self._message_content(response) if message_only else _clean_terminal_text(response),
+        }
+
+    def _message_content(self, response: bytes) -> str:
+        return extract_live_cli_terminal_message(response)
+
+    def _poll_message_source(
+        self,
+        response: bytes,
+        *,
+        quiet: bool,
+        previous: LiveCliMessageSnapshot,
+        on_delta: Callable[[str], None] | None,
+        last_visible_content_ref: list[str],
+    ) -> LiveCliMessageSnapshot:
+        snapshot = self._message_source.poll(response, quiet=quiet)
+        if not snapshot.content:
+            return previous
+        last_visible_content = last_visible_content_ref[0] if last_visible_content_ref else ""
+        if on_delta is not None:
+            if not last_visible_content:
+                on_delta(snapshot.content)
+            elif snapshot.content.startswith(last_visible_content):
+                delta = snapshot.content[len(last_visible_content) :]
+                if delta:
+                    on_delta(delta)
+        if last_visible_content_ref:
+            last_visible_content_ref[0] = snapshot.content
+        return snapshot
+
+    def _output_message_from_snapshot(self, snapshot: LiveCliMessageSnapshot) -> dict[str, object]:
+        return {
+            "actor_id": self.agent_id,
+            "actor_type": "agent",
+            "kind": "agent_message",
+            "content": snapshot.content,
+            "metadata": {
+                "message_source": snapshot.source_kind,
+                "message_source_path": snapshot.source,
+            },
         }
 
     def _state_snapshot(self) -> tuple[subprocess.Popen[bytes], int]:
@@ -759,6 +851,7 @@ class RoomScheduler:
             _mark_latency(latency, latency_ticks, "input_write_completed_at")
             output = runtime.read_output(timeout_seconds=self.read_timeout_seconds, on_delta=append_delta)
             content = clean_lobby_text(output.get("content"), limit=12000)
+            output_metadata = output.get("metadata") if isinstance(output.get("metadata"), dict) else {}
             if content and not latency.get("first_output_at"):
                 _mark_latency(latency, latency_ticks, "first_output_at")
                 _mark_latency(latency, latency_ticks, "last_output_at")
@@ -770,7 +863,7 @@ class RoomScheduler:
                 content,
                 source_event_id=source_event_id,
                 relay_depth=relay_depth,
-                metadata={"latency": dict(latency)},
+                metadata={**dict(output_metadata), "latency": dict(latency)},
             )
             with self._lock:
                 self._last_output_event_id[agent_id] = clean_lobby_text(output_event.get("event_id"), limit=128)
@@ -947,11 +1040,7 @@ def _terminal_input_bytes(text: str, *, input_mode: str, submit_newline: str) ->
 
 
 def _clean_terminal_text(response: bytes) -> str:
-    text = response.decode("utf-8", errors="replace")
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
-    text = re.sub(r"\x1b[@-_][0-?]*[ -/]*[@-~]?", "", text)
-    text = text.replace("\x07", "")
+    text = strip_terminal_ansi(response)
     return text.strip()
 
 
