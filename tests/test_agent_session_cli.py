@@ -260,6 +260,37 @@ class AgentSessionCliTests(unittest.TestCase):
         smoke_runner.assert_not_called()
         self.assertIn('"status": "not_run"', stdout.getvalue())
 
+    def test_room_smoke_live_cli_dispatches_command_config_harness(self):
+        args = build_parser().parse_args(
+            [
+                "room",
+                "smoke",
+                "--providers",
+                "codex,grok",
+                "--config",
+                "configs/live-cli-providers.example.json",
+                "--approve-real-provider",
+                "--json",
+            ]
+        )
+
+        stdout = StringIO()
+        with patch("sys.stdout", stdout), patch("agentsassemble.cli.run_live_cli_smoke") as smoke_runner:
+            smoke_runner.return_value = {
+                "status": "ok",
+                "providers": [{"agent_id": "codex", "status": "ok"}],
+            }
+            exit_code = run_room_command(args)
+
+        self.assertEqual(exit_code, 0)
+        smoke_runner.assert_called_once_with(
+            config_path="configs/live-cli-providers.example.json",
+            providers=["codex", "grok"],
+            approve_real_provider=True,
+            timeout_seconds=120.0,
+        )
+        self.assertIn('"status": "ok"', stdout.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

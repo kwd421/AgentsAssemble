@@ -57,6 +57,7 @@ from agentsassemble.live_agent_continuity_proof import (
     run_live_agent_continuity_proof,
     run_live_agent_continuity_proof_batch,
 )
+from agentsassemble.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG, run_live_cli_smoke
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.lobby_promotion import promote_lobby_events_to_official
@@ -1685,8 +1686,13 @@ def build_parser() -> argparse.ArgumentParser:
     room_turn.add_argument("--json", action="store_true", dest="as_json")
     room_turn.add_argument("instruction")
 
-    room_smoke = room_subparsers.add_parser("smoke", help="Run opt-in Agent Session Codex smoke checks.")
-    room_smoke_subparsers = room_smoke.add_subparsers(dest="room_smoke_command", required=True)
+    room_smoke = room_subparsers.add_parser("smoke", help="Run opt-in Agent Session or live CLI smoke checks.")
+    room_smoke.add_argument("--providers", default="", help="Comma-separated live CLI provider ids to smoke, such as codex,grok.")
+    room_smoke.add_argument("--config", default=str(DEFAULT_LIVE_CLI_SMOKE_CONFIG), help="Live CLI provider smoke config JSON.")
+    room_smoke.add_argument("--timeout", type=parse_nonnegative_float, default=120.0, help="Per-provider live CLI smoke timeout.")
+    room_smoke.add_argument("--approve-real-provider", action="store_true", help="Allow real local provider CLI commands to run.")
+    room_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print JSON output.")
+    room_smoke_subparsers = room_smoke.add_subparsers(dest="room_smoke_command")
     for smoke_command in (
         "fresh-codex",
         "explicit-session-codex",
@@ -8452,7 +8458,19 @@ def run_room_command(args: argparse.Namespace) -> int:
             )
         return 0
     if args.room_command == "smoke":
-        if bool(args.approve_real_provider) and args.room_smoke_command in CODEX_APP_SERVER_SMOKE_COMMANDS:
+        live_cli_providers = [
+            clean_lobby_text(provider, limit=128)
+            for provider in str(getattr(args, "providers", "") or "").split(",")
+            if provider.strip()
+        ]
+        if live_cli_providers:
+            payload = run_live_cli_smoke(
+                config_path=getattr(args, "config", str(DEFAULT_LIVE_CLI_SMOKE_CONFIG)),
+                providers=live_cli_providers,
+                approve_real_provider=bool(args.approve_real_provider),
+                timeout_seconds=float(getattr(args, "timeout", 120.0) or 120.0),
+            )
+        elif bool(args.approve_real_provider) and args.room_smoke_command in CODEX_APP_SERVER_SMOKE_COMMANDS:
             payload = run_codex_app_server_smoke(
                 args.room_smoke_command,
                 approve_real_provider=True,
@@ -8460,7 +8478,7 @@ def run_room_command(args: argparse.Namespace) -> int:
         else:
             payload = {
                 "status": "skipped" if not args.approve_real_provider else "not_run",
-                "smoke": args.room_smoke_command,
+                "smoke": args.room_smoke_command or "live-cli",
                 "requires_approval": True,
                 "approved": bool(args.approve_real_provider),
                 "metrics": {

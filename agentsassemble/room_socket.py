@@ -62,14 +62,7 @@ class GeneralRoomSocketHub:
             elif message_type == "dispatch":
                 self.controller.dispatch()
             elif message_type == "smoke_start":
-                self._broadcast(
-                    {
-                        "type": "smoke_progress",
-                        "run_id": "not_implemented",
-                        "phase": "start",
-                        "status": "not_implemented",
-                    }
-                )
+                self._handle_smoke_start(message)
             else:
                 self._send_error(connection, f"unknown room socket message type: {message_type}")
         except Exception as error:
@@ -116,6 +109,22 @@ class GeneralRoomSocketHub:
         else:
             raise ValueError(f"unsupported agent control action: {action}")
         self._broadcast({"type": "agent_state", "agent": payload["agent"]})
+
+    def _handle_smoke_start(self, message: dict[str, object]) -> None:
+        def run() -> None:
+            self._broadcast({"type": "smoke_progress", "run_id": "", "phase": "start", "status": "running"})
+            result = self.controller.smoke_payload(message, reporter=self._broadcast)
+            self._broadcast(
+                {
+                    "type": "smoke_progress",
+                    "run_id": str(result.get("run_id") or ""),
+                    "phase": "complete",
+                    "status": str(result.get("status") or "unknown"),
+                    "result": result,
+                }
+            )
+
+        threading.Thread(target=run, daemon=True).start()
 
     def _snapshot(self, *, after_event_id: str = "") -> dict[str, object]:
         agents = list(self.controller.agents_payload().get("agents", []))

@@ -249,7 +249,13 @@ export type GeneralRoomSocketClientMessage =
       action: "start" | "stop" | "resume" | "interrupt";
     }
   | { type: "dispatch"; target?: string; after_event_id?: string }
-  | { type: "smoke_start"; providers?: string[] };
+  | {
+      type: "smoke_start";
+      providers?: string[];
+      config?: string;
+      approve_real_provider?: boolean;
+      timeout_seconds?: number;
+    };
 
 export type GeneralRoomSocketServerMessage =
   | {
@@ -270,7 +276,14 @@ export type GeneralRoomSocketServerMessage =
     }
   | { type: "agent_message"; event: GeneralRoomEvent }
   | ({ type: "latency"; agent_id: string } & GeneralRoomLatency)
-  | { type: "smoke_progress"; run_id: string; provider?: string; phase: string; status: string }
+  | {
+      type: "smoke_progress";
+      run_id: string;
+      provider?: string;
+      phase: string;
+      status: string;
+      result?: Record<string, unknown>;
+    }
   | { type: "error"; message: string; recoverable?: boolean; event?: GeneralRoomEvent };
 
 export interface GeneralRoomSocketHandlers {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -11,6 +12,7 @@ from agentsassemble.live_cli import (
     LiveCliRuntime,
     RoomScheduler,
 )
+from agentsassemble.live_cli_smoke import run_live_cli_smoke
 from agentsassemble.meeting_events import clean_lobby_text
 
 
@@ -108,15 +110,40 @@ class GeneralRoomController:
         return {"room_id": self.room.room_id, "agents": self.scheduler.latency_payload()}
 
     def smoke_runs_payload(self) -> dict[str, object]:
-        return {"room_id": self.room.room_id, "smoke_runs": []}
+        smoke_dir = self.output_root / "rooms" / self.room.room_id / "smoke"
+        runs: list[dict[str, object]] = []
+        if smoke_dir.exists():
+            for path in sorted(smoke_dir.glob("*.json"), reverse=True)[:50]:
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                if isinstance(payload, dict):
+                    runs.append(
+                        {
+                            "run_id": payload.get("run_id") or path.stem,
+                            "status": payload.get("status") or "unknown",
+                            "started_at": payload.get("started_at") or "",
+                            "finished_at": payload.get("finished_at") or "",
+                            "result_path": str(path),
+                        }
+                    )
+        return {"room_id": self.room.room_id, "smoke_runs": runs}
 
-    def smoke_payload(self, payload: dict[str, object]) -> dict[str, object]:
-        del payload
-        return {
-            "room_id": self.room.room_id,
-            "status": "not_implemented",
-            "message": "real live CLI smoke harness is implemented in the smoke slice",
-        }
+    def smoke_payload(
+        self,
+        payload: dict[str, object],
+        *,
+        reporter: Callable[[dict[str, object]], None] | None = None,
+    ) -> dict[str, object]:
+        return run_live_cli_smoke(
+            config_path=str(payload.get("config") or payload.get("config_path") or "configs/live-cli-providers.example.json"),
+            output_root=self.output_root,
+            providers=_provider_list(payload.get("providers")),
+            approve_real_provider=bool(payload.get("approve_real_provider") or payload.get("approve_real_providers")),
+            timeout_seconds=float(payload.get("timeout_seconds") or payload.get("timeout") or 120),
+            reporter=reporter,
+        )
 
     def start_agent(self, agent_id: str) -> dict[str, object]:
         runtime = self._runtime(agent_id)
@@ -207,3 +234,11 @@ class GeneralRoomController:
         if runtime is None:
             raise ValueError(f"unknown agent: {agent_id}")
         return runtime
+
+
+def _provider_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [clean_lobby_text(item, limit=128) for item in value.split(",") if item.strip()]
+    if isinstance(value, list):
+        return [clean_lobby_text(item, limit=128) for item in value if clean_lobby_text(item, limit=128)]
+    return []

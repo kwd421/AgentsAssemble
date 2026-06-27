@@ -1,0 +1,35 @@
+{
+  "room_id": "general",
+  "providers": [
+    {
+      "id": "codex",
+      "kind": "live_cli",
+      "display_name": "Codex CLI",
+      "command": ["codex"],
+      "cwd": ".",
+      "startup_probe": "codex",
+      "session_probe_prompt": "AGENTSASSEMBLE_SESSION_MARKER=codex-001 를 기억해줘. 짧게 확인만 해.",
+      "memory_check_prompt": "아까 내가 준 AGENTSASSEMBLE_SESSION_MARKER 값을 말해줘."
+    },
+    {
+      "id": "antigravity",
+      "kind": "live_cli",
+      "display_name": "Antigravity CLI",
+      "command": ["antigravity"],
+      "cwd": ".",
+      "startup_probe": "antigravity",
+      "session_probe_prompt": "AGENTSASSEMBLE_SESSION_MARKER=antigravity-001 를 기억해줘. 짧게 확인만 해.",
+      "memory_check_prompt": "아까 marker 값 뭐였지?"
+    },
+    {
+      "id": "grok",
+      "kind": "live_cli",
+      "display_name": "Grok CLI",
+      "command": ["grok"],
+      "cwd": ".",
+      "startup_probe": "grok",
+      "session_probe_prompt": "AGENTSASSEMBLE_SESSION_MARKER=grok-001 를 기억해줘. 짧게 확인만 해.",
+      "memory_check_prompt": "아까 marker 값 뭐였지?"
+    }
+  ]
+}
