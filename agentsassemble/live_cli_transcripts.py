@@ -31,7 +31,7 @@ class LiveCliMessageSource(Protocol):
     def prepare_start(self) -> None:
         ...
 
-    def begin_turn(self) -> None:
+    def begin_turn(self, expected_input: str = "") -> None:
         ...
 
     def poll(self, terminal_output: bytes, *, quiet: bool = False) -> LiveCliMessageSnapshot:
@@ -49,7 +49,8 @@ class TerminalCaptureMessageSource:
     def prepare_start(self) -> None:
         return
 
-    def begin_turn(self) -> None:
+    def begin_turn(self, expected_input: str = "") -> None:
+        del expected_input
         return
 
     def poll(self, terminal_output: bytes, *, quiet: bool = False) -> LiveCliMessageSnapshot:
@@ -79,16 +80,21 @@ class _JsonlOffsetMessageSource:
         self._ignored_existing_paths: set[str] = set()
         self._active_paths: set[str] = set()
         self._turn_input_seen_paths: set[str] = set()
+        self._bound_path = ""
+        self._expected_turn_input = ""
 
     def prepare_start(self) -> None:
         self._offsets = {}
         self._active_paths = set()
         self._turn_input_seen_paths = set()
+        self._bound_path = ""
+        self._expected_turn_input = ""
         self._ignored_existing_paths = {str(path) for path in self._candidate_paths()}
 
-    def begin_turn(self) -> None:
+    def begin_turn(self, expected_input: str = "") -> None:
         self._offsets = {}
         self._turn_input_seen_paths = set()
+        self._expected_turn_input = _normalize_turn_input(expected_input)
         for path in self._visible_candidate_paths():
             self._offsets[str(path)] = _safe_size(path)
 
@@ -102,9 +108,14 @@ class _JsonlOffsetMessageSource:
             self._offsets[path_key] = next_offset
             if not text:
                 continue
-            if self._contains_turn_input(text):
+            if self._contains_turn_input(text, expected_input=self._expected_turn_input):
                 self._turn_input_seen_paths.add(path_key)
+                if not self._bound_path:
+                    self._bound_path = path_key
+                    self._active_paths.add(path_key)
             if path_key not in self._turn_input_seen_paths:
+                continue
+            if self._bound_path and path_key != self._bound_path:
                 continue
             snapshot = self._extract_from_text(text, source=str(path))
             if snapshot.content:
@@ -116,12 +127,16 @@ class _JsonlOffsetMessageSource:
         return {
             "message_source": self.source_kind,
             "message_source_strict": True,
+            "message_source_bound": bool(self._bound_path),
         }
 
     def _candidate_paths(self) -> list[Path]:
         raise NotImplementedError
 
     def _visible_candidate_paths(self) -> list[Path]:
+        if self._bound_path:
+            bound = Path(self._bound_path)
+            return [bound] if bound.is_file() else []
         paths: list[Path] = []
         for path in self._candidate_paths():
             key = str(path)
@@ -133,8 +148,14 @@ class _JsonlOffsetMessageSource:
     def _extract_from_text(self, text: str, *, source: str) -> LiveCliMessageSnapshot:
         raise NotImplementedError
 
-    def _contains_turn_input(self, text: str) -> bool:
+    def _turn_input_texts(self, text: str) -> list[str]:
         raise NotImplementedError
+
+    def _contains_turn_input(self, text: str, *, expected_input: str) -> bool:
+        inputs = [_normalize_turn_input(value) for value in self._turn_input_texts(text)]
+        if expected_input:
+            return expected_input in inputs
+        return any(inputs)
 
 
 class CodexSessionMessageSource(_JsonlOffsetMessageSource):
@@ -183,18 +204,25 @@ class CodexSessionMessageSource(_JsonlOffsetMessageSource):
             source_kind=self.source_kind,
         )
 
-    def _contains_turn_input(self, text: str) -> bool:
+    def _turn_input_texts(self, text: str) -> list[str]:
+        inputs: list[str] = []
         for entry in _jsonl_objects(text):
             payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
             if str(entry.get("type") or "") == "event_msg" and str(payload.get("type") or "") == "user_message":
-                return True
+                inputs.append(str(payload.get("message") or ""))
             if (
                 str(entry.get("type") or "") == "response_item"
                 and str(payload.get("type") or "") == "message"
                 and str(payload.get("role") or "") == "user"
             ):
-                return True
-        return False
+                content = payload.get("content")
+                if isinstance(content, list):
+                    inputs.extend(
+                        str(item.get("text") or "")
+                        for item in content
+                        if isinstance(item, dict) and str(item.get("type") or "") == "input_text"
+                    )
+        return inputs
 
 
 class GrokSessionMessageSource(_JsonlOffsetMessageSource):
@@ -222,7 +250,7 @@ class GrokSessionMessageSource(_JsonlOffsetMessageSource):
                 continue
             content = entry.get("content")
             if isinstance(content, str):
-                latest = clean_lobby_text(content, limit=12000)
+                latest = _clean_grok_assistant_content(content)
         return LiveCliMessageSnapshot(
             content=latest,
             complete=bool(latest),
@@ -230,8 +258,13 @@ class GrokSessionMessageSource(_JsonlOffsetMessageSource):
             source_kind=self.source_kind,
         )
 
-    def _contains_turn_input(self, text: str) -> bool:
-        return any(str(entry.get("type") or "") == "user" for entry in _jsonl_objects(text))
+    def _turn_input_texts(self, text: str) -> list[str]:
+        inputs: list[str] = []
+        for entry in _jsonl_objects(text):
+            if str(entry.get("type") or "") != "user":
+                continue
+            inputs.extend(_grok_user_inputs(entry.get("content")))
+        return inputs
 
 
 class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
@@ -281,12 +314,13 @@ class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
             source_kind=self.source_kind,
         )
 
-    def _contains_turn_input(self, text: str) -> bool:
-        return any(
-            str(entry.get("source") or "") == "USER_EXPLICIT"
-            or str(entry.get("type") or "") == "USER_INPUT"
+    def _turn_input_texts(self, text: str) -> list[str]:
+        return [
+            _antigravity_user_request(entry.get("content"))
             for entry in _jsonl_objects(text)
-        )
+            if str(entry.get("source") or "") == "USER_EXPLICIT"
+            or str(entry.get("type") or "") == "USER_INPUT"
+        ]
 
 
 class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
@@ -338,12 +372,22 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
             source_kind=self.source_kind,
         )
 
-    def _contains_turn_input(self, text: str) -> bool:
+    def _turn_input_texts(self, text: str) -> list[str]:
+        inputs: list[str] = []
         for entry in _jsonl_objects(text):
             message = entry.get("message") if isinstance(entry.get("message"), dict) else {}
-            if str(entry.get("type") or "") == "user" or str(message.get("role") or "") == "user":
-                return True
-        return False
+            if str(entry.get("type") or "") != "user" and str(message.get("role") or "") != "user":
+                continue
+            content = message.get("content")
+            if isinstance(content, str):
+                inputs.append(content)
+            elif isinstance(content, list):
+                inputs.extend(
+                    str(block.get("text") or "")
+                    for block in content
+                    if isinstance(block, dict) and str(block.get("type") or "") in {"text", "input_text"}
+                )
+        return inputs
 
 
 def _claude_message_text(message: dict[str, object]) -> str:
@@ -424,14 +468,67 @@ def _jsonl_objects(text: str) -> list[dict[str, object]]:
 
 
 def _read_from_offset(path: Path, offset: int) -> tuple[str, int]:
+    start = max(0, int(offset))
     try:
         with path.open("rb") as handle:
-            handle.seek(max(0, int(offset)))
+            handle.seek(start)
             data = handle.read()
-            next_offset = handle.tell()
     except OSError:
-        return "", max(0, int(offset))
-    return data.decode("utf-8", errors="replace"), next_offset
+        return "", start
+    if not data:
+        return "", start
+    if data.endswith((b"\n", b"\r")):
+        complete = data
+    else:
+        last_newline = max(data.rfind(b"\n"), data.rfind(b"\r"))
+        complete = data[: last_newline + 1] if last_newline >= 0 else b""
+        trailing = data[last_newline + 1 :]
+        try:
+            parsed = json.loads(trailing.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            parsed = None
+        if isinstance(parsed, dict):
+            complete = data
+    return complete.decode("utf-8", errors="replace"), start + len(complete)
+
+
+def _normalize_turn_input(value: object) -> str:
+    return str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def _antigravity_user_request(value: object) -> str:
+    return _tagged_body(str(value or ""), "USER_REQUEST")
+
+
+def _grok_user_inputs(value: object) -> list[str]:
+    if isinstance(value, str):
+        candidates = [value]
+    elif isinstance(value, list):
+        candidates = [
+            str(block.get("text") or "")
+            for block in value
+            if isinstance(block, dict) and str(block.get("type") or "") == "text"
+        ]
+    else:
+        return []
+    return [_tagged_body(candidate, "user_query") for candidate in candidates]
+
+
+def _clean_grok_assistant_content(value: str) -> str:
+    content = re.sub(r"(?:<\|eos\|>)+\s*$", "", str(value or ""), flags=re.IGNORECASE)
+    return clean_lobby_text(content, limit=12000)
+
+
+def _tagged_body(content: str, tag: str) -> str:
+    opening = f"<{tag}>"
+    closing = f"</{tag}>"
+    start = content.find(opening)
+    if start < 0:
+        return content
+    end = content.find(closing, start + len(opening))
+    if end < 0:
+        return content
+    return content[start + len(opening) : end]
 
 
 def _safe_size(path: Path) -> int:

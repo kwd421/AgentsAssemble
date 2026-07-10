@@ -130,7 +130,7 @@ def _antigravity_command(_model: str) -> tuple[str, ...]:
 
 
 def _grok_command(_model: str) -> tuple[str, ...]:
-    return ("grok", "--no-alt-screen", "--permission-mode", "plan")
+    return ("grok", "agent", "stdio")
 
 
 def _claude_command(model: str) -> tuple[str, ...]:
@@ -141,6 +141,7 @@ def _claude_command(model: str) -> tuple[str, ...]:
         "--permission-mode",
         "plan",
         "--tools",
+        "",
         "--safe-mode",
     )
 
@@ -240,7 +241,7 @@ def native_cli_provider_spec_from_config(
     definition = native_cli_provider_definition(
         payload.get("provider_id") or payload.get("provider_kind") or agent_id
     )
-    command = tuple(str(part) for part in list(payload.get("command") or []) if str(part))
+    command = tuple(str(part) for part in list(payload.get("command") or []))
     model = clean_lobby_text(payload.get("model"), limit=128)
     if not model and "--model" in command:
         index = command.index("--model")
@@ -280,9 +281,13 @@ def native_cli_provider_spec_from_config(
 
 
 def validate_native_cli_provider_spec(spec: NativeCliProviderSpec) -> None:
-    if not spec.command:
+    if not spec.command or not str(spec.command[0]).strip():
         raise ValueError("Native CLI Agent Session command is required.")
     executable = Path(spec.command[0]).name.casefold()
+    if executable == "grok" and spec.normalized_provider_kind() == "grok_live_session":
+        command_parts = {str(part).casefold() for part in spec.command[1:]}
+        if not {"agent", "stdio"}.issubset(command_parts):
+            raise ValueError("Grok Agent Sessions require grok agent stdio; PTY fallback is disabled.")
     is_claude = executable == "claude" or spec.normalized_provider_kind() == "claude_code"
     if not is_claude:
         return

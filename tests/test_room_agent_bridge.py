@@ -2,7 +2,8 @@ import threading
 import time
 import unittest
 
-from agentsassemble.room_agent_bridge import RoomAgentBridge
+from agentsassemble.grok_acp_runtime import GrokAcpRuntime
+from agentsassemble.room_agent_bridge import RoomAgentBridge, runtime_from_config
 
 
 class FakeClient:
@@ -80,6 +81,42 @@ def _wait_for(predicate, timeout=2.0):
 
 
 class RoomAgentBridgeTests(unittest.TestCase):
+    def test_grok_acp_config_selects_structured_runtime(self):
+        runtime = runtime_from_config(
+            {
+                "participant_id": "grok",
+                "provider_kind": "grok_live_session",
+                "command": ["grok", "agent", "stdio"],
+                "cwd": ".",
+                "runtime_state_dir": ".agentsassemble/test-grok-acp",
+            }
+        )
+
+        self.assertIsInstance(runtime, GrokAcpRuntime)
+
+    def test_pty_runtime_preserves_an_intentional_empty_cli_argument(self):
+        runtime = runtime_from_config(
+            {
+                "participant_id": "claude",
+                "provider_kind": "claude_code",
+                "command": ["claude", "--tools", "", "--safe-mode"],
+                "cwd": ".",
+            }
+        )
+
+        self.assertEqual(runtime.command, ["claude", "--tools", "", "--safe-mode"])
+
+    def test_real_grok_command_does_not_fall_back_to_pty(self):
+        with self.assertRaisesRegex(ValueError, "PTY fallback is disabled"):
+            runtime_from_config(
+                {
+                    "participant_id": "grok",
+                    "provider_kind": "grok_live_session",
+                    "command": ["grok", "--no-alt-screen"],
+                    "cwd": ".",
+                }
+            )
+
     def test_persistent_runtime_handles_multiple_turns_without_restart(self):
         client = FakeClient()
         runtime = FakeRuntime()

@@ -117,6 +117,15 @@ class RoomRealtimeController:
         with self._lock:
             previous_session = self.store.session(clean_room_id, spec.agent_id)
             previous_participant = self.store.participant(clean_room_id, spec.agent_id)
+            requested_profile_key = spec.runtime_profile_key()
+            if (
+                previous_session.get("runtime_status") in {"starting", "idle", "busy", "recovering"}
+                and previous_session.get("runtime_profile_key") != requested_profile_key
+            ):
+                raise RoomCommandRejected(
+                    "This Agent Session is running with a different runtime profile; stop it before changing settings.",
+                    code="runtime_profile_conflict",
+                )
             providers = self._providers_by_room.setdefault(clean_room_id, {})
             providers[clean_lobby_text(spec.agent_id, limit=128)] = spec
             self._ensure_provider_session(clean_room_id, spec)
@@ -402,6 +411,7 @@ class RoomRealtimeController:
                 runtime_status="recovering" if automatic_recovery else "error",
                 pid=None,
                 bridge_pid=None,
+                provider_session_active=False,
                 active_turn_id="",
                 turn_phase="",
                 inflight_event_ids=[],
@@ -421,7 +431,7 @@ class RoomRealtimeController:
                 session_id=session_id,
                 content=message,
                 error_code="bridge_process_exited",
-                stderr_tail=clean_lobby_text(stderr_tail, limit=16000),
+                stderr_tail_present=bool(clean_lobby_text(stderr_tail, limit=16000)),
                 recovery_required=True,
                 automatic_recovery_scheduled=automatic_recovery,
             )
@@ -665,6 +675,7 @@ class RoomRealtimeController:
             runtime_status="stopped",
             pid=None,
             bridge_pid=None,
+            provider_session_active=False,
             active_turn_id="",
             turn_phase="",
             inflight_event_ids=[],
@@ -802,8 +813,10 @@ class RoomRealtimeController:
             pty=bool(payload.get("pty", True)),
             transport=clean_lobby_text(payload.get("transport"), limit=64) or "pty",
             is_one_shot=bool(payload.get("is_one_shot", False)),
+            model=clean_lobby_text(payload.get("model"), limit=128) or session.get("model") or "",
             started_at=clean_lobby_text(payload.get("started_at"), limit=128) or _now(),
             last_error="",
+            **_runtime_diagnostic_fields(payload),
         )
         if previous_participant.get("status") != "joined":
             self.store.append_event(room_id, "participant_joined", participant_id=agent_id, session_id=session["session_id"])
@@ -815,11 +828,12 @@ class RoomRealtimeController:
 
     def _bridge_health(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         _agent_id, session = self._bridge_session(identity, room_id)
-        fields = {
+        fields: dict[str, object] = {
             key: payload[key]
             for key in ("pid", "running", "resolved_executable", "started_at", "last_error", "returncode")
             if key in payload
         }
+        fields.update(_runtime_diagnostic_fields(payload))
         updated = self.store.update_session_fields(room_id, str(session["session_id"]), **fields)
         self._publish_session_state(room_id, updated)
         return {"agent_session": self._public_session(updated)}
@@ -848,8 +862,8 @@ class RoomRealtimeController:
 
     def _message_delta(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         agent_id, session = self._active_bridge_turn(identity, room_id, payload)
-        content = clean_lobby_text(payload.get("content"), limit=12000)
-        if not content:
+        content = _message_delta_text(payload.get("content"), limit=12000)
+        if not content.strip():
             raise RoomCommandRejected("Delta content is required.", code="empty")
         if session.get("turn_phase") != "streaming":
             self.store.update_session_fields(room_id, str(session["session_id"]), turn_phase="streaming")
@@ -897,6 +911,7 @@ class RoomRealtimeController:
             message_source=payload.get("message_source"),
         )
         latency = _merged_latency(session.get("latency"), payload.get("latency"))
+        diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
         finished = self.store.append_event(
             room_id,
             "turn_finished",
@@ -929,6 +944,7 @@ class RoomRealtimeController:
             turn_count=int(session.get("turn_count") or 0) + 1,
             latency=latency,
             last_error="",
+            **_runtime_diagnostic_fields(diagnostics),
         )
         self._assign_pending(room_id, agent_id)
         current = self.store.session(room_id, str(session["session_id"]))
@@ -948,7 +964,7 @@ class RoomRealtimeController:
             turn_id=session["active_turn_id"],
             content=content,
             error_code="interrupted" if interrupted else "provider_turn_failed",
-            diagnostics=diagnostics,
+            diagnostics=_public_runtime_diagnostics(diagnostics),
         )
         self.store.append_event(
             room_id,
@@ -983,6 +999,7 @@ class RoomRealtimeController:
             recovery_required=not interrupted,
             recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
             last_error=content,
+            **_runtime_diagnostic_fields(diagnostics),
         )
         self._publish_session_state(room_id, updated)
         if automatic_recovery:
@@ -1127,6 +1144,10 @@ class RoomRealtimeController:
                 "queued_at": source_event.get("created_at") or dispatched_at,
                 "dispatch_started_at": dispatched_at,
             },
+            provider_visible_chars=int(packet.get("provider_visible_chars") or 0),
+            provider_visible_event_count=int(packet.get("provider_visible_event_count") or 0),
+            provider_input_mode=clean_lobby_text(packet.get("input_mode"), limit=32),
+            context_error_detected=False,
         )
         self._publish_session_state(room_id, updated)
         self.store.append_event(
@@ -1330,7 +1351,7 @@ class RoomRealtimeController:
 
     @staticmethod
     def _public_session(session: dict[str, object]) -> dict[str, object]:
-        hidden = {"env", "token", "ticket", "credentials"}
+        hidden = {"env", "token", "ticket", "credentials", "stderr_tail", "terminal_tail", "provider_session_id"}
         return {key: value for key, value in session.items() if key not in hidden}
 
 
@@ -1348,6 +1369,49 @@ def _merged_latency(existing: object, incoming: object) -> dict[str, object]:
     if isinstance(incoming, dict):
         base.update({key: value for key, value in incoming.items() if value not in (None, "")})
     return base
+
+
+def _runtime_diagnostic_fields(diagnostics: object) -> dict[str, object]:
+    values = diagnostics if isinstance(diagnostics, dict) else {}
+    return {
+        "terminal_byte_count": int(values.get("terminal_byte_count") or 0),
+        "terminal_tail": str(values.get("terminal_tail") or "")[-16000:],
+        "stderr_drained": bool(values.get("stderr_drained", False)),
+        "stderr_byte_count": int(values.get("stderr_byte_count") or 0),
+        "stderr_line_count": int(values.get("stderr_line_count") or 0),
+        "stderr_warning_count": int(values.get("stderr_warning_count") or 0),
+        "stderr_tail": str(values.get("stderr_tail") or "")[-16000:],
+        "stderr_tail_truncated": bool(values.get("stderr_tail_truncated", False)),
+        "stderr_last_line_at": clean_lobby_text(values.get("stderr_last_line_at"), limit=128),
+        "provider_session_active": bool(values.get("provider_session_active", False)),
+        "provider_session_load_supported": bool(values.get("provider_session_load_supported", False)),
+        "provider_session_reused": bool(values.get("provider_session_reused", False)),
+        "provider_session_resume_failed": bool(values.get("provider_session_resume_failed", False)),
+        "provider_session_resume_error": clean_lobby_text(
+            values.get("provider_session_resume_error"),
+            limit=1000,
+        ),
+        "approval_policy": clean_lobby_text(values.get("approval_policy"), limit=64),
+        "yolo_mode": values.get("yolo_mode") if isinstance(values.get("yolo_mode"), bool) else None,
+        "permission_request_count": int(values.get("permission_request_count") or 0),
+        "permission_denied_count": int(values.get("permission_denied_count") or 0),
+        "empty_turn_recovery_count": int(values.get("empty_turn_recovery_count") or 0),
+        "notification_drop_count": int(values.get("notification_drop_count") or 0),
+        "message_source": clean_lobby_text(values.get("message_source"), limit=128),
+        "message_source_strict": bool(values.get("message_source_strict", False)),
+    }
+
+
+def _public_runtime_diagnostics(diagnostics: object) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in _runtime_diagnostic_fields(diagnostics).items()
+        if key not in {"stderr_tail", "terminal_tail"}
+    }
+
+
+def _message_delta_text(value: object, *, limit: int) -> str:
+    return str(value or "").replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")[:limit]
 
 
 def _provider_process_exited(message: str, diagnostics: dict[str, object]) -> bool:

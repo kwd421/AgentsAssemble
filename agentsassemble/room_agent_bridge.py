@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
+from agentsassemble.grok_acp_runtime import GrokAcpRuntime
 from agentsassemble.live_cli import LiveCliRuntime
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
@@ -178,6 +179,7 @@ class RoomAgentBridge:
                     "turn_id": turn_id,
                     "content": final_content,
                     "message_source": metadata.get("message_source") or metadata.get("source_kind") or "terminal",
+                    "diagnostics": self._health_payload(self.runtime.health()),
                     "latency": {
                         "first_output_at": first_output_at,
                         "last_output_at": last_output_at or completed_at,
@@ -226,13 +228,46 @@ class RoomAgentBridge:
             "returncode": health.get("returncode"),
             "terminal_byte_count": int(health.get("terminal_byte_count") or 0),
             "terminal_tail": str(health.get("terminal_tail") or "")[-16000:],
+            "stderr_drained": bool(health.get("stderr_drained", False)),
+            "stderr_byte_count": int(health.get("stderr_byte_count") or 0),
+            "stderr_line_count": int(health.get("stderr_line_count") or 0),
+            "stderr_warning_count": int(health.get("stderr_warning_count") or 0),
+            "stderr_tail": str(health.get("stderr_tail") or "")[-16000:],
+            "stderr_tail_truncated": bool(health.get("stderr_tail_truncated", False)),
+            "stderr_last_line_at": str(health.get("stderr_last_line_at") or ""),
+            "provider_session_active": bool(health.get("provider_session_active", False)),
+            "provider_session_load_supported": bool(health.get("provider_session_load_supported", False)),
+            "provider_session_reused": bool(health.get("provider_session_reused", False)),
+            "provider_session_resume_failed": bool(health.get("provider_session_resume_failed", False)),
+            "provider_session_resume_error": str(health.get("provider_session_resume_error") or "")[:1000],
+            "approval_policy": str(health.get("approval_policy") or ""),
+            "yolo_mode": health.get("yolo_mode"),
+            "permission_request_count": int(health.get("permission_request_count") or 0),
+            "permission_denied_count": int(health.get("permission_denied_count") or 0),
+            "empty_turn_recovery_count": int(health.get("empty_turn_recovery_count") or 0),
+            "notification_drop_count": int(health.get("notification_drop_count") or 0),
+            "message_source": str(health.get("message_source") or ""),
+            "message_source_strict": bool(health.get("message_source_strict", False)),
+            "model": str(health.get("model") or ""),
         }
 
 
-def runtime_from_config(config: dict[str, object]) -> LiveCliRuntime:
-    command = [str(part) for part in config.get("command", []) if str(part)] if isinstance(config.get("command"), list) else []
-    if not command:
+def runtime_from_config(config: dict[str, object]) -> BridgeRuntime:
+    command = [str(part) for part in config.get("command", [])] if isinstance(config.get("command"), list) else []
+    if not command or not command[0].strip():
         raise ValueError("Agent Bridge command is required.")
+    provider_kind = clean_lobby_text(config.get("provider_kind"), limit=64)
+    if provider_kind == "grok_live_session" and _is_grok_acp_command(command):
+        return GrokAcpRuntime(
+            clean_lobby_text(config.get("participant_id") or config.get("agent_id"), limit=128),
+            command,
+            cwd=clean_lobby_text(config.get("cwd"), limit=500) or ".",
+            state_dir=clean_lobby_text(config.get("runtime_state_dir"), limit=1000)
+            or ".agentsassemble/grok-acp",
+            startup_timeout_seconds=_positive_float(config.get("startup_timeout_seconds"), 20.0),
+        )
+    if provider_kind == "grok_live_session" and Path(command[0]).name.casefold() == "grok":
+        raise ValueError("Grok Agent Sessions require grok agent stdio; PTY fallback is disabled.")
     return LiveCliRuntime(
         clean_lobby_text(config.get("participant_id") or config.get("agent_id"), limit=128),
         command,
@@ -248,6 +283,12 @@ def runtime_from_config(config: dict[str, object]) -> LiveCliRuntime:
         startup_accept_contains=str(config.get("startup_accept_contains") or ""),
         startup_accept_keys=str(config.get("startup_accept_keys") or "\r"),
     )
+
+
+def _is_grok_acp_command(command: list[str]) -> bool:
+    executable = Path(command[0]).name.casefold() if command else ""
+    parts = [str(part).casefold() for part in command[1:]]
+    return executable == "grok" and "agent" in parts and "stdio" in parts
 
 
 def main() -> int:

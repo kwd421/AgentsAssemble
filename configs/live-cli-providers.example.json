@@ -58,11 +58,8 @@
       "display_name": "Grok CLI",
       "command": [
         "grok",
-        "--no-alt-screen",
-        "--permission-mode",
-        "plan",
-        "--cwd",
-        "."
+        "agent",
+        "stdio"
       ],
       "cwd": ".",
       "submit_newline": "\r",
@@ -85,6 +82,7 @@
         "--permission-mode",
         "plan",
         "--tools",
+        "",
         "--safe-mode"
       ],
       "cwd": ".",

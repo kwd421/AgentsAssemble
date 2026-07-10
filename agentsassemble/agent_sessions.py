@@ -2941,6 +2941,7 @@ def build_provider_bootstrap_input(
         "[Agent Session bootstrap]",
         "You are participating in a shared AgentsAssemble room. Reply only with room-visible text.",
         "Do not inspect or edit the project unless the current room instruction explicitly asks for it.",
+        "Answer conversational turns directly; never invoke a tool merely to produce or format the room reply.",
         "Do not reveal internal runtime data, process ids, tokens, or hidden chain-of-thought.",
     ]
     memory_text = _room_memory_text(room_memory or {})
@@ -2980,7 +2981,11 @@ def build_provider_recovery_input(
     media_manifest: list[dict[str, object]] | None = None,
     unsupported_media: list[dict[str, object]] | None = None,
 ) -> str:
-    parts = ["[Agent Session recovery]", "Use this compact room memory to continue the same room-visible conversation."]
+    parts = [
+        "[Agent Session recovery]",
+        "Use this compact room memory to continue the same room-visible conversation.",
+        "Answer conversational turns directly; never invoke a tool merely to produce or format the room reply.",
+    ]
     memory_text = _room_memory_text(room_memory)
     if memory_text:
         parts.extend(["", "[Room memory]", memory_text])

@@ -202,10 +202,10 @@ class LiveCliRuntime:
             return
         self.start()
         self._drain_startup_output()
-        self._message_source.begin_turn()
+        lines = [_room_input_text(event) for event in events]
+        self._message_source.begin_turn(lines[0] if len(lines) == 1 else "")
         self._message_turn_started = True
-        for event in events:
-            line = _room_input_text(event)
+        for event, line in zip(events, lines):
             self._send_line(line)
             event_id = clean_lobby_text(event.get("event_id"), limit=128)
             if event_id:
@@ -214,7 +214,7 @@ class LiveCliRuntime:
     def send(self, text: str) -> None:
         self.start()
         self._drain_startup_output()
-        self._message_source.begin_turn()
+        self._message_source.begin_turn(text)
         self._message_turn_started = True
         self._send_line(text)
 

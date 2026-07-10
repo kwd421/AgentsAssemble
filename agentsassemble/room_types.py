@@ -59,6 +59,16 @@ class AgentSession(TypedDict):
     inflight_event_ids: NotRequired[list[str]]
     recovery_required: NotRequired[bool]
     recovery_attempt_count: NotRequired[int]
+    provider_session_active: NotRequired[bool]
+    provider_session_load_supported: NotRequired[bool]
+    provider_session_reused: NotRequired[bool]
+    provider_session_resume_failed: NotRequired[bool]
+    provider_session_resume_error: NotRequired[str]
+    provider_visible_chars: NotRequired[int]
+    provider_visible_event_count: NotRequired[int]
+    stderr_byte_count: NotRequired[int]
+    stderr_warning_count: NotRequired[int]
+    notification_drop_count: NotRequired[int]
 
 
 class RoomCommand(TypedDict):

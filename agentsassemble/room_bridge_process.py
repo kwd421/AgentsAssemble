@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
@@ -22,11 +22,20 @@ BridgeExitListener = Callable[[str, str, int, str], None]
 class _BridgeHandle:
     room_id: str
     session_id: str
+    runtime_profile_key: str
+    resolved_executable: str
     process: subprocess.Popen[bytes]
     config_path: Path
     stdout_path: Path
     stderr_path: Path
     stopping: bool = False
+    stderr_byte_count: int = 0
+    stderr_line_count: int = 0
+    stderr_warning_count: int = 0
+    stderr_tail_truncated: bool = False
+    stderr_tail: bytearray = field(default_factory=bytearray)
+    stderr_lock: threading.Lock = field(default_factory=threading.Lock)
+    stderr_thread: threading.Thread | None = None
 
 
 class NativeCliBridgeProcessManager:
@@ -62,10 +71,15 @@ class NativeCliBridgeProcessManager:
     ) -> dict[str, object]:
         validate_native_cli_provider_spec(spec)
         session_id = str(session.get("session_id") or spec.agent_id)
+        runtime_profile_key = spec.runtime_profile_key()
         key = (room_id, session_id)
         with self._lock:
             existing = self._handles.get(key)
             if existing is not None and existing.process.poll() is None:
+                if existing.runtime_profile_key != runtime_profile_key:
+                    raise RuntimeError(
+                        "Agent Bridge is already running with an incompatible runtime profile; stop it before restarting."
+                    )
                 return self._launch_payload(existing, spec, runtime_reused=True)
         if not server_url:
             raise ValueError("Agent Bridge server URL is required.")
@@ -90,10 +104,11 @@ class NativeCliBridgeProcessManager:
         if not ticket:
             raise ValueError("Agent Bridge ticket issuer returned an empty ticket.")
         bridge_dir = self.output_root / "rooms" / room_id / "bridges" / session_id
-        bridge_dir.mkdir(parents=True, exist_ok=True)
-        config_path = bridge_dir / "config.json"
-        stdout_path = bridge_dir / "stdout.log"
-        stderr_path = bridge_dir / "stderr.log"
+        profile_dir = bridge_dir / runtime_profile_key
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        config_path = profile_dir / "config.json"
+        stdout_path = profile_dir / "stdout.log"
+        stderr_path = profile_dir / "stderr.log"
         config = {
             "room_id": room_id,
             "participant_id": spec.agent_id,
@@ -112,8 +127,17 @@ class NativeCliBridgeProcessManager:
             "startup_accept_contains": spec.startup_accept_contains,
             "startup_accept_keys": spec.startup_accept_keys,
             "turn_timeout_seconds": spec.turn_timeout_seconds,
+            "runtime_profile_key": runtime_profile_key,
+            "runtime_state_dir": str(profile_dir / "provider-state"),
         }
         config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        stdout_path.touch(exist_ok=True)
+        stderr_path.touch(exist_ok=True)
+        for path in (config_path, stdout_path, stderr_path):
+            try:
+                path.chmod(0o600)
+            except OSError:
+                pass
         env = os.environ.copy()
         env.update(
             {
@@ -126,19 +150,20 @@ class NativeCliBridgeProcessManager:
         package_root = str(Path(__file__).resolve().parent.parent)
         env["PYTHONPATH"] = os.pathsep.join(part for part in (package_root, env.get("PYTHONPATH", "")) if part)
         command = [sys.executable, "-m", "agentsassemble.room_agent_bridge"]
-        with stdout_path.open("ab") as stdout_file, stderr_path.open("ab") as stderr_file:
-            process = self._popen_factory(
-                command,
-                stdin=subprocess.DEVNULL,
-                stdout=stdout_file,
-                stderr=stderr_file,
-                cwd=package_root,
-                env=env,
-                start_new_session=True,
-            )
+        process = self._popen_factory(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            cwd=package_root,
+            env=env,
+            start_new_session=True,
+        )
         handle = _BridgeHandle(
             room_id=room_id,
             session_id=session_id,
+            runtime_profile_key=runtime_profile_key,
+            resolved_executable=executable,
             process=process,
             config_path=config_path,
             stdout_path=stdout_path,
@@ -146,6 +171,13 @@ class NativeCliBridgeProcessManager:
         )
         with self._lock:
             self._handles[key] = handle
+        handle.stderr_thread = threading.Thread(
+            target=self._drain_stderr,
+            args=(handle,),
+            name=f"AgentsAssembleBridgeStderr-{spec.agent_id}",
+            daemon=True,
+        )
+        handle.stderr_thread.start()
         threading.Thread(
             target=self._watch,
             args=(handle,),
@@ -177,6 +209,7 @@ class NativeCliBridgeProcessManager:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=1.0)
+        self._finish_stderr(handle)
         with self._lock:
             self._handles.pop(key, None)
         provider_alive = _terminate_provider_process(provider_pid, timeout_seconds=timeout_seconds)
@@ -205,20 +238,83 @@ class NativeCliBridgeProcessManager:
             "running": handle.process.poll() is None,
             "bridge_pid": handle.process.pid,
             "returncode": handle.process.poll(),
-            "stderr_tail": _tail(handle.stderr_path),
+            "runtime_profile_key": handle.runtime_profile_key,
+            **self._stderr_snapshot(handle),
         }
 
     def _watch(self, handle: _BridgeHandle) -> None:
         returncode = handle.process.wait()
+        self._finish_stderr(handle)
         key = (handle.room_id, handle.session_id)
         with self._lock:
             current = self._handles.get(key)
-            if current is handle:
+            is_current = current is handle
+            if is_current:
                 self._handles.pop(key, None)
-            listener = self._on_exit
+            listener = self._on_exit if is_current else None
             stopping = handle.stopping
         if listener is not None and not stopping:
-            listener(handle.room_id, handle.session_id, int(returncode), _tail(handle.stderr_path))
+            listener(
+                handle.room_id,
+                handle.session_id,
+                int(returncode),
+                str(self._stderr_snapshot(handle)["stderr_tail"]),
+            )
+
+    def _drain_stderr(self, handle: _BridgeHandle) -> None:
+        stream = getattr(handle.process, "stderr", None)
+        if stream is None:
+            return
+        try:
+            try:
+                for line in stream:
+                    data = line.encode("utf-8", errors="replace") if isinstance(line, str) else bytes(line)
+                    with handle.stderr_lock:
+                        handle.stderr_byte_count += len(data)
+                        handle.stderr_line_count += 1
+                        if b"warn" in data.lower() or b"warning" in data.lower():
+                            handle.stderr_warning_count += 1
+                        handle.stderr_tail.extend(data)
+                        if len(handle.stderr_tail) > 16_000:
+                            del handle.stderr_tail[:-16_000]
+                            handle.stderr_tail_truncated = True
+            except (OSError, ValueError):
+                pass
+        finally:
+            self._persist_stderr_snapshot(handle)
+
+    def _finish_stderr(self, handle: _BridgeHandle) -> None:
+        thread = handle.stderr_thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=1.0)
+        stream = getattr(handle.process, "stderr", None)
+        if stream is not None:
+            try:
+                stream.close()
+            except OSError:
+                pass
+        self._persist_stderr_snapshot(handle)
+
+    @staticmethod
+    def _stderr_snapshot(handle: _BridgeHandle) -> dict[str, object]:
+        with handle.stderr_lock:
+            return {
+                "stderr_drained": True,
+                "stderr_byte_count": handle.stderr_byte_count,
+                "stderr_line_count": handle.stderr_line_count,
+                "stderr_warning_count": handle.stderr_warning_count,
+                "stderr_tail_truncated": handle.stderr_tail_truncated,
+                "stderr_tail": bytes(handle.stderr_tail).decode("utf-8", errors="replace"),
+            }
+
+    def _persist_stderr_snapshot(self, handle: _BridgeHandle) -> None:
+        with handle.stderr_lock:
+            tail = bytes(handle.stderr_tail)
+        try:
+            handle.stderr_path.write_bytes(tail)
+            handle.stderr_path.chmod(0o600)
+        except OSError:
+            pass
 
     def _resolve(self, executable: str) -> str:
         if not executable:
@@ -239,21 +335,13 @@ class NativeCliBridgeProcessManager:
         return {
             "bridge_pid": handle.process.pid,
             "runtime_reused": runtime_reused,
-            "resolved_executable": resolved_executable,
+            "runtime_profile_key": handle.runtime_profile_key,
+            "resolved_executable": resolved_executable or handle.resolved_executable,
             "command_configured": list(spec.command),
             "config_path": str(handle.config_path),
             "stdout_path": str(handle.stdout_path),
             "stderr_path": str(handle.stderr_path),
         }
-
-
-def _tail(path: Path, *, max_chars: int = 16000) -> str:
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
-    return text[-max(1, int(max_chars)) :]
-
 
 def _terminate_provider_process(provider_pid: int | None, *, timeout_seconds: float) -> bool:
     try:

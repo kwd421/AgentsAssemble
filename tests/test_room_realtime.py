@@ -302,8 +302,16 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(recovering["runtime_status"], "recovering")
         self.assertEqual(recovering["recovery_attempt_count"], 1)
         self.assertTrue(recovering["recovery_required"])
+        self.assertFalse(recovering["provider_session_active"])
         self.assertIn(first_assignment["source_event_id"], recovering["pending_event_ids"])
         self.assertIn("fatal provider stderr", recovering["stderr_tail"])
+        crash_error = next(
+            event
+            for event in reversed(self.controller.store.read_events("general"))
+            if event.get("type") == "error" and event.get("error_code") == "bridge_process_exited"
+        )
+        self.assertNotIn("stderr_tail", crash_error)
+        self.assertTrue(crash_error["stderr_tail_present"])
 
         self.recovery_scheduler.run_next()
         self.assertEqual(self.manager.starts, [("general", "codex"), ("general", "codex")])
@@ -446,6 +454,31 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertNotEqual(first_session["workspace"], second_session["workspace"])
         self.assertNotEqual(first_session["runtime_profile_key"], second_session["runtime_profile_key"])
 
+    def test_running_agent_rejects_profile_change_without_mutating_its_session(self):
+        self._command("req-start-profile", "agent.start", {"agent_id": "codex"})
+        self._connect_bridge()
+        before = RoomStore(self.root).session("general", "codex")
+
+        with self.assertRaisesRegex(RoomCommandRejected, "stop it before changing settings") as raised:
+            self._command(
+                "req-change-profile",
+                "agent.create",
+                {
+                    "provider_id": "codex",
+                    "agent_id": "codex",
+                    "display_name": "Codex",
+                    "workspace": str(self.root / "different"),
+                    "model": "gpt-5.3-codex",
+                    "start": True,
+                },
+            )
+        after = RoomStore(self.root).session("general", "codex")
+
+        self.assertEqual(raised.exception.code, "runtime_profile_conflict")
+        self.assertEqual(after["runtime_profile_key"], before["runtime_profile_key"])
+        self.assertEqual(after["command_configured"], before["command_configured"])
+        self.assertEqual(after["runtime_status"], "idle")
+
     def test_stopped_agent_collects_backlog_but_never_auto_starts(self):
         self._command("req-message", "message.send", {"content": "@codex remember this"})
         session = RoomStore(self.root).session("general", "codex")
@@ -501,9 +534,15 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
 
         self._command(
-            "req-delta",
+            "req-delta-one",
             "message.delta",
-            {"turn_id": assignment["turn_id"], "content": "clean delta"},
+            {"turn_id": assignment["turn_id"], "content": "clean"},
+            identity,
+        )
+        self._command(
+            "req-delta-two",
+            "message.delta",
+            {"turn_id": assignment["turn_id"], "content": " delta"},
             identity,
         )
         self._command(
@@ -519,8 +558,53 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertIn("message_delta", event_types)
         self.assertIn("message_final", event_types)
         self.assertIn("turn_finished", event_types)
+        self.assertEqual(
+            [event["content"] for event in events if event["type"] == "message_delta"],
+            ["clean", " delta"],
+        )
         self.assertFalse((self.root / "rooms" / "general" / "live_cli_events.jsonl").exists())
         self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "idle")
+
+    def test_runtime_diagnostics_survive_failure_without_exposing_raw_provider_output(self):
+        self._command("req-start-diagnostics", "agent.start", {"agent_id": "codex"})
+        identity, channel = self._connect_bridge()
+        self._command("req-prompt-diagnostics", "message.send", {"content": "@codex fail safely"})
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+
+        result = self._command(
+            "req-failed-diagnostics",
+            "turn.failed",
+            {
+                "turn_id": assignment["turn_id"],
+                "message": "provider turn failed",
+                "diagnostics": {
+                    "transport": "acp_stdio",
+                    "stderr_drained": True,
+                    "stderr_byte_count": 70001,
+                    "stderr_warning_count": 44,
+                    "stderr_tail": "private provider warning",
+                    "terminal_tail": "private terminal screen",
+                    "provider_session_active": True,
+                    "provider_session_reused": True,
+                    "message_source": "grok_acp",
+                    "message_source_strict": True,
+                },
+            },
+            identity,
+        )
+        stored = RoomStore(self.root).session("general", "codex")
+        error_event = result["result"]["event"]
+        public_session = result["result"]["agent_session"]
+
+        self.assertEqual(stored["stderr_tail"], "private provider warning")
+        self.assertEqual(stored["terminal_tail"], "private terminal screen")
+        self.assertEqual(stored["stderr_byte_count"], 70001)
+        self.assertTrue(stored["provider_session_reused"])
+        self.assertEqual(stored["message_source"], "grok_acp")
+        self.assertNotIn("stderr_tail", error_event["diagnostics"])
+        self.assertNotIn("terminal_tail", error_event["diagnostics"])
+        self.assertNotIn("stderr_tail", public_session)
+        self.assertNotIn("terminal_tail", public_session)
 
     def test_stop_disables_session_and_later_messages_do_not_restart_it(self):
         self._command("req-start", "agent.start", {"agent_id": "codex"})
@@ -533,6 +617,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(self.manager.stops, [("general", "codex")])
         self.assertFalse(session["enabled"])
         self.assertEqual(session["runtime_status"], "stopped")
+        self.assertFalse(session["provider_session_active"])
         self.assertEqual(len(session["pending_event_ids"]), 1)
 
     def test_muted_participant_cannot_send_through_command_path(self):

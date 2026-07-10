@@ -268,6 +268,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertEqual(packet["media_manifest"][0]["id"], media["id"])
         self.assertNotIn(str(Path.cwd()), str(packet))
         self.assertIn("Do not inspect or edit the project", packet["provider_input"])
+        self.assertIn("never invoke a tool merely to produce", packet["provider_input"])
 
     def test_sse_replays_missed_events_and_emits_heartbeat_when_idle(self):
         store = RoomStore(self.output_root)
@@ -2225,6 +2226,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertNotIn("Known room summary", normal)
         self.assertIn("Known room summary", recovery)
         self.assertIn("Ship app-server", recovery)
+        self.assertIn("never invoke a tool merely to produce", recovery)
 
     def test_new_session_without_provider_is_state_only_and_not_launchable(self):
         result = resume_agent_session_payload(

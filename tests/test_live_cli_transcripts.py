@@ -26,7 +26,8 @@ class _StaticMessageSource:
     def prepare_start(self) -> None:
         return
 
-    def begin_turn(self) -> None:
+    def begin_turn(self, expected_input: str = "") -> None:
+        del expected_input
         self.started = True
 
     def poll(self, terminal_output: bytes, *, quiet: bool = False) -> LiveCliMessageSnapshot:
@@ -263,6 +264,123 @@ class TranscriptMessageSourceTests(unittest.TestCase):
         self.assertTrue(snapshot.complete)
         self.assertEqual(snapshot.content, "clean provider session")
 
+    def test_codex_source_binds_to_session_containing_exact_delivered_input(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            session_dir = root / ".codex" / "sessions" / "2026" / "07" / "10"
+            session_dir.mkdir(parents=True)
+            source = CodexSessionMessageSource(home=root, cwd=workspace)
+            source.prepare_start()
+            delivered = "[Room update]\n@codex answer TARGET-1 only"
+            source.begin_turn(delivered)
+
+            target = session_dir / "rollout-target.jsonl"
+            target.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "session_meta", "payload": {"cwd": str(workspace)}}),
+                        json.dumps({"type": "event_msg", "payload": {"type": "user_message", "message": delivered}}),
+                        json.dumps(
+                            {"type": "event_msg", "payload": {"type": "agent_message", "message": "TARGET-1"}}
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            unrelated = session_dir / "rollout-newer-unrelated.jsonl"
+            unrelated.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "session_meta", "payload": {"cwd": str(workspace)}}),
+                        json.dumps(
+                            {
+                                "type": "event_msg",
+                                "payload": {"type": "user_message", "message": "another Codex process input"},
+                            }
+                        ),
+                        json.dumps(
+                            {"type": "event_msg", "payload": {"type": "agent_message", "message": "WRONG"}}
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            first = source.poll(b"", quiet=True)
+            source.begin_turn("target second turn")
+            with unrelated.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {
+                            "type": "event_msg",
+                            "payload": {"type": "user_message", "message": "target second turn"},
+                        }
+                    )
+                    + "\n"
+                )
+                handle.write(
+                    json.dumps({"type": "event_msg", "payload": {"type": "agent_message", "message": "WRONG-2"}})
+                    + "\n"
+                )
+            still_waiting = source.poll(b"", quiet=True)
+            with target.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {
+                            "type": "event_msg",
+                            "payload": {"type": "user_message", "message": "target second turn"},
+                        }
+                    )
+                    + "\n"
+                )
+                handle.write(
+                    json.dumps({"type": "event_msg", "payload": {"type": "agent_message", "message": "TARGET-2"}})
+                    + "\n"
+                )
+            second = source.poll(b"", quiet=True)
+
+        self.assertEqual(first.content, "TARGET-1")
+        self.assertFalse(still_waiting.complete)
+        self.assertEqual(second.content, "TARGET-2")
+        self.assertTrue(source.describe()["message_source_bound"])
+
+    def test_transcript_cursor_waits_for_a_complete_jsonl_record(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            session_dir = root / ".codex" / "sessions" / "2026" / "07" / "10"
+            session_dir.mkdir(parents=True)
+            session = session_dir / "rollout-split.jsonl"
+            delivered = "split record input"
+            source = CodexSessionMessageSource(home=root, cwd=workspace)
+            source.prepare_start()
+            source.begin_turn(delivered)
+            user_line = json.dumps(
+                {"type": "event_msg", "payload": {"type": "user_message", "message": delivered}}
+            )
+            assistant_line = json.dumps(
+                {"type": "event_msg", "payload": {"type": "agent_message", "message": "complete answer"}}
+            )
+            split_at = len(assistant_line) // 2
+            session_meta = json.dumps({"type": "session_meta", "payload": {"cwd": str(workspace)}})
+            session.write_text(
+                session_meta + "\n" + user_line + "\n" + assistant_line[:split_at],
+                encoding="utf-8",
+            )
+
+            incomplete = source.poll(b"", quiet=False)
+            with session.open("a", encoding="utf-8") as handle:
+                handle.write(assistant_line[split_at:] + "\n")
+            complete = source.poll(b"", quiet=True)
+
+        self.assertFalse(incomplete.complete)
+        self.assertEqual(complete.content, "complete answer")
+
     def test_grok_source_reads_assistant_content_from_chat_history(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -288,6 +406,64 @@ class TranscriptMessageSourceTests(unittest.TestCase):
 
         self.assertTrue(snapshot.complete)
         self.assertEqual(snapshot.content, "clean grok answer")
+
+    def test_grok_source_matches_delivered_input_inside_structured_user_query(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            history = root / ".grok" / "sessions" / "workspace" / "session-a" / "chat_history.jsonl"
+            history.parent.mkdir(parents=True)
+            delivered = "[Room update]\n@grok answer TARGET only"
+            source = GrokSessionMessageSource(home=root)
+            source.prepare_start()
+            source.begin_turn(delivered)
+            history.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": f"<user_query>\n{delivered}\n</user_query>",
+                                    }
+                                ],
+                            }
+                        ),
+                        json.dumps({"type": "assistant", "content": "TARGET"}),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            snapshot = source.poll(b"", quiet=True)
+
+        self.assertTrue(snapshot.complete)
+        self.assertEqual(snapshot.content, "TARGET")
+
+    def test_grok_source_removes_only_trailing_provider_eos_marker(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            history = root / ".grok" / "sessions" / "workspace" / "session-a" / "chat_history.jsonl"
+            history.parent.mkdir(parents=True)
+            source = GrokSessionMessageSource(home=root)
+            source.prepare_start()
+            source.begin_turn("reply exactly")
+            history.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "user", "content": "reply exactly"}),
+                        json.dumps({"type": "assistant", "content": "TARGET<|eos|>"}),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            snapshot = source.poll(b"", quiet=True)
+
+        self.assertEqual(snapshot.content, "TARGET")
 
     def test_antigravity_source_reads_model_content_from_transcript(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -330,6 +506,56 @@ class TranscriptMessageSourceTests(unittest.TestCase):
 
         self.assertTrue(snapshot.complete)
         self.assertEqual(snapshot.content, "clean antigravity answer")
+
+    def test_antigravity_source_matches_delivered_input_inside_provider_metadata_wrapper(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            transcript = (
+                root
+                / ".gemini"
+                / "antigravity-cli"
+                / "brain"
+                / "conv-a"
+                / ".system_generated"
+                / "logs"
+                / "transcript.jsonl"
+            )
+            transcript.parent.mkdir(parents=True)
+            delivered = "[Room update]\n@antigravity answer TARGET only"
+            source = AntigravityTranscriptMessageSource(home=root)
+            source.prepare_start()
+            source.begin_turn(delivered)
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "source": "USER_EXPLICIT",
+                                "type": "USER_INPUT",
+                                "content": (
+                                    f"<USER_REQUEST>\n{delivered}\n</USER_REQUEST>\n"
+                                    "<ADDITIONAL_METADATA>local provider metadata</ADDITIONAL_METADATA>"
+                                ),
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "source": "MODEL",
+                                "type": "PLANNER_RESPONSE",
+                                "status": "DONE",
+                                "content": "TARGET",
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            snapshot = source.poll(b"", quiet=True)
+
+        self.assertTrue(snapshot.complete)
+        self.assertEqual(snapshot.content, "TARGET")
 
     def test_codex_source_ignores_late_previous_completion_until_next_user_input(self):
         with tempfile.TemporaryDirectory() as temp_dir:
