@@ -40,7 +40,19 @@ export type ServerRoomDockSource = {
   last_active_at?: string;
 };
 
+export const LIVE_CLI_ROOM: RoomDockItem = {
+  id: "live-cli-general",
+  label: "Agent Session",
+  meetingId: "general",
+  topic: "Codex, Antigravity, Grok live CLI room",
+  shortLabel: "G",
+  icon: Radio,
+  createdAt: "",
+  tone: "resident",
+};
+
 export const PINNED_ROOMS: RoomDockItem[] = [
+  LIVE_CLI_ROOM,
   {
     id: "resident-m1",
     label: "AgentsAssemble",

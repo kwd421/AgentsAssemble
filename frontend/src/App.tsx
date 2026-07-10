@@ -132,6 +132,7 @@ import {
   persistRoomDockItems,
 } from "./lib/roomDockPersistence";
 import {
+  LIVE_CLI_ROOM,
   createFreshRoom,
   createStartupRoute,
   localPreviewInviteUrlForRoom,
@@ -502,6 +503,46 @@ function agentSessionMemberToLiveAgent(member: RoomMember): LiveAgent {
   };
 }
 
+function generalRoomAgentStatus(agent: GeneralRoomAgent) {
+  if (agent.status === "busy" || agent.status === "starting") return "working";
+  if (agent.status === "idle") return "online";
+  if (agent.status === "stopped" || agent.status === "disconnected") return "stopped";
+  return agent.status || "unknown";
+}
+
+function generalRoomAgentToLiveAgent(agent: GeneralRoomAgent): LiveAgent {
+  const displayName = agent.display_name || agent.provider_label || agent.agent_id;
+  const lastActivity = agent.latency?.turn_completed_at || agent.started_at || agent.stopped_at || "";
+  return {
+    agent_id: agent.agent_id,
+    display_name: displayName,
+    owner_id: "operator-local",
+    created_by: "operator-local",
+    status: generalRoomAgentStatus(agent),
+    provider_kind: agent.provider_label || "live_cli",
+    connection_kind: agent.transport || "pty",
+    engagement_mode: "agent_session",
+    meeting_id: LIVE_CLI_ROOM.meetingId,
+    session_id: agent.agent_id,
+    workspace_path: agent.workspace_dir || "",
+    last_seen_at: lastActivity,
+    last_reply_at: lastActivity,
+    last_observed_event_id: agent.last_seen_event_id,
+    last_observed_live_event_id: agent.last_output_event_id,
+    join_semantics: "terminal_pty_prompt_bridge",
+    context_durability: "provider_owned_cli_session",
+    execution_mode: "provider_persistent",
+    runner_residency: "server-managed room scheduler",
+    provider_residency: "persistent PTY",
+    provider_persistent: agent.is_one_shot === false,
+    execution_summary: "Local CLI session attached to #general.",
+    sandbox_enforcement: "",
+    admission_status: "approved",
+    host_approved_binding: true,
+    capabilities: ["room_chat", "mentions", "persistent_cli"],
+  };
+}
+
 function mobileViewportMatches() {
   return (
     typeof window !== "undefined" &&
@@ -693,6 +734,7 @@ export default function App() {
     8000
   );
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? createFreshRoom();
+  const isLiveCliRoom = activeRoom.meetingId === LIVE_CLI_ROOM.meetingId;
   // Rooms-as-server-objects: when a room becomes active, promote it to a
   // server-backed meeting (idempotent) so adding agents / roster / lobby always
   // have a real meeting to bind to instead of failing with "Meeting not found".
@@ -860,7 +902,7 @@ export default function App() {
       events.forEach((event) => {
         if (event.event_id) generalRoomLastEventIdRef.current = event.event_id;
         const lobbyEvent = generalRoomEventToLobbyEvent(event, {
-          meetingId: activeRoom.meetingId,
+          meetingId: LIVE_CLI_ROOM.meetingId,
           agentsById: generalRoomAgentsByIdRef.current,
           streamingByTurnKey: generalRoomStreamingByTurnKeyRef.current,
         });
@@ -868,7 +910,7 @@ export default function App() {
       });
       rememberGeneralRoomLobbyEvents(nextLobbyEvents);
     },
-    [activeRoom.meetingId, rememberGeneralRoomLobbyEvents]
+    [rememberGeneralRoomLobbyEvents]
   );
   const applyGeneralRoomServerMessage = useCallback(
     (message: GeneralRoomSocketServerMessage) => {
@@ -914,6 +956,14 @@ export default function App() {
     socket.send({ type: "user_message", content: message, actor_id: "human" });
     return [];
   }, []);
+  const sendGeneralRoomAgentControl = useCallback(
+    (agent: GeneralRoomAgent, action: "start" | "stop" | "resume" | "interrupt") => {
+      const socket = generalRoomSocketRef.current;
+      if (!socket?.ready()) return;
+      socket.send({ type: "agent_control", agent_id: agent.agent_id, action });
+    },
+    []
+  );
   useEffect(() => {
     const meetingId = activeRoom.meetingId || "";
     if (!meetingId || meetingId === "pending-join" || guestLocked) return;
@@ -1319,7 +1369,10 @@ export default function App() {
       ? "flow"
       : "official"
     : "flow";
-  const scopedAgents = agents.filter((agent) => roomHasAgent(activeRoom, agent));
+  const liveCliAgents = isLiveCliRoom
+    ? Object.values(generalRoomAgentsById).map(generalRoomAgentToLiveAgent)
+    : [];
+  const scopedAgents = [...agents.filter((agent) => roomHasAgent(activeRoom, agent)), ...liveCliAgents];
   const refreshMembers = useCallback(() => {
     if (!activeRoom.meetingId) return;
     // Through the public entrance the roster endpoint requires the guest
@@ -1368,14 +1421,10 @@ export default function App() {
       const names: string[] = [];
       appendMentionableName(names, seen, "나");
       scopedAgents.forEach((agent) => appendAgentMentionables(names, seen, agent));
-      Object.values(generalRoomAgentsById).forEach((agent) => {
-        appendMentionableName(names, seen, agent.display_name);
-        appendMentionableName(names, seen, agent.agent_id);
-      });
       activeRoomMembers.forEach((member) => appendMemberMentionables(names, seen, member));
       return names;
     },
-    [activeRoomMembers, generalRoomAgentsById, scopedAgents]
+    [activeRoomMembers, scopedAgents]
   );
   const scopedOnlineCount = scopedAgents.filter((agent) => isActivePresence(agent.status)).length;
   // Participants currently generating a reply (status "working") — drives the
@@ -1394,16 +1443,11 @@ export default function App() {
     scopedAgents.forEach((agent) => {
       if (agent.status === "working") add(agent.display_name || agent.agent_id);
     });
-    Object.values(generalRoomAgentsById).forEach((agent) => {
-      if (agent.status === "busy" || agent.status === "starting") {
-        add(agent.display_name || agent.agent_id);
-      }
-    });
     activeRoomMembers.forEach((member) => {
       if (member.thinking) add(member.display_name || member.participant_id);
     });
     return names;
-  }, [scopedAgents, generalRoomAgentsById, activeRoomMembers]);
+  }, [scopedAgents, activeRoomMembers]);
   const activeChannelSettings = roomChannelSettings[activeRoomKey] || {};
   const activeCustomChannels = roomCustomChannels[activeRoomKey] || [];
   const activeCustomChannel = activeCustomChannels.find((item) => item.id === channel) || null;
@@ -2978,7 +3022,7 @@ export default function App() {
             agents={scopedAgents}
             mentionables={scopedMentionables}
             bindLobbyStream={bindLobbyStream}
-            submitMessage={!guestLocked ? submitGeneralRoomMessage : undefined}
+            submitMessage={isLiveCliRoom && !guestLocked ? submitGeneralRoomMessage : undefined}
             roomSessionToken={lobbyPostingState.sessionToken}
             localDisplayName={guestSession?.displayName || ""}
             canManageRoom={!guestLocked}
@@ -3155,6 +3199,9 @@ export default function App() {
                 onStartAddAgent={openAgentCreate}
                 memberSearchQuery={rightPanelSearchQuery}
                 onMemberSearchQueryChange={setRightPanelSearchQuery}
+                liveCliRoom={isLiveCliRoom}
+                liveCliAgents={Object.values(generalRoomAgentsById)}
+                onLiveCliAgentControl={sendGeneralRoomAgentControl}
               />
             </section>
           ) : (

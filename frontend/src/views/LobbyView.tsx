@@ -333,21 +333,28 @@ export default function LobbyView({
     () => events.filter((event) => event.kind !== "vote_cast"),
     [events]
   );
+  const roomScopedConversationEvents = useMemo(
+    () =>
+      conversationEvents.filter((event) => {
+        if (event.flow_meeting_id && event.flow_meeting_id !== activeRoom.meetingId) {
+          return false;
+        }
+        return true;
+      }),
+    [activeRoom.meetingId, conversationEvents]
+  );
   const visibleEvents = useMemo(() => {
-    if (!activeRoom.createdAt) return conversationEvents;
+    if (!activeRoom.createdAt) return roomScopedConversationEvents;
     const roomStartedAt = Date.parse(activeRoom.createdAt);
-    if (!Number.isFinite(roomStartedAt)) return conversationEvents;
-    return conversationEvents.filter((event) => {
-      if (event.flow_meeting_id && event.flow_meeting_id !== activeRoom.meetingId) {
-        return false;
-      }
+    if (!Number.isFinite(roomStartedAt)) return roomScopedConversationEvents;
+    return roomScopedConversationEvents.filter((event) => {
       if (event.flow_meeting_id === activeRoom.meetingId) {
         return true;
       }
       const eventTime = Date.parse(event.created_at || "");
       return Number.isFinite(eventTime) && eventTime >= roomStartedAt;
     });
-  }, [activeRoom.createdAt, activeRoom.meetingId, conversationEvents]);
+  }, [activeRoom.createdAt, activeRoom.meetingId, roomScopedConversationEvents]);
   const lobbyRows = useMemo(() => buildLobbyRows(visibleEvents), [visibleEvents]);
 
   const updatePinnedToLatest = useCallback((nextPinned: boolean) => {

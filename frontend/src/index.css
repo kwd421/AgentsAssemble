@@ -2329,6 +2329,64 @@ body[data-sidebar-resizing="true"] {
   font-weight: 800;
 }
 
+.dc-room-play-state.ready {
+  background: rgba(88, 101, 242, 0.14);
+  color: var(--color-brand);
+}
+
+.dc-room-play-state.error {
+  background: rgba(242, 63, 66, 0.12);
+  color: var(--color-danger);
+}
+
+.dc-room-live-cli-list {
+  display: grid;
+  gap: 8px;
+}
+
+.dc-room-live-cli-card {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--color-panel-separator);
+  border-radius: 6px;
+  background: var(--color-surface);
+  padding: 9px;
+}
+
+.dc-room-live-cli-head,
+.dc-room-live-cli-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dc-room-live-cli-actions {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.dc-room-live-cli-actions button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--color-sidebar-hover);
+  padding: 0 8px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.dc-room-live-cli-actions button:hover {
+  background: var(--color-channel-selected);
+  color: var(--color-text-primary);
+}
+
 .dc-room-connection-card {
   margin: 10px;
   border-radius: 6px;

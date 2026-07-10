@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Bot, Copy, Gamepad2, Plus, Square, Zap } from "lucide-react";
+import { Bot, Copy, Gamepad2, Play, Plus, RotateCcw, Square, Zap } from "lucide-react";
 import {
   startFlow,
   startMafiaGame,
   stopFlow,
   type ChannelNotificationSetting,
   type FlowState,
+  type GeneralRoomAgent,
   type LiveAgent,
   type LiveAgentProcessGroup,
   type MafiaGame,
@@ -71,6 +72,12 @@ type RoomConnectionPanelProps = {
   onStartAddAgent?: () => void;
   memberSearchQuery?: string;
   onMemberSearchQueryChange?: (query: string) => void;
+  liveCliRoom?: boolean;
+  liveCliAgents?: GeneralRoomAgent[];
+  onLiveCliAgentControl?: (
+    agent: GeneralRoomAgent,
+    action: "start" | "stop" | "resume" | "interrupt"
+  ) => void;
 };
 
 function mutedChannelCount(
@@ -118,6 +125,31 @@ function mafiaPlayersFromAgents(agents: LiveAgent[]) {
   }));
 }
 
+function liveCliStatusLabel(status?: string) {
+  if (status === "busy") return "응답 중";
+  if (status === "starting") return "시작 중";
+  if (status === "idle") return "대기";
+  if (status === "stopping") return "중지 중";
+  if (status === "stopped") return "중지됨";
+  if (status === "error") return "오류";
+  if (status === "disconnected") return "끊김";
+  return status || "상태 미정";
+}
+
+function liveCliStatusTone(status?: string) {
+  if (status === "busy" || status === "starting") return "running";
+  if (status === "idle") return "ready";
+  if (status === "error" || status === "disconnected") return "error";
+  return "";
+}
+
+function liveCliLatency(agent: GeneralRoomAgent) {
+  const latency = agent.latency || {};
+  const ttfo = typeof latency.ttfo_ms === "number" ? `${Math.round(latency.ttfo_ms)}ms first` : "";
+  const total = typeof latency.total_turn_ms === "number" ? `${Math.round(latency.total_turn_ms)}ms total` : "";
+  return [ttfo, total].filter(Boolean).join(" · ");
+}
+
 export default function RoomConnectionPanel({
   room,
   agents,
@@ -142,6 +174,9 @@ export default function RoomConnectionPanel({
   onStartAddAgent,
   memberSearchQuery,
   onMemberSearchQueryChange,
+  liveCliRoom = false,
+  liveCliAgents = [],
+  onLiveCliAgentControl = () => undefined,
 }: RoomConnectionPanelProps) {
   const mutedCount = mutedChannelCount(channelNotifications);
   const [selectedMode, setSelectedMode] = useState("turn_based_floor");
@@ -229,6 +264,79 @@ export default function RoomConnectionPanel({
     }
   }
 
+  if (liveCliRoom) {
+    return (
+      <div className="dc-room-connection-panel">
+        <section className="dc-room-play-panel" aria-label="Live CLI Agent Session">
+          <div className="dc-room-play-header">
+            <span className="dc-room-play-title">Agent Session</span>
+            <span className="dc-room-play-state running">Live CLI</span>
+          </div>
+          <p className="dc-room-connection-note preserve-words">
+            이 방의 메시지는 살아있는 로컬 CLI 세션에 전달됩니다. 각 세션은 자기 cursor 이후 이벤트만 받습니다.
+          </p>
+          <div className="dc-room-live-cli-list">
+            {liveCliAgents.map((agent) => (
+              <article key={agent.agent_id} className="dc-room-live-cli-card">
+                <div className="dc-room-live-cli-head">
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-black text-text-primary preserve-words">
+                      {agent.display_name || agent.agent_id}
+                    </p>
+                    <p className="truncate text-[11px] text-text-muted preserve-words">
+                      {agent.provider_label || agent.runtime_kind || "local CLI"}
+                      {agent.pid ? ` · pid ${agent.pid}` : ""}
+                    </p>
+                  </div>
+                  <span className={`dc-room-play-state ${liveCliStatusTone(agent.status)}`}>
+                    {liveCliStatusLabel(agent.status)}
+                  </span>
+                </div>
+                <p className="dc-room-connection-note preserve-words">
+                  {liveCliLatency(agent) || `last_seen ${agent.last_seen_event_id || "none"}`}
+                </p>
+                <div className="dc-room-live-cli-actions">
+                  <button type="button" onClick={() => onLiveCliAgentControl(agent, "start")}>
+                    <Play size={13} />
+                    Start
+                  </button>
+                  <button type="button" onClick={() => onLiveCliAgentControl(agent, "stop")}>
+                    <Square size={13} />
+                    Stop
+                  </button>
+                  <button type="button" onClick={() => onLiveCliAgentControl(agent, "resume")}>
+                    <RotateCcw size={13} />
+                    Resume
+                  </button>
+                  <button type="button" onClick={() => onLiveCliAgentControl(agent, "interrupt")}>
+                    <Zap size={13} />
+                    Interrupt
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+        <MemberList
+          agents={agents}
+          members={members}
+          roomId={room.id}
+          roomName={room.label}
+          roleOverrides={roleOverrides}
+          onRoleChange={onRoleChange}
+          canEditRoles={!guestLocked || guestOperator}
+          moderatorSessionToken={moderatorSessionToken}
+          processGroups={processGroups}
+          onSessionActionComplete={onSessionActionComplete}
+          quotaViewer={quotaViewer}
+          searchQuery={memberSearchQuery}
+          onSearchQueryChange={onMemberSearchQueryChange}
+          hideSearch={memberSearchQuery !== undefined}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="dc-room-connection-panel">
       {!guestLocked && onStartAddAgent && (
@@ -240,7 +348,7 @@ export default function RoomConnectionPanel({
           {mutedCount > 0 && <span className="dc-room-muted-count">{mutedCount} muted</span>}
         </div>
       )}
-      {!guestLocked && (
+      {!liveCliRoom && !guestLocked && (
         <section className="dc-room-play-panel" aria-label="Agent Session">
           <div className="dc-room-play-header">
             <span className="dc-room-play-title">Agent Session</span>
