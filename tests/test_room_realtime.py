@@ -122,6 +122,7 @@ class NativeCliProviderSpecTests(unittest.TestCase):
         self.assertEqual(specs["claude"].model, "haiku")
         self.assertEqual(specs["claude"].provider_kind, "claude_code")
         self.assertIn("--model", specs["claude"].command)
+        self.assertNotIn("plan", specs["claude"].command)
         self.assertNotIn("-p", specs["claude"].command)
         self.assertNotIn("--print", specs["claude"].command)
         for spec in specs.values():
@@ -526,6 +527,103 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(first_assignment["input_up_to_seq"], first_message["result"]["event_seq"])
         self.assertEqual(second_assignment["input_up_to_seq"], second_message["result"]["event_seq"])
         self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "busy")
+
+    def test_server_assigned_group_turn_sees_all_public_messages_since_agent_last_turn(self):
+        self.controller.register_provider("general", _spec("antigravity", default_responder=False))
+        self.controller.register_provider("general", _spec("claude", default_responder=False))
+        bridges = {}
+        identities = {}
+        for agent_id in ("codex", "antigravity", "claude"):
+            self._command(f"start-{agent_id}", "agent.start", {"agent_id": agent_id})
+            identities[agent_id], bridges[agent_id] = self._connect_bridge(agent_id)
+            bridges[agent_id].drain()
+
+        topic = self._command(
+            "group-topic",
+            "message.send",
+            {
+                "content": "세 사람이 공개 방에서 함께 검토할 주제야.",
+                "target_agent_id": "codex",
+            },
+        )["result"]["event"]
+        codex_assignment = next(
+            message for message in bridges["codex"].drain() if message.get("op") == "turn.assign"
+        )
+        self.assertNotIn("@", topic["content"])
+        self.assertIn(topic["id"], codex_assignment["provider_context_event_ids"])
+        codex_final = self._command(
+            "group-codex-final",
+            "message.final",
+            {"turn_id": codex_assignment["turn_id"], "content": "Codex의 공개 의견"},
+            identities["codex"],
+        )["result"]["event"]
+
+        antigravity_request = self.controller.request_agent_turn(
+            "general",
+            "antigravity",
+            source_event_id=codex_final["id"],
+        )
+        antigravity_assignment = next(
+            message for message in bridges["antigravity"].drain() if message.get("op") == "turn.assign"
+        )
+        self.assertTrue(antigravity_request["assigned"])
+        self.assertIn("세 사람이 공개 방", antigravity_assignment["provider_input"])
+        self.assertIn("Codex의 공개 의견", antigravity_assignment["provider_input"])
+        antigravity_final = self._command(
+            "group-antigravity-final",
+            "message.final",
+            {"turn_id": antigravity_assignment["turn_id"], "content": "Antigravity의 공개 의견"},
+            identities["antigravity"],
+        )["result"]["event"]
+
+        self.controller.request_agent_turn("general", "claude", source_event_id=antigravity_final["id"])
+        claude_assignment = next(
+            message for message in bridges["claude"].drain() if message.get("op") == "turn.assign"
+        )
+        self.assertIn("세 사람이 공개 방", claude_assignment["provider_input"])
+        self.assertIn("Codex의 공개 의견", claude_assignment["provider_input"])
+        self.assertIn("Antigravity의 공개 의견", claude_assignment["provider_input"])
+        claude_final = self._command(
+            "group-claude-final",
+            "message.final",
+            {"turn_id": claude_assignment["turn_id"], "content": "Claude의 공개 의견"},
+            identities["claude"],
+        )["result"]["event"]
+
+        self.controller.request_agent_turn("general", "codex", source_event_id=claude_final["id"])
+        codex_second = next(
+            message for message in bridges["codex"].drain() if message.get("op") == "turn.assign"
+        )
+        self.assertNotIn("세 사람이 공개 방", codex_second["provider_input"])
+        self.assertNotIn("Codex의 공개 의견", codex_second["provider_input"])
+        self.assertIn("Antigravity의 공개 의견", codex_second["provider_input"])
+        self.assertIn("Claude의 공개 의견", codex_second["provider_input"])
+        self.assertEqual(
+            codex_second["provider_context_actor_ids"],
+            ["antigravity", "claude"],
+        )
+
+    def test_new_agent_can_take_first_turn_from_recent_public_room_history(self):
+        topic = self._command(
+            "new-agent-topic",
+            "message.send",
+            {"content": "새 참가자도 봐야 하는 최근 공개 대화", "target_agent_id": "codex"},
+        )["result"]["event"]
+        self.controller.register_provider("general", _spec("late-agent", default_responder=False))
+        self._command("start-late-agent", "agent.start", {"agent_id": "late-agent"})
+        _identity, channel = self._connect_bridge("late-agent")
+        channel.drain()
+
+        requested = self.controller.request_agent_turn(
+            "general",
+            "late-agent",
+            source_event_id=topic["id"],
+        )
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+
+        self.assertTrue(requested["assigned"])
+        self.assertIn("새 참가자도 봐야 하는 최근 공개 대화", assignment["provider_input"])
+        self.assertIn(topic["id"], assignment["provider_context_event_ids"])
 
     def test_bridge_delta_and_final_create_only_canonical_turn_events(self):
         self._command("req-start", "agent.start", {"agent_id": "codex"})

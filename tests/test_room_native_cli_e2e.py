@@ -12,20 +12,28 @@ from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
-from agentsassemble.room_native_cli_smoke import _latency_acceptance, run_room_native_cli_smoke
+from agentsassemble.room_native_cli_smoke import NON_ROOM_REPLY, _latency_acceptance, run_room_native_cli_smoke
 from agentsassemble.room_realtime import NativeCliProviderSpec, RoomRealtimeController
 from agentsassemble.ws_room_client import connect_room_ws_with_ticket
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "fake_interactive_cli.py"
-RELAY_FIXTURE = Path(__file__).parent / "fixtures" / "fake_relay_cli.py"
+GROUP_FIXTURE = Path(__file__).parent / "fixtures" / "fake_group_cli.py"
 
 
 class NativeCliRoomEndToEndTests(unittest.TestCase):
-    def test_two_persistent_clis_relay_room_messages_in_both_directions(self):
+    def test_plan_mode_refusal_and_tool_markup_are_not_room_replies(self):
+        refusal = (
+            "Plan mode is currently active. <tool_call><tool_name>AskUserQuestion</tool_name></tool_call>"
+        )
+
+        self.assertIsNotNone(NON_ROOM_REPLY.search(refusal))
+        self.assertIsNone(NON_ROOM_REPLY.search("앞선 두 의견을 읽었고, 시간축부터 검증하자."))
+
+    def test_two_persistent_clis_take_server_assigned_turns_without_visible_mentions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            config = root / "relay-providers.json"
+            config = root / "group-providers.json"
             config.write_text(
                 json.dumps(
                     {
@@ -34,7 +42,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                             {
                                 "id": agent_id,
                                 "display_name": agent_id,
-                                "command": [os.sys.executable, "-u", str(RELAY_FIXTURE), agent_id],
+                                "command": [os.sys.executable, "-u", str(GROUP_FIXTURE), agent_id],
                                 "cwd": str(root),
                                 "input_mode": "bracketed_paste",
                                 "quiet_seconds": 0.05,
@@ -42,7 +50,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                                 "startup_timeout_seconds": 1.0,
                                 "default_responder": False,
                             }
-                            for agent_id in ("relay-a", "relay-b")
+                            for agent_id in ("group-a", "group-b")
                         ],
                     }
                 ),
@@ -52,29 +60,36 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
             result = run_room_native_cli_smoke(
                 config_path=config,
                 output_root=root,
-                providers=["relay-a", "relay-b"],
+                providers=["group-a", "group-b"],
                 approve_real_provider=True,
                 timeout_seconds=5.0,
                 agent_conversation=True,
-                conversation_seconds=0.001,
+                conversation_seconds=1.0,
                 conversation_topic="A tiny haunted station test",
                 verify_controls=True,
             )
 
         conversation = result["conversation"]
-        self.assertEqual(result["status"], "ok")
-        self.assertEqual(len(conversation["rounds"]), 2)
-        self.assertEqual(conversation["actual_turn_counts"], {"relay-a": 3, "relay-b": 3})
+        cycle_count = conversation["speaker_cycles_completed"]
+        self.assertEqual(result["status"], "ok", json.dumps(result, ensure_ascii=False, indent=2))
+        self.assertEqual(conversation["topology"], "server_assigned_shared_room")
+        self.assertGreaterEqual(cycle_count, 2)
+        self.assertEqual(len(conversation["turns"]), cycle_count * 2)
+        self.assertEqual(
+            conversation["actual_turn_counts"],
+            {"group-a": cycle_count + 1, "group-b": cycle_count + 1},
+        )
         self.assertFalse(conversation["unexpected_extra_turns"])
-        self.assertEqual(conversation["metrics"]["turn_count"], 4)
+        self.assertEqual(conversation["metrics"]["turn_count"], cycle_count * 2)
         self.assertTrue(conversation["timebox_met"])
-        self.assertEqual(conversation["cycles_completed"], 1)
+        self.assertEqual(conversation["visible_at_mention_count"], 0)
+        self.assertTrue(conversation["all_agents_saw_full_peer_context_after_warmup"])
         self.assertEqual(len(conversation["control_checks"]), 2)
         self.assertTrue(all(all(item["checks"].values()) for item in conversation["control_checks"]))
         self.assertIsNotNone(result["metrics"]["p50_time_to_first_agent_delta_ms"])
-        for round_result in conversation["rounds"]:
-            self.assertTrue(all(round_result["checks"].values()))
-            self.assertEqual(round_result["source_message_event_id"], round_result["target_turn_source_event_id"])
+        for turn in conversation["turns"]:
+            self.assertTrue(all(turn["checks"].values()))
+            self.assertNotIn("@", turn["output"])
         for provider in conversation["providers"]:
             self.assertTrue(provider["same_pid_over_turns"])
             self.assertTrue(provider["pause_resume_verified"])

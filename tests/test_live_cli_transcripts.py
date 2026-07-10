@@ -42,6 +42,12 @@ class _WaitingStaticMessageSource(_StaticMessageSource):
     fail_on_quiet_without_message = False
 
 
+class _ErrorMessageSource(_StaticMessageSource):
+    def poll(self, terminal_output: bytes, *, quiet: bool = False) -> LiveCliMessageSnapshot:
+        del terminal_output, quiet
+        return LiveCliMessageSnapshot(error="provider completed without a reply", source="test")
+
+
 def _noisy_cli_script() -> str:
     return "\n".join(
         [
@@ -180,6 +186,57 @@ class TranscriptMessageSourceTests(unittest.TestCase):
 
         self.assertTrue(snapshot.complete)
         self.assertEqual(snapshot.content, "clean codex answer")
+
+    def test_codex_source_reports_task_complete_without_assistant_message(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            session_dir = root / ".codex" / "sessions" / "2026" / "07" / "10"
+            session_dir.mkdir(parents=True)
+            source = CodexSessionMessageSource(home=root, cwd=workspace)
+            source.prepare_start()
+            delivered = "shared room turn"
+            source.begin_turn(delivered)
+            (session_dir / "rollout-no-message.jsonl").write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "session_meta", "payload": {"cwd": str(workspace)}}),
+                        json.dumps(
+                            {"type": "event_msg", "payload": {"type": "user_message", "message": delivered}}
+                        ),
+                        json.dumps(
+                            {
+                                "type": "event_msg",
+                                "payload": {"type": "task_complete", "last_agent_message": None},
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            snapshot = source.poll(b"", quiet=True)
+
+        self.assertFalse(snapshot.complete)
+        self.assertEqual(snapshot.content, "")
+        self.assertIn("without an assistant message", snapshot.error)
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_runtime_raises_strict_transcript_error_without_waiting_for_timeout(self):
+        runtime = LiveCliRuntime(
+            "strict-error",
+            [sys.executable, "-u", "-c", _noisy_cli_script()],
+            idle_quiet_seconds=0.05,
+            message_source=_ErrorMessageSource(),
+        )
+        try:
+            runtime.send("hello")
+            with self.assertRaisesRegex(LiveCliMessageExtractionError, "provider completed without a reply"):
+                runtime.read_output(timeout_seconds=2.0)
+        finally:
+            runtime.stop()
 
     def test_codex_source_ignores_other_workspace_session_jsonl(self):
         with tempfile.TemporaryDirectory() as temp_dir:

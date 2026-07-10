@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from agentsassemble.agent_sessions import DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS
 from agentsassemble.gui import _make_handler
 from agentsassemble.live_cli_smoke import _marker_recalled
 from agentsassemble.meeting_events import clean_lobby_text
@@ -23,7 +24,6 @@ from agentsassemble.native_cli_providers import (
     native_cli_provider_spec_from_config,
 )
 from agentsassemble.room_realtime import RoomRealtimeController
-from agentsassemble.room_routing import route_message_targets
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
 
 
@@ -35,6 +35,11 @@ STRICT_MESSAGE_SOURCES = {
 }
 TUI_NOISE = re.compile(
     r"(?:\x1b\[|Do you trust|Working\.\.\.|Thinking\.\.\.|ctrl\+|tokens?\b|permission mode|esc to|press enter)",
+    re.IGNORECASE,
+)
+NON_ROOM_REPLY = re.compile(
+    r"(?:<tool_call>|<tool_name>|AskUserQuestion|Plan mode is currently active|"
+    r"I can only read files|What would you like me to do\?)",
     re.IGNORECASE,
 )
 ROOM_TTFO_P50_EXTRA_LIMIT_MS = 300.0
@@ -108,17 +113,6 @@ def run_room_native_cli_smoke(
             client = connect_room_ws_with_ticket(base, ticket, ["room_events"], timeout=5.0)
             client.sock.settimeout(0.2)
             _wait_message(client, inbox, lambda item: item.get("op") == "snapshot", timeout_seconds=5.0)
-            for index in range(8):
-                controller.store.append_event(
-                    "general",
-                    "message_final",
-                    participant_id="smoke-context",
-                    participant_type="human",
-                    actor_id="smoke-context",
-                    actor_type="human",
-                    display_name="Smoke Context",
-                    content=f"bounded room history probe {index}",
-                )
             if agent_conversation:
                 conversation = _smoke_agent_conversation(
                     client,
@@ -134,6 +128,17 @@ def run_room_native_cli_smoke(
                 result["conversation"] = conversation
                 result["providers"] = list(conversation.get("providers") or [])
             else:
+                for index in range(8):
+                    controller.store.append_event(
+                        "general",
+                        "message_final",
+                        participant_id="smoke-context",
+                        participant_type="human",
+                        actor_id="smoke-context",
+                        actor_type="human",
+                        display_name="Smoke Context",
+                        content=f"bounded room history probe {index}",
+                    )
                 for spec in specs:
                     provider_result = _smoke_provider(
                         client,
@@ -425,16 +430,19 @@ def _smoke_agent_conversation(
     topic = clean_lobby_text(conversation_topic, limit=2000) or DEFAULT_CONVERSATION_TOPIC
     result: dict[str, object] = {
         "status": "pending",
-        "topology": "directed_ring_relay",
+        "topology": "server_assigned_shared_room",
         "topic": topic,
         "requested_duration_seconds": requested_seconds,
         "actual_duration_seconds": 0.0,
-        "cycles_completed": 0,
+        "speaker_cycles_completed": 0,
         "timebox_met": requested_seconds == 0.0,
         "control_checks": [],
         "providers": [],
-        "rounds": [],
-        "relay_limit": controller.max_agent_relay_depth,
+        "turns": [],
+        "speaker_order": [spec.agent_id for spec in specs],
+        "topic_event_id": "",
+        "visible_at_mention_count": 0,
+        "all_agents_saw_full_peer_context_after_warmup": None,
         "unexpected_extra_turns": False,
         "last_error": "",
     }
@@ -486,38 +494,79 @@ def _smoke_agent_conversation(
             provider_result["pty"] = bool(session.get("pty", False))
             provider_result["reported_model"] = session.get("model") or spec.model
 
-        provider_map = {spec.agent_id: spec for spec in specs}
-        pairs = tuple((spec, specs[(index + 1) % len(specs)]) for index, spec in enumerate(specs))
         conversation_started = time.monotonic()
-        round_index = 0
+        topic_before_seq = controller.store.latest_event_sequence("general")
+        topic_sent_at = time.monotonic()
+        topic_request = client.command(
+            "message.send",
+            {
+                "content": (
+                    f"이 방의 에이전트들이 함께 이야기할 주제: {topic}\n"
+                    "지금까지 이 공개 방에서 오간 발언을 읽고 직전 의견을 자연스럽게 이어가. "
+                    "서버가 발언 순서를 정하므로 다른 참가자를 호출하거나 테스트 표식을 쓰지 말고, "
+                    "한 번에 2~4문장으로 의견이나 질문을 남겨."
+                ),
+                "target_agent_id": specs[0].agent_id,
+            },
+            request_id=f"group-topic-{uuid4().hex[:6]}",
+        )
+        topic_ack = _wait_ack(client, inbox, topic_request, timeout_seconds=8.0)
+        topic_result = topic_ack.get("result") if isinstance(topic_ack.get("result"), dict) else {}
+        topic_event = topic_result.get("event") if isinstance(topic_result.get("event"), dict) else {}
+        if not topic_event.get("id"):
+            raise RuntimeError("Shared-room topic message was not appended.")
+        result["topic_event_id"] = topic_event["id"]
+        previous_event = dict(topic_event)
+        all_agent_ids = {item.agent_id for item in specs}
+        turn_index = 0
         cycle_index = 0
         while True:
             cycle_index += 1
-            for source, target in pairs:
-                round_index += 1
-                marker = f"ROOM-RELAY-{round_index}-{uuid4().hex[:6]}".upper()
-                round_result = _run_agent_relay_round(
+            for spec in specs:
+                turn_index += 1
+                already_assigned = turn_index == 1
+                turn_result = _run_group_speaker_turn(
                     client,
                     inbox,
                     controller,
-                    source=source,
-                    target=target,
-                    marker=marker,
+                    spec=spec,
+                    source_event=previous_event,
                     timeout_seconds=timeout_seconds,
-                    topic=topic,
                     cycle_index=cycle_index,
-                    providers=provider_map,
+                    sequence_index=turn_index,
+                    all_agent_ids=all_agent_ids,
+                    already_assigned=already_assigned,
+                    observed_from=topic_sent_at if already_assigned else None,
+                    after_seq=topic_before_seq if already_assigned else None,
                 )
-                result["rounds"].append(round_result)  # type: ignore[union-attr]
+                result["turns"].append(turn_result)  # type: ignore[union-attr]
+                previous_event = controller.store.event_by_id(
+                    "general",
+                    clean_lobby_text(turn_result.get("message_event_id"), limit=128),
+                )
                 result["actual_duration_seconds"] = round(time.monotonic() - conversation_started, 3)
             elapsed = time.monotonic() - conversation_started
-            result["cycles_completed"] = cycle_index
+            result["speaker_cycles_completed"] = cycle_index
             if requested_seconds <= 0.0 or elapsed >= requested_seconds:
                 break
         actual_duration = time.monotonic() - conversation_started
         result["actual_duration_seconds"] = round(actual_duration, 3)
-        result["cycles_completed"] = cycle_index
+        result["speaker_cycles_completed"] = cycle_index
         result["timebox_met"] = requested_seconds <= 0.0 or actual_duration >= requested_seconds
+        conversation_turns = [item for item in list(result["turns"]) if isinstance(item, dict)]
+        result["visible_at_mention_count"] = sum(
+            str(item.get("output") or "").count("@") for item in conversation_turns
+        ) + str(topic_event.get("content") or "").count("@")
+        warm_turns = [item for item in conversation_turns if int(item.get("cycle_index") or 0) > 1]
+        result["all_agents_saw_full_peer_context_after_warmup"] = (
+            all(bool(item.get("full_peer_context_seen")) for item in warm_turns)
+            if warm_turns
+            else None
+        )
+        if result["visible_at_mention_count"]:
+            raise RuntimeError("Shared-room conversation emitted a visible at-mention.")
+        if warm_turns and not result["all_agents_saw_full_peer_context_after_warmup"]:
+            raise RuntimeError("At least one Agent Session missed a peer's public room message.")
 
         if verify_controls:
             for spec in specs:
@@ -553,14 +602,15 @@ def _smoke_agent_conversation(
         result["turn_counts_before_quiet_window"] = turn_counts_before_quiet
         result["actual_turn_counts"] = actual_turns
         result["sessions_quiet"] = sessions_quiet_before and sessions_quiet_after
+        minimum_expected_turns = 1 + (1 if verify_controls else 0)
         result["unexpected_extra_turns"] = (
             actual_turns != turn_counts_before_quiet
             or not result["sessions_quiet"]
-            or any(count < 2 for count in actual_turns.values())
+            or any(count < minimum_expected_turns for count in actual_turns.values())
         )
         if result["unexpected_extra_turns"]:
             raise RuntimeError(
-                "Agent relay did not settle after the configured depth limit: "
+                "Shared-room speaker queue did not settle: "
                 f"before={turn_counts_before_quiet!r}, after={actual_turns!r}"
             )
 
@@ -587,7 +637,7 @@ def _smoke_agent_conversation(
             provider_result["status"] = "ok"
             if not provider_result["same_pid_over_turns"]:
                 raise RuntimeError(f"{spec.agent_id}: provider PID changed during the conversation")
-        result["metrics"] = _conversation_metrics(list(result["rounds"]))  # type: ignore[arg-type]
+        result["metrics"] = _conversation_metrics(list(result["turns"]))  # type: ignore[arg-type]
         result["status"] = "ok"
     except TimeoutError as error:
         result["status"] = "error"
@@ -707,9 +757,10 @@ def _verify_pause_resume(
         "message.send",
         {
             "content": (
-                f"@{spec.agent_id} RELAY_MARKER={marker} SOURCE={spec.agent_id} TARGET={spec.agent_id}. "
-                f"일시정지 backlog 전달 확인이야. 답변을 {marker}로 시작하는 한 문장으로만 써."
-            )
+                f"일시정지 backlog 전달 확인 코드 {marker}야. "
+                f"답변을 {marker}로 시작하는 한 문장으로만 써."
+            ),
+            "target_agent_id": spec.agent_id,
         },
         request_id=f"conversation-paused-message-{spec.agent_id}-{uuid4().hex[:6]}",
     )
@@ -795,179 +846,127 @@ def _verify_pause_resume(
     }
 
 
-def _run_agent_relay_round(
+def _run_group_speaker_turn(
     client: WsRoomClient,
     inbox: list[dict[str, object]],
     controller: RoomRealtimeController,
     *,
-    source: NativeCliProviderSpec,
-    target: NativeCliProviderSpec,
-    marker: str,
+    spec: NativeCliProviderSpec,
+    source_event: dict[str, object],
     timeout_seconds: float,
-    providers: dict[str, NativeCliProviderSpec],
-    topic: str = DEFAULT_CONVERSATION_TOPIC,
     cycle_index: int = 1,
+    sequence_index: int = 1,
+    all_agent_ids: set[str],
+    already_assigned: bool = False,
+    observed_from: float | None = None,
+    after_seq: int | None = None,
 ) -> dict[str, object]:
-    before_seq = controller.store.latest_event_sequence("general")
-    target_turn_count = int(controller.store.session("general", target.agent_id).get("turn_count") or 0)
-    started = time.monotonic()
-    prompt = (
-        f"@{source.agent_id} RELAY_MARKER={marker} SOURCE={source.agent_id} TARGET={target.agent_id}. "
-        f"대화 주제는 '{topic}'이고 지금은 {cycle_index}번째 순환이야. 이전 방 대화를 이어서 새 의견을 "
-        f"한두 문장 말하고 {target.agent_id}에게 질문해. 검증을 위해 {marker}를 자연스럽게 한 번 포함하고, "
-        f"상대가 답을 {marker}로 시작하도록 요청해. 마지막에는 반드시 @{target.agent_id}를 붙여 호출해."
+    source_event_id = clean_lobby_text(source_event.get("id"), limit=128)
+    source_event_seq = int(source_event.get("seq") or 0)
+    if not source_event_id or source_event.get("type") != "message_final":
+        raise RuntimeError(f"{spec.agent_id}: group turn source was not a public room message")
+    session_before = controller.store.session("general", spec.agent_id)
+    previous_turn_count = int(session_before.get("turn_count") or 0)
+    clean_after_seq = (
+        int(after_seq)
+        if after_seq is not None
+        else controller.store.latest_event_sequence("general")
     )
-    request_id = client.command(
-        "message.send",
-        {"content": prompt},
-        request_id=f"conversation-message-{source.agent_id}-{uuid4().hex[:8]}",
-    )
-    ack = _wait_ack(client, inbox, request_id, timeout_seconds=8.0)
-    human_event_id = clean_lobby_text(
-        ack.get("result", {}).get("event", {}).get("id")
-        if isinstance(ack.get("result"), dict) and isinstance(ack.get("result", {}).get("event"), dict)
-        else "",
-        limit=128,
-    )
-    source_observed = _wait_agent_final_event(
+    started = observed_from if observed_from is not None else time.monotonic()
+    if not already_assigned:
+        assigned = controller.request_agent_turn(
+            "general",
+            spec.agent_id,
+            source_event_id=source_event_id,
+        )
+        if not assigned.get("assigned"):
+            raise RuntimeError(f"{spec.agent_id}: server floor did not assign the requested group turn")
+    observed = _wait_agent_final_event(
         client,
         inbox,
-        source.agent_id,
-        after_seq=before_seq,
+        spec.agent_id,
+        after_seq=clean_after_seq,
         observed_from=started,
         timeout_seconds=timeout_seconds,
     )
-    source_final_at = time.monotonic()
-    target_observed = _wait_agent_final_event(
-        client,
-        inbox,
-        target.agent_id,
-        after_seq=before_seq,
-        observed_from=source_final_at,
-        timeout_seconds=timeout_seconds,
+    completed_at = time.monotonic()
+    event = observed["event"]
+    session_after = _wait_until_value(
+        lambda: controller.store.session("general", spec.agent_id),
+        lambda session: int(session.get("turn_count") or 0) > previous_turn_count
+        and session.get("runtime_status") == "idle"
+        and not session.get("pending_event_ids"),
+        timeout_seconds=8.0,
     )
-    target_final_at = time.monotonic()
-    source_event = source_observed["event"]
-    target_event = target_observed["event"]
-    source_content = str(source_event.get("content") or "")
-    target_content = str(target_event.get("content") or "")
-    follow_ups: list[dict[str, object]] = []
-    follow_up_final_at = target_final_at
-    follow_decision = route_message_targets(
-        dict(target_event),
-        providers,
-        max_agent_relay_depth=controller.max_agent_relay_depth,
-    )
-    for follow_agent_id in follow_decision.targets:
-        follow_observed = _wait_agent_final_event(
-            client,
-            inbox,
-            follow_agent_id,
-            after_seq=int(target_event.get("seq") or 0),
-            observed_from=target_final_at,
-            timeout_seconds=timeout_seconds,
-        )
-        follow_up_final_at = time.monotonic()
-        follow_event = follow_observed["event"]
-        follow_started = next(
-            (
-                event
-                for event in reversed(controller.store.read_events("general"))
-                if event.get("type") == "turn_started"
-                and event.get("participant_id") == follow_agent_id
-                and event.get("turn_id") == follow_event.get("turn_id")
-            ),
-            {},
-        )
-        follow_content = str(follow_event.get("content") or "")
-        expected_follow_source = STRICT_MESSAGE_SOURCES.get(follow_agent_id)
-        follow_checks = {
-            "turn_sourced_from_target_message": follow_started.get("source_event_id") == target_event.get("id"),
-            "final_sourced_from_target_message": follow_event.get("source_event_id") == target_event.get("id"),
-            "relay_depth_reached_limit": int(follow_event.get("relay_depth") or 0)
-            == controller.max_agent_relay_depth,
-            "message_clean": not bool(TUI_NOISE.search(follow_content)),
-            "message_structured": not expected_follow_source
-            or follow_event.get("message_source") == expected_follow_source,
-        }
-        if not all(follow_checks.values()):
-            failed = sorted(name for name, passed in follow_checks.items() if not passed)
-            raise RuntimeError(f"Agent follow-up relay checks failed: {', '.join(failed)}")
-        follow_ups.append({
-            "agent_id": follow_agent_id,
-            "message_event_id": follow_event.get("id"),
-            "source_event_id": follow_event.get("source_event_id"),
-            "message_source": follow_event.get("message_source"),
-            "output": follow_content[-2000:],
-            "ttfo_ms": follow_observed["ttfo_ms"],
-            "turn_completed_ms": round((follow_up_final_at - target_final_at) * 1000, 1),
-            "relay_depth": follow_event.get("relay_depth"),
-            "checks": follow_checks,
-        })
-
-    for agent_id in providers:
-        _wait_until_value(
-            lambda agent_id=agent_id: controller.store.session("general", agent_id),
-            lambda session: session.get("runtime_status") == "idle" and not session.get("pending_event_ids"),
-            timeout_seconds=8.0,
-        )
-    target_session = _wait_until_value(
-        lambda: controller.store.session("general", target.agent_id),
-        lambda session: int(session.get("turn_count") or 0) > target_turn_count and session.get("runtime_status") == "idle",
-        timeout_seconds=5.0,
-    )
-    target_started = next(
+    turn_started = next(
         (
             event
             for event in reversed(controller.store.read_events("general"))
             if event.get("type") == "turn_started"
-            and event.get("participant_id") == target.agent_id
-            and event.get("turn_id") == target_event.get("turn_id")
+            and event.get("participant_id") == spec.agent_id
+            and event.get("turn_id") == observed["event"].get("turn_id")
         ),
         {},
     )
-    expected_source = STRICT_MESSAGE_SOURCES.get(source.agent_id)
-    expected_target = STRICT_MESSAGE_SOURCES.get(target.agent_id)
+    context_after_seq = int(turn_started.get("provider_context_after_seq") or 0)
+    context_up_to_seq = int(turn_started.get("provider_context_up_to_seq") or 0)
+    expected_context = controller.store.read_events(
+        "general",
+        after_seq=context_after_seq,
+        before_seq=context_up_to_seq + 1,
+        limit=DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS,
+        newest=True,
+        event_types=("message_final",),
+        exclude_actor_id=spec.agent_id,
+    )
+    expected_context_ids = [clean_lobby_text(item.get("id"), limit=128) for item in expected_context]
+    context_event_ids = [
+        clean_lobby_text(value, limit=128)
+        for value in list(turn_started.get("provider_context_event_ids") or [])
+        if clean_lobby_text(value, limit=128)
+    ]
+    context_actor_ids = [
+        clean_lobby_text(value, limit=128)
+        for value in list(turn_started.get("provider_context_actor_ids") or [])
+        if clean_lobby_text(value, limit=128)
+    ]
+    peer_actor_ids = sorted((set(context_actor_ids) & all_agent_ids) - {spec.agent_id})
+    expected_peers = all_agent_ids - {spec.agent_id}
+    full_peer_context_seen = expected_peers.issubset(set(context_actor_ids)) if cycle_index > 1 else None
+    output = str(event.get("content") or "")
+    expected_source = STRICT_MESSAGE_SOURCES.get(spec.agent_id)
     checks = {
-        "human_targeted_only_source": bool(human_event_id and source_event.get("source_event_id") == human_event_id),
-        "source_mentions_target": f"@{target.agent_id}" in source_content.casefold(),
-        "source_carries_marker": marker.casefold() in source_content.casefold(),
-        "target_carries_marker": marker.casefold() in target_content.casefold(),
-        "target_turn_sourced_from_agent_message": target_started.get("source_event_id") == source_event.get("id"),
-        "target_final_sourced_from_agent_message": target_event.get("source_event_id") == source_event.get("id"),
-        "relay_depth_incremented": int(target_event.get("relay_depth") or 0) == 1,
-        "source_message_clean": not bool(TUI_NOISE.search(source_content)),
-        "target_message_clean": not bool(TUI_NOISE.search(target_content)),
-        "source_message_structured": not expected_source or source_event.get("message_source") == expected_source,
-        "target_message_structured": not expected_target or target_event.get("message_source") == expected_target,
+        "server_turn_sourced_from_previous_public_message": turn_started.get("source_event_id") == source_event_id,
+        "final_sourced_from_previous_public_message": event.get("source_event_id") == source_event_id,
+        "previous_public_message_was_visible": source_event_id in context_event_ids,
+        "entire_bounded_public_diff_was_visible": context_event_ids == expected_context_ids,
+        "context_cursor_reached_source": context_up_to_seq == source_event_seq,
+        "message_has_no_at_mention": "@" not in output,
+        "message_clean": not bool(TUI_NOISE.search(output)),
+        "message_is_room_reply": not bool(NON_ROOM_REPLY.search(output)),
+        "message_structured": not expected_source or event.get("message_source") == expected_source,
     }
     if not all(checks.values()):
         failed = sorted(name for name, passed in checks.items() if not passed)
-        raise RuntimeError(f"Agent relay checks failed: {', '.join(failed)}")
+        raise RuntimeError(f"{spec.agent_id}: shared-room turn checks failed: {', '.join(failed)}")
     return {
-        "source_agent_id": source.agent_id,
-        "target_agent_id": target.agent_id,
+        "sequence_index": sequence_index,
+        "agent_turn_count": int(session_after.get("turn_count") or 0),
         "cycle_index": cycle_index,
-        "topic": topic,
-        "marker": marker,
-        "human_event_id": human_event_id,
-        "source_message_event_id": source_event.get("id"),
-        "target_message_event_id": target_event.get("id"),
-        "target_turn_source_event_id": target_started.get("source_event_id"),
-        "source_message_source": source_event.get("message_source"),
-        "target_message_source": target_event.get("message_source"),
-        "source_output": source_content[-2000:],
-        "target_output": target_content[-2000:],
-        "source_ttfo_ms": source_observed["ttfo_ms"],
-        "source_turn_completed_ms": round((source_final_at - started) * 1000, 1),
-        "relay_ttfo_ms": target_observed["ttfo_ms"],
-        "relay_turn_completed_ms": round((target_final_at - source_final_at) * 1000, 1),
-        "round_total_ms": round((follow_up_final_at - started) * 1000, 1),
-        "target_provider_visible_chars": target_started.get("provider_visible_chars"),
-        "target_provider_visible_event_count": target_started.get("provider_visible_event_count"),
-        "target_last_seen_event_id": target_session.get("last_seen_event_id"),
-        "follow_up": follow_ups[0] if follow_ups else None,
-        "follow_ups": follow_ups,
+        "agent_id": spec.agent_id,
+        "source_event_id": source_event_id,
+        "message_event_id": event.get("id"),
+        "message_source": event.get("message_source"),
+        "output": output[-4000:],
+        "ttfo_ms": observed["ttfo_ms"],
+        "turn_completed_ms": round((completed_at - started) * 1000, 1),
+        "provider_visible_chars": turn_started.get("provider_visible_chars"),
+        "provider_visible_event_count": turn_started.get("provider_visible_event_count"),
+        "provider_context_event_ids": context_event_ids,
+        "provider_context_actor_ids": context_actor_ids,
+        "peer_actor_ids_seen": peer_actor_ids,
+        "full_peer_context_seen": full_peer_context_seen,
+        "last_seen_event_id": session_after.get("last_seen_event_id"),
         "checks": checks,
     }
 
@@ -1287,32 +1286,13 @@ def _record_latency_comparison(
     )
 
 
-def _conversation_metrics(rounds: list[dict[str, object]]) -> dict[str, object]:
-    ttfo: list[float] = []
-    completed: list[float] = []
-    for round_result in rounds:
-        for field in ("source_ttfo_ms", "relay_ttfo_ms"):
-            value = round_result.get(field)
-            if isinstance(value, (int, float)):
-                ttfo.append(float(value))
-        for field in ("source_turn_completed_ms", "relay_turn_completed_ms"):
-            value = round_result.get(field)
-            if isinstance(value, (int, float)):
-                completed.append(float(value))
-        follow_ups = [
-            item
-            for item in list(round_result.get("follow_ups") or [])
-            if isinstance(item, dict)
-        ]
-        if not follow_ups and isinstance(round_result.get("follow_up"), dict):
-            follow_ups = [round_result["follow_up"]]  # type: ignore[list-item]
-        for follow_up in follow_ups:
-            value = follow_up.get("ttfo_ms")
-            if isinstance(value, (int, float)):
-                ttfo.append(float(value))
-            value = follow_up.get("turn_completed_ms")
-            if isinstance(value, (int, float)):
-                completed.append(float(value))
+def _conversation_metrics(turns: list[dict[str, object]]) -> dict[str, object]:
+    ttfo = [float(turn["ttfo_ms"]) for turn in turns if isinstance(turn.get("ttfo_ms"), (int, float))]
+    completed = [
+        float(turn["turn_completed_ms"])
+        for turn in turns
+        if isinstance(turn.get("turn_completed_ms"), (int, float))
+    ]
     return {
         "turn_count": len(ttfo),
         "time_to_first_agent_delta_ms": ttfo,

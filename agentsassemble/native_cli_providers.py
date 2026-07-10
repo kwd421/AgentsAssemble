@@ -138,8 +138,6 @@ def _claude_command(model: str) -> tuple[str, ...]:
         "claude",
         "--model",
         model or "haiku",
-        "--permission-mode",
-        "plan",
         "--tools",
         "",
         "--safe-mode",

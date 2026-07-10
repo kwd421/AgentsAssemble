@@ -495,6 +495,8 @@ class LiveCliRuntime:
         last_visible_content_ref: list[str],
     ) -> LiveCliMessageSnapshot:
         snapshot = self._message_source.poll(response, quiet=quiet)
+        if snapshot.error:
+            raise LiveCliMessageExtractionError(snapshot.error)
         if not snapshot.content:
             return previous
         last_visible_content = last_visible_content_ref[0] if last_visible_content_ref else ""

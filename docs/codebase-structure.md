@@ -97,14 +97,14 @@ MCP tool-loop 에이전트  ─┤                ├─ lobby.jsonl        (방
 | `room_database.py` + `room_store.py` | SQLite 기반 room/participant/session/event/command 단일 영속 저장소. room별 증가 `seq`와 indexed cursor read의 source of truth |
 | `room_context.py` | agent별 `last_provider_sync_seq` 이후 이벤트를 12개/4000자 이내 provider-visible diff로 투영. 전체 transcript 재주입 금지 경계 |
 | `room_routing.py` | `@mention`, `@all`, default responder, 자기 제외, agent relay depth를 결정하는 순수 정책 |
-| `room_realtime.py` | request-id ACK/NACK, canonical append/broadcast, turn phase와 assignment, crash 후 1회 recovery를 조정. provider 프로세스나 TUI 파싱을 직접 소유하지 않음 |
-| `native_cli_providers.py` | Codex Spark/Antigravity/Grok/Claude Haiku catalog, interactive command, runtime profile key (`claude -p` 금지) |
+| `room_realtime.py` | request-id ACK/NACK, canonical append/broadcast, turn phase와 assignment, 호출문을 남기지 않는 server-owned speaker turn, crash 후 1회 recovery를 조정. provider 프로세스나 TUI 파싱을 직접 소유하지 않음 |
+| `native_cli_providers.py` | Codex Spark/Antigravity/Grok/Claude Haiku catalog, interactive command, runtime profile key (`claude -p`와 대화 차단 `plan` mode 금지) |
 | `room_bridge_process.py` | 서버 소유 Agent Bridge 프로세스 start/stop/restart, profile별 private state dir, bounded stderr drain |
 | `room_agent_bridge.py` | agent principal로 같은 room WebSocket에 인증해 turn assignment와 provider delta/final/health report를 중계 |
 | `live_cli.py` | Codex/Antigravity/Claude 장기 실행 PTY 수명과 터미널 입력/interrupt/cleanup. strict final 뒤 남은 TUI 출력을 drain하고 다음 입력 전 bounded quiet를 확인 |
 | `live_cli_transcripts.py` | 첫 exact turn input으로 provider session JSONL에 바인딩하고 assistant 자연어만 추출. 이후 bound-session input은 provider 로그의 장문 축약을 허용하며, 미완성 JSONL 레코드는 다음 poll까지 보류 |
 | `grok_acp_runtime.py` | `grok agent stdio` ACP JSON-RPC 수명, `agent_message_chunk`만 streaming, permission reject, bounded stderr, `session/load` continuity |
-| `room_native_cli_smoke.py` | opt-in 실제 CLI continuity/latency, time-boxed directed-ring 대화, pause/backlog/same-PID resume/kick 검증. 일반 제품 runtime이 아님 |
+| `room_native_cli_smoke.py` | opt-in 실제 CLI continuity/latency, 공개 주제 하나와 server-assigned turn을 쓰는 time-boxed 단체대화, 전체 peer diff, visible mention 0건, pause/backlog/same-PID resume/kick 검증. 일반 제품 runtime이 아님 |
 | `canonical_room_benchmark.py` | provider 호출 없이 100k event/10 agent indexed read, reconnect, context projection 성능을 측정 |
 
 프런트 canonical 연결은 `frontend/src/roomSocketClient.ts`, room별

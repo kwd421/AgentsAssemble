@@ -89,4 +89,6 @@ class TurnAssignment(TypedDict):
     input_up_to_seq: int
     provider_input: str
     provider_visible_chars: int
+    provider_context_event_ids: NotRequired[list[str]]
+    provider_context_actor_ids: NotRequired[list[str]]
     timeout_seconds: float

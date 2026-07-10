@@ -79,8 +79,6 @@
         "claude",
         "--model",
         "haiku",
-        "--permission-mode",
-        "plan",
         "--tools",
         "",
         "--safe-mode"

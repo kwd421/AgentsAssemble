@@ -2898,6 +2898,7 @@ def build_room_turn_packet(
         "provider_visible_event_count": len(provider_events),
         "filtered_internal_event_count": provider_projection.filtered_internal_event_count,
         "filtered_message_delta_count": provider_projection.filtered_message_delta_count,
+        "provider_context_after_seq": context_after_seq,
         "last_provider_sync_event_id_before": last_provider_sync_event_id,
         "last_provider_sync_event_id_after": latest_delta_event_id or last_provider_sync_event_id,
         "last_provider_sync_seq_before": last_provider_sync_seq,

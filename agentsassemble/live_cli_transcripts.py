@@ -23,6 +23,7 @@ class LiveCliMessageSnapshot:
     complete: bool = False
     source: str = ""
     source_kind: str = ""
+    error: str = ""
 
 
 class LiveCliMessageSource(Protocol):
@@ -122,7 +123,7 @@ class _JsonlOffsetMessageSource:
             if self._bound_path and path_key != self._bound_path:
                 continue
             snapshot = self._extract_from_text(text, source=str(path))
-            if snapshot.content:
+            if snapshot.content or snapshot.error:
                 self._active_paths.add(path_key)
                 latest = snapshot
         return latest
@@ -194,6 +195,7 @@ class CodexSessionMessageSource(_JsonlOffsetMessageSource):
 
     def _extract_from_text(self, text: str, *, source: str) -> LiveCliMessageSnapshot:
         latest = ""
+        turn_completed_without_message = False
         for entry in _jsonl_objects(text):
             payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
             entry_type = str(entry.get("type") or "")
@@ -202,13 +204,21 @@ class CodexSessionMessageSource(_JsonlOffsetMessageSource):
                 latest = clean_lobby_text(payload.get("message"), limit=12000)
             elif entry_type == "event_msg" and payload_type == "task_complete":
                 latest = clean_lobby_text(payload.get("last_agent_message"), limit=12000) or latest
+                turn_completed_without_message = not bool(latest)
             elif entry_type == "response_item":
                 latest = _codex_response_item_text(payload) or latest
+        error = ""
+        if turn_completed_without_message and not latest:
+            error = (
+                "Codex completed the turn without an assistant message; "
+                "provider quota or availability may be exhausted."
+            )
         return LiveCliMessageSnapshot(
             content=latest,
             complete=bool(latest),
-            source=source if latest else "",
+            source=source if latest or error else "",
             source_kind=self.source_kind,
+            error=error,
         )
 
     def _turn_input_texts(self, text: str) -> list[str]:

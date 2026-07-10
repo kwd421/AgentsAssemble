@@ -375,7 +375,7 @@ strict message source, marker recall, provider-visible character counts, TTFO,
 turn completion latency, RSS delta, stderr diagnostics, timeouts, context
 errors, and process cleanup.
 
-Agent-to-agent relay has a separate mode on the same harness:
+Shared-room conversation has a separate mode on the same harness:
 
 ```bash
 assemble room smoke \
@@ -388,16 +388,25 @@ assemble room smoke \
   --approve-real-provider
 ```
 
-The selected providers start together in one canonical room. With no duration,
-the harness sends one directed ring message per provider. With a duration, it
-finishes complete ring cycles until the requested conversation time is met.
-Every target turn must name the preceding agent's `message_final` as its
-`source_event_id`; natural third-agent follow-ups are collected through the
-configured relay-depth limit. `--verify-controls` additionally proves paused
-messages remain pending, paused resume keeps both PIDs, kick terminates both
-processes, and a kicked participant cannot start until explicitly re-added.
-The credential-free E2E uses two real fake PTY processes to cover the same path
-in normal test runs.
+The selected providers start together in one canonical room. The harness
+appends one public topic message without an at-mention or relay marker. After
+that, a server-owned floor scheduler assigns one speaker at a time without
+adding moderator chatter to the room. Each Agent Session receives every public
+`message_final` after its own provider-sync cursor, excluding only its own prior
+reply, so a later speaker sees conversations that happened between the other
+participants. With no duration each provider speaks once; with a duration the
+scheduler finishes complete speaker cycles until the requested time is met.
+
+Every turn records the bounded public context event IDs and actor IDs used to
+build provider input. The smoke fails if the previous public message is absent,
+the cursor window omits an expected public message, any conversation reply
+contains a visible at-mention, TUI/tool markup is mistaken for speech, or a
+provider emits a mode refusal instead of a room reply. `--verify-controls`
+additionally proves paused messages remain pending, paused resume keeps both
+PIDs, kick terminates both processes, and a kicked participant cannot start
+until explicitly re-added. The credential-free E2E uses two real fake PTY
+processes for multiple speaker cycles and verifies that both later turns see
+the full peer diff.
 
 The harness also compares provider-direct first clean output with the first
 canonical room delta for ten strict samples. The 2026-07-10 local runs recorded:
@@ -413,33 +422,31 @@ Grok's partial row is latency evidence, not a passing ten-sample smoke. A final
 Grok rerun requires provider balance; the harness reports the external 402 as a
 classified provider error instead of treating it as a transport failure. A
 separate real no-inference restart probe confirmed `loadSession: true` and a
-successful `session/load` into a new Grok process. Claude's row used
-`claude --model haiku --permission-mode plan --tools "" --safe-mode`; `-p` and
-`--print` were absent. After the local Claude login was refreshed, the two-turn
-memory smoke and all ten exact latency samples passed.
+successful `session/load` into a new Grok process. The historical Claude row
+used `claude --model haiku --permission-mode plan --tools "" --safe-mode`; `-p`
+and `--print` were absent. The current catalog removes `plan` because Claude
+treated ordinary room speech as a prohibited non-plan action. After the local
+Claude login was refreshed, the two-turn memory smoke and all ten exact latency
+samples passed.
 
-The 2026-07-10 three-provider conversation smoke kept Codex Spark,
-Antigravity, and Claude Haiku alive together in one room. The directed ring
-Codex -> Antigravity -> Claude -> Codex completed all three handoffs, plus one
-natural Antigravity -> Codex follow-up, for seven provider turns. Every handoff
-matched the preceding agent message ID, all provider messages came from strict
-session/transcript sources, and the depth-two relay settled with turn counts
-Codex 3, Antigravity 2, Claude 2. All three provider PIDs stayed stable, and no
-bridge or provider process remained after stop. The final current-code rerun
-recorded TTFO p50/p95 4438.1/6892.2 ms and turn-completion p50/p95
-4446.4/6895.8 ms. Evidence:
-`native_cli_20260710T105755Z_8c4b71.json`.
+The earlier 2026-07-10 three-provider and 351.164-second artifacts used visible
+at-mentions, relay markers, and a fixed directed ring. They remain useful for
+process continuity, latency, pause/resume, and cleanup evidence, but they do
+not count as shared group-conversation proof.
 
-A later 2026-07-10 five-minute run used Codex GPT-5.6 Luna at high effort,
-Antigravity Gemini 3.5 Flash (Medium), and Claude Opus 4.6 at high effort. The
-conversation itself ran 351.164 seconds: five complete cycles, fifteen directed
-rounds, 36 room-conversation provider turns, and six verified natural
-depth-two follow-ups. TTFO p50/p95 was 7293.9/21051.2 ms. The three pause/resume
-backlog checks added one turn each, for final provider turn counts Codex 16,
-Antigravity 11, and Claude 12. All three preserved provider and bridge PIDs
-through pause/resume, then passed kick cleanup and explicit-re-add enforcement;
-no process remained. Evidence:
-`native_cli_20260710T120815Z_57e7a7.json`.
+The first corrected real smoke used Antigravity Gemini 3.5 Flash (Medium) and
+Claude Opus 4.6 high. It appended one public deep-sea-observatory topic and then
+assigned both turns through the server floor. Antigravity saw the topic;
+Claude's bounded input contained both the topic and Antigravity's public reply.
+Both returned natural Korean room speech from strict transcript sources, used
+no visible at-mentions, kept the same PIDs, and left no process after cleanup.
+TTFO was 7969.2 ms and 15273.8 ms. Evidence:
+`native_cli_20260710T124943Z_76bd74.json`.
+
+The corresponding three-provider rerun is pending an external Codex quota
+reset. Its failed artifact records a no-message Codex completion rather than a
+group-routing failure. The transcript adapter now turns that condition into an
+immediate provider error instead of waiting for the full turn timeout.
 
 Long-room behavior is verified separately without provider calls:
 

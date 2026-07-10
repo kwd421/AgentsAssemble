@@ -8,14 +8,16 @@ import tty
 
 START = b"\x1b[200~"
 END = b"\x1b[201~"
-RELAY = re.compile(r"RELAY_MARKER=([A-Za-z0-9_.-]+) SOURCE=([\w-]+) TARGET=([\w-]+)")
+CONTROL_MARKER = re.compile(r"(PAUSE-RESUME-[A-Z0-9_.-]+)", re.IGNORECASE)
+ROOM_SPEAKER = re.compile(r"^- ([^:\n]+):", re.MULTILINE)
 
 
 def main() -> int:
     agent_id = sys.argv[1]
     tty.setraw(sys.stdin.fileno())
-    os.write(sys.stdout.fileno(), f"FAKE_RELAY_READY {agent_id}\n".encode())
+    os.write(sys.stdout.fileno(), f"FAKE_GROUP_READY {agent_id}\n".encode())
     buffer = b""
+    turn = 0
     while True:
         chunk = os.read(sys.stdin.fileno(), 4096)
         if not chunk:
@@ -28,17 +30,14 @@ def main() -> int:
             payload, _, buffer = after_start.partition(END)
             buffer = buffer.lstrip(b"\r\n")
             text = payload.decode("utf-8", errors="replace")
-            matches = RELAY.findall(text)
-            if not matches:
-                response = f"{agent_id} saw no relay marker\n"
+            turn += 1
+            control_markers = CONTROL_MARKER.findall(text)
+            if control_markers:
+                response = f"{control_markers[-1].upper()} {agent_id} 세션이 같은 대화를 이어받았어.\n"
             else:
-                marker, source, target = matches[-1]
-                if agent_id == source:
-                    response = f"{marker}에 관해 한 문장으로 답해줘 @{target}\n"
-                elif agent_id == target:
-                    response = f"{marker} 릴레이를 정상적으로 받았어.\n"
-                else:
-                    response = f"{agent_id} ignored {marker}\n"
+                speakers = ROOM_SPEAKER.findall(text)
+                heard = ", ".join(speakers[-3:]) or "공개 방"
+                response = f"{agent_id}의 {turn}번째 의견이야. 앞선 {heard}의 대화를 읽고 자연스럽게 이어갈게.\n"
             os.write(sys.stdout.fileno(), response.encode("utf-8"))
 
 

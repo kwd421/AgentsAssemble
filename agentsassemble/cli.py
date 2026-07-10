@@ -1700,13 +1700,13 @@ def build_parser() -> argparse.ArgumentParser:
     room_smoke.add_argument(
         "--agent-conversation",
         action="store_true",
-        help="Start two or more providers and verify agent-to-agent room relay around a directed ring.",
+        help="Start two or more providers and verify server-assigned turns over one shared public room history.",
     )
     room_smoke.add_argument(
         "--conversation-seconds",
         type=parse_nonnegative_float,
         default=0.0,
-        help="Keep an agent conversation running for at least this many seconds; 0 runs one directed ring.",
+        help="Keep a shared-room agent conversation running for at least this many seconds; 0 runs one speaker cycle.",
     )
     room_smoke.add_argument(
         "--conversation-topic",

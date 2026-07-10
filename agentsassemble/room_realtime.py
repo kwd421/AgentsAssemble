@@ -292,6 +292,52 @@ class RoomRealtimeController:
     def capabilities(self, identity: dict[str, object]) -> dict[str, bool]:
         return capabilities_for_identity(identity)
 
+    def request_agent_turn(
+        self,
+        room_id: str,
+        agent_id: str,
+        *,
+        source_event_id: str = "",
+    ) -> dict[str, object]:
+        """Let a server-owned floor scheduler assign a turn without a visible mention."""
+
+        clean_room_id = clean_lobby_text(room_id, limit=128)
+        clean_agent_id = clean_lobby_text(agent_id, limit=128)
+        self.ensure_room(clean_room_id)
+        with self._lock:
+            self._provider(clean_room_id, clean_agent_id)
+            session = self.store.session(clean_room_id, clean_agent_id)
+            if not session:
+                raise RoomCommandRejected(f"Agent session {clean_agent_id} was not found.", code="not_found")
+            source = self.store.event_by_id(clean_room_id, source_event_id) if source_event_id else {}
+            if not source:
+                latest = self.store.read_events(
+                    clean_room_id,
+                    event_types=("message_final",),
+                    exclude_actor_id=clean_agent_id,
+                    limit=1,
+                    newest=True,
+                )
+                source = latest[-1] if latest else {}
+            if source.get("type") != "message_final":
+                raise RoomCommandRejected("A public room message is required to assign a turn.", code="no_room_message")
+            source_seq = int(source.get("seq") or 0)
+            last_sync_seq = int(session.get("last_provider_sync_seq") or 0)
+            if session.get("bootstrap_done") and source_seq <= last_sync_seq:
+                raise RoomCommandRejected(
+                    "The Agent Session has no unseen public room message to answer.",
+                    code="no_new_room_message",
+                )
+            self._queue_event(clean_room_id, clean_agent_id, source, relay_depth=0)
+            current = self.store.session(clean_room_id, clean_agent_id)
+            return {
+                "source_event_id": source.get("id"),
+                "source_event_seq": source_seq,
+                "queued": bool(source.get("id")),
+                "assigned": current.get("active_source_event_id") == source.get("id"),
+                "agent_session": self._public_session(current),
+            }
+
     def handle_command(
         self,
         identity: dict[str, object],
@@ -1190,6 +1236,17 @@ class RoomRealtimeController:
             session_id=str(session["session_id"]),
             instruction="Reply naturally to the new room messages. Return only the text that should appear in the room.",
         )
+        provider_events = [event for event in list(packet.get("events") or []) if isinstance(event, dict)]
+        provider_context_event_ids = [
+            clean_lobby_text(event.get("id"), limit=128)
+            for event in provider_events
+            if clean_lobby_text(event.get("id"), limit=128)
+        ]
+        provider_context_actor_ids = [
+            clean_lobby_text(event.get("participant_id") or event.get("actor_id"), limit=128)
+            for event in provider_events
+            if clean_lobby_text(event.get("participant_id") or event.get("actor_id"), limit=128)
+        ]
         input_up_to_event_id = clean_lobby_text(packet.get("last_provider_sync_event_id_after"), limit=128) or pending[-1]
         source_event = self.store.event_by_id(room_id, pending[-1])
         input_up_to_seq = _safe_bounded_int(
@@ -1230,6 +1287,10 @@ class RoomRealtimeController:
             source_event_id=pending[-1],
             provider_visible_chars=packet.get("provider_visible_chars"),
             provider_visible_event_count=packet.get("provider_visible_event_count"),
+            provider_context_event_ids=provider_context_event_ids,
+            provider_context_actor_ids=provider_context_actor_ids,
+            provider_context_after_seq=packet.get("provider_context_after_seq"),
+            provider_context_up_to_seq=packet.get("last_provider_sync_seq_after"),
         )
         self.store.append_event(
             room_id,
@@ -1250,6 +1311,8 @@ class RoomRealtimeController:
             "input_up_to_seq": input_up_to_seq,
             "provider_input": packet.get("provider_input") or "",
             "provider_visible_chars": packet.get("provider_visible_chars") or 0,
+            "provider_context_event_ids": provider_context_event_ids,
+            "provider_context_actor_ids": provider_context_actor_ids,
             "timeout_seconds": self._provider(room_id, agent_id).turn_timeout_seconds,
         }
         if self.broker.direct_to_bridge(room_id, agent_id, assignment):
