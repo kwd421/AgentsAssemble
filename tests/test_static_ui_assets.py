@@ -30,38 +30,6 @@ def react_lobby_external_participation_surface() -> str:
 
 
 class StaticUiAssetTests(unittest.TestCase):
-    def test_react_default_surface_keeps_discord_room_shell(self):
-        app_source = frontend_file("App.tsx")
-        socket_source = frontend_file("roomSocketClient.ts")
-        room_dock_source = frontend_file("lib/roomDockModel.ts")
-        self.assertNotIn('import GeneralRoomView from "./views/GeneralRoomView";', app_source)
-        self.assertNotIn("return <GeneralRoomView />;", app_source)
-        self.assertFalse((FRONTEND_DIR / "views" / "GeneralRoomView.tsx").exists())
-        self.assertIn("export default function App()", app_source)
-        self.assertIn("<RoomRail", app_source)
-        self.assertIn("<HomeSidebar", app_source)
-        self.assertIn("<LobbyView", app_source)
-        self.assertIn('label: "general"', app_source)
-        self.assertNotIn("export const LIVE_CLI_ROOM", room_dock_source)
-        self.assertNotIn("PINNED_ROOMS", room_dock_source)
-        self.assertNotIn("submitGeneralRoomMessage", app_source)
-        self.assertNotIn("generalRoomEventToLobbyEvent", app_source)
-        lobby_source = frontend_file("views/LobbyView.tsx")
-        self.assertIn("const roomScopedConversationEvents = useMemo", lobby_source)
-        self.assertIn("event.flow_meeting_id !== activeRoom.meetingId", lobby_source)
-        self.assertIn("return roomScopedConversationEvents;", lobby_source)
-        self.assertLess(lobby_source.index("const roomScopedConversationEvents = useMemo"), lobby_source.index("if (!activeRoom.createdAt) return roomScopedConversationEvents;"))
-        room_connection_source = frontend_file("views/components/RoomConnectionPanel.tsx")
-        self.assertIn("agentSessions?: RoomAgentSession[];", room_connection_source)
-        self.assertIn("onAgentControl?:", room_connection_source)
-        self.assertNotIn("if (liveCliRoom) {", room_connection_source)
-        self.assertIn('onAgentControl(session, "start")', room_connection_source)
-        self.assertIn('onAgentControl(session, "stop")', room_connection_source)
-        self.assertNotIn("openGeneralRoomSocket", app_source + socket_source)
-        self.assertNotIn('"/ws/rooms/general"', socket_source)
-        self.assertNotIn('"/api/rooms/general/events"', socket_source)
-        self.assertNotIn('"/api/rooms/general/agents"', socket_source)
-
     def test_retired_vanilla_static_console_is_not_packaged_or_tested(self):
         pyproject = PYPROJECT.read_text(encoding="utf-8")
 

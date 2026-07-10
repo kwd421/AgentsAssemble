@@ -76,6 +76,20 @@ function liveCliLatency(agent: RoomAgentSession) {
   return [ttfo, total].filter(Boolean).join(" · ");
 }
 
+function providerSessionContinuity(session: RoomAgentSession) {
+  const structuredSession =
+    session.transport === "acp_stdio" ||
+    session.provider_session_load_supported ||
+    session.provider_session_reused ||
+    session.provider_session_resume_failed;
+  if (!structuredSession) return "";
+  if (!session.provider_session_active && session.provider_session_load_supported) return "provider session 재개 대기";
+  if (!session.provider_session_active) return "provider session 비활성";
+  if (session.provider_session_resume_failed) return "provider session 새로 시작됨";
+  if (session.provider_session_reused) return "provider session 이어짐";
+  return "provider session 활성";
+}
+
 export default function RoomConnectionPanel({
   room,
   agents,
@@ -123,6 +137,7 @@ export default function RoomConnectionPanel({
             {agentSessions.map((session) => {
               const status = session.runtime_status || session.status;
               const running = ["starting", "idle", "busy"].includes(status);
+              const sessionContinuity = providerSessionContinuity(session);
               return (
                 <article key={session.session_id} className="dc-room-live-cli-card">
                   <div className="dc-room-live-cli-head">
@@ -177,10 +192,42 @@ export default function RoomConnectionPanel({
                       Interrupt
                     </button>
                   </div>
-                  <details className="dc-room-connection-note preserve-words">
+                  <details className="dc-room-connection-note dc-room-runtime-diagnostics preserve-words">
                     <summary>진단</summary>
+                    <p>
+                      runtime {session.runtime_kind || "live_cli"} · {session.transport || "pty"}
+                    </p>
+                    {session.runtime_profile_key && <p>profile {session.runtime_profile_key}</p>}
+                    {session.message_source && (
+                      <p>
+                        message {session.message_source}
+                        {session.message_source_strict ? " · strict" : ""}
+                      </p>
+                    )}
                     <p>{liveCliLatency(session) || `turns ${session.turn_count || 0}`}</p>
                     <p>cursor {session.last_seen_event_id || "none"}</p>
+                    <p>
+                      input {session.provider_visible_chars || 0} chars · {session.provider_visible_event_count || 0} events
+                    </p>
+                    <p>
+                      stderr {session.stderr_byte_count || 0} bytes · warnings {session.stderr_warning_count || 0}
+                    </p>
+                    {Boolean(session.notification_drop_count) && (
+                      <p className="dc-room-play-error">protocol drops {session.notification_drop_count}</p>
+                    )}
+                    {sessionContinuity && <p>{sessionContinuity}</p>}
+                    {typeof session.yolo_mode === "boolean" && (
+                      <p>approval {session.yolo_mode ? "unsafe always-approve" : session.approval_policy || "restricted"}</p>
+                    )}
+                    {Boolean(session.permission_request_count) && (
+                      <p>
+                        permissions denied {session.permission_denied_count || 0}/{session.permission_request_count}
+                      </p>
+                    )}
+                    {session.context_error_detected && <p className="dc-room-play-error">context error detected</p>}
+                    {session.provider_session_resume_error && (
+                      <p className="dc-room-play-error">{session.provider_session_resume_error}</p>
+                    )}
                     {session.last_error && <p className="dc-room-play-error">{session.last_error}</p>}
                   </details>
                 </article>

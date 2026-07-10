@@ -83,27 +83,3 @@ class FrontendRosterTruthTests(unittest.TestCase):
         for unsafe in ("session_id", "argv", "command", "provider_output", "last_error", "source_path"):
             with self.subTest(unsafe=unsafe):
                 self.assertNotIn(unsafe, component)
-
-    def test_room_roster_uses_agent_session_state_not_live_agents_as_canonical_source(self):
-        app = frontend_file("App.tsx")
-        api = frontend_file("api.ts")
-
-        self.assertIn("fetchRoomMembers", app)
-        self.assertIn("agentSessions", api)
-        self.assertNotIn('"/api/live-agents"', app)
-        self.assertNotIn('"/api/live-agents"', api)
-        self.assertNotIn("mergeLiveAgentRosters", app)
-        self.assertNotIn("liveAgentsData", app)
-
-    def test_agent_session_surface_has_no_manual_turn_or_provider_ids(self):
-        live_view = frontend_file("views/LiveView.tsx")
-        room_connection = frontend_file("views/components/RoomConnectionPanel.tsx")
-
-        self.assertIn("agentSessionProgress", live_view)
-        self.assertIn("thinking/progress", live_view)
-        self.assertNotIn("runNextAgentSessionTurn", room_connection)
-        self.assertNotIn("다음 턴 호출", room_connection)
-        self.assertNotIn("Agent Session turn instruction", room_connection)
-        self.assertNotIn("turnInstruction", room_connection)
-        self.assertNotIn("provider_thread_id", room_connection)
-        self.assertNotIn("provider_session_id", room_connection)

@@ -2387,6 +2387,20 @@ body[data-sidebar-resizing="true"] {
   color: var(--color-text-primary);
 }
 
+.dc-room-runtime-diagnostics {
+  display: grid;
+  gap: 3px;
+}
+
+.dc-room-runtime-diagnostics summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.dc-room-runtime-diagnostics p {
+  margin: 0;
+}
+
 .dc-room-connection-card {
   margin: 10px;
   border-radius: 6px;

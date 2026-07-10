@@ -6,16 +6,20 @@ Current new MVP model: **local interactive CLI-first #general MVP**.
 
 The active local CLI path uses a canonical RoomStore participant/session, one
 ticket-authenticated room WebSocket, and a provider-specific Agent Bridge that
-owns one persistent PTY. See `docs/live-cli-room-current-architecture.md` for
-the implemented ownership map, lifecycle, protocol, and verification surface.
+owns one persistent provider process. A verified structured interactive
+protocol is preferred; a strict-transcript PTY is the fallback. See
+`docs/live-cli-room-current-architecture.md` for the implemented ownership map,
+lifecycle, protocol, and verification surface.
 
-The primary provider boundary is now `AgentRuntime`: `start()`,
-`deliver(events)`, `read_output()`, `interrupt()`, `stop()`, `health()`, plus a
-per-runtime `last_seen_event_id` cursor. `LiveCliRuntime` is the default path
-for Codex CLI, Claude Code CLI, Gemini CLI, and similar local terminal agents.
-It keeps one real CLI process alive through PTY/tmux/expect-style interaction,
-delivers only new room events, and streams terminal output back to `#general`.
-The meeting/research/decision/archive pipeline stays legacy for this MVP.
+The product boundary is the canonical room command/event protocol. A
+`RoomAgentBridge` receives bounded turn assignments and delegates them to a
+persistent provider adapter with `start()`, `send()`, `read_output()`,
+`interrupt()`, `stop()`, and `health()`. Room cursors belong to the canonical
+Agent Session, not the provider adapter. `LiveCliRuntime` implements strict
+provider-transcript PTY interaction for Codex CLI, Claude Code CLI,
+Antigravity, and similar terminal agents. `GrokAcpRuntime` implements Grok's
+structured `grok agent stdio` ACP surface. The meeting/research/decision/archive
+pipeline stays legacy for this MVP.
 
 API runtime is later compatibility. API providers must implement the same
 AgentRuntime room-event contract before joining the room, and API convenience

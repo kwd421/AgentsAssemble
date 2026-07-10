@@ -5,6 +5,22 @@ It is intentionally conservative: discovery, config generation, and preflight
 checks are not execution, and a passing static check is not real provider
 readiness.
 
+> Scope note (2026-07-10): this table primarily records the legacy resident
+> runner and continuity-proof lanes. The canonical shared-room MVP now uses one
+> Agent Bridge/WebSocket contract. In that path Grok is wired through
+> `grok agent stdio` ACP, while Codex, Antigravity, and Claude use persistent
+> strict-transcript PTYs. See `docs/live-cli-room-current-architecture.md`; do
+> not infer current shared-room wiring from an older row below.
+
+Current canonical shared-room evidence on this local install:
+
+| Provider | Canonical runtime | Real room evidence (2026-07-10) |
+| --- | --- | --- |
+| Codex Spark | persistent interactive PTY plus Codex session JSONL | two-turn continuity, ten strict latency samples, and three-provider ring relay passed |
+| Antigravity `agy` | persistent interactive PTY plus transcript JSONL | two-turn continuity, ten strict latency samples, and three-provider ring relay passed |
+| Claude Haiku | persistent interactive PTY plus Claude session JSONL | two-turn continuity, ten strict latency samples, and three-provider ring relay passed; print mode was not used |
+| Grok | persistent ACP stdio process | two strict latency samples and session-load restart probe passed; current inference rerun is blocked by provider balance 402 |
+
 Codex, Kiro, Cursor, Grok, Antigravity, and Hermes are the
 provider-specific resume residents in this matrix. They are still not native
 provider channels: each one has a provider-specific resume adapter plus bounded

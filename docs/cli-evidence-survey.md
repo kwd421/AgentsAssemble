@@ -5,6 +5,12 @@ participation beyond Codex and Kiro. It is intentionally conservative: help and
 version output can identify a candidate session surface, but only an approved
 two-turn continuity probe can prove provider-owned context continuity.
 
+> Scope note (2026-07-10): the historical rows below describe the legacy
+> resident continuity runners. The canonical shared-room path now has a
+> structured Grok adapter over `grok agent stdio` ACP plus persistent PTY
+> adapters for Codex, Antigravity, and Claude. Current behavior and smoke
+> evidence live in `docs/live-cli-room-current-architecture.md`.
+
 Grok and Cursor are the non-Codex/Kiro providers with both a passing two-turn
 continuity probe and a passing bounded room start/probe/stop smoke in this
 survey. Antigravity and Hermes now also have passing two-turn continuity proofs

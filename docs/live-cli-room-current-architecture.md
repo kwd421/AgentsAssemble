@@ -16,8 +16,9 @@ The active room has one authority for each domain concern:
 - one durable room event contract in `RoomStore`;
 - one participant and Agent Session registry per room;
 - one command path with request IDs and ACK/NACK responses;
-- one provider process boundary, implemented by an Agent Bridge and a
-  persistent `LiveCliRuntime` PTY;
+- one provider process boundary, implemented by an Agent Bridge and one
+  persistent provider adapter: a verified structured protocol when available,
+  otherwise a strict-transcript `LiveCliRuntime` PTY;
 - one browser projection built from the canonical snapshot and event stream.
 
 There is no provider-specific browser socket and no second `general` event
@@ -64,11 +65,10 @@ RoomRealtimeController
   | turn.assign on the same WebSocket protocol
   v
 RoomAgentBridge process
-  | one persistent PTY
-  v
-Codex / agy / Grok / Claude CLI
-  | provider-owned transcript message source
-  v
+  |-- GrokAcpRuntime -> grok agent stdio -> ACP agent_message_chunk
+  `-- LiveCliRuntime -> persistent PTY -> Codex / agy / Claude
+                          | provider-owned transcript message source
+                          v
 RoomAgentBridge
   | turn.state / message.delta / message.final / turn.failed
   v
@@ -89,7 +89,7 @@ interactive terminal process behind the bridge.
 | Ordered room history | `RoomStore` SQLite `room_events` | yes |
 | Command deduplication | `RoomStore` SQLite `command_results` | yes |
 | Active bridge subprocess handle | `NativeCliBridgeProcessManager` | process lifetime |
-| Provider PTY and transcript cursor | `LiveCliRuntime` inside Agent Bridge | bridge lifetime |
+| Provider process and output cursor | provider adapter inside Agent Bridge | bridge lifetime; Grok ACP session marker is durable |
 | Browser reconnect cursor | room event `seq` | browser lifetime, replayable |
 | Provider private conversation | provider CLI/session files | provider-owned |
 
@@ -124,6 +124,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `room_bridge_process.py` | server-owned Agent Bridge process lifecycle | room routing |
 | `room_agent_bridge.py` | authenticated bridge client and turn/report protocol | browser UI |
 | `live_cli.py` | persistent PTY lifecycle and provider message extraction | room membership or history replay |
+| `grok_acp_runtime.py` | Grok ACP lifecycle, permission denial, structured deltas, and provider session load | room routing or browser state |
 
 ## WebSocket Protocol
 
@@ -250,9 +251,19 @@ and not the complete transcript.
 
 ## Provider Runtime And Message Extraction
 
-The bridge runs `LiveCliRuntime` over a PTY in a new process group. The runtime
-drains startup output, handles only configured trust prompts, writes input as a
-human would, streams output observations, and stops the whole process group.
+The bridge selects a provider adapter without changing the room protocol.
+Codex, Antigravity, and Claude currently run through `LiveCliRuntime` over one
+persistent PTY in a new process group. The PTY runtime drains startup output,
+handles only configured trust prompts, writes input as a human would, streams
+strict transcript observations, and stops the whole process group.
+
+Grok uses its advertised Agent Client Protocol surface, `grok agent stdio`.
+`GrokAcpRuntime` keeps one JSON-RPC process alive, accepts only
+`agent_message_chunk` as room text, rejects permission requests, uses an
+isolated `GROK_HOME`, and fails closed if Grok reports always-approve mode. It
+drains stderr continuously into a bounded diagnostic tail. A bridge restart
+uses ACP `session/load` with an opaque provider session marker stored mode
+`0600`; the UI receives only reuse/failure booleans, never that identifier.
 
 Room messages come from strict provider-owned sources:
 
@@ -260,7 +271,7 @@ Room messages come from strict provider-owned sources:
 |---|---|---|
 | Codex Spark | `codex ... --model gpt-5.3-codex-spark` | Codex session JSONL |
 | Antigravity | `agy --sandbox` | Antigravity transcript JSONL |
-| Grok | `grok ... --permission-mode plan` | Grok chat history |
+| Grok | `grok agent stdio` | ACP `agent_message_chunk` |
 | Claude Haiku | `claude --model haiku ...` | Claude session JSONL |
 
 If a strict source does not yield an assistant message, the turn fails. Terminal
@@ -278,10 +289,18 @@ group. Stop, kick, server shutdown, and smoke cleanup terminate the bridge,
 wait, kill after timeout, and explicitly clean a recorded orphan provider PID
 if needed.
 
+The process manager compares `runtime_profile_key` before reusing a live
+bridge. An incompatible model, command, workspace, terminal, or timeout profile
+is rejected until the old process is stopped. Bridge config, logs, and durable
+provider state live under a profile-keyed directory, so stopping and changing a
+profile cannot silently load the previous profile's provider session.
+
 Bridge stderr is written to bounded diagnostic files rather than being left as
 an unread pipe. Provider runtime diagnostics retain bounded stderr counts/tail,
-latency, message-source evidence, and process health without placing those
-details in provider prompts or normal chat.
+latency, message-source evidence, permission denials, session continuity, and
+process health. Raw stderr, terminal tails, and provider session identifiers
+stay server-side; they are not placed in provider prompts, normal chat, or the
+public Agent Session projection.
 
 ## React Integration
 
@@ -329,6 +348,13 @@ not erase already loaded history, streaming delta/final coalescing, history
 pagination, and canonical Agent Session control actions. Python source-string
 assertions are not the authority for those behaviors.
 
+Canonical-room frontend assertions belong in Vitest or Playwright. Three
+duplicate Python tests that only searched source strings for the old general
+socket, manual-turn controls, and Agent Session wiring were removed after the
+behavioral coverage existed. Legacy UI source-string tests remain until each
+has an equivalent behavior test; do not add new canonical-room contracts to
+that suite.
+
 The opt-in real-provider smoke uses the same production path:
 
 ```bash
@@ -343,17 +369,79 @@ strict message source, marker recall, provider-visible character counts, TTFO,
 turn completion latency, RSS delta, stderr diagnostics, timeouts, context
 errors, and process cleanup.
 
+Agent-to-agent relay has a separate mode on the same harness:
+
+```bash
+assemble room smoke \
+  --providers codex,antigravity,claude \
+  --config configs/live-cli-providers.example.json \
+  --agent-conversation \
+  --approve-real-provider
+```
+
+The selected providers start together in one canonical room. The harness sends
+one directed ring message per provider, verifies that each target turn names the
+preceding agent's `message_final` as its `source_event_id`, checks strict
+provider message sources, records first-delta latency, and waits for the relay
+depth limit to settle before cleanup. The credential-free E2E uses two real
+fake PTY processes to cover the same path in normal test runs.
+
+The harness also compares provider-direct first clean output with the first
+canonical room delta for ten strict samples. The 2026-07-10 local runs recorded:
+
+| Provider | Strict samples | Direct p50 | Room p50 | Added p50 | Result |
+|---|---:|---:|---:|---:|---|
+| Codex Spark | 10 | 1702.0 ms | 1727.9 ms | 23.9 ms | exact outputs, same PID, marker recalled, cleanup passed |
+| Antigravity `agy` | 10 | 1371.8 ms | 1389.2 ms | 18.9 ms | exact outputs, same PID, marker recalled, cleanup passed |
+| Grok ACP | 2 of 10 | 1136.8 ms | 1162.3 ms | 25.5 ms | first two exact; later provider usage balance exhausted |
+| Claude Haiku | 10 | 2268.9 ms | 2292.8 ms | 25.1 ms | exact outputs, same PID, marker recalled, cleanup passed |
+
+Grok's partial row is latency evidence, not a passing ten-sample smoke. A final
+Grok rerun requires provider balance; the harness reports the external 402 as a
+classified provider error instead of treating it as a transport failure. A
+separate real no-inference restart probe confirmed `loadSession: true` and a
+successful `session/load` into a new Grok process. Claude's row used
+`claude --model haiku --permission-mode plan --tools "" --safe-mode`; `-p` and
+`--print` were absent. After the local Claude login was refreshed, the two-turn
+memory smoke and all ten exact latency samples passed.
+
+The 2026-07-10 three-provider conversation smoke kept Codex Spark,
+Antigravity, and Claude Haiku alive together in one room. The directed ring
+Codex -> Antigravity -> Claude -> Codex completed all three handoffs, plus one
+natural Antigravity -> Codex follow-up, for seven provider turns. Every handoff
+matched the preceding agent message ID, all provider messages came from strict
+session/transcript sources, and the depth-two relay settled with turn counts
+Codex 3, Antigravity 2, Claude 2. All three provider PIDs stayed stable, and no
+bridge or provider process remained after stop. The final current-code rerun
+recorded TTFO p50/p95 4438.1/6892.2 ms and turn-completion p50/p95
+4446.4/6895.8 ms. Evidence:
+`native_cli_20260710T105755Z_8c4b71.json`.
+
+Long-room behavior is verified separately without provider calls:
+
+```bash
+assemble room benchmark --events 100000 --agent-count 10 --samples 50
+```
+
+The latest 2026-07-10 local run held 100,051 canonical events. Latest-window
+p50/p95 was 0.671/0.753 ms, reconnect 0.668/0.721 ms, history paging
+0.680/0.728 ms, and ten-agent context projection 2.164/2.573 ms. Context stayed
+within 12 events and 495 characters, the SQLite query plan used indexes, the
+database was 85.7 MB, and process RSS grew by 8.5 MB.
+
 ## Remaining Boundaries
 
 - `RoomStore` uses indexed SQLite sequence reads and bounded browser snapshots.
-  Long-room verification still needs the 100k-event/10-agent benchmark in the
-  release smoke tier so later query changes cannot silently reintroduce scans.
+  The 100k-event/10-agent command is implemented and covered at smaller scale
+  in unit tests; CI should keep a scheduled or release-tier full-cardinality run
+  so later query changes cannot silently reintroduce scans.
 - PTY interaction remains sensitive to provider TUI changes. Prefer a
   provider-supported structured interactive protocol behind the same Agent
-  Bridge interface when one is verified.
-- Resume currently starts a new bridge/provider process and replays pending room
-  delta. Reattaching an existing detached OS process is a later feature and must
-  be reported separately.
+  Bridge interface when one is verified. Grok is the first such adapter.
+- Resume starts a new bridge/provider process and replays pending room delta.
+  Grok additionally reloads its provider-owned ACP session; PTY providers retain
+  only room-memory recovery across a process restart. Reattaching an existing
+  detached OS process is a separate later feature and must be reported as such.
 - Legacy meeting, lobby, side-chat, SSE, and provider adapters remain for old
   product paths. They must not become a second execution path for native CLI
   participants in the shared-room MVP.

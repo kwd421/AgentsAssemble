@@ -19,6 +19,11 @@ test("streams one canonical Agent Session message and controls the persistent CL
   await expect(reply).toHaveCount(1);
   await expect(reply).toBeVisible();
   await expect(page.getByText("FAKE_CLI_READY", { exact: true })).toHaveCount(0);
+  await sessionCard.getByText("진단", { exact: true }).click();
+  await expect(sessionCard.getByText("runtime live_cli · pty", { exact: true })).toBeVisible();
+  await expect(sessionCard.getByText(/input \d+ chars · \d+ events/)).toBeVisible();
+  await expect(sessionCard.getByText(/stderr \d+ bytes · warnings \d+/)).toBeVisible();
+  await expect(page.getByText("다음 턴 호출", { exact: true })).toHaveCount(0);
 
   await sessionCard.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(sessionCard.getByText("중지됨", { exact: true })).toBeVisible();
