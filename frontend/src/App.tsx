@@ -54,8 +54,6 @@ import {
   upsertRoomMember,
   applyMeetingStreamUpdate,
   initialMeetingStreamState,
-  openRoomSocket,
-  type RoomSocketHandle,
   mergeSideChatEvents,
   meetingLiveEventsToTimelineEvents,
   meetingStreamStateForActiveMeeting,
@@ -70,8 +68,6 @@ import {
   type MafiaGame,
   type MafiaGameResponse,
   type LobbyEvent,
-  type RoomEvent,
-  type RoomAgentSession,
   type SideChatEvent,
   type ChannelNotificationSetting,
   type ChannelSettings,
@@ -83,6 +79,7 @@ import {
   type PublicInviteStatus,
 } from "./api";
 import { usePoll } from "./hooks";
+import { useCanonicalRoom } from "./useCanonicalRoom";
 import AdminPanel from "./views/AdminPanel";
 import BoardView from "./views/BoardView";
 import FriendsView, { type FriendListFilter } from "./views/FriendsView";
@@ -114,11 +111,6 @@ import {
   roomAppearanceStyle,
   type RoomAppearance,
 } from "./lib/roomAppearance";
-import {
-  projectRoomEventProgress,
-  projectRoomEventsToTimeline,
-  type AgentSessionProgress,
-} from "./lib/roomEventProjection";
 import {
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
@@ -194,13 +186,6 @@ type SidebarResizeState = {
   startWidth: number;
   startX: number;
   currentWidth: number;
-};
-
-type RoomHistoryState = {
-  oldestSeq: number;
-  lastSeq: number;
-  hasMoreBefore: boolean;
-  resumeGap: boolean;
 };
 
 type MobilePanelDragState = {
@@ -592,15 +577,8 @@ export default function App() {
   // server-backed meeting (idempotent) so adding agents / roster / lobby always
   // have a real meeting to bind to instead of failing with "Meeting not found".
   const ensuredMeetingsRef = useRef<Set<string>>(new Set());
-  const [roomSocket, setRoomSocket] = useState<RoomSocketHandle | null>(null);
   const lobbyStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
   const flowStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
-  const roomEventsByRoomRef = useRef<Record<string, RoomEvent[]>>({});
-  const [roomEventsByRoom, setRoomEventsByRoom] = useState<Record<string, RoomEvent[]>>({});
-  const [roomHistoryByRoom, setRoomHistoryByRoom] = useState<Record<string, RoomHistoryState>>({});
-  const [roomAgentSessionsByRoom, setRoomAgentSessionsByRoom] = useState<Record<string, RoomAgentSession[]>>({});
-  const [roomCapabilitiesByRoom, setRoomCapabilitiesByRoom] = useState<Record<string, Record<string, boolean>>>({});
-  const [agentSessionProgressByRoom, setAgentSessionProgressByRoom] = useState<Record<string, AgentSessionProgress | null>>({});
   const bindLobbyStream = useCallback((receive: (events: LobbyEvent[]) => void) => {
     lobbyStreamRef.current = receive;
     return () => {
@@ -617,58 +595,37 @@ export default function App() {
       }
     };
   }, []);
-  const roomEventsToTimelineEvents = useCallback((events: RoomEvent[]): LobbyEvent[] => {
-    return projectRoomEventsToTimeline(events, { viewerParticipantId: guestSession?.agentId || "operator-local" });
-  }, [guestSession?.agentId]);
-  const applyRoomEvents = useCallback(
-    (roomId: string, incoming: RoomEvent[], replace = false) => {
-      if (!roomId) return;
-      const current = replace ? [] : roomEventsByRoomRef.current[roomId] || [];
-      const byId = new Map(current.map((event) => [event.id, event]));
-      incoming.forEach((event) => {
-        if (event.id) byId.set(event.id, event);
-        if (event.type === "agent_session_state" && event.agent_session) {
-          setRoomAgentSessionsByRoom((previous) => {
-            const sessions = previous[roomId] || [];
-            const next = sessions.filter((session) => session.session_id !== event.agent_session?.session_id);
-            return { ...previous, [roomId]: [...next, event.agent_session as RoomAgentSession] };
-          });
-        }
-        const progress = projectRoomEventProgress(event);
-        if (progress !== undefined) {
-          setAgentSessionProgressByRoom((previous) => ({ ...previous, [roomId]: progress }));
-        }
-      });
-      const next = [...byId.values()].sort((left, right) => Number(left.seq || 0) - Number(right.seq || 0));
-      roomEventsByRoomRef.current = { ...roomEventsByRoomRef.current, [roomId]: next };
-      setRoomEventsByRoom((previous) => ({ ...previous, [roomId]: next }));
-      const timeline = roomEventsToTimelineEvents(next);
-      lobbyStreamRef.current?.(timeline);
-      flowStreamRef.current?.(timeline);
+  const canonicalRoomAuth = guestLocked
+    ? guestSession?.sessionToken
+      ? ({ kind: "session" as const, sessionToken: guestSession.sessionToken })
+      : undefined
+    : activeRoom.meetingId
+      ? ({ kind: "host" as const, meetingId: activeRoom.meetingId })
+      : undefined;
+  const canonicalRoom = useCanonicalRoom({
+    roomId: activeRoom.meetingId || "",
+    auth: canonicalRoomAuth,
+    viewerParticipantId: guestSession?.agentId || "operator-local",
+    onSideChat: (incoming) => {
+      setSideChatError(null);
+      setSideChatEvents((previous) => mergeSideChatEvents(previous, incoming));
     },
-    [roomEventsToTimelineEvents]
-  );
-  const sendAgentControl = useCallback(
-    async (session: RoomAgentSession, action: "start" | "stop" | "resume" | "interrupt") => {
-      if (!roomSocket) return;
-      await roomSocket.command(`agent.${action}`, { agent_id: session.participant_id });
+    onError: (errorValue) => {
+      if (errorValue instanceof Error && errorValue.message.includes("Side chat")) {
+        setSideChatError(errorValue);
+      }
     },
-    [roomSocket]
-  );
-  const sendParticipantKick = useCallback(
-    async (participantId: string) => {
-      if (!roomSocket) throw new Error("방 연결이 준비되지 않았습니다.");
-      await roomSocket.command("participant.kick", { participant_id: participantId });
-    },
-    [roomSocket]
-  );
-  const sendParticipantMute = useCallback(
-    async (participantId: string, muted: boolean) => {
-      if (!roomSocket) throw new Error("방 연결이 준비되지 않았습니다.");
-      await roomSocket.command("participant.mute", { participant_id: participantId, muted });
-    },
-    [roomSocket]
-  );
+  });
+  const roomSocket = canonicalRoom.socket;
+  const activeRoomAgentSessions = canonicalRoom.agentSessions;
+  const activeRoomCapabilities = canonicalRoom.capabilities;
+  const activeRoomHistory = canonicalRoom.history;
+  const activeRoomTimelineEvents = canonicalRoom.timelineEvents;
+  const activeAgentSessionProgress = canonicalRoom.agentSessionProgress;
+  const loadCanonicalRoomHistory = canonicalRoom.loadHistory;
+  const sendAgentControl = canonicalRoom.sendAgentControl;
+  const sendParticipantKick = canonicalRoom.sendParticipantKick;
+  const sendParticipantMute = canonicalRoom.sendParticipantMute;
   useEffect(() => {
     const meetingId = activeRoom.meetingId || "";
     if (!meetingId || meetingId === "pending-join" || guestLocked) return;
@@ -1052,20 +1009,6 @@ export default function App() {
   const mafiaGame = mafiaData?.game ?? null;
   const scopedMafiaGame = mafiaGame?.game_id === activeRoom.meetingId ? mafiaGame : null;
   const activeRoomFlowVisible = Boolean(flow.meeting_id && flow.meeting_id === activeRoom.meetingId);
-  const activeRoomEvents = roomEventsByRoom[activeRoom.meetingId || ""] || [];
-  const activeRoomAgentSessions = roomAgentSessionsByRoom[activeRoom.meetingId || ""] || [];
-  const activeRoomCapabilities = roomCapabilitiesByRoom[activeRoom.meetingId || ""] || {};
-  const activeRoomHistory = roomHistoryByRoom[activeRoom.meetingId || ""] || {
-    oldestSeq: 0,
-    lastSeq: 0,
-    hasMoreBefore: false,
-    resumeGap: false,
-  };
-  const activeRoomTimelineEvents = useMemo(
-    () => roomEventsToTimelineEvents(activeRoomEvents),
-    [activeRoomEvents, roomEventsToTimelineEvents]
-  );
-  const activeAgentSessionProgress = agentSessionProgressByRoom[activeRoom.meetingId || ""] || null;
   const scopedFlow = activeRoomFlowVisible
     ? flow
     : {
@@ -1089,6 +1032,7 @@ export default function App() {
   useEffect(() => {
     if (activeRoomTimelineEvents.length) {
       lobbyStreamRef.current?.(activeRoomTimelineEvents);
+      flowStreamRef.current?.(activeRoomTimelineEvents);
     }
   }, [activeRoom.meetingId, activeRoomTimelineEvents]);
   const refreshMembers = useCallback(() => {
@@ -1511,25 +1455,6 @@ export default function App() {
     }
     setRoomMenu(null);
     setChannelMenu(null);
-  }
-
-  function handleMafiaStarted(game: MafiaGame) {
-    saveStoredMafiaGameId(game.game_id);
-    setMafiaGameId(game.game_id);
-    setChannel("live");
-    setAdminOpen(false);
-    setChannelMenu(null);
-    closeMobileOverlays();
-  }
-
-  function handleFlowStarted() {
-    clearStoredMafiaGameId();
-    setMafiaGameId("");
-    refreshFlow();
-    setChannel("live");
-    setAdminOpen(false);
-    setChannelMenu(null);
-    closeMobileOverlays();
   }
 
   function goToChannel(next: string) {
@@ -2085,102 +2010,13 @@ export default function App() {
 
   useEffect(() => {
     refreshMembers();
-    if (!activeRoom.meetingId) return undefined;
-    const guestToken = guestLocked ? guestSession?.sessionToken || "" : "";
-    const auth = guestToken
-      ? ({ kind: "session" as const, sessionToken: guestToken })
-      : guestLocked
-        ? undefined
-        : ({ kind: "host" as const, meetingId: activeRoom.meetingId });
-    if (!auth) return undefined;
-    const roomId = activeRoom.meetingId;
-    const socket = openRoomSocket(auth, ["room_events", "side_chat"], {
-      onRoomSnapshot: (snapshot) => {
-        setRoomAgentSessionsByRoom((previous) => ({
-          ...previous,
-          [roomId]: snapshot.agent_sessions || [],
-        }));
-        setRoomCapabilitiesByRoom((previous) => ({
-          ...previous,
-          [roomId]: snapshot.capabilities || {},
-        }));
-        setRoomHistoryByRoom((previous) => {
-          const current = previous[roomId];
-          const resumed = snapshot.snapshot_mode === "resume" && current;
-          return {
-            ...previous,
-            [roomId]: {
-              oldestSeq: resumed ? current.oldestSeq : Number(snapshot.oldest_seq || 0),
-              lastSeq: Number(snapshot.last_seq || current?.lastSeq || 0),
-              hasMoreBefore: resumed ? current.hasMoreBefore : Boolean(snapshot.has_more_before),
-              resumeGap: Boolean(snapshot.resume_gap),
-            },
-          };
-        });
-        applyRoomEvents(roomId, snapshot.events || [], snapshot.snapshot_mode !== "resume");
-        refreshMembers();
-      },
-      onRoomEvents: (events) => {
-        applyRoomEvents(roomId, events);
-        if (events.some((event) => ["participant_joined", "participant_left", "participant_kicked"].includes(event.type))) {
-          refreshMembers();
-        }
-      },
-      onSideChat: (incoming) => {
-        setSideChatError(null);
-        setSideChatEvents((previous) => mergeSideChatEvents(previous, incoming));
-      },
-      onError: (errorValue) => {
-        if (errorValue instanceof Error && errorValue.message.includes("Side chat")) {
-          setSideChatError(errorValue);
-        }
-      },
-    });
-    setRoomSocket(socket);
-    return () => {
-      socket.close();
-      setRoomSocket(null);
-    };
-  }, [
-    activeRoom.meetingId,
-    activeRoomKey,
-    guestLocked,
-    guestSession?.sessionToken,
-    applyRoomEvents,
-    refreshMembers,
-  ]);
+  }, [canonicalRoom.membershipRevision, refreshMembers]);
 
   function updateRoom(roomId: string, updates: Partial<RoomDockItem>) {
     setRooms((previous) =>
       previous.map((room) => (room.id === roomId ? { ...room, ...updates } : room))
     );
   }
-
-  const loadCanonicalRoomHistory = useCallback(
-    async (beforeSeq: number) => {
-      const roomId = activeRoom.meetingId || "";
-      if (!roomSocket || !roomId) {
-        throw new Error("방 연결이 준비되지 않았습니다.");
-      }
-      const page = await roomSocket.historyBefore(beforeSeq, 50);
-      applyRoomEvents(roomId, page.events || []);
-      setRoomHistoryByRoom((previous) => ({
-        ...previous,
-        [roomId]: {
-          oldestSeq: Number(page.oldest_seq || previous[roomId]?.oldestSeq || 0),
-          lastSeq: Number(page.last_seq || previous[roomId]?.lastSeq || 0),
-          hasMoreBefore: Boolean(page.has_more_before),
-          resumeGap: false,
-        },
-      }));
-      return {
-        loadedCount: page.events.length,
-        oldestSeq: Number(page.oldest_seq || 0),
-        hasMoreBefore: Boolean(page.has_more_before),
-      };
-    },
-    [activeRoom.meetingId, applyRoomEvents, roomSocket]
-  );
 
   function persistRoomSettings(
     room: RoomDockItem,
@@ -2916,15 +2752,10 @@ export default function App() {
             >
               <RoomConnectionPanel
                 room={activeRoom}
-                appearance={activeAppearance}
                 agents={scopedAgents}
                 members={activeRoomMembers}
                 roleOverrides={activeMemberRoles}
                 onRoleChange={updateMemberRole}
-                flow={scopedFlow}
-                refreshFlow={refreshFlow}
-                onMafiaStarted={handleMafiaStarted}
-                onFlowStarted={handleFlowStarted}
                 guestLocked={guestLocked}
                 guestAiPacketPreview={guestAiPacketPreview}
                 guestAiPacketStatus={guestAiPacketStatus || guestJoinStatus}

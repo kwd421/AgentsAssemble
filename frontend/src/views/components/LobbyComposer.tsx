@@ -4,12 +4,12 @@ import { AtSign, Gift, Paperclip, Send, Smile, Sparkles, Sticker, X } from "luci
 import {
   postLobbyMessage,
   postRoomSay,
-  RoomSocketSayError,
   uploadLobbyAttachment,
   type LobbyAttachmentRef,
   type LobbyEvent,
 } from "../../api";
 import { useRoomSocket } from "../../RoomSocketContext";
+import { RoomSocketSayError } from "../../roomSocketClient";
 import {
   MAX_ATTACHMENTS_MESSAGE,
   MAX_ATTACHMENTS_PER_EVENT,

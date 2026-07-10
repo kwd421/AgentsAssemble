@@ -294,6 +294,17 @@ canonical room socket for the active room and renders:
 - server-authoritative moderation capabilities;
 - advanced latency and runtime diagnostics.
 
+Frontend ownership follows the same boundary as the server:
+
+- `api.ts` owns HTTP request/response contracts and the WebSocket ticket call;
+- `roomSocketClient.ts` owns canonical frames, request correlation, reconnect,
+  sequence resume, and `resync_required` recovery;
+- `useCanonicalRoom.ts` owns room-indexed events, history pages, Agent Session
+  state, capabilities, provider availability, and timeline projection;
+- `App.tsx` chooses the active room and composes the existing multi-room shell;
+- `RoomConnectionPanel.tsx` renders canonical Agent Session controls and does
+  not expose the frozen flow/Mafia runner as an Agent Session fallback.
+
 The dock no longer restores hard-coded demo rooms. Hiding a server room writes a
 local tombstone so the next server directory refresh does not immediately add
 it back. A guest leave still revokes the room session. Hiding, leaving,
@@ -311,6 +322,12 @@ separate Agent Bridge process, and a fake interactive PTY CLI. It proves:
 - delta/final event delivery;
 - one canonical SQLite event authority;
 - bridge and provider cleanup.
+
+Vitest behavior tests separately exercise command ACK/NACK correlation,
+backpressure reconnect from the last durable sequence, resume snapshots that do
+not erase already loaded history, streaming delta/final coalescing, history
+pagination, and canonical Agent Session control actions. Python source-string
+assertions are not the authority for those behaviors.
 
 The opt-in real-provider smoke uses the same production path:
 

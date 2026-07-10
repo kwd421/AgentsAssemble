@@ -167,7 +167,19 @@ SSE 스트림: `/api/events/lobby`(전역) · `/api/events/side-chat` · `/api/r
 
 ## 5. 프런트엔드 (`frontend/src/`)
 
-- **`App.tsx` (2.5k줄)** — 단일 허브 컴포넌트. 모든 전역 상태(rooms dock, 활성 방, 채널, 게스트 세션, 멤버, flow, 모달들)와 폴링 보유.
+새 shared-room MVP의 프런트 책임은 다음처럼 분리한다.
+
+- `roomSocketClient.ts`: canonical WebSocket protocol, ACK/NACK, reconnect,
+  seq resume, backpressure resync
+- `useCanonicalRoom.ts`: 방별 event/history/session/capability projection
+- `RoomSocketContext.tsx`: composer와 vote control에 현재 socket handle 제공
+- `App.tsx`: 기존 다중 방 shell과 active-room 조합
+
+기본 `RoomConnectionPanel`은 Agent Session control만 표시한다. 레거시
+flow/Mafia API와 화면은 삭제하지 않더라도 새 Agent Session의 fallback 실행기로
+연결하지 않는다.
+
+- **`App.tsx` (2.8k줄)** — 기존 다중 방 허브 컴포넌트. rooms dock, 활성 방, 채널, 게스트 세션, 레거시 flow, 모달을 조합하며 canonical room socket/state는 위 전용 모듈에 위임.
   - 폴링: flow 4s · live-agents 5s · processes 5s · lifecycle 5s · mafia 3.5s. **room-members는 방 전환 시 1회 + 액션 후 refresh** (실시간 아님 — 이슈 1 원인)
   - SSE 구독: side-chat(상시), meeting events(live 채널 열람 시)
   - 게스트 모드: `guestLocked` 분기로 기능 축소. 게스트 세션은 localStorage(`roomGuestSession.v1`)에 저장, 같은 inviteToken일 때만 복원

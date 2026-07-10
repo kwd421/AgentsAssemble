@@ -1,5 +1,5 @@
 import { createContext, useContext, type ReactNode } from "react";
-import type { RoomSocketHandle } from "./api";
+import type { RoomSocketHandle } from "./roomSocketClient";
 
 const RoomSocketContext = createContext<RoomSocketHandle | null>(null);
 
