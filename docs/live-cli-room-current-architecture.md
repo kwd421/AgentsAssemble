@@ -105,6 +105,26 @@ gap is replayed exactly; a larger gap returns a bounded latest window with
 context, not a browser history snapshot. Legacy room JSON/JSONL is migrated once
 with a validated backup and is never used as a parallel fallback authority.
 
+### Module Ownership
+
+The canonical path is split by reason to change. Compatibility imports may
+remain in `room_realtime.py`, but new behavior belongs in its owning module.
+
+| Module | Owns | Does not own |
+|---|---|---|
+| `room_database.py` | SQLite schema, indexed reads, migration transaction and backup | routing or provider processes |
+| `room_store.py` | room, participant, session, event, and command-result persistence API | WebSocket connections |
+| `room_types.py` | shared event, participant, session, command, and turn packet shapes | validation or side effects |
+| `room_commands.py` | command envelope validation and identity capability policy | command execution |
+| `room_routing.py` | pure mention, default-responder, and relay-depth target selection | persistence or process launch |
+| `room_context.py` | bounded bootstrap and cursor-diff provider input projection | provider-private memory |
+| `room_event_broker.py` | bounded per-connection fanout and targeted bridge delivery | durable history |
+| `native_cli_providers.py` | provider catalog, safe commands, profile identity, and Claude interactive guard | PTY parsing |
+| `room_realtime.py` | command, durable state, turn, and recovery orchestration | provider terminal implementation |
+| `room_bridge_process.py` | server-owned Agent Bridge process lifecycle | room routing |
+| `room_agent_bridge.py` | authenticated bridge client and turn/report protocol | browser UI |
+| `live_cli.py` | persistent PTY lifecycle and provider message extraction | room membership or history replay |
+
 ## WebSocket Protocol
 
 ### Authentication
@@ -158,6 +178,11 @@ a snapshot containing room state, participants, Agent Sessions, active turns,
 capabilities, bounded backfill, and `last_seq`. New appends are pushed through
 bounded per-connection queues. The React client reconnects with exponential
 backoff and its last observed sequence.
+
+Backpressure never silently drops a final message. A full connection queue
+drops intermediate `message_delta` frames first. If even essential frames
+cannot fit, the broker emits `resync_required`; the browser reconnects and
+recovers canonical events from SQLite by sequence.
 
 ## Participant And Capability Rules
 

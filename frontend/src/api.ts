@@ -2470,6 +2470,18 @@ export interface RoomHistoryPage {
   has_more_before: boolean;
 }
 
+export interface NativeCliProviderAvailability {
+  id: string;
+  display_name: string;
+  provider_kind: string;
+  runtime_kind: "live_cli";
+  connection_kind: "native_cli_bridge";
+  executable: string;
+  default_model: string;
+  interactive: true;
+  startable: boolean;
+}
+
 export interface RoomSocketSnapshot {
   op: "snapshot";
   stream: "room_events";
@@ -2483,6 +2495,7 @@ export interface RoomSocketSnapshot {
   has_more_before: boolean;
   resume_gap: boolean;
   snapshot_mode: "initial" | "resume" | "gap" | "bridge";
+  available_providers: NativeCliProviderAvailability[];
   capabilities: Record<string, boolean>;
 }
 
@@ -2564,6 +2577,7 @@ export function openRoomSocket(
       error?: { code?: string; message?: string };
       category?: string;
       message?: string;
+      reason?: string;
       last_seq?: number;
       agent_sessions?: RoomAgentSession[];
       participants?: Array<Record<string, unknown>>;
@@ -2594,6 +2608,16 @@ export function openRoomSocket(
         String(msg.category || "rejected")
       );
       handlers.onError?.(error);
+      return;
+    }
+    if (msg.op === "resync_required") {
+      handlers.onError?.(
+        new RoomSocketSayError(
+          String(msg.reason || "Room event delivery fell behind; reconnecting."),
+          "resync_required"
+        )
+      );
+      socket?.close();
       return;
     }
     if (msg.op === "snapshot" && msg.stream === "room_events") {

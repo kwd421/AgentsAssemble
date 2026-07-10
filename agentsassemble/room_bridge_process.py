@@ -12,7 +12,7 @@ import threading
 import time
 from typing import Callable
 
-from agentsassemble.room_realtime import NativeCliProviderSpec, validate_native_cli_provider_spec
+from agentsassemble.native_cli_providers import NativeCliProviderSpec, validate_native_cli_provider_spec
 
 
 BridgeExitListener = Callable[[str, str, int, str], None]

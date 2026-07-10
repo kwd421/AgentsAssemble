@@ -217,7 +217,8 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(control_error.exception.code, "permission_denied")
 
     def test_snapshot_capabilities_are_server_authoritative(self):
-        operator = self.controller.snapshot(HOST)["capabilities"]
+        operator_snapshot = self.controller.snapshot(HOST)
+        operator = operator_snapshot["capabilities"]
         guest = self.controller.snapshot(
             {**HOST, "operator": False, "invite_scope": "read_write", "agent_id": "guest"}
         )["capabilities"]
@@ -228,6 +229,10 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse(guest["participant.kick"])
         self.assertFalse(guest["participant.mute"])
         self.assertFalse(guest["agent.control"])
+        self.assertEqual(
+            [provider["id"] for provider in operator_snapshot["available_providers"]],
+            ["codex", "antigravity", "grok", "claude"],
+        )
 
     def test_snapshot_is_bounded_and_history_pages_are_read_only(self):
         for index in range(250):

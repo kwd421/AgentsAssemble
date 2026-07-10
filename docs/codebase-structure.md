@@ -1,11 +1,17 @@
-# AgentsAssemble 코드베이스 구조 (2026-06-11 기준)
+# AgentsAssemble 코드베이스 구조 (2026-07-10 기준)
 
 > 현재 native CLI Agent Session의 RoomStore 상태 소유권, 단일 WebSocket,
 > Agent Bridge, PTY 수명주기는 `docs/live-cli-room-current-architecture.md`를
 > 먼저 참고한다. 이 문서는 그 경로 밖의 전체 코드베이스 지도를 주로
 > 설명한다.
 
-작업 참고용 전체 지도. 백엔드 ~56k줄(Python), 프런트엔드 ~22k줄(React/TS).
+작업 참고용 전체 지도. 백엔드와 프런트에는 레거시 회의 경로와 새 shared-room
+MVP가 함께 남아 있다. **새 native CLI Agent Session 작업에서는 아래의 레거시
+JSONL/폴링 설명을 현재 권위로 해석하지 말고**
+`docs/live-cli-room-current-architecture.md`의 SQLite + 단일 WebSocket 경계를
+따른다.
+
+백엔드 ~56k줄(Python), 프런트엔드 ~22k줄(React/TS).
 단일 서버 프로세스(`python -m agentsassemble.cli gui`, 기본 127.0.0.1:8765)가
 HTTP API + SSE + 정적 프런트엔드 서빙을 전부 담당하는 **local-first** 구조다.
 저장은 혼합형: 신원·로스터(users/credentials/memberships)는 **SQLite `identity.db`**(`identity_store.py`),
@@ -45,6 +51,13 @@ MCP tool-loop 에이전트  ─┤                ├─ lobby.jsonl        (방
 ### 2.2 방 데이터 계층
 | 파일 | 역할 |
 |---|---|
+| `room_database.py` | **새 shared-room SQLite 권위**: rooms/participants/agent_sessions/room_events/command_results, seq 인덱스, 레거시 room JSON/JSONL 1회 검증 마이그레이션과 백업 |
+| `room_store.py` | canonical room 도메인 저장 API. 브라우저 backfill, 참가자/Agent Session, command dedup이 모두 이 경로를 사용 |
+| `room_context.py` | 새 세션의 RoomMemory + 최근 12개/4,000자 bootstrap, 이후 `last_provider_sync_seq` 뒤의 bounded diff 구성 |
+| `room_types.py` | canonical room event/participant/session/command/turn packet 타입 계약 |
+| `room_commands.py` | request-id command 검증과 서버 권위 capability 정책 |
+| `room_routing.py` | `@mention`, `@all`, default responder, agent relay depth를 결정하는 순수 정책 |
+| `room_event_broker.py` | bounded WebSocket fanout. delta를 먼저 버리고 essential overflow는 `resync_required`로 SQLite replay 유도 |
 | `meeting_events.py` | `LobbyEvent`(40+ 필드: actor_id, side, auto_chain_depth, flow_* 15개, attachments), JSONL append/tail-read, `clean_lobby_text` |
 | `identity_store.py` | **SQLite 신원 코어(identity.db)**: users(운영자 플래그)/credentials(device→user)/memberships(방별 로스터+뮤트+host, PK로 유령 중복 차단). 레거시 users.json/room_members.json 1회 마이그레이션 |
 | `room_members.py` | 로스터 API(identity_store 위임) + 라이브 에이전트/세션 병합(`room_members_payload`): 초대 멤버 presence는 살아있는 세션 기준 재계산, 동명 stale 게스트 자동 접기, 역할(human/director/implementer/reviewer/agent), **muted**, kick |
@@ -76,6 +89,17 @@ MCP tool-loop 에이전트  ─┤                ├─ lobby.jsonl        (방
 | 전송 | `live_session_transport.py` | JSONL/PTY 터미널 세션 드라이버 |
 | provider 어댑터 | `adapters/{registry,codex,remote_bridge,local_cli,http_llm}.py`, `*_resident.py`(codex/cursor/kiro/grok/antigravity/hermes/claude) | provider별 기본 커맨드/세션 |
 
+새 shared-room MVP의 native CLI 경로는 위 레거시 3구조와 별도 메시지 버스를
+만들지 않고, canonical `/ws?ticket=...`에 Agent Bridge principal로 참여한다.
+
+| 파일 | 새 shared-room 책임 |
+|---|---|
+| `room_realtime.py` | command ACK/NACK, canonical append, turn orchestration, 1회 crash recovery 조정 |
+| `native_cli_providers.py` | Codex Spark/Antigravity/Grok/Claude Haiku catalog, interactive command, runtime profile key (`claude -p` 금지) |
+| `room_bridge_process.py` | 서버가 소유하는 Agent Bridge 프로세스 start/stop/restart |
+| `room_agent_bridge.py` | 같은 room WebSocket에 인증해 turn assignment와 provider report를 중계 |
+| `live_cli.py` | 장기 실행 PTY와 provider-owned transcript에서 자연어 assistant message 추출 |
+
 핵심 메커니즘 (이슈 분석 시 필수):
 - **공유 engagement 모듈** `room_engagement.py`: should_reply/멘션/자기·사람 판정/체인깊이를 runner와 mcp_server가 공동 import (중복 제거 완료).
 - **커서**: 에이전트별 `last_observed_event_id`(lobby) / `last_observed_live_event_id`(공식) / `last_observed_dm_event_id`. 이후 이벤트만 후보.
@@ -98,6 +122,13 @@ MCP tool-loop 에이전트  ─┤                ├─ lobby.jsonl        (방
 `local_resources.py` · `task_scope_report.py`
 
 ## 3. 데이터 파일 (`.agentsassemble/`)
+
+새 shared-room MVP의 canonical 상태는
+`.agentsassemble/rooms/rooms.sqlite3` 하나에 있으며, room별 디렉터리는 media,
+handoff, bridge diagnostic, smoke artifact만 보관한다. 이전 `room.json`,
+`participants.json`, `sessions.json`, `events.jsonl`은 검증 후 backup을 남기는
+1회 migration input일 뿐 병렬 source of truth가 아니다. 아래 표는 주로
+레거시 meeting/lobby 경로의 파일이다.
 
 | 파일 | 내용 | 쓰는 곳 |
 |---|---|---|

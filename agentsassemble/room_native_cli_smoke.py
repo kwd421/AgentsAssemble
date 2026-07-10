@@ -18,7 +18,11 @@ from agentsassemble.gui import _make_handler
 from agentsassemble.live_cli_smoke import _marker_recalled
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
-from agentsassemble.room_realtime import NativeCliProviderSpec, RoomRealtimeController, validate_native_cli_provider_spec
+from agentsassemble.native_cli_providers import (
+    NativeCliProviderSpec,
+    native_cli_provider_spec_from_config,
+)
+from agentsassemble.room_realtime import RoomRealtimeController
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
 
 
@@ -349,40 +353,12 @@ def _load_specs(config_path: Path, selected: list[str], *, timeout_seconds: floa
         agent_id = clean_lobby_text(item.get("id"), limit=128)
         if selected_set and agent_id.casefold() not in selected_set:
             continue
-        command = tuple(str(part) for part in list(item.get("command") or []) if str(part))
-        provider_kind = {
-            "codex": "codex_live_session",
-            "grok": "grok_live_session",
-            "antigravity": "antigravity_live_session",
-            "claude": "claude_code",
-        }.get(agent_id, clean_lobby_text(item.get("provider_kind"), limit=64))
-        cwd = str(Path(str(item.get("cwd") or ".")).expanduser().resolve())
-        model = clean_lobby_text(item.get("model"), limit=128)
-        if not model and "--model" in command:
-            index = command.index("--model")
-            model = command[index + 1] if index + 1 < len(command) else ""
-        spec = NativeCliProviderSpec(
-            agent_id=agent_id,
-            display_name=clean_lobby_text(item.get("display_name"), limit=128) or agent_id,
-            command=command,
-            cwd=cwd,
-            provider_kind=provider_kind,
-            model=model,
-            default_responder=False,
-            quiet_seconds=float(item.get("quiet_seconds") or 4.0),
-            input_mode=clean_lobby_text(item.get("input_mode"), limit=64) or "line",
-            submit_newline=str(item.get("submit_newline") or "\r"),
-            submit_delay_seconds=float(item.get("submit_delay_seconds", 0.1)),
-            terminal_rows=int(item.get("terminal_rows") or 40),
-            terminal_columns=int(item.get("terminal_columns") or 120),
-            startup_quiet_seconds=float(item.get("startup_quiet_seconds") or 1.0),
-            startup_timeout_seconds=float(item.get("startup_timeout_seconds") or 20.0),
-            startup_accept_contains=str(item.get("startup_accept_contains") or ""),
-            startup_accept_keys=str(item.get("startup_accept_keys") or "\r"),
-            turn_timeout_seconds=timeout_seconds,
+        specs.append(
+            native_cli_provider_spec_from_config(
+                item,
+                turn_timeout_seconds=timeout_seconds,
+            )
         )
-        validate_native_cli_provider_spec(spec)
-        specs.append(spec)
     if selected_set:
         found = {spec.agent_id.casefold() for spec in specs}
         missing = sorted(selected_set - found)

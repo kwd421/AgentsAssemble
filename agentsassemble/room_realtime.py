@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-from collections import deque
-from dataclasses import dataclass
 from datetime import UTC, datetime
-import hashlib
-import json
-import re
-import socket
 import threading
 from pathlib import Path
 from typing import Callable, Protocol
@@ -14,227 +8,29 @@ from uuid import uuid4
 
 from agentsassemble.agent_sessions import build_room_turn_packet
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.native_cli_providers import (
+    NativeCliProviderSpec,
+    UnsupportedNativeCliProvider,
+    default_native_cli_provider_specs,
+    native_cli_provider_catalog_payload,
+    native_cli_provider_spec_from_payload,
+    validate_native_cli_provider_spec,
+)
 from agentsassemble.room_invite import revoke_sessions_for_participant
+from agentsassemble.room_commands import (
+    RoomCommandValidationError,
+    capabilities_for_identity,
+    parse_room_command,
+)
+from agentsassemble.room_event_broker import ROOM_EVENT_STREAM, RoomEventBroker, RoomSocketChannel
 from agentsassemble.room_members import is_room_member_muted, remove_room_member, set_room_member_muted
+from agentsassemble.room_routing import route_message_targets
 from agentsassemble.room_store import RoomStore
+from agentsassemble.room_types import RoomCommand, RoomEvent, TurnAssignment
 from agentsassemble.voice_presence import leave_all_voice
 
-ROOM_EVENT_STREAM = "room_events"
 ROOM_SNAPSHOT_EVENT_LIMIT = 200
 ROOM_HISTORY_MAX_LIMIT = 200
-ROOM_COMMAND_ACTIONS = {
-    "room.history",
-    "message.send",
-    "agent.create",
-    "agent.start",
-    "agent.stop",
-    "agent.resume",
-    "agent.interrupt",
-    "participant.kick",
-    "participant.mute",
-    "bridge.ready",
-    "bridge.health",
-    "turn.state",
-    "message.delta",
-    "message.final",
-    "turn.failed",
-}
-
-
-@dataclass(frozen=True)
-class NativeCliProviderSpec:
-    agent_id: str
-    display_name: str
-    command: tuple[str, ...]
-    cwd: str = "."
-    provider_kind: str = ""
-    model: str = ""
-    default_responder: bool = True
-    quiet_seconds: float = 4.0
-    input_mode: str = "line"
-    submit_newline: str = "\r"
-    submit_delay_seconds: float = 0.1
-    terminal_rows: int = 40
-    terminal_columns: int = 120
-    startup_quiet_seconds: float = 1.0
-    startup_timeout_seconds: float = 20.0
-    startup_accept_contains: str = ""
-    startup_accept_keys: str = "\r"
-    turn_timeout_seconds: float = 180.0
-
-    def normalized_provider_kind(self) -> str:
-        return clean_lobby_text(self.provider_kind, limit=64) or f"{self.agent_id}_live_session"
-
-    def runtime_profile_key(self) -> str:
-        profile = json.dumps(
-            {
-                "provider_kind": self.normalized_provider_kind(),
-                "command": list(self.command),
-                "cwd": str(Path(self.cwd).expanduser().resolve()),
-                "model": self.model,
-                "quiet_seconds": self.quiet_seconds,
-                "input_mode": self.input_mode,
-                "submit_newline": self.submit_newline,
-                "submit_delay_seconds": self.submit_delay_seconds,
-                "terminal_rows": self.terminal_rows,
-                "terminal_columns": self.terminal_columns,
-                "startup_quiet_seconds": self.startup_quiet_seconds,
-                "startup_timeout_seconds": self.startup_timeout_seconds,
-                "startup_accept_contains": self.startup_accept_contains,
-                "startup_accept_keys": self.startup_accept_keys,
-                "turn_timeout_seconds": self.turn_timeout_seconds,
-            },
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(profile.encode("utf-8")).hexdigest()[:20]
-
-
-def default_native_cli_provider_specs(*, workspace: str | Path = ".") -> list[NativeCliProviderSpec]:
-    cwd = str(Path(workspace).expanduser().resolve())
-    return [
-        NativeCliProviderSpec(
-            agent_id="codex",
-            display_name="Codex Spark",
-            command=(
-                "codex",
-                "--no-alt-screen",
-                "--ask-for-approval",
-                "never",
-                "--sandbox",
-                "read-only",
-                "--model",
-                "gpt-5.3-codex-spark",
-            ),
-            cwd=cwd,
-            provider_kind="codex_live_session",
-            model="gpt-5.3-codex-spark",
-            input_mode="bracketed_paste",
-            startup_accept_contains="Do you trust",
-        ),
-        NativeCliProviderSpec(
-            agent_id="antigravity",
-            display_name="Antigravity CLI",
-            command=("agy", "--sandbox"),
-            cwd=cwd,
-            provider_kind="antigravity_live_session",
-            input_mode="bracketed_paste",
-            startup_accept_contains="Do you trust",
-        ),
-        NativeCliProviderSpec(
-            agent_id="grok",
-            display_name="Grok CLI",
-            command=("grok", "--no-alt-screen", "--permission-mode", "plan"),
-            cwd=cwd,
-            provider_kind="grok_live_session",
-        ),
-        NativeCliProviderSpec(
-            agent_id="claude",
-            display_name="Claude Haiku",
-            command=(
-                "claude",
-                "--model",
-                "haiku",
-                "--permission-mode",
-                "plan",
-                "--tools",
-                "--safe-mode",
-            ),
-            cwd=cwd,
-            provider_kind="claude_code",
-            model="haiku",
-            input_mode="bracketed_paste",
-            startup_accept_contains="Do you trust",
-        ),
-    ]
-
-
-def validate_native_cli_provider_spec(spec: NativeCliProviderSpec) -> None:
-    """Reject provider command shapes that cannot represent a resident session."""
-
-    executable = Path(spec.command[0]).name.casefold() if spec.command else ""
-    is_claude = executable == "claude" or spec.normalized_provider_kind() == "claude_code"
-    if not is_claude:
-        return
-    forbidden = [part for part in spec.command[1:] if part in {"-p", "--print"} or part.startswith("--print=")]
-    if forbidden:
-        raise ValueError("Claude Code Agent Sessions require interactive mode; print mode is forbidden.")
-
-
-def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeCliProviderSpec:
-    provider = clean_lobby_text(payload.get("provider_id") or payload.get("provider_kind") or payload.get("provider"), limit=64)
-    aliases = {
-        "codex": "codex_live_session",
-        "claude": "claude_code",
-        "antigravity": "antigravity_live_session",
-        "agy": "antigravity_live_session",
-        "grok": "grok_live_session",
-    }
-    provider_kind = aliases.get(provider, provider)
-    display_name = clean_lobby_text(payload.get("display_name"), limit=64) or provider or "Agent"
-    explicit_agent_id = clean_lobby_text(payload.get("agent_id") or payload.get("participant_id"), limit=128)
-    agent_id = explicit_agent_id or _slug_agent_id(f"{provider or 'agent'}-{display_name}")
-    workspace = clean_lobby_text(payload.get("workspace") or payload.get("workspace_path") or payload.get("cwd"), limit=500)
-    cwd = str(Path(workspace or ".").expanduser().resolve())
-    model = clean_lobby_text(payload.get("model") or payload.get("model_id"), limit=128)
-    if provider_kind == "codex_live_session":
-        model = model or "gpt-5.3-codex-spark"
-        spec = NativeCliProviderSpec(
-            agent_id=agent_id,
-            display_name=display_name,
-            command=(
-                "codex",
-                "--no-alt-screen",
-                "--ask-for-approval",
-                "never",
-                "--sandbox",
-                "read-only",
-                "--model",
-                model,
-            ),
-            cwd=cwd,
-            provider_kind=provider_kind,
-            model=model,
-            input_mode="bracketed_paste",
-            startup_accept_contains="Do you trust",
-        )
-    elif provider_kind == "claude_code":
-        model = model or "haiku"
-        spec = NativeCliProviderSpec(
-            agent_id=agent_id,
-            display_name=display_name,
-            command=("claude", "--model", model, "--permission-mode", "plan", "--tools", "--safe-mode"),
-            cwd=cwd,
-            provider_kind=provider_kind,
-            model=model,
-            input_mode="bracketed_paste",
-            startup_accept_contains="Do you trust",
-        )
-    elif provider_kind == "antigravity_live_session":
-        spec = NativeCliProviderSpec(
-            agent_id=agent_id,
-            display_name=display_name,
-            command=("agy", "--sandbox"),
-            cwd=cwd,
-            provider_kind=provider_kind,
-            model=model,
-            input_mode="bracketed_paste",
-            startup_accept_contains="Do you trust",
-        )
-    elif provider_kind == "grok_live_session":
-        spec = NativeCliProviderSpec(
-            agent_id=agent_id,
-            display_name=display_name,
-            command=("grok", "--no-alt-screen", "--permission-mode", "plan"),
-            cwd=cwd,
-            provider_kind=provider_kind,
-            model=model,
-        )
-    else:
-        raise RoomCommandRejected(f"Provider {provider or provider_kind or 'unknown'} is not available as a native CLI Agent Session.", code="unsupported_provider")
-    validate_native_cli_provider_spec(spec)
-    return spec
 
 
 class AgentBridgeManager(Protocol):
@@ -267,149 +63,6 @@ class RoomCommandRejected(ValueError):
     def __init__(self, message: str, *, code: str = "rejected") -> None:
         super().__init__(message)
         self.code = code
-
-
-class RoomSocketChannel:
-    """Bounded per-connection outbound queue with a selectable wakeup fd."""
-
-    def __init__(self, identity: dict[str, object], *, max_messages: int = 1000) -> None:
-        self.connection_id = f"conn-{uuid4().hex[:12]}"
-        self.identity = dict(identity)
-        self.room_id = clean_lobby_text(identity.get("meeting_id"), limit=128)
-        self.max_messages = max(10, int(max_messages or 1000))
-        self._queue: deque[dict[str, object]] = deque()
-        self._subscriptions: set[str] = set()
-        self._lock = threading.RLock()
-        self._read_socket, self._write_socket = socket.socketpair()
-        self._read_socket.setblocking(False)
-        self._write_socket.setblocking(False)
-        self.closed = False
-
-    def subscribe(self, streams: set[str]) -> None:
-        with self._lock:
-            self._subscriptions = set(streams)
-
-    def subscribed(self, stream: str) -> bool:
-        with self._lock:
-            return stream in self._subscriptions
-
-    def send(self, message: dict[str, object]) -> bool:
-        with self._lock:
-            if self.closed:
-                return False
-            was_empty = not self._queue
-            if len(self._queue) >= self.max_messages:
-                self._drop_for_backpressure()
-            self._queue.append(dict(message))
-            if was_empty:
-                try:
-                    self._write_socket.send(b"\x01")
-                except (BlockingIOError, OSError):
-                    pass
-            return True
-
-    def drain(self) -> list[dict[str, object]]:
-        with self._lock:
-            if self.closed:
-                return []
-            while True:
-                try:
-                    if not self._read_socket.recv(4096):
-                        break
-                except BlockingIOError:
-                    break
-                except OSError:
-                    break
-            messages = list(self._queue)
-            self._queue.clear()
-            return messages
-
-    def fileno(self) -> int:
-        return self._read_socket.fileno()
-
-    def close(self) -> None:
-        with self._lock:
-            if self.closed:
-                return
-            self.closed = True
-            self._queue.clear()
-            for sock in (self._read_socket, self._write_socket):
-                try:
-                    sock.close()
-                except OSError:
-                    pass
-
-    def _drop_for_backpressure(self) -> None:
-        for index, message in enumerate(self._queue):
-            events = message.get("events") if isinstance(message.get("events"), list) else []
-            if any(isinstance(event, dict) and event.get("type") == "message_delta" for event in events):
-                del self._queue[index]
-                return
-        if self._queue:
-            self._queue.popleft()
-
-
-class RoomEventBroker:
-    """Non-blocking fanout for canonical room events and targeted bridge turns."""
-
-    def __init__(self) -> None:
-        self._lock = threading.RLock()
-        self._channels: dict[str, RoomSocketChannel] = {}
-
-    def connect(self, identity: dict[str, object]) -> RoomSocketChannel:
-        channel = RoomSocketChannel(identity)
-        with self._lock:
-            self._channels[channel.connection_id] = channel
-        return channel
-
-    def disconnect(self, channel: RoomSocketChannel) -> None:
-        with self._lock:
-            self._channels.pop(channel.connection_id, None)
-        channel.close()
-
-    def broadcast_event(self, event: dict[str, object]) -> None:
-        room_id = clean_lobby_text(event.get("room_id"), limit=128)
-        message = {"op": "event", "stream": ROOM_EVENT_STREAM, "events": [dict(event)]}
-        with self._lock:
-            channels = list(self._channels.values())
-        for channel in channels:
-            if channel.room_id == room_id and channel.subscribed(ROOM_EVENT_STREAM):
-                channel.send(message)
-
-    def direct_to_bridge(self, room_id: str, participant_id: str, message: dict[str, object]) -> bool:
-        clean_room_id = clean_lobby_text(room_id, limit=128)
-        clean_participant_id = clean_lobby_text(participant_id, limit=128)
-        delivered = False
-        with self._lock:
-            channels = list(self._channels.values())
-        for channel in channels:
-            identity = channel.identity
-            if (
-                channel.room_id == clean_room_id
-                and clean_lobby_text(identity.get("agent_id"), limit=128) == clean_participant_id
-                and identity.get("client_type") == "agent_bridge"
-            ):
-                delivered = channel.send(message) or delivered
-        return delivered
-
-    def has_bridge(self, room_id: str, participant_id: str) -> bool:
-        clean_room_id = clean_lobby_text(room_id, limit=128)
-        clean_participant_id = clean_lobby_text(participant_id, limit=128)
-        with self._lock:
-            return any(
-                not channel.closed
-                and channel.room_id == clean_room_id
-                and channel.identity.get("client_type") == "agent_bridge"
-                and clean_lobby_text(channel.identity.get("agent_id"), limit=128) == clean_participant_id
-                for channel in self._channels.values()
-            )
-
-    def close(self) -> None:
-        with self._lock:
-            channels = list(self._channels.values())
-            self._channels.clear()
-        for channel in channels:
-            channel.close()
 
 
 class RoomRealtimeController:
@@ -602,6 +255,7 @@ class RoomRealtimeController:
             "has_more_before": has_more_before,
             "resume_gap": resume_gap,
             "snapshot_mode": snapshot_mode,
+            "available_providers": native_cli_provider_catalog_payload(),
             "capabilities": self.capabilities(identity),
         }
 
@@ -627,35 +281,24 @@ class RoomRealtimeController:
         }
 
     def capabilities(self, identity: dict[str, object]) -> dict[str, bool]:
-        operator = bool(identity.get("operator"))
-        bridge = identity.get("client_type") == "agent_bridge"
-        read_write = str(identity.get("invite_scope") or "read_write") != "read_only"
-        return {
-            "room.history": not bridge,
-            "message.send": read_write and not bridge,
-            "room.manage": operator,
-            "participant.kick": operator,
-            "participant.mute": operator,
-            "agent.control": operator,
-            "bridge.report": bridge,
-        }
+        return capabilities_for_identity(identity)
 
     def handle_command(
         self,
         identity: dict[str, object],
-        message: dict[str, object],
+        message: RoomCommand | dict[str, object],
         *,
         server_url: str = "",
         ticket_issuer: Callable[[dict[str, object]], str] | None = None,
     ) -> dict[str, object]:
         room_id = clean_lobby_text(identity.get("meeting_id"), limit=128)
-        request_id = clean_lobby_text(message.get("request_id"), limit=128)
-        action = clean_lobby_text(message.get("action"), limit=64)
-        payload = dict(message.get("payload")) if isinstance(message.get("payload"), dict) else {}
-        if not request_id:
-            raise RoomCommandRejected("request_id is required.", code="bad_request")
-        if action not in ROOM_COMMAND_ACTIONS:
-            raise RoomCommandRejected(f"Unsupported room command: {action}", code="unknown_action")
+        try:
+            command = parse_room_command(dict(message))
+        except RoomCommandValidationError as error:
+            raise RoomCommandRejected(str(error), code=error.code) from error
+        request_id = command.request_id
+        action = command.action
+        payload = command.payload
         self.ensure_room(room_id)
         if action == "room.history":
             if identity.get("client_type") == "agent_bridge":
@@ -961,7 +604,10 @@ class RoomRealtimeController:
         server_url: str,
         ticket_issuer: Callable[[dict[str, object]], str] | None,
     ) -> dict[str, object]:
-        spec = native_cli_provider_spec_from_payload(payload)
+        try:
+            spec = native_cli_provider_spec_from_payload(payload)
+        except UnsupportedNativeCliProvider as error:
+            raise RoomCommandRejected(str(error), code="unsupported_provider") from error
         session = self.register_provider(room_id, spec)
         result: dict[str, object] = {
             "status": "created",
@@ -1382,43 +1028,40 @@ class RoomRealtimeController:
                     )
                     self._publish_session_state(room_id, failed)
 
-    def _on_event_appended(self, event: dict[str, object]) -> None:
+    def _on_event_appended(self, event: RoomEvent | dict[str, object]) -> None:
         self.broker.broadcast_event(event)
         if event.get("type") != "message_final":
             return
         with self._lock:
             self._route_message_event(event)
 
-    def _route_message_event(self, event: dict[str, object]) -> None:
+    def _route_message_event(self, event: RoomEvent | dict[str, object]) -> None:
         room_id = clean_lobby_text(event.get("room_id"), limit=128)
-        actor = event.get("actor") if isinstance(event.get("actor"), dict) else {}
-        actor_id = clean_lobby_text(actor.get("participant_id") or event.get("participant_id"), limit=128)
-        actor_type = clean_lobby_text(actor.get("participant_type") or event.get("participant_type"), limit=32)
-        content = clean_lobby_text(event.get("content"), limit=12000)
-        relay_depth = int(event.get("relay_depth") or 0)
-        if actor_type == "agent" and relay_depth >= self.max_agent_relay_depth:
-            return
         providers = self._room_providers(room_id)
-        mentioned = _mentioned_agents(content, providers)
-        target_agent_id = clean_lobby_text(event.get("target_agent_id"), limit=128)
-        if target_agent_id in providers:
-            mentioned.add(target_agent_id)
-        if "@all" in content.lower():
-            targets = set(providers)
-        elif mentioned:
-            targets = mentioned
-        elif actor_type != "agent":
-            targets = {agent_id for agent_id, spec in providers.items() if spec.default_responder}
-        else:
-            targets = set()
-        targets.discard(actor_id)
-        for agent_id in sorted(targets):
+        decision = route_message_targets(
+            dict(event),
+            providers,
+            max_agent_relay_depth=self.max_agent_relay_depth,
+        )
+        for agent_id in decision.targets:
             participant = self.store.participant(room_id, agent_id)
             if participant.get("status") == "kicked" or participant.get("muted"):
                 continue
-            self._queue_event(room_id, agent_id, event, relay_depth=relay_depth + (1 if actor_type == "agent" else 0))
+            self._queue_event(
+                room_id,
+                agent_id,
+                event,
+                relay_depth=decision.relay_depth + (1 if decision.actor_type == "agent" else 0),
+            )
 
-    def _queue_event(self, room_id: str, agent_id: str, event: dict[str, object], *, relay_depth: int) -> None:
+    def _queue_event(
+        self,
+        room_id: str,
+        agent_id: str,
+        event: RoomEvent | dict[str, object],
+        *,
+        relay_depth: int,
+    ) -> None:
         session = self.store.session(room_id, agent_id)
         if not session:
             return
@@ -1504,7 +1147,7 @@ class RoomRealtimeController:
             turn_id=turn_id,
             phase="thinking",
         )
-        assignment = {
+        assignment: TurnAssignment = {
             "op": "turn.assign",
             "room_id": room_id,
             "participant_id": agent_id,
@@ -1689,34 +1332,6 @@ class RoomRealtimeController:
     def _public_session(session: dict[str, object]) -> dict[str, object]:
         hidden = {"env", "token", "ticket", "credentials"}
         return {key: value for key, value in session.items() if key not in hidden}
-
-
-def _mentioned_agents(content: str, providers: dict[str, NativeCliProviderSpec]) -> set[str]:
-    lowered = content.lower()
-    mentioned = set()
-    for agent_id in providers:
-        if re.search(rf"(?<![\w-])@{re.escape(agent_id.lower())}(?![\w-])", lowered):
-            mentioned.add(agent_id)
-    return mentioned
-
-
-def _slug_agent_id(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9._-]+", "-", str(value or "").casefold()).strip("-")
-    return slug[:96] or "agent-session"
-
-
-def _event_by_id(events: list[dict[str, object]], event_id: str) -> dict[str, object]:
-    for event in reversed(events):
-        if event.get("id") == event_id:
-            return event
-    return {}
-
-
-def _latest_public_event_id(events: list[dict[str, object]]) -> str:
-    for event in reversed(events):
-        if event.get("type") == "message_final":
-            return clean_lobby_text(event.get("id"), limit=128)
-    return ""
 
 
 def _dedupe_text_list(values: list[object]) -> list[str]:
