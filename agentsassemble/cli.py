@@ -1691,6 +1691,17 @@ def build_parser() -> argparse.ArgumentParser:
     room_smoke.add_argument("--providers", default="", help="Comma-separated live CLI provider ids to smoke, such as codex,grok.")
     room_smoke.add_argument("--config", default=str(DEFAULT_LIVE_CLI_SMOKE_CONFIG), help="Live CLI provider smoke config JSON.")
     room_smoke.add_argument("--timeout", type=parse_nonnegative_float, default=120.0, help="Per-provider live CLI smoke timeout.")
+    room_smoke.add_argument(
+        "--latency-samples",
+        type=parse_nonnegative_int,
+        default=0,
+        help="After one warmup, compare same-turn provider-runtime and room-observed TTFO this many times per provider.",
+    )
+    room_smoke.add_argument(
+        "--agent-conversation",
+        action="store_true",
+        help="Start two or more providers and verify agent-to-agent room relay around a directed ring.",
+    )
     room_smoke.add_argument("--approve-real-provider", action="store_true", help="Allow real local provider CLI commands to run.")
     room_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print JSON output.")
     room_smoke_subparsers = room_smoke.add_subparsers(dest="room_smoke_command")
@@ -1710,6 +1721,18 @@ def build_parser() -> argparse.ArgumentParser:
         smoke = room_smoke_subparsers.add_parser(smoke_command, help=f"Run {smoke_command} smoke check.")
         smoke.add_argument("--approve-real-provider", action="store_true")
         smoke.add_argument("--json", action="store_true", dest="as_json")
+
+    room_benchmark = room_subparsers.add_parser(
+        "benchmark",
+        help="Measure the canonical SQLite room at long-room cardinality without starting providers.",
+    )
+    room_benchmark.add_argument("--output-root", default="", help="Parent directory for benchmark artifacts.")
+    room_benchmark.add_argument("--events", type=parse_positive_int, default=100_000)
+    room_benchmark.add_argument("--agent-count", type=parse_positive_int, default=10)
+    room_benchmark.add_argument("--read-window", type=parse_positive_int, default=200)
+    room_benchmark.add_argument("--samples", type=parse_positive_int, default=50)
+    room_benchmark.add_argument("--keep-output", action="store_true")
+    room_benchmark.add_argument("--json", action="store_true", dest="as_json")
 
     room_leave = room_subparsers.add_parser("leave", parents=[room_server], help="Leave a room as an Agent Session participant.")
     room_leave.add_argument("room_id")
@@ -8429,6 +8452,37 @@ def run_room_command(args: argparse.Namespace) -> int:
             print(f"{room.get('room_id') or args.room_id}: {room.get('status') or 'unknown'}")
             print(f"active participants: {len(participants)}")
         return 0
+    if args.room_command == "benchmark":
+        from agentsassemble.canonical_room_benchmark import (
+            CanonicalRoomBenchmarkOptions,
+            run_canonical_room_benchmark,
+        )
+
+        result = run_canonical_room_benchmark(
+            CanonicalRoomBenchmarkOptions(
+                output_root=Path(args.output_root) if args.output_root else None,
+                events=int(args.events),
+                agent_count=int(args.agent_count),
+                read_window=int(args.read_window),
+                samples=int(args.samples),
+                cleanup=not bool(args.keep_output),
+            )
+        )
+        if args.as_json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
+            latest = metrics.get("latest_window_ms") if isinstance(metrics.get("latest_window_ms"), dict) else {}
+            reconnect = metrics.get("reconnect_after_seq_ms") if isinstance(metrics.get("reconnect_after_seq_ms"), dict) else {}
+            context = metrics.get("agent_context_ms") if isinstance(metrics.get("agent_context_ms"), dict) else {}
+            print(
+                f"canonical room benchmark: {result.get('status')} · "
+                f"events={result.get('measured_event_count')} · agents={args.agent_count}"
+            )
+            print(f"- latest window p50/p95: {latest.get('p50_ms')} / {latest.get('p95_ms')} ms")
+            print(f"- reconnect p50/p95: {reconnect.get('p50_ms')} / {reconnect.get('p95_ms')} ms")
+            print(f"- agent context p50/p95: {context.get('p50_ms')} / {context.get('p95_ms')} ms")
+        return 0 if result.get("status") == "ok" else 1
     if args.room_command in {"join", "resume"}:
         payload = {
             "room_id": args.room_id,
@@ -8470,6 +8524,8 @@ def run_room_command(args: argparse.Namespace) -> int:
                 providers=live_cli_providers,
                 approve_real_provider=bool(args.approve_real_provider),
                 timeout_seconds=float(getattr(args, "timeout", 120.0) or 120.0),
+                latency_samples=int(getattr(args, "latency_samples", 0) or 0),
+                agent_conversation=bool(getattr(args, "agent_conversation", False)),
             )
         elif bool(args.approve_real_provider) and args.room_smoke_command in CODEX_APP_SERVER_SMOKE_COMMANDS:
             payload = run_codex_app_server_smoke(
@@ -8507,7 +8563,7 @@ def run_room_command(args: argparse.Namespace) -> int:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
             print(f"{payload['smoke']}: {payload['status']} (real provider smoke is opt-in and not run by unit tests)")
-        return 0
+        return 0 if payload.get("status") in {"ok", "skipped", "not_run"} else 1
     if args.room_command == "turn":
         payload = {
             "room_id": args.room_id,

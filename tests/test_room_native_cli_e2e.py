@@ -12,15 +12,66 @@ from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
-from agentsassemble.room_native_cli_smoke import run_room_native_cli_smoke
+from agentsassemble.room_native_cli_smoke import _latency_acceptance, run_room_native_cli_smoke
 from agentsassemble.room_realtime import NativeCliProviderSpec, RoomRealtimeController
 from agentsassemble.ws_room_client import connect_room_ws_with_ticket
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "fake_interactive_cli.py"
+RELAY_FIXTURE = Path(__file__).parent / "fixtures" / "fake_relay_cli.py"
 
 
 class NativeCliRoomEndToEndTests(unittest.TestCase):
+    def test_two_persistent_clis_relay_room_messages_in_both_directions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = root / "relay-providers.json"
+            config.write_text(
+                json.dumps(
+                    {
+                        "room_id": "general",
+                        "providers": [
+                            {
+                                "id": agent_id,
+                                "display_name": agent_id,
+                                "command": [os.sys.executable, "-u", str(RELAY_FIXTURE), agent_id],
+                                "cwd": str(root),
+                                "input_mode": "bracketed_paste",
+                                "quiet_seconds": 0.05,
+                                "startup_quiet_seconds": 0.05,
+                                "startup_timeout_seconds": 1.0,
+                                "default_responder": False,
+                            }
+                            for agent_id in ("relay-a", "relay-b")
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_room_native_cli_smoke(
+                config_path=config,
+                output_root=root,
+                providers=["relay-a", "relay-b"],
+                approve_real_provider=True,
+                timeout_seconds=5.0,
+                agent_conversation=True,
+            )
+
+        conversation = result["conversation"]
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(len(conversation["rounds"]), 2)
+        self.assertEqual(conversation["actual_turn_counts"], {"relay-a": 2, "relay-b": 2})
+        self.assertFalse(conversation["unexpected_extra_turns"])
+        self.assertEqual(conversation["metrics"]["turn_count"], 4)
+        self.assertIsNotNone(result["metrics"]["p50_time_to_first_agent_delta_ms"])
+        for round_result in conversation["rounds"]:
+            self.assertTrue(all(round_result["checks"].values()))
+            self.assertEqual(round_result["source_message_event_id"], round_result["target_turn_source_event_id"])
+        for provider in conversation["providers"]:
+            self.assertTrue(provider["same_pid_over_turns"])
+            self.assertFalse(provider["alive_after_stop"])
+
     def test_unified_smoke_harness_records_real_process_provenance(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -52,6 +103,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                 providers=["fake"],
                 approve_real_provider=True,
                 timeout_seconds=5.0,
+                latency_samples=2,
             )
             provider = result["providers"][0]
 
@@ -62,6 +114,29 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
         self.assertTrue(provider["memory_marker_recalled"])
         self.assertFalse(provider["alive_after_stop"])
         self.assertEqual(provider["message_sources"], ["terminal_capture", "terminal_capture"])
+        self.assertEqual(len(provider["provider_direct_ttfo_ms"]), 2)
+        self.assertEqual(len(provider["room_observed_ttfo_ms"]), 2)
+        self.assertFalse(provider["latency_acceptance"]["enforced"])
+
+    def test_latency_acceptance_enforces_same_turn_room_overhead_limits(self):
+        passing = _latency_acceptance(
+            [1000.0] * 10,
+            [1100.0] * 10,
+        )
+        excessive_ratio = _latency_acceptance(
+            [1000.0] * 10,
+            [1200.0] * 10,
+        )
+        excessive_tail = _latency_acceptance(
+            [1000.0] * 9 + [100.0],
+            [1100.0] * 9 + [2000.0],
+        )
+
+        self.assertTrue(passing["passed"])
+        self.assertFalse(excessive_ratio["passed"])
+        self.assertFalse(excessive_ratio["checks"]["room_p50_within_115_percent"])
+        self.assertFalse(excessive_tail["passed"])
+        self.assertFalse(excessive_tail["checks"]["p95_extra_within_750_ms"])
 
     def test_browser_and_persistent_cli_bridge_share_one_canonical_websocket(self):
         self._inbox: list[dict[str, object]] = []

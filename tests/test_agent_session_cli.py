@@ -270,6 +270,9 @@ class AgentSessionCliTests(unittest.TestCase):
                 "--config",
                 "configs/live-cli-providers.example.json",
                 "--approve-real-provider",
+                "--latency-samples",
+                "10",
+                "--agent-conversation",
                 "--json",
             ]
         )
@@ -288,8 +291,21 @@ class AgentSessionCliTests(unittest.TestCase):
             providers=["codex", "grok"],
             approve_real_provider=True,
             timeout_seconds=120.0,
+            latency_samples=10,
+            agent_conversation=True,
         )
         self.assertIn('"status": "ok"', stdout.getvalue())
+
+    def test_room_smoke_returns_failure_exit_code_for_real_provider_error(self):
+        args = build_parser().parse_args(
+            ["room", "smoke", "--providers", "grok", "--approve-real-provider", "--json"]
+        )
+
+        with patch("sys.stdout", StringIO()), patch("agentsassemble.cli.run_room_native_cli_smoke") as smoke_runner:
+            smoke_runner.return_value = {"status": "error", "smoke": "room-native-cli", "providers": []}
+            exit_code = run_room_command(args)
+
+        self.assertEqual(exit_code, 1)
 
 
 if __name__ == "__main__":
