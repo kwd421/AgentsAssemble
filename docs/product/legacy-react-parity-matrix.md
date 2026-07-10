@@ -103,7 +103,7 @@ surface rather than silently counted as React parity.
 | `/api/rooms/archive` | POST | exact | `archiveRoom()` | yes | Moderation endpoint that hides archived rooms from default room lists while preserving file-backed room data. |
 | `/api/rooms/state` | GET | exact | `-` | no | RoomStore state projection endpoint; not wrapped by React preview yet. |
 | `/api/rooms/close` | POST | exact | `-` | no | RoomStore close endpoint; not wrapped by React preview yet. |
-| `/api/agent-sessions` | POST | exact | `createAgentSession()` | yes | React Add Agent creates RoomStore-backed Agent Session participants/sessions as the canonical room roster source; legacy live-agent creation is compatibility-only. |
+| `/api/agent-sessions` | POST | exact | `-` | no | Legacy HTTP compatibility endpoint. React Add Agent now sends canonical `agent.create` over the ticket-authenticated room WebSocket. |
 | `/api/agent-sessions/next-turn` | POST | exact | `runNextAgentSessionTurn()` | yes | React Agent Session call control asks the ordered RoomTurnScheduler to pick the next active Agent Session from the latest public room message. |
 | `/api/agent-sessions/resume` | POST | exact | `resumeAgentSession()` | yes | React member detail panel attaches canonical Agent Session state and reports process status separately; process launch remains explicit. |
 | `/api/agent-sessions/turn` | POST | exact | `runAgentSessionTurn()` | yes | Host/operator Agent Session turn execution endpoint; active room results are consumed through RoomStore SSE after the direct operator call. |
@@ -204,19 +204,19 @@ surface rather than silently counted as React parity.
 | `/api/ws-ticket` | POST | exact | `getWsTicket()` | yes | WS 전환 (WS-4/5): issues a single-use short-TTL ticket (authed session) so the browser can open `/ws?ticket=...` without an Authorization header. `connectRoomSocket()` uses it for guest roster + lobby push. |
 | `/api/room-members` | GET | exact | `fetchRoomMembers()` | yes | React reads persisted selected-room members, including saved friends invited from the Discord home surface. |
 | `/api/room-members` | POST | exact | `upsertRoomMember()` | yes | React writes saved-friend invitations into selected-room member state; this does not start providers or send external Discord invites. |
-| `/api/room-members/mute` | POST | exact | `muteRoomMember()` | yes | Moderation (host token or operator session): toggles a participant's muted flag from the member panel context menu. |
-| `/api/room-members/kick` | POST | exact | `kickRoomMember()` | yes | Moderation (host token or operator session): revokes the participant's sessions, removes the roster row, and expels a bound live agent. |
+| `/api/room-members/mute` | POST | exact | `-` | no | Legacy HTTP compatibility endpoint. React moderation sends `participant.mute` through the canonical room WebSocket. |
+| `/api/room-members/kick` | POST | exact | `-` | no | Legacy HTTP compatibility endpoint. React moderation sends `participant.kick` through the canonical room WebSocket. |
 | `/api/room-participants/leave` | POST | exact | `-` | no | Agent Session participant leave endpoint with participant-token or moderator authorization; not wrapped by React preview yet. |
 | `/api/room-participants/kick` | POST | exact | `-` | no | Agent Session participant kick endpoint with moderator authorization; not wrapped by React preview yet. |
 | `/api/room-participants/export` | POST | exact | `-` | no | Agent Session participant export endpoint with moderator authorization; not wrapped by React preview yet. |
 | `/api/provider-sessions` | GET | exact | `fetchProviderSessions()` | yes | React agent-create modal lists local provider-owned sessions so the operator can choose an existing Agent Session handle without exposing it in roster UI. |
-| `/api/room-events/stream` | GET | sse | `subscribeRoomEvents()` | yes | React can subscribe to the ordered room event stream for Agent Session state updates. |
+| `/api/room-events/stream` | GET | sse | `-` | no | Legacy/read-only SSE compatibility endpoint. React receives canonical RoomStore snapshots and events from `/ws?ticket=...`. |
 | `/api/host/claim` | POST | exact | `claimHostDevice()` | yes | Host-token gated: binds this device's stable identity to the operator account so its sessions moderate from any entrance. |
 | `/api/live-agent-create/options` | GET | exact | `fetchLiveAgentCreateOptions()` | yes | React agent-create modal loads provider/options metadata. |
 | `/api/live-agent-create` | POST | exact | `createFrontendLiveAgent()` | yes | React agent-create modal provisions a frontend-created live agent config. |
 | `/api/live-agent-create/check` | POST | exact | `checkFrontendLiveAgent()` | yes | React agent-create modal validates the requested agent before creation. |
 | `/api/live-agent-create/login` | POST | exact | `startFrontendLiveAgentLogin()` | yes | React agent-create modal starts a provider login flow when required. |
-| `/api/live-agent-room/expel` | POST | exact | `expelLiveAgentFromRoom()` | yes | Member panel removes an agent from the room while keeping its saved session config. |
+| `/api/live-agent-room/expel` | POST | exact | `-` | no | Legacy process-admin endpoint. Canonical native CLI participants use `participant.kick` over the room WebSocket. |
 | `/api/live-agent-room/delete-session` | POST | exact | `deleteLiveAgentSession()` | yes | Member panel deletes an agent session (room binding, record, and saved config). |
 | `/api/live-agent-room/stop-self-managed` | POST | exact | `stopSelfManagedAgent()` | yes | Member detail panel can stop a self-managed process only when the agent advertised verifiable local stop evidence. |
 | `/api/live-agent-room/resume-self-managed` | POST | exact | `resumeSelfManagedAgent()` | yes | Member detail panel can resume a self-managed process only when the agent advertised verifiable local relaunch evidence. |

@@ -152,7 +152,7 @@ export default function RoomRail({
             onClick={() => onLeaveRoom(menuRoom.id)}
           >
             <LogOut size={16} />
-            서버 나가기
+            {guestLocked ? "서버 나가기" : "사이드바에서 숨기기"}
           </button>
         </div>
       )}

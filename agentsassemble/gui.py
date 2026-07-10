@@ -55,8 +55,12 @@ from agentsassemble.live_agent_frontend_create import (
 from agentsassemble.provider_sessions import list_provider_sessions
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
-from agentsassemble.live_cli_control import GeneralRoomController
-from agentsassemble.room_socket import GeneralRoomSocketHub
+from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
+from agentsassemble.room_realtime import (
+    RoomCommandRejected,
+    RoomRealtimeController,
+    default_native_cli_provider_specs,
+)
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
 from agentsassemble.live_agent_room_admin import (
     delete_live_agent_session_payload,
@@ -1242,6 +1246,9 @@ def serve_gui(
         session_run_monitor.stop()
         public_tunnel_manager.stop()
         process_supervisor.close()
+        realtime_controller = getattr(handler, "room_realtime_controller", None)
+        if realtime_controller is not None:
+            realtime_controller.close()
         server.server_close()
 
 
@@ -8213,6 +8220,7 @@ def _make_handler(
     public_tunnel_manager: PublicTunnelManager | None = None,
     live_agent_login_launcher: object | None = None,
     live_agent_login_command_resolver: object | None = None,
+    room_realtime_controller_override: RoomRealtimeController | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     configure_room_invite_store(default_room_invite_store_path(output_root))
     # Identity (users/credentials/memberships) lives in one SQLite file; a
@@ -8229,10 +8237,18 @@ def _make_handler(
     # WS 전환 (WS-4): single-use tickets bind a verified session to a /ws open
     # (browsers can't set Authorization on `new WebSocket`).
     ws_ticket_store = WsTicketStore()
-    general_room_controller = GeneralRoomController(output_root)
-    general_room_socket_hub = GeneralRoomSocketHub(general_room_controller)
+    if room_realtime_controller_override is not None:
+        room_realtime_controller = room_realtime_controller_override
+    else:
+        native_cli_bridge_manager = NativeCliBridgeProcessManager(output_root)
+        room_realtime_controller = RoomRealtimeController(
+            output_root,
+            providers=default_native_cli_provider_specs(workspace=Path.cwd()),
+            bridge_manager=native_cli_bridge_manager,
+        )
+        native_cli_bridge_manager.set_exit_listener(room_realtime_controller.bridge_process_exited)
 
-    def _ws_room_deps() -> WsRoomDeps:
+    def _ws_room_deps(channel, handler) -> WsRoomDeps:
         # Reuse the proven SSE snapshot machinery + the governed say append path,
         # so the WS transport behaves exactly like the HTTP/SSE one (no pub/sub yet).
         def read_lobby_after(meeting_id: str, after_id: str) -> tuple[list, str]:
@@ -8285,6 +8301,19 @@ def _make_handler(
                 on,
             )
 
+        def execute_command(identity: dict, message: dict) -> dict[str, object]:
+            try:
+                return room_realtime_controller.handle_command(
+                    identity,
+                    message,
+                    server_url=_local_server_url(handler.server.server_address),
+                    ticket_issuer=lambda bridge_identity: ws_ticket_store.issue(bridge_identity),
+                )
+            except RoomCommandRejected as rejected:
+                from agentsassemble.ws_room_session import WsCommandRejected
+
+                raise WsCommandRejected(str(rejected), code=rejected.code) from rejected
+
         return WsRoomDeps(
             read_lobby_after=read_lobby_after,
             read_roster=read_roster,
@@ -8293,6 +8322,12 @@ def _make_handler(
             is_muted=lambda meeting_id, agent_id: is_room_member_muted(output_root, meeting_id, agent_id),
             set_thinking=set_thinking,
             is_session_active=lambda session_token: bool(verify_session_token(session_token)),
+            room_snapshot=lambda identity, after_seq: room_realtime_controller.snapshot(
+                identity,
+                after_seq=after_seq,
+            ),
+            execute_command=execute_command,
+            on_subscribe=lambda identity, streams, after_seq: channel.subscribe(streams),
         )
     # R2: route-table dispatcher. Migrated domains register here; do_GET/do_POST
     # try the table first and fall back to the legacy if-chains below.
@@ -8354,9 +8389,6 @@ def _make_handler(
             query = parse_qs(parsed.query)
             if not self._request_is_trusted(path=path, method="GET"):
                 self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
-                return
-            if path == "/ws/rooms/general":
-                self._handle_general_room_ws_upgrade()
                 return
             if path == "/ws":
                 self._handle_ws_upgrade(query)
@@ -11451,76 +11483,8 @@ def _make_handler(
             self.end_headers()
             self.wfile.write(data)
 
-        def _handle_general_room_ws_upgrade(self) -> None:
-            """Upgrade /ws/rooms/general for the local CLI-first room transport."""
-            import select
-
-            if not self._request_is_local_operator():
-                self._send_error(HTTPStatus.FORBIDDEN, "local operator connection required")
-                return
-            if not is_websocket_upgrade(self.headers):
-                self._send_error(HTTPStatus.BAD_REQUEST, "WebSocket upgrade required")
-                return
-            key = str(self.headers.get("Sec-WebSocket-Key") or "")
-            if not key:
-                self._send_error(HTTPStatus.BAD_REQUEST, "missing Sec-WebSocket-Key")
-                return
-            self.close_connection = True
-            self.send_response(HTTPStatus.SWITCHING_PROTOCOLS)
-            self.send_header("Upgrade", "websocket")
-            self.send_header("Connection", "Upgrade")
-            self.send_header("Sec-WebSocket-Accept", compute_accept_key(key))
-            self.end_headers()
-            self.wfile.flush()
-
-            sock = self.connection
-            send_lock = threading.Lock()
-
-            def send_json(payload: dict[str, object]) -> None:
-                data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-                with send_lock:
-                    sock.sendall(encode_text(data.decode("utf-8")))
-
-            connection = general_room_socket_hub.connect(send_json)
-            assembler = MessageAssembler()
-            try:
-                while not connection.closed:
-                    ready, _, _ = select.select([sock], [], [], SSE_EVENT_POLL_INTERVAL_SECONDS)
-                    if not ready:
-                        continue
-                    data = sock.recv(65536)
-                    if not data:
-                        break
-                    assembler.feed(data)
-                    for opcode, payload in assembler.messages():
-                        if opcode == OP_PING:
-                            with send_lock:
-                                sock.sendall(encode_pong(payload))
-                        elif opcode == OP_PONG:
-                            continue
-                        elif opcode == OP_CLOSE:
-                            with send_lock:
-                                sock.sendall(encode_close(CLOSE_NORMAL))
-                            connection.closed = True
-                            break
-                        elif opcode == OP_TEXT:
-                            general_room_socket_hub.handle_text(connection, payload)
-            except WebSocketProtocolError:
-                try:
-                    with send_lock:
-                        sock.sendall(encode_close(CLOSE_PROTOCOL_ERROR))
-                except OSError:
-                    pass
-            except (BrokenPipeError, ConnectionResetError, OSError):
-                pass
-            finally:
-                general_room_socket_hub.disconnect(connection)
-
         def _handle_ws_upgrade(self, query: dict) -> None:
-            """WS 전환 (WS-4): upgrade /ws, bind the ticket's session as a fixed
-            identity, then run the per-connection frame loop. Delivery reuses the
-            SSE snapshot reader (no pub/sub yet); the win here is the governed
-            handshake (identity + client_type fixed once)."""
+            """Upgrade the one authenticated room socket used by browsers and bridges."""
             import select
 
             if not is_websocket_upgrade(self.headers):
@@ -11544,6 +11508,8 @@ def _make_handler(
                 "invite_scope": str(session.get("invite_scope") or "read_write"),
                 "meeting_id": str(session.get("meeting_id") or ""),
                 "operator": bool(session.get("operator")),
+                "session_id": str(session.get("session_id") or session.get("agent_id") or ""),
+                "provider_kind": str(session.get("provider_kind") or ""),
             }
             self.close_connection = True
             self.send_response(HTTPStatus.SWITCHING_PROTOCOLS)
@@ -11552,7 +11518,8 @@ def _make_handler(
             self.send_header("Sec-WebSocket-Accept", compute_accept_key(key))
             self.end_headers()
             self.wfile.flush()
-            ws = WsRoomSession(identity=identity, deps=_ws_room_deps(), session_token=session_token)
+            channel = room_realtime_controller.connect(identity)
+            ws = WsRoomSession(identity=identity, deps=_ws_room_deps(channel, self), session_token=session_token)
             assembler = MessageAssembler()
             sock = self.connection
             def _send_all(frames: list[bytes]) -> bool:
@@ -11569,8 +11536,8 @@ def _make_handler(
 
             try:
                 while not ws.closed:
-                    ready, _, _ = select.select([sock], [], [], SSE_EVENT_POLL_INTERVAL_SECONDS)
-                    if ready:
+                    ready, _, _ = select.select([sock, channel], [], [], SSE_EVENT_POLL_INTERVAL_SECONDS)
+                    if sock in ready:
                         data = sock.recv(65536)
                         if not data:
                             break  # client closed the TCP connection
@@ -11583,6 +11550,10 @@ def _make_handler(
                             outbound.extend(ws.handle_frame(opcode, payload))
                         if not _send_all(outbound):
                             break
+                    if channel in ready:
+                        pushed = [encode_text(json.dumps(message, ensure_ascii=False)) for message in channel.drain()]
+                        if not _send_all(pushed):
+                            break
                     if not _send_all(ws.poll()):
                         break
             except WebSocketProtocolError:
@@ -11592,6 +11563,8 @@ def _make_handler(
                     pass
             except (BrokenPipeError, ConnectionResetError, OSError):
                 pass
+            finally:
+                room_realtime_controller.disconnect(channel)
 
         def _send_sse_stream(
             self,
@@ -11759,6 +11732,7 @@ def _make_handler(
             except (TypeError, ValueError):
                 return default
 
+    AgentsAssembleHandler.room_realtime_controller = room_realtime_controller
     return AgentsAssembleHandler
 
 

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 import threading
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -13,6 +15,21 @@ PARTICIPANT_STATUSES = {"joined", "left", "kicked", "exported", "detached"}
 SESSION_STATUSES = {"available", "attached", "detached", "unavailable", "error"}
 ACTIVE_PARTICIPANT_STATUSES = {"joined"}
 
+_STORE_REGISTRY_LOCK = threading.RLock()
+_STORE_LOCKS: dict[str, threading.RLock] = {}
+_EVENT_LISTENERS: dict[str, list[Callable[[dict[str, object]], None]]] = {}
+_EVENT_NEXT_SEQUENCE: dict[str, int] = {}
+
+
+def _store_lock(output_root: Path) -> threading.RLock:
+    key = str(output_root.expanduser().resolve())
+    with _STORE_REGISTRY_LOCK:
+        return _STORE_LOCKS.setdefault(key, threading.RLock())
+
+
+def _event_path_key(path: Path) -> str:
+    return str(path.expanduser().resolve())
+
 
 class RoomStore:
     """Small file-backed source of truth for active room/session state."""
@@ -20,7 +37,7 @@ class RoomStore:
     def __init__(self, output_root: Path) -> None:
         self.output_root = Path(output_root)
         self.rooms_root = self.output_root / "rooms"
-        self._lock = threading.RLock()
+        self._lock = _store_lock(self.output_root)
 
     def create_room(self, room_id: str, *, label: str = "", status: str = "active") -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
@@ -190,6 +207,77 @@ class RoomStore:
             self._write_json(self._sessions_path(clean_room_id), {"sessions": sessions})
             return incoming, created
 
+    def update_session_fields(self, room_id: str, session_id: str, **updates: object) -> dict[str, object]:
+        """Update an existing session while preserving explicit empty values.
+
+        ``upsert_session`` intentionally ignores empty incoming values for legacy
+        merge callers. Runtime lifecycle transitions need the opposite behavior:
+        stopping a process must be able to clear its pid, active turn, and error.
+        """
+        clean_room_id = _clean_room_id(room_id)
+        clean_session_id = _clean_session_id(session_id)
+        with self._lock:
+            sessions = self.sessions(clean_room_id)
+            for index, session in enumerate(sessions):
+                if session.get("session_id") != clean_session_id:
+                    continue
+                updated = {**session, **updates, "updated_at": _now()}
+                if "status" in updates:
+                    updated["status"] = _session_status(updates.get("status"))
+                sessions[index] = updated
+                self._write_json(self._sessions_path(clean_room_id), {"sessions": sessions})
+                return updated
+        raise ValueError(f"Session {clean_session_id} was not found.")
+
+    def update_participant_fields(self, room_id: str, participant_id: str, **updates: object) -> dict[str, object]:
+        clean_room_id = _clean_room_id(room_id)
+        clean_participant_id = _clean_participant_id(participant_id)
+        with self._lock:
+            participants = self.participants(clean_room_id)
+            for index, participant in enumerate(participants):
+                if participant.get("participant_id") != clean_participant_id:
+                    continue
+                updated = {**participant, **updates, "updated_at": _now()}
+                if "status" in updates:
+                    updated["status"] = _participant_status(updates.get("status"))
+                participants[index] = updated
+                self._write_json(self._participants_path(clean_room_id), {"participants": participants})
+                return updated
+        raise ValueError(f"Participant {clean_participant_id} was not found.")
+
+    def command_result(self, room_id: str, request_id: str) -> dict[str, object]:
+        clean_request_id = clean_lobby_text(request_id, limit=128)
+        if not clean_request_id:
+            return {}
+        with self._lock:
+            commands = _read_json_list(self._commands_path(_clean_room_id(room_id)), "commands")
+        for command in reversed(commands):
+            if command.get("request_id") == clean_request_id and isinstance(command.get("result"), dict):
+                return dict(command["result"])
+        return {}
+
+    def record_command_result(
+        self,
+        room_id: str,
+        request_id: str,
+        result: dict[str, object],
+        *,
+        max_entries: int = 500,
+    ) -> dict[str, object]:
+        clean_room_id = _clean_room_id(room_id)
+        clean_request_id = clean_lobby_text(request_id, limit=128)
+        if not clean_request_id:
+            raise ValueError("request_id is required.")
+        with self._lock:
+            existing = self.command_result(clean_room_id, clean_request_id)
+            if existing:
+                return existing
+            commands = _read_json_list(self._commands_path(clean_room_id), "commands")
+            commands.append({"request_id": clean_request_id, "created_at": _now(), "result": dict(result)})
+            commands = commands[-max(1, int(max_entries or 500)) :]
+            self._write_json(self._commands_path(clean_room_id), {"commands": commands})
+        return dict(result)
+
     def detach_participant_sessions(self, room_id: str, participant_id: str) -> list[dict[str, object]]:
         clean_room_id = _clean_room_id(room_id)
         clean_participant_id = _clean_participant_id(participant_id)
@@ -209,38 +297,141 @@ class RoomStore:
 
     def append_event(self, room_id: str, event_type: str, **payload: object) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
-        event = {
-            "id": uuid4().hex[:12],
-            "created_at": _now(),
-            "room_id": clean_room_id,
-            "type": _clean_event_type(event_type),
-            **{key: value for key, value in payload.items() if value not in (None, "", [], {})},
-        }
         path = self._events_path(clean_room_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with self._lock, path.open("a", encoding="utf-8") as file:
-            file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+        path_key = _event_path_key(path)
+        with self._lock:
+            sequence = _next_event_sequence(path)
+            clean_payload = {
+                key: value
+                for key, value in payload.items()
+                if key not in {"v", "id", "seq", "room_id", "type", "created_at", "actor"}
+                and value not in (None, "", [], {})
+            }
+            participant_id = clean_lobby_text(
+                payload.get("participant_id") or payload.get("actor_id"),
+                limit=128,
+            )
+            participant_type = clean_lobby_text(
+                payload.get("participant_type") or payload.get("actor_type"),
+                limit=32,
+            )
+            if participant_type == "user":
+                participant_type = "human"
+            if participant_id and not participant_type:
+                participant_type = "agent" if payload.get("participant_id") else "human"
+            event = {
+                "v": 1,
+                "id": uuid4().hex[:12],
+                "seq": sequence,
+                "created_at": _now(),
+                "room_id": clean_room_id,
+                "type": _clean_event_type(event_type),
+                "actor": {
+                    "participant_id": participant_id,
+                    "participant_type": participant_type,
+                },
+                **clean_payload,
+            }
+            with path.open("a", encoding="utf-8") as file:
+                file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+            with _STORE_REGISTRY_LOCK:
+                listeners = list(_EVENT_LISTENERS.get(path_key, []))
+        for listener in listeners:
+            try:
+                listener(dict(event))
+            except Exception:
+                continue
         return event
 
-    def read_events(self, room_id: str, *, after: str = "") -> list[dict[str, object]]:
-        path = self._events_path(_clean_room_id(room_id))
+    def read_events(
+        self,
+        room_id: str,
+        *,
+        after: str = "",
+        after_seq: int = 0,
+    ) -> list[dict[str, object]]:
+        clean_room_id = _clean_room_id(room_id)
+        path = self._events_path(clean_room_id)
         if not path.exists():
             return []
-        events = []
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict):
-                events.append(event)
+        with self._lock:
+            events = _read_canonical_events(path, clean_room_id)
+        if after_seq:
+            return [event for event in events if _safe_int(event.get("seq")) > max(0, int(after_seq))]
         if after:
             for index, event in enumerate(events):
                 if str(event.get("id") or "") == after:
                     return events[index + 1 :]
         return events
+
+    def latest_event_sequence(self, room_id: str) -> int:
+        events = self.read_events(room_id)
+        return _safe_int(events[-1].get("seq")) if events else 0
+
+    def add_event_listener(
+        self,
+        room_id: str,
+        listener: Callable[[dict[str, object]], None],
+    ) -> Callable[[], None]:
+        path_key = _event_path_key(self._events_path(_clean_room_id(room_id)))
+        with _STORE_REGISTRY_LOCK:
+            _EVENT_LISTENERS.setdefault(path_key, []).append(listener)
+
+        def remove() -> None:
+            with _STORE_REGISTRY_LOCK:
+                listeners = _EVENT_LISTENERS.get(path_key, [])
+                if listener in listeners:
+                    listeners.remove(listener)
+                if not listeners:
+                    _EVENT_LISTENERS.pop(path_key, None)
+
+        return remove
+
+    def canonicalize_events(self, room_id: str) -> dict[str, object]:
+        clean_room_id = _clean_room_id(room_id)
+        path = self._events_path(clean_room_id)
+        if not path.exists():
+            return {"room_id": clean_room_id, "migrated": False, "event_count": 0, "backup_path": ""}
+        with self._lock:
+            raw_lines = path.read_text(encoding="utf-8").splitlines()
+            raw_events = _json_objects(raw_lines)
+            canonical = [
+                _canonical_event_from_record(record, clean_room_id, index)
+                for index, record in enumerate(raw_events, start=1)
+            ]
+            canonical = [event for event in canonical if event]
+            migrated = any(
+                "event_id" in record
+                or "kind" in record
+                or "id" not in record
+                or "type" not in record
+                or "seq" not in record
+                or "v" not in record
+                or "actor" not in record
+                for record in raw_events
+            )
+            backup_path = path.with_name("events.pre-unification.jsonl")
+            if migrated:
+                if not backup_path.exists():
+                    shutil.copyfile(path, backup_path)
+                tmp = path.with_suffix(path.suffix + ".tmp")
+                tmp.write_text(
+                    "".join(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n" for event in canonical),
+                    encoding="utf-8",
+                )
+                tmp.replace(path)
+            path_key = _event_path_key(path)
+            with _STORE_REGISTRY_LOCK:
+                _EVENT_NEXT_SEQUENCE[path_key] = max(
+                    [_safe_int(event.get("seq")) for event in canonical] or [0]
+                )
+        return {
+            "room_id": clean_room_id,
+            "migrated": migrated,
+            "event_count": len(canonical),
+            "backup_path": str(backup_path) if migrated else "",
+        }
 
     def attach_media(
         self,
@@ -334,6 +525,9 @@ class RoomStore:
     def _events_path(self, room_id: str) -> Path:
         return self._room_dir(room_id) / "events.jsonl"
 
+    def _commands_path(self, room_id: str) -> Path:
+        return self._room_dir(room_id) / "commands.json"
+
     def _media_dir(self, room_id: str) -> Path:
         return self._room_dir(room_id) / "media"
 
@@ -361,6 +555,122 @@ def _read_json_list(path: Path, key: str) -> list[dict[str, object]]:
     payload = _read_json_object(path)
     items = payload.get(key)
     return [dict(item) for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+
+def _json_objects(lines: list[str]) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events
+
+
+def _read_canonical_events(path: Path, room_id: str) -> list[dict[str, object]]:
+    records = _json_objects(path.read_text(encoding="utf-8").splitlines())
+    return [
+        event
+        for index, record in enumerate(records, start=1)
+        if (event := _canonical_event_from_record(record, room_id, index))
+    ]
+
+
+def _canonical_event_from_record(
+    record: dict[str, object],
+    room_id: str,
+    sequence: int,
+) -> dict[str, object]:
+    if record.get("id") and record.get("type"):
+        event = dict(record)
+        event["v"] = 1
+        event["seq"] = _safe_int(record.get("seq")) or sequence
+        event["room_id"] = clean_lobby_text(record.get("room_id"), limit=128) or room_id
+        actor = record.get("actor") if isinstance(record.get("actor"), dict) else {}
+        participant_id = clean_lobby_text(
+            actor.get("participant_id") or record.get("participant_id") or record.get("actor_id"),
+            limit=128,
+        )
+        participant_type = clean_lobby_text(
+            actor.get("participant_type") or record.get("participant_type") or record.get("actor_type"),
+            limit=32,
+        )
+        if participant_type == "user":
+            participant_type = "human"
+        if participant_id and not participant_type:
+            participant_type = "agent" if record.get("participant_id") else "human"
+        event["actor"] = {
+            "participant_id": participant_id,
+            "participant_type": participant_type,
+        }
+        return event
+
+    legacy_id = clean_lobby_text(record.get("event_id"), limit=128)
+    legacy_kind = clean_lobby_text(record.get("kind"), limit=64)
+    if not legacy_id or not legacy_kind:
+        return {}
+    event_type = {
+        "user_message": "message_final",
+        "agent_message": "message_final",
+        "agent_delta": "message_delta",
+        "agent_error": "error",
+        "agent_input": "agent_input",
+        "system": "system",
+    }.get(legacy_kind, legacy_kind)
+    participant_id = clean_lobby_text(record.get("actor_id"), limit=128)
+    participant_type = clean_lobby_text(record.get("actor_type"), limit=32)
+    if participant_type == "user":
+        participant_type = "human"
+    metadata = dict(record.get("metadata")) if isinstance(record.get("metadata"), dict) else {}
+    event: dict[str, object] = {
+        "v": 1,
+        "id": legacy_id,
+        "seq": sequence,
+        "created_at": clean_lobby_text(record.get("created_at"), limit=128) or _now(),
+        "room_id": clean_lobby_text(record.get("room_id"), limit=128) or room_id,
+        "type": event_type,
+        "actor": {
+            "participant_id": participant_id,
+            "participant_type": participant_type or ("agent" if legacy_kind.startswith("agent_") else "human"),
+        },
+        "actor_id": participant_id,
+        "actor_type": participant_type or ("agent" if legacy_kind.startswith("agent_") else "human"),
+        "content": clean_lobby_text(record.get("content"), limit=12000),
+    }
+    if metadata:
+        event["metadata"] = metadata
+        source_event_id = clean_lobby_text(metadata.get("source_event_id"), limit=128)
+        if source_event_id:
+            event["source_event_id"] = source_event_id
+    return {key: value for key, value in event.items() if value not in (None, "", [], {})}
+
+
+def _next_event_sequence(path: Path) -> int:
+    path_key = _event_path_key(path)
+    with _STORE_REGISTRY_LOCK:
+        current = _EVENT_NEXT_SEQUENCE.get(path_key)
+    if current is None:
+        current = 0
+        if path.exists():
+            records = _json_objects(path.read_text(encoding="utf-8").splitlines())
+            current = max(
+                [_safe_int(record.get("seq")) or index for index, record in enumerate(records, start=1)] or [0]
+            )
+    next_sequence = current + 1
+    with _STORE_REGISTRY_LOCK:
+        _EVENT_NEXT_SEQUENCE[path_key] = next_sequence
+    return next_sequence
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _clean_room_id(value: object) -> str:

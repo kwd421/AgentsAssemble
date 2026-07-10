@@ -275,7 +275,7 @@ class AgentSessionCliTests(unittest.TestCase):
         )
 
         stdout = StringIO()
-        with patch("sys.stdout", stdout), patch("agentsassemble.cli.run_live_cli_smoke") as smoke_runner:
+        with patch("sys.stdout", stdout), patch("agentsassemble.cli.run_room_native_cli_smoke") as smoke_runner:
             smoke_runner.return_value = {
                 "status": "ok",
                 "providers": [{"agent_id": "codex", "status": "ok"}],

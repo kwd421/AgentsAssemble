@@ -57,7 +57,8 @@ from agentsassemble.live_agent_continuity_proof import (
     run_live_agent_continuity_proof,
     run_live_agent_continuity_proof_batch,
 )
-from agentsassemble.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG, run_live_cli_smoke
+from agentsassemble.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG
+from agentsassemble.room_native_cli_smoke import run_room_native_cli_smoke
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.lobby_promotion import promote_lobby_events_to_official
@@ -8464,7 +8465,7 @@ def run_room_command(args: argparse.Namespace) -> int:
             if provider.strip()
         ]
         if live_cli_providers:
-            payload = run_live_cli_smoke(
+            payload = run_room_native_cli_smoke(
                 config_path=getattr(args, "config", str(DEFAULT_LIVE_CLI_SMOKE_CONFIG)),
                 providers=live_cli_providers,
                 approve_real_provider=bool(args.approve_real_provider),

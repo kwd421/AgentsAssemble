@@ -7,6 +7,7 @@ from pathlib import Path
 from agentsassemble.live_cli import LiveCliRuntime, live_cli_supported
 from agentsassemble.live_cli_transcripts import (
     AntigravityTranscriptMessageSource,
+    ClaudeSessionMessageSource,
     CodexSessionMessageSource,
     GrokSessionMessageSource,
     LiveCliMessageExtractionError,
@@ -36,6 +37,10 @@ class _StaticMessageSource:
         return {"message_source": "test"}
 
 
+class _WaitingStaticMessageSource(_StaticMessageSource):
+    fail_on_quiet_without_message = False
+
+
 def _noisy_cli_script() -> str:
     return "\n".join(
         [
@@ -50,6 +55,92 @@ def _noisy_cli_script() -> str:
 
 
 class TranscriptMessageSourceTests(unittest.TestCase):
+    def test_claude_source_reads_only_assistant_text_from_current_workspace_session(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            project = root / ".claude" / "projects" / str(workspace).replace("/", "-")
+            project.mkdir(parents=True)
+            existing = project / "existing.jsonl"
+            existing.write_text(
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {"role": "assistant", "content": [{"type": "text", "text": "old answer"}]},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            source = ClaudeSessionMessageSource(home=root, cwd=workspace)
+            source.prepare_start()
+            source.begin_turn()
+            current = project / "current.jsonl"
+            current.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "user", "message": {"role": "user", "content": "hello"}}),
+                        json.dumps(
+                            {
+                                "type": "assistant",
+                                "message": {
+                                    "role": "assistant",
+                                    "content": [
+                                        {"type": "thinking", "thinking": "private reasoning"},
+                                        {"type": "tool_use", "name": "Read", "input": {"path": "/tmp/noise"}},
+                                        {"type": "text", "text": "clean claude answer"},
+                                    ],
+                                },
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            snapshot = source.poll(b"Claude TUI chrome", quiet=True)
+
+        self.assertTrue(snapshot.complete)
+        self.assertEqual(snapshot.content, "clean claude answer")
+        self.assertEqual(snapshot.source_kind, "claude_session_jsonl")
+
+    def test_claude_source_reports_api_error_instead_of_exposing_it_as_room_message(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            project = root / ".claude" / "projects" / str(workspace).replace("/", "-")
+            project.mkdir(parents=True)
+            source = ClaudeSessionMessageSource(home=root, cwd=workspace)
+            source.prepare_start()
+            source.begin_turn()
+            (project / "current.jsonl").write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "user", "message": {"role": "user", "content": "hello"}}),
+                        json.dumps(
+                            {
+                                "type": "assistant",
+                                "isApiErrorMessage": True,
+                                "error": "authentication_failed",
+                                "apiErrorStatus": 401,
+                                "message": {
+                                    "role": "assistant",
+                                    "content": [{"type": "text", "text": "API Error: 401 Invalid authentication credentials"}],
+                                },
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(LiveCliMessageExtractionError, "401 Invalid authentication"):
+                source.poll(b"", quiet=True)
+
     def test_codex_source_reads_final_answer_from_session_jsonl(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -134,6 +225,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                 "\n".join(
                     [
                         json.dumps({"type": "session_meta", "payload": {"cwd": str(workspace)}}),
+                        json.dumps({"type": "event_msg", "payload": {"type": "user_message", "message": "hi"}}),
                         json.dumps(
                             {
                                 "type": "event_msg",
@@ -153,6 +245,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                 "\n".join(
                     [
                         json.dumps({"type": "session_meta", "payload": {"cwd": str(workspace)}}),
+                        json.dumps({"type": "event_msg", "payload": {"type": "user_message", "message": "hi"}}),
                         json.dumps(
                             {
                                 "type": "event_msg",
@@ -182,6 +275,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
             history.write_text(
                 "\n".join(
                     [
+                        json.dumps({"type": "user", "content": "hello"}),
                         json.dumps({"type": "reasoning", "summary": [{"text": "do not show as message"}]}),
                         json.dumps({"type": "assistant", "content": "clean grok answer"}),
                     ]
@@ -236,6 +330,47 @@ class TranscriptMessageSourceTests(unittest.TestCase):
 
         self.assertTrue(snapshot.complete)
         self.assertEqual(snapshot.content, "clean antigravity answer")
+
+    def test_codex_source_ignores_late_previous_completion_until_next_user_input(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            session_dir = root / ".codex" / "sessions" / "2026" / "07" / "10"
+            session_dir.mkdir(parents=True)
+            session = session_dir / "rollout-current.jsonl"
+            source = CodexSessionMessageSource(home=root, cwd=workspace)
+            source.prepare_start()
+            source.begin_turn()
+            session.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "session_meta", "payload": {"cwd": str(workspace)}}),
+                        json.dumps({"type": "event_msg", "payload": {"type": "user_message", "message": "first"}}),
+                        json.dumps({"type": "event_msg", "payload": {"type": "agent_message", "message": "first answer"}}),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            first = source.poll(b"", quiet=True)
+            source.begin_turn()
+            with session.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {"type": "event_msg", "payload": {"type": "task_complete", "last_agent_message": "first answer"}}
+                    )
+                    + "\n"
+                )
+            stale = source.poll(b"", quiet=True)
+            with session.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"type": "event_msg", "payload": {"type": "user_message", "message": "second"}}) + "\n")
+                handle.write(json.dumps({"type": "event_msg", "payload": {"type": "agent_message", "message": "second answer"}}) + "\n")
+            second = source.poll(b"", quiet=True)
+
+        self.assertEqual(first.content, "first answer")
+        self.assertFalse(stale.complete)
+        self.assertEqual(second.content, "second answer")
 
     def test_antigravity_source_ignores_model_tool_result_content(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -327,3 +462,33 @@ class LiveCliRuntimeExtractionTests(unittest.TestCase):
                 runtime.read_output(timeout_seconds=2)
         finally:
             runtime.stop()
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_live_cli_runtime_reports_terminal_auth_failure_without_using_it_as_chat(self):
+        script = "\n".join(
+            [
+                "import sys",
+                "for line in sys.stdin:",
+                "    if line.strip():",
+                "        print('Please run /login - API Error: 401 Invalid authentication credentials', flush=True)",
+            ]
+        )
+        runtime = LiveCliRuntime(
+            "claude",
+            [sys.executable, "-u", "-c", script],
+            idle_quiet_seconds=0.05,
+            message_source=_WaitingStaticMessageSource(""),
+        )
+        try:
+            runtime.send("hello")
+            with self.assertRaisesRegex(LiveCliMessageExtractionError, "authentication failed"):
+                runtime.read_output(timeout_seconds=2)
+            health = runtime.health()
+        finally:
+            runtime.stop()
+
+        self.assertGreater(health["terminal_byte_count"], 0)
+        self.assertEqual(
+            health["terminal_tail"],
+            "Provider authentication failed: run the provider's interactive login command.",
+        )

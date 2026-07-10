@@ -8,6 +8,7 @@ from agentsassemble.ws_room_session import (
     WsRoomDeps,
     WsRoomSession,
     WsSayRejected,
+    WsCommandRejected,
     WsTicketStore,
 )
 
@@ -76,6 +77,17 @@ class FakeDeps:
         self.session_active = True
         self.posted = []
         self.statuses = []             # (identity, status) from set_status
+        self.room_snapshot = {
+            "room": {"room_id": "room-1"},
+            "participants": [],
+            "agent_sessions": [],
+            "active_turns": [],
+            "events": [{"id": "canonical-1", "seq": 1, "type": "message_final"}],
+            "last_seq": 1,
+            "capabilities": {"message.send": True},
+        }
+        self.commands = []
+        self.subscriptions = []
 
     def make(self):
         return WsRoomDeps(
@@ -86,6 +98,9 @@ class FakeDeps:
             is_muted=lambda meeting_id, agent_id: self.muted,
             set_thinking=lambda identity, on: self.statuses.append((identity, on)),
             is_session_active=lambda session_token: self.session_active,
+            room_snapshot=lambda identity, after_seq: {**self.room_snapshot, "after_seq": after_seq},
+            execute_command=self._execute_command,
+            on_subscribe=lambda identity, streams, after_seq: self.subscriptions.append((identity, streams, after_seq)),
         )
 
     def _read_lobby_after(self, meeting_id, after):
@@ -97,6 +112,17 @@ class FakeDeps:
         event = {"id": "evt1", "message": payload["message"], "actor_id": identity["agent_id"]}
         self.posted.append((identity, payload))
         return event
+
+    def _execute_command(self, identity, message):
+        self.commands.append((identity, message))
+        if message.get("action") == "reject":
+            raise WsCommandRejected("no", code="permission_denied")
+        return {
+            "op": "ack",
+            "request_id": message.get("request_id"),
+            "accepted": True,
+            "action": message.get("action"),
+        }
 
 
 def _session(deps, *, session_token="", **identity_over):
@@ -114,6 +140,24 @@ def _session(deps, *, session_token="", **identity_over):
 
 
 class SubscribeTests(unittest.TestCase):
+    def test_room_events_subscription_returns_canonical_snapshot_and_resume_sequence(self):
+        deps = FakeDeps()
+        sess = _session(deps)
+
+        msgs = text_messages(
+            sess.handle_frame(
+                OP_TEXT,
+                json.dumps({"op": "subscribe", "streams": ["room_events"], "resume_from_seq": 7}).encode(),
+            )
+        )
+
+        self.assertEqual(msgs[0], {"op": "subscribed", "streams": ["room_events"]})
+        self.assertEqual(msgs[1]["op"], "snapshot")
+        self.assertEqual(msgs[1]["stream"], "room_events")
+        self.assertEqual(msgs[1]["events"][0]["seq"], 1)
+        self.assertEqual(msgs[1]["after_seq"], 7)
+        self.assertEqual(deps.subscriptions[0][1], {"room_events"})
+
     def test_subscribe_acks_and_pushes_snapshot(self):
         deps = FakeDeps()
         deps.lobby_queue = [{"id": "e1", "message": "hi"}]
@@ -257,6 +301,41 @@ class ThinkingTests(unittest.TestCase):
 
 
 class ControlAndMiscTests(unittest.TestCase):
+    def test_correlated_command_returns_ack(self):
+        deps = FakeDeps()
+        sess = _session(deps)
+        msgs = text_messages(
+            sess.handle_frame(
+                OP_TEXT,
+                json.dumps(
+                    {
+                        "op": "command",
+                        "request_id": "req-1",
+                        "action": "message.send",
+                        "payload": {"content": "hello"},
+                    }
+                ).encode(),
+            )
+        )
+
+        self.assertEqual(msgs[0]["op"], "ack")
+        self.assertEqual(msgs[0]["request_id"], "req-1")
+        self.assertEqual(deps.commands[0][0]["agent_id"], "guest-1")
+
+    def test_rejected_command_returns_correlated_nack(self):
+        deps = FakeDeps()
+        sess = _session(deps)
+        msgs = text_messages(
+            sess.handle_frame(
+                OP_TEXT,
+                json.dumps({"op": "command", "request_id": "req-2", "action": "reject", "payload": {}}).encode(),
+            )
+        )
+
+        self.assertEqual(msgs[0]["op"], "nack")
+        self.assertEqual(msgs[0]["request_id"], "req-2")
+        self.assertEqual(msgs[0]["error"]["code"], "permission_denied")
+
     def test_ping_returns_pong(self):
         sess = _session(FakeDeps())
         frames = sess.handle_frame(OP_PING, b"abc")

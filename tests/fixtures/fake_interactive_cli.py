@@ -1,0 +1,40 @@
+from __future__ import annotations
+
+import os
+import re
+import sys
+import tty
+
+
+START = b"\x1b[200~"
+END = b"\x1b[201~"
+
+
+def main() -> int:
+    tty.setraw(sys.stdin.fileno())
+    os.write(sys.stdout.fileno(), b"FAKE_CLI_READY\n")
+    buffer = b""
+    marker = ""
+    turn = 0
+    while True:
+        chunk = os.read(sys.stdin.fileno(), 4096)
+        if not chunk:
+            return 0
+        buffer += chunk
+        while START in buffer:
+            _prefix, _, after_start = buffer.partition(START)
+            if END not in after_start:
+                break
+            payload, _, buffer = after_start.partition(END)
+            buffer = buffer.lstrip(b"\r\n")
+            text = payload.decode("utf-8", errors="replace")
+            found = re.search(r"AGENTSASSEMBLE_SESSION_MARKER=([A-Za-z0-9_.-]+)", text)
+            if found:
+                marker = found.group(1)
+            turn += 1
+            response = f"fake reply {turn}; marker={marker}; pid={os.getpid()}\n"
+            os.write(sys.stdout.fileno(), response.encode("utf-8"))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

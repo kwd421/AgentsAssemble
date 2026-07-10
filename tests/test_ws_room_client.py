@@ -20,7 +20,7 @@ from agentsassemble.room_websocket import (
     encode_text,
     parse_frame,
 )
-from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws, join_room_session
+from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws, connect_room_ws_with_ticket, join_room_session
 
 
 class FakeSocket:
@@ -110,6 +110,21 @@ class SendUnitTests(unittest.TestCase):
         client, sock = self._opened()
         client.say("hello", kind="message")
         self.assertEqual(sock.sent_messages()[-1], {"op": "say", "message": "hello", "kind": "message"})
+
+    def test_command_sends_correlated_room_command(self):
+        client, sock = self._opened()
+        request_id = client.command("message.send", {"content": "hello"}, request_id="req-1")
+
+        self.assertEqual(request_id, "req-1")
+        self.assertEqual(
+            sock.sent_messages()[-1],
+            {
+                "op": "command",
+                "request_id": "req-1",
+                "action": "message.send",
+                "payload": {"content": "hello"},
+            },
+        )
 
     def test_say_can_wait_for_ack(self):
         client, sock = self._opened()
@@ -224,6 +239,20 @@ class LiveRoundTripTests(unittest.TestCase):
 
 
 class ConnectRoomWsTests(unittest.TestCase):
+    def test_connect_with_internal_ticket_uses_same_ws_endpoint(self):
+        sock = FakeSocket()
+        with patch("agentsassemble.ws_room_client.socket_module.create_connection", return_value=sock):
+            client = connect_room_ws_with_ticket(
+                "http://room.example",
+                "internal-ticket",
+                ["room_events"],
+            )
+        try:
+            self.assertIn(b"GET /ws?ticket=internal-ticket HTTP/1.1", sock.sent)
+            self.assertEqual(sock.sent_messages()[-1], {"op": "subscribe", "streams": ["room_events"]})
+        finally:
+            client.close()
+
     def test_https_room_wraps_socket_with_tls(self):
         sock = FakeSocket()
 

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 import os
-import re
 import signal
 import shutil
 import subprocess
@@ -11,11 +9,9 @@ import time
 import fcntl
 import struct
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
-from uuid import uuid4
 
 from agentsassemble.live_cli_output import extract_live_cli_terminal_message, strip_terminal_ansi
 from agentsassemble.live_cli_transcripts import (
@@ -43,13 +39,15 @@ except ImportError:  # pragma: no cover - host dependent
 
 
 GENERAL_ROOM_ID = "general"
-LIVE_CLI_EVENT_KINDS = {
-    "user_message",
-    "agent_input",
-    "agent_delta",
-    "agent_message",
-    "agent_error",
-    "system",
+PARENT_AGENT_SESSION_ENV_KEYS = {
+    "CLAUDECODE",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_SESSION_ID",
+    "CODEX_CI",
+    "CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
+    "CODEX_PERMISSION_PROFILE",
+    "CODEX_SHELL",
+    "CODEX_THREAD_ID",
 }
 
 
@@ -80,170 +78,6 @@ class AgentRuntime(Protocol):
         ...
 
 
-class GeneralRoomEventStore:
-    """Append-only #general event log for the CLI-first MVP."""
-
-    def __init__(self, output_root: str | Path, *, room_id: str = GENERAL_ROOM_ID) -> None:
-        clean_room_id = clean_lobby_text(room_id, limit=128) or GENERAL_ROOM_ID
-        if clean_room_id in {".", ".."} or "/" in clean_room_id or "\\" in clean_room_id:
-            raise ValueError("room_id is invalid.")
-        self.output_root = Path(output_root)
-        self.room_id = clean_room_id
-        self._lock = threading.RLock()
-        self._listeners: list[Callable[[dict[str, object]], None]] = []
-        self.events_path.parent.mkdir(parents=True, exist_ok=True)
-
-    @property
-    def events_path(self) -> Path:
-        return self.output_root / "rooms" / self.room_id / "events.jsonl"
-
-    def append_user_message(
-        self,
-        actor_id: str,
-        content: str,
-        *,
-        metadata: dict[str, object] | None = None,
-    ) -> dict[str, object]:
-        return self.append_event("user_message", actor_id=actor_id, actor_type="user", content=content, metadata=metadata)
-
-    def append_agent_input(
-        self,
-        agent_id: str,
-        content: str,
-        *,
-        source_event_id: str,
-        metadata: dict[str, object] | None = None,
-    ) -> dict[str, object]:
-        return self.append_event(
-            "agent_input",
-            actor_id=agent_id,
-            actor_type="agent",
-            content=content,
-            metadata={"source_event_id": source_event_id, **dict(metadata or {})},
-        )
-
-    def append_agent_delta(
-        self,
-        agent_id: str,
-        content: str,
-        *,
-        source_event_id: str,
-        metadata: dict[str, object] | None = None,
-    ) -> dict[str, object]:
-        return self.append_event(
-            "agent_delta",
-            actor_id=agent_id,
-            actor_type="agent",
-            content=content,
-            metadata={"source_event_id": source_event_id, **dict(metadata or {})},
-        )
-
-    def append_agent_message(
-        self,
-        agent_id: str,
-        content: str,
-        *,
-        source_event_id: str,
-        relay_depth: int = 0,
-        metadata: dict[str, object] | None = None,
-    ) -> dict[str, object]:
-        return self.append_event(
-            "agent_message",
-            actor_id=agent_id,
-            actor_type="agent",
-            content=content,
-            metadata={
-                "source_event_id": source_event_id,
-                "relay_depth": max(0, int(relay_depth or 0)),
-                **dict(metadata or {}),
-            },
-        )
-
-    def append_agent_error(
-        self,
-        agent_id: str,
-        message: str,
-        *,
-        source_event_id: str = "",
-        metadata: dict[str, object] | None = None,
-    ) -> dict[str, object]:
-        return self.append_event(
-            "agent_error",
-            actor_id=agent_id,
-            actor_type="agent",
-            content=message,
-            metadata={"source_event_id": source_event_id, **dict(metadata or {})},
-        )
-
-    def append_system(self, message: str) -> dict[str, object]:
-        return self.append_event("system", actor_id="system", actor_type="system", content=message)
-
-    def add_listener(self, listener: Callable[[dict[str, object]], None]) -> None:
-        with self._lock:
-            self._listeners.append(listener)
-
-    def append_event(
-        self,
-        kind: str,
-        *,
-        actor_id: str,
-        actor_type: str,
-        content: str,
-        metadata: dict[str, object] | None = None,
-        **extra: object,
-    ) -> dict[str, object]:
-        clean_kind = clean_lobby_text(kind, limit=64)
-        if clean_kind not in LIVE_CLI_EVENT_KINDS:
-            raise ValueError(f"Unsupported #general event kind: {kind}")
-        event = {
-            "event_id": uuid4().hex[:12],
-            "created_at": datetime.now(UTC).isoformat(),
-            "room_id": self.room_id,
-            "actor_id": clean_lobby_text(actor_id, limit=128),
-            "actor_type": clean_lobby_text(actor_type, limit=32),
-            "kind": clean_kind,
-            "content": clean_lobby_text(content, limit=12000),
-            "metadata": _clean_metadata({**dict(metadata or {}), **extra}),
-        }
-        with self._lock:
-            with self.events_path.open("a", encoding="utf-8") as file:
-                file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
-            listeners = list(self._listeners)
-        for listener in listeners:
-            try:
-                listener(dict(event))
-            except Exception:
-                continue
-        return event
-
-    def read_events(self, *, after: str = "") -> list[dict[str, object]]:
-        if not self.events_path.exists():
-            return []
-        events: list[dict[str, object]] = []
-        for line in self.events_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict):
-                events.append(event)
-        clean_after = clean_lobby_text(after, limit=128)
-        if not clean_after:
-            return events
-        for index, event in enumerate(events):
-            if str(event.get("event_id") or "") == clean_after:
-                return events[index + 1 :]
-        return events
-
-    def latest_event_id(self) -> str:
-        events = self.read_events()
-        if not events:
-            return ""
-        return clean_lobby_text(events[-1].get("event_id"), limit=128)
-
-
 class LiveCliRuntime:
     """Persistent PTY-backed runtime for one local interactive CLI."""
 
@@ -257,11 +91,14 @@ class LiveCliRuntime:
         popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
         idle_quiet_seconds: float = 0.35,
         submit_newline: str = "\n",
+        submit_delay_seconds: float = 0.1,
         input_mode: str = "line",
         terminal_rows: int = 40,
         terminal_columns: int = 120,
         startup_quiet_seconds: float = 0.0,
         startup_timeout_seconds: float = 0.0,
+        startup_accept_contains: str = "",
+        startup_accept_keys: str = "\r",
         max_output_bytes: int = 256_000,
         message_source: LiveCliMessageSource | None = None,
     ) -> None:
@@ -276,6 +113,7 @@ class LiveCliRuntime:
         self._popen_factory = popen_factory
         self.idle_quiet_seconds = max(0.01, float(idle_quiet_seconds))
         self.submit_newline = submit_newline or "\n"
+        self.submit_delay_seconds = max(0.0, float(submit_delay_seconds or 0.0))
         self.input_mode = clean_lobby_text(input_mode, limit=64) or "line"
         if self.input_mode not in {"line", "bracketed_paste"}:
             raise ValueError("input_mode must be line or bracketed_paste.")
@@ -283,6 +121,8 @@ class LiveCliRuntime:
         self.terminal_columns = max(40, int(terminal_columns or 120))
         self.startup_quiet_seconds = max(0.0, float(startup_quiet_seconds or 0.0))
         self.startup_timeout_seconds = max(0.0, float(startup_timeout_seconds or 0.0))
+        self.startup_accept_contains = str(startup_accept_contains or "")
+        self.startup_accept_keys = str(startup_accept_keys or "\r")
         self.max_output_bytes = max(1, int(max_output_bytes))
         self._message_source = message_source or make_live_cli_message_source(
             self.agent_id,
@@ -299,6 +139,8 @@ class LiveCliRuntime:
         self._stopped_at = ""
         self._resolved_executable = ""
         self._startup_drained = False
+        self._terminal_byte_count = 0
+        self._terminal_tail = bytearray()
 
     def start(self) -> dict[str, object]:
         with self._lock:
@@ -319,6 +161,8 @@ class LiveCliRuntime:
                 _configure_slave_terminal(slave_fd, rows=self.terminal_rows, columns=self.terminal_columns)
                 process_env = os.environ.copy()
                 process_env.update(self.env)
+                for key in PARENT_AGENT_SESSION_ENV_KEYS:
+                    process_env.pop(key, None)
                 if not process_env.get("TERM") or process_env.get("TERM") == "dumb":
                     process_env["TERM"] = "xterm-256color"
                 process_env.setdefault("COLORTERM", "truecolor")
@@ -349,6 +193,8 @@ class LiveCliRuntime:
             self._started_at = _now_iso()
             self._stopped_at = ""
             self._startup_drained = False
+            self._terminal_byte_count = 0
+            self._terminal_tail = bytearray()
             return self.health()
 
     def deliver(self, events: list[dict[str, object]]) -> None:
@@ -367,6 +213,9 @@ class LiveCliRuntime:
 
     def send(self, text: str) -> None:
         self.start()
+        self._drain_startup_output()
+        self._message_source.begin_turn()
+        self._message_turn_started = True
         self._send_line(text)
 
     def send_keys(self, sequence: str) -> None:
@@ -439,7 +288,11 @@ class LiveCliRuntime:
                 continue
             chunks.append(chunk)
             total_bytes += len(chunk)
+            self._record_terminal_bytes(chunk)
             last_read_at = time.monotonic()
+            terminal_error = _terminal_fatal_error(bytes(self._terminal_tail))
+            if terminal_error and getattr(self._message_source, "strict", False):
+                raise LiveCliMessageExtractionError(terminal_error)
             final_snapshot = self._poll_message_source(
                 b"".join(chunks),
                 quiet=False,
@@ -470,6 +323,7 @@ class LiveCliRuntime:
                 break
             chunks.append(chunk)
             total_bytes += len(chunk)
+            self._record_terminal_bytes(chunk)
             if total_bytes > self.max_output_bytes:
                 raise ValueError(f"Live CLI output exceeded {self.max_output_bytes} bytes.")
         return self._output_message(b"".join(chunks), message_only=False)
@@ -505,6 +359,8 @@ class LiveCliRuntime:
             started_at = self._started_at
             stopped_at = self._stopped_at
             resolved_executable = self._resolved_executable or _resolve_executable(self.command)
+            terminal_byte_count = self._terminal_byte_count
+            terminal_tail = _terminal_diagnostic_tail(bytes(self._terminal_tail))
         returncode = process.poll() if process is not None else None
         running = process is not None and returncode is None
         return {
@@ -520,10 +376,15 @@ class LiveCliRuntime:
             "transport": "pty",
             "is_one_shot": False,
             "input_mode": self.input_mode,
+            "submit_delay_seconds": self.submit_delay_seconds,
             "terminal_rows": self.terminal_rows,
             "terminal_columns": self.terminal_columns,
             "startup_quiet_seconds": self.startup_quiet_seconds,
             "startup_timeout_seconds": self.startup_timeout_seconds,
+            "startup_accept_configured": bool(self.startup_accept_contains),
+            "parent_agent_session_env_removed": sorted(PARENT_AGENT_SESSION_ENV_KEYS),
+            "terminal_byte_count": terminal_byte_count,
+            "terminal_tail": terminal_tail,
             **self._message_source.describe(),
             "running": running,
             "stopped": not running,
@@ -539,19 +400,22 @@ class LiveCliRuntime:
         process, fd = self._state_snapshot()
         del process
         payload = str(text or "")
-        data = _terminal_input_bytes(payload, input_mode=self.input_mode, submit_newline=self.submit_newline)
-        offset = 0
-        while offset < len(data):
-            writable = _select_writable(fd, 5.0)
-            if not writable:
-                raise TimeoutError("Timed out writing to Live CLI runtime.")
-            try:
-                written = os.write(fd, data[offset:])
-            except OSError as error:
-                raise RuntimeError("Live CLI runtime closed while writing.") from error
-            if written <= 0:
-                raise RuntimeError("Live CLI runtime closed while writing.")
-            offset += written
+        chunks = _terminal_input_chunks(payload, input_mode=self.input_mode, submit_newline=self.submit_newline)
+        for index, data in enumerate(chunks):
+            if index and self.submit_delay_seconds:
+                time.sleep(self.submit_delay_seconds)
+            offset = 0
+            while offset < len(data):
+                writable = _select_writable(fd, 5.0)
+                if not writable:
+                    raise TimeoutError("Timed out writing to Live CLI runtime.")
+                try:
+                    written = os.write(fd, data[offset:])
+                except OSError as error:
+                    raise RuntimeError("Live CLI runtime closed while writing.") from error
+                if written <= 0:
+                    raise RuntimeError("Live CLI runtime closed while writing.")
+                offset += written
 
     def _output_message(self, response: bytes, *, message_only: bool = True) -> dict[str, object]:
         return {
@@ -616,20 +480,44 @@ class LiveCliRuntime:
         process, fd = self._state_snapshot()
         deadline = time.monotonic() + self.startup_timeout_seconds
         last_read_at: float | None = None
+        startup_output = bytearray()
+        startup_accepted = False
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError(f"Live CLI runtime exited with return code {process.returncode}.")
             readable = _select_readable(fd, 0.1)
             now = time.monotonic()
             if readable:
-                _read_chunk(fd, process)
+                chunk = _read_chunk(fd, process)
+                if chunk:
+                    startup_output.extend(chunk)
+                    self._record_terminal_bytes(chunk)
+                    if len(startup_output) > 64_000:
+                        del startup_output[:-64_000]
                 last_read_at = now
+                if (
+                    not startup_accepted
+                    and self.startup_accept_contains
+                    and self.startup_accept_contains.casefold()
+                    in _clean_terminal_text(bytes(startup_output)).casefold()
+                ):
+                    os.write(fd, self.startup_accept_keys.encode("utf-8"))
+                    startup_accepted = True
                 continue
             if last_read_at is None:
                 continue
             if self.startup_quiet_seconds <= 0 or now - last_read_at >= self.startup_quiet_seconds:
                 break
         self._startup_drained = True
+
+    def _record_terminal_bytes(self, chunk: bytes) -> None:
+        if not chunk:
+            return
+        with self._lock:
+            self._terminal_byte_count += len(chunk)
+            self._terminal_tail.extend(chunk)
+            if len(self._terminal_tail) > 32_000:
+                del self._terminal_tail[:-32_000]
 
     def _fd_is_current(self, fd: int) -> bool:
         with self._lock:
@@ -690,245 +578,6 @@ class ApiRuntime:
         }
 
 
-@dataclass
-class AgentRuntimeBinding:
-    agent_id: str
-    runtime: AgentRuntime
-    default_responder: bool = True
-
-
-class RoomScheduler:
-    """Server-side router from #general events to persistent runtimes."""
-
-    def __init__(
-        self,
-        room: GeneralRoomEventStore,
-        agents: list[AgentRuntimeBinding],
-        *,
-        read_timeout_seconds: float = 120.0,
-        max_agent_relay_depth: int = 1,
-        max_replies_per_source: int = 1,
-        agent_cooldown_seconds: float = 0.0,
-        agent_state_listener: Callable[[str, dict[str, object]], None] | None = None,
-        latency_listener: Callable[[str, dict[str, object]], None] | None = None,
-    ) -> None:
-        self.room = room
-        self.agents = {clean_lobby_text(agent.agent_id, limit=128): agent for agent in agents}
-        self.read_timeout_seconds = max(0.1, float(read_timeout_seconds))
-        self.max_agent_relay_depth = max(0, int(max_agent_relay_depth))
-        self.max_replies_per_source = max(1, int(max_replies_per_source))
-        self.agent_cooldown_seconds = max(0.0, float(agent_cooldown_seconds))
-        self._lock = threading.RLock()
-        self._busy: set[str] = set()
-        self._threads: list[threading.Thread] = []
-        self._last_reply_at: dict[str, float] = {}
-        self._reply_counts: dict[tuple[str, str], int] = {}
-        self._last_input_event_id: dict[str, str] = {}
-        self._last_output_event_id: dict[str, str] = {}
-        self._turn_counts: dict[str, int] = {}
-        self._last_errors: dict[str, str] = {}
-        self._latencies: dict[str, dict[str, object]] = {}
-        self.agent_state_listener = agent_state_listener
-        self.latency_listener = latency_listener
-
-    def dispatch_new_events(self) -> list[dict[str, object]]:
-        dispatched: list[dict[str, object]] = []
-        started_agents: list[str] = []
-        with self._lock:
-            for agent_id, binding in self.agents.items():
-                if agent_id in self._busy:
-                    continue
-                event = self._next_actionable_event(binding)
-                if event is None:
-                    continue
-                source_event_id = clean_lobby_text(event.get("event_id"), limit=128)
-                if not self._reserve_reply(agent_id, source_event_id):
-                    continue
-                self._busy.add(agent_id)
-                thread = threading.Thread(target=self._run_agent_event, args=(binding, event), daemon=True)
-                self._threads.append(thread)
-                dispatched.append(event)
-                thread.start()
-                started_agents.append(agent_id)
-        for agent_id in started_agents:
-            self._notify_agent_state(agent_id)
-        return dispatched
-
-    def wait_for_idle(self, *, timeout_seconds: float) -> bool:
-        deadline = time.monotonic() + max(0.0, float(timeout_seconds))
-        while True:
-            with self._lock:
-                threads = list(self._threads)
-            for thread in threads:
-                remaining = max(0.0, deadline - time.monotonic())
-                thread.join(timeout=min(0.05, remaining))
-            with self._lock:
-                self._threads = [thread for thread in self._threads if thread.is_alive()]
-                if not self._busy and not self._threads:
-                    return True
-            if time.monotonic() >= deadline:
-                return False
-
-    def stop_all(self) -> None:
-        for binding in self.agents.values():
-            binding.runtime.stop()
-        self.wait_for_idle(timeout_seconds=1.0)
-
-    def agent_statuses(self) -> dict[str, dict[str, object]]:
-        with self._lock:
-            busy = set(self._busy)
-        statuses: dict[str, dict[str, object]] = {}
-        for agent_id, binding in self.agents.items():
-            health = binding.runtime.health()
-            last_error = self._last_errors.get(agent_id, "")
-            if agent_id in busy:
-                status = "busy"
-            elif last_error and not health.get("running"):
-                status = "error"
-            elif health.get("running"):
-                status = "idle"
-            else:
-                status = "stopped"
-            health["status"] = status
-            health["last_input_event_id"] = self._last_input_event_id.get(agent_id, "")
-            health["last_output_event_id"] = self._last_output_event_id.get(agent_id, "")
-            health["turn_count"] = self._turn_counts.get(agent_id, 0)
-            health["last_error"] = last_error or str(health.get("last_error") or "")
-            health["latency"] = dict(self._latencies.get(agent_id, {}))
-            statuses[agent_id] = health
-        return statuses
-
-    def latency_payload(self) -> dict[str, dict[str, object]]:
-        with self._lock:
-            return {agent_id: dict(latency) for agent_id, latency in self._latencies.items()}
-
-    def _notify_agent_state(self, agent_id: str) -> None:
-        if self.agent_state_listener is None:
-            return
-        try:
-            self.agent_state_listener(agent_id, dict(self.agent_statuses().get(agent_id, {})))
-        except Exception:
-            return
-
-    def _notify_latency(self, agent_id: str) -> None:
-        if self.latency_listener is None:
-            return
-        with self._lock:
-            latency = dict(self._latencies.get(agent_id, {}))
-        try:
-            self.latency_listener(agent_id, latency)
-        except Exception:
-            return
-
-    def _next_actionable_event(self, binding: AgentRuntimeBinding) -> dict[str, object] | None:
-        runtime = binding.runtime
-        events = self.room.read_events(after=runtime.last_seen_event_id)
-        for event in events:
-            event_id = clean_lobby_text(event.get("event_id"), limit=128)
-            if self._event_targets_agent(event, binding):
-                return event
-            if event_id:
-                runtime.last_seen_event_id = event_id
-        return None
-
-    def _event_targets_agent(self, event: dict[str, object], binding: AgentRuntimeBinding) -> bool:
-        agent_id = clean_lobby_text(binding.agent_id, limit=128)
-        kind = clean_lobby_text(event.get("kind"), limit=64)
-        actor_id = clean_lobby_text(event.get("actor_id"), limit=128)
-        content = clean_lobby_text(event.get("content"), limit=12000)
-        mentions = _mentions(content)
-        if kind == "user_message":
-            if not mentions:
-                return bool(binding.default_responder)
-            return "all" in mentions or agent_id.casefold() in mentions
-        if kind != "agent_message":
-            return False
-        if actor_id == agent_id:
-            return False
-        if _safe_int(_event_metadata(event).get("relay_depth")) >= self.max_agent_relay_depth:
-            return False
-        return "all" in mentions or agent_id.casefold() in mentions
-
-    def _reserve_reply(self, agent_id: str, source_event_id: str) -> bool:
-        if not source_event_id:
-            return True
-        now = time.monotonic()
-        if self.agent_cooldown_seconds > 0:
-            last_reply_at = self._last_reply_at.get(agent_id, 0.0)
-            if now - last_reply_at < self.agent_cooldown_seconds:
-                return False
-        key = (agent_id, source_event_id)
-        count = self._reply_counts.get(key, 0)
-        if count >= self.max_replies_per_source:
-            return False
-        self._reply_counts[key] = count + 1
-        self._last_reply_at[agent_id] = now
-        return True
-
-    def _run_agent_event(self, binding: AgentRuntimeBinding, source_event: dict[str, object]) -> None:
-        agent_id = clean_lobby_text(binding.agent_id, limit=128)
-        runtime = binding.runtime
-        source_event_id = clean_lobby_text(source_event.get("event_id"), limit=128)
-        relay_depth = _safe_int(_event_metadata(source_event).get("relay_depth")) + 1
-        latency, latency_ticks = _new_latency(source_event)
-        try:
-            runtime.start()
-            input_text = _room_input_text(source_event)
-            _mark_latency(latency, latency_ticks, "dispatch_started_at")
-            _mark_latency(latency, latency_ticks, "input_write_started_at")
-            self.room.append_agent_input(agent_id, input_text, source_event_id=source_event_id)
-            with self._lock:
-                self._last_input_event_id[agent_id] = source_event_id
-
-            def append_delta(delta: str) -> None:
-                if not latency.get("first_output_at"):
-                    _mark_latency(latency, latency_ticks, "first_output_at")
-                _mark_latency(latency, latency_ticks, "last_output_at")
-                self.room.append_agent_delta(agent_id, delta, source_event_id=source_event_id)
-
-            runtime.deliver([source_event])
-            _mark_latency(latency, latency_ticks, "input_write_completed_at")
-            output = runtime.read_output(timeout_seconds=self.read_timeout_seconds, on_delta=append_delta)
-            content = clean_lobby_text(output.get("content"), limit=12000)
-            output_metadata = output.get("metadata") if isinstance(output.get("metadata"), dict) else {}
-            if content and not latency.get("first_output_at"):
-                _mark_latency(latency, latency_ticks, "first_output_at")
-                _mark_latency(latency, latency_ticks, "last_output_at")
-            _mark_latency(latency, latency_ticks, "quiet_detected_at")
-            _mark_latency(latency, latency_ticks, "turn_completed_at")
-            _complete_latency(latency, latency_ticks)
-            output_event = self.room.append_agent_message(
-                agent_id,
-                content,
-                source_event_id=source_event_id,
-                relay_depth=relay_depth,
-                metadata={**dict(output_metadata), "latency": dict(latency)},
-            )
-            with self._lock:
-                self._last_output_event_id[agent_id] = clean_lobby_text(output_event.get("event_id"), limit=128)
-                self._turn_counts[agent_id] = self._turn_counts.get(agent_id, 0) + 1
-                self._last_errors[agent_id] = ""
-                self._latencies[agent_id] = dict(latency)
-        except Exception as error:
-            _mark_latency(latency, latency_ticks, "turn_completed_at")
-            _complete_latency(latency, latency_ticks)
-            error_event = self.room.append_agent_error(
-                agent_id,
-                str(error),
-                source_event_id=source_event_id,
-                metadata={"latency": dict(latency)},
-            )
-            with self._lock:
-                self._last_output_event_id[agent_id] = clean_lobby_text(error_event.get("event_id"), limit=128)
-                self._last_errors[agent_id] = str(error)
-                self._latencies[agent_id] = dict(latency)
-        finally:
-            with self._lock:
-                self._busy.discard(agent_id)
-            self._notify_agent_state(agent_id)
-            self._notify_latency(agent_id)
-
-
 def live_cli_supported() -> bool:
     return (
         pty is not None
@@ -946,90 +595,8 @@ def _room_input_text(event: dict[str, object]) -> str:
     return f"#general {actor}: {content}"
 
 
-def _event_metadata(event: dict[str, object]) -> dict[str, object]:
-    metadata = event.get("metadata")
-    return dict(metadata) if isinstance(metadata, dict) else {}
-
-
-def _clean_metadata(metadata: dict[str, object]) -> dict[str, object]:
-    clean: dict[str, object] = {}
-    for key, value in metadata.items():
-        if value in (None, "", [], {}):
-            continue
-        if key in {"source_event_id", "queued_at"}:
-            clean[key] = clean_lobby_text(value, limit=128)
-        elif key == "latency" and isinstance(value, dict):
-            clean[key] = {str(item_key): item_value for item_key, item_value in value.items()}
-        else:
-            clean[key] = value
-    return clean
-
-
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
-
-
-def _new_latency(source_event: dict[str, object]) -> tuple[dict[str, object], dict[str, datetime]]:
-    metadata = _event_metadata(source_event)
-    queued_at = clean_lobby_text(metadata.get("queued_at"), limit=128) or clean_lobby_text(
-        source_event.get("created_at"), limit=128
-    )
-    if not queued_at:
-        queued_at = _now_iso()
-    latency: dict[str, object] = {
-        "queued_at": queued_at,
-        "dispatch_started_at": "",
-        "input_write_started_at": "",
-        "input_write_completed_at": "",
-        "first_output_at": "",
-        "last_output_at": "",
-        "quiet_detected_at": "",
-        "turn_completed_at": "",
-        "queue_delay_ms": 0,
-        "input_write_ms": 0,
-        "ttfo_ms": 0,
-        "stream_ms": 0,
-        "quiet_wait_ms": 0,
-        "total_turn_ms": 0,
-    }
-    queued_datetime = _parse_iso(queued_at) or datetime.now(UTC)
-    return latency, {"queued_at": queued_datetime}
-
-
-def _mark_latency(latency: dict[str, object], ticks: dict[str, datetime], key: str) -> None:
-    now = datetime.now(UTC)
-    ticks[key] = now
-    latency[key] = now.isoformat()
-
-
-def _complete_latency(latency: dict[str, object], ticks: dict[str, datetime]) -> None:
-    latency["queue_delay_ms"] = _duration_ms(ticks, "queued_at", "dispatch_started_at")
-    latency["input_write_ms"] = _duration_ms(ticks, "input_write_started_at", "input_write_completed_at")
-    latency["ttfo_ms"] = _duration_ms(ticks, "input_write_completed_at", "first_output_at")
-    latency["stream_ms"] = _duration_ms(ticks, "first_output_at", "last_output_at")
-    latency["quiet_wait_ms"] = _duration_ms(ticks, "last_output_at", "quiet_detected_at")
-    latency["total_turn_ms"] = _duration_ms(ticks, "queued_at", "turn_completed_at")
-
-
-def _duration_ms(ticks: dict[str, datetime], start: str, end: str) -> int:
-    start_time = ticks.get(start)
-    end_time = ticks.get(end)
-    if start_time is None or end_time is None:
-        return 0
-    return max(0, int((end_time - start_time).total_seconds() * 1000))
-
-
-def _parse_iso(value: object) -> datetime | None:
-    text = clean_lobby_text(value, limit=128)
-    if not text:
-        return None
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
 
 
 def _resolve_executable(command: list[str]) -> str:
@@ -1042,10 +609,6 @@ def _resolve_executable(command: list[str]) -> str:
         path = Path(executable).expanduser()
         return str(path.resolve()) if path.exists() else ""
     return shutil.which(executable) or ""
-
-
-def _mentions(content: str) -> set[str]:
-    return {match.casefold() for match in re.findall(r"@([A-Za-z0-9_.-]+)", content or "")}
 
 
 def _configure_slave_terminal(fd: int, *, rows: int = 40, columns: int = 120) -> None:
@@ -1068,19 +631,34 @@ def _set_terminal_window_size(fd: int, *, rows: int, columns: int) -> None:
         return
 
 
-def _terminal_input_bytes(text: str, *, input_mode: str, submit_newline: str) -> bytes:
+def _terminal_input_chunks(text: str, *, input_mode: str, submit_newline: str) -> tuple[bytes, ...]:
     payload = str(text or "")
     newline = submit_newline or "\n"
     if clean_lobby_text(input_mode, limit=64) == "bracketed_paste":
-        return f"\x1b[200~{payload}\x1b[201~{newline}".encode("utf-8")
+        return (f"\x1b[200~{payload}\x1b[201~".encode("utf-8"), newline.encode("utf-8"))
     if not payload.endswith(newline):
         payload += newline
-    return payload.encode("utf-8")
+    return (payload.encode("utf-8"),)
 
 
 def _clean_terminal_text(response: bytes) -> str:
     text = strip_terminal_ansi(response)
     return text.strip()
+
+
+def _terminal_fatal_error(response: bytes) -> str:
+    folded = " ".join(_clean_terminal_text(response).casefold().split())
+    if "invalid authentication credentials" in folded or "api error: 401" in folded:
+        return "Provider authentication failed: run the provider's interactive login command."
+    if "authentication required" in folded or "not logged in" in folded:
+        return "Provider authentication is required."
+    return ""
+
+
+def _terminal_diagnostic_tail(response: bytes) -> str:
+    # Normal TUI capture can contain the room prompt and account display data.
+    # Persist only a classified operational error, never the screen contents.
+    return _terminal_fatal_error(response)
 
 
 def _select_readable(fd: int | None, timeout_seconds: float) -> bool:
@@ -1174,16 +752,4 @@ def _terminate_process_group_children(process: subprocess.Popen[bytes], *, timeo
         return
 
 
-def _safe_int(value: object) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0
-
-
-# Transitional aliases for the earlier local prototype names. The new MVP
-# surface is AgentRuntime, LiveCliRuntime, GeneralRoomEventStore, RoomScheduler.
 LiveCliSession = LiveCliRuntime
-GeneralRoomEventLog = GeneralRoomEventStore
-LiveCliRoomScheduler = RoomScheduler
-LiveCliAgent = AgentRuntimeBinding

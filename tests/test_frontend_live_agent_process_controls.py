@@ -140,6 +140,7 @@ class FrontendLiveAgentProcessControlTests(unittest.TestCase):
         self.assertIn("const hasSourceAgentId = Boolean(sourceAgentId)", profile_source)
         self.assertIn("hasSourceAgentId &&", profile_source)
         self.assertIn("processGroups?: LiveAgentProcessGroup[]", panel_source)
+        self.assertIn("!guestLocked && agentSessions.length === 0", panel_source)
         self.assertNotIn("sessionGroup={sessionGroup}", panel_source)
         self.assertIn("processGroups={activeProcessGroups}", app_source)
         self.assertNotIn("sessionGroup={activeProcessGroup}", app_source)
@@ -148,7 +149,9 @@ class FrontendLiveAgentProcessControlTests(unittest.TestCase):
         self.assertIn("resumeAgentSession", member_source)
         self.assertIn("stopLiveAgentSessionAgent", member_source)
         self.assertIn("updateLiveAgentSessionAgentTiming", member_source)
-        self.assertIn("expelLiveAgentFromRoom", member_source)
+        self.assertNotIn("expelLiveAgentFromRoom", member_source)
+        self.assertIn("onParticipantKick", member_source)
+        self.assertIn('agent.connection_kind === "native_cli_bridge"', member_source)
         self.assertIn("deleteLiveAgentSession", member_source)
         self.assertIn("호출 간격", member_source)
         self.assertIn("초 단위", member_source)
@@ -157,7 +160,7 @@ class FrontendLiveAgentProcessControlTests(unittest.TestCase):
         self.assertIn('"/api/live-agent-sessions/resume-agent"', api_source)
         self.assertIn('"/api/live-agent-sessions/stop-agent"', api_source)
         self.assertIn('"/api/live-agent-sessions/agent-timing"', api_source)
-        self.assertIn('"/api/live-agent-room/expel"', api_source)
+        self.assertNotIn('"/api/live-agent-room/expel"', api_source)
         self.assertIn('"/api/live-agent-room/delete-session"', api_source)
 
     def test_agent_session_api_posts_selected_agent_id(self):
@@ -224,11 +227,6 @@ class FrontendLiveAgentProcessControlTests(unittest.TestCase):
               liveAgentConfigPath: "/tmp/live-agent.json",
               pollInterval: 0.25,
             });
-            await api.expelLiveAgentFromRoom({
-              meetingId: "resident-m1",
-              groupId: "resident-main--agent-a",
-              agentId: "agent-a",
-            });
             await api.deleteLiveAgentSession({
               meetingId: "resident-m1",
               groupId: "resident-main--agent-a",
@@ -262,14 +260,10 @@ class FrontendLiveAgentProcessControlTests(unittest.TestCase):
             assert.equal(calls[3].body.agent_id, "agent-a");
             assert.equal(calls[3].body.live_agent_config_path, "/tmp/live-agent.json");
             assert.equal(calls[3].body.poll_interval, 0.25);
-            assert.equal(calls[4].url, "/api/live-agent-room/expel");
+            assert.equal(calls[4].url, "/api/live-agent-room/delete-session");
             assert.equal(calls[4].body.meeting_id, "resident-m1");
             assert.equal(calls[4].body.group_id, "resident-main--agent-a");
             assert.equal(calls[4].body.agent_id, "agent-a");
-            assert.equal(calls[5].url, "/api/live-agent-room/delete-session");
-            assert.equal(calls[5].body.meeting_id, "resident-m1");
-            assert.equal(calls[5].body.group_id, "resident-main--agent-a");
-            assert.equal(calls[5].body.agent_id, "agent-a");
             """
         )
         subprocess.run(

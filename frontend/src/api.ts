@@ -186,18 +186,7 @@ export interface RoomMembersResponse {
   roles: Array<{ id: string; label: string; description: string }>;
 }
 
-export interface GeneralRoomEvent {
-  event_id: string;
-  created_at: string;
-  room_id: string;
-  actor_id: string;
-  actor_type: "user" | "agent" | "system" | string;
-  kind: "user_message" | "agent_input" | "agent_delta" | "agent_message" | "agent_error" | "system" | string;
-  content: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface GeneralRoomLatency {
+export interface RoomAgentLatency {
   queued_at?: string;
   dispatch_started_at?: string;
   input_write_started_at?: string;
@@ -212,92 +201,6 @@ export interface GeneralRoomLatency {
   stream_ms?: number;
   quiet_wait_ms?: number;
   total_turn_ms?: number;
-}
-
-export interface GeneralRoomAgent {
-  agent_id: string;
-  display_name: string;
-  provider_label: string;
-  runtime_kind: string;
-  command_configured: string[];
-  command_display: string;
-  resolved_executable: string;
-  pid?: number | null;
-  status: "stopped" | "starting" | "idle" | "busy" | "stopping" | "error" | "disconnected" | string;
-  started_at: string;
-  stopped_at: string;
-  last_seen_event_id: string;
-  last_input_event_id: string;
-  last_output_event_id: string;
-  turn_count: number;
-  last_error: string;
-  latency: GeneralRoomLatency;
-  session_dir?: string;
-  workspace_dir?: string;
-  pty?: boolean;
-  transport?: string;
-  is_one_shot?: boolean;
-  resumed_process?: boolean;
-}
-
-export type GeneralRoomSocketClientMessage =
-  | { type: "hello"; client_id?: string; after_event_id?: string }
-  | { type: "user_message"; room_id?: "general"; content: string; actor_id?: string }
-  | {
-      type: "agent_control";
-      agent_id: string;
-      action: "start" | "stop" | "resume" | "interrupt";
-    }
-  | { type: "dispatch"; target?: string; after_event_id?: string }
-  | {
-      type: "smoke_start";
-      providers?: string[];
-      config?: string;
-      approve_real_provider?: boolean;
-      timeout_seconds?: number;
-    };
-
-export type GeneralRoomSocketServerMessage =
-  | {
-      type: "snapshot";
-      room_id: string;
-      events: GeneralRoomEvent[];
-      agents: GeneralRoomAgent[];
-      latency: Record<string, GeneralRoomLatency>;
-    }
-  | { type: "room_event"; event: GeneralRoomEvent }
-  | { type: "agent_state"; agent_id?: string; agent: GeneralRoomAgent }
-  | {
-      type: "agent_delta";
-      agent_id: string;
-      turn_id?: string;
-      delta: string;
-      event?: GeneralRoomEvent;
-    }
-  | { type: "agent_message"; event: GeneralRoomEvent }
-  | ({ type: "latency"; agent_id: string } & GeneralRoomLatency)
-  | {
-      type: "smoke_progress";
-      run_id: string;
-      provider?: string;
-      phase: string;
-      status: string;
-      result?: Record<string, unknown>;
-    }
-  | { type: "error"; message: string; recoverable?: boolean; event?: GeneralRoomEvent };
-
-export interface GeneralRoomSocketHandlers {
-  afterEventId?: string;
-  onMessage: (message: GeneralRoomSocketServerMessage) => void;
-  onOpen?: () => void;
-  onClose?: () => void;
-  onError?: (error: Event | Error) => void;
-}
-
-export interface GeneralRoomSocketHandle {
-  close: () => void;
-  ready: () => boolean;
-  send: (message: GeneralRoomSocketClientMessage) => void;
 }
 
 export type ChannelNotificationSetting = "default" | "all" | "mentions" | "mute";
@@ -441,16 +344,62 @@ export interface MeetingLiveEvent {
 }
 
 export interface RoomEvent {
+  v?: number;
   id: string;
+  seq: number;
   created_at: string;
   room_id: string;
   type: string;
+  actor?: {
+    participant_id?: string;
+    participant_type?: string;
+  };
   participant_id?: string;
+  participant_type?: string;
   session_id?: string;
   turn_id?: string;
+  source_event_id?: string;
   actor_id?: string;
+  actor_type?: string;
+  display_name?: string;
   content?: string;
+  phase?: string;
+  status?: string;
+  latency?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  agent_session?: RoomAgentSession;
   media?: LobbyAttachmentRef | Record<string, unknown>;
+}
+
+export interface RoomAgentSession {
+  room_id: string;
+  session_id: string;
+  participant_id: string;
+  display_name: string;
+  status: string;
+  runtime_status: string;
+  enabled: boolean;
+  provider_kind: string;
+  runtime_kind: string;
+  connection_kind: string;
+  command_configured?: string[];
+  resolved_executable?: string;
+  workspace?: string;
+  pid?: number | null;
+  bridge_pid?: number | null;
+  active_turn_id?: string;
+  turn_phase?: string;
+  last_seen_event_id?: string;
+  last_provider_sync_event_id?: string;
+  last_spoke_event_id?: string;
+  turn_count?: number;
+  last_error?: string;
+  latency?: RoomAgentLatency;
+  pty?: boolean;
+  transport?: string;
+  is_one_shot?: boolean;
+  started_at?: string;
+  updated_at?: string;
 }
 
 export interface LiveAgent {
@@ -1328,33 +1277,6 @@ export function createFrontendLiveAgent(request: FrontendLiveAgentCreateRequest)
   return postJson<FrontendLiveAgentCreateResponse>("/api/live-agent-create", frontendLiveAgentCreatePayload(request));
 }
 
-function agentIdFromCreateRequest(request: FrontendLiveAgentCreateRequest) {
-  return `${request.providerId || "agent"}-${request.displayName || "session"}`
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 96) || "agent-session";
-}
-
-export function createAgentSession(request: FrontendLiveAgentCreateRequest) {
-  const agentId = agentIdFromCreateRequest(request);
-  return postJson<AgentSessionActionResponse>("/api/agent-sessions", {
-    room_id: request.meetingId,
-    agent_id: agentId,
-    session_id: request.sessionId || agentId,
-    display_name: request.displayName,
-    provider_kind: request.providerId === "codex" ? "codex_live_session" : request.providerId,
-    model: request.modelId || "",
-    effort: request.effort || "",
-    sandbox: request.permissionOption || "",
-    permissions: request.permissionOption || "",
-    workspace: request.workspacePath || "",
-    runtime_sharing_policy: "isolated_session",
-    start: Boolean(request.startNow),
-  });
-}
-
 // Promote a localStorage room to a server-backed meeting (rooms-as-server-objects).
 // Idempotent; called when a room becomes active so its meeting always exists.
 export function ensureRoomMeeting(meetingId: string, label = "") {
@@ -1591,22 +1513,6 @@ export function resumeSelfManagedAgent({ agentId }: { agentId: string }) {
   });
 }
 
-export function expelLiveAgentFromRoom({
-  meetingId,
-  groupId,
-  agentId,
-}: {
-  meetingId: string;
-  groupId?: string;
-  agentId: string;
-}) {
-  return postJson<LiveAgentSessionActionResponse>("/api/live-agent-room/expel", {
-    meeting_id: meetingId,
-    group_id: groupId || "",
-    agent_id: agentId,
-  });
-}
-
 export function deleteLiveAgentSession({
   meetingId,
   groupId,
@@ -1759,32 +1665,11 @@ export function upsertRoomMember(member: Partial<RoomMember>) {
   return postJson<RoomMembersResponse & { member: RoomMember }>("/api/room-members", member);
 }
 
-export function muteRoomMember(params: { meetingId: string; participantId: string; muted: boolean; sessionToken?: string }) {
-  return postJsonModerator<RoomMembersResponse & { member: RoomMember }>("/api/room-members/mute", {
-    meeting_id: params.meetingId,
-    participant_id: params.participantId,
-    muted: params.muted,
-  }, params.sessionToken || "");
-}
-
 export function claimHostDevice(params: { deviceToken: string; displayName?: string }) {
   return postJsonHost<{ status: string; user_id: string; participant_id: string; operator: boolean }>("/api/host/claim", {
     device_token: params.deviceToken,
     display_name: params.displayName || "",
   });
-}
-
-export interface KickRoomMemberResponse extends RoomMembersResponse {
-  status: string;
-  participant_id: string;
-  revoked_sessions: number;
-  removed_member: boolean;
-  expelled_agent: boolean;
-}
-
-export function kickRoomMember(params: { meetingId: string; participantId: string; sessionToken?: string }) {
-  const body = { meeting_id: params.meetingId, participant_id: params.participantId };
-  return postJsonModerator<KickRoomMemberResponse>("/api/room-members/kick", body, params.sessionToken || "");
 }
 
 export function fetchUserProfile(): Promise<UserProfile> {
@@ -2508,46 +2393,7 @@ export function subscribeSideChat(
   return () => source.close();
 }
 
-export function subscribeRoomEvents(
-  roomId: string,
-  cursor: string,
-  onEvent: (event: RoomEvent) => void,
-  onHeartbeat?: () => void,
-  onError?: (err: Event) => void
-): () => void {
-  const source = new EventSource(`/api/room-events/stream${queryString({ room_id: roomId, cursor })}`);
-
-  function handleData(raw: string) {
-    try {
-      const payload = JSON.parse(raw) as RoomEvent;
-      if (payload && payload.id && payload.type) onEvent(payload);
-    } catch {
-      // Ignore malformed frames; the stream is append-only and the next event can recover.
-    }
-  }
-
-  source.addEventListener("heartbeat", () => onHeartbeat?.());
-  source.onmessage = (event) => handleData(event.data);
-  source.addEventListener("message_final", (event) => handleData((event as MessageEvent).data));
-  source.addEventListener("message_delta", (event) => handleData((event as MessageEvent).data));
-  source.addEventListener("thinking_delta", (event) => handleData((event as MessageEvent).data));
-  source.addEventListener("turn_started", (event) => handleData((event as MessageEvent).data));
-  source.addEventListener("turn_finished", (event) => handleData((event as MessageEvent).data));
-  source.addEventListener("error", (event) => handleData((event as MessageEvent).data));
-  source.addEventListener("session_resumed", (event) => handleData((event as MessageEvent).data));
-  source.addEventListener("participant_joined", (event) => handleData((event as MessageEvent).data));
-  source.addEventListener("participant_left", (event) => handleData((event as MessageEvent).data));
-  source.addEventListener("participant_kicked", (event) => handleData((event as MessageEvent).data));
-  source.addEventListener("participant_exported", (event) => handleData((event as MessageEvent).data));
-  if (onError) source.onerror = onError;
-  return () => source.close();
-}
-
-// --- WebSocket transport (WS 전환, WS-5) ------------------------------------
-// Additive: WS gives a single push channel (esp. for guests, who can't attach
-// auth to EventSource and otherwise poll). Callers run it ALONGSIDE the existing
-// SSE+poll; lobby/roster updates are idempotent (dedup by id / full snapshot),
-// so a WS failure leaves the existing path covering everything.
+// --- Canonical room WebSocket transport --------------------------------------
 
 interface WsTicketResponse {
   ticket: string;
@@ -2558,7 +2404,10 @@ export interface RoomSocketHandlers {
   onLobby?: (events: LobbyEvent[]) => void;
   onRoster?: (members: RoomMember[]) => void;
   onSideChat?: (events: SideChatEvent[]) => void;
+  onRoomSnapshot?: (snapshot: RoomSocketSnapshot) => void;
+  onRoomEvents?: (events: RoomEvent[]) => void;
   onOpen?: () => void;
+  onClose?: () => void;
   onError?: (err: Event | Error) => void;
 }
 
@@ -2566,8 +2415,6 @@ function wsBaseUrl(): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${window.location.host}`;
 }
-
-const GENERAL_ROOM_WS_PATH = "/ws/rooms/general";
 
 export type RoomSocketAuth =
   | { kind: "session"; sessionToken: string }
@@ -2581,50 +2428,6 @@ export function getWsTicket(auth: RoomSocketAuth): Promise<string> {
   return postJsonWithToken<WsTicketResponse>("/api/ws-ticket", body, auth.sessionToken).then(
     (res) => res.ticket
   );
-}
-
-export function openGeneralRoomSocket(handlers: GeneralRoomSocketHandlers): GeneralRoomSocketHandle {
-  let socket: WebSocket | null = null;
-  let closed = false;
-  const pending: GeneralRoomSocketClientMessage[] = [];
-
-  function rawSend(message: GeneralRoomSocketClientMessage) {
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      pending.push(message);
-      return;
-    }
-    socket.send(JSON.stringify(message));
-  }
-
-  socket = new WebSocket(`${wsBaseUrl()}${GENERAL_ROOM_WS_PATH}`);
-  socket.onopen = () => {
-    handlers.onOpen?.();
-    rawSend({ "type": "hello", after_event_id: handlers.afterEventId || "" });
-    while (pending.length && socket?.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify(pending.shift()));
-    }
-  };
-  socket.onmessage = (event) => {
-    try {
-      handlers.onMessage(JSON.parse(String(event.data)) as GeneralRoomSocketServerMessage);
-    } catch (error) {
-      handlers.onError?.(error as Error);
-    }
-  };
-  socket.onerror = (event) => handlers.onError?.(event);
-  socket.onclose = () => {
-    closed = true;
-    handlers.onClose?.();
-  };
-
-  return {
-    close: () => {
-      closed = true;
-      socket?.close();
-    },
-    ready: () => !closed && socket?.readyState === WebSocket.OPEN,
-    send: rawSend,
-  };
 }
 
 export interface RoomSayRequest {
@@ -2651,9 +2454,31 @@ export interface RoomSocketHandle {
   close: () => void;
   ready: () => boolean;
   say: (request: RoomSayRequest) => Promise<LobbyPostResponse>;
+  command: (action: string, payload?: Record<string, unknown>) => Promise<RoomCommandAck>;
 }
 
-const ROOM_SOCKET_SAY_TIMEOUT_MS = 15_000;
+export interface RoomSocketSnapshot {
+  op: "snapshot";
+  stream: "room_events";
+  room: ServerRoom | Record<string, unknown>;
+  participants: Array<Record<string, unknown>>;
+  agent_sessions: RoomAgentSession[];
+  active_turns: Array<Record<string, unknown>>;
+  events: RoomEvent[];
+  last_seq: number;
+  capabilities: Record<string, boolean>;
+}
+
+export interface RoomCommandAck {
+  op: "ack";
+  request_id: string;
+  accepted: true;
+  action: string;
+  result?: Record<string, unknown>;
+  deduplicated?: boolean;
+}
+
+const ROOM_SOCKET_COMMAND_TIMEOUT_MS = 20_000;
 
 /**
  * Open a governed room WebSocket: ticket auth, subscribe to streams, push
@@ -2666,18 +2491,46 @@ export function openRoomSocket(
 ): RoomSocketHandle {
   let socket: WebSocket | null = null;
   let closed = false;
-  let sayPending: {
-    resolve: (value: LobbyPostResponse) => void;
-    reject: (reason: Error) => void;
-    timerId: number;
-  } | null = null;
+  let reconnectTimer = 0;
+  let reconnectAttempt = 0;
+  let lastSeq = 0;
+  let requestCounter = 0;
+  const pending = new Map<
+    string,
+    {
+      action: string;
+      payload: Record<string, unknown>;
+      resolve: (value: RoomCommandAck) => void;
+      reject: (reason: Error) => void;
+      timerId: number;
+    }
+  >();
 
-  function clearSayPending(error?: Error) {
-    if (!sayPending) return;
-    window.clearTimeout(sayPending.timerId);
-    const pending = sayPending;
-    sayPending = null;
-    if (error) pending.reject(error);
+  function nextRequestId() {
+    requestCounter += 1;
+    return `web-${Date.now().toString(36)}-${requestCounter.toString(36)}`;
+  }
+
+  function sendPending() {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    pending.forEach((command, requestId) => {
+      socket?.send(
+        JSON.stringify({
+          op: "command",
+          request_id: requestId,
+          action: command.action,
+          payload: command.payload,
+        })
+      );
+    });
+  }
+
+  function rejectAll(error: Error) {
+    pending.forEach((command) => {
+      window.clearTimeout(command.timerId);
+      command.reject(error);
+    });
+    pending.clear();
   }
 
   function dispatchFrame(raw: string) {
@@ -2687,15 +2540,34 @@ export function openRoomSocket(
       events?: LobbyEvent[];
       members?: RoomMember[];
       event?: LobbyEvent;
+      request_id?: string;
+      accepted?: boolean;
+      action?: string;
+      result?: Record<string, unknown>;
+      error?: { code?: string; message?: string };
       category?: string;
       message?: string;
+      last_seq?: number;
+      agent_sessions?: RoomAgentSession[];
+      participants?: Array<Record<string, unknown>>;
+      active_turns?: Array<Record<string, unknown>>;
+      capabilities?: Record<string, boolean>;
+      room?: ServerRoom | Record<string, unknown>;
     };
-    if (msg.op === "ack" && msg.event) {
-      if (sayPending) {
-        const pending = sayPending;
-        sayPending = null;
-        window.clearTimeout(pending.timerId);
-        pending.resolve({ event: msg.event, events: [msg.event] });
+    if ((msg.op === "ack" || msg.op === "nack") && msg.request_id) {
+      const command = pending.get(msg.request_id);
+      if (!command) return;
+      pending.delete(msg.request_id);
+      window.clearTimeout(command.timerId);
+      if (msg.op === "nack" || msg.accepted === false) {
+        command.reject(
+          new RoomSocketSayError(
+            String(msg.error?.message || msg.message || "Room command was rejected."),
+            String(msg.error?.code || msg.category || "rejected")
+          )
+        );
+      } else {
+        command.resolve(msg as RoomCommandAck);
       }
       return;
     }
@@ -2704,13 +2576,21 @@ export function openRoomSocket(
         String(msg.message || "Room message was rejected."),
         String(msg.category || "rejected")
       );
-      if (sayPending) {
-        const pending = sayPending;
-        sayPending = null;
-        window.clearTimeout(pending.timerId);
-        pending.reject(error);
-      }
       handlers.onError?.(error);
+      return;
+    }
+    if (msg.op === "snapshot" && msg.stream === "room_events") {
+      const snapshot = msg as unknown as RoomSocketSnapshot;
+      lastSeq = Math.max(lastSeq, Number(snapshot.last_seq || 0));
+      handlers.onRoomSnapshot?.(snapshot);
+      return;
+    }
+    if (msg.op === "event" && msg.stream === "room_events" && Array.isArray(msg.events)) {
+      const events = msg.events as unknown as RoomEvent[];
+      events.forEach((event) => {
+        lastSeq = Math.max(lastSeq, Number(event.seq || 0));
+      });
+      handlers.onRoomEvents?.(events);
       return;
     }
     if (msg.op === "event" && msg.stream === "lobby" && Array.isArray(msg.events)) {
@@ -2722,66 +2602,85 @@ export function openRoomSocket(
     }
   }
 
-  (async () => {
+  async function connect() {
     try {
       const ticket = await getWsTicket(auth);
       if (closed) return;
-      socket = new WebSocket(`${wsBaseUrl()}/ws?ticket=${encodeURIComponent(ticket)}`);
-      socket.onopen = () => {
-        socket?.send(JSON.stringify({ op: "subscribe", streams }));
+      const currentSocket = new WebSocket(`${wsBaseUrl()}/ws?ticket=${encodeURIComponent(ticket)}`);
+      socket = currentSocket;
+      currentSocket.onopen = () => {
+        reconnectAttempt = 0;
+        currentSocket.send(JSON.stringify({ op: "subscribe", streams, resume_from_seq: lastSeq }));
+        sendPending();
         handlers.onOpen?.();
       };
-      socket.onmessage = (event) => {
+      currentSocket.onmessage = (event) => {
         try {
           dispatchFrame(event.data as string);
-        } catch {
-          // Ignore malformed frames.
+        } catch (error) {
+          handlers.onError?.(error as Error);
         }
       };
-      socket.onerror = (event) => handlers.onError?.(event);
-      socket.onclose = () => clearSayPending(new RoomSocketSayError("Room socket closed.", "socket_closed"));
+      currentSocket.onerror = (event) => handlers.onError?.(event);
+      currentSocket.onclose = () => {
+        if (socket === currentSocket) socket = null;
+        handlers.onClose?.();
+        if (closed) return;
+        reconnectAttempt += 1;
+        const delay = Math.min(5_000, 250 * 2 ** Math.min(reconnectAttempt, 5));
+        reconnectTimer = window.setTimeout(() => void connect(), delay);
+      };
     } catch (err) {
       handlers.onError?.(err as Error);
+      if (!closed) {
+        reconnectAttempt += 1;
+        const delay = Math.min(5_000, 250 * 2 ** Math.min(reconnectAttempt, 5));
+        reconnectTimer = window.setTimeout(() => void connect(), delay);
+      }
     }
-  })();
+  }
+
+  function command(action: string, payload: Record<string, unknown> = {}) {
+    return new Promise<RoomCommandAck>((resolve, reject) => {
+      if (closed) {
+        reject(new RoomSocketSayError("Room socket is closed.", "socket_closed"));
+        return;
+      }
+      const requestId = nextRequestId();
+      const timerId = window.setTimeout(() => {
+        const waiting = pending.get(requestId);
+        if (!waiting) return;
+        pending.delete(requestId);
+        waiting.reject(new RoomSocketSayError("Room command timed out.", "timeout"));
+      }, ROOM_SOCKET_COMMAND_TIMEOUT_MS);
+      pending.set(requestId, { action, payload, resolve, reject, timerId });
+      sendPending();
+    });
+  }
+
+  void connect();
 
   return {
     close: () => {
       closed = true;
-      clearSayPending(new RoomSocketSayError("Room socket closed.", "socket_closed"));
+      window.clearTimeout(reconnectTimer);
+      rejectAll(new RoomSocketSayError("Room socket closed.", "socket_closed"));
       socket?.close();
     },
     ready: () => socket?.readyState === WebSocket.OPEN,
-    say: (request) =>
-      new Promise<LobbyPostResponse>((resolve, reject) => {
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-          reject(new RoomSocketSayError("Room socket is not connected.", "socket_closed"));
-          return;
-        }
-        if (sayPending) {
-          reject(new RoomSocketSayError("Another room message is still sending.", "busy"));
-          return;
-        }
-        const timerId = window.setTimeout(() => {
-          if (!sayPending) return;
-          const pending = sayPending;
-          sayPending = null;
-          pending.reject(new RoomSocketSayError("Room message timed out.", "timeout"));
-        }, ROOM_SOCKET_SAY_TIMEOUT_MS);
-        sayPending = { resolve, reject, timerId };
-        socket.send(
-          JSON.stringify({
-            op: "say",
-            message: request.message,
-            attachments: request.attachments || [],
-            kind: request.kind || "message",
-            vote_id: request.voteId || "",
-            vote_question: request.voteQuestion || "",
-            vote_options: request.voteOptions || [],
-            vote_choice: request.voteChoice || "",
-          })
-        );
-      }),
+    command,
+    say: async (request) => {
+      await command("message.send", {
+        content: request.message,
+        attachments: request.attachments || [],
+        kind: request.kind || "message",
+        vote_id: request.voteId || "",
+        vote_question: request.voteQuestion || "",
+        vote_options: request.voteOptions || [],
+        vote_choice: request.voteChoice || "",
+      });
+      return { events: [] };
+    },
   };
 }
 

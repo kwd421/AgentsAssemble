@@ -48,7 +48,7 @@ def _recv_server_text(sock: socket.socket, timeout: float = 4.0) -> dict:
     def _need(n: int) -> bytes:
         nonlocal buf
         while len(buf) < n:
-            chunk = sock.recv(4096)
+            chunk = sock.recv(n - len(buf))
             if not chunk:
                 raise AssertionError("socket closed before a full frame arrived")
             buf += chunk
@@ -141,18 +141,26 @@ class WsEndpointTests(unittest.TestCase):
     def _handshake(self, host: str, port: int, ticket: str) -> socket.socket:
         return self._handshake_path(host, port, f"/ws?ticket={ticket}")
 
-    def test_general_room_ws_hello_snapshot_on_loopback(self):
+    def test_general_room_uses_ticketed_canonical_ws_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
             server = self._start_server(Path(tmp))
             try:
                 host, port = server.server_address
-                sock = self._handshake_path(host, port, "/ws/rooms/general")
+                base = f"http://{host}:{port}"
+                ticket = self._host_ws_ticket(base, "general")
+                sock = self._handshake(host, port, ticket)
                 try:
-                    sock.sendall(_client_text_frame(json.dumps({"type": "hello", "client_id": "browser-1"})))
-                    msg = _recv_server_text(sock)
-                    self.assertEqual(msg["type"], "snapshot")
-                    self.assertEqual(msg["room_id"], "general")
-                    self.assertIn("codex", [agent["agent_id"] for agent in msg["agents"]])
+                    sock.sendall(
+                        _client_text_frame(
+                            json.dumps({"op": "subscribe", "streams": ["room_events"], "resume_from_seq": 0})
+                        )
+                    )
+                    subscribed = _recv_server_text(sock)
+                    snapshot = _recv_server_text(sock)
+                    self.assertEqual(subscribed, {"op": "subscribed", "streams": ["room_events"]})
+                    self.assertEqual(snapshot["op"], "snapshot")
+                    self.assertEqual(snapshot["room"]["room_id"], "general")
+                    self.assertIn("codex", [session["participant_id"] for session in snapshot["agent_sessions"]])
                 finally:
                     sock.close()
             finally:

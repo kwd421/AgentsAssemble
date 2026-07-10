@@ -3033,11 +3033,9 @@ def _provider_visible_room_events(events: list[dict[str, object]]) -> list[dict[
 
 def _provider_room_delta(events: list[dict[str, object]], *, participant_id: str, after_event_id: str = "") -> dict[str, object]:
     source = _events_after_id(events, after_event_id) if after_event_id else list(events)
-    visible: list[dict[str, object]] = []
-    lines: list[str] = []
+    candidates: list[tuple[dict[str, object], str]] = []
     filtered_internal = 0
     filtered_delta = 0
-    omitted = 0
     latest_event_id = after_event_id
     for event in source:
         event_type = clean_lobby_text(event.get("type"), limit=64)
@@ -3078,17 +3076,23 @@ def _provider_room_delta(events: list[dict[str, object]], *, participant_id: str
         }
         clean_event["content"] = content
         line = f"- {speaker}: {content}"
-        if len(visible) >= PROVIDER_ROOM_DELTA_MAX_EVENTS or (
-            lines and len("\n".join([*lines, line])) > PROVIDER_ROOM_DELTA_MAX_CHARS
-        ):
-            omitted += 1
-            continue
-        visible.append(clean_event)
-        lines.append(line)
+        candidates.append((clean_event, line))
+    selected: list[tuple[dict[str, object], str]] = []
+    selected_chars = 0
+    for candidate in reversed(candidates):
+        line_chars = len(candidate[1]) + (1 if selected else 0)
+        if len(selected) >= PROVIDER_ROOM_DELTA_MAX_EVENTS or selected_chars + line_chars > PROVIDER_ROOM_DELTA_MAX_CHARS:
+            break
+        selected.append(candidate)
+        selected_chars += line_chars
+    selected.reverse()
+    visible = [event for event, _line in selected]
+    lines = [line for _event, line in selected]
+    omitted = len(candidates) - len(selected)
     if omitted:
-        summary = f"- [omitted {omitted} additional room update(s)]"
+        summary = f"- [omitted {omitted} earlier room update(s)]"
         if not lines or len("\n".join([*lines, summary])) <= PROVIDER_ROOM_DELTA_MAX_CHARS:
-            lines.append(summary)
+            lines.insert(0, summary)
     return {
         "events": visible,
         "text": "\n".join(lines),

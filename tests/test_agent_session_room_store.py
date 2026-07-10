@@ -2120,6 +2120,35 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertEqual(packet["last_provider_sync_event_id_after"], final_id)
         self.assertLessEqual(packet["provider_visible_chars"], 20000)
 
+    def test_provider_delta_keeps_latest_source_message_when_room_history_is_truncated(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        resume_agent_session_payload(
+            self.output_root,
+            {"room_id": "room-a", "agent_id": "agent-a", "session_id": "session-a", "provider_kind": "grok_live_session"},
+        )
+        for index in range(8):
+            store.append_event("room-a", "message_final", participant_id="human", content=f"old room update {index}")
+        source = store.append_event(
+            "room-a",
+            "message_final",
+            participant_id="human",
+            content="@agent-a AGENTSASSEMBLE_SESSION_MARKER=latest-source",
+        )
+
+        packet = build_room_turn_packet(
+            self.output_root,
+            room_id="room-a",
+            participant_id="agent-a",
+            session_id="session-a",
+            instruction="Reply.",
+        )
+
+        self.assertIn("AGENTSASSEMBLE_SESSION_MARKER=latest-source", packet["provider_input"])
+        self.assertNotIn("old room update 0", packet["provider_input"])
+        self.assertIn("omitted 3 earlier room update", packet["provider_input"])
+        self.assertEqual(packet["last_provider_sync_event_id_after"], source["id"])
+
     def test_media_is_not_implicitly_sent_without_selection_or_room_reference(self):
         store = RoomStore(self.output_root)
         store.create_room("room-a")

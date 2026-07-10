@@ -6,6 +6,36 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DocsArchitectureTests(unittest.TestCase):
+    def test_live_cli_room_current_architecture_records_canonical_boundary(self):
+        relative_path = "docs/live-cli-room-current-architecture.md"
+        audit_path = ROOT / relative_path
+        audit = audit_path.read_text(encoding="utf-8")
+
+        self.assertTrue(audit_path.exists())
+        for required in (
+            "one ticket-authenticated WebSocket endpoint",
+            "RoomStore",
+            "RoomRealtimeController",
+            "RoomAgentBridge",
+            "One provider process stays alive across turns",
+            "Sending a room message never starts a stopped provider",
+            "cursor advances only after `message.final`",
+            "Claude Code must remain interactive",
+            "rejects `-p`",
+            "one canonical event file",
+        ):
+            self.assertIn(required, audit)
+
+        self.assertNotIn("/ws/rooms/general", audit)
+
+        for document in (
+            ROOT / "docs" / "product" / "OPERATING_MODEL.md",
+            ROOT / "docs" / "live-session-room-model.md",
+            ROOT / "docs" / "provider-architecture.md",
+            ROOT / "docs" / "codebase-structure.md",
+        ):
+            self.assertIn(relative_path, document.read_text(encoding="utf-8"))
+
     def test_product_operating_model_records_agentsassemble_specific_memory(self):
         doc = (ROOT / "docs" / "product" / "OPERATING_MODEL.md").read_text(encoding="utf-8")
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")

@@ -6,11 +6,11 @@ import {
   stopFlow,
   type ChannelNotificationSetting,
   type FlowState,
-  type GeneralRoomAgent,
   type LiveAgent,
   type LiveAgentProcessGroup,
   type MafiaGame,
   type RoomMember,
+  type RoomAgentSession,
 } from "../../api";
 import type { AgentQuotaVisibilityViewer } from "../../lib/agentQuotaVisibility";
 import type { RoomAppearance } from "../../lib/roomAppearance";
@@ -59,8 +59,6 @@ type RoomConnectionPanelProps = {
   onMafiaStarted?: (game: MafiaGame) => void;
   onFlowStarted?: () => void;
   guestLocked?: boolean;
-  guestOperator?: boolean;
-  moderatorSessionToken?: string;
   guestAiPacketPreview?: string;
   guestAiPacketStatus?: string;
   onCreateCompanionAiPacket?: () => void;
@@ -72,12 +70,14 @@ type RoomConnectionPanelProps = {
   onStartAddAgent?: () => void;
   memberSearchQuery?: string;
   onMemberSearchQueryChange?: (query: string) => void;
-  liveCliRoom?: boolean;
-  liveCliAgents?: GeneralRoomAgent[];
-  onLiveCliAgentControl?: (
-    agent: GeneralRoomAgent,
+  agentSessions?: RoomAgentSession[];
+  capabilities?: Record<string, boolean>;
+  onAgentControl?: (
+    session: RoomAgentSession,
     action: "start" | "stop" | "resume" | "interrupt"
-  ) => void;
+  ) => void | Promise<void>;
+  onParticipantKick?: (participantId: string) => void | Promise<void>;
+  onParticipantMute?: (participantId: string, muted: boolean) => void | Promise<void>;
 };
 
 function mutedChannelCount(
@@ -143,7 +143,7 @@ function liveCliStatusTone(status?: string) {
   return "";
 }
 
-function liveCliLatency(agent: GeneralRoomAgent) {
+function liveCliLatency(agent: RoomAgentSession) {
   const latency = agent.latency || {};
   const ttfo = typeof latency.ttfo_ms === "number" ? `${Math.round(latency.ttfo_ms)}ms first` : "";
   const total = typeof latency.total_turn_ms === "number" ? `${Math.round(latency.total_turn_ms)}ms total` : "";
@@ -161,8 +161,6 @@ export default function RoomConnectionPanel({
   onMafiaStarted,
   onFlowStarted,
   guestLocked = false,
-  guestOperator = false,
-  moderatorSessionToken = "",
   guestAiPacketPreview = "",
   guestAiPacketStatus = "",
   onCreateCompanionAiPacket,
@@ -174,9 +172,11 @@ export default function RoomConnectionPanel({
   onStartAddAgent,
   memberSearchQuery,
   onMemberSearchQueryChange,
-  liveCliRoom = false,
-  liveCliAgents = [],
-  onLiveCliAgentControl = () => undefined,
+  agentSessions = [],
+  capabilities = {},
+  onAgentControl = () => undefined,
+  onParticipantKick,
+  onParticipantMute,
 }: RoomConnectionPanelProps) {
   const mutedCount = mutedChannelCount(channelNotifications);
   const [selectedMode, setSelectedMode] = useState("turn_based_floor");
@@ -264,79 +264,6 @@ export default function RoomConnectionPanel({
     }
   }
 
-  if (liveCliRoom) {
-    return (
-      <div className="dc-room-connection-panel">
-        <section className="dc-room-play-panel" aria-label="Live CLI Agent Session">
-          <div className="dc-room-play-header">
-            <span className="dc-room-play-title">Agent Session</span>
-            <span className="dc-room-play-state running">Live CLI</span>
-          </div>
-          <p className="dc-room-connection-note preserve-words">
-            이 방의 메시지는 살아있는 로컬 CLI 세션에 전달됩니다. 각 세션은 자기 cursor 이후 이벤트만 받습니다.
-          </p>
-          <div className="dc-room-live-cli-list">
-            {liveCliAgents.map((agent) => (
-              <article key={agent.agent_id} className="dc-room-live-cli-card">
-                <div className="dc-room-live-cli-head">
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-black text-text-primary preserve-words">
-                      {agent.display_name || agent.agent_id}
-                    </p>
-                    <p className="truncate text-[11px] text-text-muted preserve-words">
-                      {agent.provider_label || agent.runtime_kind || "local CLI"}
-                      {agent.pid ? ` · pid ${agent.pid}` : ""}
-                    </p>
-                  </div>
-                  <span className={`dc-room-play-state ${liveCliStatusTone(agent.status)}`}>
-                    {liveCliStatusLabel(agent.status)}
-                  </span>
-                </div>
-                <p className="dc-room-connection-note preserve-words">
-                  {liveCliLatency(agent) || `last_seen ${agent.last_seen_event_id || "none"}`}
-                </p>
-                <div className="dc-room-live-cli-actions">
-                  <button type="button" onClick={() => onLiveCliAgentControl(agent, "start")}>
-                    <Play size={13} />
-                    Start
-                  </button>
-                  <button type="button" onClick={() => onLiveCliAgentControl(agent, "stop")}>
-                    <Square size={13} />
-                    Stop
-                  </button>
-                  <button type="button" onClick={() => onLiveCliAgentControl(agent, "resume")}>
-                    <RotateCcw size={13} />
-                    Resume
-                  </button>
-                  <button type="button" onClick={() => onLiveCliAgentControl(agent, "interrupt")}>
-                    <Zap size={13} />
-                    Interrupt
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-        <MemberList
-          agents={agents}
-          members={members}
-          roomId={room.id}
-          roomName={room.label}
-          roleOverrides={roleOverrides}
-          onRoleChange={onRoleChange}
-          canEditRoles={!guestLocked || guestOperator}
-          moderatorSessionToken={moderatorSessionToken}
-          processGroups={processGroups}
-          onSessionActionComplete={onSessionActionComplete}
-          quotaViewer={quotaViewer}
-          searchQuery={memberSearchQuery}
-          onSearchQueryChange={onMemberSearchQueryChange}
-          hideSearch={memberSearchQuery !== undefined}
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="dc-room-connection-panel">
       {!guestLocked && onStartAddAgent && (
@@ -348,7 +275,83 @@ export default function RoomConnectionPanel({
           {mutedCount > 0 && <span className="dc-room-muted-count">{mutedCount} muted</span>}
         </div>
       )}
-      {!liveCliRoom && !guestLocked && (
+      {!guestLocked && agentSessions.length > 0 && (
+        <section className="dc-room-play-panel" aria-label="Agent Session">
+          <div className="dc-room-play-header">
+            <span className="dc-room-play-title">Agent Session</span>
+            <span className="dc-room-play-state running">{agentSessions.length}</span>
+          </div>
+          <div className="dc-room-live-cli-list">
+            {agentSessions.map((session) => {
+              const status = session.runtime_status || session.status;
+              const running = ["starting", "idle", "busy"].includes(status);
+              return (
+                <article key={session.session_id} className="dc-room-live-cli-card">
+                  <div className="dc-room-live-cli-head">
+                    <div className="min-w-0">
+                      <p className="truncate text-[13px] font-black text-text-primary preserve-words">
+                        {session.display_name || session.participant_id}
+                      </p>
+                      <p className="truncate text-[11px] text-text-muted preserve-words">
+                        {session.runtime_kind || "local CLI"}
+                        {session.pid ? ` · pid ${session.pid}` : ""}
+                      </p>
+                    </div>
+                    <span className={`dc-room-play-state ${liveCliStatusTone(status)}`}>
+                      {liveCliStatusLabel(status)}
+                    </span>
+                  </div>
+                  <div className="dc-room-live-cli-actions">
+                    <button
+                      type="button"
+                      title="세션 시작"
+                      disabled={running}
+                      onClick={() => void onAgentControl(session, "start")}
+                    >
+                      <Play size={13} />
+                      Start
+                    </button>
+                    <button
+                      type="button"
+                      title="세션 중지"
+                      disabled={!running && status !== "error"}
+                      onClick={() => void onAgentControl(session, "stop")}
+                    >
+                      <Square size={13} />
+                      Stop
+                    </button>
+                    <button
+                      type="button"
+                      title="세션 재개"
+                      disabled={running}
+                      onClick={() => void onAgentControl(session, "resume")}
+                    >
+                      <RotateCcw size={13} />
+                      Resume
+                    </button>
+                    <button
+                      type="button"
+                      title="현재 응답 중단"
+                      disabled={status !== "busy"}
+                      onClick={() => void onAgentControl(session, "interrupt")}
+                    >
+                      <Zap size={13} />
+                      Interrupt
+                    </button>
+                  </div>
+                  <details className="dc-room-connection-note preserve-words">
+                    <summary>진단</summary>
+                    <p>{liveCliLatency(session) || `turns ${session.turn_count || 0}`}</p>
+                    <p>cursor {session.last_seen_event_id || "none"}</p>
+                    {session.last_error && <p className="dc-room-play-error">{session.last_error}</p>}
+                  </details>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+      {!guestLocked && agentSessions.length === 0 && (
         <section className="dc-room-play-panel" aria-label="Agent Session">
           <div className="dc-room-play-header">
             <span className="dc-room-play-title">Agent Session</span>
@@ -494,8 +497,10 @@ export default function RoomConnectionPanel({
         roomName={room.label}
         roleOverrides={roleOverrides}
         onRoleChange={onRoleChange}
-        canEditRoles={!guestLocked || guestOperator}
-        moderatorSessionToken={moderatorSessionToken}
+        canEditRoles={Boolean(capabilities["room.manage"])}
+        canModerate={Boolean(capabilities["participant.kick"] || capabilities["participant.mute"])}
+        onParticipantKick={capabilities["participant.kick"] ? onParticipantKick : undefined}
+        onParticipantMute={capabilities["participant.mute"] ? onParticipantMute : undefined}
         processGroups={processGroups}
         onSessionActionComplete={onSessionActionComplete}
         quotaViewer={quotaViewer}

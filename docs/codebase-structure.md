@@ -1,5 +1,10 @@
 # AgentsAssemble 코드베이스 구조 (2026-06-11 기준)
 
+> 현재 native CLI Agent Session의 RoomStore 상태 소유권, 단일 WebSocket,
+> Agent Bridge, PTY 수명주기는 `docs/live-cli-room-current-architecture.md`를
+> 먼저 참고한다. 이 문서는 그 경로 밖의 전체 코드베이스 지도를 주로
+> 설명한다.
+
 작업 참고용 전체 지도. 백엔드 ~56k줄(Python), 프런트엔드 ~22k줄(React/TS).
 단일 서버 프로세스(`python -m agentsassemble.cli gui`, 기본 127.0.0.1:8765)가
 HTTP API + SSE + 정적 프런트엔드 서빙을 전부 담당하는 **local-first** 구조다.

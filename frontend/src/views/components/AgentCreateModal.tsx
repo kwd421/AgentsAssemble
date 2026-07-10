@@ -2,12 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Bot, CheckCircle2, Folder, LogIn, Play, Plus, X } from "lucide-react";
 import {
   checkFrontendLiveAgent,
-  createAgentSession,
   fetchLiveAgentCreateOptions,
   fetchProviderSessions,
   startFrontendLiveAgentLogin,
-  type AgentSessionActionResponse,
-  type FrontendLiveAgentCreateResponse,
+  type FrontendLiveAgentCreateRequest,
   type FrontendLiveAgentCheckResponse,
   type LiveAgentCreateProvider,
   type ProviderSession,
@@ -18,7 +16,8 @@ type AgentCreateModalProps = {
   meetingId: string;
   roomLabel: string;
   onClose: () => void;
-  onCreated?: (result: AgentSessionActionResponse | FrontendLiveAgentCreateResponse) => void;
+  onCreate: (request: FrontendLiveAgentCreateRequest) => Promise<void>;
+  onCreated?: () => void;
 };
 
 export default function AgentCreateModal({
@@ -26,6 +25,7 @@ export default function AgentCreateModal({
   meetingId,
   roomLabel,
   onClose,
+  onCreate,
   onCreated,
 }: AgentCreateModalProps) {
   const [providers, setProviders] = useState<LiveAgentCreateProvider[]>([]);
@@ -182,7 +182,7 @@ export default function AgentCreateModal({
     setBusy("create");
     setStatus(effectiveStartNow ? "에이전트 시작 중..." : "에이전트 추가 중...");
     try {
-      const result = await createAgentSession({
+      await onCreate({
         meetingId,
         providerId,
         displayName,
@@ -196,8 +196,8 @@ export default function AgentCreateModal({
         sessionId,
         startNow: effectiveStartNow,
       });
-      setStatus(result.process_status === "resumed" || result.process_status === "launched" ? "시작 요청 완료" : "추가됨");
-      onCreated?.(result);
+      setStatus(effectiveStartNow ? "시작 요청 완료" : "추가됨");
+      onCreated?.();
       onClose();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "에이전트 추가 실패");

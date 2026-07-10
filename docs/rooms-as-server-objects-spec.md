@@ -8,8 +8,9 @@ referenced files before editing; do not assume anything not stated here.
 Rooms today live in two disjoint places, neither of which is an owned, queryable
 object:
 
-- **Frontend**: the room dock is browser `localStorage` (`PINNED_ROOMS` + persisted
-  entries) in `frontend/src/lib/roomDockModel.ts`.
+- **Frontend**: the room dock caches server rooms in browser `localStorage` and
+  keeps local hidden-room tombstones. Hard-coded demo rooms are not restored on
+  startup.
 - **Server**: a room only materializes as a filesystem dir `.agentsassemble/meetings/<id>/`
   when something needs it. There is **no registry of which rooms exist, who owns
   them, their label, or when they were last active.**
@@ -140,9 +141,10 @@ to avoid a circular import.
 - `ServerRoom` type: `{ room_id, label, last_active_at, archived, origin }`.
 
 ### 6. Frontend dock merge — `frontend/src/lib/roomDockModel.ts` + `frontend/src/App.tsx`
-- On load, fetch `fetchRooms()` and **merge** server rooms into the dock:
+- On load, fetch `fetchRooms(true)` and **merge** active server rooms into the dock:
   server rooms not already present (by `meetingId === room_id`) become dock items
-  (label from server, `meetingId = room_id`). Keep `PINNED_ROOMS` + local entries.
+  (label from server, `meetingId = room_id`). Keep unsynchronized local entries,
+  but filter archived, closed, and locally hidden server rooms.
   localStorage stays as a cache/fast-path; server list is authoritative for
   existence. De-dupe by `meetingId`.
 - This is what makes `room-20260605T021739` (and any localStorage-cleared room)

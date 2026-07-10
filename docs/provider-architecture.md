@@ -4,6 +4,11 @@ AgentsAssemble should support many providers without making the meeting runner k
 
 Current new MVP model: **local interactive CLI-first #general MVP**.
 
+The active local CLI path uses a canonical RoomStore participant/session, one
+ticket-authenticated room WebSocket, and a provider-specific Agent Bridge that
+owns one persistent PTY. See `docs/live-cli-room-current-architecture.md` for
+the implemented ownership map, lifecycle, protocol, and verification surface.
+
 The primary provider boundary is now `AgentRuntime`: `start()`,
 `deliver(events)`, `read_output()`, `interrupt()`, `stop()`, `health()`, plus a
 per-runtime `last_seen_event_id` cursor. `LiveCliRuntime` is the default path

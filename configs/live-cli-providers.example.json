@@ -12,16 +12,21 @@
         "never",
         "--sandbox",
         "read-only",
+        "--model",
+        "gpt-5.3-codex-spark",
         "-C",
         "."
       ],
       "cwd": ".",
       "input_mode": "bracketed_paste",
       "submit_newline": "\r",
+      "submit_delay_seconds": 0.15,
       "terminal_columns": 120,
       "terminal_rows": 40,
-      "initial_prompt_args": ["{prompt}"],
-      "startup_wait_seconds": 2,
+      "startup_quiet_seconds": 1,
+      "startup_timeout_seconds": 20,
+      "startup_accept_contains": "Do you trust the contents of this project?",
+      "startup_accept_keys": "\r",
       "quiet_seconds": 4,
       "session_probe_prompt": "AGENTSASSEMBLE_SESSION_MARKER=codex-001 를 기억하고 codex-001 이라고만 답해.",
       "memory_check_prompt": "아까 내가 준 AGENTSASSEMBLE_SESSION_MARKER 값을 말해줘. marker 값만 답해."
@@ -31,18 +36,18 @@
       "kind": "live_cli",
       "display_name": "Antigravity CLI",
       "command": [
-        "/Users/seinel/.local/bin/agy",
-        "--dangerously-skip-permissions"
+        "agy",
+        "--sandbox"
       ],
       "cwd": ".",
       "input_mode": "bracketed_paste",
       "submit_newline": "\r",
       "terminal_columns": 120,
       "terminal_rows": 40,
-      "initial_prompt_args": ["--prompt-interactive", "{prompt}"],
       "startup_accept_contains": "Do you trust the contents of this project?",
       "startup_accept_keys": "\r",
-      "startup_after_accept_wait_seconds": 2,
+      "startup_quiet_seconds": 1,
+      "startup_timeout_seconds": 20,
       "quiet_seconds": 4,
       "session_probe_prompt": "AGENTSASSEMBLE_SESSION_MARKER=antigravity-001 를 기억하고 antigravity-001 이라고만 답해.",
       "memory_check_prompt": "아까 marker 값 뭐였지? marker 값만 답해."
@@ -54,7 +59,8 @@
       "command": [
         "grok",
         "--no-alt-screen",
-        "--always-approve",
+        "--permission-mode",
+        "plan",
         "--cwd",
         "."
       ],
@@ -62,9 +68,37 @@
       "submit_newline": "\r",
       "terminal_columns": 120,
       "terminal_rows": 40,
-      "startup_wait_seconds": 1,
+      "startup_quiet_seconds": 1,
+      "startup_timeout_seconds": 20,
       "quiet_seconds": 4,
       "session_probe_prompt": "AGENTSASSEMBLE_SESSION_MARKER=grok-001 를 기억하고 grok-001 이라고만 답해.",
+      "memory_check_prompt": "아까 marker 값 뭐였지? marker 값만 답해."
+    },
+    {
+      "id": "claude",
+      "kind": "live_cli",
+      "display_name": "Claude Haiku",
+      "command": [
+        "claude",
+        "--model",
+        "haiku",
+        "--permission-mode",
+        "plan",
+        "--tools",
+        "--safe-mode"
+      ],
+      "cwd": ".",
+      "input_mode": "bracketed_paste",
+      "submit_newline": "\r",
+      "submit_delay_seconds": 0.2,
+      "terminal_columns": 120,
+      "terminal_rows": 40,
+      "startup_quiet_seconds": 1,
+      "startup_timeout_seconds": 20,
+      "startup_accept_contains": "Do you trust the contents of this project?",
+      "startup_accept_keys": "\r",
+      "quiet_seconds": 4,
+      "session_probe_prompt": "AGENTSASSEMBLE_SESSION_MARKER=claude-haiku-001 를 기억하고 claude-haiku-001 이라고만 답해.",
       "memory_check_prompt": "아까 marker 값 뭐였지? marker 값만 답해."
     }
   ]

@@ -29,7 +29,8 @@ from agentsassemble.room_websocket import (
 )
 
 WS_TICKET_TTL_SECONDS = 30.0
-WS_STREAMS = ("lobby", "roster", "side_chat")
+WS_STREAMS = ("lobby", "roster", "side_chat", "room_events")
+WS_DEFAULT_STREAMS = ("lobby", "roster", "side_chat")
 WS_SAY_METADATA_FIELDS = {
     "source_event_id",
     "thread_source_event_id",
@@ -139,6 +140,9 @@ class WsRoomDeps:
     is_muted: Callable[[str, str], bool]
     set_thinking: Callable[[dict, bool], None]
     is_session_active: Callable[[str], bool] = lambda token: True
+    room_snapshot: Callable[[dict, int], dict[str, object]] = lambda identity, after_seq: {}
+    execute_command: Callable[[dict, dict], dict[str, object]] = lambda identity, message: {}
+    on_subscribe: Callable[[dict, set[str], int], None] = lambda identity, streams, after_seq: None
 
 
 @dataclass
@@ -153,6 +157,7 @@ class WsRoomSession:
     subscribed: set = field(default_factory=set)
     _cursors: dict = field(default_factory=dict)
     _roster_sig: str = ""
+    _room_after_seq: int = 0
     closed: bool = False
 
     @property
@@ -189,6 +194,8 @@ class WsRoomSession:
             return self._on_say(msg)
         if op == "thinking":
             return self._on_thinking(msg)
+        if op == "command":
+            return self._on_command(msg)
         if op == "ping":  # app-level ping (in addition to control-frame ping)
             return [encode_text(json.dumps({"op": "pong"}))]
         return [self._error("unknown_op", f"Unknown op: {op!r}")]
@@ -206,15 +213,35 @@ class WsRoomSession:
 
     # -- ops --------------------------------------------------------------- #
     def _on_subscribe(self, msg: dict) -> list[bytes]:
-        requested = msg.get("streams") or list(WS_STREAMS)
+        requested = msg.get("streams") or list(WS_DEFAULT_STREAMS)
         streams = [s for s in requested if s in WS_STREAMS]
         self.subscribed = set(streams)
+        self._room_after_seq = _safe_nonnegative_int(msg.get("resume_from_seq"))
         for stream in streams:
             resume = str(msg.get("resume_from_id") or "") if stream in {"lobby", "side_chat"} else ""
             self._cursors[stream] = resume
+        try:
+            self.deps.on_subscribe(self.identity, set(streams), self._room_after_seq)
+        except Exception:
+            return [self._error("subscribe_failed", "Could not subscribe to room events.")]
         frames = [encode_text(json.dumps({"op": "subscribed", "streams": sorted(self.subscribed)}))]
         frames.extend(self.poll(snapshot=True))  # immediate snapshot after subscribe
         return frames
+
+    def _on_command(self, msg: dict) -> list[bytes]:
+        request_id = str(msg.get("request_id") or "").strip()
+        if not request_id:
+            return [self._nack("", "bad_request", "request_id is required.")]
+        try:
+            response = self.deps.execute_command(self.identity, msg)
+        except WsCommandRejected as rejected:
+            return [self._nack(request_id, rejected.code, str(rejected))]
+        except Exception as error:
+            code = str(getattr(error, "code", "command_failed") or "command_failed")
+            return [self._nack(request_id, code, str(error) or "Room command failed.")]
+        if not isinstance(response, dict):
+            return [self._nack(request_id, "command_failed", "Room command returned an invalid response.")]
+        return [encode_text(json.dumps(response))]
 
     def _on_say(self, msg: dict) -> list[bytes]:
         if str(self.identity.get("invite_scope") or "") == "read_only":
@@ -294,6 +321,11 @@ class WsRoomSession:
                     "events": [],
                     "snapshot": True,
                 })))
+        if snapshot and "room_events" in self.subscribed:
+            payload = dict(self.deps.room_snapshot(self.identity, self._room_after_seq))
+            payload["op"] = "snapshot"
+            payload["stream"] = "room_events"
+            frames.append(encode_text(json.dumps(payload)))
         return frames
 
     def _session_is_active(self) -> bool:
@@ -311,6 +343,19 @@ class WsRoomSession:
     def _error(self, category: str, message: str) -> bytes:
         return encode_text(json.dumps({"op": "error", "category": category, "message": message}))
 
+    @staticmethod
+    def _nack(request_id: str, code: str, message: str) -> bytes:
+        return encode_text(
+            json.dumps(
+                {
+                    "op": "nack",
+                    "request_id": request_id,
+                    "accepted": False,
+                    "error": {"code": code, "message": message},
+                }
+            )
+        )
+
 
 class WsSayRejected(Exception):
     """Raised by deps.post_say to reject a message with a category (e.g. turn_conflict)."""
@@ -318,3 +363,16 @@ class WsSayRejected(Exception):
     def __init__(self, message: str, *, category: str = "rejected") -> None:
         super().__init__(message)
         self.category = category
+
+
+class WsCommandRejected(Exception):
+    def __init__(self, message: str, *, code: str = "rejected") -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _safe_nonnegative_int(value: object) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0

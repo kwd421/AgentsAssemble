@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,14 +78,17 @@ class _JsonlOffsetMessageSource:
         self._offsets: dict[str, int] = {}
         self._ignored_existing_paths: set[str] = set()
         self._active_paths: set[str] = set()
+        self._turn_input_seen_paths: set[str] = set()
 
     def prepare_start(self) -> None:
         self._offsets = {}
         self._active_paths = set()
+        self._turn_input_seen_paths = set()
         self._ignored_existing_paths = {str(path) for path in self._candidate_paths()}
 
     def begin_turn(self) -> None:
         self._offsets = {}
+        self._turn_input_seen_paths = set()
         for path in self._visible_candidate_paths():
             self._offsets[str(path)] = _safe_size(path)
 
@@ -97,6 +101,10 @@ class _JsonlOffsetMessageSource:
             text, next_offset = _read_from_offset(path, start)
             self._offsets[path_key] = next_offset
             if not text:
+                continue
+            if self._contains_turn_input(text):
+                self._turn_input_seen_paths.add(path_key)
+            if path_key not in self._turn_input_seen_paths:
                 continue
             snapshot = self._extract_from_text(text, source=str(path))
             if snapshot.content:
@@ -123,6 +131,9 @@ class _JsonlOffsetMessageSource:
         return paths
 
     def _extract_from_text(self, text: str, *, source: str) -> LiveCliMessageSnapshot:
+        raise NotImplementedError
+
+    def _contains_turn_input(self, text: str) -> bool:
         raise NotImplementedError
 
 
@@ -162,15 +173,28 @@ class CodexSessionMessageSource(_JsonlOffsetMessageSource):
             if entry_type == "event_msg" and payload_type == "agent_message":
                 latest = clean_lobby_text(payload.get("message"), limit=12000)
             elif entry_type == "event_msg" and payload_type == "task_complete":
-                latest = latest or clean_lobby_text(payload.get("last_agent_message"), limit=12000)
+                latest = clean_lobby_text(payload.get("last_agent_message"), limit=12000) or latest
             elif entry_type == "response_item":
-                latest = latest or _codex_response_item_text(payload)
+                latest = _codex_response_item_text(payload) or latest
         return LiveCliMessageSnapshot(
             content=latest,
             complete=bool(latest),
             source=source if latest else "",
             source_kind=self.source_kind,
         )
+
+    def _contains_turn_input(self, text: str) -> bool:
+        for entry in _jsonl_objects(text):
+            payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+            if str(entry.get("type") or "") == "event_msg" and str(payload.get("type") or "") == "user_message":
+                return True
+            if (
+                str(entry.get("type") or "") == "response_item"
+                and str(payload.get("type") or "") == "message"
+                and str(payload.get("role") or "") == "user"
+            ):
+                return True
+        return False
 
 
 class GrokSessionMessageSource(_JsonlOffsetMessageSource):
@@ -205,6 +229,9 @@ class GrokSessionMessageSource(_JsonlOffsetMessageSource):
             source=source if latest else "",
             source_kind=self.source_kind,
         )
+
+    def _contains_turn_input(self, text: str) -> bool:
+        return any(str(entry.get("type") or "") == "user" for entry in _jsonl_objects(text))
 
 
 class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
@@ -254,6 +281,84 @@ class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
             source_kind=self.source_kind,
         )
 
+    def _contains_turn_input(self, text: str) -> bool:
+        return any(
+            str(entry.get("source") or "") == "USER_EXPLICIT"
+            or str(entry.get("type") or "") == "USER_INPUT"
+            for entry in _jsonl_objects(text)
+        )
+
+
+class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
+    """Read only assistant text from Claude Code's structured session log."""
+
+    source_kind = "claude_session_jsonl"
+
+    def _candidate_paths(self) -> list[Path]:
+        root = self.home / ".claude" / "projects"
+        if not root.exists():
+            return []
+        if self.cwd is not None:
+            project = root / re.sub(r"[/.]", "-", str(self.cwd))
+            if project.exists():
+                return _recent_paths(project.glob("*.jsonl"))
+            return []
+        return _recent_paths(root.glob("*/*.jsonl"))
+
+    def _extract_from_text(self, text: str, *, source: str) -> LiveCliMessageSnapshot:
+        messages: list[str] = []
+        for entry in _jsonl_objects(text):
+            if str(entry.get("type") or "") != "assistant":
+                continue
+            message = entry.get("message") if isinstance(entry.get("message"), dict) else {}
+            if bool(entry.get("isApiErrorMessage")) or entry.get("error") or entry.get("apiErrorStatus"):
+                detail = _claude_message_text(message) or clean_lobby_text(entry.get("error"), limit=500)
+                raise LiveCliMessageExtractionError(detail or "Claude Code provider authentication failed.")
+            if str(message.get("role") or "assistant") != "assistant":
+                continue
+            content = message.get("content")
+            if isinstance(content, str):
+                piece = clean_lobby_text(content, limit=12000)
+                if piece:
+                    messages.append(piece)
+                continue
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict) or str(block.get("type") or "") != "text":
+                    continue
+                piece = clean_lobby_text(block.get("text"), limit=12000)
+                if piece:
+                    messages.append(piece)
+        result = "\n".join(messages).strip()
+        return LiveCliMessageSnapshot(
+            content=result,
+            complete=bool(result),
+            source=source if result else "",
+            source_kind=self.source_kind,
+        )
+
+    def _contains_turn_input(self, text: str) -> bool:
+        for entry in _jsonl_objects(text):
+            message = entry.get("message") if isinstance(entry.get("message"), dict) else {}
+            if str(entry.get("type") or "") == "user" or str(message.get("role") or "") == "user":
+                return True
+        return False
+
+
+def _claude_message_text(message: dict[str, object]) -> str:
+    content = message.get("content")
+    if isinstance(content, str):
+        return clean_lobby_text(content, limit=1000)
+    if not isinstance(content, list):
+        return ""
+    return "\n".join(
+        piece
+        for block in content
+        if isinstance(block, dict) and str(block.get("type") or "") == "text"
+        if (piece := clean_lobby_text(block.get("text"), limit=1000))
+    ).strip()
+
 
 def make_live_cli_message_source(
     agent_id: str,
@@ -268,6 +373,8 @@ def make_live_cli_message_source(
         return GrokSessionMessageSource(cwd=cwd)
     if provider == "antigravity":
         return AntigravityTranscriptMessageSource(cwd=cwd)
+    if provider == "claude":
+        return ClaudeSessionMessageSource(cwd=cwd)
     return TerminalCaptureMessageSource()
 
 
@@ -282,6 +389,8 @@ def _provider_key(agent_id: str, command: list[str]) -> str:
         return "grok"
     if names & {"agy", "antigravity"}:
         return "antigravity"
+    if "claude" in names:
+        return "claude"
     return ""
 
 

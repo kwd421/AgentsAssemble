@@ -16,8 +16,10 @@ from collections import deque
 import json
 import socket as socket_module
 import ssl
+import threading
 import urllib.request
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from agentsassemble.room_websocket import (
     OP_CLOSE,
@@ -61,6 +63,7 @@ class WsRoomClient:
         self.closed = False
         self._assembler = MessageAssembler(expect_mask=False)
         self._pending_messages: deque[dict] = deque()
+        self._send_lock = threading.Lock()
 
     def open(self, path: str) -> None:
         """Send the upgrade request, verify the 101 + accept key, and buffer any
@@ -109,8 +112,27 @@ class WsRoomClient:
         except (BrokenPipeError, ConnectionResetError, OSError):
             self.closed = True
 
+    def command(
+        self,
+        action: str,
+        payload: dict[str, object] | None = None,
+        *,
+        request_id: str = "",
+    ) -> str:
+        correlated_id = str(request_id or f"req-{uuid4().hex[:16]}")
+        self._send(
+            {
+                "op": "command",
+                "request_id": correlated_id,
+                "action": str(action or ""),
+                "payload": dict(payload or {}),
+            }
+        )
+        return correlated_id
+
     def _send(self, obj: dict) -> None:
-        self.sock.sendall(encode_client_text(json.dumps(obj)))
+        with self._send_lock:
+            self.sock.sendall(encode_client_text(json.dumps(obj)))
 
     def receive(self) -> list[dict]:
         """One recv; return parsed server messages (dicts). Auto-responds to ping;
@@ -166,7 +188,8 @@ class WsRoomClient:
 
     def _safe_send(self, frame: bytes) -> None:
         try:
-            self.sock.sendall(frame)
+            with self._send_lock:
+                self.sock.sendall(frame)
         except (BrokenPipeError, ConnectionResetError, OSError):
             self.closed = True
 
@@ -272,6 +295,22 @@ def connect_room_ws(
 ) -> WsRoomClient:
     """Real-usage convenience: ws-ticket → TCP connect → handshake → subscribe."""
     ticket = request_ws_ticket(server_url, session_token, timeout=timeout)
+    return connect_room_ws_with_ticket(server_url, ticket, streams, timeout=timeout)
+
+
+def connect_room_ws_with_ticket(
+    server_url: str,
+    ticket: str,
+    streams: list[str],
+    *,
+    timeout: float = 5.0,
+) -> WsRoomClient:
+    """Open the canonical room socket with a pre-issued single-use ticket.
+
+    Server-owned Agent Bridges receive an internal ticket directly, while
+    browsers and remote residents first exchange a session token for one.
+    Both continue through the exact same WebSocket endpoint and protocol.
+    """
     parsed = urlparse(server_url)
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or (443 if parsed.scheme == "https" else 80)

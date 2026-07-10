@@ -7,6 +7,7 @@ import {
   type RoomGuestSession,
 } from "./roomGuestSession";
 import {
+  loadHiddenRoomIds,
   loadRoomDockItems,
   type PersistedRoomDockItem,
 } from "./roomDockPersistence";
@@ -38,52 +39,9 @@ export type ServerRoomDockSource = {
   room_id: string;
   label?: string;
   last_active_at?: string;
+  archived?: boolean;
+  status?: string;
 };
-
-export const LIVE_CLI_ROOM: RoomDockItem = {
-  id: "live-cli-general",
-  label: "Agent Session",
-  meetingId: "general",
-  topic: "Codex, Antigravity, Grok live CLI room",
-  shortLabel: "G",
-  icon: Radio,
-  createdAt: "",
-  tone: "resident",
-};
-
-export const PINNED_ROOMS: RoomDockItem[] = [
-  LIVE_CLI_ROOM,
-  {
-    id: "resident-m1",
-    label: "AgentsAssemble",
-    meetingId: "resident-m1",
-    topic: "상주 회의실",
-    shortLabel: "A",
-    icon: Bot,
-    createdAt: "",
-    tone: "resident",
-  },
-  {
-    id: "mafia-room",
-    label: "Mafia Night",
-    meetingId: "mafia-room",
-    topic: "추론 게임",
-    shortLabel: "M",
-    icon: Gamepad2,
-    createdAt: "",
-    tone: "mafia",
-  },
-  {
-    id: "work-room",
-    label: "Work Room",
-    meetingId: "work-room",
-    topic: "개발 회의",
-    shortLabel: "W",
-    icon: LayoutDashboard,
-    createdAt: "",
-    tone: "work",
-  },
-];
 
 function compactTimestamp(date: Date) {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -139,12 +97,11 @@ function hydrateRoom(room: PersistedRoomDockItem): RoomDockItem {
 }
 
 export function initialOperatorRooms(directRoom?: RoomDockItem | null) {
-  const persisted = loadRoomDockItems().map(hydrateRoom);
-  const baseRooms = persisted.length ? persisted : [createFreshRoom(), ...PINNED_ROOMS];
-  const missingPinnedRooms = PINNED_ROOMS.filter(
-    (pinned) => !baseRooms.some((room) => room.id === pinned.id || room.meetingId === pinned.meetingId)
-  );
-  const rooms = [...baseRooms, ...missingPinnedRooms];
+  const hidden = new Set(loadHiddenRoomIds());
+  const persisted = loadRoomDockItems()
+    .filter((room) => !hidden.has(room.meetingId))
+    .map(hydrateRoom);
+  const rooms = persisted.length ? persisted : [createFreshRoom()];
   if (!directRoom) return rooms;
   const existingIndex = rooms.findIndex(
     (room) => room.id === directRoom.id || room.meetingId === directRoom.meetingId
@@ -164,7 +121,8 @@ export function initialOperatorRooms(directRoom?: RoomDockItem | null) {
 
 export function roomFromServerRoom(room: ServerRoomDockSource): RoomDockItem | null {
   const meetingId = String(room.room_id || "").trim();
-  if (!meetingId) return null;
+  const status = String(room.status || "active").toLowerCase();
+  if (!meetingId || room.archived || status === "closed" || status === "archived") return null;
   const label = String(room.label || meetingId).trim() || meetingId;
   return {
     id: `server-${meetingId}`,
@@ -180,19 +138,27 @@ export function roomFromServerRoom(room: ServerRoomDockSource): RoomDockItem | n
 
 export function mergeServerRoomsIntoDock(
   currentRooms: RoomDockItem[],
-  serverRooms: ServerRoomDockSource[]
+  serverRooms: ServerRoomDockSource[],
+  hiddenMeetingIds: string[] = []
 ): RoomDockItem[] {
-  const next = [...currentRooms];
+  const inactiveMeetingIds = new Set(
+    serverRooms
+      .filter((room) => !roomFromServerRoom(room))
+      .map((room) => String(room.room_id || "").trim())
+      .filter(Boolean)
+  );
+  const next = currentRooms.filter((room) => !inactiveMeetingIds.has(room.meetingId));
   const seenMeetingIds = new Set(next.map((room) => room.meetingId));
-  let added = false;
+  const hidden = new Set(hiddenMeetingIds);
+  let changed = next.length !== currentRooms.length;
   for (const serverRoom of serverRooms) {
     const dockRoom = roomFromServerRoom(serverRoom);
-    if (!dockRoom || seenMeetingIds.has(dockRoom.meetingId)) continue;
+    if (!dockRoom || hidden.has(dockRoom.meetingId) || seenMeetingIds.has(dockRoom.meetingId)) continue;
     next.push(dockRoom);
     seenMeetingIds.add(dockRoom.meetingId);
-    added = true;
+    changed = true;
   }
-  return added ? next : currentRooms;
+  return changed ? next : currentRooms;
 }
 
 function cleanInviteValue(value: string | null, fallback: string, limit: number) {

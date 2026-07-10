@@ -4,6 +4,11 @@ AgentsAssemble must model a shared council room, not a survey runner that interv
 
 Current new MVP surface: **local interactive CLI-first #general MVP**.
 
+The local CLI room now uses the canonical RoomStore participant/session/event
+model and the ticket-authenticated room WebSocket. Read
+`docs/live-cli-room-current-architecture.md` for the current implemented data
+flow, lifecycle rules, verification surface, and remaining boundaries.
+
 The active implementation direction is one `#general` room where persistent
 local CLI sessions read only events after their last cursor and write terminal
 output back as room events. The first runtime boundary is `AgentRuntime`, with

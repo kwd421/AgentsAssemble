@@ -9,6 +9,7 @@ export type PersistedRoomDockItem = {
 };
 
 const ROOM_DOCK_STORAGE_KEY = "agentsassemble.discord.rooms.v1";
+const HIDDEN_ROOM_DOCK_STORAGE_KEY = "agentsassemble.discord.hiddenRooms.v1";
 const MAX_STORED_ROOMS = 24;
 
 function safeText(value: unknown, fallback: string, maxLength: number) {
@@ -63,5 +64,31 @@ export function persistRoomDockItems(rooms: PersistedRoomDockItem[]) {
     window.localStorage.setItem(ROOM_DOCK_STORAGE_KEY, JSON.stringify(normalized));
   } catch {
     // Room dock persistence is a browser convenience; keep the live UI state if storage is unavailable.
+  }
+}
+
+export function loadHiddenRoomIds(): string[] {
+  try {
+    const raw = window.localStorage.getItem(HIDDEN_ROOM_DOCK_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return [...new Set(parsed.map((value) => safeText(value, "", 128)).filter(Boolean))].slice(
+      0,
+      MAX_STORED_ROOMS
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function persistHiddenRoomIds(roomIds: string[]) {
+  try {
+    const normalized = [...new Set(roomIds.map((value) => safeText(value, "", 128)).filter(Boolean))].slice(
+      0,
+      MAX_STORED_ROOMS
+    );
+    window.localStorage.setItem(HIDDEN_ROOM_DOCK_STORAGE_KEY, JSON.stringify(normalized));
+  } catch {
+    // Hidden-room state is a local UI preference, so an unavailable storage backend is non-fatal.
   }
 }

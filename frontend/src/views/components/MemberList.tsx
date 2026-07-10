@@ -21,9 +21,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   resumeAgentSession,
   deleteLiveAgentSession,
-  expelLiveAgentFromRoom,
-  kickRoomMember,
-  muteRoomMember,
   stopLiveAgentSessionAgent,
   stopSelfManagedAgent,
   resumeSelfManagedAgent,
@@ -555,12 +552,14 @@ function MemberDetailModal({
   processGroups = [],
   onSessionActionComplete,
   onAgentProfileSettingsChange,
+  onParticipantKick,
 }: {
   entry: MemberEntry;
   onClose: () => void;
   processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
   onAgentProfileSettingsChange?: (settings: Record<string, AgentProfileSettings>) => void;
+  onParticipantKick?: (participantId: string) => void | Promise<void>;
 }) {
   const [sessionActionBusy, setSessionActionBusy] = useState(false);
   const [sessionActionStatus, setSessionActionStatus] = useState("");
@@ -646,7 +645,10 @@ function MemberDetailModal({
       sessionGroup.meeting_id &&
       sessionGroup.config_path
   );
-  const hasRoomAdminControl = Boolean(agent.agent_id && agent.meeting_id);
+  const canonicalRoomAgent = agent.connection_kind === "native_cli_bridge";
+  const hasRoomAdminControl = Boolean(
+    agent.agent_id && agent.meeting_id && (onParticipantKick || !canonicalRoomAgent)
+  );
   const pollIntervalValue = parsePositiveSeconds(pollIntervalSeconds);
   const cooldownValue = parseNonnegativeSeconds(cooldownSeconds);
   const canResumeSession = Boolean(
@@ -802,17 +804,12 @@ function MemberDetailModal({
   }
 
   async function handleExpelAgent() {
-    const meetingId = sessionGroup?.meeting_id || agent.meeting_id;
-    if (!meetingId || !agent.agent_id) return;
+    if (!agent.agent_id || !onParticipantKick) return;
     if (!window.confirm(`${entry.displayName}을 이 방에서 추방할까요? 세션 설정은 유지됩니다.`)) return;
     setSessionActionBusy(true);
     setSessionActionStatus("추방 요청 중...");
     try {
-      await expelLiveAgentFromRoom({
-        meetingId,
-        groupId: sessionGroup?.group_id || agent.process_group_id,
-        agentId: agent.agent_id,
-      });
+      await onParticipantKick(agent.agent_id);
       setSessionActionStatus("추방 완료");
       onSessionActionComplete?.();
       onClose();
@@ -1248,7 +1245,9 @@ function MemberDetailModal({
           <section className="dc-member-detail-section" aria-label={`${entry.displayName} 방 관리`}>
             <h3>방 관리</h3>
             <p className="dc-member-detail-note preserve-words">
-              추방은 이 방에서만 제거하고, 삭제는 저장된 세션 설정까지 제거합니다.
+              {canonicalRoomAgent
+                ? "추방하면 실행 중인 CLI를 중지하고 이 방의 참가자와 라우팅에서 제거합니다."
+                : "추방은 이 방에서만 제거하고, 삭제는 저장된 레거시 세션 설정까지 제거합니다."}
             </p>
             {!hasResumeControl && !hasStopControl && !canSelfStop && !canSelfResume && (
               <p className="dc-member-detail-note preserve-words">
@@ -1283,26 +1282,30 @@ function MemberDetailModal({
                   RESUME
                 </button>
               )}
-              <button
-                type="button"
-                className="dc-member-session-button"
-                data-variant="danger"
-                disabled={sessionActionBusy}
-                onClick={handleExpelAgent}
-              >
-                <LogOut size={15} />
-                추방
-              </button>
-              <button
-                type="button"
-                className="dc-member-session-button"
-                data-variant="danger"
-                disabled={sessionActionBusy}
-                onClick={handleDeleteAgentSession}
-              >
-                <Trash2 size={15} />
-                세션 삭제
-              </button>
+              {onParticipantKick && (
+                <button
+                  type="button"
+                  className="dc-member-session-button"
+                  data-variant="danger"
+                  disabled={sessionActionBusy}
+                  onClick={handleExpelAgent}
+                >
+                  <LogOut size={15} />
+                  추방
+                </button>
+              )}
+              {!canonicalRoomAgent && (
+                <button
+                  type="button"
+                  className="dc-member-session-button"
+                  data-variant="danger"
+                  disabled={sessionActionBusy}
+                  onClick={handleDeleteAgentSession}
+                >
+                  <Trash2 size={15} />
+                  세션 삭제
+                </button>
+              )}
             </div>
             {!hasSessionSection && sessionActionStatus && (
               <p className="dc-member-session-status preserve-words">{sessionActionStatus}</p>
@@ -1328,7 +1331,9 @@ export default function MemberList({
   searchQuery,
   onSearchQueryChange,
   hideSearch = false,
-  moderatorSessionToken = "",
+  canModerate = false,
+  onParticipantKick,
+  onParticipantMute,
 }: {
   agents: LiveAgent[];
   members?: RoomMember[];
@@ -1343,7 +1348,9 @@ export default function MemberList({
   searchQuery?: string;
   onSearchQueryChange?: (query: string) => void;
   hideSearch?: boolean;
-  moderatorSessionToken?: string;
+  canModerate?: boolean;
+  onParticipantKick?: (participantId: string) => void | Promise<void>;
+  onParticipantMute?: (participantId: string, muted: boolean) => void | Promise<void>;
 }) {
   const [localRoleOverrides, setLocalRoleOverrides] = useState<Record<string, RoleId>>({});
   const [localQuery, setLocalQuery] = useState("");
@@ -1464,8 +1471,6 @@ export default function MemberList({
     setAgentProfileSettings(loadAgentProfileSettings());
   }, [roomId]);
 
-  const canModerate = canEditRoles;
-
   function handleMemberContextMenu(entry: MemberEntry, event: ReactMouseEvent<HTMLElement>) {
     // Host-only moderation: right-clicking a participant opens the mute menu.
     // Self and any participant without a room scope can't be muted.
@@ -1475,21 +1480,13 @@ export default function MemberList({
   }
 
   async function handleToggleMute(entry: MemberEntry) {
-    if (!entry.meetingId) return;
+    if (!entry.meetingId || !onParticipantMute) return;
     setMuteBusy(true);
     try {
-      await muteRoomMember({
-        meetingId: entry.meetingId,
-        participantId: entry.id,
-        muted: !entry.muted,
-        sessionToken: moderatorSessionToken,
-      });
+      await onParticipantMute(entry.id, !entry.muted);
       onSessionActionComplete?.();
     } catch (error) {
-      window.alert(
-        `뮤트 변경 실패: ${error instanceof Error ? error.message : String(error)}\n` +
-          "(호스트 토큰이 없으면 거부됩니다 — 호스트 브라우저에서 다시 시도하세요)"
-      );
+      window.alert(`뮤트 변경 실패: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setMuteBusy(false);
       setMemberMenu(null);
@@ -1497,24 +1494,17 @@ export default function MemberList({
   }
 
   async function handleKick(entry: MemberEntry) {
-    if (!entry.meetingId) return;
+    if (!entry.meetingId || !onParticipantKick) return;
     if (!window.confirm(`${entry.displayName}을(를) 이 방에서 내보낼까요? (열린 초대 링크로는 다시 들어올 수 있어요)`)) {
       setMemberMenu(null);
       return;
     }
     setMuteBusy(true);
     try {
-      await kickRoomMember({
-        meetingId: entry.meetingId,
-        participantId: entry.id,
-        sessionToken: moderatorSessionToken,
-      });
+      await onParticipantKick(entry.id);
       onSessionActionComplete?.();
     } catch (error) {
-      window.alert(
-        `내보내기 실패: ${error instanceof Error ? error.message : String(error)}\n` +
-          "(호스트 토큰이 없으면 거부됩니다 — 호스트 브라우저에서 다시 시도하세요)"
-      );
+      window.alert(`내보내기 실패: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setMuteBusy(false);
       setMemberMenu(null);
@@ -1651,6 +1641,7 @@ export default function MemberList({
           processGroups={processGroups}
           onSessionActionComplete={onSessionActionComplete}
           onAgentProfileSettingsChange={setAgentProfileSettings}
+          onParticipantKick={canModerate ? onParticipantKick : undefined}
         />
       )}
       {memberMenu && (
