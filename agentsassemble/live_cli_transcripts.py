@@ -108,7 +108,11 @@ class _JsonlOffsetMessageSource:
             self._offsets[path_key] = next_offset
             if not text:
                 continue
-            if self._contains_turn_input(text, expected_input=self._expected_turn_input):
+            exact_input = self._contains_turn_input(text, expected_input=self._expected_turn_input)
+            bound_session_input = bool(
+                self._bound_path == path_key and self._contains_any_turn_input(text)
+            )
+            if exact_input or bound_session_input:
                 self._turn_input_seen_paths.add(path_key)
                 if not self._bound_path:
                     self._bound_path = path_key
@@ -156,6 +160,9 @@ class _JsonlOffsetMessageSource:
         if expected_input:
             return expected_input in inputs
         return any(inputs)
+
+    def _contains_any_turn_input(self, text: str) -> bool:
+        return any(_normalize_turn_input(value) for value in self._turn_input_texts(text))
 
 
 class CodexSessionMessageSource(_JsonlOffsetMessageSource):

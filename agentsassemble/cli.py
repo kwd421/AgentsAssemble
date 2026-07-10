@@ -1702,6 +1702,22 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Start two or more providers and verify agent-to-agent room relay around a directed ring.",
     )
+    room_smoke.add_argument(
+        "--conversation-seconds",
+        type=parse_nonnegative_float,
+        default=0.0,
+        help="Keep an agent conversation running for at least this many seconds; 0 runs one directed ring.",
+    )
+    room_smoke.add_argument(
+        "--conversation-topic",
+        default="",
+        help="Topic used by the time-boxed real agent conversation.",
+    )
+    room_smoke.add_argument(
+        "--verify-controls",
+        action="store_true",
+        help="Verify process-preserving pause/resume backlog handling and participant kick cleanup.",
+    )
     room_smoke.add_argument("--approve-real-provider", action="store_true", help="Allow real local provider CLI commands to run.")
     room_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print JSON output.")
     room_smoke_subparsers = room_smoke.add_subparsers(dest="room_smoke_command")
@@ -8526,6 +8542,9 @@ def run_room_command(args: argparse.Namespace) -> int:
                 timeout_seconds=float(getattr(args, "timeout", 120.0) or 120.0),
                 latency_samples=int(getattr(args, "latency_samples", 0) or 0),
                 agent_conversation=bool(getattr(args, "agent_conversation", False)),
+                conversation_seconds=float(getattr(args, "conversation_seconds", 0.0) or 0.0),
+                conversation_topic=str(getattr(args, "conversation_topic", "") or ""),
+                verify_controls=bool(getattr(args, "verify_controls", False)),
             )
         elif bool(args.approve_real_provider) and args.room_smoke_command in CODEX_APP_SERVER_SMOKE_COMMANDS:
             payload = run_codex_app_server_smoke(

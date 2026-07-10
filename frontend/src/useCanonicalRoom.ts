@@ -222,7 +222,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   );
 
   const sendAgentControl = useCallback(
-    async (session: RoomAgentSession, action: "start" | "stop" | "resume" | "interrupt") => {
+    async (session: RoomAgentSession, action: "start" | "pause" | "stop" | "resume" | "interrupt") => {
       if (!socket) return;
       await socket.command(`agent.${action}`, { agent_id: session.participant_id });
     },

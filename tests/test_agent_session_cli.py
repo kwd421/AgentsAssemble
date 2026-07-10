@@ -273,6 +273,11 @@ class AgentSessionCliTests(unittest.TestCase):
                 "--latency-samples",
                 "10",
                 "--agent-conversation",
+                "--conversation-seconds",
+                "300",
+                "--conversation-topic",
+                "haunted station",
+                "--verify-controls",
                 "--json",
             ]
         )
@@ -293,6 +298,9 @@ class AgentSessionCliTests(unittest.TestCase):
             timeout_seconds=120.0,
             latency_samples=10,
             agent_conversation=True,
+            conversation_seconds=300.0,
+            conversation_topic="haunted station",
+            verify_controls=True,
         )
         self.assertIn('"status": "ok"', stdout.getvalue())
 

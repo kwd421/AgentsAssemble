@@ -464,11 +464,13 @@ class RoomRealtimeController:
                 server_url=server_url,
                 ticket_issuer=ticket_issuer,
             )
-        if action in {"agent.start", "agent.resume", "agent.stop", "agent.interrupt"}:
+        if action in {"agent.start", "agent.pause", "agent.resume", "agent.stop", "agent.interrupt"}:
             self._require_capability(identity, "agent.control")
             agent_id = self._payload_agent_id(payload)
             if action == "agent.start":
                 return self._start_agent(room_id, agent_id, server_url=server_url, ticket_issuer=ticket_issuer)
+            if action == "agent.pause":
+                return self._pause_agent(room_id, agent_id)
             if action == "agent.resume":
                 return self._resume_agent(room_id, agent_id, server_url=server_url, ticket_issuer=ticket_issuer)
             if action == "agent.stop":
@@ -543,7 +545,7 @@ class RoomRealtimeController:
         if not session:
             self._ensure_provider_session(room_id, spec)
             session = self.store.session(room_id, agent_id)
-        if session.get("runtime_status") in {"starting", "idle", "busy"}:
+        if session.get("runtime_status") in {"starting", "idle", "busy", "paused"}:
             return {"agent_session": self._public_session(session), "runtime_reused": True}
         self.store.update_session_fields(
             room_id,
@@ -642,9 +644,78 @@ class RoomRealtimeController:
         ticket_issuer: Callable[[dict[str, object]], str] | None,
     ) -> dict[str, object]:
         session = self.store.session(room_id, agent_id)
+        if session and session.get("runtime_status") == "paused":
+            if not self.broker.has_bridge(room_id, agent_id):
+                raise RoomCommandRejected(
+                    "The paused Agent Session bridge is no longer connected.",
+                    code="runtime_unavailable",
+                )
+            updated = self.store.update_session_fields(
+                room_id,
+                agent_id,
+                status="attached",
+                enabled=True,
+                runtime_status="idle",
+                last_error="",
+            )
+            self.store.append_event(
+                room_id,
+                "session_resumed",
+                participant_id=agent_id,
+                session_id=agent_id,
+                process_reused=True,
+            )
+            self._assign_pending(room_id, agent_id)
+            current = self.store.session(room_id, agent_id)
+            self._publish_session_state(room_id, current)
+            return {
+                "agent_session": self._public_session(current),
+                "runtime_reused": True,
+                "process_reused": True,
+            }
+        if session and session.get("runtime_status") in {"starting", "idle", "busy"}:
+            return {"agent_session": self._public_session(session), "runtime_reused": True}
         if session and session.get("runtime_status") not in {"stopped", "available"}:
             self._stop_agent(room_id, agent_id, disable=False)
         return self._start_agent(room_id, agent_id, server_url=server_url, ticket_issuer=ticket_issuer)
+
+    def _pause_agent(self, room_id: str, agent_id: str) -> dict[str, object]:
+        session = self.store.session(room_id, agent_id)
+        if not session:
+            raise RoomCommandRejected(f"Agent session {agent_id} was not found.", code="not_found")
+        runtime_status = clean_lobby_text(session.get("runtime_status"), limit=32)
+        if runtime_status == "paused":
+            return {
+                "agent_session": self._public_session(session),
+                "runtime_reused": True,
+                "process_preserved": True,
+            }
+        if runtime_status != "idle" or not self.broker.has_bridge(room_id, agent_id):
+            raise RoomCommandRejected(
+                "Only an idle, connected Agent Session can be paused.",
+                code="invalid_state",
+            )
+        updated = self.store.update_session_fields(
+            room_id,
+            agent_id,
+            status="attached",
+            enabled=False,
+            runtime_status="paused",
+            last_error="",
+        )
+        self.store.append_event(
+            room_id,
+            "session_paused",
+            participant_id=agent_id,
+            session_id=agent_id,
+            process_preserved=True,
+        )
+        self._publish_session_state(room_id, updated)
+        return {
+            "agent_session": self._public_session(updated),
+            "runtime_reused": True,
+            "process_preserved": True,
+        }
 
     def _stop_agent(self, room_id: str, agent_id: str, *, disable: bool = True) -> dict[str, object]:
         session = self.store.session(room_id, agent_id)

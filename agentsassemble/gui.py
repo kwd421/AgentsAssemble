@@ -8139,6 +8139,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             in {
                 "/join",
                 "/join/",
+                "/ws",
                 "/api",
                 "/api/",
                 "/api/room/events",
@@ -8158,6 +8159,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
         )
     if method == "POST":
         return path in {
+            "/api/ws-ticket",
             "/api/room-invite/join",
             "/api/room-invite/leave",
             "/api/room-invite/companion",

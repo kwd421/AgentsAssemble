@@ -1,7 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RoomAgentSession } from "../../api";
 import RoomConnectionPanel from "./RoomConnectionPanel";
+
+afterEach(cleanup);
 
 const room = {
   id: "general",
@@ -53,6 +55,39 @@ describe("RoomConnectionPanel", () => {
     fireEvent.click(screen.getByTitle("세션 시작"));
     expect(onAgentControl).toHaveBeenCalledWith(session, "start");
     expect((screen.getByTitle("세션 중지") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("pauses an idle session and resumes a paused session", () => {
+    const onAgentControl = vi.fn();
+    const idle = agentSession("idle");
+    const { getByText, getByTitle, rerender } = render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[]}
+        members={[]}
+        agentSessions={[idle]}
+        onAgentControl={onAgentControl}
+      />
+    );
+
+    fireEvent.click(getByTitle("세션 일시정지"));
+    expect(onAgentControl).toHaveBeenCalledWith(idle, "pause");
+    expect((getByTitle("세션 재개") as HTMLButtonElement).disabled).toBe(true);
+
+    const paused = agentSession("paused");
+    rerender(
+      <RoomConnectionPanel
+        room={room}
+        agents={[]}
+        members={[]}
+        agentSessions={[paused]}
+        onAgentControl={onAgentControl}
+      />
+    );
+    expect(getByText("일시정지")).toBeTruthy();
+    fireEvent.click(getByTitle("세션 재개"));
+    expect(onAgentControl).toHaveBeenCalledWith(paused, "resume");
+    expect((getByTitle("세션 일시정지") as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("shows bounded runtime diagnostics without provider ids or raw stderr", () => {

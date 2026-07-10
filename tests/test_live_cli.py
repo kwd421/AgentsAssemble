@@ -9,6 +9,7 @@ from agentsassemble.live_cli import (
     LiveCliRuntime,
     live_cli_supported,
 )
+from agentsassemble.live_cli_transcripts import LiveCliMessageSnapshot
 
 
 def _fake_cli_script(*, delay_seconds: float = 0.0) -> str:
@@ -126,6 +127,68 @@ class LiveCliRuntimeTests(unittest.TestCase):
 
         self.assertIn("reply: #general human: first", output["content"])
         self.assertNotIn("startup banner", output["content"])
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_strict_message_completion_drains_large_residual_tui_output_before_next_turn(self):
+        class EarlyStrictMessageSource:
+            strict = True
+
+            def __init__(self) -> None:
+                self.expected = ""
+
+            def prepare_start(self) -> None:
+                return
+
+            def begin_turn(self, expected_input: str = "") -> None:
+                self.expected = expected_input
+
+            def poll(self, terminal_output: bytes, *, quiet: bool = False) -> LiveCliMessageSnapshot:
+                del quiet
+                marker = f"answer:{self.expected}"
+                text = terminal_output.decode("utf-8", errors="replace")
+                return LiveCliMessageSnapshot(
+                    content=marker if marker in text else "",
+                    complete=marker in text,
+                    source="fake-transcript",
+                    source_kind="fake_strict",
+                )
+
+            def describe(self) -> dict[str, object]:
+                return {"message_source": "fake_strict", "message_source_strict": True}
+
+        script = "\n".join(
+            [
+                "import os, sys",
+                "count = 0",
+                "for line in sys.stdin:",
+                "    text = line.strip()",
+                "    if not text:",
+                "        continue",
+                "    count += 1",
+                "    print('answer:' + text, flush=True)",
+                "    if count == 1:",
+                "        os.write(sys.stdout.fileno(), b'x' * 200000)",
+                "        print('', flush=True)",
+            ]
+        )
+        runtime = LiveCliRuntime(
+            "strict",
+            [sys.executable, "-u", "-c", script],
+            idle_quiet_seconds=0.05,
+            message_source=EarlyStrictMessageSource(),
+        )
+        try:
+            runtime.send("first")
+            first = runtime.read_output(timeout_seconds=2)
+            runtime.send("second")
+            second = runtime.read_output(timeout_seconds=2)
+            health = runtime.health()
+        finally:
+            runtime.stop()
+
+        self.assertEqual(first["content"], "answer:first")
+        self.assertEqual(second["content"], "answer:second")
+        self.assertGreater(health["terminal_byte_count"], 100_000)
 
     @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
     def test_live_cli_runtime_does_not_inherit_parent_agent_session_identity(self):

@@ -40,6 +40,10 @@ TUI_NOISE = re.compile(
 ROOM_TTFO_P50_EXTRA_LIMIT_MS = 300.0
 ROOM_TTFO_P95_EXTRA_LIMIT_MS = 750.0
 ROOM_TTFO_P50_RATIO_LIMIT = 1.15
+DEFAULT_CONVERSATION_TOPIC = (
+    "자정 이후 폐쇄된 지하철역에서 안내방송이 아직 일어나지 않은 승객의 행동을 예고한다면, "
+    "세 에이전트는 어떤 규칙으로 원인을 조사하고 서로를 믿을까?"
+)
 
 
 def run_room_native_cli_smoke(
@@ -51,6 +55,9 @@ def run_room_native_cli_smoke(
     timeout_seconds: float = 180.0,
     latency_samples: int = 0,
     agent_conversation: bool = False,
+    conversation_seconds: float = 0.0,
+    conversation_topic: str = "",
+    verify_controls: bool = False,
 ) -> dict[str, object]:
     selected = [clean_lobby_text(value, limit=128) for value in list(providers or []) if value]
     run_id = "native_cli_" + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid4().hex[:6]
@@ -64,6 +71,9 @@ def run_room_native_cli_smoke(
         "started_at": _now(),
         "latency_samples": max(0, int(latency_samples)),
         "mode": "agent_conversation" if agent_conversation else "provider_session",
+        "conversation_seconds": max(0.0, float(conversation_seconds)),
+        "conversation_topic": clean_lobby_text(conversation_topic, limit=2000),
+        "verify_controls": bool(verify_controls),
         "latency_method": {
             "provider_direct": "same turn: provider runtime send started to first clean structured/transcript delta",
             "room_observed": "same turn: browser WebSocket message command sent to first room delta received",
@@ -117,6 +127,9 @@ def run_room_native_cli_smoke(
                     manager,
                     specs,
                     timeout_seconds=max(1.0, float(timeout_seconds)),
+                    conversation_seconds=max(0.0, float(conversation_seconds)),
+                    conversation_topic=clean_lobby_text(conversation_topic, limit=2000),
+                    verify_controls=bool(verify_controls),
                 )
                 result["conversation"] = conversation
                 result["providers"] = list(conversation.get("providers") or [])
@@ -404,10 +417,21 @@ def _smoke_agent_conversation(
     specs: list[NativeCliProviderSpec],
     *,
     timeout_seconds: float,
+    conversation_seconds: float = 0.0,
+    conversation_topic: str = "",
+    verify_controls: bool = False,
 ) -> dict[str, object]:
+    requested_seconds = max(0.0, float(conversation_seconds))
+    topic = clean_lobby_text(conversation_topic, limit=2000) or DEFAULT_CONVERSATION_TOPIC
     result: dict[str, object] = {
         "status": "pending",
         "topology": "directed_ring_relay",
+        "topic": topic,
+        "requested_duration_seconds": requested_seconds,
+        "actual_duration_seconds": 0.0,
+        "cycles_completed": 0,
+        "timebox_met": requested_seconds == 0.0,
+        "control_checks": [],
         "providers": [],
         "rounds": [],
         "relay_limit": controller.max_agent_relay_depth,
@@ -427,6 +451,8 @@ def _smoke_agent_conversation(
                 "agent_id": spec.agent_id,
                 "display_name": spec.display_name,
                 "provider_kind": spec.normalized_provider_kind(),
+                "configured_model": spec.model,
+                "configured_command": list(spec.command),
                 "runtime_profile_key": spec.runtime_profile_key(),
                 "resolved_executable": resolved,
                 "bridge_pid": None,
@@ -458,20 +484,52 @@ def _smoke_agent_conversation(
             provider_result["provider_pids"] = [provider_pid]
             provider_result["transport"] = session.get("transport") or "unknown"
             provider_result["pty"] = bool(session.get("pty", False))
+            provider_result["reported_model"] = session.get("model") or spec.model
 
+        provider_map = {spec.agent_id: spec for spec in specs}
         pairs = tuple((spec, specs[(index + 1) % len(specs)]) for index, spec in enumerate(specs))
-        for round_index, (source, target) in enumerate(pairs, start=1):
-            marker = f"ROOM-RELAY-{round_index}-{uuid4().hex[:6]}".upper()
-            round_result = _run_agent_relay_round(
-                client,
-                inbox,
-                controller,
-                source=source,
-                target=target,
-                marker=marker,
-                timeout_seconds=timeout_seconds,
-            )
-            result["rounds"].append(round_result)  # type: ignore[union-attr]
+        conversation_started = time.monotonic()
+        round_index = 0
+        cycle_index = 0
+        while True:
+            cycle_index += 1
+            for source, target in pairs:
+                round_index += 1
+                marker = f"ROOM-RELAY-{round_index}-{uuid4().hex[:6]}".upper()
+                round_result = _run_agent_relay_round(
+                    client,
+                    inbox,
+                    controller,
+                    source=source,
+                    target=target,
+                    marker=marker,
+                    timeout_seconds=timeout_seconds,
+                    topic=topic,
+                    cycle_index=cycle_index,
+                    providers=provider_map,
+                )
+                result["rounds"].append(round_result)  # type: ignore[union-attr]
+                result["actual_duration_seconds"] = round(time.monotonic() - conversation_started, 3)
+            elapsed = time.monotonic() - conversation_started
+            result["cycles_completed"] = cycle_index
+            if requested_seconds <= 0.0 or elapsed >= requested_seconds:
+                break
+        actual_duration = time.monotonic() - conversation_started
+        result["actual_duration_seconds"] = round(actual_duration, 3)
+        result["cycles_completed"] = cycle_index
+        result["timebox_met"] = requested_seconds <= 0.0 or actual_duration >= requested_seconds
+
+        if verify_controls:
+            for spec in specs:
+                control_result = _verify_pause_resume(
+                    client,
+                    inbox,
+                    controller,
+                    manager,
+                    spec,
+                    timeout_seconds=timeout_seconds,
+                )
+                result["control_checks"].append(control_result)  # type: ignore[union-attr]
 
         turn_counts_before_quiet = {
             spec.agent_id: int(controller.store.session("general", spec.agent_id).get("turn_count") or 0)
@@ -519,6 +577,13 @@ def _smoke_agent_conversation(
             provider_result["stderr_warning_count"] = int(session.get("stderr_warning_count") or 0)
             provider_result["provider_visible_chars"] = int(session.get("provider_visible_chars") or 0)
             provider_result["provider_visible_event_count"] = int(session.get("provider_visible_event_count") or 0)
+            provider_result["pause_resume_verified"] = bool(
+                any(
+                    item.get("agent_id") == spec.agent_id and all(dict(item.get("checks") or {}).values())
+                    for item in list(result.get("control_checks") or [])
+                    if isinstance(item, dict)
+                )
+            ) if verify_controls else None
             provider_result["status"] = "ok"
             if not provider_result["same_pid_over_turns"]:
                 raise RuntimeError(f"{spec.agent_id}: provider PID changed during the conversation")
@@ -536,13 +601,36 @@ def _smoke_agent_conversation(
             provider_pids = list(provider_result.get("provider_pids") or [])
             provider_pid = int(provider_pids[-1] or 0) if provider_pids else 0
             bridge_pid = int(provider_result.get("bridge_pid") or 0)
+            cleanup_ack: dict[str, object] = {}
+            restart_response: dict[str, object] = {}
+            provider_result["cleanup_action"] = "participant.kick" if verify_controls else "agent.stop"
             try:
-                request_id = client.command(
-                    "agent.stop",
-                    {"agent_id": spec.agent_id},
-                    request_id=f"conversation-stop-{spec.agent_id}-{uuid4().hex[:6]}",
-                )
-                _wait_ack(client, inbox, request_id, timeout_seconds=8.0)
+                if verify_controls:
+                    request_id = client.command(
+                        "participant.kick",
+                        {"participant_id": spec.agent_id},
+                        request_id=f"conversation-kick-{spec.agent_id}-{uuid4().hex[:6]}",
+                    )
+                    cleanup_ack = _wait_ack(client, inbox, request_id, timeout_seconds=8.0)
+                    restart_request = client.command(
+                        "agent.start",
+                        {"agent_id": spec.agent_id},
+                        request_id=f"conversation-kick-restart-{spec.agent_id}-{uuid4().hex[:6]}",
+                    )
+                    restart_response = _wait_message(
+                        client,
+                        inbox,
+                        lambda item: item.get("request_id") == restart_request
+                        and item.get("op") in {"ack", "nack"},
+                        timeout_seconds=8.0,
+                    )
+                else:
+                    request_id = client.command(
+                        "agent.stop",
+                        {"agent_id": spec.agent_id},
+                        request_id=f"conversation-stop-{spec.agent_id}-{uuid4().hex[:6]}",
+                    )
+                    cleanup_ack = _wait_ack(client, inbox, request_id, timeout_seconds=8.0)
             except Exception as stop_error:
                 if not result.get("last_error"):
                     result["last_error"] = str(stop_error)
@@ -551,6 +639,34 @@ def _smoke_agent_conversation(
             provider_result["alive_after_stop"] = _pid_alive(provider_pid) or _pid_alive(bridge_pid) or bool(
                 manager.health("general", spec.agent_id).get("running")
             )
+            if verify_controls:
+                cleanup_result = cleanup_ack.get("result") if isinstance(cleanup_ack.get("result"), dict) else {}
+                participant = (
+                    cleanup_result.get("participant")
+                    if isinstance(cleanup_result.get("participant"), dict)
+                    else {}
+                )
+                restart_error = (
+                    restart_response.get("error")
+                    if isinstance(restart_response.get("error"), dict)
+                    else {}
+                )
+                kick_checks = {
+                    "kick_acknowledged": cleanup_ack.get("op") == "ack",
+                    "participant_marked_kicked": participant.get("status") == "kicked",
+                    "provider_and_bridge_stopped": not provider_result["alive_after_stop"],
+                    "restart_requires_explicit_re_add": bool(
+                        restart_response.get("op") == "nack" and restart_error.get("code") == "not_found"
+                    ),
+                }
+                provider_result["kick_checks"] = kick_checks
+                provider_result["kick_verified"] = all(kick_checks.values())
+                if not provider_result["kick_verified"]:
+                    result["status"] = "error"
+                    failed = sorted(name for name, passed in kick_checks.items() if not passed)
+                    result["last_error"] = result.get("last_error") or (
+                        f"{spec.agent_id}: kick checks failed: {', '.join(failed)}"
+                    )
             if provider_result["alive_after_stop"]:
                 provider_result["status"] = "error"
                 result["status"] = "error"
@@ -562,6 +678,123 @@ def _smoke_agent_conversation(
     return result
 
 
+def _verify_pause_resume(
+    client: WsRoomClient,
+    inbox: list[dict[str, object]],
+    controller: RoomRealtimeController,
+    manager: NativeCliBridgeProcessManager,
+    spec: NativeCliProviderSpec,
+    *,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    before = controller.store.session("general", spec.agent_id)
+    before_pid = int(before.get("pid") or 0)
+    before_bridge_pid = int(before.get("bridge_pid") or 0)
+    before_turn_count = int(before.get("turn_count") or 0)
+    before_seq = controller.store.latest_event_sequence("general")
+    if before.get("runtime_status") != "idle" or before.get("pending_event_ids"):
+        raise RuntimeError(f"{spec.agent_id}: session was not quiet before pause verification")
+
+    pause_request = client.command(
+        "agent.pause",
+        {"agent_id": spec.agent_id},
+        request_id=f"conversation-pause-{spec.agent_id}-{uuid4().hex[:6]}",
+    )
+    pause_ack = _wait_ack(client, inbox, pause_request, timeout_seconds=8.0)
+    paused = controller.store.session("general", spec.agent_id)
+    marker = f"PAUSE-RESUME-{spec.agent_id}-{uuid4().hex[:6]}".upper()
+    queued_request = client.command(
+        "message.send",
+        {
+            "content": (
+                f"@{spec.agent_id} RELAY_MARKER={marker} SOURCE={spec.agent_id} TARGET={spec.agent_id}. "
+                f"일시정지 backlog 전달 확인이야. 답변을 {marker}로 시작하는 한 문장으로만 써."
+            )
+        },
+        request_id=f"conversation-paused-message-{spec.agent_id}-{uuid4().hex[:6]}",
+    )
+    queued_ack = _wait_ack(client, inbox, queued_request, timeout_seconds=8.0)
+    queued_event = (
+        queued_ack.get("result", {}).get("event", {})
+        if isinstance(queued_ack.get("result"), dict)
+        and isinstance(queued_ack.get("result", {}).get("event"), dict)
+        else {}
+    )
+    queued_event_id = clean_lobby_text(queued_event.get("id"), limit=128)
+    time.sleep(0.5)
+    waiting = controller.store.session("general", spec.agent_id)
+
+    resumed_at = time.monotonic()
+    resume_request = client.command(
+        "agent.resume",
+        {"agent_id": spec.agent_id},
+        request_id=f"conversation-resume-{spec.agent_id}-{uuid4().hex[:6]}",
+    )
+    resume_ack = _wait_ack(client, inbox, resume_request, timeout_seconds=8.0)
+    observed = _wait_agent_final_event(
+        client,
+        inbox,
+        spec.agent_id,
+        after_seq=before_seq,
+        observed_from=resumed_at,
+        timeout_seconds=timeout_seconds,
+    )
+    final_event = observed["event"]
+    final_session = _wait_until_value(
+        lambda: controller.store.session("general", spec.agent_id),
+        lambda session: int(session.get("turn_count") or 0) > before_turn_count
+        and session.get("runtime_status") == "idle"
+        and not session.get("pending_event_ids"),
+        timeout_seconds=8.0,
+    )
+    resume_result = resume_ack.get("result") if isinstance(resume_ack.get("result"), dict) else {}
+    output = str(final_event.get("content") or "")
+    expected_source = STRICT_MESSAGE_SOURCES.get(spec.agent_id)
+    checks = {
+        "pause_acknowledged": bool(
+            isinstance(pause_ack.get("result"), dict)
+            and pause_ack.get("result", {}).get("process_preserved")
+        ),
+        "paused_without_process_exit": bool(
+            paused.get("runtime_status") == "paused"
+            and not paused.get("enabled")
+            and int(paused.get("pid") or 0) == before_pid
+            and int(paused.get("bridge_pid") or 0) == before_bridge_pid
+            and _pid_alive(before_pid)
+            and bool(manager.health("general", spec.agent_id).get("running"))
+        ),
+        "paused_message_not_dispatched": bool(
+            waiting.get("runtime_status") == "paused"
+            and int(waiting.get("turn_count") or 0) == before_turn_count
+        ),
+        "backlog_recorded": bool(queued_event_id and queued_event_id in list(waiting.get("pending_event_ids") or [])),
+        "resume_reused_runtime": bool(resume_result.get("runtime_reused") and resume_result.get("process_reused")),
+        "same_provider_pid_after_resume": int(final_session.get("pid") or 0) == before_pid,
+        "same_bridge_pid_after_resume": int(final_session.get("bridge_pid") or 0) == before_bridge_pid,
+        "backlog_event_was_turn_source": final_event.get("source_event_id") == queued_event_id,
+        "resume_output_contains_marker": marker.casefold() in output.casefold(),
+        "resume_output_clean": not bool(TUI_NOISE.search(output)),
+        "resume_output_structured": not expected_source or final_event.get("message_source") == expected_source,
+        "backlog_cleared": not final_session.get("pending_event_ids"),
+    }
+    if not all(checks.values()):
+        failed = sorted(name for name, passed in checks.items() if not passed)
+        raise RuntimeError(f"{spec.agent_id}: pause/resume checks failed: {', '.join(failed)}")
+    return {
+        "agent_id": spec.agent_id,
+        "marker": marker,
+        "pid_before": before_pid,
+        "pid_after": int(final_session.get("pid") or 0),
+        "bridge_pid_before": before_bridge_pid,
+        "bridge_pid_after": int(final_session.get("bridge_pid") or 0),
+        "queued_event_id": queued_event_id,
+        "final_source_event_id": final_event.get("source_event_id"),
+        "ttfo_ms": observed["ttfo_ms"],
+        "output": output[-2000:],
+        "checks": checks,
+    }
+
+
 def _run_agent_relay_round(
     client: WsRoomClient,
     inbox: list[dict[str, object]],
@@ -571,15 +804,18 @@ def _run_agent_relay_round(
     target: NativeCliProviderSpec,
     marker: str,
     timeout_seconds: float,
+    providers: dict[str, NativeCliProviderSpec],
+    topic: str = DEFAULT_CONVERSATION_TOPIC,
+    cycle_index: int = 1,
 ) -> dict[str, object]:
     before_seq = controller.store.latest_event_sequence("general")
-    source_turn_count = int(controller.store.session("general", source.agent_id).get("turn_count") or 0)
     target_turn_count = int(controller.store.session("general", target.agent_id).get("turn_count") or 0)
     started = time.monotonic()
     prompt = (
         f"@{source.agent_id} RELAY_MARKER={marker} SOURCE={source.agent_id} TARGET={target.agent_id}. "
-        f"방에는 {marker}를 포함한 짧은 질문 하나만 써. 질문 안에서 상대가 답을 반드시 {marker}로 "
-        "시작하고 at-sign 문자는 쓰지 않도록 요청해. 마지막에는 at-sign 문자와 TARGET id를 붙여 호출해."
+        f"대화 주제는 '{topic}'이고 지금은 {cycle_index}번째 순환이야. 이전 방 대화를 이어서 새 의견을 "
+        f"한두 문장 말하고 {target.agent_id}에게 질문해. 검증을 위해 {marker}를 자연스럽게 한 번 포함하고, "
+        f"상대가 답을 {marker}로 시작하도록 요청해. 마지막에는 반드시 @{target.agent_id}를 붙여 호출해."
     )
     request_id = client.command(
         "message.send",
@@ -615,19 +851,18 @@ def _run_agent_relay_round(
     target_event = target_observed["event"]
     source_content = str(source_event.get("content") or "")
     target_content = str(target_event.get("content") or "")
-    follow_up: dict[str, object] | None = None
-    follow_up_count = 0
+    follow_ups: list[dict[str, object]] = []
     follow_up_final_at = target_final_at
     follow_decision = route_message_targets(
         dict(target_event),
-        {source.agent_id: source, target.agent_id: target},
+        providers,
         max_agent_relay_depth=controller.max_agent_relay_depth,
     )
-    if source.agent_id in follow_decision.targets:
+    for follow_agent_id in follow_decision.targets:
         follow_observed = _wait_agent_final_event(
             client,
             inbox,
-            source.agent_id,
+            follow_agent_id,
             after_seq=int(target_event.get("seq") or 0),
             observed_from=target_final_at,
             timeout_seconds=timeout_seconds,
@@ -639,13 +874,13 @@ def _run_agent_relay_round(
                 event
                 for event in reversed(controller.store.read_events("general"))
                 if event.get("type") == "turn_started"
-                and event.get("participant_id") == source.agent_id
+                and event.get("participant_id") == follow_agent_id
                 and event.get("turn_id") == follow_event.get("turn_id")
             ),
             {},
         )
         follow_content = str(follow_event.get("content") or "")
-        expected_follow_source = STRICT_MESSAGE_SOURCES.get(source.agent_id)
+        expected_follow_source = STRICT_MESSAGE_SOURCES.get(follow_agent_id)
         follow_checks = {
             "turn_sourced_from_target_message": follow_started.get("source_event_id") == target_event.get("id"),
             "final_sourced_from_target_message": follow_event.get("source_event_id") == target_event.get("id"),
@@ -658,8 +893,8 @@ def _run_agent_relay_round(
         if not all(follow_checks.values()):
             failed = sorted(name for name, passed in follow_checks.items() if not passed)
             raise RuntimeError(f"Agent follow-up relay checks failed: {', '.join(failed)}")
-        follow_up = {
-            "agent_id": source.agent_id,
+        follow_ups.append({
+            "agent_id": follow_agent_id,
             "message_event_id": follow_event.get("id"),
             "source_event_id": follow_event.get("source_event_id"),
             "message_source": follow_event.get("message_source"),
@@ -668,15 +903,14 @@ def _run_agent_relay_round(
             "turn_completed_ms": round((follow_up_final_at - target_final_at) * 1000, 1),
             "relay_depth": follow_event.get("relay_depth"),
             "checks": follow_checks,
-        }
-        follow_up_count = 1
+        })
 
-    _wait_until_value(
-        lambda: controller.store.session("general", source.agent_id),
-        lambda session: int(session.get("turn_count") or 0) >= source_turn_count + 1 + follow_up_count
-        and session.get("runtime_status") == "idle",
-        timeout_seconds=5.0,
-    )
+    for agent_id in providers:
+        _wait_until_value(
+            lambda agent_id=agent_id: controller.store.session("general", agent_id),
+            lambda session: session.get("runtime_status") == "idle" and not session.get("pending_event_ids"),
+            timeout_seconds=8.0,
+        )
     target_session = _wait_until_value(
         lambda: controller.store.session("general", target.agent_id),
         lambda session: int(session.get("turn_count") or 0) > target_turn_count and session.get("runtime_status") == "idle",
@@ -713,6 +947,8 @@ def _run_agent_relay_round(
     return {
         "source_agent_id": source.agent_id,
         "target_agent_id": target.agent_id,
+        "cycle_index": cycle_index,
+        "topic": topic,
         "marker": marker,
         "human_event_id": human_event_id,
         "source_message_event_id": source_event.get("id"),
@@ -730,7 +966,8 @@ def _run_agent_relay_round(
         "target_provider_visible_chars": target_started.get("provider_visible_chars"),
         "target_provider_visible_event_count": target_started.get("provider_visible_event_count"),
         "target_last_seen_event_id": target_session.get("last_seen_event_id"),
-        "follow_up": follow_up,
+        "follow_up": follow_ups[0] if follow_ups else None,
+        "follow_ups": follow_ups,
         "checks": checks,
     }
 
@@ -772,7 +1009,8 @@ def _wait_agent_final_event(
         and event.get("type") in {"message_final", "error"}
     )
     if event.get("type") == "error":
-        raise RuntimeError(str(event.get("content") or f"{agent_id} turn failed"))
+        detail = str(event.get("content") or "provider turn failed")
+        raise RuntimeError(f"{agent_id}: {detail}")
     completed_at = time.monotonic()
     return {
         "event": event,
@@ -1061,13 +1299,20 @@ def _conversation_metrics(rounds: list[dict[str, object]]) -> dict[str, object]:
             value = round_result.get(field)
             if isinstance(value, (int, float)):
                 completed.append(float(value))
-        follow_up = round_result.get("follow_up") if isinstance(round_result.get("follow_up"), dict) else {}
-        value = follow_up.get("ttfo_ms")
-        if isinstance(value, (int, float)):
-            ttfo.append(float(value))
-        value = follow_up.get("turn_completed_ms")
-        if isinstance(value, (int, float)):
-            completed.append(float(value))
+        follow_ups = [
+            item
+            for item in list(round_result.get("follow_ups") or [])
+            if isinstance(item, dict)
+        ]
+        if not follow_ups and isinstance(round_result.get("follow_up"), dict):
+            follow_ups = [round_result["follow_up"]]  # type: ignore[list-item]
+        for follow_up in follow_ups:
+            value = follow_up.get("ttfo_ms")
+            if isinstance(value, (int, float)):
+                ttfo.append(float(value))
+            value = follow_up.get("turn_completed_ms")
+            if isinstance(value, (int, float)):
+                completed.append(float(value))
     return {
         "turn_count": len(ttfo),
         "time_to_first_agent_delta_ms": ttfo,
@@ -1195,6 +1440,7 @@ def _write_result(output_root: str | Path, result: dict[str, object]) -> Path:
     directory = Path(output_root) / "rooms" / "general" / "smoke"
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{result['run_id']}.json"
+    result["result_path"] = str(path)
     path.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path
 

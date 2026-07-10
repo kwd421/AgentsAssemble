@@ -381,6 +381,85 @@ class TranscriptMessageSourceTests(unittest.TestCase):
         self.assertFalse(incomplete.complete)
         self.assertEqual(complete.content, "complete answer")
 
+    def test_bound_antigravity_session_accepts_truncated_later_user_input(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            transcript = (
+                root
+                / ".gemini"
+                / "antigravity-cli"
+                / "brain"
+                / "conversation-a"
+                / ".system_generated"
+                / "logs"
+                / "transcript.jsonl"
+            )
+            transcript.parent.mkdir(parents=True)
+            source = AntigravityTranscriptMessageSource(home=root, cwd=workspace)
+            source.prepare_start()
+            source.begin_turn("first exact input")
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "USER_INPUT",
+                                "source": "USER_EXPLICIT",
+                                "status": "DONE",
+                                "content": "<USER_REQUEST>first exact input</USER_REQUEST>",
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "PLANNER_RESPONSE",
+                                "source": "MODEL",
+                                "status": "DONE",
+                                "content": "first answer",
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            first = source.poll(b"", quiet=True)
+
+            long_input = "second exact input " + ("room context " * 1000)
+            source.begin_turn(long_input)
+            with transcript.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {
+                            "type": "USER_INPUT",
+                            "source": "USER_EXPLICIT",
+                            "status": "DONE",
+                            "content": (
+                                "<USER_REQUEST>second exact input room context "
+                                "<truncated 11900 bytes>\nlatest room line</USER_REQUEST>"
+                            ),
+                        }
+                    )
+                    + "\n"
+                )
+                handle.write(
+                    json.dumps(
+                        {
+                            "type": "PLANNER_RESPONSE",
+                            "source": "MODEL",
+                            "status": "DONE",
+                            "content": "second answer after truncated input",
+                        }
+                    )
+                    + "\n"
+                )
+            second = source.poll(b"", quiet=True)
+
+        self.assertEqual(first.content, "first answer")
+        self.assertEqual(second.content, "second answer after truncated input")
+        self.assertTrue(source.describe()["message_source_bound"])
+
     def test_grok_source_reads_assistant_content_from_chat_history(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

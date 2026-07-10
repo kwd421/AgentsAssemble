@@ -56,20 +56,29 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                 approve_real_provider=True,
                 timeout_seconds=5.0,
                 agent_conversation=True,
+                conversation_seconds=0.001,
+                conversation_topic="A tiny haunted station test",
+                verify_controls=True,
             )
 
         conversation = result["conversation"]
         self.assertEqual(result["status"], "ok")
         self.assertEqual(len(conversation["rounds"]), 2)
-        self.assertEqual(conversation["actual_turn_counts"], {"relay-a": 2, "relay-b": 2})
+        self.assertEqual(conversation["actual_turn_counts"], {"relay-a": 3, "relay-b": 3})
         self.assertFalse(conversation["unexpected_extra_turns"])
         self.assertEqual(conversation["metrics"]["turn_count"], 4)
+        self.assertTrue(conversation["timebox_met"])
+        self.assertEqual(conversation["cycles_completed"], 1)
+        self.assertEqual(len(conversation["control_checks"]), 2)
+        self.assertTrue(all(all(item["checks"].values()) for item in conversation["control_checks"]))
         self.assertIsNotNone(result["metrics"]["p50_time_to_first_agent_delta_ms"])
         for round_result in conversation["rounds"]:
             self.assertTrue(all(round_result["checks"].values()))
             self.assertEqual(round_result["source_message_event_id"], round_result["target_turn_source_event_id"])
         for provider in conversation["providers"]:
             self.assertTrue(provider["same_pid_over_turns"])
+            self.assertTrue(provider["pause_resume_verified"])
+            self.assertTrue(provider["kick_verified"])
             self.assertFalse(provider["alive_after_stop"])
 
     def test_unified_smoke_harness_records_real_process_provenance(self):

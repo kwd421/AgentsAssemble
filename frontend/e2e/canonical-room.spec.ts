@@ -25,6 +25,20 @@ test("streams one canonical Agent Session message and controls the persistent CL
   await expect(sessionCard.getByText(/stderr \d+ bytes · warnings \d+/)).toBeVisible();
   await expect(page.getByText("다음 턴 호출", { exact: true })).toHaveCount(0);
 
+  await sessionCard.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect(sessionCard.getByText("일시정지", { exact: true })).toBeVisible();
+
+  await composer.fill("@fake AGENTSASSEMBLE_SESSION_MARKER=ui-e2e-paused 재개 뒤에만 답해.");
+  await page.getByRole("button", { name: "채팅 메시지 보내기" }).click();
+  const resumedReply = page.getByText(/fake reply 2; marker=ui-e2e-paused/);
+  await page.waitForTimeout(300);
+  await expect(resumedReply).toHaveCount(0);
+
+  await sessionCard.getByRole("button", { name: "Resume", exact: true }).click();
+  await expect(resumedReply).toHaveCount(1);
+  await expect(resumedReply).toBeVisible();
+  await expect(sessionCard.getByText("대기", { exact: true })).toBeVisible();
+
   await sessionCard.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(sessionCard.getByText("중지됨", { exact: true })).toBeVisible();
 });

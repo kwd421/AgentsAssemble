@@ -153,6 +153,7 @@ Supported browser/operator actions are:
 - `message.send`
 - `agent.create`
 - `agent.start`
+- `agent.pause`
 - `agent.stop`
 - `agent.resume`
 - `agent.interrupt`
@@ -211,7 +212,9 @@ send, and muted agents do not receive new turns.
 stopped --agent.start--> starting --bridge.ready--> idle
 idle --turn.assign--> busy --message.final--> idle
 busy --agent.interrupt--> idle or error
-idle/busy --agent.stop--> stopped
+idle --agent.pause--> paused --agent.resume--> idle (same bridge and provider PID)
+paused --new room event--> paused + durable pending_event_ids
+idle/busy/paused --agent.stop--> stopped
 unexpected CLI/bridge exit --> recovering (one attempt) --> starting/idle
 second exit or non-retryable failure --> error + recovery_required
 error/stopped --explicit agent.resume--> starting
@@ -219,8 +222,11 @@ participant.kick --> stopped + kicked + removed from routing
 ```
 
 Sending a room message never starts a stopped provider. Eligible messages are
-queued durably in `pending_event_ids`. An explicit start or resume launches one
-bridge, which launches one PTY process and then receives backlog.
+queued durably in `pending_event_ids`. `agent.pause` is accepted only for an
+idle connected session: it keeps both processes alive, disables assignment,
+and lets backlog accumulate. Resuming that paused session reuses both PIDs and
+assigns the backlog. Resuming a stopped/error session is the separate restart
+path that launches a bridge and provider process.
 
 When a turn is assigned, pending IDs move to `inflight_event_ids`. The room-local
 `last_provider_sync_seq` cursor advances to the delivered input boundary only
@@ -376,15 +382,22 @@ assemble room smoke \
   --providers codex,antigravity,claude \
   --config configs/live-cli-providers.example.json \
   --agent-conversation \
+  --conversation-seconds 300 \
+  --conversation-topic "topic" \
+  --verify-controls \
   --approve-real-provider
 ```
 
-The selected providers start together in one canonical room. The harness sends
-one directed ring message per provider, verifies that each target turn names the
-preceding agent's `message_final` as its `source_event_id`, checks strict
-provider message sources, records first-delta latency, and waits for the relay
-depth limit to settle before cleanup. The credential-free E2E uses two real
-fake PTY processes to cover the same path in normal test runs.
+The selected providers start together in one canonical room. With no duration,
+the harness sends one directed ring message per provider. With a duration, it
+finishes complete ring cycles until the requested conversation time is met.
+Every target turn must name the preceding agent's `message_final` as its
+`source_event_id`; natural third-agent follow-ups are collected through the
+configured relay-depth limit. `--verify-controls` additionally proves paused
+messages remain pending, paused resume keeps both PIDs, kick terminates both
+processes, and a kicked participant cannot start until explicitly re-added.
+The credential-free E2E uses two real fake PTY processes to cover the same path
+in normal test runs.
 
 The harness also compares provider-direct first clean output with the first
 canonical room delta for ten strict samples. The 2026-07-10 local runs recorded:
@@ -417,6 +430,17 @@ recorded TTFO p50/p95 4438.1/6892.2 ms and turn-completion p50/p95
 4446.4/6895.8 ms. Evidence:
 `native_cli_20260710T105755Z_8c4b71.json`.
 
+A later 2026-07-10 five-minute run used Codex GPT-5.6 Luna at high effort,
+Antigravity Gemini 3.5 Flash (Medium), and Claude Opus 4.6 at high effort. The
+conversation itself ran 351.164 seconds: five complete cycles, fifteen directed
+rounds, 36 room-conversation provider turns, and six verified natural
+depth-two follow-ups. TTFO p50/p95 was 7293.9/21051.2 ms. The three pause/resume
+backlog checks added one turn each, for final provider turn counts Codex 16,
+Antigravity 11, and Claude 12. All three preserved provider and bridge PIDs
+through pause/resume, then passed kick cleanup and explicit-re-add enforcement;
+no process remained. Evidence:
+`native_cli_20260710T120815Z_57e7a7.json`.
+
 Long-room behavior is verified separately without provider calls:
 
 ```bash
@@ -438,10 +462,19 @@ database was 85.7 MB, and process RSS grew by 8.5 MB.
 - PTY interaction remains sensitive to provider TUI changes. Prefer a
   provider-supported structured interactive protocol behind the same Agent
   Bridge interface when one is verified. Grok is the first such adapter.
-- Resume starts a new bridge/provider process and replays pending room delta.
-  Grok additionally reloads its provider-owned ACP session; PTY providers retain
-  only room-memory recovery across a process restart. Reattaching an existing
-  detached OS process is a separate later feature and must be reported as such.
+- Strict transcript extraction binds the provider session on the first exact
+  delivered input. Later turns on that bound session require a new provider
+  user-input record but do not require the provider's diagnostic transcript to
+  preserve the entire input verbatim; Antigravity truncates long logged input.
+  PTY bytes emitted after a strict final are drained before the next input, and
+  the runtime waits for a bounded terminal-quiet window so footer rendering
+  cannot fill the PTY or race the next prompt.
+- Resume from `stopped` or `error` starts a new bridge/provider process and
+  replays pending room delta; resume from `paused` preserves both processes.
+  Grok additionally reloads its provider-owned ACP session after a restart; PTY
+  providers retain only room-memory recovery across a process restart.
+  Reattaching an existing detached OS process is a separate later feature and
+  must be reported as such.
 - Legacy meeting, lobby, side-chat, SSE, and provider adapters remain for old
   product paths. They must not become a second execution path for native CLI
   participants in the shared-room MVP.

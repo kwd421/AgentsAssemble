@@ -620,6 +620,56 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse(session["provider_session_active"])
         self.assertEqual(len(session["pending_event_ids"]), 1)
 
+    def test_pause_preserves_process_and_resume_assigns_backlog_to_same_bridge(self):
+        self._command("req-start-pause", "agent.start", {"agent_id": "codex"})
+        identity, channel = self._connect_bridge()
+        channel.drain()
+
+        paused = self._command("req-pause", "agent.pause", {"agent_id": "codex"})["result"]
+        paused_session = RoomStore(self.root).session("general", "codex")
+        self.assertTrue(paused["process_preserved"])
+        self.assertEqual(paused_session["runtime_status"], "paused")
+        self.assertFalse(paused_session["enabled"])
+        self.assertEqual(paused_session["pid"], 808)
+        self.assertEqual(self.manager.starts, [("general", "codex")])
+        self.assertEqual(self.manager.stops, [])
+
+        self._command("req-paused-message", "message.send", {"content": "@codex answer after resume"})
+        waiting = RoomStore(self.root).session("general", "codex")
+        self.assertEqual(waiting["runtime_status"], "paused")
+        self.assertEqual(len(waiting["pending_event_ids"]), 1)
+        self.assertFalse(any(message.get("op") == "turn.assign" for message in channel.drain()))
+
+        resumed = self._command("req-resume-paused", "agent.resume", {"agent_id": "codex"})["result"]
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+        resumed_session = RoomStore(self.root).session("general", "codex")
+        self.assertTrue(resumed["runtime_reused"])
+        self.assertTrue(resumed["process_reused"])
+        self.assertEqual(resumed_session["runtime_status"], "busy")
+        self.assertEqual(resumed_session["pid"], 808)
+        self.assertEqual(assignment["source_event_id"], waiting["pending_event_ids"][0])
+        self.assertEqual(self.manager.starts, [("general", "codex")])
+        self.assertEqual(self.manager.stops, [])
+
+        self._command(
+            "req-resumed-final",
+            "message.final",
+            {"turn_id": assignment["turn_id"], "content": "resumed"},
+            identity,
+        )
+        self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "idle")
+
+    def test_pause_rejects_busy_session_without_interrupting_it(self):
+        self._command("req-start-busy-pause", "agent.start", {"agent_id": "codex"})
+        _identity, _channel = self._connect_bridge()
+        self._command("req-busy-pause-message", "message.send", {"content": "@codex still working"})
+
+        with self.assertRaises(RoomCommandRejected) as error:
+            self._command("req-pause-busy", "agent.pause", {"agent_id": "codex"})
+
+        self.assertEqual(error.exception.code, "invalid_state")
+        self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "busy")
+
     def test_muted_participant_cannot_send_through_command_path(self):
         guest = {**HOST, "operator": False, "agent_id": "guest", "display_name": "Guest"}
         channel = self.controller.connect(guest)

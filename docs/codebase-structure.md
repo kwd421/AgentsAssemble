@@ -101,16 +101,16 @@ MCP tool-loop 에이전트  ─┤                ├─ lobby.jsonl        (방
 | `native_cli_providers.py` | Codex Spark/Antigravity/Grok/Claude Haiku catalog, interactive command, runtime profile key (`claude -p` 금지) |
 | `room_bridge_process.py` | 서버 소유 Agent Bridge 프로세스 start/stop/restart, profile별 private state dir, bounded stderr drain |
 | `room_agent_bridge.py` | agent principal로 같은 room WebSocket에 인증해 turn assignment와 provider delta/final/health report를 중계 |
-| `live_cli.py` | Codex/Antigravity/Claude 장기 실행 PTY 수명과 터미널 입력/interrupt/cleanup |
-| `live_cli_transcripts.py` | 정확히 전달한 turn input이 기록된 provider session JSONL에 바인딩하고 assistant 자연어만 추출. 미완성 JSONL 레코드는 다음 poll까지 보류 |
+| `live_cli.py` | Codex/Antigravity/Claude 장기 실행 PTY 수명과 터미널 입력/interrupt/cleanup. strict final 뒤 남은 TUI 출력을 drain하고 다음 입력 전 bounded quiet를 확인 |
+| `live_cli_transcripts.py` | 첫 exact turn input으로 provider session JSONL에 바인딩하고 assistant 자연어만 추출. 이후 bound-session input은 provider 로그의 장문 축약을 허용하며, 미완성 JSONL 레코드는 다음 poll까지 보류 |
 | `grok_acp_runtime.py` | `grok agent stdio` ACP JSON-RPC 수명, `agent_message_chunk`만 streaming, permission reject, bounded stderr, `session/load` continuity |
-| `room_native_cli_smoke.py` | opt-in 실제 CLI continuity/latency와 2명 이상 directed-ring agent conversation 검증. 일반 제품 runtime이 아님 |
+| `room_native_cli_smoke.py` | opt-in 실제 CLI continuity/latency, time-boxed directed-ring 대화, pause/backlog/same-PID resume/kick 검증. 일반 제품 runtime이 아님 |
 | `canonical_room_benchmark.py` | provider 호출 없이 100k event/10 agent indexed read, reconnect, context projection 성능을 측정 |
 
 프런트 canonical 연결은 `frontend/src/roomSocketClient.ts`, room별
 snapshot/event/session 상태는 `frontend/src/useCanonicalRoom.ts`가 맡고,
 `RoomConnectionPanel.tsx`는 접힌 고급 진단과
-start/stop/resume/interrupt만 렌더링한다. provider id나 stderr tail을 일반
+start/pause/stop/resume/interrupt만 렌더링한다. provider id나 stderr tail을 일반
 채팅 메시지 또는 provider prompt에 넣지 않는다.
 
 핵심 메커니즘 (이슈 분석 시 필수):

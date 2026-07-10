@@ -1,4 +1,4 @@
-import { Bot, Copy, Play, Plus, RotateCcw, Square, Zap } from "lucide-react";
+import { Bot, CirclePause, Copy, Play, Plus, RotateCcw, Square, Zap } from "lucide-react";
 import {
   type ChannelNotificationSetting,
   type LiveAgent,
@@ -39,7 +39,7 @@ type RoomConnectionPanelProps = {
   capabilities?: Record<string, boolean>;
   onAgentControl?: (
     session: RoomAgentSession,
-    action: "start" | "stop" | "resume" | "interrupt"
+    action: "start" | "pause" | "stop" | "resume" | "interrupt"
   ) => void | Promise<void>;
   onParticipantKick?: (participantId: string) => void | Promise<void>;
   onParticipantMute?: (participantId: string, muted: boolean) => void | Promise<void>;
@@ -55,6 +55,7 @@ function liveCliStatusLabel(status?: string) {
   if (status === "busy") return "응답 중";
   if (status === "starting") return "시작 중";
   if (status === "idle") return "대기";
+  if (status === "paused") return "일시정지";
   if (status === "stopping") return "중지 중";
   if (status === "stopped") return "중지됨";
   if (status === "error") return "오류";
@@ -64,7 +65,7 @@ function liveCliStatusLabel(status?: string) {
 
 function liveCliStatusTone(status?: string) {
   if (status === "busy" || status === "starting") return "running";
-  if (status === "idle") return "ready";
+  if (status === "idle" || status === "paused") return "ready";
   if (status === "error" || status === "disconnected") return "error";
   return "";
 }
@@ -136,7 +137,7 @@ export default function RoomConnectionPanel({
           <div className="dc-room-live-cli-list">
             {agentSessions.map((session) => {
               const status = session.runtime_status || session.status;
-              const running = ["starting", "idle", "busy"].includes(status);
+              const running = ["starting", "idle", "busy", "paused"].includes(status);
               const sessionContinuity = providerSessionContinuity(session);
               return (
                 <article key={session.session_id} className="dc-room-live-cli-card">
@@ -166,6 +167,15 @@ export default function RoomConnectionPanel({
                     </button>
                     <button
                       type="button"
+                      title="세션 일시정지"
+                      disabled={status !== "idle"}
+                      onClick={() => void onAgentControl(session, "pause")}
+                    >
+                      <CirclePause size={13} />
+                      Pause
+                    </button>
+                    <button
+                      type="button"
                       title="세션 중지"
                       disabled={!running && status !== "error"}
                       onClick={() => void onAgentControl(session, "stop")}
@@ -176,7 +186,7 @@ export default function RoomConnectionPanel({
                     <button
                       type="button"
                       title="세션 재개"
-                      disabled={running}
+                      disabled={status !== "paused" && running}
                       onClick={() => void onAgentControl(session, "resume")}
                     >
                       <RotateCcw size={13} />

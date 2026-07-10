@@ -130,6 +130,7 @@ class LiveCliRuntime:
             cwd=self.cwd,
         )
         self._message_turn_started = False
+        self._needs_terminal_settle = False
         self.last_seen_event_id = ""
         self._lock = threading.RLock()
         self._master_fd: int | None = None
@@ -193,6 +194,7 @@ class LiveCliRuntime:
             self._started_at = _now_iso()
             self._stopped_at = ""
             self._startup_drained = False
+            self._needs_terminal_settle = False
             self._terminal_byte_count = 0
             self._terminal_tail = bytearray()
             return self.health()
@@ -261,6 +263,7 @@ class LiveCliRuntime:
                 )
                 if final_snapshot.complete:
                     self._message_turn_started = False
+                    self._needs_terminal_settle = True
                     return self._output_message_from_snapshot(final_snapshot)
                 if final_snapshot.content:
                     last_visible_content = final_snapshot.content
@@ -277,6 +280,7 @@ class LiveCliRuntime:
                             )
                         continue
                     self._message_turn_started = False
+                    self._needs_terminal_settle = True
                     return self._output_message(b"".join(chunks))
                 continue
             chunk = _read_chunk(fd, process)
@@ -304,6 +308,7 @@ class LiveCliRuntime:
                 last_visible_content = final_snapshot.content
             if final_snapshot.complete:
                 self._message_turn_started = False
+                self._needs_terminal_settle = True
                 return self._output_message_from_snapshot(final_snapshot)
             if total_bytes > self.max_output_bytes:
                 raise ValueError(f"Live CLI output exceeded {self.max_output_bytes} bytes.")
@@ -398,24 +403,76 @@ class LiveCliRuntime:
 
     def _send_line(self, text: str) -> None:
         process, fd = self._state_snapshot()
-        del process
+        if self._needs_terminal_settle:
+            self._drain_pending_terminal_output(
+                process,
+                fd,
+                quiet_seconds=min(1.0, self.idle_quiet_seconds),
+                timeout_seconds=5.0,
+            )
+            self._needs_terminal_settle = False
+        else:
+            self._drain_terminal_available(process, fd)
         payload = str(text or "")
         chunks = _terminal_input_chunks(payload, input_mode=self.input_mode, submit_newline=self.submit_newline)
         for index, data in enumerate(chunks):
             if index and self.submit_delay_seconds:
                 time.sleep(self.submit_delay_seconds)
             offset = 0
+            write_deadline = time.monotonic() + 5.0
             while offset < len(data):
-                writable = _select_writable(fd, 5.0)
-                if not writable:
-                    raise TimeoutError("Timed out writing to Live CLI runtime.")
-                try:
-                    written = os.write(fd, data[offset:])
-                except OSError as error:
-                    raise RuntimeError("Live CLI runtime closed while writing.") from error
-                if written <= 0:
+                if process.poll() is not None or not self._fd_is_current(fd):
                     raise RuntimeError("Live CLI runtime closed while writing.")
-                offset += written
+                if _select_writable(fd, 0.05):
+                    try:
+                        written = os.write(fd, data[offset:])
+                    except OSError as error:
+                        raise RuntimeError("Live CLI runtime closed while writing.") from error
+                    if written <= 0:
+                        raise RuntimeError("Live CLI runtime closed while writing.")
+                    offset += written
+                    continue
+                self._drain_terminal_available(process, fd)
+                if time.monotonic() >= write_deadline:
+                    raise TimeoutError("Timed out writing to Live CLI runtime.")
+
+    def _drain_pending_terminal_output(
+        self,
+        process: subprocess.Popen[bytes],
+        fd: int,
+        *,
+        quiet_seconds: float = 0.05,
+        timeout_seconds: float = 2.0,
+    ) -> int:
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        quiet_at = time.monotonic() + max(0.0, quiet_seconds)
+        total = 0
+        while time.monotonic() < deadline:
+            drained = self._drain_terminal_available(process, fd)
+            if drained:
+                total += drained
+                quiet_at = time.monotonic() + max(0.0, quiet_seconds)
+                continue
+            if time.monotonic() >= quiet_at:
+                break
+            time.sleep(0.005)
+        return total
+
+    def _drain_terminal_available(
+        self,
+        process: subprocess.Popen[bytes],
+        fd: int,
+        *,
+        max_bytes: int = 1_000_000,
+    ) -> int:
+        total = 0
+        while total < max_bytes and _select_readable(fd, 0.0):
+            chunk = _read_chunk(fd, process)
+            if not chunk:
+                break
+            total += len(chunk)
+            self._record_terminal_bytes(chunk)
+        return total
 
     def _output_message(self, response: bytes, *, message_only: bool = True) -> dict[str, object]:
         return {
