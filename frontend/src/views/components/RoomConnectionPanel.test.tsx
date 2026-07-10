@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RoomAgentSession } from "../../api";
+import type { LiveAgent, RoomAgentSession, RoomMember } from "../../api";
 import RoomConnectionPanel from "./RoomConnectionPanel";
 
 afterEach(cleanup);
@@ -28,65 +28,147 @@ function agentSession(status: string): RoomAgentSession {
   };
 }
 
+function agent(status = "online"): LiveAgent {
+  return {
+    agent_id: "codex",
+    display_name: "Codex Spark",
+    owner_id: "operator-local",
+    status,
+    provider_kind: "codex_live_session",
+    connection_kind: "native_cli_bridge",
+    engagement_mode: "agent_session",
+    meeting_id: "general",
+    model_id: "gpt-5.3-codex-spark",
+    last_seen_at: "2026-07-11T00:00:00Z",
+    last_reply_at: "2026-07-11T00:00:00Z",
+    sandbox_enforcement: "read-only",
+    capabilities: [],
+  };
+}
+
+function member(status = "attached"): RoomMember {
+  return {
+    meeting_id: "general",
+    participant_id: "codex",
+    display_name: "Codex Spark",
+    role: "agent",
+    participant_type: "subscription_ai",
+    provider_kind: "codex_live_session",
+    connection_kind: "native_cli_bridge",
+    owner_id: "operator-local",
+    status,
+    source: "agent_session",
+    created_at: "2026-07-11T00:00:00Z",
+    updated_at: "2026-07-11T00:00:00Z",
+  };
+}
+
+const agentControlCapability = { "agent.control": true };
+
+function openAgentDetails() {
+  fireEvent.click(screen.getByText("나's Codex Spark"));
+}
+
 describe("RoomConnectionPanel", () => {
-  it("renders a clean empty Agent Session state without legacy play controls", () => {
+  it("does not render a separate fixed Agent Session section", () => {
     render(<RoomConnectionPanel room={room} agents={[]} members={[]} agentSessions={[]} />);
 
-    expect(screen.getByText("연결된 세션 없음")).toBeTruthy();
+    expect(screen.queryByText("연결된 세션 없음")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Agent Session" })).toBeNull();
     expect(screen.queryByText("Mafia Night")).toBeNull();
     expect(screen.queryByLabelText("대화 방식")).toBeNull();
     expect(screen.queryByText("다음 턴 호출")).toBeNull();
     expect(screen.queryByRole("textbox", { name: /Agent Session/i })).toBeNull();
   });
 
-  it("sends canonical controls for the selected persistent session", () => {
+  it("uses the canonical viewer member as the single human self row", () => {
+    const viewerMember: RoomMember = {
+      meeting_id: "general",
+      participant_id: "operator-local",
+      display_name: "호스트",
+      role: "human",
+      participant_type: "human",
+      provider_kind: "",
+      connection_kind: "agent_session",
+      status: "joined",
+      source: "agent_session",
+      created_at: "2026-07-11T00:00:00Z",
+      updated_at: "2026-07-11T00:00:00Z",
+    };
+
+    render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[]}
+        members={[viewerMember]}
+        viewerParticipantId="operator-local"
+      />
+    );
+
+    expect(screen.getByText("사람 — 1")).toBeTruthy();
+    expect(screen.getByText("참여 중")).toBeTruthy();
+    expect(screen.queryByText("내 에이전트 — 1")).toBeNull();
+    expect(screen.queryByText("나's 호스트")).toBeNull();
+  });
+
+  it("renders a canonical session once in the agent roster and opens its controls", () => {
     const onAgentControl = vi.fn();
     const session = agentSession("stopped");
     render(
       <RoomConnectionPanel
         room={room}
-        agents={[]}
-        members={[]}
+        agents={[agent("offline")]}
+        members={[member("stopped")]}
         agentSessions={[session]}
+        capabilities={agentControlCapability}
         onAgentControl={onAgentControl}
       />
     );
 
+    expect(screen.getAllByText("나's Codex Spark")).toHaveLength(1);
+    expect(screen.queryByTitle("세션 시작")).toBeNull();
+    openAgentDetails();
     fireEvent.click(screen.getByTitle("세션 시작"));
     expect(onAgentControl).toHaveBeenCalledWith(session, "start");
     expect((screen.getByTitle("세션 중지") as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("pauses an idle session and resumes a paused session", () => {
-    const onAgentControl = vi.fn();
+  it("pauses an idle session and resumes a paused session", async () => {
+    const onAgentControl = vi.fn().mockResolvedValue(undefined);
     const idle = agentSession("idle");
     const { getByText, getByTitle, rerender } = render(
       <RoomConnectionPanel
         room={room}
-        agents={[]}
-        members={[]}
+        agents={[agent()]}
+        members={[member()]}
         agentSessions={[idle]}
+        capabilities={agentControlCapability}
         onAgentControl={onAgentControl}
       />
     );
 
+    openAgentDetails();
     fireEvent.click(getByTitle("세션 일시정지"));
-    expect(onAgentControl).toHaveBeenCalledWith(idle, "pause");
+    await waitFor(() => expect(onAgentControl).toHaveBeenCalledWith(idle, "pause"));
     expect((getByTitle("세션 재개") as HTMLButtonElement).disabled).toBe(true);
 
     const paused = agentSession("paused");
     rerender(
       <RoomConnectionPanel
         room={room}
-        agents={[]}
-        members={[]}
+        agents={[agent()]}
+        members={[member()]}
         agentSessions={[paused]}
+        capabilities={agentControlCapability}
         onAgentControl={onAgentControl}
       />
     );
-    expect(getByText("일시정지")).toBeTruthy();
+    expect(getByText("일시정지", { selector: ".dc-member-status-chip" })).toBeTruthy();
+    await waitFor(() =>
+      expect((getByTitle("세션 재개") as HTMLButtonElement).disabled).toBe(false)
+    );
     fireEvent.click(getByTitle("세션 재개"));
-    expect(onAgentControl).toHaveBeenCalledWith(paused, "resume");
+    await waitFor(() => expect(onAgentControl).toHaveBeenCalledWith(paused, "resume"));
     expect((getByTitle("세션 일시정지") as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -108,9 +190,18 @@ describe("RoomConnectionPanel", () => {
       stderr_tail: "secret terminal warning",
     } as RoomAgentSession & { provider_session_id: string; stderr_tail: string };
 
-    render(<RoomConnectionPanel room={room} agents={[]} members={[]} agentSessions={[session]} />);
+    render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[agent()]}
+        members={[member()]}
+        agentSessions={[session]}
+      />
+    );
 
-    expect(screen.getByText("runtime live_cli · acp_stdio")).toBeTruthy();
+    openAgentDetails();
+
+    expect(screen.getByText("live_cli · acp_stdio")).toBeTruthy();
     expect(screen.getByText("profile profile-4c21")).toBeTruthy();
     expect(screen.getByText("message grok_acp · strict")).toBeTruthy();
     expect(screen.getByText("input 418 chars · 3 events")).toBeTruthy();
@@ -125,12 +216,13 @@ describe("RoomConnectionPanel", () => {
     render(
       <RoomConnectionPanel
         room={room}
-        agents={[]}
-        members={[]}
+        agents={[agent()]}
+        members={[member()]}
         agentSessions={[{ ...agentSession("idle"), transport: "pty", provider_session_active: false }]}
       />
     );
 
+    openAgentDetails();
     expect(screen.queryByText("provider session 비활성")).toBeNull();
     expect(screen.queryByText("provider session 재개 대기")).toBeNull();
   });

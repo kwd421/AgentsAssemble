@@ -29,6 +29,7 @@ import {
   uploadLobbyAttachment,
   type LiveAgent,
   type LiveAgentProcessGroup,
+  type RoomAgentSession,
   type RoomMember,
 } from "../../api";
 import {
@@ -63,12 +64,19 @@ import { participantTypeMeta } from "../../lib/participantTypes";
 import { isActivePresence, presenceStatusLabel } from "../../lib/presenceStatus";
 import ProviderTruthChips from "./ProviderTruthChips";
 import ImageCropper from "./ImageCropper";
+import AgentSessionDetails, {
+  agentSessionIsPresent,
+  agentSessionPresenceStatus,
+  agentSessionStatusLabel,
+  type AgentSessionControlAction,
+} from "./AgentSessionDetails";
 
 export type RoleId = "human" | "director" | "implementer" | "reviewer" | "agent";
 
 type MemberEntry = {
   id: string;
   agent?: LiveAgent;
+  agentSession?: RoomAgentSession;
   member?: RoomMember;
   displayName: string;
   detail: string;
@@ -469,7 +477,13 @@ function MemberRow({
         </span>
         <span
           className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-sidebar ${
-            statusDotClass(entry.agent?.status || entry.member?.status || "online")
+            statusDotClass(
+              entry.agentSession
+                ? agentSessionPresenceStatus(
+                    entry.agentSession.runtime_status || entry.agentSession.status
+                  )
+                : entry.agent?.status || entry.member?.status || "online"
+            )
           }`}
           aria-hidden
         />
@@ -512,10 +526,16 @@ function MemberRow({
           <p className="min-w-0 flex-1 truncate preserve-words" title={entry.fullDetail || entry.detail}>
             {entry.detail}
           </p>
-          {entry.member && entry.statusLabel && (
+          {entry.statusLabel && (
             <span
               className="dc-member-status-chip preserve-words"
-              data-state={entry.member.status === "pending" ? "attention" : entry.active ? "active" : "idle"}
+              data-state={
+                entry.member?.status === "pending"
+                  ? "attention"
+                  : entry.active
+                    ? "active"
+                    : "idle"
+              }
             >
               {entry.statusLabel}
             </span>
@@ -553,6 +573,7 @@ function MemberDetailModal({
   onSessionActionComplete,
   onAgentProfileSettingsChange,
   onParticipantKick,
+  onAgentControl,
 }: {
   entry: MemberEntry;
   onClose: () => void;
@@ -560,6 +581,10 @@ function MemberDetailModal({
   onSessionActionComplete?: () => void;
   onAgentProfileSettingsChange?: (settings: Record<string, AgentProfileSettings>) => void;
   onParticipantKick?: (participantId: string) => void | Promise<void>;
+  onAgentControl?: (
+    session: RoomAgentSession,
+    action: AgentSessionControlAction
+  ) => void | Promise<void>;
 }) {
   const [sessionActionBusy, setSessionActionBusy] = useState(false);
   const [sessionActionStatus, setSessionActionStatus] = useState("");
@@ -635,10 +660,10 @@ function MemberDetailModal({
   );
   const locationRows = sessionLocationRows(agent, sessionGroup);
   const hasSessionLocation = locationRows.length > 0;
-  const hasSessionSection = Boolean(
+  const hasSessionSection = !entry.agentSession && Boolean(
     hasSessionLocation || hasResumeControl || hasStopControl || showIndividualControlReason
   );
-  const hasTimingControl = Boolean(
+  const hasTimingControl = !entry.agentSession && Boolean(
     sessionGroup &&
       processOwnsAgent &&
       sessionGroup.group_id &&
@@ -959,6 +984,9 @@ function MemberDetailModal({
           <ProviderTruthChips badges={agentTruthBadges(entry.agent)} compact limit={4} />
           {lastObserved && <p className="dc-member-detail-note preserve-words">{lastObserved}</p>}
         </section>
+        {entry.agentSession && (
+          <AgentSessionDetails session={entry.agentSession} onControl={onAgentControl} />
+        )}
         {canEditAgentProfile && (
           <section className="dc-member-detail-section" aria-label={`${entry.displayName} 에이전트 프로필`}>
             <h3>에이전트 프로필</h3>
@@ -1320,6 +1348,7 @@ function MemberDetailModal({
 export default function MemberList({
   agents,
   members = [],
+  viewerParticipantId = "operator-local",
   roomId,
   roomName,
   roleOverrides,
@@ -1334,9 +1363,12 @@ export default function MemberList({
   canModerate = false,
   onParticipantKick,
   onParticipantMute,
+  agentSessions = [],
+  onAgentControl,
 }: {
   agents: LiveAgent[];
   members?: RoomMember[];
+  viewerParticipantId?: string;
   roomId: string;
   roomName: string;
   roleOverrides?: Record<string, string>;
@@ -1351,10 +1383,15 @@ export default function MemberList({
   canModerate?: boolean;
   onParticipantKick?: (participantId: string) => void | Promise<void>;
   onParticipantMute?: (participantId: string, muted: boolean) => void | Promise<void>;
+  agentSessions?: RoomAgentSession[];
+  onAgentControl?: (
+    session: RoomAgentSession,
+    action: AgentSessionControlAction
+  ) => void | Promise<void>;
 }) {
   const [localRoleOverrides, setLocalRoleOverrides] = useState<Record<string, RoleId>>({});
   const [localQuery, setLocalQuery] = useState("");
-  const [detailEntry, setDetailEntry] = useState<MemberEntry | null>(null);
+  const [detailEntryId, setDetailEntryId] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [memberMenu, setMemberMenu] = useState<{ x: number; y: number; entry: MemberEntry } | null>(null);
   const [muteBusy, setMuteBusy] = useState(false);
@@ -1365,21 +1402,31 @@ export default function MemberList({
   const contextBadges = roomContextSummaryBadges(agents);
   const effectiveRoleOverrides = (roleOverrides || localRoleOverrides) as Record<string, RoleId>;
   const entries = useMemo<MemberEntry[]>(() => {
+    const memberById = new Map(members.map((member) => [member.participant_id, member]));
+    const sessionByParticipantId = new Map(
+      agentSessions.map((session) => [session.participant_id, session])
+    );
     const mutedById = new Map(members.map((member) => [member.participant_id, Boolean(member.muted)]));
+    const viewerMember = memberById.get(viewerParticipantId);
+    const viewerEntryId = viewerMember?.participant_id || "human:self";
     const human: MemberEntry = {
-      id: "human:self",
+      id: viewerEntryId,
+      member: viewerMember,
       displayName: "나",
       detail: "사람",
-      role: effectiveRoleOverrides["human:self"] || "human",
+      statusLabel: viewerMember ? memberStatusLabel(viewerMember) : undefined,
+      role: effectiveRoleOverrides[viewerEntryId] || "human",
       owner: true,
-      active: true,
-      muted: false,
-      meetingId: "",
+      active: viewerMember ? memberActive(viewerMember) : true,
+      muted: Boolean(viewerMember?.muted),
+      meetingId: String(viewerMember?.meeting_id || ""),
       canViewQuota: false,
       ownedByViewer: true,
       icon: UserCheck,
     };
     const agentEntries = agents.map((agent) => {
+      const member = memberById.get(agent.agent_id);
+      const agentSession = sessionByParticipantId.get(agent.agent_id);
       const inferredRole = inferAgentRole(agent);
       const role = effectiveRoleOverrides[agent.agent_id] || inferredRole;
       const profile = agentProfileSettings[agent.agent_id] || {};
@@ -1388,14 +1435,25 @@ export default function MemberList({
       const ownerDisplayName = String(agent.owner_display_name || (ownedByViewer ? "나" : "다른 사람")).trim();
       const agentDisplayName = String(profile.displayName || agent.display_name || agent.agent_id).trim();
       const agentPanelDisplayName = `${ownerDisplayName}'s ${agentDisplayName}`;
+      const executionDetail = providerExecutionLabel(agent);
+      const detail = [executionDetail, agentSession?.model].filter(Boolean).join(" · ");
+      const runtimeStatus = agentSession?.runtime_status || agentSession?.status;
       return {
         id: agent.agent_id,
         agent,
+        agentSession,
+        member,
         displayName: agentPanelDisplayName,
-        detail: providerExecutionLabel(agent),
+        detail,
+        fullDetail: [detail, agentSession?.runtime_kind].filter(Boolean).join(" · "),
+        statusLabel: agentSession
+          ? agentSessionStatusLabel(runtimeStatus)
+          : member
+            ? memberStatusLabel(member)
+            : undefined,
         role,
         owner: false,
-        active: isActive(agent),
+        active: agentSession ? agentSessionIsPresent(runtimeStatus) : isActive(agent),
         muted: mutedById.get(agent.agent_id) ?? false,
         meetingId: String(agent.meeting_id || ""),
         canViewQuota: canViewQuotaForAgent,
@@ -1409,7 +1467,12 @@ export default function MemberList({
     });
     const agentIds = new Set(agentEntries.map((entry) => entry.id));
     const invitedEntries = members
-      .filter((member) => member.participant_id && !agentIds.has(member.participant_id))
+      .filter(
+        (member) =>
+          member.participant_id &&
+          member.participant_id !== viewerParticipantId &&
+          !agentIds.has(member.participant_id)
+      )
       .map((member) => {
         const fallbackRole = memberRole(member);
         const role = effectiveRoleOverrides[member.participant_id] || fallbackRole;
@@ -1447,7 +1510,20 @@ export default function MemberList({
         } satisfies MemberEntry;
       });
     return [human, ...agentEntries, ...invitedEntries];
-  }, [agentProfileSettings, agents, canEditRoles, effectiveRoleOverrides, members, quotaViewer]);
+  }, [
+    agentProfileSettings,
+    agentSessions,
+    agents,
+    canEditRoles,
+    effectiveRoleOverrides,
+    members,
+    quotaViewer,
+    viewerParticipantId,
+  ]);
+  const detailEntry = useMemo(
+    () => entries.find((entry) => entry.id === detailEntryId) || null,
+    [detailEntryId, entries]
+  );
   const visibleEntries = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return entries;
@@ -1474,7 +1550,7 @@ export default function MemberList({
   function handleMemberContextMenu(entry: MemberEntry, event: ReactMouseEvent<HTMLElement>) {
     // Host-only moderation: right-clicking a participant opens the mute menu.
     // Self and any participant without a room scope can't be muted.
-    if (!canModerate || entry.id === "human:self" || !entry.meetingId) return;
+    if (!canModerate || entry.owner || !entry.meetingId) return;
     event.preventDefault();
     setMemberMenu({ x: event.clientX, y: event.clientY, entry });
   }
@@ -1616,7 +1692,7 @@ export default function MemberList({
                 <MemberRow
                   key={entry.id}
                   entry={entry}
-                  onOpenDetails={setDetailEntry}
+                  onOpenDetails={(entry) => setDetailEntryId(entry.id)}
                   onRoleChange={handleRoleChange}
                   onContextMenu={handleMemberContextMenu}
                   canEditRoles={canEditRoles}
@@ -1637,11 +1713,12 @@ export default function MemberList({
       {detailEntry && (
         <MemberDetailModal
           entry={detailEntry}
-          onClose={() => setDetailEntry(null)}
+          onClose={() => setDetailEntryId("")}
           processGroups={processGroups}
           onSessionActionComplete={onSessionActionComplete}
           onAgentProfileSettingsChange={setAgentProfileSettings}
           onParticipantKick={canModerate ? onParticipantKick : undefined}
+          onAgentControl={onAgentControl}
         />
       )}
       {memberMenu && (

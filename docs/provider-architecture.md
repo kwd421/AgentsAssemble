@@ -25,6 +25,41 @@ API runtime is later compatibility. API providers must implement the same
 AgentRuntime room-event contract before joining the room, and API convenience
 must not lower the interface to complete(prompt) -> text.
 
+## Local Models And Hosted APIs
+
+Local models and hosted APIs are provider backends, not separate room
+participants or separate room transports. Both must sit behind the same
+AgentRuntime boundary and receive the same bounded turn assignment produced by
+the canonical room scheduler. The browser, human participants, and provider
+bridges continue to use the room WebSocket; an adapter may use a provider-native
+HTTP, stdio, or SDK protocol internally without creating a second room bus.
+
+The preferred OpenCode integration shape is one host-level, long-running
+`opencode serve` process shared by several Agent Sessions. Each room agent owns
+an explicit OpenCode session id and an isolated runtime profile containing at
+least provider, model, variant, workspace, permissions, and agent config. Do
+not start one OpenCode server per room agent: a local feasibility run measured
+roughly 844 MiB RSS for one idle/warm server. Per-agent isolation belongs in
+OpenCode sessions and profile validation, not duplicate server processes.
+
+Hosted models and local models differ only in provider configuration:
+
+- Hosted API: OpenCode provider credentials remain in OpenCode's auth store or
+  the server environment. Credentials never enter room events, prompts, or
+  diagnostics.
+- Local model: LM Studio, Ollama, or another OpenAI-compatible server owns
+  model loading and GPU/RAM lifecycle. The OpenCode adapter points at its local
+  base URL and configured model id.
+- Direct provider adapter: when a provider has a stronger structured protocol
+  than OpenCode, it may implement AgentRuntime directly, but it must preserve
+  the same room cursor, streaming, interruption, error, and lifecycle contract.
+
+OpenCode server lifecycle and local model-server lifecycle are separate. A
+stopped room Agent Session must not silently unload a shared local model or stop
+other agents' OpenCode sessions. Conversely, loss of either shared service must
+produce an Agent Session error and a recoverable restart path rather than a
+fabricated room reply.
+
 Legacy user-facing model: **Agent Session**.
 
 Provider, adapter, runner, bridge, delegate, MCP, one-shot, and baseline are

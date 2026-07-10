@@ -287,6 +287,31 @@ also become canonical error events rather than chat text.
 Claude Code must remain interactive. Provider validation rejects `-p`,
 `--print`, and `--print=...` before process launch.
 
+### OpenCode structured-runtime feasibility
+
+A local feasibility run on 2026-07-11 used OpenCode 1.17.18 with one persistent
+`opencode serve` process and explicit session reuse. Two turns used the same
+OpenCode session, recalled a private marker on the second turn, and returned
+structured JSON events in about 1.9 seconds and 2.1 seconds respectively. This
+proves that OpenCode can be a structured AgentRuntime backend; it does not prove
+that one persistent TUI process exists per room participant. The short-lived
+`opencode run --attach` commands were clients of the persistent server and
+provider-owned session.
+
+The same run measured approximately 844 MiB RSS for the OpenCode server, so the
+production shape should share one host-level server and isolate room agents by
+explicit OpenCode session and runtime profile. The existing user OpenCode data
+directory also contained an incompatible historical migration state. The test
+therefore used an isolated temporary data directory and left the user's default
+database untouched. A real integration must own and migrate a dedicated data
+directory instead of mutating an arbitrary user database.
+
+LM Studio was installed and local GGUF models were present, but its local API
+server was not running during this check. OpenCode documents LM Studio and
+Ollama as OpenAI-compatible custom providers. Local-model verification remains
+pending until the selected model server is started and exercised through the
+same explicit-session recall and latency smoke.
+
 ## Process Ownership And Cleanup
 
 The server owns Agent Bridge subprocesses. Tickets are passed through the child
@@ -327,8 +352,11 @@ Frontend ownership follows the same boundary as the server:
 - `useCanonicalRoom.ts` owns room-indexed events, history pages, Agent Session
   state, capabilities, provider availability, and timeline projection;
 - `App.tsx` chooses the active room and composes the existing multi-room shell;
-- `RoomConnectionPanel.tsx` renders canonical Agent Session controls and does
-  not expose the frozen flow/Mafia runner as an Agent Session fallback.
+- `RoomConnectionPanel.tsx` composes the canonical participant roster and does
+  not render a second, fixed Agent Session list above it;
+- `MemberList.tsx` joins canonical participant identity with Agent Session
+  state, while `AgentSessionDetails.tsx` owns lifecycle controls and bounded
+  diagnostics inside that participant's detail view.
 
 The dock no longer restores hard-coded demo rooms. Hiding a server room writes a
 local tombstone so the next server directory refresh does not immediately add
@@ -387,6 +415,17 @@ assemble room smoke \
   --verify-controls \
   --approve-real-provider
 ```
+
+To watch the same real-provider smoke in the canonical React room while it
+runs, stop the normal GUI server first and add:
+
+```bash
+  --observe-gui-port 8765
+```
+
+The smoke then serves the normal frontend and `/ws` room protocol on that
+loopback port and persists its room history under `.agentsassemble`. Without
+the option, smoke state remains isolated in a temporary directory as before.
 
 The selected providers start together in one canonical room. The harness
 appends one public topic message without an at-mention or relay marker. After

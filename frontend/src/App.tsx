@@ -653,7 +653,10 @@ export default function App() {
   const activeRoomKey = roomSettingsKey(activeRoom);
   const activeRoomMembers = roomMembersByRoom[activeRoomKey] || [];
   const agents: LiveAgent[] = activeRoomMembers
-    .filter((member) => member.source === "agent_session")
+    .filter(
+      (member) =>
+        member.source === "agent_session" && member.participant_type !== "human"
+    )
     .map(agentSessionMemberToLiveAgent);
   const activeProcessGroups = useMemo(
     () =>
@@ -2675,6 +2678,7 @@ export default function App() {
           channelLabel={activeChannelDisplay.label}
           agents={scopedAgents}
           members={activeRoomMembers}
+          viewerParticipantId={guestSession?.agentId || "operator-local"}
           roleOverrides={activeMemberRoles}
           guestLocked={guestLocked}
           initialMode={mobileRoomInfoInitialMode}
@@ -2754,6 +2758,7 @@ export default function App() {
                 room={activeRoom}
                 agents={scopedAgents}
                 members={activeRoomMembers}
+                viewerParticipantId={guestSession?.agentId || "operator-local"}
                 roleOverrides={activeMemberRoles}
                 onRoleChange={updateMemberRole}
                 guestLocked={guestLocked}

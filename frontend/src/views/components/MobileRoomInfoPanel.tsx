@@ -70,17 +70,22 @@ function memberAvatarLabel(name: string) {
 function buildMobileMembers({
   agents,
   members,
+  viewerParticipantId,
   roleOverrides,
 }: {
   agents: LiveAgent[];
   members: RoomMember[];
+  viewerParticipantId: string;
   roleOverrides?: Record<string, string>;
 }) {
+  const viewerMember = members.find(
+    (member) => member.participant_id === viewerParticipantId
+  );
   const self: MobileMemberRow = {
-    id: "human:self",
+    id: viewerMember?.participant_id || "human:self",
     displayName: "나",
     detail: "사람",
-    active: true,
+    active: viewerMember ? isActivePresence(viewerMember.status) : true,
     role: "human",
     icon: User,
   };
@@ -98,7 +103,12 @@ function buildMobileMembers({
   });
   const agentIds = new Set(agentRows.map((entry) => entry.id));
   const invitedRows = members
-    .filter((member) => member.participant_id && !agentIds.has(member.participant_id))
+    .filter(
+      (member) =>
+        member.participant_id &&
+        member.participant_id !== viewerParticipantId &&
+        !agentIds.has(member.participant_id)
+    )
     .map((member) => {
       const typeMeta = participantTypeMeta(member.participant_type);
       const role = roleOverrides?.[member.participant_id] || member.role || "agent";
@@ -172,6 +182,7 @@ export default function MobileRoomInfoPanel({
   channelLabel,
   agents,
   members,
+  viewerParticipantId = "operator-local",
   roleOverrides,
   guestLocked = false,
   onClose,
@@ -185,6 +196,7 @@ export default function MobileRoomInfoPanel({
   channelLabel: string;
   agents: LiveAgent[];
   members: RoomMember[];
+  viewerParticipantId?: string;
   roleOverrides?: Record<string, string>;
   guestLocked?: boolean;
   onClose: () => void;
@@ -198,8 +210,8 @@ export default function MobileRoomInfoPanel({
   );
   const [activeTab, setActiveTab] = useState<MobileInfoTab>("members");
   const { people, bots } = useMemo(
-    () => buildMobileMembers({ agents, members, roleOverrides }),
-    [agents, members, roleOverrides]
+    () => buildMobileMembers({ agents, members, viewerParticipantId, roleOverrides }),
+    [agents, members, roleOverrides, viewerParticipantId]
   );
   const tabLabel = MOBILE_INFO_TABS.find((tab) => tab.id === activeTab)?.label || "멤버";
   const hasRoomIconImage = Boolean(appearance.iconImage);
