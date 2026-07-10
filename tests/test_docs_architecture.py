@@ -19,10 +19,11 @@ class DocsArchitectureTests(unittest.TestCase):
             "RoomAgentBridge",
             "One provider process stays alive across turns",
             "Sending a room message never starts a stopped provider",
-            "cursor advances only after `message.final`",
+            "`last_provider_sync_seq` cursor advances",
+            "latest 12 visible final messages",
             "Claude Code must remain interactive",
             "rejects `-p`",
-            "one canonical event file",
+            "one canonical SQLite event authority",
         ):
             self.assertIn(required, audit)
 

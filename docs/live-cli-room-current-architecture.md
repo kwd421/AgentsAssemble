@@ -186,7 +186,8 @@ stopped --agent.start--> starting --bridge.ready--> idle
 idle --turn.assign--> busy --message.final--> idle
 busy --agent.interrupt--> idle or error
 idle/busy --agent.stop--> stopped
-bridge crash --> error + recovery_required
+unexpected CLI/bridge exit --> recovering (one attempt) --> starting/idle
+second exit or non-retryable failure --> error + recovery_required
 error/stopped --explicit agent.resume--> starting
 participant.kick --> stopped + kicked + removed from routing
 ```
@@ -195,10 +196,14 @@ Sending a room message never starts a stopped provider. Eligible messages are
 queued durably in `pending_event_ids`. An explicit start or resume launches one
 bridge, which launches one PTY process and then receives backlog.
 
-When a turn is assigned, pending IDs move to `inflight_event_ids`. The delivery
-cursor advances only after `message.final`. A provider error or bridge crash
-returns inflight IDs to pending, preserves diagnostics, and marks
-`recovery_required`. Recovery is still an explicit operator action.
+When a turn is assigned, pending IDs move to `inflight_event_ids`. The room-local
+`last_provider_sync_seq` cursor advances to the delivered input boundary only
+after `message.final`; provider errors never advance it. An unexpected provider
+or bridge process exit returns inflight IDs to pending, preserves bounded stderr
+evidence, and schedules one retry after one second when the current server still
+holds the launch approval context. The retry receives RoomMemory plus the
+pending diff. A second exit before a successful final, an auth/configuration
+failure, or a server restart requires an explicit operator resume.
 
 ## Routing And Context
 
@@ -210,11 +215,13 @@ returns inflight IDs to pending, preserves diagnostics, and marks
 - A busy provider queues later events without blocking other providers.
 - A stopped, kicked, or muted provider is never invoked.
 
-`build_room_turn_packet()` reads events after the provider sync cursor and keeps
-the newest contiguous events within the count and character budgets. The source
-event that triggered the turn cannot be dropped by truncation. The provider
-input is a thin room envelope plus this delta, not RoomStore JSON and not the
-complete transcript.
+`build_room_turn_packet()` uses indexed `seq` reads. A new session receives
+RoomMemory plus at most the latest 12 visible final messages within a 4,000
+character room-context budget. Later turns receive only other participants'
+visible final messages after `last_provider_sync_seq`, under the same bounds.
+The source event that triggered the turn cannot be dropped by truncation. The
+provider input is a thin room envelope plus this projection, not RoomStore JSON
+and not the complete transcript.
 
 ## Provider Runtime And Message Extraction
 
@@ -277,7 +284,7 @@ separate Agent Bridge process, and a fake interactive PTY CLI. It proves:
 - two turns on one provider PID;
 - provider-private marker recall;
 - delta/final event delivery;
-- one canonical event file;
+- one canonical SQLite event authority;
 - bridge and provider cleanup.
 
 The opt-in real-provider smoke uses the same production path:

@@ -390,8 +390,13 @@ export interface RoomAgentSession {
   active_turn_id?: string;
   turn_phase?: string;
   last_seen_event_id?: string;
+  last_seen_seq?: number;
   last_provider_sync_event_id?: string;
+  last_provider_sync_seq?: number;
+  bootstrap_cutoff_seq?: number;
   last_spoke_event_id?: string;
+  recovery_attempt_count?: number;
+  recovery_required?: boolean;
   turn_count?: number;
   last_error?: string;
   latency?: RoomAgentLatency;

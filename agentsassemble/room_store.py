@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -428,6 +428,8 @@ class RoomStore:
         limit: int | None = None,
         newest: bool = False,
         include_hidden: bool = False,
+        event_types: Iterable[str] | None = None,
+        exclude_actor_id: str = "",
     ) -> list[dict[str, object]]:
         clean_room_id = _clean_room_id(room_id)
         clauses = ["room_id = ?"]
@@ -435,6 +437,19 @@ class RoomStore:
         if not include_hidden:
             clauses.append("visibility = ?")
             parameters.append(VISIBLE)
+        clean_event_types = tuple(
+            event_type
+            for event_type in (clean_lobby_text(value, limit=64) for value in (event_types or ()))
+            if event_type
+        )
+        if clean_event_types:
+            placeholders = ",".join("?" for _ in clean_event_types)
+            clauses.append(f"event_type IN ({placeholders})")
+            parameters.extend(clean_event_types)
+        clean_excluded_actor = clean_lobby_text(exclude_actor_id, limit=128)
+        if clean_excluded_actor:
+            clauses.append("actor_id != ?")
+            parameters.append(clean_excluded_actor)
         effective_after_seq = max(0, int(after_seq or 0))
         with self._connection() as connection:
             if not effective_after_seq and after:
@@ -461,15 +476,70 @@ class RoomStore:
             events.reverse()
         return events
 
-    def event_count(self, room_id: str, *, include_hidden: bool = False) -> int:
+    def event_count(
+        self,
+        room_id: str,
+        *,
+        include_hidden: bool = False,
+        after_seq: int = 0,
+        before_seq: int = 0,
+        event_types: Iterable[str] | None = None,
+        exclude_actor_id: str = "",
+    ) -> int:
         clean_room_id = _clean_room_id(room_id)
-        query = "SELECT COUNT(*) FROM room_events WHERE room_id = ?"
-        parameters: tuple[object, ...] = (clean_room_id,)
+        clauses = ["room_id = ?"]
+        parameters: list[object] = [clean_room_id]
+        if not include_hidden:
+            clauses.append("visibility = ?")
+            parameters.append(VISIBLE)
+        if after_seq:
+            clauses.append("seq > ?")
+            parameters.append(max(0, int(after_seq)))
+        if before_seq:
+            clauses.append("seq < ?")
+            parameters.append(max(0, int(before_seq)))
+        clean_event_types = tuple(
+            event_type
+            for event_type in (clean_lobby_text(value, limit=64) for value in (event_types or ()))
+            if event_type
+        )
+        if clean_event_types:
+            placeholders = ",".join("?" for _ in clean_event_types)
+            clauses.append(f"event_type IN ({placeholders})")
+            parameters.extend(clean_event_types)
+        clean_excluded_actor = clean_lobby_text(exclude_actor_id, limit=128)
+        if clean_excluded_actor:
+            clauses.append("actor_id != ?")
+            parameters.append(clean_excluded_actor)
+        query = f"SELECT COUNT(*) FROM room_events WHERE {' AND '.join(clauses)}"
+        with self._connection() as connection:
+            return int(connection.execute(query, tuple(parameters)).fetchone()[0])
+
+    def event_by_id(self, room_id: str, event_id: str, *, include_hidden: bool = False) -> dict[str, object]:
+        clean_room_id = _clean_room_id(room_id)
+        clean_event_id = clean_lobby_text(event_id, limit=128)
+        if not clean_event_id:
+            return {}
+        query = "SELECT payload_json FROM room_events WHERE room_id = ? AND event_id = ?"
+        parameters: tuple[object, ...] = (clean_room_id, clean_event_id)
         if not include_hidden:
             query += " AND visibility = ?"
-            parameters = (clean_room_id, VISIBLE)
+            parameters = (clean_room_id, clean_event_id, VISIBLE)
         with self._connection() as connection:
-            return int(connection.execute(query, parameters).fetchone()[0])
+            row = connection.execute(query, parameters).fetchone()
+        return _row_payload(row, column="payload_json")
+
+    def event_sequence(self, room_id: str, event_id: str) -> int:
+        clean_room_id = _clean_room_id(room_id)
+        clean_event_id = clean_lobby_text(event_id, limit=128)
+        if not clean_event_id:
+            return 0
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT seq FROM room_events WHERE room_id = ? AND event_id = ?",
+                (clean_room_id, clean_event_id),
+            ).fetchone()
+        return int(row["seq"]) if row is not None else 0
 
     def latest_event_sequence(self, room_id: str) -> int:
         clean_room_id = _clean_room_id(room_id)

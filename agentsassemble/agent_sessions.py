@@ -15,6 +15,11 @@ from typing import Any, Callable, Iterable, Protocol
 from uuid import uuid4
 
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.room_context import (
+    DEFAULT_ROOM_CONTEXT_CHARS,
+    DEFAULT_ROOM_CONTEXT_MESSAGES,
+    project_room_context,
+)
 from agentsassemble.room_store import RoomStore
 
 CommandRunner = Callable[[list[str]], dict[str, object] | subprocess.CompletedProcess[str] | None]
@@ -25,7 +30,7 @@ AgentTurnCommandStreamer = Callable[[list[str], str, float], Iterable[AgentTurnC
 AgentTurnAdapter = Callable[[dict[str, object], dict[str, object]], Iterable[AgentTurnChunk]]
 ProcessFactory = Callable[[], object]
 DEFAULT_AGENT_TURN_TIMEOUT_SECONDS = 600.0
-DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS = 40
+DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS = DEFAULT_ROOM_CONTEXT_MESSAGES
 DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS = 20000
 CODEX_APP_SERVER_STDERR_TAIL_LINES = 50
 CODEX_APP_SERVER_STDERR_TAIL_CHARS = 16000
@@ -34,8 +39,6 @@ CODEX_APP_SERVER_IDLE_COMPLETION_GRACE_SECONDS = 1.0
 CODEX_APP_SERVER_INFERRED_TURN_COMPLETED_METHOD = "agentsassemble/turn_inferred_completed"
 DEFAULT_CODEX_APP_SERVER_RUNTIME_SHARING_POLICY = "isolated_session"
 CODEX_APP_SERVER_RUNTIME_SHARING_POLICIES = {"isolated_session", "shared_profile", "shared_profile_serial"}
-PROVIDER_ROOM_DELTA_MAX_EVENTS = 6
-PROVIDER_ROOM_DELTA_MAX_CHARS = 1200
 CODEX_APP_SERVER_SMOKE_COMMANDS = {
     "codex-app-server-same-profile",
     "codex-app-server-profile-isolation",
@@ -415,6 +418,8 @@ def run_agent_session_turn_payload(
         "filtered_message_delta_count": packet.get("filtered_message_delta_count", 0),
         "last_provider_sync_event_id_before": packet.get("last_provider_sync_event_id_before", ""),
         "last_provider_sync_event_id_after": packet.get("last_provider_sync_event_id_after", ""),
+        "last_provider_sync_seq_before": packet.get("last_provider_sync_seq_before", 0),
+        "last_provider_sync_seq_after": packet.get("last_provider_sync_seq_after", 0),
         "bootstrap_included": bool(packet.get("bootstrap_included")),
         "room_delta_included": bool(packet.get("room_delta_included")),
         "recovery_summary_included": bool(packet.get("recovery_summary_included")),
@@ -562,20 +567,29 @@ def run_agent_session_turn_payload(
             diagnostics=_diagnostic_items({**runtime_state, "turn_finished_ms": _elapsed_ms(started_monotonic)}),
         )
     )
-    packet_events = packet.get("events") if isinstance(packet.get("events"), list) else []
-    latest_public_event_id = _latest_public_event_id(store.read_events(room_id))
-    last_spoke_event_id = _latest_own_message_event_id(store.read_events(room_id), agent_id)
+    latest_public_event_id = clean_lobby_text(packet.get("last_provider_sync_event_id_after"), limit=128)
+    latest_public_seq = _nonnegative_int(packet.get("last_provider_sync_seq_after"))
+    last_spoke_event_id = next(
+        (
+            clean_lobby_text(event.get("id"), limit=128)
+            for event in reversed(appended)
+            if event.get("type") == "message_final"
+        ),
+        "",
+    )
     session_update = {
         **store.session(room_id, session_id),
         "status": "attached",
         "bootstrap_done": True,
         "recovery_required": False,
+        "recovery_attempt_count": 0,
         "last_provider_sync_event_id": latest_public_event_id,
+        "last_provider_sync_seq": latest_public_seq,
+        "last_seen_event_id": latest_public_event_id,
+        "last_seen_seq": latest_public_seq,
     }
     if last_spoke_event_id:
         session_update["last_spoke_event_id"] = last_spoke_event_id
-    if packet_events:
-        session_update["last_seen_event_id"] = packet_events[-1].get("id")
     store.upsert_session(room_id, session_update)
     return {
         "status": "finished",
@@ -2541,6 +2555,8 @@ def _merge_runtime_diagnostics(state: dict[str, object], chunk: dict[str, object
         "filtered_message_delta_count",
         "last_provider_sync_event_id_before",
         "last_provider_sync_event_id_after",
+        "last_provider_sync_seq_before",
+        "last_provider_sync_seq_after",
         "bootstrap_included",
         "room_delta_included",
         "recovery_summary_included",
@@ -2801,29 +2817,42 @@ def build_room_turn_packet(
     session = store.session(room_id, session_id)
     last_seen_event_id = clean_lobby_text(session.get("last_seen_event_id"), limit=128)
     last_provider_sync_event_id = clean_lobby_text(session.get("last_provider_sync_event_id"), limit=128)
-    events_after_seen = store.read_events(room_id, after=last_seen_event_id) if last_seen_event_id else store.read_events(room_id)
-    all_events = store.read_events(room_id)
+    last_seen_seq = _nonnegative_int(session.get("last_seen_seq")) or store.event_sequence(room_id, last_seen_event_id)
+    last_provider_sync_seq = _nonnegative_int(session.get("last_provider_sync_seq")) or store.event_sequence(
+        room_id,
+        last_provider_sync_event_id,
+    )
     recent_limit = _positive_int(max_recent_events, DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS)
     prompt_limit = _positive_int(max_prompt_chars, DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS)
-    recent_events = all_events[-recent_limit:]
-    events = _dedupe_events([*events_after_seen, *recent_events])
-    provider_projection = _provider_room_delta(
-        all_events,
+    bootstrap_done = bool(session.get("bootstrap_done"))
+    recovery_required = bool(session.get("recovery_required"))
+    context_after_seq = 0 if not bootstrap_done else last_provider_sync_seq
+    provider_projection = project_room_context(
+        store,
+        room_id=room_id,
         participant_id=participant_id,
-        after_event_id=last_provider_sync_event_id,
+        after_seq=context_after_seq,
+        max_messages=recent_limit,
+        max_chars=min(DEFAULT_ROOM_CONTEXT_CHARS, max(256, prompt_limit // 2)),
     )
-    provider_events = provider_projection["events"]
-    media_manifest = _selected_media_manifest(all_events, media_ids=media_ids, room_delta_text=provider_projection["text"])
+    provider_events = list(provider_projection.events)
+    media_events = store.read_events(
+        room_id,
+        event_types=("media_attached", "unsupported_media"),
+    )
+    media_manifest = _selected_media_manifest(
+        media_events,
+        media_ids=media_ids,
+        room_delta_text=provider_projection.text,
+    )
     unsupported_media = [media for media in media_manifest if not bool(media.get("supported"))]
     room_memory = room_memory_from_session(session)
     summary = dict(room_memory)
-    bootstrap_done = bool(session.get("bootstrap_done"))
-    recovery_required = bool(session.get("recovery_required"))
     if recovery_required:
         provider_input = build_provider_recovery_input(
             instruction=instruction,
             room_memory=room_memory,
-            room_delta=provider_projection["text"],
+            room_delta=provider_projection.text,
             media_manifest=media_manifest,
             unsupported_media=unsupported_media,
         )
@@ -2834,7 +2863,7 @@ def build_room_turn_packet(
         provider_input = build_provider_bootstrap_input(
             instruction=instruction,
             room_memory=room_memory,
-            room_delta=provider_projection["text"],
+            room_delta=provider_projection.text,
             media_manifest=media_manifest,
             unsupported_media=unsupported_media,
         )
@@ -2844,14 +2873,15 @@ def build_room_turn_packet(
     else:
         provider_input = build_provider_turn_input(
             instruction=instruction,
-            room_delta=provider_projection["text"],
+            room_delta=provider_projection.text,
             media_manifest=media_manifest,
             unsupported_media=unsupported_media,
         )
-        input_mode = "delta" if provider_projection["text"] else "current_only"
+        input_mode = "delta" if provider_projection.text else "current_only"
         bootstrap_included = False
         recovery_summary_included = False
-    latest_delta_event_id = clean_lobby_text(provider_projection.get("latest_event_id"), limit=128)
+    latest_delta_event_id = clean_lobby_text(provider_projection.latest_event_id, limit=128)
+    latest_delta_seq = int(provider_projection.latest_seq or last_provider_sync_seq)
     packet = {
         "room_id": room_id,
         "participant_id": participant_id,
@@ -2860,19 +2890,23 @@ def build_room_turn_packet(
         "include_summary": bool(recovery_summary_included),
         "summary_checkpoint_id": clean_lobby_text(summary.get("up_to_event_id") if isinstance(summary, dict) else "", limit=128),
         "after_event_id": last_seen_event_id,
+        "after_seq": last_seen_seq,
         "events": provider_events,
         "provider_input": provider_input,
         "input_mode": input_mode,
         "provider_visible_chars": len(provider_input),
         "provider_visible_event_count": len(provider_events),
-        "filtered_internal_event_count": provider_projection["filtered_internal_event_count"],
-        "filtered_message_delta_count": provider_projection["filtered_message_delta_count"],
+        "filtered_internal_event_count": provider_projection.filtered_internal_event_count,
+        "filtered_message_delta_count": provider_projection.filtered_message_delta_count,
         "last_provider_sync_event_id_before": last_provider_sync_event_id,
         "last_provider_sync_event_id_after": latest_delta_event_id or last_provider_sync_event_id,
+        "last_provider_sync_seq_before": last_provider_sync_seq,
+        "last_provider_sync_seq_after": latest_delta_seq,
+        "bootstrap_cutoff_seq": _nonnegative_int(session.get("bootstrap_cutoff_seq")),
         "bootstrap_included": bootstrap_included,
-        "room_delta_included": bool(provider_projection["text"]),
+        "room_delta_included": bool(provider_projection.text),
         "recovery_summary_included": recovery_summary_included,
-        "recent_event_count": len(recent_events),
+        "recent_event_count": len(provider_events),
         "max_recent_events": recent_limit,
         "max_prompt_chars": prompt_limit,
         "media_manifest": media_manifest,
@@ -2979,127 +3013,11 @@ def _positive_int(value: object, default: int) -> int:
     return parsed if parsed > 0 else default
 
 
-def _dedupe_events(events: list[dict[str, object]]) -> list[dict[str, object]]:
-    seen: set[str] = set()
-    deduped = []
-    for event in events:
-        event_id = str(event.get("id") or "")
-        key = event_id or json.dumps(event, sort_keys=True)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(event)
-    return deduped
-
-
-def _provider_visible_room_events(events: list[dict[str, object]]) -> list[dict[str, object]]:
-    visible = []
-    for event in events:
-        if not isinstance(event, dict):
-            continue
-        event_type = clean_lobby_text(event.get("type"), limit=64)
-        if event_type in {
-            "turn_started",
-            "turn_finished",
-            "message_delta",
-            "thinking_delta",
-            "approval_requested",
-            "approval_resolved",
-            "context_compaction_started",
-            "context_compaction_finished",
-            "error",
-        }:
-            continue
-        if "content" not in event and "media" not in event:
-            continue
-        clean_event = {
-            key: event[key]
-            for key in (
-                "id",
-                "created_at",
-                "type",
-                "participant_id",
-                "actor_id",
-                "display_name",
-                "content",
-                "media",
-            )
-            if key in event and event[key] not in (None, "", [], {})
-        }
-        if clean_event:
-            visible.append(clean_event)
-    return visible
-
-
-def _provider_room_delta(events: list[dict[str, object]], *, participant_id: str, after_event_id: str = "") -> dict[str, object]:
-    source = _events_after_id(events, after_event_id) if after_event_id else list(events)
-    candidates: list[tuple[dict[str, object], str]] = []
-    filtered_internal = 0
-    filtered_delta = 0
-    latest_event_id = after_event_id
-    for event in source:
-        event_type = clean_lobby_text(event.get("type"), limit=64)
-        if event_type == "message_delta":
-            filtered_delta += 1
-            continue
-        if event_type in {
-            "turn_started",
-            "turn_finished",
-            "thinking_delta",
-            "approval_requested",
-            "approval_resolved",
-            "context_compaction_started",
-            "context_compaction_finished",
-            "error",
-            "session_resumed",
-            "session_attached",
-            "participant_joined",
-            "room_created",
-        }:
-            filtered_internal += 1
-            continue
-        if event_type != "message_final":
-            continue
-        if clean_lobby_text(event.get("participant_id"), limit=128) == participant_id:
-            continue
-        latest_event_id = clean_lobby_text(event.get("id"), limit=128) or latest_event_id
-        content = clean_lobby_text(event.get("content"), limit=4000)
-        if not content:
-            continue
-        if len(content) > 500:
-            content = content[:500].rstrip() + " [truncated]"
-        speaker = clean_lobby_text(event.get("display_name") or event.get("participant_id") or event.get("actor_id"), limit=64) or "room"
-        clean_event = {
-            key: event[key]
-            for key in ("id", "created_at", "type", "participant_id", "actor_id", "display_name", "content")
-            if key in event and event[key] not in (None, "", [], {})
-        }
-        clean_event["content"] = content
-        line = f"- {speaker}: {content}"
-        candidates.append((clean_event, line))
-    selected: list[tuple[dict[str, object], str]] = []
-    selected_chars = 0
-    for candidate in reversed(candidates):
-        line_chars = len(candidate[1]) + (1 if selected else 0)
-        if len(selected) >= PROVIDER_ROOM_DELTA_MAX_EVENTS or selected_chars + line_chars > PROVIDER_ROOM_DELTA_MAX_CHARS:
-            break
-        selected.append(candidate)
-        selected_chars += line_chars
-    selected.reverse()
-    visible = [event for event, _line in selected]
-    lines = [line for _event, line in selected]
-    omitted = len(candidates) - len(selected)
-    if omitted:
-        summary = f"- [omitted {omitted} earlier room update(s)]"
-        if not lines or len("\n".join([*lines, summary])) <= PROVIDER_ROOM_DELTA_MAX_CHARS:
-            lines.insert(0, summary)
-    return {
-        "events": visible,
-        "text": "\n".join(lines),
-        "latest_event_id": latest_event_id,
-        "filtered_internal_event_count": filtered_internal,
-        "filtered_message_delta_count": filtered_delta,
-    }
+def _nonnegative_int(value: object) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _selected_media_manifest(
@@ -3133,15 +3051,6 @@ def _selected_media_manifest(
         if (media_id and media_id in referenced_text) or (filename and filename in referenced_text):
             referenced.append(media)
     return referenced
-
-
-def _events_after_id(events: list[dict[str, object]], event_id: str) -> list[dict[str, object]]:
-    if not event_id:
-        return list(events)
-    for index, event in enumerate(events):
-        if clean_lobby_text(event.get("id"), limit=128) == event_id:
-            return events[index + 1 :]
-    return list(events)
 
 
 def _latest_public_event_id(events: list[dict[str, object]]) -> str:

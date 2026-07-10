@@ -2127,7 +2127,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             self.output_root,
             {"room_id": "room-a", "agent_id": "agent-a", "session_id": "session-a", "provider_kind": "grok_live_session"},
         )
-        for index in range(8):
+        for index in range(15):
             store.append_event("room-a", "message_final", participant_id="human", content=f"old room update {index}")
         source = store.append_event(
             "room-a",
@@ -2146,7 +2146,8 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         self.assertIn("AGENTSASSEMBLE_SESSION_MARKER=latest-source", packet["provider_input"])
         self.assertNotIn("old room update 0", packet["provider_input"])
-        self.assertIn("omitted 3 earlier room update", packet["provider_input"])
+        self.assertIn("omitted 4 earlier room update", packet["provider_input"])
+        self.assertEqual(packet["provider_visible_event_count"], 12)
         self.assertEqual(packet["last_provider_sync_event_id_after"], source["id"])
 
     def test_media_is_not_implicitly_sent_without_selection_or_room_reference(self):
@@ -2181,7 +2182,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
     def test_provider_sync_cursor_advances_after_success_and_not_after_failure(self):
         store = RoomStore(self.output_root)
         store.create_room("room-a")
-        store.append_event("room-a", "message_final", participant_id="human", content="hello")
+        source = store.append_event("room-a", "message_final", participant_id="human", content="hello")
         resume_agent_session_payload(
             self.output_root,
             {"room_id": "room-a", "agent_id": "agent-a", "session_id": "session-a", "provider_kind": "codex_live_session"},
@@ -2198,7 +2199,9 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertTrue(session_after_success.get("bootstrap_done"))
         self.assertEqual(session_after_success.get("last_spoke_event_id"), success["events"][-2]["id"])
         cursor_after_success = session_after_success.get("last_provider_sync_event_id")
-        self.assertEqual(cursor_after_success, success["events"][-2]["id"])
+        cursor_seq_after_success = session_after_success.get("last_provider_sync_seq")
+        self.assertEqual(cursor_after_success, source["id"])
+        self.assertEqual(cursor_seq_after_success, source["seq"])
 
         store = RoomStore(self.output_root)
         store.append_event("room-a", "message_final", participant_id="human", content="new human update")
@@ -2210,6 +2213,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         self.assertEqual(failed["turn_status"], "error")
         self.assertEqual(RoomStore(self.output_root).session("room-a", "session-a").get("last_provider_sync_event_id"), cursor_after_success)
+        self.assertEqual(RoomStore(self.output_root).session("room-a", "session-a").get("last_provider_sync_seq"), cursor_seq_after_success)
 
     def test_normal_provider_input_omits_summary_but_recovery_includes_it(self):
         normal = build_provider_turn_input(instruction="Answer.", room_delta="")

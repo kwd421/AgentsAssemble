@@ -260,6 +260,9 @@ class AgentBridgeManager(Protocol):
     def close(self) -> None: ...
 
 
+RecoveryScheduler = Callable[[float, Callable[[], None]], object]
+
+
 class RoomCommandRejected(ValueError):
     def __init__(self, message: str, *, code: str = "rejected") -> None:
         super().__init__(message)
@@ -421,6 +424,8 @@ class RoomRealtimeController:
         broker: RoomEventBroker | None = None,
         default_room_id: str = "general",
         max_agent_relay_depth: int = 2,
+        recovery_delay_seconds: float = 1.0,
+        recovery_scheduler: RecoveryScheduler | None = None,
     ) -> None:
         self.output_root = Path(output_root)
         self.store = RoomStore(self.output_root)
@@ -428,6 +433,8 @@ class RoomRealtimeController:
         self.bridge_manager = bridge_manager
         self.default_room_id = clean_lobby_text(default_room_id, limit=128) or "general"
         self.max_agent_relay_depth = max(0, int(max_agent_relay_depth))
+        self.recovery_delay_seconds = max(0.0, float(recovery_delay_seconds))
+        self._recovery_scheduler = recovery_scheduler or _schedule_daemon_timer
         default_providers = {
             clean_lobby_text(spec.agent_id, limit=128): spec
             for spec in list(providers or [])
@@ -438,6 +445,11 @@ class RoomRealtimeController:
         }
         self._lock = threading.RLock()
         self._event_listener_removers: dict[str, Callable[[], None]] = {}
+        self._launch_contexts: dict[
+            tuple[str, str],
+            tuple[str, Callable[[dict[str, object]], str] | None],
+        ] = {}
+        self._recovery_handles: dict[tuple[str, str], object] = {}
         self._closed = False
         self.ensure_room(self.default_room_id)
         for spec in default_providers.values():
@@ -695,6 +707,13 @@ class RoomRealtimeController:
             self._closed = True
             removers = list(self._event_listener_removers.values())
             self._event_listener_removers.clear()
+            recovery_handles = list(self._recovery_handles.values())
+            self._recovery_handles.clear()
+            self._launch_contexts.clear()
+        for handle in recovery_handles:
+            cancel = getattr(handle, "cancel", None)
+            if callable(cancel):
+                cancel()
         for remove in removers:
             remove()
         if self.bridge_manager is not None:
@@ -716,20 +735,28 @@ class RoomRealtimeController:
         returncode: int,
         stderr_tail: str = "",
     ) -> None:
-        """Preserve crash evidence and leave backlog ready for explicit resume."""
+        """Preserve crash evidence and schedule one bounded in-process recovery."""
         with self._lock:
             session = self.store.session(room_id, session_id)
             if not session or session.get("runtime_status") == "stopped":
                 return
+            key = (room_id, session_id)
             pending = _dedupe_text_list(
                 [*list(session.get("inflight_event_ids") or []), *list(session.get("pending_event_ids") or [])]
             )
             message = f"Agent Bridge exited with return code {returncode}."
+            recovery_attempt_count = int(session.get("recovery_attempt_count") or 0)
+            automatic_recovery = bool(
+                not self._closed
+                and session.get("enabled")
+                and recovery_attempt_count < 1
+                and key in self._launch_contexts
+            )
             self.store.update_session_fields(
                 room_id,
                 session_id,
-                status="error",
-                runtime_status="error",
+                status="unavailable" if automatic_recovery else "error",
+                runtime_status="recovering" if automatic_recovery else "error",
                 pid=None,
                 bridge_pid=None,
                 active_turn_id="",
@@ -737,6 +764,7 @@ class RoomRealtimeController:
                 inflight_event_ids=[],
                 pending_event_ids=pending,
                 recovery_required=True,
+                recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
                 last_error=message,
                 stderr_tail=clean_lobby_text(stderr_tail, limit=16000),
             )
@@ -752,8 +780,15 @@ class RoomRealtimeController:
                 error_code="bridge_process_exited",
                 stderr_tail=clean_lobby_text(stderr_tail, limit=16000),
                 recovery_required=True,
+                automatic_recovery_scheduled=automatic_recovery,
             )
             self._publish_session_state(room_id, self.store.session(room_id, session_id))
+            if automatic_recovery:
+                handle = self._recovery_scheduler(
+                    self.recovery_delay_seconds,
+                    lambda: self._recover_bridge(room_id, session_id),
+                )
+                self._recovery_handles[key] = handle
 
     def _execute_action(
         self,
@@ -845,6 +880,7 @@ class RoomRealtimeController:
         *,
         server_url: str,
         ticket_issuer: Callable[[dict[str, object]], str] | None,
+        automatic_recovery: bool = False,
     ) -> dict[str, object]:
         spec = self._provider(room_id, agent_id)
         session = self.store.session(room_id, agent_id)
@@ -863,6 +899,10 @@ class RoomRealtimeController:
             enabled=True,
             runtime_status="starting",
             last_error="",
+            recovery_required=bool(session.get("recovery_required")) if automatic_recovery else False,
+            recovery_attempt_count=(
+                int(session.get("recovery_attempt_count") or 0) if automatic_recovery else 0
+            ),
         )
         if self.bridge_manager is None:
             self.store.update_session_fields(
@@ -874,6 +914,8 @@ class RoomRealtimeController:
                 last_error="Agent bridge manager is unavailable.",
             )
             raise RoomCommandRejected("Agent bridge manager is unavailable.", code="runtime_unavailable")
+        launch_key = (room_id, agent_id)
+        self._launch_contexts[launch_key] = (server_url, ticket_issuer)
         try:
             launch = self.bridge_manager.start(
                 room_id,
@@ -883,6 +925,8 @@ class RoomRealtimeController:
                 ticket_issuer=ticket_issuer,
             )
         except Exception as error:
+            if not automatic_recovery:
+                self._launch_contexts.pop(launch_key, None)
             self.store.update_session_fields(
                 room_id,
                 agent_id,
@@ -950,6 +994,14 @@ class RoomRealtimeController:
         session = self.store.session(room_id, agent_id)
         if not session:
             raise RoomCommandRejected(f"Agent session {agent_id} was not found.", code="not_found")
+        key = (room_id, agent_id)
+        recovery_handle = self._recovery_handles.pop(key, None)
+        cancel = getattr(recovery_handle, "cancel", None)
+        if callable(cancel):
+            cancel()
+        if disable:
+            self._launch_contexts.pop(key, None)
+        self.store.update_session_fields(room_id, agent_id, runtime_status="stopping")
         self.broker.direct_to_bridge(room_id, agent_id, {"op": "agent.control", "action": "stop"})
         stopped = {"stopped": True, "alive": False}
         if self.bridge_manager is not None:
@@ -972,6 +1024,8 @@ class RoomRealtimeController:
             inflight_event_ids=[],
             pending_event_ids=pending,
             last_error="",
+            recovery_required=False,
+            recovery_attempt_count=0,
         )
         participant = self.store.participant(room_id, agent_id)
         if participant:
@@ -985,6 +1039,42 @@ class RoomRealtimeController:
         )
         self._publish_session_state(room_id, updated)
         return {"agent_session": self._public_session(updated), "process": stopped}
+
+    def _recover_bridge(self, room_id: str, session_id: str) -> None:
+        key = (room_id, session_id)
+        with self._lock:
+            self._recovery_handles.pop(key, None)
+            session = self.store.session(room_id, session_id)
+            launch_context = self._launch_contexts.get(key)
+            if (
+                self._closed
+                or not session
+                or not session.get("enabled")
+                or session.get("runtime_status") != "recovering"
+                or launch_context is None
+            ):
+                return
+            server_url, ticket_issuer = launch_context
+            try:
+                self._start_agent(
+                    room_id,
+                    session_id,
+                    server_url=server_url,
+                    ticket_issuer=ticket_issuer,
+                    automatic_recovery=True,
+                )
+            except Exception as error:
+                current = self.store.session(room_id, session_id)
+                if current:
+                    updated = self.store.update_session_fields(
+                        room_id,
+                        session_id,
+                        status="error",
+                        runtime_status="error",
+                        recovery_required=True,
+                        last_error=clean_lobby_text(error, limit=4000) or "Automatic recovery failed.",
+                    )
+                    self._publish_session_state(room_id, updated)
 
     def _interrupt_agent(self, room_id: str, agent_id: str) -> dict[str, object]:
         session = self.store.session(room_id, agent_id)
@@ -1143,6 +1233,7 @@ class RoomRealtimeController:
             raise RoomCommandRejected("Final message content is required.", code="empty")
         active_turn_id = str(session["active_turn_id"])
         input_up_to_event_id = clean_lobby_text(session.get("input_up_to_event_id"), limit=128)
+        input_up_to_seq = _safe_bounded_int(session.get("input_up_to_seq"), default=0, minimum=0)
         relay_depth = int(session.get("active_relay_depth") or 0)
         event = self.store.append_event(
             room_id,
@@ -1179,12 +1270,16 @@ class RoomRealtimeController:
             active_source_event_id="",
             active_relay_depth=0,
             input_up_to_event_id="",
+            input_up_to_seq=0,
             inflight_event_ids=[],
             last_provider_sync_event_id=input_up_to_event_id or session.get("last_provider_sync_event_id") or "",
+            last_provider_sync_seq=input_up_to_seq or session.get("last_provider_sync_seq") or 0,
             last_seen_event_id=input_up_to_event_id or session.get("last_seen_event_id") or "",
+            last_seen_seq=input_up_to_seq or session.get("last_seen_seq") or 0,
             last_spoke_event_id=event["id"],
             bootstrap_done=True,
             recovery_required=False,
+            recovery_attempt_count=0,
             turn_count=int(session.get("turn_count") or 0) + 1,
             latency=latency,
             last_error="",
@@ -1198,6 +1293,7 @@ class RoomRealtimeController:
         agent_id, session = self._active_bridge_turn(identity, room_id, payload)
         interrupted = clean_lobby_text(payload.get("status"), limit=32) == "interrupted"
         content = clean_lobby_text(payload.get("message") or payload.get("content"), limit=4000) or "Provider turn failed."
+        diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
         error = self.store.append_event(
             room_id,
             "error",
@@ -1206,7 +1302,7 @@ class RoomRealtimeController:
             turn_id=session["active_turn_id"],
             content=content,
             error_code="interrupted" if interrupted else "provider_turn_failed",
-            diagnostics=payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {},
+            diagnostics=diagnostics,
         )
         self.store.append_event(
             room_id,
@@ -1217,23 +1313,74 @@ class RoomRealtimeController:
             status="interrupted" if interrupted else "error",
         )
         pending = _dedupe_text_list([*list(session.get("inflight_event_ids") or []), *list(session.get("pending_event_ids") or [])])
+        recovery_attempt_count = int(session.get("recovery_attempt_count") or 0)
+        automatic_recovery = bool(
+            not interrupted
+            and recovery_attempt_count < 1
+            and session.get("enabled")
+            and self.broker.has_bridge(room_id, agent_id)
+            and _provider_process_exited(content, diagnostics)
+        )
         updated = self.store.update_session_fields(
             room_id,
             str(session["session_id"]),
-            status="attached" if interrupted else "error",
-            runtime_status="idle" if interrupted else "error",
+            status="attached" if interrupted or automatic_recovery else "error",
+            runtime_status="idle" if interrupted else ("recovering" if automatic_recovery else "error"),
             turn_phase="",
             active_turn_id="",
             active_source_event_id="",
             active_relay_depth=0,
             input_up_to_event_id="",
+            input_up_to_seq=0,
             inflight_event_ids=[],
             pending_event_ids=pending,
             recovery_required=not interrupted,
+            recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
             last_error=content,
         )
         self._publish_session_state(room_id, updated)
+        if automatic_recovery:
+            key = (room_id, str(session["session_id"]))
+            handle = self._recovery_scheduler(
+                self.recovery_delay_seconds,
+                lambda: self._retry_pending_turn(room_id, str(session["session_id"])),
+            )
+            self._recovery_handles[key] = handle
         return {"event": error, "agent_session": self._public_session(updated)}
+
+    def _retry_pending_turn(self, room_id: str, session_id: str) -> None:
+        key = (room_id, session_id)
+        with self._lock:
+            self._recovery_handles.pop(key, None)
+            session = self.store.session(room_id, session_id)
+            if (
+                self._closed
+                or not session
+                or not session.get("enabled")
+                or session.get("runtime_status") != "recovering"
+                or not self.broker.has_bridge(room_id, str(session.get("participant_id") or session_id))
+            ):
+                return
+            participant_id = str(session.get("participant_id") or session_id)
+            updated = self.store.update_session_fields(
+                room_id,
+                session_id,
+                status="attached",
+                runtime_status="idle",
+            )
+            self._publish_session_state(room_id, updated)
+            if not self._assign_pending(room_id, participant_id):
+                current = self.store.session(room_id, session_id)
+                if current and current.get("pending_event_ids"):
+                    failed = self.store.update_session_fields(
+                        room_id,
+                        session_id,
+                        status="error",
+                        runtime_status="error",
+                        recovery_required=True,
+                        last_error="Automatic provider recovery could not reassign the pending turn.",
+                    )
+                    self._publish_session_state(room_id, failed)
 
     def _on_event_appended(self, event: dict[str, object]) -> None:
         self.broker.broadcast_event(event)
@@ -1313,7 +1460,12 @@ class RoomRealtimeController:
             instruction="Reply naturally to the new room messages. Return only the text that should appear in the room.",
         )
         input_up_to_event_id = clean_lobby_text(packet.get("last_provider_sync_event_id_after"), limit=128) or pending[-1]
-        source_event = _event_by_id(self.store.read_events(room_id), pending[-1])
+        source_event = self.store.event_by_id(room_id, pending[-1])
+        input_up_to_seq = _safe_bounded_int(
+            packet.get("last_provider_sync_seq_after"),
+            default=int(source_event.get("seq") or 0),
+            minimum=0,
+        )
         dispatched_at = _now()
         updated = self.store.update_session_fields(
             room_id,
@@ -1324,6 +1476,7 @@ class RoomRealtimeController:
             active_source_event_id=pending[-1],
             active_relay_depth=int(session.get("pending_relay_depth") or 0),
             input_up_to_event_id=input_up_to_event_id,
+            input_up_to_seq=input_up_to_seq,
             inflight_event_ids=pending,
             pending_event_ids=[],
             pending_relay_depth=0,
@@ -1359,6 +1512,7 @@ class RoomRealtimeController:
             "turn_id": turn_id,
             "source_event_id": pending[-1],
             "input_up_to_event_id": input_up_to_event_id,
+            "input_up_to_seq": input_up_to_seq,
             "provider_input": packet.get("provider_input") or "",
             "provider_visible_chars": packet.get("provider_visible_chars") or 0,
             "timeout_seconds": self._provider(room_id, agent_id).turn_timeout_seconds,
@@ -1372,6 +1526,7 @@ class RoomRealtimeController:
             runtime_status="disconnected",
             active_turn_id="",
             turn_phase="",
+            input_up_to_seq=0,
             inflight_event_ids=[],
             pending_event_ids=pending,
             last_error="Agent bridge disconnected before turn assignment.",
@@ -1417,6 +1572,17 @@ class RoomRealtimeController:
                 provider_kind=spec.normalized_provider_kind(),
                 connection_kind="native_cli_bridge",
             )
+            cursor_updates: dict[str, object] = {}
+            if "last_provider_sync_seq" not in session:
+                cursor_updates["last_provider_sync_seq"] = self.store.event_sequence(
+                    room_id,
+                    clean_lobby_text(session.get("last_provider_sync_event_id"), limit=128),
+                )
+            if "last_seen_seq" not in session:
+                cursor_updates["last_seen_seq"] = self.store.event_sequence(
+                    room_id,
+                    clean_lobby_text(session.get("last_seen_event_id"), limit=128),
+                )
             self.store.update_session_fields(
                 room_id,
                 agent_id,
@@ -1431,9 +1597,18 @@ class RoomRealtimeController:
                 pty=True,
                 transport="pty",
                 is_one_shot=False,
+                **cursor_updates,
             )
             return
-        latest_public = _latest_public_event_id(self.store.read_events(room_id))
+        latest_events = self.store.read_events(
+            room_id,
+            event_types=("message_final",),
+            limit=1,
+            newest=True,
+        )
+        latest_public_event = latest_events[-1] if latest_events else {}
+        latest_public = clean_lobby_text(latest_public_event.get("id"), limit=128)
+        latest_public_seq = int(latest_public_event.get("seq") or 0)
         self.store.upsert_session(
             room_id,
             {
@@ -1454,7 +1629,11 @@ class RoomRealtimeController:
                 "inflight_event_ids": [],
                 "turn_count": 0,
                 "last_provider_sync_event_id": latest_public,
+                "last_provider_sync_seq": latest_public_seq,
                 "last_seen_event_id": latest_public,
+                "last_seen_seq": latest_public_seq,
+                "bootstrap_cutoff_seq": latest_public_seq,
+                "recovery_attempt_count": 0,
                 "pty": True,
                 "transport": "pty",
                 "is_one_shot": False,
@@ -1556,6 +1735,28 @@ def _merged_latency(existing: object, incoming: object) -> dict[str, object]:
     return base
 
 
+def _provider_process_exited(message: str, diagnostics: dict[str, object]) -> bool:
+    lower = str(message or "").casefold()
+    if any(
+        marker in lower
+        for marker in (
+            "401",
+            "unauthorized",
+            "authentication",
+            "authenticate",
+            "login required",
+            "configured command missing",
+            "permission denied",
+        )
+    ):
+        return False
+    running = diagnostics.get("running")
+    returncode = diagnostics.get("returncode")
+    if running is False and returncode not in (None, ""):
+        return True
+    return "runtime exited with return code" in lower or "runtime stopped while reading" in lower
+
+
 def _safe_int_or_none(value: object) -> int | None:
     try:
         return int(value) if value not in (None, "") else None
@@ -1578,6 +1779,13 @@ def _safe_bounded_int(
     if maximum is not None:
         parsed = min(int(maximum), parsed)
     return parsed
+
+
+def _schedule_daemon_timer(delay_seconds: float, callback: Callable[[], None]) -> threading.Timer:
+    timer = threading.Timer(max(0.0, float(delay_seconds)), callback)
+    timer.daemon = True
+    timer.start()
+    return timer
 
 
 def _now() -> str:

@@ -28,9 +28,12 @@ class FakeBridgeManager:
     def __init__(self) -> None:
         self.starts: list[tuple[str, str]] = []
         self.stops: list[tuple[str, str]] = []
+        self.start_errors = []
 
     def start(self, room_id, session, spec, *, server_url="", ticket_issuer=None):
         del server_url, ticket_issuer
+        if self.start_errors:
+            raise self.start_errors.pop(0)
         self.starts.append((room_id, str(session["session_id"])))
         return {"bridge_pid": 701, "resolved_executable": f"/fake/{spec.command[0]}"}
 
@@ -41,6 +44,32 @@ class FakeBridgeManager:
 
     def close(self):
         return None
+
+
+class _ScheduledRecovery:
+    def __init__(self, callback):
+        self.callback = callback
+        self.cancelled = False
+
+    def cancel(self):
+        self.cancelled = True
+
+
+class ControlledRecoveryScheduler:
+    def __init__(self):
+        self.delays = []
+        self.pending = []
+
+    def __call__(self, delay_seconds, callback):
+        scheduled = _ScheduledRecovery(callback)
+        self.delays.append(delay_seconds)
+        self.pending.append(scheduled)
+        return scheduled
+
+    def run_next(self):
+        scheduled = self.pending.pop(0)
+        if not scheduled.cancelled:
+            scheduled.callback()
 
 
 def _spec(agent_id="codex", *, default_responder=True):
@@ -134,10 +163,13 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.manager = FakeBridgeManager()
+        self.recovery_scheduler = ControlledRecoveryScheduler()
+        self.ready_count = 0
         self.controller = RoomRealtimeController(
             self.root,
             providers=[_spec()],
             bridge_manager=self.manager,
+            recovery_scheduler=self.recovery_scheduler,
         )
 
     def tearDown(self):
@@ -154,8 +186,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         identity = _bridge_identity(agent_id)
         channel = self.controller.connect(identity)
         channel.subscribe({"room_events"})
+        self.ready_count += 1
         self._command(
-            f"ready-{agent_id}",
+            f"ready-{agent_id}-{self.ready_count}",
             "bridge.ready",
             {"pid": 808, "pty": True, "transport": "pty", "is_one_shot": False},
             identity,
@@ -243,6 +276,117 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(snapshot["events"], [])
         self.assertFalse(snapshot["has_more_before"])
 
+    def test_bridge_crash_restarts_once_with_room_memory_and_pending_diff(self):
+        self._command("req-start-recovery", "agent.start", {"agent_id": "codex"})
+        self.controller.store.update_session_fields(
+            "general",
+            "codex",
+            room_memory={"summary": "Compact recovery memory.", "decisions": [], "open_questions": []},
+        )
+        _identity, first_channel = self._connect_bridge()
+        self._command("req-crash-source", "message.send", {"content": "@codex recover this turn"})
+        first_assignment = next(
+            message for message in first_channel.drain() if message.get("op") == "turn.assign"
+        )
+        self.controller.broker.disconnect(first_channel)
+
+        self.controller.bridge_process_exited("general", "codex", 17, "fatal provider stderr")
+        recovering = self.controller.store.session("general", "codex")
+
+        self.assertEqual(self.recovery_scheduler.delays, [1.0])
+        self.assertEqual(recovering["runtime_status"], "recovering")
+        self.assertEqual(recovering["recovery_attempt_count"], 1)
+        self.assertTrue(recovering["recovery_required"])
+        self.assertIn(first_assignment["source_event_id"], recovering["pending_event_ids"])
+        self.assertIn("fatal provider stderr", recovering["stderr_tail"])
+
+        self.recovery_scheduler.run_next()
+        self.assertEqual(self.manager.starts, [("general", "codex"), ("general", "codex")])
+        _identity, second_channel = self._connect_bridge()
+        recovered_assignment = next(
+            message for message in second_channel.drain() if message.get("op") == "turn.assign"
+        )
+
+        self.assertIn("[Agent Session recovery]", recovered_assignment["provider_input"])
+        self.assertIn("Compact recovery memory.", recovered_assignment["provider_input"])
+        self.assertIn("recover this turn", recovered_assignment["provider_input"])
+
+        self.controller.broker.disconnect(second_channel)
+        self.controller.bridge_process_exited("general", "codex", 18, "failed again")
+        failed = self.controller.store.session("general", "codex")
+
+        self.assertEqual(self.recovery_scheduler.pending, [])
+        self.assertEqual(failed["runtime_status"], "error")
+        self.assertTrue(failed["recovery_required"])
+
+    def test_provider_process_exit_retries_turn_once_but_auth_failure_does_not(self):
+        self._command("req-start-provider-retry", "agent.start", {"agent_id": "codex"})
+        identity, channel = self._connect_bridge()
+        self._command("req-provider-retry-source", "message.send", {"content": "@codex retry provider"})
+        first_assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+
+        self._command(
+            "req-provider-exit",
+            "turn.failed",
+            {
+                "turn_id": first_assignment["turn_id"],
+                "message": "Live CLI runtime exited with return code 9.",
+                "diagnostics": {"running": False, "returncode": 9},
+            },
+            identity,
+        )
+        self.assertEqual(len(self.recovery_scheduler.pending), 1)
+
+        self.recovery_scheduler.run_next()
+        retry_assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+        self.assertIn("[Agent Session recovery]", retry_assignment["provider_input"])
+        self.assertIn("retry provider", retry_assignment["provider_input"])
+        self.controller.store.update_session_fields("general", "codex", recovery_attempt_count=0)
+
+        self._command(
+            "req-provider-auth-failure",
+            "turn.failed",
+            {
+                "turn_id": retry_assignment["turn_id"],
+                "message": "401 Unauthorized: authentication required",
+                "diagnostics": {"running": False, "returncode": 1},
+            },
+            identity,
+        )
+        failed = self.controller.store.session("general", "codex")
+
+        self.assertEqual(self.recovery_scheduler.pending, [])
+        self.assertEqual(failed["runtime_status"], "error")
+        self.assertTrue(failed["recovery_required"])
+
+    def test_operator_stop_cancels_scheduled_bridge_recovery(self):
+        self._command("req-start-before-cancel", "agent.start", {"agent_id": "codex"})
+        _identity, channel = self._connect_bridge()
+        self.controller.broker.disconnect(channel)
+        self.controller.bridge_process_exited("general", "codex", 11, "crashed")
+
+        self._command("req-stop-recovery", "agent.stop", {"agent_id": "codex"})
+        self.recovery_scheduler.run_next()
+        stopped = self.controller.store.session("general", "codex")
+
+        self.assertEqual(self.manager.starts, [("general", "codex")])
+        self.assertEqual(stopped["runtime_status"], "stopped")
+        self.assertFalse(stopped["enabled"])
+
+    def test_failed_automatic_bridge_start_requires_manual_recovery(self):
+        self._command("req-start-before-failed-recovery", "agent.start", {"agent_id": "codex"})
+        _identity, channel = self._connect_bridge()
+        self.controller.broker.disconnect(channel)
+        self.controller.bridge_process_exited("general", "codex", 12, "crashed")
+        self.manager.start_errors.append(RuntimeError("replacement bridge failed"))
+
+        self.recovery_scheduler.run_next()
+        failed = self.controller.store.session("general", "codex")
+
+        self.assertEqual(failed["runtime_status"], "error")
+        self.assertTrue(failed["recovery_required"])
+        self.assertIn("replacement bridge failed", failed["last_error"])
+
     def test_agent_create_registers_and_starts_native_cli_on_same_command_path(self):
         created = self._command(
             "req-create-claude",
@@ -307,7 +451,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(session["runtime_status"], "stopped")
 
     def test_explicit_start_and_bridge_ready_assign_backlog_on_same_socket_path(self):
-        self._command("req-message", "message.send", {"content": "@codex answer this"})
+        message = self._command("req-message", "message.send", {"content": "@codex answer this"})
         started = self._command("req-start", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
         pushed = channel.drain()
@@ -318,6 +462,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(self.manager.starts, [("general", "codex")])
         self.assertEqual(assignment["turn_id"], session["active_turn_id"])
         self.assertIn("@codex answer this", assignment["provider_input"])
+        self.assertEqual(assignment["input_up_to_seq"], message["result"]["event_seq"])
         self.assertEqual(session["runtime_status"], "busy")
         self.assertEqual(session["pid"], 808)
         self.assertEqual(identity["client_type"], "agent_bridge")
@@ -325,9 +470,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
     def test_busy_agent_automatically_receives_next_pending_turn_after_final(self):
         self._command("req-start", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
-        self._command("req-first", "message.send", {"content": "@codex first"})
+        first_message = self._command("req-first", "message.send", {"content": "@codex first"})
         first_assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
-        self._command("req-second", "message.send", {"content": "@codex second"})
+        second_message = self._command("req-second", "message.send", {"content": "@codex second"})
 
         self._command(
             "req-final-one",
@@ -339,6 +484,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
         self.assertNotEqual(second_assignment["turn_id"], first_assignment["turn_id"])
         self.assertIn("@codex second", second_assignment["provider_input"])
+        self.assertNotIn("@codex first", second_assignment["provider_input"])
+        self.assertEqual(first_assignment["input_up_to_seq"], first_message["result"]["event_seq"])
+        self.assertEqual(second_assignment["input_up_to_seq"], second_message["result"]["event_seq"])
         self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "busy")
 
     def test_bridge_delta_and_final_create_only_canonical_turn_events(self):
