@@ -14,6 +14,8 @@ dist/
 build/
 *.egg-info/
 node_modules/
+frontend/playwright-report/
+frontend/test-results/
 
 # Cloudflare wrangler local cache + account credentials (room-redirector) — never commit
 .wrangler/

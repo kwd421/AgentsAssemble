@@ -115,6 +115,11 @@ import {
   type RoomAppearance,
 } from "./lib/roomAppearance";
 import {
+  projectRoomEventProgress,
+  projectRoomEventsToTimeline,
+  type AgentSessionProgress,
+} from "./lib/roomEventProjection";
+import {
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
   loadSidebarWidth,
@@ -184,13 +189,6 @@ type ChannelMenuState = {
   x: number;
   y: number;
 } | null;
-
-type AgentSessionProgress = {
-  participantId: string;
-  displayName: string;
-  message: string;
-  turnId: string;
-};
 
 type SidebarResizeState = {
   startWidth: number;
@@ -611,114 +609,9 @@ export default function App() {
       }
     };
   }, []);
-  const roomEventToLobbyEvent = useCallback((event: RoomEvent): LobbyEvent | null => {
-    if (!event.id) return null;
-    if (!["message_delta", "message_final", "error"].includes(event.type)) return null;
-    const actorId = String(event.actor?.participant_id || event.participant_id || event.actor_id || "");
-    const actorType = String(event.actor?.participant_type || event.participant_type || event.actor_type || "");
-    const speaker = String(event.display_name || actorId || "Agent Session");
-    const isSpeech = event.type === "message_delta" || event.type === "message_final";
-    const mine = actorType === "human" && (actorId === "operator-local" || actorId === guestSession?.agentId);
-    return {
-      id: String(event.turn_id || event.id),
-      created_at: event.created_at,
-      name: mine ? "나" : speaker,
-      side: mine ? "mine" : "other",
-      kind: isSpeech ? "message" : "system",
-      message: String(event.content || "Agent Session failed."),
-      actor_id: actorId,
-      actor_type: actorType,
-      flow_event_type: "agent_session_turn",
-      flow_action: event.type,
-      flow_meeting_id: event.room_id,
-      flow_id: String(event.turn_id || ""),
-    };
-  }, [guestSession?.agentId]);
   const roomEventsToTimelineEvents = useCallback((events: RoomEvent[]): LobbyEvent[] => {
-    const timeline: LobbyEvent[] = [];
-    const turnIndex = new Map<string, number>();
-    events.forEach((event) => {
-      if (!event.id) return;
-      const actorId = String(event.actor?.participant_id || event.participant_id || event.actor_id || "");
-      const sourceEventId = String(event.source_event_id || event.metadata?.source_event_id || "");
-      const turnId = String(
-        event.turn_id ||
-          (sourceEventId && actorId ? `source:${sourceEventId}:actor:${actorId}` : event.id)
-      );
-      const speaker = String(event.display_name || actorId || "Agent Session");
-      if (event.type === "message_delta" || event.type === "message_final") {
-        const existingIndex = turnIndex.get(turnId);
-        const existing = existingIndex === undefined ? null : timeline[existingIndex];
-        const message =
-          event.type === "message_final"
-            ? String(event.content || "")
-            : `${existing?.message || ""}${event.content || ""}`;
-        const lobbyEvent: LobbyEvent = {
-          id: turnId,
-          created_at: event.created_at,
-          name: roomEventToLobbyEvent(event)?.name || speaker,
-          side: roomEventToLobbyEvent(event)?.side || "other",
-          kind: "message",
-          message,
-          actor_id: actorId,
-          actor_type: String(event.actor?.participant_type || event.participant_type || event.actor_type || ""),
-          flow_event_type: "agent_session_turn",
-          flow_action: event.type,
-          flow_meeting_id: event.room_id,
-          flow_id: turnId,
-        };
-        if (existingIndex === undefined) {
-          turnIndex.set(turnId, timeline.length);
-          timeline.push(lobbyEvent);
-        } else {
-          timeline[existingIndex] = lobbyEvent;
-        }
-        return;
-      }
-      if (["turn_started", "turn_state", "turn_finished", "thinking_delta", "agent_session_state"].includes(event.type)) return;
-      if (event.type === "error") {
-        if (turnIndex.has(`${turnId}:error`)) return;
-        turnIndex.set(`${turnId}:error`, timeline.length);
-        timeline.push({
-          id: `${turnId}:error`,
-          created_at: event.created_at,
-          name: speaker,
-          side: "other",
-          kind: "system",
-          message: String(event.content || "Turn failed."),
-          actor_id: speaker,
-          flow_event_type: "agent_session_turn",
-          flow_action: event.type,
-          flow_meeting_id: event.room_id,
-          flow_id: turnId,
-        });
-        return;
-      }
-      const lobbyEvent = roomEventToLobbyEvent(event);
-      if (lobbyEvent) timeline.push(lobbyEvent);
-    });
-    return timeline;
-  }, [roomEventToLobbyEvent]);
-  const roomEventProgress = useCallback((event: RoomEvent): AgentSessionProgress | null | undefined => {
-    const phase = String(event.phase || "");
-    if (
-      event.type === "turn_started" ||
-      event.type === "message_delta" ||
-      (event.type === "turn_state" && ["thinking", "streaming"].includes(phase))
-    ) {
-      const participantId = String(event.actor?.participant_id || event.participant_id || event.actor_id || "");
-      return {
-        participantId,
-        displayName: participantId || "Agent Session",
-        message: phase === "streaming" || event.type === "message_delta" ? "응답 작성 중..." : "생각 중...",
-        turnId: String(event.turn_id || ""),
-      };
-    }
-    if (event.type === "turn_finished" || event.type === "message_final" || event.type === "error") {
-      return null;
-    }
-    return undefined;
-  }, []);
+    return projectRoomEventsToTimeline(events, { viewerParticipantId: guestSession?.agentId || "operator-local" });
+  }, [guestSession?.agentId]);
   const applyRoomEvents = useCallback(
     (roomId: string, incoming: RoomEvent[], replace = false) => {
       if (!roomId) return;
@@ -733,7 +626,7 @@ export default function App() {
             return { ...previous, [roomId]: [...next, event.agent_session as RoomAgentSession] };
           });
         }
-        const progress = roomEventProgress(event);
+        const progress = projectRoomEventProgress(event);
         if (progress !== undefined) {
           setAgentSessionProgressByRoom((previous) => ({ ...previous, [roomId]: progress }));
         }
@@ -745,7 +638,7 @@ export default function App() {
       lobbyStreamRef.current?.(timeline);
       flowStreamRef.current?.(timeline);
     },
-    [roomEventProgress, roomEventsToTimelineEvents]
+    [roomEventsToTimelineEvents]
   );
   const sendAgentControl = useCallback(
     async (session: RoomAgentSession, action: "start" | "stop" | "resume" | "interrupt") => {
