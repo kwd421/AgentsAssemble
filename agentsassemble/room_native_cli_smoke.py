@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -63,6 +64,7 @@ def run_room_native_cli_smoke(
     conversation_seconds: float = 0.0,
     conversation_topic: str = "",
     verify_controls: bool = False,
+    observe_gui_port: int = 0,
 ) -> dict[str, object]:
     selected = [clean_lobby_text(value, limit=128) for value in list(providers or []) if value]
     run_id = "native_cli_" + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid4().hex[:6]
@@ -79,6 +81,8 @@ def run_room_native_cli_smoke(
         "conversation_seconds": max(0.0, float(conversation_seconds)),
         "conversation_topic": clean_lobby_text(conversation_topic, limit=2000),
         "verify_controls": bool(verify_controls),
+        "observe_gui_port": max(0, int(observe_gui_port)),
+        "observer_url": "",
         "latency_method": {
             "provider_direct": "same turn: provider runtime send started to first clean structured/transcript delta",
             "room_observed": "same turn: browser WebSocket message command sent to first room delta received",
@@ -93,19 +97,28 @@ def run_room_native_cli_smoke(
         return result
 
     specs = _load_specs(Path(config_path), selected, timeout_seconds=max(1.0, float(timeout_seconds)))
-    with tempfile.TemporaryDirectory(prefix="agentsassemble-native-smoke-") as temp_dir:
-        server_root = Path(temp_dir) / "state"
+    with ExitStack() as stack:
+        if observe_gui_port > 0:
+            server_root = Path(output_root).expanduser().resolve()
+            server_root.mkdir(parents=True, exist_ok=True)
+        else:
+            temp_dir = stack.enter_context(
+                tempfile.TemporaryDirectory(prefix="agentsassemble-native-smoke-")
+            )
+            server_root = Path(temp_dir) / "state"
         manager = NativeCliBridgeProcessManager(server_root)
         controller = RoomRealtimeController(server_root, providers=specs, bridge_manager=manager)
         manager.set_exit_listener(controller.bridge_process_exited)
         server = ThreadingHTTPServer(
-            ("127.0.0.1", 0),
+            ("127.0.0.1", max(0, int(observe_gui_port))),
             _make_handler(server_root, room_realtime_controller_override=controller),
         )
         server_thread = threading.Thread(target=server.serve_forever, daemon=True)
         server_thread.start()
         host, port = server.server_address
         base = f"http://{host}:{port}"
+        if observe_gui_port > 0:
+            result["observer_url"] = base + "/"
         client: WsRoomClient | None = None
         inbox: list[dict[str, object]] = []
         try:

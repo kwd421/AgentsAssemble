@@ -1718,6 +1718,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Verify process-preserving pause/resume backlog handling and participant kick cleanup.",
     )
+    room_smoke.add_argument(
+        "--observe-gui-port",
+        type=parse_nonnegative_int,
+        default=0,
+        help="Serve the canonical React room on this port during the smoke and persist its room state.",
+    )
     room_smoke.add_argument("--approve-real-provider", action="store_true", help="Allow real local provider CLI commands to run.")
     room_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print JSON output.")
     room_smoke_subparsers = room_smoke.add_subparsers(dest="room_smoke_command")
@@ -8545,6 +8551,7 @@ def run_room_command(args: argparse.Namespace) -> int:
                 conversation_seconds=float(getattr(args, "conversation_seconds", 0.0) or 0.0),
                 conversation_topic=str(getattr(args, "conversation_topic", "") or ""),
                 verify_controls=bool(getattr(args, "verify_controls", False)),
+                observe_gui_port=int(getattr(args, "observe_gui_port", 0) or 0),
             )
         elif bool(args.approve_real_provider) and args.room_smoke_command in CODEX_APP_SERVER_SMOKE_COMMANDS:
             payload = run_codex_app_server_smoke(

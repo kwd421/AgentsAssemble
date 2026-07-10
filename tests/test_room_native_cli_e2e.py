@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import tempfile
 import threading
 import time
@@ -67,11 +68,13 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                 conversation_seconds=1.0,
                 conversation_topic="A tiny haunted station test",
                 verify_controls=True,
+                observe_gui_port=self._unused_loopback_port(),
             )
 
         conversation = result["conversation"]
         cycle_count = conversation["speaker_cycles_completed"]
         self.assertEqual(result["status"], "ok", json.dumps(result, ensure_ascii=False, indent=2))
+        self.assertRegex(result["observer_url"], r"^http://127\.0\.0\.1:\d+/$")
         self.assertEqual(conversation["topology"], "server_assigned_shared_room")
         self.assertGreaterEqual(cycle_count, 2)
         self.assertEqual(len(conversation["turns"]), cycle_count * 2)
@@ -95,6 +98,12 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
             self.assertTrue(provider["pause_resume_verified"])
             self.assertTrue(provider["kick_verified"])
             self.assertFalse(provider["alive_after_stop"])
+
+    @staticmethod
+    def _unused_loopback_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            return int(probe.getsockname()[1])
 
     def test_unified_smoke_harness_records_real_process_provenance(self):
         with tempfile.TemporaryDirectory() as temp_dir:

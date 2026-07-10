@@ -278,6 +278,8 @@ class AgentSessionCliTests(unittest.TestCase):
                 "--conversation-topic",
                 "haunted station",
                 "--verify-controls",
+                "--observe-gui-port",
+                "8765",
                 "--json",
             ]
         )
@@ -301,6 +303,7 @@ class AgentSessionCliTests(unittest.TestCase):
             conversation_seconds=300.0,
             conversation_topic="haunted station",
             verify_controls=True,
+            observe_gui_port=8765,
         )
         self.assertIn('"status": "ok"', stdout.getvalue())
 
