@@ -158,7 +158,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                 self.assertIn("room-e2e-001", second_message["content"])
                 self.assertEqual(first_session["pid"], second_session["pid"])
                 self.assertEqual(second_session["turn_count"], 2)
-                self.assertTrue((root / "rooms" / "general" / "events.jsonl").is_file())
+                self.assertTrue((root / "rooms" / "rooms.sqlite3").is_file())
                 self.assertFalse((root / "rooms" / "general" / "live_cli_events.jsonl").exists())
 
                 stop_request = client.command("agent.stop", {"agent_id": "fake"}, request_id="stop-fake")

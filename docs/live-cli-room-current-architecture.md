@@ -56,11 +56,9 @@ RoomRealtimeController
   | append / read-after-seq
   v
 RoomStore
+  |-- .agentsassemble/rooms/rooms.sqlite3
   `-- .agentsassemble/rooms/<room_id>/
-        room.json
-        participants.json
-        sessions.json
-        events.jsonl
+        media/ handoffs/ bridges/ smoke/
 
 RoomRealtimeController
   | turn.assign on the same WebSocket protocol
@@ -85,20 +83,27 @@ interactive terminal process behind the bridge.
 
 | Concern | Owner | Durable |
 |---|---|---:|
-| Room metadata | `RoomStore.room.json` | yes |
-| Participant identity and membership | `RoomStore.participants.json` | yes |
-| Agent Session configuration and cursor | `RoomStore.sessions.json` | yes |
-| Ordered room history | `RoomStore.events.jsonl` | yes |
-| Command deduplication | RoomStore command results | yes |
+| Room metadata | `RoomStore` SQLite `rooms` | yes |
+| Participant identity and membership | `RoomStore` SQLite `participants` | yes |
+| Agent Session configuration and cursor | `RoomStore` SQLite `agent_sessions` | yes |
+| Ordered room history | `RoomStore` SQLite `room_events` | yes |
+| Command deduplication | `RoomStore` SQLite `command_results` | yes |
 | Active bridge subprocess handle | `NativeCliBridgeProcessManager` | process lifetime |
 | Provider PTY and transcript cursor | `LiveCliRuntime` inside Agent Bridge | bridge lifetime |
 | Browser reconnect cursor | room event `seq` | browser lifetime, replayable |
 | Provider private conversation | provider CLI/session files | provider-owned |
 
-`events.jsonl` has one schema. Every event has a room-local monotonic `seq`, an
+`room_events` has one schema. Every event has a room-local monotonic `seq`, an
 `id`, `room_id`, `type`, `created_at`, and canonical actor fields. Delta and
 final message events share a `turn_id` so the browser updates one streaming
 message instead of creating one message per delta.
+
+The browser receives at most the latest 200 visible events in an initial
+snapshot and requests older pages over the same WebSocket. A short reconnect
+gap is replayed exactly; a larger gap returns a bounded latest window with
+`resume_gap: true`. Agent Bridges receive turn assignments and bounded projected
+context, not a browser history snapshot. Legacy room JSON/JSONL is migrated once
+with a validated backup and is never used as a parallel fallback authority.
 
 ## WebSocket Protocol
 
@@ -291,9 +296,9 @@ errors, and process cleanup.
 
 ## Remaining Boundaries
 
-- `RoomStore` JSONL reads are appropriate for the local MVP but still scan more
-  history than a long-running high-volume room should. A future indexed store
-  must preserve the same event and cursor contract.
+- `RoomStore` uses indexed SQLite sequence reads and bounded browser snapshots.
+  Long-room verification still needs the 100k-event/10-agent benchmark in the
+  release smoke tier so later query changes cannot silently reintroduce scans.
 - PTY interaction remains sensitive to provider TUI changes. Prefer a
   provider-supported structured interactive protocol behind the same Agent
   Bridge interface when one is verified.

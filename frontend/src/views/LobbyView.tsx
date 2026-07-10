@@ -280,6 +280,10 @@ export default function LobbyView({
   typingNames = [],
   bindLobbyStream,
   submitMessage,
+  canonicalEvents,
+  canonicalOldestSeq = 0,
+  canonicalHasMoreHistory = false,
+  loadCanonicalHistory,
 }: {
   activeRoom: RoomDockItem;
   agents: LiveAgent[];
@@ -302,6 +306,14 @@ export default function LobbyView({
   localDisplayName?: string;
   bindLobbyStream?: (receive: (events: LobbyEvent[]) => void) => () => void;
   submitMessage?: (message: string) => Promise<LobbyEvent[]>;
+  canonicalEvents?: LobbyEvent[];
+  canonicalOldestSeq?: number;
+  canonicalHasMoreHistory?: boolean;
+  loadCanonicalHistory?: (beforeSeq: number) => Promise<{
+    loadedCount: number;
+    oldestSeq: number;
+    hasMoreBefore: boolean;
+  }>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const voterName = useMemo(() => {
@@ -320,6 +332,7 @@ export default function LobbyView({
   const [pinnedToLatest, setPinnedToLatest] = useState(true);
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const usesCanonicalHistory = Boolean(loadCanonicalHistory);
 
   const mentionables = useMemo(
     () =>
@@ -373,10 +386,25 @@ export default function LobbyView({
     if (loadingOlderRef.current || !hasMoreHistory || !loaded) return;
     const element = scrollRef.current;
     const oldest = events[0];
-    if (!element || !oldest?.id) return;
+    if (!element || (!usesCanonicalHistory && !oldest?.id)) return;
     loadingOlderRef.current = true;
     setLoadingOlder(true);
     prependAnchorRef.current = { scrollHeight: element.scrollHeight, scrollTop: element.scrollTop };
+    if (usesCanonicalHistory && loadCanonicalHistory) {
+      loadCanonicalHistory(canonicalOldestSeq)
+        .then((page) => {
+          setHasMoreHistory(page.hasMoreBefore);
+          if (!page.loadedCount) prependAnchorRef.current = null;
+        })
+        .catch(() => {
+          prependAnchorRef.current = null;
+        })
+        .finally(() => {
+          loadingOlderRef.current = false;
+          setLoadingOlder(false);
+        });
+      return;
+    }
     const request = roomSessionToken
       ? fetchRoomLobby(roomSessionToken, { before: oldest.id, limit: HISTORY_PAGE_SIZE })
       : fetchLobby(activeRoom.meetingId, { before: oldest.id, limit: HISTORY_PAGE_SIZE });
@@ -397,7 +425,16 @@ export default function LobbyView({
         loadingOlderRef.current = false;
         setLoadingOlder(false);
       });
-  }, [activeRoom.meetingId, events, hasMoreHistory, loaded, roomSessionToken]);
+  }, [
+    activeRoom.meetingId,
+    canonicalOldestSeq,
+    events,
+    hasMoreHistory,
+    loadCanonicalHistory,
+    loaded,
+    roomSessionToken,
+    usesCanonicalHistory,
+  ]);
 
   const handleLobbyScroll = useCallback(
     (event: UIEvent<HTMLDivElement>) => {
@@ -429,6 +466,12 @@ export default function LobbyView({
   }, [activeRoom.id, updatePinnedToLatest]);
 
   useEffect(() => {
+    if (usesCanonicalHistory) {
+      setEvents(canonicalEvents || []);
+      setLoaded(true);
+      setHasMoreHistory(canonicalHasMoreHistory);
+      return;
+    }
     let cancelled = false;
     setEvents([]);
     setLoaded(false);
@@ -454,7 +497,14 @@ export default function LobbyView({
     return () => {
       cancelled = true;
     };
-  }, [activeRoom.meetingId, onGuestSessionExpired, roomSessionToken]);
+  }, [
+    activeRoom.meetingId,
+    canonicalEvents,
+    canonicalHasMoreHistory,
+    onGuestSessionExpired,
+    roomSessionToken,
+    usesCanonicalHistory,
+  ]);
 
   const handleSSE = useCallback((incoming: LobbyEvent[]) => {
     setEvents((previous) => {

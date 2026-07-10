@@ -20,7 +20,10 @@ from agentsassemble.room_store import RoomStore
 from agentsassemble.voice_presence import leave_all_voice
 
 ROOM_EVENT_STREAM = "room_events"
+ROOM_SNAPSHOT_EVENT_LIMIT = 200
+ROOM_HISTORY_MAX_LIMIT = 200
 ROOM_COMMAND_ACTIONS = {
+    "room.history",
     "message.send",
     "agent.create",
     "agent.start",
@@ -477,7 +480,6 @@ class RoomRealtimeController:
         if not clean_room_id:
             raise ValueError("room_id is required.")
         with self._lock:
-            self.store.canonicalize_events(clean_room_id)
             room = self.store.create_room(clean_room_id, label="#general" if clean_room_id == "general" else clean_room_id)
             if clean_room_id not in self._event_listener_removers:
                 self._event_listener_removers[clean_room_id] = self.store.add_event_listener(
@@ -537,7 +539,34 @@ class RoomRealtimeController:
     def snapshot(self, identity: dict[str, object], *, after_seq: int = 0) -> dict[str, object]:
         room_id = clean_lobby_text(identity.get("meeting_id"), limit=128)
         self.ensure_room(room_id)
-        events = self.store.read_events(room_id, after_seq=max(0, int(after_seq or 0)))
+        latest_seq = self.store.latest_event_sequence(room_id)
+        requested_after_seq = max(0, int(after_seq or 0))
+        bridge = identity.get("client_type") == "agent_bridge"
+        resume_gap = False
+        if bridge:
+            events: list[dict[str, object]] = []
+            snapshot_mode = "bridge"
+        elif requested_after_seq:
+            resume_gap = latest_seq - requested_after_seq > ROOM_SNAPSHOT_EVENT_LIMIT
+            if resume_gap:
+                events = self.store.read_events(room_id, limit=ROOM_SNAPSHOT_EVENT_LIMIT, newest=True)
+                snapshot_mode = "gap"
+            else:
+                events = self.store.read_events(
+                    room_id,
+                    after_seq=requested_after_seq,
+                    limit=ROOM_SNAPSHOT_EVENT_LIMIT,
+                )
+                snapshot_mode = "resume"
+        else:
+            events = self.store.read_events(room_id, limit=ROOM_SNAPSHOT_EVENT_LIMIT, newest=True)
+            snapshot_mode = "initial"
+        oldest_seq = int(events[0].get("seq") or 0) if events else 0
+        has_more_before = bool(
+            not bridge
+            and oldest_seq
+            and self.store.oldest_event_sequence(room_id) < oldest_seq
+        )
         sessions = [self._public_session(session) for session in self.store.sessions(room_id)]
         active_turns = [
             {
@@ -556,8 +585,33 @@ class RoomRealtimeController:
             "agent_sessions": sessions,
             "active_turns": active_turns,
             "events": events,
-            "last_seq": self.store.latest_event_sequence(room_id),
+            "oldest_seq": oldest_seq,
+            "last_seq": latest_seq,
+            "has_more_before": has_more_before,
+            "resume_gap": resume_gap,
+            "snapshot_mode": snapshot_mode,
             "capabilities": self.capabilities(identity),
+        }
+
+    def history_page(self, room_id: str, *, before_seq: int, limit: int = ROOM_HISTORY_MAX_LIMIT) -> dict[str, object]:
+        clean_room_id = clean_lobby_text(room_id, limit=128)
+        self.ensure_room(clean_room_id)
+        clean_before_seq = max(0, int(before_seq or 0))
+        clean_limit = min(ROOM_HISTORY_MAX_LIMIT, max(1, int(limit or ROOM_HISTORY_MAX_LIMIT)))
+        events = self.store.read_events(
+            clean_room_id,
+            before_seq=clean_before_seq,
+            limit=clean_limit,
+            newest=True,
+        )
+        oldest_seq = int(events[0].get("seq") or 0) if events else 0
+        return {
+            "events": events,
+            "oldest_seq": oldest_seq,
+            "has_more_before": bool(
+                oldest_seq and self.store.oldest_event_sequence(clean_room_id) < oldest_seq
+            ),
+            "last_seq": self.store.latest_event_sequence(clean_room_id),
         }
 
     def capabilities(self, identity: dict[str, object]) -> dict[str, bool]:
@@ -565,6 +619,7 @@ class RoomRealtimeController:
         bridge = identity.get("client_type") == "agent_bridge"
         read_write = str(identity.get("invite_scope") or "read_write") != "read_only"
         return {
+            "room.history": not bridge,
             "message.send": read_write and not bridge,
             "room.manage": operator,
             "participant.kick": operator,
@@ -590,6 +645,27 @@ class RoomRealtimeController:
         if action not in ROOM_COMMAND_ACTIONS:
             raise RoomCommandRejected(f"Unsupported room command: {action}", code="unknown_action")
         self.ensure_room(room_id)
+        if action == "room.history":
+            if identity.get("client_type") == "agent_bridge":
+                raise RoomCommandRejected("Agent Bridges receive assigned context, not browser history pages.", code="permission_denied")
+            result = self.history_page(
+                room_id,
+                before_seq=_safe_bounded_int(payload.get("before_seq"), default=0, minimum=0),
+                limit=_safe_bounded_int(
+                    payload.get("limit"),
+                    default=ROOM_HISTORY_MAX_LIMIT,
+                    minimum=1,
+                    maximum=ROOM_HISTORY_MAX_LIMIT,
+                ),
+            )
+            return {
+                "op": "ack",
+                "request_id": request_id,
+                "accepted": True,
+                "action": action,
+                "result": result,
+                "deduplicated": False,
+            }
         with self._lock:
             prior = self.store.command_result(room_id, request_id)
             if prior:
@@ -1485,6 +1561,23 @@ def _safe_int_or_none(value: object) -> int | None:
         return int(value) if value not in (None, "") else None
     except (TypeError, ValueError):
         return None
+
+
+def _safe_bounded_int(
+    value: object,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int | None = None,
+) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = int(default)
+    parsed = max(int(minimum), parsed)
+    if maximum is not None:
+        parsed = min(int(maximum), parsed)
+    return parsed
 
 
 def _now() -> str:

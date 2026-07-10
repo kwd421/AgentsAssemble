@@ -196,6 +196,53 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse(guest["participant.mute"])
         self.assertFalse(guest["agent.control"])
 
+    def test_snapshot_is_bounded_and_history_pages_are_read_only(self):
+        for index in range(250):
+            self.controller.store.append_event("general", "message_final", content=f"message-{index}")
+
+        snapshot = self.controller.snapshot(HOST)
+        page_ack = self._command(
+            "req-history",
+            "room.history",
+            {"before_seq": snapshot["oldest_seq"], "limit": 200},
+        )
+        page = page_ack["result"]
+
+        self.assertEqual(snapshot["snapshot_mode"], "initial")
+        self.assertEqual(len(snapshot["events"]), 200)
+        self.assertEqual(snapshot["events"][0]["content"], "message-50")
+        self.assertEqual(snapshot["events"][-1]["content"], "message-249")
+        self.assertTrue(snapshot["has_more_before"])
+        self.assertFalse(snapshot["resume_gap"])
+        self.assertEqual(len(page["events"]), 51)
+        self.assertFalse(page["has_more_before"])
+        self.assertEqual(page["events"][-1]["content"], "message-49")
+        self.assertEqual(self.controller.store.command_result("general", "req-history"), {})
+
+    def test_resume_snapshot_replays_small_gap_and_reports_large_gap(self):
+        for index in range(230):
+            self.controller.store.append_event("general", "message_final", content=f"message-{index}")
+        latest = self.controller.store.latest_event_sequence("general")
+
+        exact = self.controller.snapshot(HOST, after_seq=latest - 2)
+        gap = self.controller.snapshot(HOST, after_seq=1)
+
+        self.assertEqual(exact["snapshot_mode"], "resume")
+        self.assertEqual(len(exact["events"]), 2)
+        self.assertFalse(exact["resume_gap"])
+        self.assertEqual(gap["snapshot_mode"], "gap")
+        self.assertEqual(len(gap["events"]), 200)
+        self.assertTrue(gap["resume_gap"])
+
+    def test_agent_bridge_snapshot_does_not_replay_room_history(self):
+        self.controller.store.append_event("general", "message_final", content="private room history")
+
+        snapshot = self.controller.snapshot(_bridge_identity())
+
+        self.assertEqual(snapshot["snapshot_mode"], "bridge")
+        self.assertEqual(snapshot["events"], [])
+        self.assertFalse(snapshot["has_more_before"])
+
     def test_agent_create_registers_and_starts_native_cli_on_same_command_path(self):
         created = self._command(
             "req-create-claude",

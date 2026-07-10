@@ -58,17 +58,21 @@ The active room source of truth is separate from meeting artifacts:
 
 ```text
 .agentsassemble/
-  rooms/<room_id>/
-    room.json
-    participants.json
-    sessions.json
-    events.jsonl
-    media/
-    handoffs/
+  rooms/
+    rooms.sqlite3
+    <room_id>/
+      media/
+      handoffs/
+      bridges/
+      smoke/
+    _migration_backup/<timestamp>/<room_id>/
 ```
 
-`room.json`, `participants.json`, and `sessions.json` define current state.
-`events.jsonl` is append-only ordered history. Meeting files under
+`rooms.sqlite3` is the single active authority for room metadata, membership,
+Agent Sessions, ordered events, and command deduplication. Existing JSON/JSONL
+room state is imported once, validated, and copied to `_migration_backup`
+before the old authority files are removed. Provider media, bridge evidence,
+handoffs, and smoke artifacts remain files. Meeting files under
 `.agentsassemble/meetings` remain archives/snapshots, not active roster state.
 
 Roster visibility and private operational signals are separate. Room
@@ -91,8 +95,8 @@ stack. The first room-event bus foundation is:
   system events.
 - cursor-based reads so agents and browsers can ask only for events after
   their last observed id.
-- SSE fanout for new events, with polling as a fallback rather than the primary
-  feeling of the room.
+- ticket-authenticated WebSocket fanout for canonical room events; legacy SSE
+  remains isolated to legacy meeting surfaces.
 - bounded in-memory queues and fairness/backpressure policy when several
   residents try to speak at once.
 - id/reference payloads for attachments and artifacts, so large bytes are not

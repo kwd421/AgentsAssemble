@@ -2455,6 +2455,14 @@ export interface RoomSocketHandle {
   ready: () => boolean;
   say: (request: RoomSayRequest) => Promise<LobbyPostResponse>;
   command: (action: string, payload?: Record<string, unknown>) => Promise<RoomCommandAck>;
+  historyBefore: (beforeSeq: number, limit?: number) => Promise<RoomHistoryPage>;
+}
+
+export interface RoomHistoryPage {
+  events: RoomEvent[];
+  oldest_seq: number;
+  last_seq: number;
+  has_more_before: boolean;
 }
 
 export interface RoomSocketSnapshot {
@@ -2465,7 +2473,11 @@ export interface RoomSocketSnapshot {
   agent_sessions: RoomAgentSession[];
   active_turns: Array<Record<string, unknown>>;
   events: RoomEvent[];
+  oldest_seq: number;
   last_seq: number;
+  has_more_before: boolean;
+  resume_gap: boolean;
+  snapshot_mode: "initial" | "resume" | "gap" | "bridge";
   capabilities: Record<string, boolean>;
 }
 
@@ -2669,6 +2681,16 @@ export function openRoomSocket(
     },
     ready: () => socket?.readyState === WebSocket.OPEN,
     command,
+    historyBefore: async (beforeSeq, limit = 200) => {
+      const ack = await command("room.history", { before_seq: beforeSeq, limit });
+      const result = ack.result || {};
+      return {
+        events: Array.isArray(result.events) ? (result.events as RoomEvent[]) : [],
+        oldest_seq: Number(result.oldest_seq || 0),
+        last_seq: Number(result.last_seq || 0),
+        has_more_before: Boolean(result.has_more_before),
+      };
+    },
     say: async (request) => {
       await command("message.send", {
         content: request.message,

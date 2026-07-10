@@ -196,6 +196,13 @@ type SidebarResizeState = {
   currentWidth: number;
 };
 
+type RoomHistoryState = {
+  oldestSeq: number;
+  lastSeq: number;
+  hasMoreBefore: boolean;
+  resumeGap: boolean;
+};
+
 type MobilePanelDragState = {
   startX: number;
   startY: number;
@@ -590,6 +597,7 @@ export default function App() {
   const flowStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
   const roomEventsByRoomRef = useRef<Record<string, RoomEvent[]>>({});
   const [roomEventsByRoom, setRoomEventsByRoom] = useState<Record<string, RoomEvent[]>>({});
+  const [roomHistoryByRoom, setRoomHistoryByRoom] = useState<Record<string, RoomHistoryState>>({});
   const [roomAgentSessionsByRoom, setRoomAgentSessionsByRoom] = useState<Record<string, RoomAgentSession[]>>({});
   const [roomCapabilitiesByRoom, setRoomCapabilitiesByRoom] = useState<Record<string, Record<string, boolean>>>({});
   const [agentSessionProgressByRoom, setAgentSessionProgressByRoom] = useState<Record<string, AgentSessionProgress | null>>({});
@@ -1047,6 +1055,12 @@ export default function App() {
   const activeRoomEvents = roomEventsByRoom[activeRoom.meetingId || ""] || [];
   const activeRoomAgentSessions = roomAgentSessionsByRoom[activeRoom.meetingId || ""] || [];
   const activeRoomCapabilities = roomCapabilitiesByRoom[activeRoom.meetingId || ""] || {};
+  const activeRoomHistory = roomHistoryByRoom[activeRoom.meetingId || ""] || {
+    oldestSeq: 0,
+    lastSeq: 0,
+    hasMoreBefore: false,
+    resumeGap: false,
+  };
   const activeRoomTimelineEvents = useMemo(
     () => roomEventsToTimelineEvents(activeRoomEvents),
     [activeRoomEvents, roomEventsToTimelineEvents]
@@ -2090,7 +2104,20 @@ export default function App() {
           ...previous,
           [roomId]: snapshot.capabilities || {},
         }));
-        applyRoomEvents(roomId, snapshot.events || [], true);
+        setRoomHistoryByRoom((previous) => {
+          const current = previous[roomId];
+          const resumed = snapshot.snapshot_mode === "resume" && current;
+          return {
+            ...previous,
+            [roomId]: {
+              oldestSeq: resumed ? current.oldestSeq : Number(snapshot.oldest_seq || 0),
+              lastSeq: Number(snapshot.last_seq || current?.lastSeq || 0),
+              hasMoreBefore: resumed ? current.hasMoreBefore : Boolean(snapshot.has_more_before),
+              resumeGap: Boolean(snapshot.resume_gap),
+            },
+          };
+        });
+        applyRoomEvents(roomId, snapshot.events || [], snapshot.snapshot_mode !== "resume");
         refreshMembers();
       },
       onRoomEvents: (events) => {
@@ -2128,6 +2155,32 @@ export default function App() {
       previous.map((room) => (room.id === roomId ? { ...room, ...updates } : room))
     );
   }
+
+  const loadCanonicalRoomHistory = useCallback(
+    async (beforeSeq: number) => {
+      const roomId = activeRoom.meetingId || "";
+      if (!roomSocket || !roomId) {
+        throw new Error("방 연결이 준비되지 않았습니다.");
+      }
+      const page = await roomSocket.historyBefore(beforeSeq, 50);
+      applyRoomEvents(roomId, page.events || []);
+      setRoomHistoryByRoom((previous) => ({
+        ...previous,
+        [roomId]: {
+          oldestSeq: Number(page.oldest_seq || previous[roomId]?.oldestSeq || 0),
+          lastSeq: Number(page.last_seq || previous[roomId]?.lastSeq || 0),
+          hasMoreBefore: Boolean(page.has_more_before),
+          resumeGap: false,
+        },
+      }));
+      return {
+        loadedCount: page.events.length,
+        oldestSeq: Number(page.oldest_seq || 0),
+        hasMoreBefore: Boolean(page.has_more_before),
+      };
+    },
+    [activeRoom.meetingId, applyRoomEvents, roomSocket]
+  );
 
   function persistRoomSettings(
     room: RoomDockItem,
@@ -2722,6 +2775,10 @@ export default function App() {
             onGuestSessionExpired={expireGuestSession}
             threadSummaries={sideChatThreadSummaries}
             typingNames={typingNames}
+            canonicalEvents={activeRoomTimelineEvents}
+            canonicalOldestSeq={activeRoomHistory.oldestSeq}
+            canonicalHasMoreHistory={activeRoomHistory.hasMoreBefore}
+            loadCanonicalHistory={loadCanonicalRoomHistory}
           />
         ) : channel === "live" ? (
           <LiveView
