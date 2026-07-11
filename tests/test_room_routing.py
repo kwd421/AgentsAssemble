@@ -59,6 +59,26 @@ class RoomRoutingPolicyTests(unittest.TestCase):
         self.assertEqual(allowed.targets, ("grok",))
         self.assertEqual(blocked.targets, ())
 
+    def test_continuous_mode_relays_plain_agent_messages_until_depth_limit(self):
+        providers = {
+            **_providers(),
+            "peer": NativeCliProviderSpec("peer", "Peer", ("peer",), default_responder=True),
+        }
+        allowed = route_message_targets(
+            _event("계속 이야기하자", actor_id="codex", actor_type="agent", relay_depth=2),
+            providers,
+            max_agent_relay_depth=6,
+            relay_agent_messages=True,
+        )
+        blocked = route_message_targets(
+            _event("마지막 발언", actor_id="peer", actor_type="agent", relay_depth=6),
+            providers,
+            max_agent_relay_depth=6,
+            relay_agent_messages=True,
+        )
+        self.assertEqual(allowed.targets, ("peer",))
+        self.assertEqual(blocked.targets, ())
+
 
 if __name__ == "__main__":
     unittest.main()

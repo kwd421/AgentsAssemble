@@ -218,6 +218,7 @@ def create_room_invite(
     max_uses: int = 0,
     client_type: str = "browser",
     provider_kind: str = "manual",
+    created_by_user_id: str = "",
 ) -> dict[str, object]:
     """Create an invite token for a remote client to join the room.
 
@@ -257,6 +258,9 @@ def create_room_invite(
     )
 
     invite_token = packet["token"]
+    join_code = f"aaj1_{secrets.token_urlsafe(24)}"
+    join_code_fingerprint = hashlib.sha256(join_code.encode("utf-8")).hexdigest()
+    join_nonce = secrets.token_urlsafe(24)
 
     # Track pending invite for revocation (key by token fingerprint)
     invite_id = _invite_fingerprint(str(invite_token))
@@ -270,6 +274,9 @@ def create_room_invite(
             "participant_type": clean_participant_type,
             "client_type": clean_client_type,
             "provider_kind": clean_provider_kind,
+            "created_by_user_id": clean_lobby_text(created_by_user_id, limit=128),
+            "join_code_fingerprint": join_code_fingerprint,
+            "join_nonce": join_nonce,
             "permission_mode": resolved_permission_mode,
             "max_uses": clean_max_uses,
             "use_count": 0,
@@ -283,11 +290,12 @@ def create_room_invite(
     public_url = get_public_url()
     join_url = ""
     if public_url:
-        join_url = f"{public_url}/join?token={invite_token}"
+        join_url = f"{public_url}/join?token={join_code}"
 
     result: dict[str, object] = {
         "invite_id": invite_id,
         "invite_token": invite_token,
+        "join_code": join_code,
         "meeting_id": packet["meeting_id"],
         "agent_id": clean_agent_id,
         "display_name": clean_display_name,
@@ -396,9 +404,21 @@ def join_room_with_invite(
     secret = _get_invite_secret()
 
     # Check if this invite has been revoked and read its reuse policy.
+    join_code = token if token.startswith("aaj1_") else ""
+    join_code_fingerprint = hashlib.sha256(join_code.encode("utf-8")).hexdigest() if join_code else ""
     invite_id = _invite_fingerprint(token)
     with _state_lock:
         invite_info = _pending_invites.get(invite_id)
+        if join_code_fingerprint:
+            invite_info = next(
+                (
+                    candidate
+                    for candidate in _pending_invites.values()
+                    if candidate.get("join_code_fingerprint") == join_code_fingerprint
+                ),
+                None,
+            )
+            invite_id = str((invite_info or {}).get("invite_id") or "")
         if invite_info and invite_info.get("revoked"):
             return {"status": "rejected", "reason": "invite_revoked"}
         invite_scope = normalize_invite_scope(invite_info.get("invite_scope") if invite_info else "")
@@ -416,19 +436,34 @@ def join_room_with_invite(
         max_uses = int(invite_info.get("max_uses", 1)) if invite_info else 1
         reusable = max_uses != 1
 
-    verification = verify_lan_invite_token(
-        token,
-        secret=secret,
-        expected_meeting_id=meeting_id,
-    )
-
-    if verification.get("status") != "ok":
-        return {
-            "status": "rejected",
-            "reason": verification.get("identity_status", "verification_failed"),
+    if join_code:
+        if invite_info is None:
+            return {"status": "rejected", "reason": "invite_not_found"}
+        expires_at = datetime.fromisoformat(str(invite_info.get("expires_at") or ""))
+        if expires_at <= datetime.now(UTC):
+            return {"status": "rejected", "reason": "token_expired"}
+        if meeting_id and meeting_id != invite_info.get("meeting_id"):
+            return {"status": "rejected", "reason": "meeting_mismatch"}
+        claims = {
+            "meeting_id": invite_info.get("meeting_id"),
+            "nonce": invite_info.get("join_nonce"),
+            "agent": {
+                "agent_id": invite_info.get("agent_id"),
+                "display_name": invite_info.get("display_name"),
+            },
         }
-
-    claims = verification.get("claims", {})
+    else:
+        verification = verify_lan_invite_token(
+            token,
+            secret=secret,
+            expected_meeting_id=meeting_id,
+        )
+        if verification.get("status") != "ok":
+            return {
+                "status": "rejected",
+                "reason": verification.get("identity_status", "verification_failed"),
+            }
+        claims = verification.get("claims", {})
     nonce = str(claims.get("nonce") or "")
     nonce_fingerprint = _nonce_fingerprint(nonce)
 
@@ -480,6 +515,7 @@ def join_room_with_invite(
     )
     resolved_meeting_id = str(claims.get("meeting_id") or "")
     clean_owner_display_name = clean_lobby_text(owner_display_name, limit=64)
+    created_by_user_id = clean_lobby_text((invite_info or {}).get("created_by_user_id"), limit=128)
 
     # One identity, one live session per room: revoke any session this
     # participant already holds before issuing the new one.
@@ -495,6 +531,7 @@ def join_room_with_invite(
         participant_type=resolved_participant_type,
         client_type=invite_client_type,
         provider_kind=invite_provider_kind,
+        owner_id=created_by_user_id,
     )
 
     return {
@@ -508,6 +545,7 @@ def join_room_with_invite(
         "client_type": invite_client_type,
         "provider_kind": invite_provider_kind,
         "owner_display_name": clean_owner_display_name,
+        "owner_id": created_by_user_id,
         "stable_identity": stable_user is not None,
         # The server operator's account moderates from any entrance (public
         # URL included) — the join response tells the client to unlock those
@@ -618,6 +656,24 @@ def revoke_invite(invite_id: str) -> bool:
         return True
 
 
+def revoke_room_access(meeting_id: str) -> dict[str, int]:
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    revoked_invites = 0
+    revoked_sessions = 0
+    with _state_lock:
+        for invite in _pending_invites.values():
+            if invite.get("meeting_id") == clean_meeting_id and not invite.get("revoked"):
+                invite["revoked"] = True
+                revoked_invites += 1
+        for fingerprint, session in list(_active_sessions.items()):
+            if session.get("meeting_id") == clean_meeting_id:
+                del _active_sessions[fingerprint]
+                revoked_sessions += 1
+        if revoked_invites or revoked_sessions:
+            _persist_state_locked()
+    return {"revoked_invites": revoked_invites, "revoked_sessions": revoked_sessions}
+
+
 def pending_invites_summary() -> list[dict[str, object]]:
     """Return summary of pending (non-consumed, non-expired) invites."""
     now = datetime.now(UTC)
@@ -652,6 +708,7 @@ def _issue_session_token(
     participant_type: str = "human",
     client_type: str = "browser",
     provider_kind: str = "manual",
+    owner_id: str = "",
 ) -> str:
     """Generate and store a session token."""
     now = datetime.now(UTC)
@@ -665,6 +722,7 @@ def _issue_session_token(
         "participant_type": _normalize_invite_participant_type(participant_type),
         "client_type": _normalize_invite_client_type(client_type),
         "provider_kind": clean_lobby_text(provider_kind, limit=64) or "manual",
+        "owner_id": clean_lobby_text(owner_id, limit=128),
         "connection_kind": (
             "native_cli_bridge"
             if _normalize_invite_client_type(client_type) == "agent_bridge"
@@ -788,6 +846,9 @@ def _clean_session_record(value: object) -> dict[str, object]:
         "meeting_id": clean_lobby_text(source.get("meeting_id"), limit=128),
         "invite_scope": normalize_invite_scope(source.get("invite_scope")),
         "participant_type": _normalize_invite_participant_type(source.get("participant_type")),
+        "client_type": _normalize_invite_client_type(source.get("client_type")),
+        "provider_kind": clean_lobby_text(source.get("provider_kind"), limit=64),
+        "owner_id": clean_lobby_text(source.get("owner_id"), limit=128),
         "connection_kind": clean_lobby_text(
             source.get("connection_kind") or NATIVE_REMOTE_ROOM_CLIENT_KIND,
             limit=64,
@@ -809,6 +870,11 @@ def _clean_pending_invite_record(value: object, *, invite_id: str) -> dict[str, 
         "meeting_id": clean_lobby_text(source.get("meeting_id"), limit=128),
         "invite_scope": normalize_invite_scope(source.get("invite_scope")),
         "participant_type": _normalize_invite_participant_type(source.get("participant_type")),
+        "client_type": _normalize_invite_client_type(source.get("client_type")),
+        "provider_kind": clean_lobby_text(source.get("provider_kind"), limit=64),
+        "created_by_user_id": clean_lobby_text(source.get("created_by_user_id"), limit=128),
+        "join_code_fingerprint": clean_lobby_text(source.get("join_code_fingerprint"), limit=128),
+        "join_nonce": clean_lobby_text(source.get("join_nonce"), limit=128),
         "expires_at": clean_lobby_text(source.get("expires_at"), limit=64),
         "created_at": clean_lobby_text(source.get("created_at"), limit=64),
         "revoked": bool(source.get("revoked")),

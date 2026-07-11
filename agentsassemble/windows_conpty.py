@@ -118,7 +118,14 @@ class WindowsConPtyRuntime:
         else:
             process.write(payload + ("" if payload.endswith(self.submit_newline) else self.submit_newline))
 
-    def read_output(self, *, timeout_seconds: float, on_delta: Callable[[str], None] | None = None) -> dict[str, object]:
+    def read_output(
+        self,
+        *,
+        timeout_seconds: float,
+        on_delta: Callable[[str], None] | None = None,
+        on_activity: Callable[[dict[str, object]], None] | None = None,
+    ) -> dict[str, object]:
+        del on_activity
         deadline = time.monotonic() + max(0.1, float(timeout_seconds))
         previous = ""
         while time.monotonic() < deadline:

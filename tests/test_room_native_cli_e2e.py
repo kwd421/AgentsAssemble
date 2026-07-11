@@ -216,7 +216,8 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                     client,
                     lambda message: message.get("op") == "ack" and message.get("request_id") == start_request,
                 )
-                bridge_pid = start_ack["result"]["launch"]["bridge_pid"]
+                self.assertNotIn("bridge_pid", start_ack["result"]["launch"])
+                bridge_pid = manager.health("general", "fake")["bridge_pid"]
                 self._wait_for(lambda: controller.store.session("general", "fake").get("runtime_status") == "idle")
 
                 first_request = client.command(
@@ -242,7 +243,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                         f"{error}\nsession={session!r}\nevents={events!r}\nstderr={stderr_tail!r}"
                     ) from error
                 first_session = controller.store.session("general", "fake")
-                provider_pid = first_session["pid"]
+                provider_pid = first_session["reported_provider_pid"]
 
                 second_request = client.command(
                     "message.send",
@@ -264,7 +265,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
 
                 self.assertIn("room-e2e-001", first_message["content"])
                 self.assertIn("room-e2e-001", second_message["content"])
-                self.assertEqual(first_session["pid"], second_session["pid"])
+                self.assertEqual(first_session["reported_provider_pid"], second_session["reported_provider_pid"])
                 self.assertEqual(second_session["turn_count"], 2)
                 self.assertTrue((root / "rooms" / "rooms.sqlite3").is_file())
                 self.assertFalse((root / "rooms" / "general" / "live_cli_events.jsonl").exists())

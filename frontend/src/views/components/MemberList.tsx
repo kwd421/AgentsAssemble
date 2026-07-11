@@ -166,6 +166,7 @@ function memberActive(member: RoomMember) {
 }
 
 function memberRole(member: RoomMember): RoleId {
+  if (member.participant_type === "human") return "human";
   return ["human", "director", "implementer", "reviewer", "agent"].includes(member.role)
     ? member.role
     : "agent";
@@ -534,6 +535,8 @@ function MemberDetailModal({
   onAgentControl,
   availableProviders = [],
   onAgentConfigure,
+  activityVisible,
+  onActivityVisibilityChange,
 }: {
   entry: MemberEntry;
   onClose: () => void;
@@ -550,6 +553,8 @@ function MemberDetailModal({
     session: RoomAgentSession,
     settings: Record<string, string>
   ) => void | Promise<void>;
+  activityVisible?: boolean;
+  onActivityVisibilityChange?: (session: RoomAgentSession, visible: boolean) => void;
 }) {
   const [sessionActionBusy, setSessionActionBusy] = useState(false);
   const [sessionActionStatus, setSessionActionStatus] = useState("");
@@ -599,6 +604,8 @@ function MemberDetailModal({
             )}
             onControl={onAgentControl}
             onConfigure={onAgentConfigure}
+            activityVisible={activityVisible}
+            onActivityVisibilityChange={onActivityVisibilityChange}
           />
           {onParticipantKick && (
             <section className="dc-member-detail-section" aria-label={`${entry.displayName} 방 관리`}>
@@ -719,13 +726,25 @@ function MemberDetailModal({
     }
   }
 
-  function handleSaveAgentProfile() {
-    const nextProfiles = saveAgentProfileSettings(agent.agent_id, {
-      displayName: agentNameDraft,
-      avatarImage: agentAvatarImage,
-    });
-    onAgentProfileSettingsChange?.(nextProfiles);
-    setAgentProfileStatus("에이전트 프로필 저장됨");
+  async function handleSaveAgentProfile() {
+    setAgentProfileStatus("에이전트 프로필 저장 중...");
+    try {
+      if (entry.agentSession && onAgentConfigure) {
+        await onAgentConfigure(entry.agentSession, {
+          display_name: agentNameDraft,
+          avatar_image_url: agentAvatarImage,
+        });
+      }
+      const nextProfiles = saveAgentProfileSettings(agent.agent_id, {
+        displayName: agentNameDraft,
+        avatarImage: agentAvatarImage,
+      });
+      onAgentProfileSettingsChange?.(nextProfiles);
+      onSessionActionComplete?.();
+      setAgentProfileStatus("에이전트 프로필 저장됨");
+    } catch (error) {
+      setAgentProfileStatus(error instanceof Error ? error.message : "에이전트 프로필 저장 실패");
+    }
   }
 
   async function handleSaveAgentOptions() {
@@ -955,6 +974,8 @@ function MemberDetailModal({
             )}
             onControl={onAgentControl}
             onConfigure={onAgentConfigure}
+            activityVisible={activityVisible}
+            onActivityVisibilityChange={onActivityVisibilityChange}
           />
         )}
         {canEditAgentProfile && (
@@ -991,7 +1012,7 @@ function MemberDetailModal({
                   }}
                 />
               </label>
-              <button type="button" className="dc-member-session-button" onClick={handleSaveAgentProfile}>
+              <button type="button" className="dc-member-session-button" onClick={() => void handleSaveAgentProfile()}>
                 저장
               </button>
             </div>
@@ -1290,6 +1311,8 @@ export default function MemberList({
   onAgentControl,
   availableProviders = [],
   onAgentConfigure,
+  agentActivityVisibility = {},
+  onAgentActivityVisibilityChange,
 }: {
   agents: LiveAgent[];
   members?: RoomMember[];
@@ -1318,6 +1341,8 @@ export default function MemberList({
     session: RoomAgentSession,
     settings: Record<string, string>
   ) => void | Promise<void>;
+  agentActivityVisibility?: Record<string, boolean>;
+  onAgentActivityVisibilityChange?: (session: RoomAgentSession, visible: boolean) => void;
 }) {
   const [localRoleOverrides, setLocalRoleOverrides] = useState<Record<string, RoleId>>({});
   const [localQuery, setLocalQuery] = useState("");
@@ -1662,6 +1687,12 @@ export default function MemberList({
           onAgentControl={onAgentControl}
           availableProviders={availableProviders}
           onAgentConfigure={onAgentConfigure}
+          activityVisible={
+            detailEntry.agentSession
+              ? agentActivityVisibility[detailEntry.agentSession.participant_id] !== false
+              : true
+          }
+          onActivityVisibilityChange={onAgentActivityVisibilityChange}
         />
       )}
       {memberMenu && (

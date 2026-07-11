@@ -21,6 +21,7 @@ def route_message_targets(
     providers: Mapping[str, NativeCliProviderSpec],
     *,
     max_agent_relay_depth: int,
+    relay_agent_messages: bool = False,
 ) -> RoomRoutingDecision:
     actor = event.get("actor") if isinstance(event.get("actor"), dict) else {}
     actor_id = clean_lobby_text(actor.get("participant_id") or event.get("participant_id"), limit=128)
@@ -38,7 +39,7 @@ def route_message_targets(
             targets = set(providers)
         elif mentioned:
             targets = mentioned
-        elif actor_type != "agent":
+        elif actor_type != "agent" or relay_agent_messages:
             targets = {agent_id for agent_id, spec in providers.items() if spec.default_responder}
         else:
             targets = set()

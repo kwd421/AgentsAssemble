@@ -78,6 +78,7 @@ class IdentityBackend(Protocol):
     def get_room(self, room_id: str) -> dict[str, object] | None: ...
     def set_room_archived(self, room_id: str, archived: bool) -> bool: ...
     def touch_room(self, room_id: str) -> None: ...
+    def delete_room(self, room_id: str) -> bool: ...
     def record_usage(self, event: dict[str, object]) -> None: ...
     def usage_summary(self, *, user_id: str = "", meeting_id: str = "", since: str = "") -> dict[str, object]: ...
 
@@ -605,6 +606,15 @@ class IdentityStore:
                 "UPDATE rooms SET last_active_at = ? WHERE room_id = ?",
                 (_now(), clean_room_id),
             )
+
+    def delete_room(self, room_id: str) -> bool:
+        clean_room_id = clean_lobby_text(room_id, limit=128)
+        if not clean_room_id:
+            return False
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            connection.execute("DELETE FROM memberships WHERE meeting_id = ?", (clean_room_id,))
+            cursor = connection.execute("DELETE FROM rooms WHERE room_id = ?", (clean_room_id,))
+        return cursor.rowcount > 0
 
     # -- usage accounting -----------------------------------------------------
     def record_usage(self, event: dict[str, object]) -> None:

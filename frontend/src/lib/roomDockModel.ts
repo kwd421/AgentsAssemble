@@ -7,7 +7,6 @@ import {
   type RoomGuestSession,
 } from "./roomGuestSession";
 import {
-  loadHiddenRoomIds,
   loadRoomDockItems,
   type PersistedRoomDockItem,
 } from "./roomDockPersistence";
@@ -97,9 +96,7 @@ function hydrateRoom(room: PersistedRoomDockItem): RoomDockItem {
 }
 
 export function initialOperatorRooms(directRoom?: RoomDockItem | null) {
-  const hidden = new Set(loadHiddenRoomIds());
   const persisted = loadRoomDockItems()
-    .filter((room) => !hidden.has(room.meetingId))
     .map(hydrateRoom);
   const rooms = persisted;
   if (!directRoom) return rooms;
@@ -138,8 +135,7 @@ export function roomFromServerRoom(room: ServerRoomDockSource): RoomDockItem | n
 
 export function mergeServerRoomsIntoDock(
   currentRooms: RoomDockItem[],
-  serverRooms: ServerRoomDockSource[],
-  hiddenMeetingIds: string[] = []
+  serverRooms: ServerRoomDockSource[]
 ): RoomDockItem[] {
   const inactiveMeetingIds = new Set(
     serverRooms
@@ -147,13 +143,17 @@ export function mergeServerRoomsIntoDock(
       .map((room) => String(room.room_id || "").trim())
       .filter(Boolean)
   );
-  const next = currentRooms.filter((room) => !inactiveMeetingIds.has(room.meetingId));
+  const serverMeetingIds = new Set(
+    serverRooms.map((room) => String(room.room_id || "").trim()).filter(Boolean)
+  );
+  const next = currentRooms.filter(
+    (room) => serverMeetingIds.has(room.meetingId) && !inactiveMeetingIds.has(room.meetingId)
+  );
   const seenMeetingIds = new Set(next.map((room) => room.meetingId));
-  const hidden = new Set(hiddenMeetingIds);
   let changed = next.length !== currentRooms.length;
   for (const serverRoom of serverRooms) {
     const dockRoom = roomFromServerRoom(serverRoom);
-    if (!dockRoom || hidden.has(dockRoom.meetingId) || seenMeetingIds.has(dockRoom.meetingId)) continue;
+    if (!dockRoom || seenMeetingIds.has(dockRoom.meetingId)) continue;
     next.push(dockRoom);
     seenMeetingIds.add(dockRoom.meetingId);
     changed = true;
@@ -198,16 +198,16 @@ export function roomFromInviteParams(): RoomDockItem | null {
 }
 
 export function roomFromGuestSession(session: RoomGuestSession): RoomDockItem {
-  const label = session.meetingId || "초대받은 방";
+  const label = session.roomLabel || session.meetingId || "초대받은 방";
   return {
     id: `guest-session-${session.meetingId || session.agentId}`,
     label,
     meetingId: session.meetingId,
-    topic: `${session.displayName || session.agentId}로 입장한 방`,
+    topic: session.roomTopic || `${session.displayName || session.agentId}로 입장한 방`,
     shortLabel: label.slice(0, 1).toUpperCase() || "G",
     inviteScope: session.inviteScope,
     icon: Users,
-    createdAt: session.joinedAt,
+    createdAt: session.roomCreatedAt || "",
     tone: "resident",
   };
 }

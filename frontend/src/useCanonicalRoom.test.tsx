@@ -39,13 +39,17 @@ function session(status = "idle"): RoomAgentSession {
   };
 }
 
-function snapshot(events: RoomEvent[], mode: RoomSocketSnapshot["snapshot_mode"] = "initial") {
+function snapshot(
+  events: RoomEvent[],
+  mode: RoomSocketSnapshot["snapshot_mode"] = "initial",
+  currentSessions: RoomAgentSession[] = [session()]
+) {
   return {
     op: "snapshot",
     stream: "room_events",
     room: { room_id: "general" },
     participants: [],
-    agent_sessions: [session()],
+    agent_sessions: currentSessions,
     active_turns: [],
     events,
     oldest_seq: events[0]?.seq || 0,
@@ -59,6 +63,33 @@ function snapshot(events: RoomEvent[], mode: RoomSocketSnapshot["snapshot_mode"]
 }
 
 describe("useCanonicalRoom", () => {
+  it("keeps current snapshot sessions instead of replaying stale historical state", async () => {
+    let handlers: RoomSocketHandlers | undefined;
+    const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {
+      handlers = nextHandlers;
+      return {
+        close: vi.fn(),
+        ready: () => true,
+        command: vi.fn(),
+        say: vi.fn(),
+        historyBefore: vi.fn(),
+      } satisfies RoomSocketHandle;
+    });
+    const { result } = renderHook(() =>
+      useCanonicalRoom({
+        roomId: "general",
+        auth: { kind: "host", meetingId: "general" },
+        openSocket,
+      })
+    );
+    await waitFor(() => expect(openSocket).toHaveBeenCalledOnce());
+    const stale = { ...event(4, "agent_session_state"), agent_session: session("idle") };
+
+    act(() => handlers?.onRoomSnapshot?.(snapshot([stale], "initial", [session("stopped")])));
+
+    expect(result.current.agentSessions[0].runtime_status).toBe("stopped");
+  });
+
   it("keeps resume history, coalesces streaming output, and updates session state", async () => {
     let handlers: RoomSocketHandlers | undefined;
     const command = vi.fn(async (action: string) => ({
@@ -67,17 +98,26 @@ describe("useCanonicalRoom", () => {
       accepted: true,
       action,
     }) satisfies RoomCommandAck);
+    const historyBefore = vi
+      .fn()
+      .mockResolvedValueOnce({
+        events: [event(2, "turn_state")],
+        oldest_seq: 2,
+        last_seq: 2,
+        has_more_before: true,
+      })
+      .mockResolvedValueOnce({
+        events: [event(1, "message_final", "older")],
+        oldest_seq: 1,
+        last_seq: 1,
+        has_more_before: false,
+      });
     const handle: RoomSocketHandle = {
       close: vi.fn(),
       ready: () => true,
       command,
       say: vi.fn(),
-      historyBefore: vi.fn(async () => ({
-        events: [event(1, "message_final", "older")],
-        oldest_seq: 1,
-        last_seq: 5,
-        has_more_before: false,
-      })),
+      historyBefore,
     };
     const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {
       handlers = nextHandlers;
@@ -113,10 +153,18 @@ describe("useCanonicalRoom", () => {
     await act(async () => {
       await result.current.loadHistory(3);
       await result.current.sendAgentControl(session(), "stop");
+      await result.current.sendAgentConfigure(session(), { display_name: "Luna" });
     });
-    expect(result.current.events.map((item) => item.seq)).toEqual([1, 3, 4, 5, 6]);
+    expect(result.current.events.map((item) => item.seq)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(result.current.history.hasMoreBefore).toBe(false);
+    expect(result.current.agentSessionProgress).toBeNull();
+    expect(historyBefore).toHaveBeenNthCalledWith(1, 3, 200);
+    expect(historyBefore).toHaveBeenNthCalledWith(2, 2, 200);
     expect(command).toHaveBeenCalledWith("agent.stop", { agent_id: "codex" });
+    expect(command).toHaveBeenCalledWith("agent.configure", {
+      agent_id: "codex",
+      display_name: "Luna",
+    });
   });
 
   it("ignores late callbacks from the room socket it already replaced", async () => {

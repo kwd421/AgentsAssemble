@@ -286,6 +286,8 @@ class PublicInviteHttpTests(unittest.TestCase):
                     ) as response:
                         session_payload = json.loads(response.read().decode("utf-8"))
                     self.assertEqual(session_payload["status"], "admitted")
+                    self.assertEqual(session_payload["room_label"], "friend-room")
+                    self.assertIn("room_created_at", session_payload)
 
                     with urlopen(
                         Request(

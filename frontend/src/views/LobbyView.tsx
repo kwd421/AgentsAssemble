@@ -114,6 +114,7 @@ function buildLobbyRows(events: LobbyEvent[]): LobbyRow[] {
 
 const HISTORY_TOP_THRESHOLD = 120;
 const HISTORY_PAGE_SIZE = 50;
+const INITIAL_HISTORY_MESSAGE_TARGET = 20;
 
 // Streamed reasoning/tool steps (kind="thinking"), grouped and collapsed by
 // default — like "what it's doing" you can expand. The final answer is a normal
@@ -123,7 +124,10 @@ function ThinkingGroup({ events, showHeader }: { events: LobbyEvent[]; showHeade
   const header = events[0];
   const name = header?.name || "agent";
   return (
-    <div className="dc-thinking-group grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-0.5">
+    <div
+      className="dc-thinking-group grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-0.5"
+      data-room-event-id={header?.id}
+    >
       <span className={showHeader ? "dc-message-avatar mt-0.5 agent" : ""} aria-hidden="true">
         {showHeader ? <Bot size={16} /> : null}
       </span>
@@ -141,7 +145,7 @@ function ThinkingGroup({ events, showHeader }: { events: LobbyEvent[]; showHeade
           aria-expanded={open}
         >
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-          <span>{`💭 ${name}의 생각 · ${events.length}단계`}</span>
+          <span>{`💭 ${name}의 생각과 작업 · ${events.length}단계`}</span>
         </button>
         {open && (
           <div className="dc-thinking-steps mt-1 border-l border-white/10 pl-3">
@@ -197,7 +201,11 @@ function MessageRow({ event, onOpenSideThread, threadSummary, voteCard, showHead
 }) {
   const systemLike = event.kind === "system" || event.kind === "flow_event";
   return (
-    <div className={`dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 ${showHeader ? "py-1.5" : "py-0.5"}`} tabIndex={0}>
+    <div
+      className={`dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 ${showHeader ? "py-1.5" : "py-0.5"}`}
+      data-room-event-id={event.id}
+      tabIndex={0}
+    >
       <span className={showHeader ? `dc-message-avatar mt-0.5 ${systemLike ? "system" : "agent"}` : ""} aria-hidden={!showHeader}>
         {showHeader ? (systemLike ? <Zap size={16} /> : <Bot size={16} />) : null}
       </span>
@@ -325,8 +333,19 @@ export default function LobbyView({
     }
   }, [localDisplayName]);
   const pinnedToLatestRef = useRef(true);
+  const historyReadyRef = useRef(false);
+  const historyRoomRef = useRef(activeRoom.id);
+  if (historyRoomRef.current !== activeRoom.id) {
+    historyRoomRef.current = activeRoom.id;
+    historyReadyRef.current = false;
+  }
   const loadingOlderRef = useRef(false);
-  const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const prependAnchorRef = useRef<{
+    eventId: string;
+    viewportTop: number;
+    scrollHeight: number;
+    scrollTop: number;
+  } | null>(null);
   const [events, setEvents] = useState<LobbyEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [pinnedToLatest, setPinnedToLatest] = useState(true);
@@ -357,6 +376,7 @@ export default function LobbyView({
     [activeRoom.meetingId, conversationEvents]
   );
   const visibleEvents = useMemo(() => {
+    if (usesCanonicalHistory) return roomScopedConversationEvents;
     if (!activeRoom.createdAt) return roomScopedConversationEvents;
     const roomStartedAt = Date.parse(activeRoom.createdAt);
     if (!Number.isFinite(roomStartedAt)) return roomScopedConversationEvents;
@@ -367,7 +387,7 @@ export default function LobbyView({
       const eventTime = Date.parse(event.created_at || "");
       return Number.isFinite(eventTime) && eventTime >= roomStartedAt;
     });
-  }, [activeRoom.createdAt, activeRoom.meetingId, roomScopedConversationEvents]);
+  }, [activeRoom.createdAt, activeRoom.meetingId, roomScopedConversationEvents, usesCanonicalHistory]);
   const lobbyRows = useMemo(() => buildLobbyRows(visibleEvents), [visibleEvents]);
 
   const updatePinnedToLatest = useCallback((nextPinned: boolean) => {
@@ -382,25 +402,39 @@ export default function LobbyView({
     updatePinnedToLatest(true);
   }, [updatePinnedToLatest]);
 
-  const loadOlderHistory = useCallback(() => {
-    if (loadingOlderRef.current || !hasMoreHistory || !loaded) return;
+  const loadOlderHistory = useCallback((triggerScrollTop?: number) => {
+    if (!historyReadyRef.current || loadingOlderRef.current || !hasMoreHistory || !loaded) return;
     const element = scrollRef.current;
     const oldest = events[0];
     if (!element || (!usesCanonicalHistory && !oldest?.id)) return;
     loadingOlderRef.current = true;
     setLoadingOlder(true);
-    prependAnchorRef.current = { scrollHeight: element.scrollHeight, scrollTop: element.scrollTop };
+    const anchorEventId = visibleEvents[0]?.id || "";
+    const anchorElement = Array.from(
+      element.querySelectorAll<HTMLElement>("[data-room-event-id]")
+    ).find((candidate) => candidate.dataset.roomEventId === anchorEventId);
+    prependAnchorRef.current = {
+      eventId: anchorEventId,
+      viewportTop: anchorElement
+        ? element.getBoundingClientRect().top + anchorElement.offsetTop - (triggerScrollTop ?? element.scrollTop)
+        : element.getBoundingClientRect().top,
+      scrollHeight: element.scrollHeight,
+      scrollTop: triggerScrollTop ?? element.scrollTop,
+    };
     if (usesCanonicalHistory && loadCanonicalHistory) {
       loadCanonicalHistory(canonicalOldestSeq)
         .then((page) => {
           setHasMoreHistory(page.hasMoreBefore);
-          if (!page.loadedCount) prependAnchorRef.current = null;
+          if (!page.loadedCount) {
+            prependAnchorRef.current = null;
+            loadingOlderRef.current = false;
+          }
         })
         .catch(() => {
           prependAnchorRef.current = null;
+          loadingOlderRef.current = false;
         })
         .finally(() => {
-          loadingOlderRef.current = false;
           setLoadingOlder(false);
         });
       return;
@@ -416,13 +450,14 @@ export default function LobbyView({
           setEvents((previous) => mergeLobbyEvents(older, previous));
         } else {
           prependAnchorRef.current = null;
+          loadingOlderRef.current = false;
         }
       })
       .catch(() => {
         prependAnchorRef.current = null;
+        loadingOlderRef.current = false;
       })
       .finally(() => {
-        loadingOlderRef.current = false;
         setLoadingOlder(false);
       });
   }, [
@@ -434,13 +469,14 @@ export default function LobbyView({
     loaded,
     roomSessionToken,
     usesCanonicalHistory,
+    visibleEvents,
   ]);
 
   const handleLobbyScroll = useCallback(
     (event: UIEvent<HTMLDivElement>) => {
       updatePinnedToLatest(lobbyFeedIsNearBottom(event.currentTarget));
       if (event.currentTarget.scrollTop <= HISTORY_TOP_THRESHOLD) {
-        loadOlderHistory();
+        loadOlderHistory(event.currentTarget.scrollTop);
       }
     },
     [loadOlderHistory, updatePinnedToLatest]
@@ -451,15 +487,45 @@ export default function LobbyView({
     if (!element) return;
     const anchor = prependAnchorRef.current;
     if (anchor) {
-      // Keep the viewport on the same message after older history is prepended.
       prependAnchorRef.current = null;
-      element.scrollTop = element.scrollHeight - anchor.scrollHeight + anchor.scrollTop;
+      loadingOlderRef.current = false;
+      const restoreAnchor = () => {
+        const anchorElement = Array.from(
+          element.querySelectorAll<HTMLElement>("[data-room-event-id]")
+        ).find((candidate) => candidate.dataset.roomEventId === anchor.eventId);
+        if (anchorElement && anchor.eventId) {
+          element.scrollTop += anchorElement.getBoundingClientRect().top - anchor.viewportTop;
+          return;
+        }
+        element.scrollTop = element.scrollHeight - anchor.scrollHeight + anchor.scrollTop;
+      };
+      restoreAnchor();
+      window.requestAnimationFrame(restoreAnchor);
       return;
     }
     if (!pinnedToLatestRef.current) return;
     element.scrollTop = element.scrollHeight;
     // typingNames is a dep so placeholder rows stay in view when they appear.
-  }, [visibleEvents, typingNames]);
+  }, [activeRoom.id, visibleEvents, typingNames]);
+
+  useEffect(() => {
+    if (!loaded || !hasMoreHistory || loadingOlder) return;
+    const scheduledRoomId = activeRoom.id;
+    const timeoutId = window.setTimeout(() => {
+      if (historyRoomRef.current !== scheduledRoomId) return;
+      const element = scrollRef.current;
+      if (!element) return;
+      historyReadyRef.current = true;
+      const renderedMessageCount = element.querySelectorAll("[data-room-event-id]").length;
+      if (
+        renderedMessageCount < INITIAL_HISTORY_MESSAGE_TARGET ||
+        element.scrollHeight <= element.clientHeight + HISTORY_TOP_THRESHOLD
+      ) {
+        loadOlderHistory(element.scrollTop);
+      }
+    }, 50);
+    return () => window.clearTimeout(timeoutId);
+  }, [activeRoom.id, hasMoreHistory, loadOlderHistory, loaded, loadingOlder, visibleEvents]);
 
   useEffect(() => {
     updatePinnedToLatest(true);
@@ -560,6 +626,7 @@ export default function LobbyView({
         ref={scrollRef}
         onScroll={handleLobbyScroll}
         className="relative min-h-0 flex-1 overflow-y-auto py-4 chat-scroll"
+        style={{ overflowAnchor: "none" }}
       >
         {!pinnedToLatest && visibleEvents.length > 0 && (
           <button

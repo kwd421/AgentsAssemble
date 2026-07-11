@@ -246,7 +246,6 @@ def _insert_room_import(connection: sqlite3.Connection, room_import: LegacyRoomI
             "round": message.round_id,
             "legacy_source_event_id": message.source_id,
             "legacy_source_kind": message.source_kind,
-            "legacy_source_path": room_import.source_path,
             "legacy_migration_version": MIGRATION_VERSION,
         }
         connection.execute(

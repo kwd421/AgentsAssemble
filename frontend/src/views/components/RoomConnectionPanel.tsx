@@ -50,6 +50,8 @@ type RoomConnectionPanelProps = {
     session: RoomAgentSession,
     settings: Record<string, string>
   ) => void | Promise<void>;
+  agentActivityVisibility?: Record<string, boolean>;
+  onAgentActivityVisibilityChange?: (session: RoomAgentSession, visible: boolean) => void;
 };
 
 function mutedChannelCount(
@@ -84,6 +86,8 @@ export default function RoomConnectionPanel({
   onParticipantMute,
   availableProviders = [],
   onAgentConfigure,
+  agentActivityVisibility = {},
+  onAgentActivityVisibilityChange,
 }: RoomConnectionPanelProps) {
   const mutedCount = mutedChannelCount(channelNotifications);
 
@@ -161,6 +165,8 @@ export default function RoomConnectionPanel({
         onAgentControl={capabilities["agent.control"] ? onAgentControl : undefined}
         availableProviders={availableProviders}
         onAgentConfigure={capabilities["agent.control"] ? onAgentConfigure : undefined}
+        agentActivityVisibility={agentActivityVisibility}
+        onAgentActivityVisibilityChange={onAgentActivityVisibilityChange}
       />
     </div>
   );

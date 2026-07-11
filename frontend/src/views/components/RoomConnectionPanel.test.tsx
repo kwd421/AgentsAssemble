@@ -226,4 +226,26 @@ describe("RoomConnectionPanel", () => {
     expect(screen.queryByText("provider session 비활성")).toBeNull();
     expect(screen.queryByText("provider session 재개 대기")).toBeNull();
   });
+
+  it("changes only the viewer's thought and tool activity visibility", () => {
+    const session = agentSession("idle");
+    const onVisibilityChange = vi.fn();
+    render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[agent()]}
+        members={[member()]}
+        agentSessions={[session]}
+        agentActivityVisibility={{ codex: true }}
+        onAgentActivityVisibilityChange={onVisibilityChange}
+      />
+    );
+
+    openAgentDetails();
+    const toggle = screen.getByRole("checkbox", { name: /켜짐/ });
+    fireEvent.click(toggle);
+
+    expect(onVisibilityChange).toHaveBeenCalledWith(session, false);
+    expect(screen.getByText("공개용 생각 요약과 안전하게 정리된 도구 활동만 표시합니다.")).toBeTruthy();
+  });
 });

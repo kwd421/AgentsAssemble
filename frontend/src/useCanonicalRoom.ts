@@ -61,6 +61,12 @@ function upsertAgentSessions(current: RoomAgentSession[], incoming: RoomAgentSes
   return [...byId.values()];
 }
 
+type ApplyRoomEventsOptions = {
+  replace?: boolean;
+  projectProgress?: boolean;
+  projectSessionState?: boolean;
+};
+
 /** Owns canonical room socket lifecycle and its room-indexed React projection. */
 export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   const { roomId, auth, viewerParticipantId = "", openSocket = openRoomSocket } = options;
@@ -87,15 +93,26 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   const [lastError, setLastError] = useState<Error | null>(null);
   const [membershipRevision, setMembershipRevision] = useState(0);
 
-  const applyEvents = useCallback((targetRoomId: string, incoming: RoomEvent[], replace = false) => {
+  const applyEvents = useCallback((
+    targetRoomId: string,
+    incoming: RoomEvent[],
+    options: ApplyRoomEventsOptions = {}
+  ) => {
     if (!targetRoomId) return;
+    const {
+      replace = false,
+      projectProgress = true,
+      projectSessionState = true,
+    } = options;
     const next = mergeRoomEvents(eventsRef.current[targetRoomId] || [], incoming, replace);
     eventsRef.current = { ...eventsRef.current, [targetRoomId]: next };
     setEventsByRoom((previous) => ({ ...previous, [targetRoomId]: next }));
 
-    const sessionUpdates = incoming.flatMap((event) =>
-      event.type === "agent_session_state" && event.agent_session ? [event.agent_session] : []
-    );
+    const sessionUpdates = projectSessionState
+      ? incoming.flatMap((event) =>
+          event.type === "agent_session_state" && event.agent_session ? [event.agent_session] : []
+        )
+      : [];
     if (sessionUpdates.length) {
       setSessionsByRoom((previous) => ({
         ...previous,
@@ -103,13 +120,15 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       }));
     }
 
-    let progress: AgentSessionProgress | null | undefined;
-    incoming.forEach((event) => {
-      const projected = projectRoomEventProgress(event);
-      if (projected !== undefined) progress = projected;
-    });
-    if (progress !== undefined) {
-      setProgressByRoom((previous) => ({ ...previous, [targetRoomId]: progress ?? null }));
+    if (projectProgress) {
+      let progress: AgentSessionProgress | null | undefined;
+      incoming.forEach((event) => {
+        const projected = projectRoomEventProgress(event);
+        if (projected !== undefined) progress = projected;
+      });
+      if (progress !== undefined) {
+        setProgressByRoom((previous) => ({ ...previous, [targetRoomId]: progress ?? null }));
+      }
     }
 
     if (
@@ -180,7 +199,10 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
             },
           };
         });
-        applyEvents(roomId, snapshot.events || [], snapshot.snapshot_mode !== "resume");
+        applyEvents(roomId, snapshot.events || [], {
+          replace: snapshot.snapshot_mode !== "resume",
+          projectSessionState: snapshot.snapshot_mode === "resume",
+        });
         setMembershipRevision((previous) => previous + 1);
       },
       onRoomEvents: (events) => {
@@ -216,21 +238,41 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   const loadHistory = useCallback(
     async (beforeSeq: number) => {
       if (!socket || !roomId) throw new Error("방 연결이 준비되지 않았습니다.");
-      const page = await socket.historyBefore(beforeSeq, 50);
-      applyEvents(roomId, page.events || []);
+      let cursor = beforeSeq;
+      let hasMoreBefore = true;
+      let oldestSeq = beforeSeq;
+      const events: RoomEvent[] = [];
+      for (let pageIndex = 0; pageIndex < 5 && hasMoreBefore; pageIndex += 1) {
+        const page = await socket.historyBefore(cursor, 200);
+        events.push(...(page.events || []));
+        oldestSeq = Number(page.oldest_seq || cursor || 0);
+        hasMoreBefore = Boolean(page.has_more_before);
+        if (!page.events.length || oldestSeq >= cursor) break;
+        cursor = oldestSeq;
+        if (page.events.some((event) => event.type === "message_final" || event.type === "error")) {
+          break;
+        }
+      }
+      applyEvents(roomId, events, {
+        projectProgress: false,
+        projectSessionState: false,
+      });
       setHistoryByRoom((previous) => ({
         ...previous,
         [roomId]: {
-          oldestSeq: Number(page.oldest_seq || previous[roomId]?.oldestSeq || 0),
-          lastSeq: Number(page.last_seq || previous[roomId]?.lastSeq || 0),
-          hasMoreBefore: Boolean(page.has_more_before),
+          oldestSeq: Number(oldestSeq || previous[roomId]?.oldestSeq || 0),
+          lastSeq: Number(previous[roomId]?.lastSeq || 0),
+          hasMoreBefore,
           resumeGap: false,
         },
       }));
+      const visibleCount = events.filter(
+        (event) => event.type === "message_final" || event.type === "error"
+      ).length;
       return {
-        loadedCount: page.events.length,
-        oldestSeq: Number(page.oldest_seq || 0),
-        hasMoreBefore: Boolean(page.has_more_before),
+        loadedCount: visibleCount,
+        oldestSeq,
+        hasMoreBefore,
       };
     },
     [applyEvents, roomId, socket]
@@ -249,7 +291,6 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
       await socket.command("agent.configure", {
         agent_id: session.participant_id,
-        provider_kind: session.provider_kind,
         ...settings,
       });
     },
@@ -273,9 +314,19 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   );
 
   const events = eventsByRoom[roomId] || [];
+  const participantNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    (participantsByRoom[roomId] || []).forEach((participant) => {
+      if (participant.participant_id) names[participant.participant_id] = participant.display_name;
+    });
+    (sessionsByRoom[roomId] || []).forEach((session) => {
+      if (session.participant_id) names[session.participant_id] = session.display_name;
+    });
+    return names;
+  }, [participantsByRoom, roomId, sessionsByRoom]);
   const timelineEvents: LobbyEvent[] = useMemo(
-    () => projectRoomEventsToTimeline(events, { viewerParticipantId }),
-    [events, viewerParticipantId]
+    () => projectRoomEventsToTimeline(events, { viewerParticipantId, participantNames }),
+    [events, participantNames, viewerParticipantId]
   );
 
   return {

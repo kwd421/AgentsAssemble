@@ -10,6 +10,9 @@ export type RoomGuestSession = {
   inviteScope: RoomAppearance["inviteScope"];
   expiresAt: string;
   joinedAt: string;
+  roomLabel?: string;
+  roomTopic?: string;
+  roomCreatedAt?: string;
   // True when this session belongs to the server operator's account —
   // unlocks host moderation through the public entrance.
   operator?: boolean;
@@ -56,6 +59,9 @@ export function roomGuestSessionFromJoinPayload(
     inviteScope: normalizeInviteScope(record.invite_scope),
     expiresAt: cleanText(record.expires_at, 64),
     joinedAt: now.toISOString(),
+    roomLabel: cleanText(record.room_label || record.roomLabel, 80) || undefined,
+    roomTopic: cleanText(record.room_topic || record.roomTopic, 160) || undefined,
+    roomCreatedAt: cleanText(record.room_created_at || record.roomCreatedAt, 64) || undefined,
     operator: record.operator === true,
   };
 }
@@ -72,6 +78,9 @@ export function normalizeRoomGuestSession(value: unknown): RoomGuestSession | nu
     invite_scope: record.inviteScope,
     expires_at: record.expiresAt,
     operator: record.operator,
+    room_label: record.roomLabel,
+    room_topic: record.roomTopic,
+    room_created_at: record.roomCreatedAt,
   });
   session.joinedAt = cleanText(record.joinedAt, 64) || session.joinedAt;
   if (!session.sessionToken || !session.meetingId || !session.agentId) return null;
@@ -106,6 +115,9 @@ export function persistRoomGuestSession(session: RoomGuestSession | null) {
   try {
     if (!session) {
       window.localStorage.removeItem(ROOM_GUEST_SESSION_STORAGE_KEY);
+      // Keep an explicit tombstone as well. Some embedded/mobile WebViews have
+      // restored a just-removed value during same-origin navigation.
+      window.localStorage.setItem(ROOM_GUEST_SESSION_STORAGE_KEY, "null");
       return;
     }
     window.localStorage.setItem(ROOM_GUEST_SESSION_STORAGE_KEY, JSON.stringify(session));

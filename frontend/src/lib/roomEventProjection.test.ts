@@ -52,4 +52,56 @@ describe("projectRoomEventsToTimeline", () => {
     expect(projectRoomEventProgress(state)?.message).toBe("생각 중...");
     expect(projectRoomEventProgress(event({ type: "message_final", turn_id: "turn-1" }))).toBeNull();
   });
+
+  it("renders provider-visible thinking as a collapsible timeline step", () => {
+    const timeline = projectRoomEventsToTimeline(
+      [
+        event({
+          id: "thought-1",
+          type: "thinking_delta",
+          turn_id: "turn-1",
+          content: "검색 결과를 비교하는 중",
+        }),
+        event({
+          id: "final-1",
+          seq: 2,
+          type: "message_final",
+          turn_id: "turn-1",
+          content: "결론입니다.",
+        }),
+      ],
+      { participantNames: { codex: "루나" } }
+    );
+
+    expect(timeline).toHaveLength(2);
+    expect(timeline[0]).toMatchObject({
+      kind: "thinking",
+      name: "루나",
+      message: "검색 결과를 비교하는 중",
+      flow_id: "turn-1",
+    });
+    expect(timeline[1]).toMatchObject({ kind: "message", name: "루나" });
+    expect(projectRoomEventProgress(event({ type: "thinking_delta", content: "검토 중" }))?.message).toBe(
+      "검토 중"
+    );
+  });
+
+  it("renders sanitized tool activity in the same collapsible timeline", () => {
+    const activity = event({
+      id: "activity-1",
+      type: "activity_delta",
+      turn_id: "turn-1",
+      activity_kind: "tool",
+      category: "search",
+      status: "running",
+      content: "정보 검색 중",
+    });
+
+    expect(projectRoomEventsToTimeline([activity])[0]).toMatchObject({
+      kind: "thinking",
+      message: "정보 검색 중",
+      flow_action: "activity_delta",
+    });
+    expect(projectRoomEventProgress(activity)?.message).toBe("정보 검색 중");
+  });
 });

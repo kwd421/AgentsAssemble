@@ -18,8 +18,8 @@ type MentionInputProps = {
   value: string;
   onChange: (value: string) => void;
   mentionables?: string[];
-  inputRef?: RefObject<HTMLInputElement | null>;
-  onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
+  inputRef?: RefObject<HTMLTextAreaElement | null>;
+  onKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   className?: string;
   placeholder?: string;
   disabled?: boolean;
@@ -39,7 +39,7 @@ export default function MentionInput({
   maxLength,
   ariaLabel,
 }: MentionInputProps) {
-  const internalRef = useRef<HTMLInputElement>(null);
+  const internalRef = useRef<HTMLTextAreaElement>(null);
   const targetRef = inputRef || internalRef;
   const mentionListId = useId();
   const [activeOptionIndex, setActiveOptionIndex] = useState(0);
@@ -95,14 +95,14 @@ export default function MentionInput({
     }, 0);
   }
 
-  function handleInputChange(event: ChangeEvent<HTMLInputElement>) {
+  function handleInputChange(event: ChangeEvent<HTMLTextAreaElement>) {
     setDismissedMentionKey("");
     setSuppressMentionSuggestions(false);
     setMentionCursor(event.target.selectionStart ?? event.target.value.length);
     onChange(event.target.value);
   }
 
-  function handleMentionKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+  function handleMentionKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (options.length === 0) {
       onKeyDown?.(event);
       return;
@@ -161,7 +161,7 @@ export default function MentionInput({
           ))}
         </div>
       )}
-      <input
+      <textarea
         ref={targetRef}
         value={value}
         onChange={handleInputChange}
@@ -178,6 +178,7 @@ export default function MentionInput({
         aria-controls={options.length > 0 ? mentionListId : undefined}
         aria-expanded={options.length > 0}
         aria-activedescendant={activeOptionId}
+        rows={1}
       />
     </>
   );

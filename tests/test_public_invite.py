@@ -121,8 +121,8 @@ class TestJoinUrl(unittest.TestCase):
             self.assertIn("join_url", invite)
             join_url = str(invite["join_url"])
             self.assertTrue(join_url.startswith("https://my-tunnel.example.com/join?token="))
-            # Token should be in the URL
-            self.assertIn(str(invite["invite_token"]), join_url)
+            self.assertIn(str(invite["join_code"]), join_url)
+            self.assertNotIn(str(invite["invite_token"]), join_url)
 
     def test_public_url_trailing_slash_stripped(self):
         with patch.dict(os.environ, {"AGENTSASSEMBLE_PUBLIC_URL": "https://example.com/"}):

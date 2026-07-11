@@ -21,7 +21,7 @@ export interface LobbyAttachmentRef {
   download_url: string;
 }
 
-export type ConversationMode = "ordered";
+export type ConversationMode = "ordered" | "continuous";
 
 export interface RoomSettings {
   roomId: string;
@@ -33,6 +33,7 @@ export interface RoomSettings {
   channelSettings: Record<string, ChannelSettings>;
   // ordered: turn-based Agent Sessions are the only supported room mode for now.
   conversationMode: ConversationMode;
+  maxRelayTurns: number;
 }
 
 export interface ServerRoom {
@@ -129,6 +130,9 @@ export interface RoomInviteJoinResponse {
   connection_kind: string;
   expires_at: string;
   operator?: boolean;
+  room_label?: string;
+  room_topic?: string;
+  room_created_at?: string;
 }
 
 export interface PublicInviteStatus {
@@ -246,6 +250,7 @@ type ApiRoomSettings = {
   member_roles?: Record<string, string>;
   channel_settings?: Record<string, ApiChannelSettings>;
   conversation_mode?: ConversationMode;
+  max_relay_turns?: number;
 };
 
 type ApiChannelSettings = {
@@ -368,6 +373,8 @@ export interface RoomEvent {
   content?: string;
   phase?: string;
   status?: string;
+  activity_kind?: "reasoning" | "tool" | string;
+  category?: string;
   latency?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   agent_session?: RoomAgentSession;
@@ -386,11 +393,6 @@ export interface RoomAgentSession {
   runtime_kind: string;
   connection_kind: string;
   external_owned?: boolean;
-  command_configured?: string[];
-  resolved_executable?: string;
-  workspace?: string;
-  pid?: number | null;
-  bridge_pid?: number | null;
   active_turn_id?: string;
   turn_phase?: string;
   last_seen_event_id?: string;
@@ -1117,7 +1119,8 @@ function normalizeRoomSettings(payload: ApiRoomSettings | undefined, fallbackRoo
     },
     memberRoles: payload?.member_roles && typeof payload.member_roles === "object" ? payload.member_roles : {},
     channelSettings: normalizeChannelSettings(payload?.channel_settings),
-    conversationMode: "ordered",
+    conversationMode: payload?.conversation_mode === "continuous" ? "continuous" : "ordered",
+    maxRelayTurns: Math.min(20, Math.max(2, Number(payload?.max_relay_turns || 6))),
   };
 }
 
@@ -1228,6 +1231,7 @@ export function saveRoomSettings({
   memberRoles,
   channelSettings,
   conversationMode,
+  maxRelayTurns,
 }: Partial<Omit<RoomSettings, "roomId">> & { roomId: string }): Promise<RoomSettings> {
   return postJson<{ room_id: string; settings: ApiRoomSettings }>("/api/room-settings", {
     room_id: roomId,
@@ -1238,6 +1242,7 @@ export function saveRoomSettings({
     member_roles: memberRoles,
     channel_settings: channelSettingsToApi(channelSettings),
     conversation_mode: conversationMode,
+    max_relay_turns: maxRelayTurns,
   }).then((payload) => normalizeRoomSettings(payload.settings, payload.room_id || roomId));
 }
 

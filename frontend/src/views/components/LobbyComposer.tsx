@@ -93,7 +93,7 @@ export default function LobbyComposer({
   onGuestSessionExpired?: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [message, setMessage] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<LobbyAttachmentRef[]>([]);
   const [busy, setBusy] = useState(false);
@@ -229,8 +229,9 @@ export default function LobbyComposer({
     }
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+    if (event.shiftKey) return;
     event.preventDefault();
     void handleSubmit();
   }

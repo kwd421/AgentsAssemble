@@ -2817,6 +2817,16 @@ def build_room_turn_packet(
 ) -> dict[str, object]:
     store = RoomStore(output_root)
     session = store.session(room_id, session_id)
+    participant = store.participant(room_id, participant_id)
+    room = store.room(room_id)
+    room_identity = {
+        "room_name": clean_lobby_text(room.get("label") or room_id, limit=128),
+        "display_name": clean_lobby_text(
+            session.get("display_name") or participant.get("display_name") or participant_id,
+            limit=80,
+        ),
+        "participant_id": participant_id,
+    }
     last_seen_event_id = clean_lobby_text(session.get("last_seen_event_id"), limit=128)
     last_provider_sync_event_id = clean_lobby_text(session.get("last_provider_sync_event_id"), limit=128)
     last_seen_seq = _nonnegative_int(session.get("last_seen_seq")) or store.event_sequence(room_id, last_seen_event_id)
@@ -2847,12 +2857,18 @@ def build_room_turn_packet(
         media_ids=media_ids,
         room_delta_text=provider_projection.text,
     )
+    for media in media_manifest:
+        media_id = clean_lobby_text(media.get("id"), limit=128)
+        filename = Path(clean_lobby_text(media.get("filename"), limit=256)).name
+        if media_id and filename:
+            media["path"] = str(store.rooms_root / room_id / "media" / media_id / filename)
     unsupported_media = [media for media in media_manifest if not bool(media.get("supported"))]
     room_memory = room_memory_from_session(session)
     summary = dict(room_memory)
     if recovery_required:
         provider_input = build_provider_recovery_input(
             instruction=instruction,
+            room_identity=room_identity,
             room_memory=room_memory,
             room_delta=provider_projection.text,
             media_manifest=media_manifest,
@@ -2864,6 +2880,7 @@ def build_room_turn_packet(
     elif not bootstrap_done:
         provider_input = build_provider_bootstrap_input(
             instruction=instruction,
+            room_identity=room_identity,
             room_memory=room_memory,
             room_delta=provider_projection.text,
             media_manifest=media_manifest,
@@ -2875,6 +2892,7 @@ def build_room_turn_packet(
     else:
         provider_input = build_provider_turn_input(
             instruction=instruction,
+            room_identity=room_identity,
             room_delta=provider_projection.text,
             media_manifest=media_manifest,
             unsupported_media=unsupported_media,
@@ -2939,6 +2957,7 @@ def build_provider_bootstrap_input(
     room_delta: str = "",
     media_manifest: list[dict[str, object]] | None = None,
     unsupported_media: list[dict[str, object]] | None = None,
+    room_identity: dict[str, object] | None = None,
 ) -> str:
     parts = [
         "[Agent Session bootstrap]",
@@ -2947,6 +2966,9 @@ def build_provider_bootstrap_input(
         "Answer conversational turns directly; never invoke a tool merely to produce or format the room reply.",
         "Do not reveal internal runtime data, process ids, tokens, or hidden chain-of-thought.",
     ]
+    identity_text = _provider_room_identity_text(room_identity or {})
+    if identity_text:
+        parts.extend(["", "[Your room identity]", identity_text])
     memory_text = _room_memory_text(room_memory or {})
     if memory_text:
         parts.extend(["", "[Room memory]", memory_text])
@@ -2965,8 +2987,12 @@ def build_provider_turn_input(
     room_delta: str = "",
     media_manifest: list[dict[str, object]] | None = None,
     unsupported_media: list[dict[str, object]] | None = None,
+    room_identity: dict[str, object] | None = None,
 ) -> str:
     parts = []
+    identity_text = _provider_room_identity_text(room_identity or {})
+    if identity_text:
+        parts.extend(["[Your room identity]", identity_text, ""])
     if room_delta:
         parts.extend(["[Room update since your last turn]", room_delta, ""])
     media_text = _provider_media_text(media_manifest or [], unsupported_media or [])
@@ -2983,12 +3009,16 @@ def build_provider_recovery_input(
     room_delta: str = "",
     media_manifest: list[dict[str, object]] | None = None,
     unsupported_media: list[dict[str, object]] | None = None,
+    room_identity: dict[str, object] | None = None,
 ) -> str:
     parts = [
         "[Agent Session recovery]",
         "Use this compact room memory to continue the same room-visible conversation.",
         "Answer conversational turns directly; never invoke a tool merely to produce or format the room reply.",
     ]
+    identity_text = _provider_room_identity_text(room_identity or {})
+    if identity_text:
+        parts.extend(["", "[Your room identity]", identity_text])
     memory_text = _room_memory_text(room_memory)
     if memory_text:
         parts.extend(["", "[Room memory]", memory_text])
@@ -3011,6 +3041,23 @@ def room_memory_from_session(session: dict[str, object]) -> dict[str, object]:
         "up_to_event_id": clean_lobby_text(memory.get("up_to_event_id") or legacy_summary.get("up_to_event_id"), limit=128),
         "compacted_at": clean_lobby_text(memory.get("compacted_at") or legacy_summary.get("compacted_at"), limit=128),
     }
+
+
+def _provider_room_identity_text(identity: dict[str, object]) -> str:
+    display_name = clean_lobby_text(identity.get("display_name"), limit=80)
+    room_name = clean_lobby_text(identity.get("room_name"), limit=128)
+    participant_id = clean_lobby_text(identity.get("participant_id"), limit=128)
+    if not display_name and not room_name:
+        return ""
+    lines = []
+    if display_name:
+        lines.append(f"Your display name in this room is: {display_name}")
+    if room_name:
+        lines.append(f"The room name is: {room_name}")
+    if participant_id:
+        lines.append(f"Your stable room participant id is: {participant_id}")
+    lines.append("Use the display name above when someone asks who you are in this room.")
+    return "\n".join(lines)
 
 
 def _positive_int(value: object, default: int) -> int:

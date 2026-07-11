@@ -68,6 +68,10 @@ def update_room_settings(output_root: Path, payload: dict[str, object]) -> dict[
         settings["conversation_mode"] = clean_conversation_mode(
             payload.get("conversation_mode") or payload.get("conversationMode")
         )
+    if "max_relay_turns" in payload or "maxRelayTurns" in payload:
+        settings["max_relay_turns"] = clean_max_relay_turns(
+            payload.get("max_relay_turns") or payload.get("maxRelayTurns")
+        )
     if "channels" in payload:
         settings["channels"] = clean_channels(payload.get("channels"))
     settings["updated_at"] = datetime.now(UTC).isoformat()
@@ -94,21 +98,28 @@ def public_room_settings(value: object, *, room_id: str) -> dict[str, object]:
         "conversation_mode": clean_conversation_mode(
             source.get("conversation_mode") or source.get("conversationMode")
         ),
+        "max_relay_turns": clean_max_relay_turns(
+            source.get("max_relay_turns") or source.get("maxRelayTurns")
+        ),
         "channels": clean_channels(source.get("channels")),
         "created_at": clean_room_text(source.get("created_at"), limit=64),
         "updated_at": clean_room_text(source.get("updated_at"), limit=64),
     }
 
 
-# Turn-based is the only supported user-facing room mode for now. Legacy quiet,
-# silent, free, and flow labels normalize here so old saved settings cannot
-# resurrect removed modes in the frontend.
-CONVERSATION_MODES = {"ordered"}
+CONVERSATION_MODES = {"ordered", "continuous"}
 
 
 def clean_conversation_mode(value: object) -> str:
     mode = str(value or "").strip().lower()
     return mode if mode in CONVERSATION_MODES else "ordered"
+
+
+def clean_max_relay_turns(value: object) -> int:
+    try:
+        return min(20, max(2, int(value or 6)))
+    except (TypeError, ValueError):
+        return 6
 
 
 def clean_room_id(value: object, *, required: bool) -> str:

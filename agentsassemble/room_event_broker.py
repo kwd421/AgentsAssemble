@@ -124,17 +124,49 @@ class RoomEventBroker:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._channels: dict[str, RoomSocketChannel] = {}
+        self._active_bridges: dict[tuple[str, str], tuple[str, int]] = {}
 
     def connect(self, identity: dict[str, object]) -> RoomSocketChannel:
         channel = RoomSocketChannel(identity)
+        channel.identity["connection_id"] = channel.connection_id
+        identity["connection_id"] = channel.connection_id
         with self._lock:
             self._channels[channel.connection_id] = channel
         return channel
 
-    def disconnect(self, channel: RoomSocketChannel) -> None:
+    def disconnect(self, channel: RoomSocketChannel) -> bool:
+        was_active = False
         with self._lock:
             self._channels.pop(channel.connection_id, None)
+            key = self._bridge_key(channel)
+            if key and self._active_bridges.get(key, ("", 0))[0] == channel.connection_id:
+                self._active_bridges.pop(key, None)
+                was_active = True
         channel.close()
+        return was_active
+
+    def channel(self, connection_id: str) -> RoomSocketChannel | None:
+        with self._lock:
+            return self._channels.get(connection_id)
+
+    def activate_bridge(self, channel: RoomSocketChannel) -> int:
+        key = self._bridge_key(channel)
+        if key is None:
+            raise ValueError("Only Agent Bridge channels can acquire a bridge lease.")
+        previous: RoomSocketChannel | None = None
+        with self._lock:
+            previous_id, previous_generation = self._active_bridges.get(key, ("", 0))
+            generation = previous_generation + 1
+            self._active_bridges[key] = (channel.connection_id, generation)
+            channel.identity["bridge_generation"] = generation
+            # WsRoomSession owns the original identity mapping used for command
+            # dispatch; keep the lease generation on both views.
+            if previous_id and previous_id != channel.connection_id:
+                previous = self._channels.get(previous_id)
+        if previous is not None:
+            previous.send({"op": "error", "code": "bridge_superseded", "recoverable": False})
+            previous.close()
+        return generation
 
     def broadcast_event(self, event: dict[str, object]) -> None:
         room_id = clean_lobby_text(event.get("room_id"), limit=128)
@@ -148,41 +180,64 @@ class RoomEventBroker:
     def direct_to_bridge(self, room_id: str, participant_id: str, message: dict[str, object]) -> bool:
         clean_room_id = clean_lobby_text(room_id, limit=128)
         clean_participant_id = clean_lobby_text(participant_id, limit=128)
-        delivered = False
         with self._lock:
-            channels = list(self._channels.values())
-        for channel in channels:
-            identity = channel.identity
-            if (
-                channel.room_id == clean_room_id
-                and clean_lobby_text(identity.get("agent_id"), limit=128) == clean_participant_id
-                and identity.get("client_type") == "agent_bridge"
-            ):
-                delivered = channel.send(message) or delivered
-        return delivered
+            active = self._active_bridges.get((clean_room_id, clean_participant_id))
+            channel = self._channels.get(active[0]) if active else None
+        return bool(channel and not channel.closed and channel.send(message))
 
     def has_bridge(self, room_id: str, participant_id: str) -> bool:
         clean_room_id = clean_lobby_text(room_id, limit=128)
         clean_participant_id = clean_lobby_text(participant_id, limit=128)
         with self._lock:
-            return any(
-                not channel.closed
-                and channel.room_id == clean_room_id
-                and channel.identity.get("client_type") == "agent_bridge"
-                and clean_lobby_text(channel.identity.get("agent_id"), limit=128) == clean_participant_id
-                for channel in self._channels.values()
-            )
+            active = self._active_bridges.get((clean_room_id, clean_participant_id))
+            channel = self._channels.get(active[0]) if active else None
+            return bool(channel and not channel.closed)
 
     def diagnostics(self) -> list[dict[str, object]]:
         with self._lock:
             return [channel.diagnostics() for channel in self._channels.values()]
 
+    def broadcast_control(self, room_id: str, message: dict[str, object]) -> None:
+        clean_room_id = clean_lobby_text(room_id, limit=128)
+        with self._lock:
+            channels = [channel for channel in self._channels.values() if channel.room_id == clean_room_id]
+        for channel in channels:
+            channel.send(message)
+
+    def disconnect_participant(self, room_id: str, participant_id: str) -> None:
+        clean_room_id = clean_lobby_text(room_id, limit=128)
+        clean_participant_id = clean_lobby_text(participant_id, limit=128)
+        with self._lock:
+            channels = [
+                channel
+                for channel in self._channels.values()
+                if channel.room_id == clean_room_id
+                and clean_lobby_text(channel.identity.get("agent_id"), limit=128) == clean_participant_id
+            ]
+        for channel in channels:
+            self.disconnect(channel)
+
+    def disconnect_room(self, room_id: str) -> None:
+        clean_room_id = clean_lobby_text(room_id, limit=128)
+        with self._lock:
+            channels = [channel for channel in self._channels.values() if channel.room_id == clean_room_id]
+        for channel in channels:
+            self.disconnect(channel)
+
     def close(self) -> None:
         with self._lock:
             channels = list(self._channels.values())
             self._channels.clear()
+            self._active_bridges.clear()
         for channel in channels:
             channel.close()
+
+    @staticmethod
+    def _bridge_key(channel: RoomSocketChannel) -> tuple[str, str] | None:
+        if channel.identity.get("client_type") != "agent_bridge":
+            return None
+        participant_id = clean_lobby_text(channel.identity.get("agent_id"), limit=128)
+        return (channel.room_id, participant_id) if channel.room_id and participant_id else None
 
 
 def _contains_message_delta(message: dict[str, object]) -> bool:

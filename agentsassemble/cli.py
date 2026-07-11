@@ -1660,15 +1660,6 @@ def build_parser() -> argparse.ArgumentParser:
     room_status.add_argument("room_id")
     room_status.add_argument("--json", action="store_true", dest="as_json")
 
-    room_prune = room_subparsers.add_parser(
-        "prune-empty", help="Safely remove rooms that contain no conversation, agents, guests, or artifacts."
-    )
-    room_prune.add_argument("--output-root", default=".agentsassemble")
-    prune_mode = room_prune.add_mutually_exclusive_group(required=True)
-    prune_mode.add_argument("--dry-run", action="store_true")
-    prune_mode.add_argument("--apply", action="store_true")
-    room_prune.add_argument("--json", action="store_true", dest="as_json")
-
     room_migrate_legacy = room_subparsers.add_parser(
         "migrate-legacy-messages",
         help="Import preserved legacy meeting messages into the canonical room event store.",
@@ -8502,23 +8493,6 @@ def run_room_command(args: argparse.Namespace) -> int:
             )
             for room in result["rooms"]:
                 print(f"- {room['room_id']}: {room['message_count']}")
-            if result.get("backup_dir"):
-                print(f"backup: {result['backup_dir']}")
-        return 0
-    if args.room_command == "prune-empty":
-        from agentsassemble.room_prune import prune_empty_rooms
-
-        try:
-            result = prune_empty_rooms(Path(args.output_root), apply=bool(args.apply))
-        except (OSError, ValueError, sqlite3.Error, json.JSONDecodeError) as error:
-            print(f"error: {error}", file=sys.stderr)
-            return 2
-        if args.as_json:
-            print(json.dumps(result, ensure_ascii=False, indent=2))
-        else:
-            print(f"{result['status']}: {len(result['candidate_room_ids'])} empty room(s)")
-            for room_id in result["candidate_room_ids"]:
-                print(f"- {room_id}")
             if result.get("backup_dir"):
                 print(f"backup: {result['backup_dir']}")
         return 0

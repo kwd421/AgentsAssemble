@@ -67,7 +67,8 @@ class DeepSeekApiRuntime:
             self._pending = content
             self._interrupted.clear()
 
-    def read_output(self, *, timeout_seconds: float, on_delta=None) -> dict[str, object]:
+    def read_output(self, *, timeout_seconds: float, on_delta=None, on_activity=None) -> dict[str, object]:
+        del on_activity
         with self._lock:
             prompt = self._pending
             self._pending = ""

@@ -314,17 +314,28 @@ class RoomStore:
             self._write_participant(connection, updated)
         return updated
 
-    def command_result(self, room_id: str, request_id: str) -> dict[str, object]:
+    def command_record(self, room_id: str, principal_id: str, request_id: str) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
+        clean_principal_id = clean_lobby_text(principal_id, limit=256)
         clean_request_id = clean_lobby_text(request_id, limit=128)
         if not clean_request_id:
             return {}
         with self._connection() as connection:
             row = connection.execute(
-                "SELECT result_json FROM command_results WHERE room_id = ? AND request_id = ?",
-                (clean_room_id, clean_request_id),
+                """SELECT action, payload_hash, result_json FROM command_results
+                   WHERE room_id = ? AND principal_id = ? AND request_id = ?""",
+                (clean_room_id, clean_principal_id, clean_request_id),
             ).fetchone()
-        return _row_payload(row, column="result_json")
+        if row is None:
+            return {}
+        return {
+            "action": str(row["action"] or ""),
+            "payload_hash": str(row["payload_hash"] or ""),
+            "result": _row_payload(row, column="result_json"),
+        }
+
+    def command_result(self, room_id: str, request_id: str, *, principal_id: str = "") -> dict[str, object]:
+        return dict(self.command_record(room_id, principal_id, request_id).get("result") or {})
 
     def record_command_result(
         self,
@@ -332,32 +343,45 @@ class RoomStore:
         request_id: str,
         result: dict[str, object],
         *,
+        principal_id: str = "",
+        action: str = "",
+        payload_hash: str = "",
         max_entries: int = 500,
     ) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
         clean_request_id = clean_lobby_text(request_id, limit=128)
+        clean_principal_id = clean_lobby_text(principal_id, limit=256)
         if not clean_request_id:
             raise ValueError("request_id is required.")
         with self._lock, self._write_transaction() as connection:
             row = connection.execute(
-                "SELECT result_json FROM command_results WHERE room_id = ? AND request_id = ?",
-                (clean_room_id, clean_request_id),
+                """SELECT result_json FROM command_results
+                   WHERE room_id = ? AND principal_id = ? AND request_id = ?""",
+                (clean_room_id, clean_principal_id, clean_request_id),
             ).fetchone()
             if row is not None:
                 return _row_payload(row, column="result_json")
             connection.execute(
-                """INSERT INTO command_results(room_id, request_id, created_at, result_json)
-                   VALUES(?, ?, ?, ?)""",
-                (clean_room_id, clean_request_id, _now(), _json_dumps(result)),
+                """INSERT INTO command_results(
+                       room_id, principal_id, request_id, action, payload_hash, created_at, result_json
+                   ) VALUES(?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    clean_room_id,
+                    clean_principal_id,
+                    clean_request_id,
+                    clean_lobby_text(action, limit=64),
+                    clean_lobby_text(payload_hash, limit=128),
+                    _now(),
+                    _json_dumps(result),
+                ),
             )
             keep = max(1, int(max_entries or 500))
             connection.execute(
-                """DELETE FROM command_results
-                   WHERE room_id = ? AND request_id NOT IN (
-                       SELECT request_id FROM command_results
-                       WHERE room_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?
+                """DELETE FROM command_results WHERE rowid IN (
+                       SELECT rowid FROM command_results WHERE room_id = ?
+                       ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET ?
                    )""",
-                (clean_room_id, clean_room_id, keep),
+                (clean_room_id, keep),
             )
         return dict(result)
 
@@ -422,6 +446,8 @@ class RoomStore:
                 },
                 **clean_payload,
             }
+            if visibility == VISIBLE:
+                event = _strip_private_event_fields(event)
             if visibility != VISIBLE:
                 event["visibility"] = visibility
             connection.execute(
@@ -793,6 +819,31 @@ def _row_payload(row: sqlite3.Row | None, *, column: str = "data_json") -> dict[
 
 def _json_dumps(payload: object) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _strip_private_event_fields(value: dict[str, object]) -> dict[str, object]:
+    hidden = {
+        "legacy_source_path",
+        "path",
+        "file_path",
+        "absolute_path",
+        "workspace",
+        "executable",
+        "argv",
+        "pid",
+        "bridge_pid",
+        "reported_provider_pid",
+        "provider_session_id",
+    }
+
+    def strip(item: object) -> object:
+        if isinstance(item, dict):
+            return {key: strip(child) for key, child in item.items() if key not in hidden}
+        if isinstance(item, list):
+            return [strip(child) for child in item]
+        return item
+
+    return dict(strip(value))
 
 
 def _database_signature(path: Path) -> tuple[int, int] | None:

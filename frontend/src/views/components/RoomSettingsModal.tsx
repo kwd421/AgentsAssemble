@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { Image as ImageIcon, UserPlus, X } from "lucide-react";
+import { Image as ImageIcon, Trash2, UserPlus, X } from "lucide-react";
 import {
   type ChannelNotificationSetting,
   type ChannelSettings,
@@ -42,6 +42,7 @@ export default function RoomSettingsModal({
   appearance,
   channelSettings,
   conversationMode,
+  maxRelayTurns,
   canInvite,
   onClose,
   onInvite,
@@ -49,12 +50,15 @@ export default function RoomSettingsModal({
   onAppearanceChange,
   onChannelSettingChange,
   onConversationModeChange,
+  onMaxRelayTurnsChange,
+  onDeleteRoom,
 }: {
   room: RoomDockItem;
   initialSectionId?: RoomSettingsSectionId;
   appearance: RoomAppearance;
   channelSettings: Record<string, ChannelSettings>;
   conversationMode: ConversationMode;
+  maxRelayTurns: number;
   canInvite: boolean;
   onClose: () => void;
   onInvite: () => void;
@@ -62,8 +66,13 @@ export default function RoomSettingsModal({
   onAppearanceChange: (updates: Partial<RoomAppearance>) => void;
   onChannelSettingChange: (channelId: string, updates: Partial<ChannelSettings>) => void;
   onConversationModeChange: (mode: ConversationMode) => void;
+  onMaxRelayTurnsChange: (turns: number) => void;
+  onDeleteRoom: (confirmationName: string) => Promise<void>;
 }) {
   const [uploadStatus, setUploadStatus] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -126,6 +135,7 @@ export default function RoomSettingsModal({
           <a href="#settings-channels">채널</a>
           <a href="#settings-notify">알림</a>
           <a href="#settings-invite">초대</a>
+          <a href="#settings-delete">서버 삭제</a>
         </aside>
         <div ref={bodyRef} className="dc-settings-body chat-scroll">
           <header className="dc-settings-titlebar">
@@ -179,7 +189,33 @@ export default function RoomSettingsModal({
                     🔢 순서 — 다들 말하고 싶어 하지만, 알고리즘이 다음 발언자를 정합니다 (공정하게 번갈아, 동시발언·도배 방지).
                   </span>
                 </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="conversation-mode"
+                    checked={conversationMode === "continuous"}
+                    onChange={() => onConversationModeChange("continuous")}
+                  />
+                  <span className="preserve-words">
+                    연쇄 대화 — 에이전트 발언을 다음 에이전트에게 자동으로 넘깁니다.
+                  </span>
+                </label>
               </div>
+              {conversationMode === "continuous" && (
+                <label>
+                  최대 연쇄 발언 수
+                  <input
+                    className="ops-input"
+                    type="number"
+                    min={2}
+                    max={20}
+                    value={maxRelayTurns}
+                    onChange={(event) =>
+                      onMaxRelayTurnsChange(Math.min(20, Math.max(2, Number(event.target.value) || 2)))
+                    }
+                  />
+                </label>
+              )}
             </div>
           </section>
 
@@ -321,6 +357,44 @@ export default function RoomSettingsModal({
                 초대 링크 만들기
               </button>
             )}
+          </section>
+          <section id="settings-delete" className="dc-settings-section">
+            <h3>서버 삭제</h3>
+            <p className="text-[13px] text-text-muted preserve-words">
+              이 작업은 복구할 수 없습니다. 확인하려면 서버 이름을 정확히 입력하세요.
+            </p>
+            <label>
+              서버 이름
+              <input
+                className="ops-input"
+                value={deleteConfirmation}
+                onChange={(event) => {
+                  setDeleteConfirmation(event.target.value);
+                  setDeleteError("");
+                }}
+                autoComplete="off"
+              />
+            </label>
+            {deleteError && <p className="text-[13px] text-red-400 preserve-words">{deleteError}</p>}
+            <button
+              type="button"
+              className="danger dc-upload-button"
+              disabled={deleting || deleteConfirmation !== room.label}
+              onClick={async () => {
+                setDeleting(true);
+                setDeleteError("");
+                try {
+                  await onDeleteRoom(deleteConfirmation);
+                } catch (error) {
+                  setDeleteError(error instanceof Error ? error.message : "서버 삭제에 실패했습니다.");
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              <Trash2 size={15} />
+              {deleting ? "삭제 중..." : "서버 영구 삭제"}
+            </button>
           </section>
         </div>
       </section>

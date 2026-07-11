@@ -15,7 +15,7 @@ from agentsassemble.grok_acp_runtime import GrokAcpRuntime
 from agentsassemble.deepseek_runtime import DeepSeekApiRuntime
 from agentsassemble.live_cli import LiveCliRuntime
 from agentsassemble.opencode_runtime import OpenCodeRuntime
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
 from agentsassemble.windows_conpty import WindowsConPtyRuntime
 
@@ -23,7 +23,7 @@ from agentsassemble.windows_conpty import WindowsConPtyRuntime
 class BridgeRuntime(Protocol):
     def start(self) -> dict[str, object]: ...
     def send(self, text: str) -> None: ...
-    def read_output(self, *, timeout_seconds: float, on_delta=None) -> dict[str, object]: ...
+    def read_output(self, *, timeout_seconds: float, on_delta=None, on_activity=None) -> dict[str, object]: ...
     def interrupt(self) -> None: ...
     def stop(self, *, timeout_seconds: float = 2.0) -> None: ...
     def health(self) -> dict[str, object]: ...
@@ -157,7 +157,7 @@ class RoomAgentBridge:
             def on_delta(delta: str) -> None:
                 nonlocal first_output_at, first_output_elapsed, last_output_at, delta_count
                 content = str(delta or "")
-                if not content:
+                if not has_room_visible_text(content):
                     return
                 now_mono = time.monotonic()
                 now_iso = _now()
@@ -179,8 +179,18 @@ class RoomAgentBridge:
                     },
                 )
 
-            result = self.runtime.read_output(timeout_seconds=timeout_seconds, on_delta=on_delta)
-            final_content = clean_lobby_text(result.get("content"), limit=12000)
+            def on_activity(activity: dict[str, object]) -> None:
+                safe = _safe_activity(activity)
+                if not safe:
+                    return
+                self._command("activity.update", {"turn_id": turn_id, **safe})
+
+            result = self.runtime.read_output(
+                timeout_seconds=timeout_seconds,
+                on_delta=on_delta,
+                on_activity=on_activity,
+            )
+            final_content = _room_message_text(result.get("content"), limit=12000)
             if not final_content:
                 raise RuntimeError("Provider CLI completed without a clean assistant message.")
             completed = time.monotonic()
@@ -337,6 +347,36 @@ def _is_grok_acp_command(command: list[str]) -> bool:
     executable = Path(command[0]).name.casefold() if command else ""
     parts = [str(part).casefold() for part in command[1:]]
     return executable == "grok" and "agent" in parts and "stdio" in parts
+
+
+_ACTIVITY_LABELS = {
+    "reasoning": {"started": "생각 정리 중", "running": "생각 정리 중", "completed": "생각 정리 완료"},
+    "file_read": {"started": "파일 읽는 중", "running": "파일 읽는 중", "completed": "파일 확인 완료"},
+    "search": {"started": "정보 검색 중", "running": "정보 검색 중", "completed": "정보 검색 완료"},
+    "command": {"started": "명령 실행 중", "running": "명령 실행 중", "completed": "명령 실행 완료"},
+    "web": {"started": "웹 확인 중", "running": "웹 확인 중", "completed": "웹 확인 완료"},
+    "tool": {"started": "도구 사용 중", "running": "도구 사용 중", "completed": "도구 사용 완료"},
+}
+
+
+def _safe_activity(activity: object) -> dict[str, str]:
+    values = activity if isinstance(activity, dict) else {}
+    category = clean_lobby_text(values.get("category"), limit=32)
+    status = clean_lobby_text(values.get("status"), limit=32)
+    if category not in _ACTIVITY_LABELS:
+        category = "tool"
+    if status not in {"started", "running", "completed"}:
+        status = "running"
+    return {
+        "activity_kind": "reasoning" if category == "reasoning" else "tool",
+        "category": category,
+        "status": status,
+        "content": _ACTIVITY_LABELS[category][status],
+    }
+
+
+def _room_message_text(value: object, *, limit: int) -> str:
+    return str(value or "").replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")[:limit].strip()
 
 
 def main() -> int:

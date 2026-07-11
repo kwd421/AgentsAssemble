@@ -48,7 +48,7 @@ class CodexAppServerLiveRuntime:
             raise RuntimeError("Codex runtime is already processing a turn.")
         self.pending = content
 
-    def read_output(self, *, timeout_seconds: float, on_delta=None) -> dict[str, object]:
+    def read_output(self, *, timeout_seconds: float, on_delta=None, on_activity=None) -> dict[str, object]:
         prompt = self.pending
         self.pending = ""
         if not prompt:
@@ -68,6 +68,8 @@ class CodexAppServerLiveRuntime:
                     final += delta
                     if on_delta is not None:
                         on_delta(delta)
+            elif chunk_type == "thinking_delta" and on_activity is not None:
+                on_activity(_codex_activity(chunk.get("content")))
             elif chunk_type == "message_final":
                 final = str(chunk.get("content") or final)
             elif chunk_type == "error":
@@ -108,3 +110,21 @@ class CodexAppServerLiveRuntime:
             "permission_mode": "workspace_write" if self.profile["sandbox"] == "workspace-write" else "meeting_read_only",
             **diagnostics,
         }
+
+
+def _codex_activity(value: object) -> dict[str, str]:
+    text = clean_lobby_text(value, limit=500).casefold()
+    status = "completed" if "finished" in text or "completed" in text else "running"
+    if "thinking" in text or "reason" in text:
+        category = "reasoning"
+    elif any(word in text for word in ("read", "cat ", "sed ", "open file")):
+        category = "file_read"
+    elif any(word in text for word in ("search", "find", "grep", "rg ")):
+        category = "search"
+    elif any(word in text for word in ("http", "web", "curl", "fetch")):
+        category = "web"
+    elif "command" in text:
+        category = "command"
+    else:
+        category = "tool"
+    return {"category": category, "status": status}

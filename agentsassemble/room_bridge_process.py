@@ -4,13 +4,12 @@ from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
-import signal
 import shutil
 import subprocess
 import sys
 import threading
-import time
 from typing import Callable
+from uuid import uuid4
 
 from agentsassemble.native_cli_providers import NativeCliProviderSpec, validate_native_cli_provider_spec
 from agentsassemble.process_environment import sanitized_child_environment
@@ -23,6 +22,7 @@ BridgeExitListener = Callable[[str, str, int, str], None]
 
 @dataclass
 class _BridgeHandle:
+    handle_id: str
     room_id: str
     session_id: str
     runtime_profile_key: str
@@ -200,6 +200,7 @@ class NativeCliBridgeProcessManager:
             finally:
                 stream.close()
         handle = _BridgeHandle(
+            handle_id=f"bridge-{uuid4().hex}",
             room_id=room_id,
             session_id=session_id,
             runtime_profile_key=runtime_profile_key,
@@ -233,14 +234,20 @@ class NativeCliBridgeProcessManager:
         session_id: str,
         *,
         timeout_seconds: float = 2.0,
-        provider_pid: int | None = None,
+        handle_id: str = "",
     ) -> dict[str, object]:
         key = (room_id, session_id)
         with self._lock:
             handle = self._handles.get(key)
             if handle is None:
-                provider_alive = _terminate_provider_process(provider_pid, timeout_seconds=timeout_seconds)
-                return {"stopped": True, "alive": provider_alive, "bridge_pid": None, "provider_alive": provider_alive}
+                return {"stopped": False, "alive": False, "bridge_pid": None, "reason": "handle_not_found"}
+            if not handle_id or handle.handle_id != handle_id:
+                return {
+                    "stopped": False,
+                    "alive": handle.process.poll() is None,
+                    "bridge_pid": handle.process.pid,
+                    "reason": "handle_mismatch",
+                }
             handle.stopping = True
         process = handle.process
         if process.poll() is None:
@@ -253,16 +260,10 @@ class NativeCliBridgeProcessManager:
         self._finish_stderr(handle)
         with self._lock:
             self._handles.pop(key, None)
-        provider_alive = (
-            _process_group_alive(int(provider_pid or 0))
-            if handle.provider_process_shared and int(provider_pid or 0) > 0
-            else _terminate_provider_process(provider_pid, timeout_seconds=timeout_seconds)
-        )
         return {
             "stopped": True,
             "alive": process.poll() is None,
             "bridge_pid": process.pid,
-            "provider_alive": provider_alive,
             "provider_process_shared": handle.provider_process_shared,
         }
 
@@ -271,7 +272,10 @@ class NativeCliBridgeProcessManager:
             keys = list(self._handles)
         for room_id, session_id in keys:
             try:
-                self.stop(room_id, session_id)
+                with self._lock:
+                    handle = self._handles.get((room_id, session_id))
+                if handle is not None:
+                    self.stop(room_id, session_id, handle_id=handle.handle_id)
             except Exception:
                 continue
         self._stop_opencode_server()
@@ -401,6 +405,7 @@ class NativeCliBridgeProcessManager:
         resolved_executable: str = "",
     ) -> dict[str, object]:
         return {
+            "bridge_handle_id": handle.handle_id,
             "bridge_pid": handle.process.pid,
             "runtime_reused": runtime_reused,
             "runtime_profile_key": handle.runtime_profile_key,
@@ -410,43 +415,3 @@ class NativeCliBridgeProcessManager:
             "stdout_path": str(handle.stdout_path),
             "stderr_path": str(handle.stderr_path),
         }
-
-def _terminate_provider_process(provider_pid: int | None, *, timeout_seconds: float) -> bool:
-    try:
-        pid = int(provider_pid or 0)
-    except (TypeError, ValueError):
-        return False
-    if pid <= 0 or not hasattr(os, "killpg"):
-        return False
-    try:
-        os.killpg(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    try:
-        os.killpg(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return False
-    deadline = time.monotonic() + max(0.1, float(timeout_seconds))
-    while time.monotonic() < deadline:
-        try:
-            os.killpg(pid, 0)
-        except ProcessLookupError:
-            return False
-        time.sleep(0.02)
-    try:
-        os.killpg(pid, signal.SIGKILL)
-    except ProcessLookupError:
-        return False
-    return _process_group_alive(pid)
-
-
-def _process_group_alive(pid: int) -> bool:
-    try:
-        os.killpg(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True

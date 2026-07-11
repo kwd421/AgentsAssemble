@@ -59,6 +59,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
             old_process._done.set()
             replacement_process = FakeProcess(pid=3102)
             old = _BridgeHandle(
+                handle_id="old-handle",
                 room_id="general",
                 session_id="codex",
                 runtime_profile_key="old-profile",
@@ -69,6 +70,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                 stderr_path=root / "old-stderr.log",
             )
             replacement = _BridgeHandle(
+                handle_id="replacement-handle",
                 room_id="general",
                 session_id="codex",
                 runtime_profile_key="new-profile",
@@ -115,7 +117,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
             self.assertEqual(config["runtime_profile_key"], spec.runtime_profile_key())
             self.assertEqual(config["runtime_state_dir"], str(Path(launch["config_path"]).parent / "provider-state"))
             self.assertEqual(Path(launch["config_path"]).parent.name, spec.runtime_profile_key())
-            stopped = manager.stop("general", "codex")
+            stopped = manager.stop("general", "codex", handle_id=launch["bridge_handle_id"])
 
         self.assertTrue(popen.process.terminated)
         self.assertFalse(stopped["alive"])
@@ -182,7 +184,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                     server_url="http://127.0.0.1:9999",
                     ticket_issuer=lambda identity: "unused",
                 )
-            manager.stop("general", "codex")
+            manager.stop("general", "codex", handle_id=launch["bridge_handle_id"])
 
         self.assertEqual(len(popen.calls), 1)
         self.assertFalse(launch["runtime_reused"])
@@ -238,7 +240,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
             while health.get("stderr_line_count") != len(warning_lines) and time.monotonic() < deadline:
                 time.sleep(0.01)
                 health = manager.health("general", "codex")
-            manager.stop("general", "codex")
+            manager.stop("general", "codex", handle_id=launch["bridge_handle_id"])
             persisted = Path(launch["stderr_path"]).read_bytes()
 
         self.assertEqual(health["stderr_line_count"], len(warning_lines))

@@ -7,6 +7,7 @@ from agentsassemble.meeting_events import clean_lobby_text
 ROOM_COMMAND_ACTIONS = frozenset(
     {
         "room.history",
+        "room.delete",
         "message.send",
         "agent.create",
         "agent.configure",
@@ -17,9 +18,11 @@ ROOM_COMMAND_ACTIONS = frozenset(
         "agent.interrupt",
         "participant.kick",
         "participant.mute",
+        "participant.leave",
         "bridge.ready",
         "bridge.health",
         "turn.state",
+        "activity.update",
         "message.delta",
         "message.final",
         "turn.failed",
@@ -59,6 +62,8 @@ def capabilities_for_identity(identity: dict[str, object]) -> dict[str, bool]:
         "room.history": not bridge,
         "message.send": read_write and not bridge,
         "room.manage": operator,
+        "room.delete": operator,
+        "participant.leave": not bridge,
         "participant.kick": operator,
         "participant.mute": operator,
         "agent.control": operator,

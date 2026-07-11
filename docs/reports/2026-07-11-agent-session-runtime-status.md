@@ -245,17 +245,9 @@ Deletion backup:
 
 ## Empty-room policy
 
-`assemble room prune-empty --dry-run|--apply` deletes only when all of these hold:
-
-- no event other than `room_created`
-- no Agent Session
-- no non-host participant
-- no media, handoff, smoke, or legacy meeting artifact
-- unchanged candidate fingerprint between dry run and apply
-
-Pruned rooms now receive a deletion tombstone. The prior repository-wide dry run
-found zero safe candidates because apparent empty rooms still had legacy artifacts;
-those records were not deleted automatically.
+Empty-room pruning was a one-time operator cleanup and is not a product command. Room lifecycle now uses explicit participant leave and owner-confirmed server deletion.
+The temporary `prune-empty` CLI and its product-facing tests were removed. Canonical
+room deletion retains a tombstone so stale browser state cannot recreate the room.
 
 ## Verification
 

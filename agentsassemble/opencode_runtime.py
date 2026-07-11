@@ -151,7 +151,7 @@ class OpenCodeRuntime:
             self._pending = content
             self._interrupted.clear()
 
-    def read_output(self, *, timeout_seconds: float, on_delta=None) -> dict[str, object]:
+    def read_output(self, *, timeout_seconds: float, on_delta=None, on_activity=None) -> dict[str, object]:
         with self._lock:
             prompt = self._pending
             self._pending = ""
@@ -160,8 +160,44 @@ class OpenCodeRuntime:
             raise RuntimeError("OpenCode runtime has no pending turn.")
         deadline = time.monotonic() + max(1.0, float(timeout_seconds))
         assistant_message_ids: set[str] = set()
-        buffered_deltas: dict[str, list[str]] = {}
+        part_types: dict[str, str] = {}
+        buffered_deltas: dict[tuple[str, str], list[str]] = {}
         emitted = ""
+        activity_states: set[tuple[str, str]] = set()
+        reasoning_active = False
+
+        def emit_activity(part: dict[str, object]) -> None:
+            nonlocal reasoning_active
+            if on_activity is None:
+                return
+            part_id = str(part.get("id") or "")
+            part_type = str(part.get("type") or "").casefold()
+            if part_type == "reasoning":
+                if not reasoning_active:
+                    reasoning_active = True
+                    on_activity({"category": "reasoning", "status": "running"})
+                return
+            if part_type not in {"tool", "tool_use", "tool-call", "toolcall"}:
+                return
+            state = part.get("state") if isinstance(part.get("state"), dict) else {}
+            raw_status = str(state.get("status") or part.get("status") or "running").casefold()
+            status = "completed" if raw_status in {"completed", "success", "done"} else "running"
+            marker = (part_id, status)
+            if marker in activity_states:
+                return
+            activity_states.add(marker)
+            tool_name = str(part.get("tool") or part.get("name") or "")
+            on_activity({"category": _tool_category(tool_name), "status": status})
+
+        def emit_text_part(message_id: str, part_id: str) -> None:
+            nonlocal emitted
+            if message_id not in assistant_message_ids or part_types.get(part_id) != "text":
+                return
+            for delta in buffered_deltas.pop((message_id, part_id), []):
+                emitted += delta
+                if on_delta is not None:
+                    on_delta(delta)
+
         try:
             event_response = self._open("GET", "/event", timeout_seconds=timeout_seconds, stream=True)
             with self._lock:
@@ -184,24 +220,39 @@ class OpenCodeRuntime:
                     message_id = str(info.get("id") or "")
                     if str(info.get("role") or "") == "assistant" and message_id:
                         assistant_message_ids.add(message_id)
-                        for delta in buffered_deltas.pop(message_id, []):
-                            emitted += delta
-                            if on_delta is not None:
-                                on_delta(delta)
+                        for buffered_message_id, part_id in list(buffered_deltas):
+                            if buffered_message_id == message_id:
+                                emit_text_part(message_id, part_id)
+                    continue
+                if event_type == "message.part.updated":
+                    part = properties.get("part") if isinstance(properties.get("part"), dict) else {}
+                    message_id = str(part.get("messageID") or properties.get("messageID") or "")
+                    part_id = str(part.get("id") or properties.get("partID") or "")
+                    part_type = str(part.get("type") or "")
+                    if part_id and part_type:
+                        part_types[part_id] = part_type
+                        emit_activity(part)
+                        if part_type == "text":
+                            emit_text_part(message_id, part_id)
+                        else:
+                            buffered_deltas.pop((message_id, part_id), None)
                     continue
                 if event_type == "message.part.delta" and str(properties.get("field") or "") == "text":
                     message_id = str(properties.get("messageID") or "")
+                    part_id = str(properties.get("partID") or "")
                     delta = str(properties.get("delta") or "")
-                    if not delta:
+                    if not delta or not part_id:
                         continue
-                    if message_id in assistant_message_ids:
+                    if message_id in assistant_message_ids and part_types.get(part_id) == "text":
                         emitted += delta
                         if on_delta is not None:
                             on_delta(delta)
-                    else:
-                        buffered_deltas.setdefault(message_id, []).append(delta)
+                    elif part_id not in part_types:
+                        buffered_deltas.setdefault((message_id, part_id), []).append(delta)
                     continue
                 if event_type == "session.idle":
+                    if reasoning_active and on_activity is not None:
+                        on_activity({"category": "reasoning", "status": "completed"})
                     break
             final = self._latest_assistant_text(session_id, timeout_seconds=max(1.0, deadline - time.monotonic()))
             content = final or emitted.strip()
@@ -233,7 +284,6 @@ class OpenCodeRuntime:
                     response.close()
                 except Exception:
                     pass
-
     def interrupt(self) -> None:
         self._interrupted.set()
         with self._lock:
@@ -378,6 +428,19 @@ class OpenCodeRuntime:
             path.chmod(0o600)
         except OSError:
             pass
+
+
+def _tool_category(tool_name: str) -> str:
+    value = str(tool_name or "").casefold()
+    if any(word in value for word in ("read", "file", "open")):
+        return "file_read"
+    if any(word in value for word in ("search", "find", "grep", "glob")):
+        return "search"
+    if any(word in value for word in ("web", "http", "fetch", "browser")):
+        return "web"
+    if any(word in value for word in ("shell", "bash", "command", "exec", "terminal")):
+        return "command"
+    return "tool"
 
 
 def _sse_event(raw_line: bytes) -> dict[str, object]:

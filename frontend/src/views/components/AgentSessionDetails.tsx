@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CirclePause, Play, RotateCcw, Save, Square, Zap } from "lucide-react";
+import { Brain, CirclePause, Play, RotateCcw, Save, Square, Zap } from "lucide-react";
 import type { RoomAgentSession } from "../../api";
 import type { NativeCliProviderAvailability, ProviderControl } from "../../roomSocketClient";
 
@@ -73,6 +73,8 @@ export default function AgentSessionDetails({
   provider,
   onControl,
   onConfigure,
+  activityVisible = true,
+  onActivityVisibilityChange,
 }: {
   session: RoomAgentSession;
   provider?: NativeCliProviderAvailability;
@@ -84,6 +86,8 @@ export default function AgentSessionDetails({
     session: RoomAgentSession,
     settings: Record<string, string>
   ) => void | Promise<void>;
+  activityVisible?: boolean;
+  onActivityVisibilityChange?: (session: RoomAgentSession, visible: boolean) => void;
 }) {
   const [pendingAction, setPendingAction] = useState<AgentSessionControlAction | null>(null);
   const [actionStatus, setActionStatus] = useState("");
@@ -92,7 +96,6 @@ export default function AgentSessionDetails({
   const status = session.runtime_status || session.status;
   const hasRunBefore = Boolean(
     session.started_at ||
-      session.pid ||
       session.turn_count ||
       session.last_seen_event_id
   );
@@ -170,12 +173,6 @@ export default function AgentSessionDetails({
             <dt>Runtime</dt>
             <dd>{`${session.runtime_kind || "live_cli"} · ${session.transport || "pty"}`}</dd>
           </div>
-          {session.pid ? (
-            <div>
-              <dt>Process</dt>
-              <dd>{`pid ${session.pid}`}</dd>
-            </div>
-          ) : null}
         </dl>
       </div>
       {provider && onConfigure && (
@@ -201,6 +198,21 @@ export default function AgentSessionDetails({
           {!canConfigure && <p>설정을 바꾸려면 세션을 먼저 중지하세요.</p>}
         </div>
       )}
+      <div className="dc-agent-activity-setting">
+        <div>
+          <Brain size={15} aria-hidden />
+          <span>생각과 작업 표시</span>
+        </div>
+        <label className="dc-agent-activity-toggle">
+          <input
+            type="checkbox"
+            checked={activityVisible}
+            onChange={(event) => onActivityVisibilityChange?.(session, event.currentTarget.checked)}
+          />
+          <span>{activityVisible ? "켜짐" : "꺼짐"}</span>
+        </label>
+        <p>공개용 생각 요약과 안전하게 정리된 도구 활동만 표시합니다.</p>
+      </div>
       {onControl && (
         <div className="dc-member-session-actions" aria-label={`${session.display_name} 세션 제어`}>
           <button

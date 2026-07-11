@@ -70,6 +70,7 @@ class AgentRuntime(Protocol):
         *,
         timeout_seconds: float,
         on_delta: Callable[[str], None] | None = None,
+        on_activity: Callable[[dict[str, object]], None] | None = None,
     ) -> dict[str, object]:
         ...
 
@@ -247,7 +248,9 @@ class LiveCliRuntime:
         *,
         timeout_seconds: float,
         on_delta: Callable[[str], None] | None = None,
+        on_activity: Callable[[dict[str, object]], None] | None = None,
     ) -> dict[str, object]:
+        del on_activity
         process, fd = self._state_snapshot()
         quiet = self.idle_quiet_seconds
         deadline = time.monotonic() + max(0.0, float(timeout_seconds))
@@ -648,8 +651,9 @@ class ApiRuntime:
         *,
         timeout_seconds: float,
         on_delta: Callable[[str], None] | None = None,
+        on_activity: Callable[[dict[str, object]], None] | None = None,
     ) -> dict[str, object]:
-        del timeout_seconds, on_delta
+        del timeout_seconds, on_delta, on_activity
         raise RuntimeError("API runtime is a later AgentRuntime implementation; LiveCliRuntime is the MVP path.")
 
     def interrupt(self) -> None:

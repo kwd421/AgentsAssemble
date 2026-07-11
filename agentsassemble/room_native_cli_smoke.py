@@ -254,13 +254,13 @@ def _smoke_provider(
         start_request = client.command("agent.start", {"agent_id": spec.agent_id}, request_id=f"smoke-start-{spec.agent_id}-{uuid4().hex[:6]}")
         start_ack = _wait_ack(client, inbox, start_request, timeout_seconds=10.0)
         launch = dict(start_ack.get("result", {}).get("launch", {})) if isinstance(start_ack.get("result"), dict) else {}
-        bridge_pid = int(launch.get("bridge_pid") or 0)
+        manager_health = controller.bridge_manager.health("general", spec.agent_id) if controller.bridge_manager else {}
+        bridge_pid = int(manager_health.get("bridge_pid") or 0)
         result["bridge_pid"] = bridge_pid or None
-        stderr_path = Path(str(launch.get("stderr_path") or ""))
         session = _wait_session(controller, spec.agent_id, {"idle", "error"}, timeout_seconds=30.0)
         if session.get("runtime_status") != "idle":
             raise RuntimeError(str(session.get("last_error") or "provider did not become idle"))
-        provider_pid = int(session.get("pid") or 0)
+        provider_pid = int(session.get("reported_provider_pid") or 0)
         result["transport"] = f"{session.get('transport') or 'unknown'}+websocket"
         result["pty"] = bool(session.get("pty", False))
         result["model"] = str(session.get("model") or result["model"])
@@ -276,7 +276,7 @@ def _smoke_provider(
             previous_turn_count=0,
             timeout_seconds=timeout_seconds,
         )
-        first_pid = int(first["session"].get("pid") or 0)  # type: ignore[union-attr]
+        first_pid = int(first["session"].get("reported_provider_pid") or 0)  # type: ignore[union-attr]
         second = _run_turn(
             client,
             inbox,
@@ -286,7 +286,7 @@ def _smoke_provider(
             previous_turn_count=1,
             timeout_seconds=timeout_seconds,
         )
-        second_pid = int(second["session"].get("pid") or 0)  # type: ignore[union-attr]
+        second_pid = int(second["session"].get("reported_provider_pid") or 0)  # type: ignore[union-attr]
         result["provider_pids"] = [first_pid, second_pid]
         result["same_pid_over_turns"] = bool(first_pid and first_pid == second_pid)
         result["memory_marker_recalled"] = _marker_recalled(marker, str(second["event"].get("content") or ""))  # type: ignore[union-attr]
@@ -325,7 +325,7 @@ def _smoke_provider(
                 previous_turn_count=2,
                 timeout_seconds=timeout_seconds,
             )
-            if int(warmup["session"].get("pid") or 0) != second_pid:  # type: ignore[union-attr]
+            if int(warmup["session"].get("reported_provider_pid") or 0) != second_pid:  # type: ignore[union-attr]
                 raise RuntimeError("provider CLI PID changed during latency warmup")
             latency_turns: list[dict[str, object]] = []
             for sample_index in range(latency_samples):
@@ -340,7 +340,7 @@ def _smoke_provider(
                     previous_turn_count=3 + sample_index,
                     timeout_seconds=timeout_seconds,
                 )
-                if int(turn["session"].get("pid") or 0) != second_pid:  # type: ignore[union-attr]
+                if int(turn["session"].get("reported_provider_pid") or 0) != second_pid:  # type: ignore[union-attr]
                     raise RuntimeError("provider CLI PID changed during latency samples")
                 sample_output = str(turn["event"].get("content") or "")  # type: ignore[union-attr]
                 result["latency_sample_outputs"].append(sample_output[-500:])  # type: ignore[union-attr]
@@ -496,12 +496,13 @@ def _smoke_agent_conversation(
             )
             ack = _wait_ack(client, inbox, request_id, timeout_seconds=10.0)
             launch = dict(ack.get("result", {}).get("launch", {})) if isinstance(ack.get("result"), dict) else {}
-            provider_result["bridge_pid"] = int(launch.get("bridge_pid") or 0) or None
             started.append(spec)
             session = _wait_session(controller, spec.agent_id, {"idle", "error"}, timeout_seconds=30.0)
             if session.get("runtime_status") != "idle":
                 raise RuntimeError(f"{spec.agent_id}: {session.get('last_error') or 'provider did not become idle'}")
-            provider_pid = int(session.get("pid") or 0)
+            manager_health = controller.bridge_manager.health("general", spec.agent_id) if controller.bridge_manager else {}
+            provider_result["bridge_pid"] = int(manager_health.get("bridge_pid") or 0) or None
+            provider_pid = int(session.get("reported_provider_pid") or 0)
             if provider_pid <= 0:
                 raise RuntimeError(f"{spec.agent_id}: provider PID was not reported")
             provider_result["provider_pids"] = [provider_pid]
@@ -633,7 +634,7 @@ def _smoke_agent_conversation(
             session = controller.store.session("general", spec.agent_id)
             provider_result = provider_results[spec.agent_id]
             first_pid = int(list(provider_result["provider_pids"])[0])
-            final_pid = int(session.get("pid") or 0)
+            final_pid = int(session.get("reported_provider_pid") or 0)
             provider_result["provider_pids"] = [first_pid, final_pid]
             provider_result["same_pid_over_turns"] = bool(first_pid and first_pid == final_pid)
             provider_result["turn_count"] = int(session.get("turn_count") or 0)
@@ -755,7 +756,7 @@ def _verify_pause_resume(
     timeout_seconds: float,
 ) -> dict[str, object]:
     before = controller.store.session("general", spec.agent_id)
-    before_pid = int(before.get("pid") or 0)
+    before_pid = int(before.get("reported_provider_pid") or 0)
     before_bridge_pid = int(before.get("bridge_pid") or 0)
     before_turn_count = int(before.get("turn_count") or 0)
     before_seq = controller.store.latest_event_sequence("general")
@@ -826,7 +827,7 @@ def _verify_pause_resume(
         "paused_without_process_exit": bool(
             paused.get("runtime_status") == "paused"
             and not paused.get("enabled")
-            and int(paused.get("pid") or 0) == before_pid
+            and int(paused.get("reported_provider_pid") or 0) == before_pid
             and int(paused.get("bridge_pid") or 0) == before_bridge_pid
             and _pid_alive(before_pid)
             and bool(manager.health("general", spec.agent_id).get("running"))
@@ -837,7 +838,7 @@ def _verify_pause_resume(
         ),
         "backlog_recorded": bool(queued_event_id and queued_event_id in list(waiting.get("pending_event_ids") or [])),
         "resume_reused_runtime": bool(resume_result.get("runtime_reused") and resume_result.get("process_reused")),
-        "same_provider_pid_after_resume": int(final_session.get("pid") or 0) == before_pid,
+        "same_provider_pid_after_resume": int(final_session.get("reported_provider_pid") or 0) == before_pid,
         "same_bridge_pid_after_resume": int(final_session.get("bridge_pid") or 0) == before_bridge_pid,
         "backlog_event_was_turn_source": final_event.get("source_event_id") == queued_event_id,
         "resume_output_contains_marker": marker.casefold() in output.casefold(),
@@ -852,7 +853,7 @@ def _verify_pause_resume(
         "agent_id": spec.agent_id,
         "marker": marker,
         "pid_before": before_pid,
-        "pid_after": int(final_session.get("pid") or 0),
+        "pid_after": int(final_session.get("reported_provider_pid") or 0),
         "bridge_pid_before": before_bridge_pid,
         "bridge_pid_after": int(final_session.get("bridge_pid") or 0),
         "queued_event_id": queued_event_id,

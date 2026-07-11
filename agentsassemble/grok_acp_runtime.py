@@ -207,7 +207,7 @@ class GrokAcpRuntime:
             if self._active_request is not None:
                 raise RuntimeError("Grok ACP runtime already has an active turn.")
             session_id = self._session_id
-        self._consume_notifications(session_id, [], on_delta=None)
+        self._consume_notifications(session_id, [], on_delta=None, on_activity=None)
         with self._lock:
             self._turn_notification_drop_start = self._notification_drop_count
         request = self._begin_request(
@@ -225,6 +225,7 @@ class GrokAcpRuntime:
         *,
         timeout_seconds: float,
         on_delta: Callable[[str], None] | None = None,
+        on_activity: Callable[[dict[str, object]], None] | None = None,
     ) -> dict[str, object]:
         with self._lock:
             active = self._active_request
@@ -239,7 +240,12 @@ class GrokAcpRuntime:
         empty_turn_recovered = False
         try:
             while time.monotonic() < deadline:
-                self._consume_notifications(session_id, content_parts, on_delta=on_delta)
+                self._consume_notifications(
+                    session_id,
+                    content_parts,
+                    on_delta=on_delta,
+                    on_activity=on_activity,
+                )
                 self._raise_if_notifications_dropped(notification_drop_start)
                 try:
                     response = response_queue.get(timeout=0.05)
@@ -248,7 +254,12 @@ class GrokAcpRuntime:
                 if response is None:
                     self._raise_if_exited()
                     continue
-                self._consume_notifications(session_id, content_parts, on_delta=on_delta)
+                self._consume_notifications(
+                    session_id,
+                    content_parts,
+                    on_delta=on_delta,
+                    on_activity=on_activity,
+                )
                 self._raise_if_notifications_dropped(notification_drop_start)
                 if response.get("_eof"):
                     raise RuntimeError("Grok ACP runtime exited before turn completion.")
@@ -587,6 +598,7 @@ class GrokAcpRuntime:
         content_parts: list[str],
         *,
         on_delta: Callable[[str], None] | None,
+        on_activity: Callable[[dict[str, object]], None] | None,
     ) -> None:
         while True:
             try:
@@ -609,7 +621,15 @@ class GrokAcpRuntime:
             if method != "session/update" or params.get("sessionId") != session_id:
                 continue
             update = params.get("update") if isinstance(params.get("update"), dict) else {}
-            if update.get("sessionUpdate") != "agent_message_chunk":
+            update_type = str(update.get("sessionUpdate") or "")
+            if update_type in {"tool_call", "tool_call_update"}:
+                if on_activity is not None:
+                    raw_status = str(update.get("status") or "running").casefold()
+                    status = "completed" if raw_status in {"completed", "success", "done"} else "running"
+                    title = str(update.get("title") or update.get("name") or "")
+                    on_activity({"category": _tool_category(title), "status": status})
+                continue
+            if update_type != "agent_message_chunk":
                 continue
             content = update.get("content") if isinstance(update.get("content"), dict) else {}
             delta = str(content.get("text") or "")
@@ -618,7 +638,6 @@ class GrokAcpRuntime:
             content_parts.append(delta)
             if on_delta is not None:
                 on_delta(delta)
-
     def _raise_if_exited(self) -> None:
         with self._lock:
             process = self.process
@@ -690,6 +709,19 @@ def _put_nowait(target: queue.Queue[dict[str, object]], value: dict[str, object]
             target.put_nowait(value)
         except queue.Full:
             pass
+
+
+def _tool_category(title: str) -> str:
+    value = str(title or "").casefold()
+    if any(word in value for word in ("read", "file", "open")):
+        return "file_read"
+    if any(word in value for word in ("search", "find", "grep")):
+        return "search"
+    if any(word in value for word in ("web", "http", "fetch", "browser")):
+        return "web"
+    if any(word in value for word in ("shell", "command", "exec", "terminal")):
+        return "command"
+    return "tool"
 
 
 def _resolve_executable(executable: str) -> str:

@@ -1,4 +1,5 @@
 import tempfile
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -11,6 +12,8 @@ from agentsassemble.room_realtime import (
     validate_native_cli_provider_spec,
 )
 from agentsassemble.room_store import RoomStore
+from agentsassemble.identity_store import identity_store_for_output_root
+from agentsassemble.room_settings import update_room_settings
 
 
 HOST = {
@@ -35,12 +38,16 @@ class FakeBridgeManager:
         if self.start_errors:
             raise self.start_errors.pop(0)
         self.starts.append((room_id, str(session["session_id"])))
-        return {"bridge_pid": 701, "resolved_executable": f"/fake/{spec.command[0]}"}
+        return {
+            "bridge_pid": 701,
+            "bridge_handle_id": f"handle-{session['session_id']}",
+            "resolved_executable": f"/fake/{spec.command[0]}",
+        }
 
-    def stop(self, room_id, session_id, *, timeout_seconds=2.0, provider_pid=None):
-        del timeout_seconds, provider_pid
+    def stop(self, room_id, session_id, *, timeout_seconds=2.0, handle_id=""):
+        del timeout_seconds
         self.stops.append((room_id, session_id))
-        return {"stopped": True, "alive": False}
+        return {"stopped": bool(handle_id), "alive": False}
 
     def close(self):
         return None
@@ -199,14 +206,47 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
     def test_message_command_uses_server_identity_and_is_deduplicated(self):
         first = self._command("req-message", "message.send", {"content": "@codex hello"})
-        duplicate = self._command("req-message", "message.send", {"content": "different"})
+        duplicate = self._command("req-message", "message.send", {"content": "@codex hello"})
+        with self.assertRaises(RoomCommandRejected) as conflict:
+            self._command("req-message", "message.send", {"content": "different"})
         messages = [event for event in RoomStore(self.root).read_events("general") if event["type"] == "message_final"]
 
         self.assertTrue(first["accepted"])
         self.assertTrue(duplicate["deduplicated"])
+        self.assertEqual(conflict.exception.code, "idempotency_conflict")
         self.assertEqual(len(messages), 1)
         self.assertEqual(messages[0]["actor"]["participant_id"], "operator-local")
         self.assertEqual(messages[0]["content"], "@codex hello")
+
+    def test_startup_reconciliation_moves_inflight_work_back_to_pending(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = RoomStore(root)
+            store.create_room("general", label="General")
+            store.upsert_participant(
+                "general",
+                {"participant_id": "codex", "display_name": "Codex", "role": "agent", "status": "joined"},
+            )
+            store.upsert_session(
+                "general",
+                {
+                    "session_id": "codex",
+                    "participant_id": "codex",
+                    "status": "attached",
+                    "runtime_status": "busy",
+                    "inflight_event_ids": ["evt-inflight"],
+                    "pending_event_ids": ["evt-pending"],
+                    "bridge_handle_id": "lost-handle",
+                },
+            )
+            controller = RoomRealtimeController(root, providers=[_spec()], bridge_manager=FakeBridgeManager())
+            recovered = RoomStore(root).session("general", "codex")
+            controller.close()
+        self.assertEqual(recovered["runtime_status"], "disconnected")
+        self.assertEqual(recovered["inflight_event_ids"], [])
+        self.assertEqual(recovered["pending_event_ids"], ["evt-inflight", "evt-pending"])
+        self.assertTrue(recovered["recovery_required"])
+        self.assertEqual(recovered["bridge_handle_id"], "")
 
     def test_read_only_browser_cannot_send_or_control_agents(self):
         read_only = {**HOST, "operator": False, "invite_scope": "read_only", "agent_id": "guest"}
@@ -217,6 +257,216 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
         self.assertEqual(send_error.exception.code, "permission_denied")
         self.assertEqual(control_error.exception.code, "permission_denied")
+
+    def test_request_id_is_scoped_to_principal_and_payload_changes_conflict(self):
+        guest = {**HOST, "agent_id": "guest", "operator": False}
+        self.controller.connect(guest)
+        host = self._command("same-id", "message.send", {"content": "host"})
+        other = self._command("same-id", "message.send", {"content": "guest"}, guest)
+        self.assertTrue(host["accepted"])
+        self.assertTrue(other["accepted"])
+        self.assertFalse(other["deduplicated"])
+
+    def test_external_reported_pid_is_diagnostic_only_and_never_sent_to_manager_stop(self):
+        identity = _bridge_identity("external")
+        identity["provider_kind"] = "codex"
+        channel = self.controller.connect(identity)
+        self._command("external-ready", "bridge.ready", {"pid": 1}, identity)
+        stopped = self._command("external-stop", "agent.stop", {"agent_id": "external"})["result"]
+        self.assertEqual(self.manager.stops, [])
+        self.assertEqual(stopped["process"]["ownership"], "external")
+        self.assertEqual(RoomStore(self.root).session("general", "external")["reported_provider_pid"], 1)
+        self.controller.disconnect(channel)
+
+    def test_external_bridge_cannot_kill_an_unrelated_real_process(self):
+        unrelated = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        try:
+            identity = _bridge_identity("malicious-external")
+            channel = self.controller.connect(identity)
+            self._command("malicious-ready", "bridge.ready", {"pid": unrelated.pid}, identity)
+            self._command("malicious-stop", "agent.stop", {"agent_id": "malicious-external"})
+            self.assertIsNone(unrelated.poll())
+            self._command("malicious-kick", "participant.kick", {"participant_id": "malicious-external"})
+            self.assertIsNone(unrelated.poll())
+            self.controller.disconnect(channel)
+        finally:
+            unrelated.terminate()
+            unrelated.wait(timeout=2)
+
+    def test_new_bridge_generation_supersedes_old_and_stale_disconnect_is_ignored(self):
+        first_identity, first_channel = self._connect_bridge()
+        second_identity = _bridge_identity("codex")
+        second_channel = self.controller.connect(second_identity)
+        self._command("ready-second", "bridge.ready", {"pid": 909}, second_identity)
+        self.assertTrue(first_channel.closed)
+        with self.assertRaises(RoomCommandRejected) as stale:
+            self._command("stale-health", "bridge.health", {"running": True}, first_identity)
+        self.assertEqual(stale.exception.code, "stale_bridge_generation")
+        self.controller.disconnect(first_channel)
+        self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "idle")
+        self.controller.disconnect(second_channel)
+
+    def test_unknown_moderation_does_not_create_ghost_participant(self):
+        for action in ("participant.kick", "participant.mute"):
+            with self.assertRaises(RoomCommandRejected) as rejected:
+                self._command(f"unknown-{action}", action, {"participant_id": "ghost"})
+            self.assertEqual(rejected.exception.code, "not_found")
+        self.assertEqual(RoomStore(self.root).participant("general", "ghost"), {})
+
+    def test_running_agent_profile_update_changes_canonical_identity_and_next_message(self):
+        identity, channel = self._connect_bridge()
+        updated = self._command(
+            "profile-update",
+            "agent.configure",
+            {
+                "agent_id": "codex",
+                "display_name": "Luna",
+                "avatar_image_url": "/api/room-media/avatar-luna",
+            },
+        )["result"]
+        self.assertEqual(updated["status"], "profile_updated")
+        self.assertEqual(RoomStore(self.root).participant("general", "codex")["display_name"], "Luna")
+        self._command("profile-message", "message.send", {"content": "@codex introduce yourself"})
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+        self.assertIn("Your display name in this room is: Luna", assignment["provider_input"])
+        final = self._command(
+            "profile-final",
+            "message.final",
+            {"turn_id": assignment["turn_id"], "content": "I am Luna."},
+            identity,
+        )["result"]["event"]
+        self.assertEqual(final["display_name"], "Luna")
+        self.assertEqual(final["avatar_image_url"], "/api/room-media/avatar-luna")
+
+    def test_continuous_room_mode_relays_one_speaker_at_a_time_and_stops_at_limit(self):
+        self.controller.register_provider("general", _spec("peer"))
+        codex_identity, codex_channel = self._connect_bridge("codex")
+        peer_identity, peer_channel = self._connect_bridge("peer")
+        update_room_settings(
+            self.root,
+            {"room_id": "general", "conversation_mode": "continuous", "max_relay_turns": 2},
+        )
+        self._command("continuous-topic", "message.send", {"content": "둘이 이어서 이야기해"})
+        first = next(message for message in codex_channel.drain() if message.get("op") == "turn.assign")
+        self.assertFalse(any(message.get("op") == "turn.assign" for message in peer_channel.drain()))
+        self._command(
+            "continuous-first",
+            "message.final",
+            {"turn_id": first["turn_id"], "content": "첫 의견이야."},
+            codex_identity,
+        )
+        second = next(message for message in peer_channel.drain() if message.get("op") == "turn.assign")
+        self._command(
+            "continuous-second",
+            "message.final",
+            {"turn_id": second["turn_id"], "content": "두 번째 의견이야."},
+            peer_identity,
+        )
+        self.assertFalse(any(message.get("op") == "turn.assign" for message in codex_channel.drain()))
+        finals = [event for event in RoomStore(self.root).read_events("general") if event.get("type") == "message_final"]
+        self.assertEqual([event.get("participant_id") for event in finals[-3:]], ["operator-local", "codex", "peer"])
+
+    def test_zero_width_silence_finishes_without_message_or_continuous_relay(self):
+        self.controller.register_provider("general", _spec("peer"))
+        codex_identity, codex_channel = self._connect_bridge("codex")
+        _peer_identity, peer_channel = self._connect_bridge("peer")
+        update_room_settings(
+            self.root,
+            {"room_id": "general", "conversation_mode": "continuous", "max_relay_turns": 4},
+        )
+        self._command("silent-topic", "message.send", {"content": "조용히 있어"})
+        assignment = next(message for message in codex_channel.drain() if message.get("op") == "turn.assign")
+
+        result = self._command(
+            "silent-final",
+            "message.final",
+            {"turn_id": assignment["turn_id"], "content": "\u200b"},
+            codex_identity,
+        )["result"]
+
+        self.assertTrue(result["silent"])
+        self.assertFalse(any(message.get("op") == "turn.assign" for message in peer_channel.drain()))
+        events = RoomStore(self.root).read_events("general")
+        self.assertEqual(
+            [event.get("participant_id") for event in events if event.get("type") == "message_final"],
+            ["operator-local"],
+        )
+        self.assertEqual(events[-2]["type"], "turn_finished")
+        self.assertEqual(events[-2]["status"], "silent")
+        self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "idle")
+
+    def test_snapshot_and_visible_events_do_not_expose_process_or_path_fields(self):
+        self.controller.store.update_session_fields(
+            "general",
+            "codex",
+            pid=123,
+            reported_provider_pid=456,
+            bridge_pid=789,
+            bridge_handle_id="secret-handle",
+            resolved_executable="/private/bin/codex",
+            workspace="/private/workspace",
+            command_configured=["codex", "--secret"],
+            provider_session_id="provider-secret",
+        )
+        event = self.controller.store.append_event(
+            "general",
+            "message_final",
+            participant_id="operator-local",
+            content="safe",
+            legacy_source_path="/private/legacy.jsonl",
+            media={"id": "media-1", "filename": "image.png", "path": "/private/image.png"},
+        )
+        snapshot = self.controller.snapshot(HOST)
+        public_session = next(item for item in snapshot["agent_sessions"] if item["session_id"] == "codex")
+        serialized = str(snapshot)
+        for forbidden in (
+            "secret-handle",
+            "/private/bin/codex",
+            "/private/workspace",
+            "provider-secret",
+            "/private/legacy.jsonl",
+            "/private/image.png",
+        ):
+            self.assertNotIn(forbidden, serialized)
+        self.assertNotIn("pid", public_session)
+        self.assertNotIn("legacy_source_path", event)
+        self.assertNotIn("path", event["media"])
+
+    def test_member_leave_and_owner_confirmed_delete(self):
+        identity_store = identity_store_for_output_root(self.root)
+        identity_store.upsert_room(room_id="general", owner_id="owner-user", label="Council")
+        identity_store.resolve_credential_user(
+            "owner-device",
+            user_id="owner-user",
+            participant_id="owner",
+            display_name="Owner",
+        )
+        owner = {**HOST, "agent_id": "owner"}
+        member = {**HOST, "agent_id": "member", "operator": False}
+        artifact = self.root / "rooms" / "general" / "media" / "artifact.txt"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text("delete me", encoding="utf-8")
+        self.controller.connect(owner)
+        self.controller.connect(member)
+        with self.assertRaises(RoomCommandRejected) as owner_leave:
+            self._command("owner-leave", "participant.leave", {}, owner)
+        self.assertEqual(owner_leave.exception.code, "owner_must_transfer_or_delete")
+        left = self._command("member-leave", "participant.leave", {}, member)
+        self.assertTrue(left["accepted"])
+        self.assertEqual(RoomStore(self.root).participant("general", "member")["status"], "left")
+        stale_channel = self.controller.connect(member)
+        self.assertEqual(RoomStore(self.root).participant("general", "member")["status"], "left")
+        self.controller.disconnect(stale_channel)
+        with self.assertRaises(RoomCommandRejected) as mismatch:
+            self._command("delete-wrong", "room.delete", {"confirmation_name": "Wrong"}, owner)
+        self.assertEqual(mismatch.exception.code, "confirmation_mismatch")
+        deleted = self._command("delete-right", "room.delete", {"confirmation_name": "Council"}, owner)
+        self.assertTrue(deleted["result"]["deleted"])
+        self.assertTrue(RoomStore(self.root).room_is_deleted("general"))
+        self.assertIsNone(identity_store.get_room("general"))
+        self.assertFalse(artifact.exists())
+        with self.assertRaises(ValueError):
+            self.controller.ensure_room("general")
 
     def test_snapshot_capabilities_are_server_authoritative(self):
         operator_snapshot = self.controller.snapshot(HOST)
@@ -426,6 +676,44 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertNotIn("-p", session["command_configured"])
         self.assertNotIn("--print", session["command_configured"])
 
+    def test_restart_restores_dynamic_server_owned_provider_for_ui_resume(self):
+        created = self._command(
+            "req-create-opencode",
+            "agent.create",
+            {
+                "provider_id": "opencode",
+                "display_name": "OpenCode",
+                "workspace": str(self.root),
+                "model": "opencode-go/glm-5.2",
+            },
+        )
+        agent_id = created["result"]["agent_session"]["session_id"]
+        self.controller.close()
+        restarted_manager = FakeBridgeManager()
+        self.controller = RoomRealtimeController(
+            self.root,
+            providers=[_spec()],
+            bridge_manager=restarted_manager,
+            recovery_scheduler=self.recovery_scheduler,
+        )
+
+        resumed = self._command("req-resume-opencode", "agent.resume", {"agent_id": agent_id})
+        bridge_identity = {
+            **_bridge_identity(agent_id),
+            "provider_kind": "opencode_server",
+        }
+        restarted_controller_spec = self.controller._provider("general", agent_id)
+        channel = self.controller.connect(bridge_identity)
+
+        self.assertTrue(resumed["accepted"])
+        self.assertEqual(restarted_manager.starts, [("general", agent_id)])
+        self.assertEqual(restarted_controller_spec.command, ("opencode",))
+        self.assertEqual(self.controller._provider("general", agent_id).command, ("opencode",))
+        session = RoomStore(self.root).session("general", agent_id)
+        self.assertEqual(session["provider_kind"], "opencode_server")
+        self.assertEqual(session["model"], "opencode-go/glm-5.2")
+        self.controller.disconnect(channel)
+
     def test_same_agent_name_in_different_rooms_keeps_separate_runtime_profiles(self):
         first = self._command(
             "req-create-first",
@@ -451,9 +739,12 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
         first_session = first["result"]["agent_session"]
         second_session = second["result"]["agent_session"]
+        first_internal = RoomStore(self.root).session("general", first_session["session_id"])
+        second_internal = RoomStore(self.root).session("other-room", second_session["session_id"])
 
         self.assertEqual(first_session["participant_id"], second_session["participant_id"])
-        self.assertNotEqual(first_session["workspace"], second_session["workspace"])
+        self.assertNotIn("workspace", first_session)
+        self.assertNotEqual(first_internal["workspace"], second_internal["workspace"])
         self.assertNotEqual(first_session["runtime_profile_key"], second_session["runtime_profile_key"])
 
     def test_running_agent_rejects_profile_change_without_mutating_its_session(self):
@@ -504,7 +795,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertIn("@codex answer this", assignment["provider_input"])
         self.assertEqual(assignment["input_up_to_seq"], message["result"]["event_seq"])
         self.assertEqual(session["runtime_status"], "busy")
-        self.assertEqual(session["pid"], 808)
+        self.assertEqual(session["reported_provider_pid"], 808)
         self.assertEqual(identity["client_type"], "agent_bridge")
 
     def test_busy_agent_automatically_receives_next_pending_turn_after_final(self):
@@ -632,6 +923,18 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self._command("req-prompt", "message.send", {"content": "@codex hello"})
         assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
 
+        activity = self._command(
+            "req-activity",
+            "activity.update",
+            {
+                "turn_id": assignment["turn_id"],
+                "category": "command",
+                "status": "running",
+                "content": "cat /private/project/.env TOKEN=secret",
+            },
+            identity,
+        )["result"]["event"]
+
         self._command(
             "req-delta-one",
             "message.delta",
@@ -654,6 +957,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         event_types = [event["type"] for event in events]
 
         self.assertIn("turn_state", event_types)
+        self.assertIn("activity_delta", event_types)
         self.assertIn("message_delta", event_types)
         self.assertIn("message_final", event_types)
         self.assertIn("turn_finished", event_types)
@@ -661,8 +965,22 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             [event["content"] for event in events if event["type"] == "message_delta"],
             ["clean", " delta"],
         )
+        self.assertEqual(activity["content"], "명령 실행 중")
+        self.assertNotIn("/private/project", str(activity))
+        self.assertNotIn("TOKEN", str(activity))
         self.assertFalse((self.root / "rooms" / "general" / "live_cli_events.jsonl").exists())
         self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "idle")
+
+    def test_canonical_room_messages_preserve_markdown_newlines(self):
+        markdown = "| 이름 | 상태 |\n| --- | --- |\n| Codex | 대기 |"
+
+        event = self._command(
+            "req-markdown-message",
+            "message.send",
+            {"content": markdown, "target_agent_id": "codex"},
+        )["result"]["event"]
+
+        self.assertEqual(event["content"], markdown)
 
     def test_runtime_diagnostics_survive_failure_without_exposing_raw_provider_output(self):
         self._command("req-start-diagnostics", "agent.start", {"agent_id": "codex"})
@@ -729,7 +1047,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertTrue(paused["process_preserved"])
         self.assertEqual(paused_session["runtime_status"], "paused")
         self.assertFalse(paused_session["enabled"])
-        self.assertEqual(paused_session["pid"], 808)
+        self.assertEqual(paused_session["reported_provider_pid"], 808)
         self.assertEqual(self.manager.starts, [("general", "codex")])
         self.assertEqual(self.manager.stops, [])
 
@@ -745,7 +1063,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertTrue(resumed["runtime_reused"])
         self.assertTrue(resumed["process_reused"])
         self.assertEqual(resumed_session["runtime_status"], "busy")
-        self.assertEqual(resumed_session["pid"], 808)
+        self.assertEqual(resumed_session["reported_provider_pid"], 808)
         self.assertEqual(assignment["source_event_id"], waiting["pending_event_ids"][0])
         self.assertEqual(self.manager.starts, [("general", "codex")])
         self.assertEqual(self.manager.stops, [])

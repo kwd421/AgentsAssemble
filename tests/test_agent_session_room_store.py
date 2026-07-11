@@ -2075,10 +2075,16 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
     def test_provider_turn_input_includes_other_public_delta_not_own_prior_message(self):
         store = RoomStore(self.output_root)
-        store.create_room("room-a")
+        store.create_room("room-a", label="Night Council")
         resume_agent_session_payload(
             self.output_root,
-            {"room_id": "room-a", "agent_id": "agent-a", "session_id": "session-a", "provider_kind": "codex_live_session"},
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-a",
+                "session_id": "session-a",
+                "display_name": "Luna",
+                "provider_kind": "codex_live_session",
+            },
         )
         store.append_event("room-a", "message_final", participant_id="agent-a", content="my previous answer")
         store.append_event("room-a", "message_final", participant_id="agent-b", content="other agent update")
@@ -2097,6 +2103,8 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertNotIn("my previous answer", packet["provider_input"])
         self.assertNotIn("provider_session_id", packet["provider_input"])
         self.assertNotIn("diagnostics", packet["provider_input"])
+        self.assertIn("Your display name in this room is: Luna", packet["provider_input"])
+        self.assertIn("The room name is: Night Council", packet["provider_input"])
 
     def test_provider_delta_truncates_long_message_and_advances_cursor(self):
         store = RoomStore(self.output_root)

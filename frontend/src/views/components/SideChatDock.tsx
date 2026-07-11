@@ -55,7 +55,7 @@ export default function SideChatDock({
   onCloseThread?: () => void;
   canPostMessages?: boolean;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [draftsByContext, setDraftsByContext] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState("");
@@ -207,7 +207,10 @@ export default function SideChatDock({
           onChange={setMessage}
           maxLength={2000}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.nativeEvent.isComposing) void handleSend();
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              void handleSend();
+            }
           }}
           placeholder={readOnlyReason || (threadContext ? "스레드에 답장" : "스레드 메모")}
           disabled={busy || composerDisabled}

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from dataclasses import replace
+import hashlib
+import json
 import threading
+import shutil
 from pathlib import Path
 from typing import Callable, Protocol
 from uuid import uuid4
 
 from agentsassemble.agent_sessions import build_room_turn_packet
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
 from agentsassemble.native_cli_providers import (
     NativeCliProviderSpec,
     UnsupportedNativeCliProvider,
@@ -17,7 +21,8 @@ from agentsassemble.native_cli_providers import (
     validate_native_cli_provider_spec,
 )
 from agentsassemble.provider_capabilities import provider_catalog_payload
-from agentsassemble.room_invite import revoke_sessions_for_participant
+from agentsassemble.identity_store import identity_store_for_output_root
+from agentsassemble.room_invite import revoke_room_access, revoke_sessions_for_participant
 from agentsassemble.room_commands import (
     RoomCommandValidationError,
     capabilities_for_identity,
@@ -26,6 +31,7 @@ from agentsassemble.room_commands import (
 from agentsassemble.room_event_broker import ROOM_EVENT_STREAM, RoomEventBroker, RoomSocketChannel
 from agentsassemble.room_members import is_room_member_muted, remove_room_member, set_room_member_muted
 from agentsassemble.room_routing import route_message_targets
+from agentsassemble.room_settings import room_settings_payload
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room_types import RoomCommand, RoomEvent, TurnAssignment
 from agentsassemble.voice_presence import leave_all_voice
@@ -51,7 +57,7 @@ class AgentBridgeManager(Protocol):
         session_id: str,
         *,
         timeout_seconds: float = 2.0,
-        provider_pid: int | None = None,
+        handle_id: str = "",
     ) -> dict[str, object]: ...
 
     def close(self) -> None: ...
@@ -108,6 +114,37 @@ class RoomRealtimeController:
         self.ensure_room(self.default_room_id)
         for spec in default_providers.values():
             self._ensure_provider_session(self.default_room_id, spec)
+        self._restore_server_owned_providers()
+        self._reconcile_startup_sessions()
+
+    def _restore_server_owned_providers(self) -> None:
+        """Rebuild startable provider specs from durable Agent Sessions."""
+        for room in self.store.list_rooms(include_archived=True):
+            room_id = clean_lobby_text(room.get("room_id"), limit=128)
+            if not room_id:
+                continue
+            self.ensure_room(room_id)
+            for session in self.store.sessions(room_id):
+                agent_id = clean_lobby_text(session.get("participant_id"), limit=128)
+                if not agent_id or agent_id in self._room_providers(room_id):
+                    continue
+                if session.get("process_ownership") != "server":
+                    continue
+                definition = native_cli_provider_definition(session.get("provider_kind"))
+                if definition is None:
+                    continue
+                spec = definition.make_spec(
+                    agent_id=agent_id,
+                    display_name=clean_lobby_text(session.get("display_name"), limit=128) or agent_id,
+                    cwd=clean_lobby_text(session.get("workspace"), limit=500) or ".",
+                    model=clean_lobby_text(session.get("model"), limit=128),
+                    reasoning_effort=clean_lobby_text(session.get("reasoning_effort"), limit=32),
+                    service_tier=clean_lobby_text(session.get("service_tier"), limit=32),
+                    variant=clean_lobby_text(session.get("variant"), limit=64),
+                    permission_mode=clean_lobby_text(session.get("permission_mode"), limit=64),
+                )
+                with self._lock:
+                    self._providers_by_room.setdefault(room_id, {})[agent_id] = spec
 
     def register_provider(self, room_id: str, spec: NativeCliProviderSpec) -> dict[str, object]:
         clean_room_id = clean_lobby_text(room_id, limit=128)
@@ -150,6 +187,42 @@ class RoomRealtimeController:
             self._publish_session_state(clean_room_id, current)
         return self._public_session(current)
 
+    def _reconcile_startup_sessions(self) -> None:
+        active_states = {"starting", "idle", "busy", "paused", "recovering", "stopping"}
+        for room in self.store.list_rooms(include_archived=True):
+            room_id = clean_lobby_text(room.get("room_id"), limit=128)
+            if not room_id:
+                continue
+            for session in self.store.sessions(room_id):
+                if session.get("runtime_status") not in active_states:
+                    continue
+                pending = _dedupe_text_list(
+                    [
+                        *list(session.get("inflight_event_ids") or []),
+                        *list(session.get("pending_event_ids") or []),
+                    ]
+                )
+                session_id = clean_lobby_text(session.get("session_id"), limit=128)
+                updated = self.store.update_session_fields(
+                    room_id,
+                    session_id,
+                    status="unavailable",
+                    runtime_status="disconnected",
+                    pid=None,
+                    reported_provider_pid=None,
+                    bridge_pid=None,
+                    bridge_handle_id="",
+                    active_turn_id="",
+                    turn_phase="",
+                    inflight_event_ids=[],
+                    pending_event_ids=pending,
+                    recovery_required=True,
+                    last_error="Server restarted without a current bridge lease or owned process handle.",
+                )
+                participant_id = clean_lobby_text(updated.get("participant_id"), limit=128)
+                if participant_id and self.store.participant(room_id, participant_id):
+                    self.store.update_participant_fields(room_id, participant_id, status="detached")
+
     def ensure_room(self, room_id: str) -> dict[str, object]:
         clean_room_id = clean_lobby_text(room_id, limit=128)
         if not clean_room_id:
@@ -171,21 +244,32 @@ class RoomRealtimeController:
         else:
             participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
             if participant_id:
-                self.store.upsert_participant(
-                    room_id,
-                    {
-                        "participant_id": participant_id,
-                        "display_name": clean_lobby_text(identity.get("display_name"), limit=64) or participant_id,
-                        "participant_type": "human",
-                        "role": "host" if identity.get("operator") else "member",
-                        "status": "joined",
-                    },
-                )
+                existing = self.store.participant(room_id, participant_id)
+                if not existing:
+                    self.store.upsert_participant(
+                        room_id,
+                        {
+                            "participant_id": participant_id,
+                            "display_name": clean_lobby_text(identity.get("display_name"), limit=64) or participant_id,
+                            "participant_type": "human",
+                            "role": "host" if identity.get("operator") else "member",
+                            "status": "joined",
+                        },
+                    )
+                elif existing.get("status") not in {"left", "kicked"}:
+                    self.store.update_participant_fields(
+                        room_id,
+                        participant_id,
+                        display_name=clean_lobby_text(identity.get("display_name"), limit=64) or participant_id,
+                    )
         return self.broker.connect(identity)
 
     def _ensure_external_bridge_session(self, room_id: str, identity: dict[str, object]) -> None:
         participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
         if not participant_id:
+            return
+        existing_session = self.store.session(room_id, participant_id)
+        if existing_session.get("process_ownership") == "server":
             return
         display_name = clean_lobby_text(identity.get("display_name"), limit=64) or participant_id
         provider_kind = clean_lobby_text(identity.get("provider_kind"), limit=64) or "external_agent"
@@ -201,7 +285,7 @@ class RoomRealtimeController:
         )
         with self._lock:
             self._providers_by_room.setdefault(room_id, {})[participant_id] = spec
-        if self.store.session(room_id, participant_id):
+        if existing_session:
             return
         self.store.upsert_participant(
             room_id,
@@ -210,7 +294,7 @@ class RoomRealtimeController:
                 "display_name": display_name,
                 "participant_type": "agent",
                 "role": "agent",
-                "owner_id": "operator-local",
+                "owner_id": clean_lobby_text(identity.get("owner_id"), limit=128),
                 "provider_kind": provider_kind,
                 "connection_kind": "native_cli_bridge",
                 "status": "joined",
@@ -238,6 +322,10 @@ class RoomRealtimeController:
                 "last_seen_seq": 0,
                 "bootstrap_cutoff_seq": 0,
                 "external_owned": True,
+                "process_ownership": "external",
+                "reported_provider_pid": None,
+                "bridge_handle_id": "",
+                "bridge_generation": 0,
                 "pty": False,
                 "transport": "websocket",
                 "is_one_shot": False,
@@ -260,8 +348,10 @@ class RoomRealtimeController:
 
     def disconnect(self, channel: RoomSocketChannel) -> None:
         identity = channel.identity
-        self.broker.disconnect(channel)
+        was_active = self.broker.disconnect(channel)
         if identity.get("client_type") != "agent_bridge":
+            return
+        if not was_active:
             return
         room_id = clean_lobby_text(identity.get("meeting_id"), limit=128)
         session_id = clean_lobby_text(identity.get("session_id") or identity.get("agent_id"), limit=128)
@@ -319,7 +409,12 @@ class RoomRealtimeController:
             and oldest_seq
             and self.store.oldest_event_sequence(room_id) < oldest_seq
         )
-        sessions = [self._public_session(session) for session in self.store.sessions(room_id)]
+        stored_sessions = self.store.sessions(room_id)
+        if bridge:
+            own_session_id = clean_lobby_text(identity.get("session_id") or identity.get("agent_id"), limit=128)
+            stored_sessions = [session for session in stored_sessions if session.get("session_id") == own_session_id]
+        sessions = [self._public_session(session) for session in stored_sessions]
+        events = [_public_event(event) for event in events]
         active_turns = [
             {
                 "turn_id": session.get("active_turn_id"),
@@ -333,7 +428,15 @@ class RoomRealtimeController:
             "op": "snapshot",
             "stream": ROOM_EVENT_STREAM,
             "room": self.store.room(room_id),
-            "participants": self.store.participants(room_id),
+            "participants": (
+                [
+                    participant
+                    for participant in self.store.participants(room_id)
+                    if participant.get("participant_id") == identity.get("agent_id")
+                ]
+                if bridge
+                else self.store.participants(room_id)
+            ),
             "agent_sessions": sessions,
             "active_turns": active_turns,
             "events": events,
@@ -342,7 +445,7 @@ class RoomRealtimeController:
             "has_more_before": has_more_before,
             "resume_gap": resume_gap,
             "snapshot_mode": snapshot_mode,
-            "available_providers": provider_catalog_payload(),
+            "available_providers": [] if bridge else provider_catalog_payload(),
             "capabilities": self.capabilities(identity),
         }
 
@@ -455,9 +558,18 @@ class RoomRealtimeController:
                 "deduplicated": False,
             }
         with self._lock:
-            prior = self.store.command_result(room_id, request_id)
+            principal_id = _command_principal(identity)
+            payload_hash = hashlib.sha256(
+                json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()
+            prior = self.store.command_record(room_id, principal_id, request_id)
             if prior:
-                return {**prior, "deduplicated": True}
+                if prior.get("action") != action or prior.get("payload_hash") != payload_hash:
+                    raise RoomCommandRejected(
+                        "request_id was already used for a different command.",
+                        code="idempotency_conflict",
+                    )
+                return {**dict(prior.get("result") or {}), "deduplicated": True}
             result = self._execute_action(
                 identity,
                 room_id,
@@ -474,7 +586,16 @@ class RoomRealtimeController:
                 "result": result,
                 "deduplicated": False,
             }
-            return self.store.record_command_result(room_id, request_id, ack)
+            if action == "room.delete":
+                return ack
+            return self.store.record_command_result(
+                room_id,
+                request_id,
+                ack,
+                principal_id=principal_id,
+                action=action,
+                payload_hash=payload_hash,
+            )
 
     def close(self) -> None:
         with self._lock:
@@ -580,6 +701,12 @@ class RoomRealtimeController:
         if action == "message.send":
             self._require_capability(identity, "message.send")
             return self._send_message(identity, room_id, payload)
+        if action == "participant.leave":
+            self._require_capability(identity, "participant.leave")
+            return self._leave_participant(identity, room_id)
+        if action == "room.delete":
+            self._require_capability(identity, "room.delete")
+            return self._delete_room(identity, room_id, payload)
         if action == "agent.create":
             self._require_capability(identity, "agent.control")
             return self._create_agent(
@@ -616,6 +743,8 @@ class RoomRealtimeController:
             return self._bridge_health(identity, room_id, payload)
         if action == "turn.state":
             return self._turn_state(identity, room_id, payload)
+        if action == "activity.update":
+            return self._activity_update(identity, room_id, payload)
         if action == "message.delta":
             return self._message_delta(identity, room_id, payload)
         if action == "message.final":
@@ -625,7 +754,7 @@ class RoomRealtimeController:
         raise RoomCommandRejected(f"Unsupported room command: {action}", code="unknown_action")
 
     def _send_message(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
-        content = clean_lobby_text(payload.get("content") or payload.get("message"), limit=12000)
+        content = _room_message_text(payload.get("content") or payload.get("message"), limit=12000)
         kind = clean_lobby_text(payload.get("kind"), limit=64) or "message"
         if kind not in {"vote", "vote_cast"} and not content:
             raise RoomCommandRejected("Message content is required.", code="empty")
@@ -730,10 +859,19 @@ class RoomRealtimeController:
             room_id,
             agent_id,
             bridge_pid=launch.get("bridge_pid"),
+            bridge_handle_id=launch.get("bridge_handle_id") or "",
+            process_ownership="server",
             resolved_executable=launch.get("resolved_executable") or "",
         )
         self._publish_session_state(room_id, updated)
-        return {"agent_session": self._public_session(updated), "launch": dict(launch), "runtime_reused": False}
+        return {
+            "agent_session": self._public_session(updated),
+            "launch": {
+                "runtime_reused": bool(launch.get("runtime_reused")),
+                "runtime_profile_key": launch.get("runtime_profile_key") or "",
+            },
+            "runtime_reused": False,
+        }
 
     def _create_agent(
         self,
@@ -767,6 +905,55 @@ class RoomRealtimeController:
         current = self.store.session(room_id, agent_id)
         if not current:
             raise RoomCommandRejected(f"Agent session {agent_id} was not found.", code="not_found")
+        runtime_keys = {
+            "provider_id",
+            "provider_kind",
+            "workspace",
+            "model",
+            "reasoning_effort",
+            "service_tier",
+            "variant",
+            "permission_mode",
+            "transport",
+        }
+        if not any(key in payload for key in runtime_keys):
+            display_name = clean_lobby_text(
+                payload.get("display_name") or current.get("display_name") or agent_id,
+                limit=80,
+            )
+            avatar_image_url = clean_lobby_text(payload.get("avatar_image_url"), limit=4096)
+            participant = self.store.participant(room_id, agent_id)
+            if not participant:
+                raise RoomCommandRejected(f"Participant {agent_id} was not found.", code="not_found")
+            updated_participant = self.store.update_participant_fields(
+                room_id,
+                agent_id,
+                display_name=display_name,
+                avatar_image_url=avatar_image_url,
+            )
+            updated_session = self.store.update_session_fields(
+                room_id,
+                agent_id,
+                display_name=display_name,
+                avatar_image_url=avatar_image_url,
+            )
+            with self._lock:
+                current_spec = self._providers_by_room.get(room_id, {}).get(agent_id)
+                if current_spec is not None:
+                    self._providers_by_room[room_id][agent_id] = replace(current_spec, display_name=display_name)
+            self.store.append_event(
+                room_id,
+                "participant_updated",
+                participant_id=agent_id,
+                display_name=display_name,
+                avatar_image_url=avatar_image_url,
+            )
+            self._publish_session_state(room_id, updated_session)
+            return {
+                "status": "profile_updated",
+                "agent_session": self._public_session(updated_session),
+                "participant": updated_participant,
+            }
         if current.get("runtime_status") in {"starting", "idle", "busy", "paused", "recovering", "stopping"}:
             raise RoomCommandRejected(
                 "Stop this Agent Session before changing its runtime settings.",
@@ -892,29 +1079,34 @@ class RoomRealtimeController:
             self._launch_contexts.pop(key, None)
         self.store.update_session_fields(room_id, agent_id, runtime_status="stopping")
         self.broker.direct_to_bridge(room_id, agent_id, {"op": "agent.control", "action": "stop"})
-        stopped = {"stopped": True, "alive": False}
-        if self.bridge_manager is not None:
+        ownership = clean_lobby_text(session.get("process_ownership"), limit=32) or (
+            "external" if session.get("external_owned") else "server"
+        )
+        stopped = {"stopped": ownership == "external", "alive": False, "ownership": ownership}
+        if self.bridge_manager is not None and ownership == "server":
             stopped = self.bridge_manager.stop(
                 room_id,
                 agent_id,
-                provider_pid=_safe_int_or_none(session.get("pid")),
+                handle_id=clean_lobby_text(session.get("bridge_handle_id"), limit=128),
             )
         pending = _dedupe_text_list([*list(session.get("inflight_event_ids") or []), *list(session.get("pending_event_ids") or [])])
+        handle_lost = ownership == "server" and not bool(stopped.get("stopped"))
         updated = self.store.update_session_fields(
             room_id,
             agent_id,
             status="detached",
             enabled=False if disable else bool(session.get("enabled")),
-            runtime_status="stopped",
+            runtime_status="disconnected" if handle_lost else "stopped",
             pid=None,
             bridge_pid=None,
+            bridge_handle_id="",
             provider_session_active=False,
             active_turn_id="",
             turn_phase="",
             inflight_event_ids=[],
             pending_event_ids=pending,
-            last_error="",
-            recovery_required=False,
+            last_error="Server-owned bridge handle was lost; no PID fallback was attempted." if handle_lost else "",
+            recovery_required=handle_lost,
             recovery_attempt_count=0,
         )
         participant = self.store.participant(room_id, agent_id)
@@ -979,16 +1171,7 @@ class RoomRealtimeController:
             raise RoomCommandRejected("The room host cannot be removed.", code="permission_denied")
         participant = self.store.participant(room_id, participant_id)
         if not participant:
-            participant, _created = self.store.upsert_participant(
-                room_id,
-                {
-                    "participant_id": participant_id,
-                    "display_name": participant_id,
-                    "participant_type": "human",
-                    "role": "member",
-                    "status": "joined",
-                },
-            )
+            raise RoomCommandRejected(f"Participant {participant_id} was not found.", code="not_found")
         if participant.get("role") == "agent":
             self._stop_agent(room_id, participant_id)
             self._providers_by_room.get(room_id, {}).pop(participant_id, None)
@@ -1006,16 +1189,7 @@ class RoomRealtimeController:
     def _mute_participant(self, room_id: str, participant_id: str, muted: bool) -> dict[str, object]:
         participant = self.store.participant(room_id, participant_id)
         if not participant:
-            participant, _created = self.store.upsert_participant(
-                room_id,
-                {
-                    "participant_id": participant_id,
-                    "display_name": participant_id,
-                    "participant_type": "human",
-                    "role": "member",
-                    "status": "joined",
-                },
-            )
+            raise RoomCommandRejected(f"Participant {participant_id} was not found.", code="not_found")
         member = set_room_member_muted(self.output_root, meeting_id=room_id, participant_id=participant_id, muted=muted)
         updated = self.store.update_participant_fields(room_id, participant_id, muted=muted)
         session = self.store.session(room_id, participant_id)
@@ -1032,8 +1206,91 @@ class RoomRealtimeController:
         )
         return {"participant": updated, "member": member}
 
+    def _leave_participant(self, identity: dict[str, object], room_id: str) -> dict[str, object]:
+        participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
+        participant = self.store.participant(room_id, participant_id)
+        if not participant:
+            raise RoomCommandRejected("Participant was not found in this room.", code="not_found")
+        if self._is_room_owner(identity, room_id):
+            raise RoomCommandRejected(
+                "The room owner must transfer ownership or delete the server.",
+                code="owner_must_transfer_or_delete",
+            )
+        updated = self.store.update_participant_fields(room_id, participant_id, status="left")
+        identity_store_for_output_root(self.output_root).remove_membership(room_id, participant_id)
+        leave_all_voice(room_id, participant_id)
+        event = self.store.append_event(room_id, "participant_left", participant_id=participant_id)
+        timer = threading.Timer(
+            0.1,
+            revoke_sessions_for_participant,
+            args=(room_id, participant_id),
+        )
+        timer.daemon = True
+        timer.start()
+        return {"participant": updated, "event": event, "revocation_scheduled": True}
+
+    def _delete_room(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        if not self._is_room_owner(identity, room_id):
+            raise RoomCommandRejected("Only the room owner can delete this server.", code="permission_denied")
+        identity_store = identity_store_for_output_root(self.output_root)
+        identity_room = identity_store.get_room(room_id) or {}
+        canonical_room = self.store.room(room_id)
+        room_name = clean_lobby_text(
+            identity_room.get("label") or canonical_room.get("label") or room_id,
+            limit=128,
+        )
+        confirmation = str(payload.get("confirmation_name") or "")
+        if confirmation != room_name:
+            raise RoomCommandRejected("The confirmation name does not match the server name.", code="confirmation_mismatch")
+        for session in list(self.store.sessions(room_id)):
+            session_id = clean_lobby_text(session.get("session_id"), limit=128)
+            if not session_id:
+                continue
+            try:
+                self._stop_agent(room_id, session_id)
+            except (RoomCommandRejected, ValueError):
+                continue
+        self.broker.broadcast_control(
+            room_id,
+            {"op": "room_deleted", "room_id": room_id, "room_name": room_name},
+        )
+        revoked = revoke_room_access(room_id)
+        identity_store.delete_room(room_id)
+        remove_listener = self._event_listener_removers.pop(room_id, None)
+        if remove_listener is not None:
+            remove_listener()
+        self.store.delete_room(room_id, reason="owner deleted server")
+        self._providers_by_room.pop(room_id, None)
+        for path in (self.output_root / "rooms" / room_id, self.output_root / "meetings" / room_id):
+            if path.exists() and path.is_dir():
+                shutil.rmtree(path)
+        threading.Timer(0.1, lambda: self.broker.disconnect_room(room_id)).start()
+        return {"room_id": room_id, "deleted": True, **revoked}
+
+    def _is_room_owner(self, identity: dict[str, object], room_id: str) -> bool:
+        store = identity_store_for_output_root(self.output_root)
+        room = store.get_room(room_id) or {}
+        owner_id = clean_lobby_text(room.get("owner_id"), limit=128)
+        participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
+        user = store.user_for_participant(participant_id) or {}
+        user_id = clean_lobby_text(user.get("user_id"), limit=128)
+        if owner_id:
+            return owner_id in {participant_id, user_id}
+        return bool(identity.get("operator"))
+
     def _bridge_ready(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
-        agent_id, session = self._bridge_session(identity, room_id)
+        agent_id, session = self._bridge_session(identity, room_id, allow_unleased=True)
+        connection_id = clean_lobby_text(identity.get("connection_id"), limit=128)
+        channel = self.broker.channel(connection_id)
+        if channel is None:
+            raise RoomCommandRejected("Agent bridge connection is no longer active.", code="bridge_disconnected")
+        generation = self.broker.activate_bridge(channel)
+        identity["bridge_generation"] = generation
         previous_participant = self.store.participant(room_id, agent_id)
         self.store.update_participant_fields(room_id, agent_id, status="joined")
         updated = self.store.update_session_fields(
@@ -1042,7 +1299,8 @@ class RoomRealtimeController:
             status="attached",
             enabled=True,
             runtime_status="idle",
-            pid=_safe_int_or_none(payload.get("pid")),
+            reported_provider_pid=_safe_int_or_none(payload.get("pid")),
+            bridge_generation=generation,
             pty=bool(payload.get("pty", True)),
             transport=clean_lobby_text(payload.get("transport"), limit=64) or "pty",
             is_one_shot=bool(payload.get("is_one_shot", False)),
@@ -1064,9 +1322,11 @@ class RoomRealtimeController:
         _agent_id, session = self._bridge_session(identity, room_id)
         fields: dict[str, object] = {
             key: payload[key]
-            for key in ("pid", "running", "resolved_executable", "started_at", "last_error", "returncode")
+            for key in ("running", "resolved_executable", "started_at", "last_error", "returncode")
             if key in payload
         }
+        if "pid" in payload:
+            fields["reported_provider_pid"] = _safe_int_or_none(payload.get("pid"))
         fields.update(_runtime_diagnostic_fields(payload))
         fields.update(_runtime_profile_fields(payload))
         updated = self.store.update_session_fields(room_id, str(session["session_id"]), **fields)
@@ -1098,7 +1358,7 @@ class RoomRealtimeController:
     def _message_delta(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         agent_id, session = self._active_bridge_turn(identity, room_id, payload)
         content = _message_delta_text(payload.get("content"), limit=12000)
-        if not content.strip():
+        if not has_room_visible_text(content):
             raise RoomCommandRejected("Delta content is required.", code="empty")
         if session.get("turn_phase") != "streaming":
             self.store.update_session_fields(room_id, str(session["session_id"]), turn_phase="streaming")
@@ -1121,15 +1381,57 @@ class RoomRealtimeController:
         )
         return {"event": event, "event_seq": event["seq"]}
 
+    def _activity_update(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        agent_id, session = self._active_bridge_turn(identity, room_id, payload)
+        category = clean_lobby_text(payload.get("category"), limit=32)
+        status = clean_lobby_text(payload.get("status"), limit=32)
+        content, activity_kind = _public_activity(category, status)
+        event = self.store.append_event(
+            room_id,
+            "activity_delta",
+            participant_id=agent_id,
+            participant_type="agent",
+            actor_id=agent_id,
+            actor_type="agent",
+            display_name=session.get("display_name") or agent_id,
+            session_id=session["session_id"],
+            turn_id=session["active_turn_id"],
+            activity_kind=activity_kind,
+            category=category if category in _PUBLIC_ACTIVITY_LABELS else "tool",
+            status=status if status in {"started", "running", "completed"} else "running",
+            content=content,
+        )
+        return {"event": event, "event_seq": event["seq"]}
+
     def _message_final(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         agent_id, session = self._active_bridge_turn(identity, room_id, payload)
-        content = clean_lobby_text(payload.get("content"), limit=12000)
-        if not content:
-            raise RoomCommandRejected("Final message content is required.", code="empty")
+        content = _room_message_text(payload.get("content"), limit=12000)
         active_turn_id = str(session["active_turn_id"])
         input_up_to_event_id = clean_lobby_text(session.get("input_up_to_event_id"), limit=128)
         input_up_to_seq = _safe_bounded_int(session.get("input_up_to_seq"), default=0, minimum=0)
         relay_depth = int(session.get("active_relay_depth") or 0)
+        latency = _merged_latency(session.get("latency"), payload.get("latency"))
+        diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
+        if not has_room_visible_text(content):
+            finished, current = self._complete_active_turn(
+                room_id,
+                session,
+                input_up_to_event_id=input_up_to_event_id,
+                input_up_to_seq=input_up_to_seq,
+                latency=latency,
+                diagnostics=diagnostics,
+                finish_status="silent",
+            )
+            return {
+                "silent": True,
+                "turn_finished": finished,
+                "agent_session": self._public_session(current),
+            }
         event = self.store.append_event(
             room_id,
             "message_final",
@@ -1138,6 +1440,7 @@ class RoomRealtimeController:
             actor_id=agent_id,
             actor_type="agent",
             display_name=session.get("display_name") or agent_id,
+            avatar_image_url=session.get("avatar_image_url") or "",
             session_id=session["session_id"],
             turn_id=active_turn_id,
             content=content,
@@ -1145,46 +1448,73 @@ class RoomRealtimeController:
             relay_depth=relay_depth,
             message_source=payload.get("message_source"),
         )
-        latency = _merged_latency(session.get("latency"), payload.get("latency"))
-        diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
+        finished, current = self._complete_active_turn(
+            room_id,
+            session,
+            input_up_to_event_id=input_up_to_event_id,
+            input_up_to_seq=input_up_to_seq,
+            latency=latency,
+            diagnostics=diagnostics,
+            finish_status="completed",
+            last_spoke_event_id=event["id"],
+        )
+        return {"event": event, "turn_finished": finished, "agent_session": self._public_session(current)}
+
+    def _complete_active_turn(
+        self,
+        room_id: str,
+        session: dict[str, object],
+        *,
+        input_up_to_event_id: str,
+        input_up_to_seq: int,
+        latency: dict[str, object],
+        diagnostics: dict[str, object],
+        finish_status: str,
+        last_spoke_event_id: str = "",
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        active_turn_id = str(session["active_turn_id"])
         finished = self.store.append_event(
             room_id,
             "turn_finished",
-            participant_id=agent_id,
+            participant_id=session["participant_id"],
             session_id=session["session_id"],
             turn_id=active_turn_id,
-            status="completed",
+            status=finish_status,
             latency=latency,
         )
+        updates: dict[str, object] = {
+            "status": "attached",
+            "runtime_status": "idle",
+            "turn_phase": "",
+            "active_turn_id": "",
+            "active_source_event_id": "",
+            "active_relay_depth": 0,
+            "input_up_to_event_id": "",
+            "input_up_to_seq": 0,
+            "inflight_event_ids": [],
+            "last_provider_sync_event_id": input_up_to_event_id or session.get("last_provider_sync_event_id") or "",
+            "last_provider_sync_seq": input_up_to_seq or session.get("last_provider_sync_seq") or 0,
+            "last_seen_event_id": input_up_to_event_id or session.get("last_seen_event_id") or "",
+            "last_seen_seq": input_up_to_seq or session.get("last_seen_seq") or 0,
+            "bootstrap_done": True,
+            "recovery_required": False,
+            "recovery_attempt_count": 0,
+            "turn_count": int(session.get("turn_count") or 0) + 1,
+            "latency": latency,
+            "last_error": "",
+            **_runtime_diagnostic_fields(diagnostics),
+        }
+        if last_spoke_event_id:
+            updates["last_spoke_event_id"] = last_spoke_event_id
         updated = self.store.update_session_fields(
             room_id,
             str(session["session_id"]),
-            status="attached",
-            runtime_status="idle",
-            turn_phase="",
-            active_turn_id="",
-            active_source_event_id="",
-            active_relay_depth=0,
-            input_up_to_event_id="",
-            input_up_to_seq=0,
-            inflight_event_ids=[],
-            last_provider_sync_event_id=input_up_to_event_id or session.get("last_provider_sync_event_id") or "",
-            last_provider_sync_seq=input_up_to_seq or session.get("last_provider_sync_seq") or 0,
-            last_seen_event_id=input_up_to_event_id or session.get("last_seen_event_id") or "",
-            last_seen_seq=input_up_to_seq or session.get("last_seen_seq") or 0,
-            last_spoke_event_id=event["id"],
-            bootstrap_done=True,
-            recovery_required=False,
-            recovery_attempt_count=0,
-            turn_count=int(session.get("turn_count") or 0) + 1,
-            latency=latency,
-            last_error="",
-            **_runtime_diagnostic_fields(diagnostics),
+            **updates,
         )
-        self._assign_pending(room_id, agent_id)
+        self._assign_pending(room_id, str(session["participant_id"]))
         current = self.store.session(room_id, str(session["session_id"]))
         self._publish_session_state(room_id, current)
-        return {"event": event, "turn_finished": finished, "agent_session": self._public_session(current)}
+        return finished, current
 
     def _turn_failed(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         agent_id, session = self._active_bridge_turn(identity, room_id, payload)
@@ -1281,7 +1611,7 @@ class RoomRealtimeController:
                     self._publish_session_state(room_id, failed)
 
     def _on_event_appended(self, event: RoomEvent | dict[str, object]) -> None:
-        self.broker.broadcast_event(event)
+        self.broker.broadcast_event(_public_event(event))
         if event.get("type") != "message_final":
             return
         with self._lock:
@@ -1290,12 +1620,29 @@ class RoomRealtimeController:
     def _route_message_event(self, event: RoomEvent | dict[str, object]) -> None:
         room_id = clean_lobby_text(event.get("room_id"), limit=128)
         providers = self._room_providers(room_id)
+        room_settings = room_settings_payload(self.output_root, room_id=room_id).get("settings")
+        settings = room_settings if isinstance(room_settings, dict) else {}
+        continuous = settings.get("conversation_mode") == "continuous"
+        max_relay_turns = int(settings.get("max_relay_turns") or self.max_agent_relay_depth)
         decision = route_message_targets(
             dict(event),
             providers,
-            max_agent_relay_depth=self.max_agent_relay_depth,
+            max_agent_relay_depth=max_relay_turns if continuous else self.max_agent_relay_depth,
+            relay_agent_messages=continuous,
         )
-        for agent_id in decision.targets:
+        targets = decision.targets
+        content = clean_lobby_text(event.get("content"), limit=12000).casefold()
+        explicitly_routed = "@all" in content or any(f"@{agent_id.casefold()}" in content for agent_id in providers)
+        if continuous and not explicitly_routed and targets:
+            ordered = sorted(providers)
+            if decision.actor_id in ordered:
+                start = (ordered.index(decision.actor_id) + 1) % len(ordered)
+                candidates = (ordered[(start + offset) % len(ordered)] for offset in range(len(ordered)))
+                next_agent = next((candidate for candidate in candidates if candidate in targets), targets[0])
+            else:
+                next_agent = targets[0]
+            targets = (next_agent,)
+        for agent_id in targets:
             participant = self.store.participant(room_id, agent_id)
             if participant.get("status") == "kicked" or participant.get("muted"):
                 continue
@@ -1303,7 +1650,7 @@ class RoomRealtimeController:
                 room_id,
                 agent_id,
                 event,
-                relay_depth=decision.relay_depth + (1 if decision.actor_type == "agent" else 0),
+                relay_depth=decision.relay_depth + (1 if continuous or decision.actor_type == "agent" else 0),
             )
 
     def _queue_event(
@@ -1501,6 +1848,10 @@ class RoomRealtimeController:
                     room_id,
                     clean_lobby_text(session.get("last_seen_event_id"), limit=128),
                 )
+            if "process_ownership" not in session:
+                cursor_updates["process_ownership"] = "external" if session.get("external_owned") else "server"
+            if "bridge_generation" not in session:
+                cursor_updates["bridge_generation"] = 0
             self.store.update_session_fields(
                 room_id,
                 agent_id,
@@ -1563,6 +1914,10 @@ class RoomRealtimeController:
                 "pty": spec.transport in {"pty", "conpty"},
                 "transport": spec.transport,
                 "is_one_shot": False,
+                "process_ownership": "server",
+                "reported_provider_pid": None,
+                "bridge_handle_id": "",
+                "bridge_generation": 0,
             },
         )
 
@@ -1582,12 +1937,22 @@ class RoomRealtimeController:
             raise RoomCommandRejected("agent_id is required.", code="bad_request")
         return agent_id
 
-    def _bridge_session(self, identity: dict[str, object], room_id: str) -> tuple[str, dict[str, object]]:
+    def _bridge_session(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        *,
+        allow_unleased: bool = False,
+    ) -> tuple[str, dict[str, object]]:
         agent_id = clean_lobby_text(identity.get("agent_id"), limit=128)
         session_id = clean_lobby_text(identity.get("session_id") or agent_id, limit=128)
         session = self.store.session(room_id, session_id)
         if not session or session.get("participant_id") != agent_id:
             raise RoomCommandRejected("Agent bridge session does not match its ticket identity.", code="permission_denied")
+        identity_generation = int(identity.get("bridge_generation") or 0)
+        session_generation = int(session.get("bridge_generation") or 0)
+        if not allow_unleased and session_generation and identity_generation != session_generation:
+            raise RoomCommandRejected("Agent bridge lease is stale.", code="stale_bridge_generation")
         return agent_id, session
 
     def _active_bridge_turn(
@@ -1613,7 +1978,26 @@ class RoomRealtimeController:
 
     @staticmethod
     def _public_session(session: dict[str, object]) -> dict[str, object]:
-        hidden = {"env", "token", "ticket", "credentials", "stderr_tail", "terminal_tail", "provider_session_id"}
+        hidden = {
+            "env",
+            "token",
+            "ticket",
+            "credentials",
+            "stderr_tail",
+            "terminal_tail",
+            "provider_session_id",
+            "pid",
+            "reported_provider_pid",
+            "bridge_pid",
+            "bridge_handle_id",
+            "command_configured",
+            "resolved_executable",
+            "workspace",
+            "config_path",
+            "stdout_path",
+            "stderr_path",
+            "provider_endpoint",
+        }
         return {key: value for key, value in session.items() if key not in hidden}
 
 
@@ -1624,6 +2008,59 @@ def _dedupe_text_list(values: list[object]) -> list[str]:
         if text and text not in result:
             result.append(text)
     return result
+
+
+_PUBLIC_ACTIVITY_LABELS = {
+    "reasoning": {"running": "생각 정리 중", "completed": "생각 정리 완료"},
+    "file_read": {"running": "파일 읽는 중", "completed": "파일 확인 완료"},
+    "search": {"running": "정보 검색 중", "completed": "정보 검색 완료"},
+    "command": {"running": "명령 실행 중", "completed": "명령 실행 완료"},
+    "web": {"running": "웹 확인 중", "completed": "웹 확인 완료"},
+    "tool": {"running": "도구 사용 중", "completed": "도구 사용 완료"},
+}
+
+
+def _public_activity(category: str, status: str) -> tuple[str, str]:
+    safe_category = category if category in _PUBLIC_ACTIVITY_LABELS else "tool"
+    safe_status = "completed" if status == "completed" else "running"
+    return (
+        _PUBLIC_ACTIVITY_LABELS[safe_category][safe_status],
+        "reasoning" if safe_category == "reasoning" else "tool",
+    )
+
+
+def _command_principal(identity: dict[str, object]) -> str:
+    client_type = clean_lobby_text(identity.get("client_type"), limit=64) or "unknown"
+    principal = clean_lobby_text(
+        identity.get("session_id") or identity.get("user_id") or identity.get("agent_id"),
+        limit=128,
+    )
+    return f"{client_type}:{principal or 'anonymous'}"
+
+
+def _public_event(event: RoomEvent | dict[str, object]) -> dict[str, object]:
+    hidden = {
+        "legacy_source_path",
+        "path",
+        "file_path",
+        "absolute_path",
+        "workspace",
+        "executable",
+        "argv",
+        "pid",
+        "bridge_pid",
+        "reported_provider_pid",
+        "provider_session_id",
+    }
+
+    def project(value: object) -> object:
+        if isinstance(value, dict):
+            return {key: project(item) for key, item in value.items() if key not in hidden}
+        if isinstance(value, list):
+            return [project(item) for item in value]
+        return value
+
+    return dict(project(dict(event)))
 
 
 def _merged_latency(existing: object, incoming: object) -> dict[str, object]:
@@ -1693,6 +2130,10 @@ def _public_runtime_diagnostics(diagnostics: object) -> dict[str, object]:
 
 def _message_delta_text(value: object, *, limit: int) -> str:
     return str(value or "").replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")[:limit]
+
+
+def _room_message_text(value: object, *, limit: int) -> str:
+    return _message_delta_text(value, limit=limit).strip()
 
 
 def _provider_process_exited(message: str, diagnostics: dict[str, object]) -> bool:

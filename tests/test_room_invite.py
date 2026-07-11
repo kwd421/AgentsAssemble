@@ -54,8 +54,14 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
         )
 
         self.assertTrue(str(invite["join_url"]).startswith("https://shared-room.example.com/join?token="))
+        self.assertIn("?token=aaj1_", invite["join_url"])
+        self.assertNotIn(str(invite["invite_token"]), str(invite["join_url"]))
         self.assertEqual(invite["remote_client_packet"]["join_url"], invite["join_url"])
         self.assertNotIn("env", invite["remote_client_packet"])
+
+        joined = join_room_with_invite(str(invite["join_code"]), display_name="Mobile Guest")
+        self.assertEqual(joined["status"], "admitted")
+        self.assertEqual(joined["meeting_id"], "test-meeting")
 
     def test_create_invite_returns_remote_client_entry_packet(self):
         invite = create_room_invite(

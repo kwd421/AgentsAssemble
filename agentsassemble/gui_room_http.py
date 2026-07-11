@@ -997,6 +997,10 @@ def register_room_routes(router: Router) -> None:
             return
         try:
             client_type = str(payload.get("client_type") or "browser")
+            request_session = ctx.session()
+            creator_participant_id = str((request_session or {}).get("agent_id") or "")
+            creator_user = user_for_participant(creator_participant_id) if creator_participant_id else None
+            created_by_user_id = str((creator_user or {}).get("user_id") or operator_user_id())
             invite = create_room_invite(
                 room_url=ctx.handler._local_server_url(),
                 meeting_id=str(payload.get("meeting_id") or ""),
@@ -1009,14 +1013,15 @@ def register_room_routes(router: Router) -> None:
                 participant_type="agent" if client_type == "agent_bridge" else str(payload.get("participant_type") or "human"),
                 client_type=client_type,
                 provider_kind=str(payload.get("provider_kind") or "manual"),
+                created_by_user_id=created_by_user_id,
             )
         except (ValueError, TypeError) as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
         stable_url = stable_entry_url()
-        if stable_url and invite.get("invite_token"):
+        if stable_url and invite.get("join_code"):
             # Permanent alias that survives tunnel rotation — share this one.
-            invite["stable_join_url"] = f"{stable_url}/join?token={invite['invite_token']}"
+            invite["stable_join_url"] = f"{stable_url}/join?token={invite['join_code']}"
         ctx.send_json(invite)
 
     @router.post("/api/room-invite/join")
@@ -1039,8 +1044,26 @@ def register_room_routes(router: Router) -> None:
         if result.get("status") != "admitted":
             ctx.send_error(HTTPStatus.FORBIDDEN, str(result.get("reason", "rejected")))
             return
+        room_id = str(result.get("meeting_id") or "")
+        room = RoomStore(ctx.deps.output_root).room(room_id)
+        settings_payload = room_settings_payload(ctx.deps.output_root, room_id=room_id)
+        settings = settings_payload.get("settings") if isinstance(settings_payload.get("settings"), dict) else {}
+        result["room_label"] = str(settings.get("label") or room.get("label") or room_id)
+        result["room_topic"] = str(settings.get("topic") or room.get("topic") or "")
+        result["room_created_at"] = str(room.get("created_at") or "")
         participant_type = str(result.get("participant_type") or "human")
         if participant_type == "human":
+            RoomStore(ctx.deps.output_root).upsert_participant(
+                str(result["meeting_id"]),
+                {
+                    "participant_id": result["agent_id"],
+                    "display_name": result["display_name"],
+                    "participant_type": "human",
+                    "role": "human",
+                    "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
+                    "status": "joined",
+                },
+            )
             try:
                 upsert_room_member(
                     ctx.deps.output_root,
@@ -1093,6 +1116,7 @@ def register_room_routes(router: Router) -> None:
                 invite_scope="room",
                 participant_type="remote",
                 max_uses=1,  # companion packets hand off one running AI; keep its identity stable
+                created_by_user_id=str((user_for_participant(str(session.get("agent_id") or "")) or {}).get("user_id") or ""),
             )
         except (ValueError, TypeError) as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))

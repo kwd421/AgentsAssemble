@@ -9,6 +9,7 @@ export type AgentSessionProgress = {
 
 type ProjectionOptions = {
   viewerParticipantId?: string;
+  participantNames?: Record<string, string>;
 };
 
 function actor(event: RoomEvent) {
@@ -24,10 +25,17 @@ function timelineKey(event: RoomEvent, actorId: string) {
   return sourceEventId && actorId ? `source:${sourceEventId}:actor:${actorId}` : String(event.id);
 }
 
-function speakerName(event: RoomEvent, actorId: string, viewerParticipantId: string) {
+function speakerName(
+  event: RoomEvent,
+  actorId: string,
+  viewerParticipantId: string,
+  participantNames: Record<string, string>
+) {
   const mine = actorId === "operator-local" || Boolean(viewerParticipantId && actorId === viewerParticipantId);
   return {
-    name: mine ? "나" : String(event.display_name || actorId || "Agent Session"),
+    name: mine
+      ? "나"
+      : String(event.display_name || participantNames[actorId] || actorId || "Agent Session"),
     side: mine ? "mine" : "other",
   };
 }
@@ -39,12 +47,31 @@ export function projectRoomEventsToTimeline(
   const timeline: LobbyEvent[] = [];
   const turnIndex = new Map<string, number>();
   const viewerParticipantId = String(options.viewerParticipantId || "");
+  const participantNames = options.participantNames || {};
 
   events.forEach((event) => {
     if (!event.id) return;
     const eventActor = actor(event);
     const key = timelineKey(event, eventActor.id);
-    const speaker = speakerName(event, eventActor.id, viewerParticipantId);
+    const speaker = speakerName(event, eventActor.id, viewerParticipantId, participantNames);
+
+    if (["thinking_delta", "activity_delta"].includes(event.type) && String(event.content || "").trim()) {
+      timeline.push({
+        id: event.id,
+        created_at: event.created_at,
+        name: speaker.name,
+        side: speaker.side,
+        kind: "thinking",
+        message: String(event.content || ""),
+        actor_id: eventActor.id,
+        actor_type: eventActor.type,
+        flow_event_type: "agent_session_turn",
+        flow_action: event.type,
+        flow_meeting_id: event.room_id,
+        flow_id: key,
+      });
+      return;
+    }
 
     if (event.type === "message_delta" || event.type === "message_final") {
       const existingIndex = turnIndex.get(key);
@@ -76,7 +103,7 @@ export function projectRoomEventsToTimeline(
       return;
     }
 
-    if (["turn_started", "turn_state", "turn_finished", "thinking_delta", "agent_session_state"].includes(event.type)) {
+    if (["turn_started", "turn_state", "turn_finished", "agent_session_state"].includes(event.type)) {
       return;
     }
     if (event.type !== "error") return;
@@ -108,6 +135,8 @@ export function projectRoomEventProgress(
   const phase = String(event.phase || "");
   if (
     event.type === "turn_started" ||
+    event.type === "thinking_delta" ||
+    event.type === "activity_delta" ||
     event.type === "message_delta" ||
     (event.type === "turn_state" && ["thinking", "streaming"].includes(phase))
   ) {
@@ -115,7 +144,12 @@ export function projectRoomEventProgress(
     return {
       participantId,
       displayName: participantId || "Agent Session",
-      message: phase === "streaming" || event.type === "message_delta" ? "응답 작성 중..." : "생각 중...",
+      message:
+        event.type === "thinking_delta" || event.type === "activity_delta"
+          ? String(event.content || "생각 중...")
+          : phase === "streaming" || event.type === "message_delta"
+            ? "응답 작성 중..."
+            : "생각 중...",
       turnId: String(event.turn_id || ""),
     };
   }

@@ -17,12 +17,29 @@ test("streams on desktop and controls the same canonical session on mobile", asy
   await page.getByRole("dialog").getByRole("button", { name: "멤버 정보 닫기" }).click();
 
   const composer = page.getByRole("textbox", { name: "채팅 입력" });
-  await composer.fill("@fake AGENTSASSEMBLE_SESSION_MARKER=ui-e2e-001 기억하고 답해.");
+  await composer.fill(
+    "@fake AGENTSASSEMBLE_SESSION_MARKER=ui-e2e-001 AGENTSASSEMBLE_RESPONSE_DELAY_MS=500 기억하고 답해."
+  );
   await page.getByRole("button", { name: "채팅 메시지 보내기" }).click();
+  await expect(page.getByText("입력 중…", { exact: true })).toBeVisible();
   const firstReply = page.getByText(/fake reply 1; marker=ui-e2e-001/);
   await expect(firstReply).toHaveCount(1);
   await expect(firstReply).toBeVisible();
+  await expect(page.getByText("입력 중…", { exact: true })).toHaveCount(0);
   await expect(page.getByText("FAKE_CLI_READY", { exact: true })).toHaveCount(0);
+
+  await composer.fill("| 에이전트 | 상태 |\n| --- | --- |\n| Fake CLI | 대기 |");
+  await page.getByRole("button", { name: "채팅 메시지 보내기" }).click();
+  const markdownTable = page.locator(".dc-message").filter({ hasText: "Fake CLI" }).last().locator("table");
+  await expect(markdownTable).toBeVisible();
+  await expect(markdownTable.getByRole("columnheader", { name: "에이전트" })).toBeVisible();
+
+  await composer.fill("같은 화자의 연속 메시지 첫 번째");
+  await page.getByRole("button", { name: "채팅 메시지 보내기" }).click();
+  await composer.fill("같은 화자의 연속 메시지 두 번째");
+  await page.getByRole("button", { name: "채팅 메시지 보내기" }).click();
+  const groupedFollowUp = page.locator(".dc-message").filter({ hasText: "같은 화자의 연속 메시지 두 번째" });
+  await expect(groupedFollowUp.locator(".dc-message-avatar")).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
 
@@ -42,6 +59,10 @@ test("streams on desktop and controls the same canonical session on mobile", asy
   }
 
   session = await openMobileSession();
+  const activityToggle = session.getByRole("checkbox", { name: /켜짐/ });
+  await expect(activityToggle).toBeChecked();
+  await activityToggle.uncheck();
+  await expect(session.getByRole("checkbox", { name: /꺼짐/ })).not.toBeChecked();
   await session.getByText("고급 진단", { exact: true }).click();
   await expect(session.getByText("Runtime", { exact: true })).toBeVisible();
   await expect(session.getByText(/input \d+ chars · \d+ events/)).toBeVisible();
@@ -66,4 +87,18 @@ test("streams on desktop and controls the same canonical session on mobile", asy
   await session.getByRole("button", { name: "중지", exact: true }).click();
   await expect(session.getByText("중지됨", { exact: true })).toBeVisible();
   await expect(page.getByText("다음 턴 호출", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "멤버 목록" }).click();
+  await page.getByRole("button", { name: "채널 정보 닫기" }).click();
+
+  await page.getByRole("button", { name: "채널 목록 열기" }).click();
+  await page.getByRole("button", { name: "서버 설정 열기" }).click();
+  const settings = page.getByRole("dialog", { name: "서버 설정" });
+  const deleteSection = settings.locator("#settings-delete");
+  await expect(deleteSection.getByText("이 작업은 복구할 수 없습니다.")).toBeVisible();
+  const deleteButton = deleteSection.getByRole("button", { name: "서버 영구 삭제" });
+  await expect(deleteButton).toBeDisabled();
+  await deleteSection.getByRole("textbox", { name: "서버 이름" }).fill("#general");
+  await expect(deleteButton).toBeEnabled();
+  await deleteButton.click();
+  await expect(page.getByRole("button", { name: "#general", exact: true })).toHaveCount(0);
 });

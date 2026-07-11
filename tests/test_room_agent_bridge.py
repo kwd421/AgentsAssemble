@@ -42,8 +42,16 @@ class FakeRuntime:
     def send(self, text):
         self.sent.append(text)
 
-    def read_output(self, *, timeout_seconds, on_delta=None):
+    def read_output(self, *, timeout_seconds, on_delta=None, on_activity=None):
         del timeout_seconds
+        if on_activity:
+            on_activity(
+                {
+                    "category": "command",
+                    "status": "running",
+                    "content": "cat /private/project/.env TOKEN=secret",
+                }
+            )
         if on_delta:
             on_delta("clean ")
             on_delta("delta")
@@ -162,6 +170,28 @@ class RoomAgentBridgeTests(unittest.TestCase):
         finals = [payload for action, payload, _ in client.commands if action == "message.final"]
         self.assertEqual([payload["content"] for payload in finals], ["clean final", "clean final"])
         self.assertTrue(all(payload["message_source"] == "fake-transcript" for payload in finals))
+        activities = [payload for action, payload, _ in client.commands if action == "activity.update"]
+        self.assertEqual(
+            activities,
+            [
+                {
+                    "turn_id": "turn-1",
+                    "activity_kind": "tool",
+                    "category": "command",
+                    "status": "running",
+                    "content": "명령 실행 중",
+                },
+                {
+                    "turn_id": "turn-2",
+                    "activity_kind": "tool",
+                    "category": "command",
+                    "status": "running",
+                    "content": "명령 실행 중",
+                },
+            ],
+        )
+        self.assertNotIn("/private/project", str(activities))
+        self.assertNotIn("TOKEN", str(activities))
 
     def test_interrupt_is_forwarded_without_stopping_runtime(self):
         client = FakeClient()

@@ -158,6 +158,9 @@ export function openRoomSocket(
   >();
 
   function nextRequestId() {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
     requestCounter += 1;
     return `web-${Date.now().toString(36)}-${requestCounter.toString(36)}`;
   }

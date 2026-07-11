@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import time
 import tty
 
 
@@ -31,6 +32,9 @@ def main() -> int:
             found = re.search(r"AGENTSASSEMBLE_SESSION_MARKER=([A-Za-z0-9_.-]+)", text)
             if found:
                 marker = found.group(1)
+            delay = re.search(r"AGENTSASSEMBLE_RESPONSE_DELAY_MS=(\d+)", text)
+            if delay:
+                time.sleep(min(int(delay.group(1)), 2_000) / 1_000)
             turn += 1
             response = f"fake reply {turn}; marker={marker}; pid={os.getpid()}\n"
             os.write(sys.stdout.fileno(), response.encode("utf-8"))

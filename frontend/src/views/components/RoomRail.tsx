@@ -144,16 +144,15 @@ export default function RoomRail({
               서버 설정
             </button>
           )}
-          <span className="dc-context-separator" aria-hidden />
-          <button
-            type="button"
-            role="menuitem"
-            className="danger"
-            onClick={() => onLeaveRoom(menuRoom.id)}
-          >
-            <LogOut size={16} />
-            {guestLocked ? "서버 나가기" : "사이드바에서 숨기기"}
-          </button>
+          {guestLocked && (
+            <>
+              <span className="dc-context-separator" aria-hidden />
+              <button type="button" role="menuitem" className="danger" onClick={() => onLeaveRoom(menuRoom.id)}>
+                <LogOut size={16} />
+                서버 나가기
+              </button>
+            </>
+          )}
         </div>
       )}
       <div className="mt-auto" />

@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover - AgentsAssemble's supported hosts are U
 
 
 ROOM_DATABASE_FILENAME = "rooms.sqlite3"
-ROOM_SCHEMA_VERSION = 1
+ROOM_SCHEMA_VERSION = 2
 LEGACY_AUTHORITY_FILES = (
     "room.json",
     "participants.json",
@@ -59,6 +59,8 @@ def initialize_room_database(rooms_root: Path, database_path: Path) -> dict[str,
             connection = open_room_database(database_path)
             try:
                 _create_schema(connection)
+                _migrate_schema(connection)
+                _scrub_legacy_source_paths(connection)
                 _validate_schema_version(connection)
                 connection.execute("PRAGMA journal_mode = WAL")
                 return _read_migration_report(connection)
@@ -264,10 +266,13 @@ def _create_schema(connection: sqlite3.Connection) -> None:
         );
         CREATE TABLE IF NOT EXISTS command_results (
             room_id TEXT NOT NULL,
+            principal_id TEXT NOT NULL DEFAULT '',
             request_id TEXT NOT NULL,
+            action TEXT NOT NULL DEFAULT '',
+            payload_hash TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             result_json TEXT NOT NULL,
-            PRIMARY KEY (room_id, request_id)
+            PRIMARY KEY (room_id, principal_id, request_id)
         );
         CREATE TABLE IF NOT EXISTS deleted_rooms (
             room_id TEXT PRIMARY KEY,
@@ -294,6 +299,70 @@ def _validate_schema_version(connection: sqlite3.Connection) -> None:
         raise RoomDatabaseMigrationError(
             f"Unsupported room database schema version {version}; expected {ROOM_SCHEMA_VERSION}."
         )
+
+
+def _migrate_schema(connection: sqlite3.Connection) -> None:
+    row = connection.execute("SELECT value FROM schema_meta WHERE key = 'schema_version'").fetchone()
+    if row is None or _safe_int(row["value"]) >= ROOM_SCHEMA_VERSION:
+        return
+    if _safe_int(row["value"]) != 1:
+        raise RoomDatabaseMigrationError(f"Unsupported room database schema version {row['value']}.")
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        connection.execute("ALTER TABLE command_results RENAME TO command_results_v1")
+        connection.execute(
+            """CREATE TABLE command_results (
+                   room_id TEXT NOT NULL,
+                   principal_id TEXT NOT NULL DEFAULT '',
+                   request_id TEXT NOT NULL,
+                   action TEXT NOT NULL DEFAULT '',
+                   payload_hash TEXT NOT NULL DEFAULT '',
+                   created_at TEXT NOT NULL,
+                   result_json TEXT NOT NULL,
+                   PRIMARY KEY (room_id, principal_id, request_id)
+               )"""
+        )
+        connection.execute(
+            """INSERT INTO command_results(
+                   room_id, principal_id, request_id, action, payload_hash, created_at, result_json
+               ) SELECT room_id, '', request_id, '', '', created_at, result_json FROM command_results_v1"""
+        )
+        connection.execute("DROP TABLE command_results_v1")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_commands_created ON command_results(room_id, created_at DESC)")
+        connection.execute(
+            "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', ?)",
+            (str(ROOM_SCHEMA_VERSION),),
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
+def _scrub_legacy_source_paths(connection: sqlite3.Connection) -> None:
+    rows = connection.execute(
+        "SELECT room_id, seq, payload_json FROM room_events WHERE payload_json LIKE '%legacy_source_path%'"
+    ).fetchall()
+    if not rows:
+        return
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        for row in rows:
+            try:
+                payload = json.loads(str(row["payload_json"] or "{}"))
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict) or "legacy_source_path" not in payload:
+                continue
+            payload.pop("legacy_source_path", None)
+            connection.execute(
+                "UPDATE room_events SET payload_json = ? WHERE room_id = ? AND seq = ?",
+                (_json_dumps(payload), row["room_id"], row["seq"]),
+            )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
 
 
 def _write_schema_metadata(connection: sqlite3.Connection, report: dict[str, object]) -> None:

@@ -18,6 +18,7 @@ import {
   Plus,
   Radio,
   Search,
+  Settings,
   UserPlus,
   UserRound,
   Volume2,
@@ -43,7 +44,6 @@ import {
   fetchSideChat,
   generatePublicInviteHostToken,
   joinRoomInvite,
-  leaveRoomInvite,
   loadHostToken,
   postRoomFriendDm,
   clearHostToken,
@@ -119,11 +119,7 @@ import {
   persistSidebarWidth,
   resizedSidebarWidth,
 } from "./lib/sidebarResizeModel";
-import {
-  loadHiddenRoomIds,
-  persistHiddenRoomIds,
-  persistRoomDockItems,
-} from "./lib/roomDockPersistence";
+import { persistRoomDockItems } from "./lib/roomDockPersistence";
 import {
   createFreshRoom,
   createStartupRoute,
@@ -137,6 +133,11 @@ import {
   type RoomDockItem,
 } from "./lib/roomDockModel";
 import { roomRailMenuPosition } from "./lib/roomRailMenuPosition";
+import {
+  agentActivityIsVisible,
+  loadAgentActivityVisibility,
+  persistAgentActivityVisibility,
+} from "./lib/agentActivityPreferences";
 import {
   loadRoomGuestSession,
   persistRoomGuestSession,
@@ -427,7 +428,6 @@ export default function App() {
   const [membersOpen, setMembersOpen] = useState(true);
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>("room-info");
   const [rooms, setRooms] = useState<RoomDockItem[]>(() => startupRoute.startupRooms);
-  const [hiddenRoomIds, setHiddenRoomIds] = useState<string[]>(loadHiddenRoomIds);
   const [activeRoomId, setActiveRoomId] = useState(() => startupRoute.activeRoomId);
   const [roomMenu, setRoomMenu] = useState<RoomMenuState>(null);
   const [channelMenu, setChannelMenu] = useState<ChannelMenuState>(null);
@@ -465,6 +465,10 @@ export default function App() {
   const [roomConversationModes, setRoomConversationModes] = useState<
     Record<string, ConversationMode>
   >({});
+  const [roomMaxRelayTurns, setRoomMaxRelayTurns] = useState<Record<string, number>>({});
+  const [agentActivityVisibility, setAgentActivityVisibility] = useState(
+    loadAgentActivityVisibility
+  );
   const [roomCustomChannels, setRoomCustomChannels] = useState<
     Record<string, RoomChannel[]>
   >({});
@@ -632,7 +636,17 @@ export default function App() {
   const activeRoomAgentSessions = canonicalRoom.agentSessions;
   const activeRoomCapabilities = canonicalRoom.capabilities;
   const activeRoomHistory = canonicalRoom.history;
+  const activeRoomCanonicalEvents = canonicalRoom.events;
   const activeRoomTimelineEvents = canonicalRoom.timelineEvents;
+  const visibleRoomTimelineEvents = useMemo(
+    () =>
+      activeRoomTimelineEvents.filter(
+        (event) =>
+          event.kind !== "thinking" ||
+          agentActivityIsVisible(agentActivityVisibility, event.actor_id || "")
+      ),
+    [activeRoomTimelineEvents, agentActivityVisibility]
+  );
   const activeAgentSessionProgress = canonicalRoom.agentSessionProgress;
   const loadCanonicalRoomHistory = canonicalRoom.loadHistory;
   const sendAgentControl = canonicalRoom.sendAgentControl;
@@ -818,7 +832,7 @@ export default function App() {
     fetchRooms(true)
       .then((payload) => {
         if (cancelled) return;
-        setRooms((previous) => mergeServerRoomsIntoDock(previous, payload.rooms || [], hiddenRoomIds));
+        setRooms((previous) => mergeServerRoomsIntoDock(previous, payload.rooms || []));
       })
       .catch(() => {
         // localStorage remains a fast-path cache when the server room registry is unavailable.
@@ -826,7 +840,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [guestLocked, hiddenRoomIds]);
+  }, [guestLocked]);
 
   useEffect(() => {
     if (guestLocked) return;
@@ -1031,12 +1045,12 @@ export default function App() {
         meeting_id: activeRoom.meetingId,
         topic: activeRoom.topic,
       };
-  const scopedLiveTimelineEvents = activeRoomTimelineEvents.length
-    ? activeRoomTimelineEvents
+  const scopedLiveTimelineEvents = visibleRoomTimelineEvents.length
+    ? visibleRoomTimelineEvents
     : activeRoomFlowVisible
       ? liveTimelineEvents
       : [];
-  const scopedTimelineSource = activeRoomTimelineEvents.length
+  const scopedTimelineSource = visibleRoomTimelineEvents.length
     ? "flow"
     : activeRoomFlowVisible
     ? flowEvents.length
@@ -1045,11 +1059,22 @@ export default function App() {
     : "flow";
   const scopedAgents = agents.filter((agent) => roomHasAgent(activeRoom, agent));
   useEffect(() => {
-    if (activeRoomTimelineEvents.length) {
-      lobbyStreamRef.current?.(activeRoomTimelineEvents);
-      flowStreamRef.current?.(activeRoomTimelineEvents);
+    if (visibleRoomTimelineEvents.length) {
+      lobbyStreamRef.current?.(visibleRoomTimelineEvents);
+      flowStreamRef.current?.(visibleRoomTimelineEvents);
     }
-  }, [activeRoom.meetingId, activeRoomTimelineEvents]);
+  }, [activeRoom.meetingId, visibleRoomTimelineEvents]);
+
+  const changeAgentActivityVisibility = useCallback(
+    (session: { participant_id: string }, visible: boolean) => {
+      setAgentActivityVisibility((previous) => {
+        const next = { ...previous, [session.participant_id]: visible };
+        persistAgentActivityVisibility(next);
+        return next;
+      });
+    },
+    []
+  );
   const refreshMembers = useCallback(() => {
     if (!activeRoom.meetingId) return;
     // Through the public entrance the roster endpoint requires the guest
@@ -1110,9 +1135,32 @@ export default function App() {
   const typingNames = useMemo(() => {
     const names: string[] = [];
     const seen = new Set<string>();
+    const activeTurnHasVisibleOutput = Boolean(
+      activeAgentSessionProgress?.turnId &&
+        activeRoomCanonicalEvents.some(
+          (event) =>
+            event.type === "message_delta" &&
+            event.turn_id === activeAgentSessionProgress.turnId &&
+            Boolean(String(event.content || "").trim())
+        )
+    );
+    const activeParticipantId = activeAgentSessionProgress?.participantId || "";
+    const activeDisplayNames = new Set(
+      activeTurnHasVisibleOutput
+        ? [
+            activeAgentSessionProgress?.displayName || "",
+            activeRoomAgentSessions.find(
+              (candidate) => candidate.participant_id === activeParticipantId
+            )?.display_name || "",
+            activeRoomMembers.find(
+              (candidate) => candidate.participant_id === activeParticipantId
+            )?.display_name || "",
+          ].filter(Boolean)
+        : []
+    );
     const add = (name: string) => {
       const trimmed = name.trim();
-      if (trimmed && !seen.has(trimmed)) {
+      if (trimmed && !activeDisplayNames.has(trimmed) && !seen.has(trimmed)) {
         seen.add(trimmed);
         names.push(trimmed);
       }
@@ -1123,8 +1171,37 @@ export default function App() {
     activeRoomMembers.forEach((member) => {
       if (member.thinking) add(member.display_name || member.participant_id);
     });
+    if (activeAgentSessionProgress && !activeTurnHasVisibleOutput) {
+      const hasVisibleThinking = activeRoomCanonicalEvents.some(
+        (event) =>
+          ["thinking_delta", "activity_delta"].includes(event.type) &&
+          event.turn_id === activeAgentSessionProgress.turnId &&
+          Boolean(String(event.content || "").trim()) &&
+          agentActivityIsVisible(agentActivityVisibility, activeAgentSessionProgress.participantId)
+      );
+      if (!hasVisibleThinking) {
+        const session = activeRoomAgentSessions.find(
+          (candidate) => candidate.participant_id === activeAgentSessionProgress.participantId
+        );
+        const participant = activeRoomMembers.find(
+          (candidate) => candidate.participant_id === activeAgentSessionProgress.participantId
+        );
+        add(
+          session?.display_name ||
+            participant?.display_name ||
+            activeAgentSessionProgress.displayName
+        );
+      }
+    }
     return names;
-  }, [scopedAgents, activeRoomMembers]);
+  }, [
+    activeAgentSessionProgress,
+    activeRoomAgentSessions,
+    activeRoomCanonicalEvents,
+    activeRoomMembers,
+    agentActivityVisibility,
+    scopedAgents,
+  ]);
   const activeChannelSettings = roomChannelSettings[activeRoomKey] || {};
   const activeCustomChannels = roomCustomChannels[activeRoomKey] || [];
   const activeCustomChannel = activeCustomChannels.find((item) => item.id === channel) || null;
@@ -1437,43 +1514,42 @@ export default function App() {
     setChannelMenu(null);
   }
 
-  async function leaveRoom(roomId: string) {
-    if (guestLocked) {
-      const sessionToken = guestSession?.sessionToken || "";
-      persistRoomGuestSession(null);
-      setGuestSession(null);
-      setRoomMenu(null);
-      setChannelMenu(null);
-      if (sessionToken) {
-        await leaveRoomInvite({ sessionToken }).catch(() => {
-          // Local guest exit should not be blocked by a stale or expired server session.
-        });
-      }
-      const url = new URL(window.location.href);
-      url.pathname = "/join";
-      url.search = "";
-      url.hash = "";
-      window.location.href = url.toString();
-      return;
-    }
+  function removeAcknowledgedRoom(roomId: string) {
     const remainingRooms = rooms.filter((room) => room.id !== roomId);
-    const roomToHide = rooms.find((room) => room.id === roomId);
-    if (roomToHide?.meetingId) {
-      setHiddenRoomIds((previous) => {
-        const next = [...new Set([...previous, roomToHide.meetingId])];
-        persistHiddenRoomIds(next);
-        return next;
-      });
-    }
-    const nextRooms = remainingRooms.length ? remainingRooms : [createFreshRoom()];
-    setRooms(nextRooms);
+    setRooms(remainingRooms);
     if (activeRoom.id === roomId) {
-      setActiveRoomId(nextRooms[0]?.id || "");
+      setActiveRoomId(remainingRooms[0]?.id || "");
       setChannel("lobby");
       setAdminOpen(false);
     }
     setRoomMenu(null);
     setChannelMenu(null);
+  }
+
+  async function leaveRoom(roomId: string) {
+    if (roomId !== activeRoom.id || !roomSocket?.ready()) {
+      throw new Error("나갈 서버를 먼저 열고 연결이 완료될 때까지 기다려 주세요.");
+    }
+    await roomSocket.command("participant.leave", {});
+    removeAcknowledgedRoom(roomId);
+    if (guestLocked) {
+      persistRoomGuestSession(null);
+      setGuestSession(null);
+      const url = new URL(window.location.href);
+      url.pathname = "/join";
+      url.search = "";
+      url.hash = "";
+      window.location.href = url.toString();
+    }
+  }
+
+  async function deleteRoom(roomId: string, confirmationName: string) {
+    if (roomId !== activeRoom.id || !roomSocket?.ready()) {
+      throw new Error("삭제할 서버를 먼저 열고 연결이 완료될 때까지 기다려 주세요.");
+    }
+    await roomSocket.command("room.delete", { confirmation_name: confirmationName });
+    setSettingsModal(null);
+    removeAcknowledgedRoom(roomId);
   }
 
   function goToChannel(next: string) {
@@ -2048,6 +2124,10 @@ export default function App() {
           ...previous,
           [activeRoomKey]: settings.conversationMode,
         }));
+        setRoomMaxRelayTurns((previous) => ({
+          ...previous,
+          [activeRoomKey]: settings.maxRelayTurns,
+        }));
       })
       .catch(() => {
         // Room settings are a UI enhancement; an unavailable endpoint should not blank the room.
@@ -2081,7 +2161,8 @@ export default function App() {
     nextAppearance: RoomAppearance,
     nextRoles?: Record<string, string>,
     nextChannels?: Record<string, ChannelSettings>,
-    nextConversationMode?: ConversationMode
+    nextConversationMode?: ConversationMode,
+    nextMaxRelayTurns?: number
   ) {
     void saveRoomSettings({
       roomId: room.meetingId,
@@ -2093,6 +2174,7 @@ export default function App() {
       channelSettings: nextChannels ?? roomChannelSettings[roomSettingsKey(room)] ?? {},
       conversationMode:
         nextConversationMode ?? roomConversationModes[roomSettingsKey(room)] ?? "ordered",
+      maxRelayTurns: nextMaxRelayTurns ?? roomMaxRelayTurns[roomSettingsKey(room)] ?? 6,
     }).catch(() => {
       // Saving is reflected again by the next explicit settings read; keep the optimistic UI state.
     });
@@ -2260,6 +2342,7 @@ export default function App() {
           )}
           channelSettings={roomChannelSettings[roomSettingsKey(settingsModalRoom)] || {}}
           conversationMode={roomConversationModes[roomSettingsKey(settingsModalRoom)] || "ordered"}
+          maxRelayTurns={roomMaxRelayTurns[roomSettingsKey(settingsModalRoom)] || 6}
           canInvite={!guestLocked}
           onClose={() => setSettingsModal(null)}
           onInvite={() => {
@@ -2312,6 +2395,21 @@ export default function App() {
               mode
             );
           }}
+          onMaxRelayTurnsChange={(turns) => {
+            const key = roomSettingsKey(settingsModalRoom);
+            setRoomMaxRelayTurns((previous) => ({ ...previous, [key]: turns }));
+            persistRoomSettings(
+              settingsModalRoom,
+              completeRoomAppearance(
+                roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
+              ),
+              roomMemberRoles[key] || {},
+              roomChannelSettings[key] || {},
+              roomConversationModes[key] || "ordered",
+              turns
+            );
+          }}
+          onDeleteRoom={(confirmationName) => deleteRoom(settingsModalRoom.id, confirmationName)}
         />
       )}
 
@@ -2390,6 +2488,17 @@ export default function App() {
               <span className="truncate preserve-words">{activeRoom.label}</span>
               <ChevronDown size={16} />
             </button>
+            {!guestLocked && (
+              <button
+                type="button"
+                className="dc-mobile-room-settings"
+                onClick={() => openRoomSettings(activeRoom.id)}
+                aria-label="서버 설정 열기"
+                title="서버 설정"
+              >
+                <Settings size={17} />
+              </button>
+            )}
             <div className="dc-sidebar-banner">
               <span
                 className="dc-sidebar-server-icon"
@@ -2675,7 +2784,7 @@ export default function App() {
             onGuestSessionExpired={expireGuestSession}
             threadSummaries={sideChatThreadSummaries}
             typingNames={typingNames}
-            canonicalEvents={activeRoomTimelineEvents}
+            canonicalEvents={visibleRoomTimelineEvents}
             canonicalOldestSeq={activeRoomHistory.oldestSeq}
             canonicalHasMoreHistory={activeRoomHistory.hasMoreBefore}
             loadCanonicalHistory={loadCanonicalRoomHistory}
@@ -2762,6 +2871,8 @@ export default function App() {
           availableProviders={canonicalRoom.availableProviders}
           onAgentControl={sendAgentControl}
           onAgentConfigure={sendAgentConfigure}
+          agentActivityVisibility={agentActivityVisibility}
+          onAgentActivityVisibilityChange={changeAgentActivityVisibility}
         />
       )}
 
@@ -2843,6 +2954,8 @@ export default function App() {
                 onAgentControl={sendAgentControl}
                 availableProviders={canonicalRoom.availableProviders}
                 onAgentConfigure={sendAgentConfigure}
+                agentActivityVisibility={agentActivityVisibility}
+                onAgentActivityVisibilityChange={changeAgentActivityVisibility}
                 onParticipantKick={sendParticipantKick}
                 onParticipantMute={sendParticipantMute}
               />

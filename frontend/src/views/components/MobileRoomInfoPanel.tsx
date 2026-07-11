@@ -219,6 +219,8 @@ export default function MobileRoomInfoPanel({
   availableProviders = [],
   onAgentControl,
   onAgentConfigure,
+  agentActivityVisibility = {},
+  onAgentActivityVisibilityChange,
 }: {
   room: MobileRoomSummary;
   appearance: RoomAppearance;
@@ -243,6 +245,8 @@ export default function MobileRoomInfoPanel({
     session: RoomAgentSession,
     settings: Record<string, string>
   ) => void | Promise<void>;
+  agentActivityVisibility?: Record<string, boolean>;
+  onAgentActivityVisibilityChange?: (session: RoomAgentSession, visible: boolean) => void;
 }) {
   const [panelMode, setPanelMode] = useState<MobilePanelMode>(
     sideChatContent ? initialMode : "info"
@@ -359,6 +363,8 @@ export default function MobileRoomInfoPanel({
               )}
               onControl={onAgentControl}
               onConfigure={onAgentConfigure}
+              activityVisible={agentActivityVisibility[selectedAgentSession.participant_id] !== false}
+              onActivityVisibilityChange={onAgentActivityVisibilityChange}
             />
           </section>
         ) : (
