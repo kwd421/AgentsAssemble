@@ -6,6 +6,7 @@ import { participantTypeMeta } from "../../lib/participantTypes";
 import { isActivePresence, presenceStatusLabel } from "../../lib/presenceStatus";
 import { inviteFriendButtonLabel, isExternalInviteUrl } from "../../lib/roomInviteCopy";
 import type { RoomAppearance } from "../../lib/roomAppearance";
+import type { NativeCliProviderAvailability } from "../../roomSocketClient";
 
 function participantIdForFriend(friend: RoomFriend): string {
   return friend.source_agent_id || friend.friend_id;
@@ -37,6 +38,9 @@ function inviteFriendSubtitle(friend: RoomFriend, typeLabel: string): string {
 export default function RoomInviteModal({
   roomLabel,
   secureInviteUrl,
+  agentInviteUrl,
+  agentInviteProviderId,
+  availableProviders,
   localPreviewUrl,
   publicUrl,
   publicUrlDraft,
@@ -53,6 +57,9 @@ export default function RoomInviteModal({
   onClose,
   onGenerateSecureInvite,
   onCopy,
+  onAgentInviteProviderChange,
+  onGenerateAgentInvite,
+  onCopyAgentInvite,
   onCopyLocalPreview,
   onPublicUrlDraftChange,
   onConfigurePublicUrl,
@@ -65,6 +72,9 @@ export default function RoomInviteModal({
 }: {
   roomLabel: string;
   secureInviteUrl: string;
+  agentInviteUrl: string;
+  agentInviteProviderId: string;
+  availableProviders: NativeCliProviderAvailability[];
   localPreviewUrl: string;
   publicUrl?: string;
   publicUrlDraft?: string;
@@ -87,6 +97,9 @@ export default function RoomInviteModal({
   onClose: () => void;
   onGenerateSecureInvite: () => void;
   onCopy: () => void;
+  onAgentInviteProviderChange: (providerId: string) => void;
+  onGenerateAgentInvite: () => void;
+  onCopyAgentInvite: () => void;
   onCopyLocalPreview: () => void;
   onPublicUrlDraftChange: (value: string) => void;
   onConfigurePublicUrl: () => void;
@@ -153,6 +166,41 @@ export default function RoomInviteModal({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="친구 찾기"
           />
+        </label>
+        <label className="dc-invite-link-label">
+          Agent Session 초대
+          <span className="text-[12px] font-bold text-text-muted preserve-words">
+            상대 컴퓨터에서 provider CLI를 실행한 뒤 링크를 숨김 입력으로 전달합니다. 링크는 한 번만 사용할 수 있습니다.
+          </span>
+          <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(132px,0.45fr)_minmax(0,1fr)_112px_112px]">
+            <select
+              className="dc-invite-link-input"
+              value={agentInviteProviderId}
+              onChange={(event) => onAgentInviteProviderChange(event.currentTarget.value)}
+              aria-label="초대할 Agent Session provider"
+            >
+              {availableProviders.map((provider) => (
+                <option key={provider.id} value={provider.id} disabled={!provider.available}>
+                  {provider.display_name}{provider.available ? "" : " (사용 불가)"}
+                </option>
+              ))}
+            </select>
+            <input
+              className="dc-invite-link-input"
+              value={agentInviteUrl}
+              placeholder="1회용 Agent Session 초대 링크"
+              readOnly
+              onFocus={(event) => event.currentTarget.select()}
+            />
+            <button type="button" className="dc-invite-copy-button" onClick={onGenerateAgentInvite}>
+              링크 생성
+            </button>
+            <button type="button" className="dc-invite-copy-button" disabled={!agentInviteUrl} onClick={onCopyAgentInvite}>
+              <Copy size={15} />
+              복사
+            </button>
+          </div>
+          <code className="mt-2 block text-[12px] text-text-muted">assemble room attend --provider {agentInviteProviderId}</code>
         </label>
 
         <div className="dc-invite-friend-list" role="list" aria-label="초대할 친구">
@@ -287,10 +335,10 @@ export default function RoomInviteModal({
         </details>
         {remoteClientPacketPreview && (
           <label className="dc-invite-link-label">
-            AI 세션용 입장 패킷
+            기존 Agent Session 안내
             <span className="text-[12px] font-bold text-text-muted preserve-words">
-              {remoteClientPacketFriendName || "상대 AI"}에게 그대로 전달하면 이미 실행 중인 세션이
-              join/read/say/leave 요청으로 방에 들어올 수 있습니다.
+              {remoteClientPacketFriendName || "상대 AI"}에게 전달할 간단한 입장 안내입니다. 새 초대는 위의
+              지속 연결 명령을 사용하세요.
             </span>
             <textarea
               className="dc-invite-packet-textarea"

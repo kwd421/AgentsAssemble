@@ -269,6 +269,11 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             result_json TEXT NOT NULL,
             PRIMARY KEY (room_id, request_id)
         );
+        CREATE TABLE IF NOT EXISTS deleted_rooms (
+            room_id TEXT PRIMARY KEY,
+            deleted_at TEXT NOT NULL,
+            reason TEXT NOT NULL DEFAULT ''
+        );
         CREATE INDEX IF NOT EXISTS idx_rooms_updated ON rooms(updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_participants_status ON participants(room_id, status);
         CREATE INDEX IF NOT EXISTS idx_sessions_participant ON agent_sessions(room_id, participant_id);

@@ -473,6 +473,32 @@ button:disabled,
   outline: none;
 }
 
+.dc-provider-secret-field {
+  display: grid;
+  gap: 8px;
+}
+
+.dc-provider-secret-field > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dc-provider-secret-field button {
+  min-height: 34px;
+  border-radius: 5px;
+  background: var(--color-surface-raised);
+  padding: 0 10px;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dc-provider-secret-field p {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
 .dc-agent-folder-field {
   display: flex;
   align-items: center;
@@ -3222,6 +3248,45 @@ body[data-sidebar-resizing="true"] {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.dc-agent-runtime-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.dc-agent-runtime-settings label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.dc-agent-runtime-settings input,
+.dc-agent-runtime-settings select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--color-surface-raised);
+  padding: 0 9px;
+  color: var(--color-text-primary);
+}
+
+.dc-agent-runtime-settings .dc-member-session-button,
+.dc-agent-runtime-settings > p {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .dc-agent-runtime-settings {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .dc-member-session-button {

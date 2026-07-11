@@ -200,7 +200,7 @@ def _parse_api_ts_wrappers_by_route(path: Path) -> dict[Route, set[str]]:
 
 def _parse_api_ts_exported_functions(path: Path) -> set[str]:
     text = path.read_text(encoding="utf-8")
-    return set(re.findall(r"\bexport function ([A-Za-z0-9_]+)\(", text))
+    return set(re.findall(r"\bexport (?:async )?function ([A-Za-z0-9_]+)\(", text))
 
 
 def _route_from_api_ts_ref(path: str, method: str) -> Route:
@@ -218,9 +218,11 @@ def _api_ts_route_refs(text: str) -> list[tuple[str, str, str]]:
     refs: list[tuple[str, str, str]] = []
     current_function = ""
     for line in lines:
-        function_match = re.search(r"\bexport function ([A-Za-z0-9_]+)\(", line)
+        function_match = re.search(r"\bexport (?:async )?function ([A-Za-z0-9_]+)\(", line)
         if function_match:
             current_function = function_match.group(1)
+        if 'method: "DELETE"' in line:
+            continue
         for matched_path in re.findall(r'["`](/api/[^"`]+)["`]', line):
             method = "GET"
             if "postJson" in line:

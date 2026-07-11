@@ -122,7 +122,8 @@ class NativeCliProviderSpecTests(unittest.TestCase):
         self.assertEqual(specs["claude"].model, "haiku")
         self.assertEqual(specs["claude"].provider_kind, "claude_code")
         self.assertIn("--model", specs["claude"].command)
-        self.assertNotIn("plan", specs["claude"].command)
+        self.assertEqual(specs["claude"].permission_mode, "meeting_read_only")
+        self.assertIn("plan", specs["claude"].command)
         self.assertNotIn("-p", specs["claude"].command)
         self.assertNotIn("--print", specs["claude"].command)
         for spec in specs.values():
@@ -232,7 +233,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse(guest["agent.control"])
         self.assertEqual(
             [provider["id"] for provider in operator_snapshot["available_providers"]],
-            ["codex", "antigravity", "grok", "claude"],
+            ["codex", "antigravity", "grok", "claude", "opencode", "deepseek"],
         )
 
     def test_snapshot_is_bounded_and_history_pages_are_read_only(self):

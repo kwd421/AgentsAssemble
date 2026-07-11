@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import sys
 import threading
 import time
 from datetime import UTC, datetime
@@ -11,9 +12,12 @@ from typing import Protocol
 from uuid import uuid4
 
 from agentsassemble.grok_acp_runtime import GrokAcpRuntime
+from agentsassemble.deepseek_runtime import DeepSeekApiRuntime
 from agentsassemble.live_cli import LiveCliRuntime
+from agentsassemble.opencode_runtime import OpenCodeRuntime
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
+from agentsassemble.windows_conpty import WindowsConPtyRuntime
 
 
 class BridgeRuntime(Protocol):
@@ -37,6 +41,8 @@ class RoomAgentBridge:
         participant_id: str,
         session_id: str,
         receive_sleep_seconds: float = 0.05,
+        initial_orientation: str = "",
+        stop_runtime_on_exit: bool = True,
     ) -> None:
         self.client = client
         self.runtime = runtime
@@ -44,6 +50,8 @@ class RoomAgentBridge:
         self.participant_id = clean_lobby_text(participant_id, limit=128)
         self.session_id = clean_lobby_text(session_id, limit=128)
         self.receive_sleep_seconds = max(0.001, float(receive_sleep_seconds))
+        self._initial_orientation = str(initial_orientation or "").strip()
+        self._stop_runtime_on_exit = bool(stop_runtime_on_exit)
         self._stop = threading.Event()
         self._worker_lock = threading.RLock()
         self._worker: threading.Thread | None = None
@@ -64,10 +72,11 @@ class RoomAgentBridge:
             return 0
         finally:
             self._stop.set()
-            try:
-                self.runtime.stop(timeout_seconds=2.0)
-            except Exception:
-                pass
+            if self._stop_runtime_on_exit:
+                try:
+                    self.runtime.stop(timeout_seconds=2.0)
+                except Exception:
+                    pass
             with self._worker_lock:
                 worker = self._worker
             if worker is not None and worker is not threading.current_thread():
@@ -97,6 +106,9 @@ class RoomAgentBridge:
     def _start_turn(self, assignment: dict[str, object]) -> None:
         turn_id = clean_lobby_text(assignment.get("turn_id"), limit=128)
         provider_input = str(assignment.get("provider_input") or "")
+        if self._initial_orientation:
+            provider_input = f"{self._initial_orientation}\n\n{provider_input}".strip()
+            self._initial_orientation = ""
         if not turn_id or not provider_input:
             return
         with self._worker_lock:
@@ -106,9 +118,10 @@ class RoomAgentBridge:
                     {"turn_id": turn_id, "status": "error", "message": "Agent Bridge received a turn while busy."},
                 )
                 return
+            turn_assignment = {**assignment, "provider_input": provider_input}
             self._worker = threading.Thread(
                 target=self._run_turn,
-                args=(assignment,),
+                args=(turn_assignment,),
                 name=f"AgentsAssembleBridgeTurn-{self.participant_id}",
                 daemon=True,
             )
@@ -195,15 +208,16 @@ class RoomAgentBridge:
             )
         except Exception as error:
             health = self.runtime.health()
-            self._command(
-                "turn.failed",
-                {
-                    "turn_id": turn_id,
-                    "status": "interrupted" if self._stop.is_set() else "error",
-                    "message": str(error),
-                    "diagnostics": self._health_payload(health),
-                },
-            )
+            if not self._stop.is_set():
+                self._command(
+                    "turn.failed",
+                    {
+                        "turn_id": turn_id,
+                        "status": "error",
+                        "message": str(error),
+                        "diagnostics": self._health_payload(health),
+                    },
+                )
         finally:
             with self._worker_lock:
                 if self._worker is threading.current_thread():
@@ -249,14 +263,39 @@ class RoomAgentBridge:
             "message_source": str(health.get("message_source") or ""),
             "message_source_strict": bool(health.get("message_source_strict", False)),
             "model": str(health.get("model") or ""),
+            "reasoning_effort": str(health.get("reasoning_effort") or ""),
+            "service_tier": str(health.get("service_tier") or ""),
+            "variant": str(health.get("variant") or ""),
+            "permission_mode": str(health.get("permission_mode") or ""),
         }
 
 
-def runtime_from_config(config: dict[str, object]) -> BridgeRuntime:
+def runtime_from_config(config: dict[str, object], *, credential: str = "") -> BridgeRuntime:
     command = [str(part) for part in config.get("command", [])] if isinstance(config.get("command"), list) else []
     if not command or not command[0].strip():
         raise ValueError("Agent Bridge command is required.")
     provider_kind = clean_lobby_text(config.get("provider_kind"), limit=64)
+    if provider_kind == "deepseek_api":
+        return DeepSeekApiRuntime(
+            clean_lobby_text(config.get("participant_id") or config.get("agent_id"), limit=128),
+            api_key=credential,
+            model=clean_lobby_text(config.get("model"), limit=128) or "deepseek-v4-flash",
+            reasoning_effort=clean_lobby_text(config.get("reasoning_effort"), limit=32) or "high",
+            thinking=clean_lobby_text(config.get("variant"), limit=32) != "non_thinking",
+        )
+    if provider_kind == "opencode_server":
+        return OpenCodeRuntime(
+            clean_lobby_text(config.get("participant_id") or config.get("agent_id"), limit=128),
+            endpoint=clean_lobby_text(config.get("provider_endpoint"), limit=1000),
+            workspace=clean_lobby_text(config.get("cwd"), limit=500) or ".",
+            state_dir=clean_lobby_text(config.get("runtime_state_dir"), limit=1000)
+            or ".agentsassemble/opencode",
+            model=clean_lobby_text(config.get("model"), limit=256) or "opencode-go/glm-5.2",
+            variant=clean_lobby_text(config.get("variant"), limit=64),
+            permission_mode=clean_lobby_text(config.get("permission_mode"), limit=64)
+            or "meeting_read_only",
+            server_pid=_optional_int(config.get("provider_server_pid")),
+        )
     if provider_kind == "grok_live_session" and _is_grok_acp_command(command):
         return GrokAcpRuntime(
             clean_lobby_text(config.get("participant_id") or config.get("agent_id"), limit=128),
@@ -268,7 +307,8 @@ def runtime_from_config(config: dict[str, object]) -> BridgeRuntime:
         )
     if provider_kind == "grok_live_session" and Path(command[0]).name.casefold() == "grok":
         raise ValueError("Grok Agent Sessions require grok agent stdio; PTY fallback is disabled.")
-    return LiveCliRuntime(
+    runtime_class = WindowsConPtyRuntime if os.name == "nt" else LiveCliRuntime
+    return runtime_class(
         clean_lobby_text(config.get("participant_id") or config.get("agent_id"), limit=128),
         command,
         cwd=clean_lobby_text(config.get("cwd"), limit=500) or None,
@@ -282,6 +322,14 @@ def runtime_from_config(config: dict[str, object]) -> BridgeRuntime:
         startup_timeout_seconds=_nonnegative_float(config.get("startup_timeout_seconds"), 20.0),
         startup_accept_contains=str(config.get("startup_accept_contains") or ""),
         startup_accept_keys=str(config.get("startup_accept_keys") or "\r"),
+        startup_input=str(config.get("startup_input") or ""),
+        profile_settings={
+            "model": config.get("model"),
+            "reasoning_effort": config.get("reasoning_effort"),
+            "service_tier": config.get("service_tier"),
+            "variant": config.get("variant"),
+            "permission_mode": config.get("permission_mode"),
+        },
     )
 
 
@@ -300,6 +348,11 @@ def main() -> int:
     config = json.loads(config_path.read_text(encoding="utf-8"))
     if not isinstance(config, dict):
         raise SystemExit("Agent Bridge config must be a JSON object.")
+    credential = ""
+    if bool(config.get("credential_stdin")):
+        credential = sys.stdin.buffer.readline(16_384).decode("utf-8", errors="replace").strip()
+        if not credential:
+            raise SystemExit("Agent Bridge credential handoff was empty.")
     client = connect_room_ws_with_ticket(server_url, ticket, ["room_events"], timeout=10.0)
     try:
         client.sock.settimeout(0.25)
@@ -307,7 +360,7 @@ def main() -> int:
         pass
     bridge = RoomAgentBridge(
         client,
-        runtime_from_config(config),
+        runtime_from_config(config, credential=credential),
         room_id=str(config.get("room_id") or "general"),
         participant_id=str(config.get("participant_id") or ""),
         session_id=str(config.get("session_id") or config.get("participant_id") or ""),
@@ -335,6 +388,14 @@ def _nonnegative_float(value: object, default: float) -> float:
     except (TypeError, ValueError):
         return default
     return parsed if parsed >= 0 else default
+
+
+def _optional_int(value: object) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _now() -> str:

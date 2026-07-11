@@ -57,6 +57,7 @@ export interface RoomFriend {
   participant_type: ParticipantType;
   provider_kind: string;
   connection_kind: string;
+  external_owned?: boolean;
   agent_id?: string;
   source_agent_id: string;
   last_meeting_id: string;
@@ -113,6 +114,8 @@ export interface RoomInviteCreateResponse {
   room_url: string;
   join_url?: string;
   remote_client_packet?: Record<string, unknown>;
+  client_type?: string;
+  provider_kind?: string;
 }
 
 export interface RoomInviteJoinResponse {
@@ -382,6 +385,7 @@ export interface RoomAgentSession {
   provider_kind: string;
   runtime_kind: string;
   connection_kind: string;
+  external_owned?: boolean;
   command_configured?: string[];
   resolved_executable?: string;
   workspace?: string;
@@ -405,6 +409,10 @@ export interface RoomAgentSession {
   is_one_shot?: boolean;
   runtime_profile_key?: string;
   model?: string;
+  reasoning_effort?: string;
+  service_tier?: string;
+  variant?: string;
+  permission_mode?: string;
   message_source?: string;
   message_source_strict?: boolean;
   provider_visible_chars?: number;
@@ -555,32 +563,6 @@ export interface AgentSessionActionResponse {
 // agentSessions is the normal room UI creation path; legacy live-agent create
 // endpoints stay internal/compatibility-only.
 
-export interface LiveAgentCreateOption {
-  id: string;
-  label: string;
-}
-
-export interface LiveAgentCreateProvider {
-  id: "codex" | "claude" | "cursor" | "grok" | "antigravity" | "local" | string;
-  label: string;
-  provider_kind: string;
-  connection_kind: string;
-  participant_type: ParticipantType;
-  startable: boolean;
-  verification_note?: string;
-  login_available?: boolean;
-  login_label?: string;
-  model_options: LiveAgentCreateOption[];
-  effort_options: LiveAgentCreateOption[];
-  speed_options: LiveAgentCreateOption[];
-  permission_options: LiveAgentCreateOption[];
-}
-
-export interface LiveAgentCreateOptionsResponse {
-  default_workspace: string;
-  providers: LiveAgentCreateProvider[];
-}
-
 export interface FrontendLiveAgentCreateRequest {
   meetingId: string;
   providerId: string;
@@ -588,49 +570,12 @@ export interface FrontendLiveAgentCreateRequest {
   workspacePath: string;
   engagementMode?: string;
   modelId?: string;
-  effort?: string;
-  speed?: string;
-  replyCharLimit?: number;
-  permissionOption?: string;
-  fastMode?: boolean;
+  reasoningEffort?: string;
+  serviceTier?: string;
+  variant?: string;
+  permissionMode?: string;
   sessionId?: string;
   startNow?: boolean;
-}
-
-export interface ProviderSession {
-  session_id: string;
-  label: string;
-  updated_at: string;
-}
-
-export function fetchProviderSessions(providerKind: string, workspace = "") {
-  const params = new URLSearchParams({ provider_kind: providerKind, workspace });
-  return fetchJson<{ sessions: ProviderSession[] }>(`/api/provider-sessions?${params.toString()}`);
-}
-
-export interface FrontendLiveAgentCreateResponse {
-  status: string;
-  meeting_id: string;
-  agent: LiveAgent;
-  agents: LiveAgent[];
-  provider?: LiveAgentCreateProvider;
-  live_agent_config_path?: string;
-  group_id?: string;
-  group?: LiveAgentProcessGroup;
-  preflight?: Record<string, unknown>;
-  message?: string;
-}
-
-export interface FrontendLiveAgentCheckResponse {
-  status: string;
-  provider?: LiveAgentCreateProvider;
-  workspace_path?: string;
-  preflight?: Record<string, unknown>;
-  message?: string;
-  auth_action?: {
-    provider_id: string;
-    label: string;
-  };
 }
 
 export interface FrontendLiveAgentLoginResponse {
@@ -1045,6 +990,33 @@ export async function postJsonHost<T>(url: string, body: object): Promise<T> {
   return res.json();
 }
 
+export interface ProviderCredentialStatus {
+  configured: boolean;
+  source: "keyring" | "environment" | "missing";
+}
+
+export async function fetchDeepSeekCredentialStatus(): Promise<ProviderCredentialStatus> {
+  const headers: Record<string, string> = {};
+  const hostToken = loadHostToken();
+  if (hostToken) headers["X-Host-Token"] = hostToken;
+  const response = await fetch("/api/provider-credentials/deepseek", { headers });
+  if (!response.ok) throw await responseError(response);
+  return response.json();
+}
+
+export async function setDeepSeekCredential(apiKey: string): Promise<ProviderCredentialStatus> {
+  return postJsonHost<ProviderCredentialStatus>("/api/provider-credentials/deepseek", { api_key: apiKey });
+}
+
+export async function deleteDeepSeekCredential(): Promise<ProviderCredentialStatus> {
+  const headers: Record<string, string> = {};
+  const hostToken = loadHostToken();
+  if (hostToken) headers["X-Host-Token"] = hostToken;
+  const response = await fetch("/api/provider-credentials/deepseek", { method: "DELETE", headers });
+  if (!response.ok) throw await responseError(response);
+  return response.json();
+}
+
 async function postJsonModerator<T>(url: string, body: object, sessionToken = ""): Promise<T> {
   // Moderation endpoints accept the host token (local console) or the
   // operator's guest session token (public entrance) — send what we have.
@@ -1277,35 +1249,6 @@ export function fetchLiveAgentProcesses() {
   return fetchJson<LiveAgentProcessesResponse>("/api/live-agent-processes");
 }
 
-export function fetchLiveAgentCreateOptions() {
-  return fetchJson<LiveAgentCreateOptionsResponse>("/api/live-agent-create/options");
-}
-
-function frontendLiveAgentCreatePayload(request: FrontendLiveAgentCreateRequest) {
-  return {
-    meeting_id: request.meetingId,
-    provider_id: request.providerId,
-    display_name: request.displayName,
-    workspace_path: request.workspacePath,
-    engagement_mode: request.engagementMode || "mentioned",
-    model_id: request.modelId || "",
-    effort: request.effort || "",
-    speed: request.speed || "",
-    reply_char_limit: request.replyCharLimit || 0,
-    permission_option: request.permissionOption || "",
-    fast_mode: Boolean(request.fastMode),
-    session_id: request.sessionId || "",
-    start_now: Boolean(request.startNow),
-  };
-}
-
-export function checkFrontendLiveAgent(request: FrontendLiveAgentCreateRequest) {
-  return postJson<FrontendLiveAgentCheckResponse>("/api/live-agent-create/check", frontendLiveAgentCreatePayload(request));
-}
-
-export function createFrontendLiveAgent(request: FrontendLiveAgentCreateRequest) {
-  return postJson<FrontendLiveAgentCreateResponse>("/api/live-agent-create", frontendLiveAgentCreatePayload(request));
-}
 
 // Promote a localStorage room to a server-backed meeting (rooms-as-server-objects).
 // Idempotent; called when a room becomes active so its meeting always exists.
@@ -1575,12 +1518,18 @@ export function createRoomInvite({
   displayName,
   inviteScope = "room",
   ttlSeconds = 604800,
+  clientType = "browser",
+  providerKind = "manual",
+  maxUses = 0,
 }: {
   meetingId: string;
   agentId: string;
   displayName: string;
   inviteScope?: RoomAppearance["inviteScope"];
   ttlSeconds?: number;
+  clientType?: "browser" | "agent_bridge";
+  providerKind?: string;
+  maxUses?: number;
 }) {
   return postJsonHost<RoomInviteCreateResponse>("/api/room-invite/create", {
     meeting_id: meetingId,
@@ -1588,6 +1537,9 @@ export function createRoomInvite({
     display_name: displayName,
     invite_scope: inviteScope,
     ttl_seconds: ttlSeconds,
+    client_type: clientType,
+    provider_kind: providerKind,
+    max_uses: maxUses,
   });
 }
 

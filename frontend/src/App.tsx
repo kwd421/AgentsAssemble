@@ -31,10 +31,10 @@ import {
   fetchPublicInviteStatus,
   fetchRoomChannels,
   fetchRooms,
-  ensureRoomMeeting,
   createRoomChannel,
   fetchRoomFriends,
   fetchRoomSettings,
+  ensureRoomMeeting,
   claimHostDevice,
   fetchRoomMembers,
   fetchMafiaGame,
@@ -257,6 +257,17 @@ const CHANNEL_NOTIFICATION_LABELS: Record<ChannelNotificationSetting, string> = 
   mute: "알림 끔",
 };
 
+const EMPTY_ROOM: RoomDockItem = {
+  id: "no-room",
+  label: "방 없음",
+  meetingId: "",
+  topic: "새 방을 만들어 대화를 시작하세요.",
+  shortLabel: "",
+  icon: Hash,
+  createdAt: "",
+  tone: "fresh",
+};
+
 const MOBILE_SWIPE_THRESHOLD = 42;
 const MOBILE_SWIPE_VERTICAL_TOLERANCE = 80;
 const STORED_MAFIA_GAME_ID_KEY = "agentsassemble.mafiaGameId";
@@ -425,6 +436,8 @@ export default function App() {
   const [agentCreateOpen, setAgentCreateOpen] = useState(false);
   const [inviteCopyStatus, setInviteCopyStatus] = useState("");
   const [secureInviteUrl, setSecureInviteUrl] = useState("");
+  const [agentInviteUrl, setAgentInviteUrl] = useState("");
+  const [agentInviteProviderId, setAgentInviteProviderId] = useState("codex");
   const [publicInviteStatus, setPublicInviteStatus] = useState<PublicInviteStatus | null>(null);
   const [publicInviteUrlDraft, setPublicInviteUrlDraft] = useState("");
   const [hostTokenDraft, setHostTokenDraft] = useState("");
@@ -572,11 +585,10 @@ export default function App() {
     workroomQueueFetcher,
     8000
   );
-  const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? createFreshRoom();
+  const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? EMPTY_ROOM;
   // Rooms-as-server-objects: when a room becomes active, promote it to a
   // server-backed meeting (idempotent) so adding agents / roster / lobby always
   // have a real meeting to bind to instead of failing with "Meeting not found".
-  const ensuredMeetingsRef = useRef<Set<string>>(new Set());
   const lobbyStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
   const flowStreamRef = useRef<((events: LobbyEvent[]) => void) | null>(null);
   const bindLobbyStream = useCallback((receive: (events: LobbyEvent[]) => void) => {
@@ -624,17 +636,9 @@ export default function App() {
   const activeAgentSessionProgress = canonicalRoom.agentSessionProgress;
   const loadCanonicalRoomHistory = canonicalRoom.loadHistory;
   const sendAgentControl = canonicalRoom.sendAgentControl;
+  const sendAgentConfigure = canonicalRoom.sendAgentConfigure;
   const sendParticipantKick = canonicalRoom.sendParticipantKick;
   const sendParticipantMute = canonicalRoom.sendParticipantMute;
-  useEffect(() => {
-    const meetingId = activeRoom.meetingId || "";
-    if (!meetingId || meetingId === "pending-join" || guestLocked) return;
-    if (ensuredMeetingsRef.current.has(meetingId)) return;
-    ensuredMeetingsRef.current.add(meetingId);
-    ensureRoomMeeting(meetingId, activeRoom.label || "").catch(() => {
-      ensuredMeetingsRef.current.delete(meetingId); // allow a later retry
-    });
-  }, [activeRoom.meetingId, activeRoom.label, guestLocked]);
   const activeSideChatMeetingId = activeRoom.meetingId || "";
   const activeMafiaGameId = mafiaGameId === activeRoom.meetingId ? mafiaGameId : "";
   const mafiaFetcher = useCallback((): Promise<MafiaGameResponse> => {
@@ -651,7 +655,15 @@ export default function App() {
   const [mafiaData, , , refreshMafia] = usePoll<MafiaGameResponse>(mafiaFetcher, 3500);
 
   const activeRoomKey = roomSettingsKey(activeRoom);
-  const activeRoomMembers = roomMembersByRoom[activeRoomKey] || [];
+  const activeRoomMembers = useMemo(() => {
+    const byId = new Map(
+      (roomMembersByRoom[activeRoomKey] || []).map((member) => [member.participant_id, member])
+    );
+    canonicalRoom.participants.forEach((participant) => {
+      byId.set(participant.participant_id, participant);
+    });
+    return [...byId.values()];
+  }, [activeRoomKey, canonicalRoom.participants, roomMembersByRoom]);
   const agents: LiveAgent[] = activeRoomMembers
     .filter(
       (member) =>
@@ -1128,9 +1140,7 @@ export default function App() {
     activeRoom,
     scopedMafiaGame
   );
-  const visibleChannels = guestLocked
-    ? CHANNELS.filter((item) => item.id === "lobby")
-    : CHANNELS;
+  const visibleChannels = CHANNELS.filter((item) => item.id === "lobby");
   const channelSearchNeedle = channelSearchQuery.trim().toLowerCase();
 
   function mobileViewportIsActive() {
@@ -1291,16 +1301,21 @@ export default function App() {
     setFriendListFilter("add");
   }
 
-  function addFreshRoom() {
+  async function addFreshRoom() {
     if (guestLocked) return;
     const room = createFreshRoom();
-    setRooms((previous) => [room, ...previous]);
-    setActiveRoomId(room.id);
-    setAdminOpen(false);
-    setChannel("lobby");
-    setRoomMenu(null);
-    setChannelMenu(null);
-    closeMobileOverlays();
+    try {
+      await ensureRoomMeeting(room.meetingId, room.label);
+      setRooms((previous) => [room, ...previous]);
+      setActiveRoomId(room.id);
+      setAdminOpen(false);
+      setChannel("lobby");
+      setRoomMenu(null);
+      setChannelMenu(null);
+      closeMobileOverlays();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "방을 만들지 못했습니다.");
+    }
   }
 
   function openRoomMenu(event: ReactMouseEvent, room: RoomDockItem) {
@@ -1346,6 +1361,7 @@ export default function App() {
     setInviteModal({ roomId });
     setInviteCopyStatus("");
     setSecureInviteUrl("");
+    setAgentInviteUrl("");
     setHostTokenDraft(loadHostToken());
     setInviteFriendStatuses({});
     setInviteRemoteClientPacket({ friendName: "", preview: "" });
@@ -1733,6 +1749,45 @@ export default function App() {
     } catch (error) {
       setInviteCopyStatus(error instanceof Error ? error.message : "보안 초대 링크 생성 실패");
     }
+  }
+
+  async function generateAgentInviteLink(room: RoomDockItem) {
+    const provider = canonicalRoom.availableProviders.find(
+      (candidate) => candidate.id === agentInviteProviderId
+    );
+    if (!provider) {
+      setInviteCopyStatus("초대할 provider를 선택하세요");
+      return;
+    }
+    setInviteCopyStatus("Agent Session 초대 링크 생성 중...");
+    try {
+      await requirePublicInviteReady();
+      const invite = await createRoomInvite({
+        meetingId: room.meetingId,
+        agentId: `${provider.id}-guest`,
+        displayName: provider.display_name,
+        inviteScope: "room",
+        ttlSeconds: 600,
+        clientType: "agent_bridge",
+        providerKind: provider.provider_kind,
+        maxUses: 1,
+      });
+      const target = secureInviteCopyTarget({
+        joinUrl: invite.join_url || "",
+        localPreviewUrl: localPreviewInviteUrlForRoom(room),
+      });
+      if (!target.copyUrl) throw new Error(target.status);
+      setAgentInviteUrl(target.copyUrl);
+      setInviteCopyStatus("Agent Session 1회용 초대 링크 생성됨");
+    } catch (error) {
+      setInviteCopyStatus(error instanceof Error ? error.message : "Agent Session 초대 생성 실패");
+    }
+  }
+
+  async function copyAgentInviteLink() {
+    if (!agentInviteUrl) return;
+    const copied = await copyText(agentInviteUrl);
+    setInviteCopyStatus(copied ? "Agent Session 초대 링크 복사됨" : "초대 링크 복사 실패");
   }
 
   async function copyInviteLink(room: RoomDockItem) {
@@ -2162,6 +2217,9 @@ export default function App() {
         <RoomInviteModal
           roomLabel={inviteModalRoom.label}
           secureInviteUrl={secureInviteUrl}
+          agentInviteUrl={agentInviteUrl}
+          agentInviteProviderId={agentInviteProviderId}
+          availableProviders={canonicalRoom.availableProviders}
           localPreviewUrl={localPreviewUrl}
           publicUrl={invitePublicUrl}
           publicUrlDraft={publicInviteUrlDraft}
@@ -2178,6 +2236,9 @@ export default function App() {
           onClose={() => setInviteModal(null)}
           onGenerateSecureInvite={() => void generateInviteLink(inviteModalRoom)}
           onCopy={() => void copyInviteLink(inviteModalRoom)}
+          onAgentInviteProviderChange={setAgentInviteProviderId}
+          onGenerateAgentInvite={() => void generateAgentInviteLink(inviteModalRoom)}
+          onCopyAgentInvite={() => void copyAgentInviteLink()}
           onCopyLocalPreview={() => void copyLocalPreviewLink(inviteModalRoom)}
           onPublicUrlDraftChange={setPublicInviteUrlDraft}
           onConfigurePublicUrl={() => void configureInvitePublicUrl()}
@@ -2258,6 +2319,7 @@ export default function App() {
         open={agentCreateOpen && !guestLocked}
         meetingId={activeRoom.meetingId}
         roomLabel={activeRoom.label}
+        providers={canonicalRoom.availableProviders}
         onClose={() => setAgentCreateOpen(false)}
         onCreate={async (request) => {
           if (!roomSocket?.ready()) {
@@ -2268,11 +2330,10 @@ export default function App() {
             display_name: request.displayName,
             workspace: request.workspacePath,
             model: request.modelId || "",
-            effort: request.effort || "",
-            speed: request.speed || "",
-            permission_option: request.permissionOption || "",
-            fast_mode: Boolean(request.fastMode),
-            provider_session_id: request.sessionId || "",
+            reasoning_effort: request.reasoningEffort || "",
+            service_tier: request.serviceTier || "",
+            variant: request.variant || "",
+            permission_mode: request.permissionMode || "meeting_read_only",
             start: Boolean(request.startNow),
           });
         }}
@@ -2697,6 +2758,10 @@ export default function App() {
               canPostMessages={!guestLocked}
             />
           }
+          agentSessions={activeRoomAgentSessions}
+          availableProviders={canonicalRoom.availableProviders}
+          onAgentControl={sendAgentControl}
+          onAgentConfigure={sendAgentConfigure}
         />
       )}
 
@@ -2776,6 +2841,8 @@ export default function App() {
                 agentSessions={activeRoomAgentSessions}
                 capabilities={activeRoomCapabilities}
                 onAgentControl={sendAgentControl}
+                availableProviders={canonicalRoom.availableProviders}
+                onAgentConfigure={sendAgentConfigure}
                 onParticipantKick={sendParticipantKick}
                 onParticipantMute={sendParticipantMute}
               />

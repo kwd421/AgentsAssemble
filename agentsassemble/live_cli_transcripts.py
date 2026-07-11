@@ -514,7 +514,9 @@ def _normalize_turn_input(value: object) -> str:
 
 
 def _antigravity_user_request(value: object) -> str:
-    return _tagged_body(str(value or ""), "USER_REQUEST")
+    request = _tagged_body(str(value or ""), "USER_REQUEST")
+    request = re.sub(r"^\s*/plan\s+", "", request, count=1, flags=re.IGNORECASE)
+    return re.sub(r"\s*/plan\s*$", "", request, count=1, flags=re.IGNORECASE).strip()
 
 
 def _grok_user_inputs(value: object) -> list[str]:

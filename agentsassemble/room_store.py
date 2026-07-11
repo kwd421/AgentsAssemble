@@ -61,6 +61,11 @@ class RoomStore:
         clean_status = _room_status(status)
         now = _now()
         with self._lock, self._write_transaction() as connection:
+            deleted = connection.execute(
+                "SELECT deleted_at FROM deleted_rooms WHERE room_id = ?", (clean_room_id,)
+            ).fetchone()
+            if deleted is not None:
+                raise ValueError(f"Room {clean_room_id} was deleted and cannot be recreated implicitly.")
             row = connection.execute("SELECT data_json FROM rooms WHERE room_id = ?", (clean_room_id,)).fetchone()
             existing = _row_payload(row)
             room = {
@@ -90,7 +95,34 @@ class RoomStore:
             )
         if not existing:
             self.append_event(clean_room_id, "room_created", label=room["label"])
-        return room
+            return room
+
+    def room_is_deleted(self, room_id: str) -> bool:
+        clean_room_id = _clean_room_id(room_id)
+        with self._connection() as connection:
+            return connection.execute(
+                "SELECT 1 FROM deleted_rooms WHERE room_id = ?", (clean_room_id,)
+            ).fetchone() is not None
+
+    def delete_room(self, room_id: str, *, reason: str = "") -> bool:
+        """Delete canonical room state and retain a tombstone against stale clients."""
+
+        clean_room_id = _clean_room_id(room_id)
+        now = _now()
+        with self._lock, self._write_transaction() as connection:
+            existed = connection.execute(
+                "SELECT 1 FROM rooms WHERE room_id = ?", (clean_room_id,)
+            ).fetchone() is not None
+            for table in ("command_results", "room_events", "agent_sessions", "participants", "rooms"):
+                connection.execute(f"DELETE FROM {table} WHERE room_id = ?", (clean_room_id,))
+            connection.execute(
+                """INSERT INTO deleted_rooms(room_id, deleted_at, reason) VALUES(?, ?, ?)
+                   ON CONFLICT(room_id) DO UPDATE SET
+                       deleted_at = excluded.deleted_at,
+                       reason = excluded.reason""",
+                (clean_room_id, now, clean_lobby_text(reason, limit=500)),
+            )
+        return existed
 
     def room(self, room_id: str) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)

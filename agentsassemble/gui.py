@@ -53,6 +53,7 @@ from agentsassemble.live_agent_frontend_create import (
     frontend_live_agent_options_payload,
 )
 from agentsassemble.provider_sessions import list_provider_sessions
+from agentsassemble.provider_secrets import PROVIDER_SECRETS
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
@@ -8080,7 +8081,7 @@ def _print_gui_startup_banner(server_url: str, *, frontend_dist_root: Path | Non
 
 
 _LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
-_PUBLIC_INVITE_CORS_METHODS = "GET, POST, OPTIONS"
+_PUBLIC_INVITE_CORS_METHODS = "GET, POST, DELETE, OPTIONS"
 _PUBLIC_INVITE_CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID"
 
 
@@ -8154,6 +8155,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
                 # away from the desk.
                 "/api/room-invite/sessions",
                 "/api/room-invite/invites",
+                "/api/provider-credentials/deepseek",
             }
             or path.startswith("/app/assets/")
         )
@@ -8173,7 +8175,10 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             "/api/room-members/kick",
             "/api/room-invite/create",
             "/api/room-invite/revoke",
+            "/api/provider-credentials/deepseek",
         }
+    if method == "DELETE":
+        return path == "/api/provider-credentials/deepseek"
     if method == "OPTIONS":
         return _public_invite_route_allowed(path, "GET") or _public_invite_route_allowed(path, "POST")
     return False
@@ -8479,6 +8484,11 @@ def _make_handler(
                 return
             if path == "/api/providers":
                 self._send_json(provider_catalog_payload())
+                return
+            if path == "/api/provider-credentials/deepseek":
+                if not self._provider_credentials_allowed():
+                    return
+                self._send_json(PROVIDER_SECRETS.status("deepseek"))
                 return
             if path == "/api/model-catalog":
                 self._send_json(model_catalog_payload())
@@ -8792,6 +8802,25 @@ def _make_handler(
                     session_token = ""
                 ticket = ws_ticket_store.issue(session, session_token=session_token)
                 self._send_json({"ticket": ticket, "ttl_seconds": WS_TICKET_TTL_SECONDS})
+                return
+            if parsed.path == "/api/provider-credentials/deepseek":
+                if not self._provider_credentials_allowed():
+                    return
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    status = PROVIDER_SECRETS.set("deepseek", str(payload.get("api_key") or ""))
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                except RuntimeError:
+                    self._send_error(HTTPStatus.SERVICE_UNAVAILABLE, "secure_store_unavailable")
+                    return
+                self._send_json(status)
                 return
             if parsed.path == "/api/demo":
                 result = run_demo_meeting(adapter_name="mock", output_root=output_root)
@@ -11264,6 +11293,11 @@ def _make_handler(
                 self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
                 return
             query = parse_qs(parsed.query)
+            if parsed.path == "/api/provider-credentials/deepseek":
+                if not self._provider_credentials_allowed():
+                    return
+                self._send_json(PROVIDER_SECRETS.delete("deepseek"))
+                return
             if parsed.path == "/api/room-friends":
                 try:
                     deleted = delete_room_friend(output_root, str(query.get("friend_id", [""])[0] or ""))
@@ -11323,6 +11357,19 @@ def _make_handler(
                 and self._request_uses_loopback_host()
                 and _origin_is_loopback_or_empty(self.headers.get("Origin"))
             )
+
+        def _provider_credentials_allowed(self) -> bool:
+            ctx = RequestContext(self, route_deps, urlparse(self.path), parse_qs(urlparse(self.path).query))
+            if not self._request_is_local_operator() and not ctx.require_moderator():
+                return False
+            if self._request_uses_loopback_host():
+                return True
+            forwarded = str(self.headers.get("X-Forwarded-Proto") or "").lower()
+            public_scheme = urlparse(get_public_url()).scheme.lower()
+            if forwarded != "https" and public_scheme != "https":
+                self._send_error(HTTPStatus.FORBIDDEN, "HTTPS is required for remote credential management")
+                return False
+            return True
 
         def _room_owner_id_for_request(self) -> str:
             session = RequestContext(self, route_deps, urlparse(self.path), parse_qs(urlparse(self.path).query)).session()
@@ -11538,6 +11585,8 @@ def _make_handler(
 
             try:
                 while not ws.closed:
+                    if channel.closed:
+                        break
                     ready, _, _ = select.select([sock, channel], [], [], SSE_EVENT_POLL_INTERVAL_SECONDS)
                     if sock in ready:
                         data = sock.recv(65536)
@@ -11563,7 +11612,7 @@ def _make_handler(
                     sock.sendall(encode_close(CLOSE_PROTOCOL_ERROR))
                 except OSError:
                     pass
-            except (BrokenPipeError, ConnectionResetError, OSError):
+            except (BrokenPipeError, ConnectionResetError, OSError, ValueError):
                 pass
             finally:
                 room_realtime_controller.disconnect(channel)

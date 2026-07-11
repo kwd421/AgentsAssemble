@@ -10,26 +10,15 @@ def read_frontend(path: str) -> str:
 
 
 class FrontendAgentCreateFlowTests(unittest.TestCase):
-    def test_api_exposes_frontend_agent_create_endpoints(self):
+    def test_api_exposes_canonical_provider_profile_and_credential_contract(self):
         source = read_frontend("api.ts")
 
-        self.assertIn("LiveAgentCreateProvider", source)
-        self.assertIn('"antigravity"', source)
-        self.assertIn("model_options", source)
-        self.assertIn("effort_options", source)
-        self.assertIn("speed_options", source)
-        self.assertIn("model_id", source)
-        self.assertIn("effort", source)
-        self.assertIn("speed", source)
-        self.assertIn("fetchLiveAgentCreateOptions", source)
-        self.assertIn('"/api/live-agent-create/options"', source)
-        self.assertIn("checkFrontendLiveAgent", source)
-        self.assertIn('"/api/live-agent-create/check"', source)
-        self.assertIn("createFrontendLiveAgent", source)
-        self.assertIn('"/api/live-agent-create"', source)
-        self.assertIn("startFrontendLiveAgentLogin", source)
-        self.assertIn('"/api/live-agent-create/login"', source)
-        self.assertIn("workspace_path", source)
+        self.assertIn("reasoningEffort", source)
+        self.assertIn("serviceTier", source)
+        self.assertIn("permissionMode", source)
+        self.assertIn("fetchDeepSeekCredentialStatus", source)
+        self.assertIn('"/api/provider-credentials/deepseek"', source)
+        self.assertNotIn("speed_options", source)
 
     def test_friends_view_has_agent_add_entry_between_search_and_friend_add(self):
         source = read_frontend("views/FriendsView.tsx")
@@ -48,27 +37,25 @@ class FrontendAgentCreateFlowTests(unittest.TestCase):
         self.assertIn("에이전트 추가", source)
         self.assertIn("<MemberList", source)
 
-    def test_agent_create_modal_has_model_effort_and_speed_controls(self):
+    def test_agent_create_modal_renders_server_discovered_native_controls(self):
         source = read_frontend("views/components/AgentCreateModal.tsx")
 
         self.assertIn("modelId", source)
-        self.assertIn("effort", source)
-        self.assertIn("speed", source)
-        self.assertIn("model_options", source)
-        self.assertIn("effort_options", source)
-        self.assertIn("speed_options", source)
+        self.assertIn("reasoningEffort", source)
+        self.assertIn("serviceTier", source)
+        self.assertIn("selectedProvider?.controls", source)
+        self.assertIn("ProviderControlField", source)
         self.assertIn("<select", source)
-        self.assertIn("모델", source)
-        self.assertIn("추론 강도", source)
-        self.assertIn("응답 속도", source)
+        self.assertNotIn("speed_options", source)
 
-    def test_agent_create_modal_can_start_provider_login_from_auth_action(self):
+    def test_agent_create_modal_does_not_restore_legacy_login_or_poll_controls(self):
         source = read_frontend("views/components/AgentCreateModal.tsx")
 
-        self.assertIn("authAction", source)
-        self.assertIn("handleLogin", source)
-        self.assertIn("startFrontendLiveAgentLogin", source)
-        self.assertIn("로그인 창을 열었습니다", source)
+        self.assertNotIn("authAction", source)
+        self.assertNotIn("startFrontendLiveAgentLogin", source)
+        self.assertNotIn("pollInterval", source)
+        self.assertIn('type="password"', source)
+        self.assertIn("setDeepSeekKey(\"\")", source)
 
 
 if __name__ == "__main__":

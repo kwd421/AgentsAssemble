@@ -24,7 +24,6 @@ import {
   stopLiveAgentSessionAgent,
   stopSelfManagedAgent,
   resumeSelfManagedAgent,
-  updateLiveAgentSessionAgentTiming,
   updateLiveAgentSessionAgentOptions,
   uploadLobbyAttachment,
   type LiveAgent,
@@ -70,6 +69,7 @@ import AgentSessionDetails, {
   agentSessionStatusLabel,
   type AgentSessionControlAction,
 } from "./AgentSessionDetails";
+import type { NativeCliProviderAvailability } from "../../roomSocketClient";
 
 export type RoleId = "human" | "director" | "implementer" | "reviewer" | "agent";
 
@@ -105,7 +105,6 @@ const ROLE_OPTIONS: Array<{ id: RoleId; label: string; icon: LucideIcon }> = [
 ];
 
 const ROW_POINTER_MOVE_TOLERANCE = 8;
-const DEFAULT_AGENT_POLL_INTERVAL_SECONDS = 0.25;
 
 function isPrimaryActivationPointer(event: ReactPointerEvent<HTMLElement>) {
   return event.pointerType !== "mouse" || event.button === 0;
@@ -255,48 +254,6 @@ function sessionLocationRows(agent: LiveAgent, sessionGroup?: LiveAgentProcessGr
   return rows.filter((row) => String(row.value || "").trim());
 }
 
-function pollIntervalFromAgent(agent?: LiveAgent) {
-  const value = agent?.poll_interval;
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? value
-    : DEFAULT_AGENT_POLL_INTERVAL_SECONDS;
-}
-
-function cooldownFromAgent(agent?: LiveAgent) {
-  const value = agent?.cooldown;
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
-}
-
-function pollIntervalSecondsText(interval: number) {
-  return String(interval > 0 ? interval : DEFAULT_AGENT_POLL_INTERVAL_SECONDS);
-}
-
-function secondsText(value: number) {
-  return String(Number.isFinite(value) && value >= 0 ? value : 0);
-}
-
-function parsePositiveSeconds(secondsText: string): number | null {
-  const parsed = Number(secondsText);
-  if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  return parsed;
-}
-
-function parseNonnegativeSeconds(secondsText: string): number | null {
-  const parsed = Number(secondsText);
-  if (!Number.isFinite(parsed) || parsed < 0) return null;
-  return parsed;
-}
-
-function pollIntervalLabel(interval: number | null) {
-  if (interval === null) return "확인 필요";
-  return `${interval}s`;
-}
-
-function cooldownLabel(cooldown: number | null) {
-  if (cooldown === null) return "확인 필요";
-  return cooldown <= 0 ? "없음" : `${cooldown}s`;
-}
-
 function privateAgentField(agent: LiveAgent, fieldParts: string[]) {
   return (agent as unknown as Record<string, unknown>)[fieldParts.join("_")];
 }
@@ -411,17 +368,18 @@ function MemberRow({
   onContextMenu: (entry: MemberEntry, event: ReactMouseEvent<HTMLElement>) => void;
   canEditRoles: boolean;
 }) {
+  const canOpenDetails = Boolean(entry.agent || entry.agentSession);
   const Icon = entry.icon;
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const quotaChips = entry.agent && entry.canViewQuota ? inlineQuotaChips(entry.agent) : [];
   const roleLabel = ROLE_OPTIONS.find((option) => option.id === entry.role)?.label || "에이전트";
 
   function openDetails() {
-    if (entry.agent) onOpenDetails(entry);
+    if (canOpenDetails) onOpenDetails(entry);
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!entry.agent || !isPrimaryActivationPointer(event) || rowTargetIsInteractive(event.target)) {
+    if (!canOpenDetails || !isPrimaryActivationPointer(event) || rowTargetIsInteractive(event.target)) {
       pointerStartRef.current = null;
       return;
     }
@@ -429,7 +387,7 @@ function MemberRow({
   }
 
   function handlePointerUp(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!entry.agent || !isPrimaryActivationPointer(event) || rowTargetIsInteractive(event.target)) return;
+    if (!canOpenDetails || !isPrimaryActivationPointer(event) || rowTargetIsInteractive(event.target)) return;
     const pointerStart = pointerStartRef.current;
     pointerStartRef.current = null;
     if (!pointerStart) return;
@@ -448,8 +406,8 @@ function MemberRow({
       className="dc-member group"
       data-role={entry.role}
       data-active={entry.active}
-      role={entry.agent ? "button" : undefined}
-      tabIndex={entry.agent ? 0 : undefined}
+      role={canOpenDetails ? "button" : undefined}
+      tabIndex={canOpenDetails ? 0 : undefined}
       data-muted={entry.muted}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
@@ -460,7 +418,7 @@ function MemberRow({
         openDetails();
       }}
       onKeyDown={(event) => {
-        if (!entry.agent) return;
+        if (!canOpenDetails) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           openDetails();
@@ -574,6 +532,8 @@ function MemberDetailModal({
   onAgentProfileSettingsChange,
   onParticipantKick,
   onAgentControl,
+  availableProviders = [],
+  onAgentConfigure,
 }: {
   entry: MemberEntry;
   onClose: () => void;
@@ -585,17 +545,14 @@ function MemberDetailModal({
     session: RoomAgentSession,
     action: AgentSessionControlAction
   ) => void | Promise<void>;
+  availableProviders?: NativeCliProviderAvailability[];
+  onAgentConfigure?: (
+    session: RoomAgentSession,
+    settings: Record<string, string>
+  ) => void | Promise<void>;
 }) {
   const [sessionActionBusy, setSessionActionBusy] = useState(false);
   const [sessionActionStatus, setSessionActionStatus] = useState("");
-  const initialPollInterval = pollIntervalFromAgent(entry.agent);
-  const [pollIntervalSeconds, setPollIntervalSeconds] = useState(
-    pollIntervalSecondsText(initialPollInterval)
-  );
-  const initialCooldown = cooldownFromAgent(entry.agent);
-  const [cooldownSeconds, setCooldownSeconds] = useState(secondsText(initialCooldown));
-  const [pollIntervalBusy, setPollIntervalBusy] = useState(false);
-  const [pollIntervalStatus, setPollIntervalStatus] = useState("");
   const [agentNameDraft, setAgentNameDraft] = useState(entry.agentProfile?.displayName || entry.agentDisplayName || "");
   const [agentAvatarImage, setAgentAvatarImage] = useState(entry.avatarImage || "");
   const [agentProfileCropFile, setAgentProfileCropFile] = useState<File | null>(null);
@@ -606,17 +563,67 @@ function MemberDetailModal({
   const [optionsStatus, setOptionsStatus] = useState("");
 
   useEffect(() => {
-    const nextPollInterval = pollIntervalFromAgent(entry.agent);
-    setPollIntervalSeconds(pollIntervalSecondsText(nextPollInterval));
-    setCooldownSeconds(secondsText(cooldownFromAgent(entry.agent)));
-    setPollIntervalStatus("");
-  }, [entry.agent?.agent_id, entry.agent?.poll_interval, entry.agent?.cooldown]);
-
-  useEffect(() => {
     setAgentNameDraft(entry.agentProfile?.displayName || entry.agentDisplayName || "");
     setAgentAvatarImage(entry.avatarImage || "");
     setAgentProfileStatus("");
   }, [entry.agent?.agent_id, entry.agentDisplayName, entry.agentProfile?.displayName, entry.avatarImage]);
+
+  if (!entry.agent && entry.agentSession) {
+    return (
+      <div className="dc-modal-backdrop" role="presentation" onClick={onClose}>
+        <section
+          className="dc-member-detail-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="member-detail-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <header className="dc-member-detail-modal-head">
+            <span className="dc-member-detail-modal-avatar" data-role={entry.role}>
+              <Bot size={22} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 id="member-detail-title" className="truncate preserve-words">
+                {entry.displayName}
+              </h2>
+              <p className="truncate preserve-words">{entry.fullDetail || entry.detail}</p>
+            </div>
+            <button type="button" className="dc-modal-close" onClick={onClose} aria-label="멤버 정보 닫기">
+              <X size={18} />
+            </button>
+          </header>
+          <AgentSessionDetails
+            session={entry.agentSession}
+            provider={availableProviders.find(
+              (provider) => provider.provider_kind === entry.agentSession?.provider_kind
+            )}
+            onControl={onAgentControl}
+            onConfigure={onAgentConfigure}
+          />
+          {onParticipantKick && (
+            <section className="dc-member-detail-section" aria-label={`${entry.displayName} 방 관리`}>
+              <button
+                type="button"
+                className="dc-member-session-button"
+                data-variant="danger"
+                disabled={sessionActionBusy}
+                onClick={() => {
+                  if (!window.confirm(`${entry.displayName}을 이 방에서 추방할까요?`)) return;
+                  setSessionActionBusy(true);
+                  void Promise.resolve(onParticipantKick(entry.id))
+                    .then(onClose)
+                    .finally(() => setSessionActionBusy(false));
+                }}
+              >
+                <LogOut size={15} />
+                추방
+              </button>
+            </section>
+          )}
+        </section>
+      </div>
+    );
+  }
 
   if (!entry.agent) return null;
   const agent = entry.agent;
@@ -663,19 +670,10 @@ function MemberDetailModal({
   const hasSessionSection = !entry.agentSession && Boolean(
     hasSessionLocation || hasResumeControl || hasStopControl || showIndividualControlReason
   );
-  const hasTimingControl = !entry.agentSession && Boolean(
-    sessionGroup &&
-      processOwnsAgent &&
-      sessionGroup.group_id &&
-      sessionGroup.meeting_id &&
-      sessionGroup.config_path
-  );
   const canonicalRoomAgent = agent.connection_kind === "native_cli_bridge";
   const hasRoomAdminControl = Boolean(
     agent.agent_id && agent.meeting_id && (onParticipantKick || !canonicalRoomAgent)
   );
-  const pollIntervalValue = parsePositiveSeconds(pollIntervalSeconds);
-  const cooldownValue = parseNonnegativeSeconds(cooldownSeconds);
   const canResumeSession = Boolean(
     hasResumeControl
   );
@@ -870,41 +868,6 @@ function MemberDetailModal({
     }
   }
 
-  async function handleUpdateTiming() {
-    if (!sessionGroup || !hasTimingControl || pollIntervalValue === null || cooldownValue === null) {
-      setPollIntervalStatus("호출 간격은 0보다 크고, 쿨다운은 0 이상의 숫자로 입력하세요");
-      return;
-    }
-    setPollIntervalBusy(true);
-    setPollIntervalStatus("저장 중...");
-    try {
-      const response = await updateLiveAgentSessionAgentTiming({
-        meetingId: sessionGroup.meeting_id,
-        groupId: sessionGroup.group_id,
-        agentId: agent.agent_id,
-        liveAgentConfigPath: sessionGroup.config_path,
-        pollInterval: pollIntervalValue,
-        cooldown: cooldownValue,
-      });
-      const applied =
-        typeof response.poll_interval === "number" && Number.isFinite(response.poll_interval)
-          ? response.poll_interval
-          : pollIntervalValue;
-      const appliedCooldown =
-        typeof response.cooldown === "number" && Number.isFinite(response.cooldown)
-          ? response.cooldown
-          : cooldownValue;
-      setPollIntervalStatus(
-        `저장됨 · 호출 ${pollIntervalLabel(applied)} · 쿨다운 ${cooldownLabel(appliedCooldown)}`
-      );
-      onSessionActionComplete?.();
-    } catch (error) {
-      setPollIntervalStatus(error instanceof Error ? error.message : "호출 간격 저장 실패");
-    } finally {
-      setPollIntervalBusy(false);
-    }
-  }
-
   return (
     <div className="dc-modal-backdrop" role="presentation" onClick={onClose}>
       <section
@@ -985,7 +948,14 @@ function MemberDetailModal({
           {lastObserved && <p className="dc-member-detail-note preserve-words">{lastObserved}</p>}
         </section>
         {entry.agentSession && (
-          <AgentSessionDetails session={entry.agentSession} onControl={onAgentControl} />
+          <AgentSessionDetails
+            session={entry.agentSession}
+            provider={availableProviders.find(
+              (provider) => provider.provider_kind === entry.agentSession?.provider_kind
+            )}
+            onControl={onAgentControl}
+            onConfigure={onAgentConfigure}
+          />
         )}
         {canEditAgentProfile && (
           <section className="dc-member-detail-section" aria-label={`${entry.displayName} 에이전트 프로필`}>
@@ -1222,53 +1192,6 @@ function MemberDetailModal({
             )}
           </section>
         )}
-        {hasTimingControl && (
-          <section className="dc-member-detail-section" aria-label={`${entry.displayName} 응답 타이밍`}>
-            <h3>응답 타이밍</h3>
-            <div className="dc-member-session-actions">
-              <label className="min-w-0 flex-1 text-[11px] font-bold text-text-muted">
-                확인 주기
-                <input
-                  className="mt-1 w-full rounded border border-line bg-black/20 px-2 py-2 text-[12px] text-text-primary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:opacity-45"
-                  type="number"
-                  min="0.05"
-                  step="0.05"
-                  inputMode="decimal"
-                  disabled={pollIntervalBusy}
-                  value={pollIntervalSeconds}
-                  onChange={(event) => setPollIntervalSeconds(event.target.value)}
-                />
-              </label>
-              <label className="min-w-0 flex-1 text-[11px] font-bold text-text-muted">
-                쿨다운
-                <input
-                  className="mt-1 w-full rounded border border-line bg-black/20 px-2 py-2 text-[12px] text-text-primary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:opacity-45"
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  inputMode="decimal"
-                  disabled={pollIntervalBusy}
-                  value={cooldownSeconds}
-                  onChange={(event) => setCooldownSeconds(event.target.value)}
-                />
-              </label>
-              <button
-                type="button"
-                className="dc-member-session-button"
-                disabled={pollIntervalBusy || pollIntervalValue === null || cooldownValue === null}
-                onClick={handleUpdateTiming}
-              >
-                적용
-              </button>
-            </div>
-            <p className="dc-member-session-status preserve-words">
-              현재 호출 {pollIntervalLabel(pollIntervalValue)} · 쿨다운 {cooldownLabel(cooldownValue)} (초 단위)
-            </p>
-            {pollIntervalStatus && (
-              <p className="dc-member-session-status preserve-words">{pollIntervalStatus}</p>
-            )}
-          </section>
-        )}
         {hasRoomAdminControl && (
           <section className="dc-member-detail-section" aria-label={`${entry.displayName} 방 관리`}>
             <h3>방 관리</h3>
@@ -1365,6 +1288,8 @@ export default function MemberList({
   onParticipantMute,
   agentSessions = [],
   onAgentControl,
+  availableProviders = [],
+  onAgentConfigure,
 }: {
   agents: LiveAgent[];
   members?: RoomMember[];
@@ -1387,6 +1312,11 @@ export default function MemberList({
   onAgentControl?: (
     session: RoomAgentSession,
     action: AgentSessionControlAction
+  ) => void | Promise<void>;
+  availableProviders?: NativeCliProviderAvailability[];
+  onAgentConfigure?: (
+    session: RoomAgentSession,
+    settings: Record<string, string>
   ) => void | Promise<void>;
 }) {
   const [localRoleOverrides, setLocalRoleOverrides] = useState<Record<string, RoleId>>({});
@@ -1474,6 +1404,7 @@ export default function MemberList({
           !agentIds.has(member.participant_id)
       )
       .map((member) => {
+        const agentSession = sessionByParticipantId.get(member.participant_id);
         const fallbackRole = memberRole(member);
         const role = effectiveRoleOverrides[member.participant_id] || fallbackRole;
         const typeMeta = participantTypeMeta(member.participant_type);
@@ -1493,18 +1424,23 @@ export default function MemberList({
           .join(" · ");
         return {
           id: member.participant_id,
+          agentSession,
           member,
           displayName: member.display_name || member.participant_id,
-          detail,
-          fullDetail,
-          statusLabel: memberStatusLabel(member),
+          detail: [detail, agentSession?.model].filter(Boolean).join(" · "),
+          fullDetail: [fullDetail, agentSession?.runtime_kind].filter(Boolean).join(" · "),
+          statusLabel: agentSession
+            ? agentSessionStatusLabel(agentSession.runtime_status || agentSession.status)
+            : memberStatusLabel(member),
           role,
           owner: false,
-          active: memberActive(member),
+          active: agentSession
+            ? agentSessionIsPresent(agentSession.runtime_status || agentSession.status)
+            : memberActive(member),
           muted: Boolean(member.muted),
           meetingId: String(member.meeting_id || ""),
           canViewQuota: false,
-          ownedByViewer: false,
+          ownedByViewer: Boolean(agentSession && !agentSession.external_owned),
           avatarImage: member.avatar_image_url,
           icon: ROLE_OPTIONS.find((option) => option.id === role)?.icon || typeMeta.icon,
         } satisfies MemberEntry;
@@ -1616,13 +1552,17 @@ export default function MemberList({
         id: "people",
         label: "사람",
         icon: User,
-        entries: visibleEntries.filter((entry) => !entry.agent && entry.role === "human"),
+        entries: visibleEntries.filter(
+          (entry) => !entry.agent && !entry.agentSession && entry.role === "human"
+        ),
       },
       {
         id: "owned-agents",
         label: "내 에이전트",
         icon: Bot,
-        entries: visibleEntries.filter((entry) => entry.agent && entry.ownedByViewer),
+        entries: visibleEntries.filter(
+          (entry) => Boolean(entry.agent || entry.agentSession) && entry.ownedByViewer
+        ),
       },
       {
         id: "other-agents",
@@ -1630,7 +1570,8 @@ export default function MemberList({
         icon: Bot,
         entries: visibleEntries.filter(
           (entry) =>
-            (entry.agent && !entry.ownedByViewer) || (!entry.agent && entry.role !== "human")
+            (Boolean(entry.agent || entry.agentSession) && !entry.ownedByViewer) ||
+            (!entry.agent && !entry.agentSession && entry.role !== "human")
         ),
       },
     ],
@@ -1719,6 +1660,8 @@ export default function MemberList({
           onAgentProfileSettingsChange={setAgentProfileSettings}
           onParticipantKick={canModerate ? onParticipantKick : undefined}
           onAgentControl={onAgentControl}
+          availableProviders={availableProviders}
+          onAgentConfigure={onAgentConfigure}
         />
       )}
       {memberMenu && (

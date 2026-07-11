@@ -37,3 +37,40 @@ jobs:
         run: npm --prefix frontend ci
       - name: Build frontend (tsc + vite)
         run: npm --prefix frontend run build
+
+  runtime-platforms:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Test provider profiles, secret boundaries, and platform transports
+        run: python -m unittest tests.test_provider_runtime_controls tests.test_room_prune
+
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+      - name: Install Playwright Chromium
+        run: npx --prefix frontend playwright install --with-deps chromium
+      - name: Run frontend unit tests
+        run: npm --prefix frontend test
+      - name: Run canonical room browser test
+        run: npm --prefix frontend run test:e2e

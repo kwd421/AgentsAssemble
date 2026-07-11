@@ -6,8 +6,12 @@ import shutil
 import subprocess
 import threading
 import time
-import fcntl
-import struct
+try:
+    import fcntl
+    import struct
+except ImportError:  # pragma: no cover - Windows uses ConPTY
+    fcntl = None  # type: ignore[assignment]
+    struct = None  # type: ignore[assignment]
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,6 +25,7 @@ from agentsassemble.live_cli_transcripts import (
     make_live_cli_message_source,
 )
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.process_environment import sanitized_provider_environment
 
 try:
     import pty
@@ -99,8 +104,10 @@ class LiveCliRuntime:
         startup_timeout_seconds: float = 0.0,
         startup_accept_contains: str = "",
         startup_accept_keys: str = "\r",
+        startup_input: str = "",
         max_output_bytes: int = 256_000,
         message_source: LiveCliMessageSource | None = None,
+        profile_settings: dict[str, object] | None = None,
     ) -> None:
         if not command:
             raise ValueError("Live CLI command is required.")
@@ -123,7 +130,13 @@ class LiveCliRuntime:
         self.startup_timeout_seconds = max(0.0, float(startup_timeout_seconds or 0.0))
         self.startup_accept_contains = str(startup_accept_contains or "")
         self.startup_accept_keys = str(startup_accept_keys or "\r")
+        self.startup_input = str(startup_input or "")
         self.max_output_bytes = max(1, int(max_output_bytes))
+        self.profile_settings = {
+            key: clean_lobby_text(value, limit=256)
+            for key, value in dict(profile_settings or {}).items()
+            if clean_lobby_text(value, limit=256)
+        }
         self._message_source = message_source or make_live_cli_message_source(
             self.agent_id,
             self.command,
@@ -140,6 +153,7 @@ class LiveCliRuntime:
         self._stopped_at = ""
         self._resolved_executable = ""
         self._startup_drained = False
+        self._startup_input_sent = False
         self._terminal_byte_count = 0
         self._terminal_tail = bytearray()
 
@@ -160,8 +174,7 @@ class LiveCliRuntime:
             master_fd, slave_fd = pty.openpty()
             try:
                 _configure_slave_terminal(slave_fd, rows=self.terminal_rows, columns=self.terminal_columns)
-                process_env = os.environ.copy()
-                process_env.update(self.env)
+                process_env = sanitized_provider_environment(self.env)
                 for key in PARENT_AGENT_SESSION_ENV_KEYS:
                     process_env.pop(key, None)
                 if not process_env.get("TERM") or process_env.get("TERM") == "dumb":
@@ -194,6 +207,7 @@ class LiveCliRuntime:
             self._started_at = _now_iso()
             self._stopped_at = ""
             self._startup_drained = False
+            self._startup_input_sent = False
             self._needs_terminal_settle = False
             self._terminal_byte_count = 0
             self._terminal_tail = bytearray()
@@ -399,6 +413,7 @@ class LiveCliRuntime:
             "last_seen_event_id": self.last_seen_event_id,
             "started_at": started_at,
             "stopped_at": stopped_at,
+            **self.profile_settings,
         }
 
     def _send_line(self, text: str) -> None:
@@ -533,15 +548,13 @@ class LiveCliRuntime:
     def _drain_startup_output(self) -> None:
         if self._startup_drained:
             return
-        if self.startup_timeout_seconds <= 0:
-            self._startup_drained = True
-            return
         process, fd = self._state_snapshot()
         deadline = time.monotonic() + self.startup_timeout_seconds
         last_read_at: float | None = None
         startup_output = bytearray()
         startup_accepted = False
-        while time.monotonic() < deadline:
+        terminal_queries_answered: set[str] = set()
+        while self.startup_timeout_seconds > 0 and time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError(f"Live CLI runtime exited with return code {process.returncode}.")
             readable = _select_readable(fd, 0.1)
@@ -551,6 +564,9 @@ class LiveCliRuntime:
                 if chunk:
                     startup_output.extend(chunk)
                     self._record_terminal_bytes(chunk)
+                    response = _terminal_query_response(bytes(startup_output), terminal_queries_answered)
+                    if response:
+                        os.write(fd, response)
                     if len(startup_output) > 64_000:
                         del startup_output[:-64_000]
                 last_read_at = now
@@ -567,6 +583,22 @@ class LiveCliRuntime:
                 continue
             if self.startup_quiet_seconds <= 0 or now - last_read_at >= self.startup_quiet_seconds:
                 break
+        if self.startup_input and not self._startup_input_sent:
+            os.write(fd, self.startup_input.encode("utf-8"))
+            self._startup_input_sent = True
+            command_deadline = time.monotonic() + 3.0
+            last_command_read = time.monotonic()
+            while time.monotonic() < command_deadline:
+                if process.poll() is not None:
+                    raise RuntimeError(f"Live CLI runtime exited with return code {process.returncode}.")
+                if _select_readable(fd, 0.05):
+                    chunk = _read_chunk(fd, process)
+                    if chunk:
+                        self._record_terminal_bytes(chunk)
+                        last_command_read = time.monotonic()
+                    continue
+                if time.monotonic() - last_command_read >= max(0.2, self.startup_quiet_seconds):
+                    break
         self._startup_drained = True
 
     def _record_terminal_bytes(self, chunk: bytes) -> None:
@@ -658,6 +690,24 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _terminal_query_response(chunk: bytes, answered: set[str] | None = None) -> bytes:
+    """Answer the small terminal capability set interactive TUIs query at startup."""
+    responses: list[bytes] = []
+    seen = answered if answered is not None else set()
+    queries = (
+        ("cursor", b"\x1b[6n", b"\x1b[1;1R"),
+        ("device", b"\x1b[c", b"\x1b[?1;2c"),
+        ("keyboard", b"\x1b[?u", b"\x1b[?0u"),
+        ("foreground", b"\x1b]10;?\x1b\\", b"\x1b]10;rgb:ffff/ffff/ffff\x1b\\"),
+        ("background", b"\x1b]11;?\x1b\\", b"\x1b]11;rgb:0000/0000/0000\x1b\\"),
+    )
+    for name, query, response in queries:
+        if name not in seen and query in chunk:
+            responses.append(response)
+            seen.add(name)
+    return b"".join(responses)
+
+
 def _resolve_executable(command: list[str]) -> str:
     if not command:
         return ""
@@ -682,7 +732,7 @@ def _configure_slave_terminal(fd: int, *, rows: int = 40, columns: int = 120) ->
 
 
 def _set_terminal_window_size(fd: int, *, rows: int, columns: int) -> None:
-    if termios is None:
+    if termios is None or fcntl is None or struct is None:
         return
     try:
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", int(rows), int(columns), 0, 0))

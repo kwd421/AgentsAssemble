@@ -209,12 +209,14 @@ surface rather than silently counted as React parity.
 | `/api/room-participants/leave` | POST | exact | `-` | no | Agent Session participant leave endpoint with participant-token or moderator authorization; not wrapped by React preview yet. |
 | `/api/room-participants/kick` | POST | exact | `-` | no | Agent Session participant kick endpoint with moderator authorization; not wrapped by React preview yet. |
 | `/api/room-participants/export` | POST | exact | `-` | no | Agent Session participant export endpoint with moderator authorization; not wrapped by React preview yet. |
-| `/api/provider-sessions` | GET | exact | `fetchProviderSessions()` | yes | React agent-create modal lists local provider-owned sessions so the operator can choose an existing Agent Session handle without exposing it in roster UI. |
+| `/api/provider-sessions` | GET | exact | `-` | no | Legacy provider-session discovery; the canonical room snapshot now supplies provider capabilities. |
+| `/api/provider-credentials/deepseek` | GET | exact | `fetchDeepSeekCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
+| `/api/provider-credentials/deepseek` | POST | exact | `setDeepSeekCredential()` | yes | Stores a DeepSeek key in the host secure store; the input is cleared by React after submission. |
 | `/api/room-events/stream` | GET | sse | `-` | no | Legacy/read-only SSE compatibility endpoint. React receives canonical RoomStore snapshots and events from `/ws?ticket=...`. |
 | `/api/host/claim` | POST | exact | `claimHostDevice()` | yes | Host-token gated: binds this device's stable identity to the operator account so its sessions moderate from any entrance. |
-| `/api/live-agent-create/options` | GET | exact | `fetchLiveAgentCreateOptions()` | yes | React agent-create modal loads provider/options metadata. |
-| `/api/live-agent-create` | POST | exact | `createFrontendLiveAgent()` | yes | React agent-create modal provisions a frontend-created live agent config. |
-| `/api/live-agent-create/check` | POST | exact | `checkFrontendLiveAgent()` | yes | React agent-create modal validates the requested agent before creation. |
+| `/api/live-agent-create/options` | GET | exact | `-` | no | Legacy create options; canonical provider controls arrive in the room WebSocket snapshot. |
+| `/api/live-agent-create` | POST | exact | `-` | no | Legacy creation route; React sends `agent.create` over the canonical room WebSocket. |
+| `/api/live-agent-create/check` | POST | exact | `-` | no | Legacy preflight route; canonical command validation returns ACK/NACK. |
 | `/api/live-agent-create/login` | POST | exact | `startFrontendLiveAgentLogin()` | yes | React agent-create modal starts a provider login flow when required. |
 | `/api/live-agent-room/expel` | POST | exact | `-` | no | Legacy process-admin endpoint. Canonical native CLI participants use `participant.kick` over the room WebSocket. |
 | `/api/live-agent-room/delete-session` | POST | exact | `deleteLiveAgentSession()` | yes | Member panel deletes an agent session (room binding, record, and saved config). |

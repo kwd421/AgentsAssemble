@@ -101,7 +101,7 @@ export function initialOperatorRooms(directRoom?: RoomDockItem | null) {
   const persisted = loadRoomDockItems()
     .filter((room) => !hidden.has(room.meetingId))
     .map(hydrateRoom);
-  const rooms = persisted.length ? persisted : [createFreshRoom()];
+  const rooms = persisted;
   if (!directRoom) return rooms;
   const existingIndex = rooms.findIndex(
     (room) => room.id === directRoom.id || room.meetingId === directRoom.meetingId

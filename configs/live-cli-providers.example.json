@@ -4,7 +4,7 @@
     {
       "id": "codex",
       "kind": "live_cli",
-      "display_name": "Codex CLI",
+      "display_name": "Codex Luna",
       "command": [
         "codex",
         "--no-alt-screen",
@@ -13,11 +13,17 @@
         "--sandbox",
         "read-only",
         "--model",
-        "gpt-5.3-codex-spark",
+        "gpt-5.6-luna",
+        "-c",
+        "model_reasoning_effort=\"low\"",
         "-C",
         "."
       ],
       "cwd": ".",
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "low",
+      "service_tier": "default",
+      "permission_mode": "meeting_read_only",
       "input_mode": "bracketed_paste",
       "submit_newline": "\r",
       "submit_delay_seconds": 0.15,
@@ -37,9 +43,15 @@
       "display_name": "Antigravity CLI",
       "command": [
         "agy",
+        "--model",
+        "Gemini 3.5 Flash (Medium)",
+        "--mode",
+        "plan",
         "--sandbox"
       ],
       "cwd": ".",
+      "model": "Gemini 3.5 Flash (Medium)",
+      "permission_mode": "meeting_read_only",
       "input_mode": "bracketed_paste",
       "submit_newline": "\r",
       "terminal_columns": 120,
@@ -50,6 +62,19 @@
       "startup_timeout_seconds": 20,
       "quiet_seconds": 4,
       "session_probe_prompt": "AGENTSASSEMBLE_SESSION_MARKER=antigravity-001 를 기억하고 antigravity-001 이라고만 답해.",
+      "memory_check_prompt": "아까 marker 값 뭐였지? marker 값만 답해."
+    },
+    {
+      "id": "opencode",
+      "kind": "opencode",
+      "display_name": "OpenCode GLM-5.2",
+      "command": ["opencode"],
+      "cwd": ".",
+      "model": "opencode-go/glm-5.2",
+      "variant": "",
+      "permission_mode": "meeting_read_only",
+      "quiet_seconds": 4,
+      "session_probe_prompt": "AGENTSASSEMBLE_SESSION_MARKER=opencode-001 를 기억하고 opencode-001 이라고만 답해.",
       "memory_check_prompt": "아까 marker 값 뭐였지? marker 값만 답해."
     },
     {

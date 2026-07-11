@@ -16,11 +16,13 @@ import {
   Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { LiveAgent, RoomMember } from "../../api";
+import type { LiveAgent, RoomAgentSession, RoomMember } from "../../api";
 import { providerExecutionLabel } from "../../lib/agentLabels";
 import type { RoomAppearance } from "../../lib/roomAppearance";
 import { isActivePresence, presenceStatusLabel } from "../../lib/presenceStatus";
 import { participantTypeMeta } from "../../lib/participantTypes";
+import type { NativeCliProviderAvailability } from "../../roomSocketClient";
+import AgentSessionDetails, { type AgentSessionControlAction } from "./AgentSessionDetails";
 
 type MobileRoomSummary = {
   id: string;
@@ -130,10 +132,17 @@ function buildMobileMembers({
 function MobileMemberList({
   people,
   bots,
+  agentSessions,
+  onSelectAgentSession,
 }: {
   people: MobileMemberRow[];
   bots: MobileMemberRow[];
+  agentSessions: RoomAgentSession[];
+  onSelectAgentSession: (session: RoomAgentSession) => void;
 }) {
+  const sessionByParticipantId = new Map(
+    agentSessions.map((session) => [session.participant_id, session])
+  );
   const sections = [
     { id: "people", label: "MEMBERS", rows: people },
     { id: "bots", label: "AI & Bots", rows: bots },
@@ -151,7 +160,23 @@ function MobileMemberList({
               {section.rows.map((row) => {
                 const Icon = row.icon;
                 return (
-                  <article key={row.id} className="dc-mobile-info-member-row">
+                  <article
+                    key={row.id}
+                    className="dc-mobile-info-member-row"
+                    role={sessionByParticipantId.has(row.id) ? "button" : undefined}
+                    tabIndex={sessionByParticipantId.has(row.id) ? 0 : undefined}
+                    onClick={() => {
+                      const session = sessionByParticipantId.get(row.id);
+                      if (session) onSelectAgentSession(session);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      const session = sessionByParticipantId.get(row.id);
+                      if (!session) return;
+                      event.preventDefault();
+                      onSelectAgentSession(session);
+                    }}
+                  >
                     <span className="dc-mobile-info-member-avatar" data-status={statusTone(row.active)}>
                       <Icon size={18} />
                       <span>{memberAvatarLabel(row.displayName)}</span>
@@ -190,6 +215,10 @@ export default function MobileRoomInfoPanel({
   onOpenSettings,
   sideChatContent,
   initialMode = "info",
+  agentSessions = [],
+  availableProviders = [],
+  onAgentControl,
+  onAgentConfigure,
 }: {
   room: MobileRoomSummary;
   appearance: RoomAppearance;
@@ -204,11 +233,25 @@ export default function MobileRoomInfoPanel({
   onOpenSettings?: () => void;
   sideChatContent?: ReactNode;
   initialMode?: MobilePanelMode;
+  agentSessions?: RoomAgentSession[];
+  availableProviders?: NativeCliProviderAvailability[];
+  onAgentControl?: (
+    session: RoomAgentSession,
+    action: AgentSessionControlAction
+  ) => void | Promise<void>;
+  onAgentConfigure?: (
+    session: RoomAgentSession,
+    settings: Record<string, string>
+  ) => void | Promise<void>;
 }) {
   const [panelMode, setPanelMode] = useState<MobilePanelMode>(
     sideChatContent ? initialMode : "info"
   );
   const [activeTab, setActiveTab] = useState<MobileInfoTab>("members");
+  const [selectedAgentSessionId, setSelectedAgentSessionId] = useState("");
+  const selectedAgentSession = agentSessions.find(
+    (session) => session.session_id === selectedAgentSessionId
+  );
   const { people, bots } = useMemo(
     () => buildMobileMembers({ agents, members, viewerParticipantId, roleOverrides }),
     [agents, members, roleOverrides, viewerParticipantId]
@@ -299,7 +342,27 @@ export default function MobileRoomInfoPanel({
       </nav>
 
       {activeTab === "members" ? (
-        <>
+        selectedAgentSession ? (
+          <section className="dc-mobile-agent-session-detail">
+            <button
+              type="button"
+              className="dc-agent-create-secondary"
+              onClick={() => setSelectedAgentSessionId("")}
+            >
+              <ArrowLeft size={16} />
+              멤버 목록
+            </button>
+            <AgentSessionDetails
+              session={selectedAgentSession}
+              provider={availableProviders.find(
+                (provider) => provider.provider_kind === selectedAgentSession.provider_kind
+              )}
+              onControl={onAgentControl}
+              onConfigure={onAgentConfigure}
+            />
+          </section>
+        ) : (
+          <>
           {!guestLocked && onInvite && (
             <button type="button" className="dc-mobile-info-invite" onClick={onInvite}>
               <UserPlus size={24} />
@@ -307,8 +370,14 @@ export default function MobileRoomInfoPanel({
               <span aria-hidden>›</span>
             </button>
           )}
-          <MobileMemberList people={people} bots={bots} />
-        </>
+          <MobileMemberList
+            people={people}
+            bots={bots}
+            agentSessions={agentSessions}
+            onSelectAgentSession={(session) => setSelectedAgentSessionId(session.session_id)}
+          />
+          </>
+        )
       ) : (
         <section className="dc-mobile-info-empty">
           <p>{tabLabel}</p>

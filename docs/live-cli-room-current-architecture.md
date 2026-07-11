@@ -1,7 +1,7 @@
 # Live CLI Room Current Architecture
 
 Status: current implementation authority  
-Updated: 2026-07-10
+Updated: 2026-07-11
 
 This document describes the active local interactive CLI-first room path. Read
 it before changing WebSocket commands, room events, Agent Session lifecycle,
@@ -66,7 +66,10 @@ RoomRealtimeController
   v
 RoomAgentBridge process
   |-- GrokAcpRuntime -> grok agent stdio -> ACP agent_message_chunk
-  `-- LiveCliRuntime -> persistent PTY -> Codex / agy / Claude
+  |-- OpenCodeRuntime -> shared opencode serve -> per-agent session + SSE
+  |-- DeepSeekApiRuntime -> server-owned credential -> HTTPS SSE
+  |-- CodexAppServerLiveRuntime -> codex app-server (invited attendee)
+  `-- LiveCliRuntime / WindowsConPtyRuntime -> persistent terminal -> Codex / agy / Claude
                           | provider-owned transcript message source
                           v
 RoomAgentBridge
@@ -120,11 +123,17 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `room_context.py` | bounded bootstrap and cursor-diff provider input projection | provider-private memory |
 | `room_event_broker.py` | bounded per-connection fanout and targeted bridge delivery | durable history |
 | `native_cli_providers.py` | provider catalog, safe commands, profile identity, and Claude interactive guard | PTY parsing |
+| `provider_capabilities.py` | cached native model, effort, tier, variant, and permission discovery | room or secret state |
+| `provider_secrets.py` | OS keyring credential access and redacted status | provider prompts or room events |
 | `room_realtime.py` | command, durable state, turn, and recovery orchestration | provider terminal implementation |
 | `room_bridge_process.py` | server-owned Agent Bridge process lifecycle | room routing |
 | `room_agent_bridge.py` | authenticated bridge client and turn/report protocol | browser UI |
 | `live_cli.py` | persistent PTY lifecycle and provider message extraction | room membership or history replay |
 | `grok_acp_runtime.py` | Grok ACP lifecycle, permission denial, structured deltas, and provider session load | room routing or browser state |
+| `opencode_runtime.py` | one host-shared server and durable per-agent OpenCode sessions | room membership |
+| `deepseek_runtime.py` | bounded private API conversation and content-only SSE streaming | credential persistence |
+| `room_attendee.py` | hidden-stdin invite admission and reconnecting canonical Agent Bridge | room persistence |
+| `windows_conpty.py` | Windows persistent ConPTY transport and process cleanup | provider policy |
 
 ## WebSocket Protocol
 
@@ -152,6 +161,7 @@ Supported browser/operator actions are:
 
 - `message.send`
 - `agent.create`
+- `agent.configure` (stopped sessions only)
 - `agent.start`
 - `agent.pause`
 - `agent.stop`
@@ -254,6 +264,44 @@ visible final messages after `last_provider_sync_seq`, under the same bounds.
 The source event that triggered the turn cannot be dropped by truncation. The
 provider input is a thin room envelope plus this projection, not RoomStore JSON
 and not the complete transcript.
+
+An agent that joins through an agent invite receives a larger but still bounded
+bootstrap: at most 50 finalized messages and 64 KB. Its first provider input
+contains only the room name, display name, conversation rules, and this bounded
+history. Server URLs, invite/session tokens, database paths, commands, process
+IDs, credentials, and backend implementation details are never provider input.
+Subsequent turns use only the durable `last_provider_sync_seq` diff.
+
+## Provider Profiles And Credentials
+
+Every runtime profile key includes provider kind, model, reasoning effort,
+service tier, variant, permission mode, workspace, runtime kind, and transport.
+Running or paused sessions reject profile changes; the operator must stop,
+configure, and start them. The React UI renders the server-discovered
+`ProviderControl[]` values and does not invent generic fast/standard/slow or
+polling settings.
+
+Provider child environments are rebuilt from a platform allowlist. Host,
+session, and invite tokens and arbitrary `*_TOKEN`/`*_API_KEY` values are not
+inherited. DeepSeek credentials live in the OS keyring, with
+`DEEPSEEK_API_KEY` as read-only fallback. Credential HTTP responses contain
+only `configured` and `source`; a credential value is never returned, logged,
+persisted in room state, or put in a child argv/environment.
+
+## Agent Invite Path
+
+The browser creates a one-use agent invite through the existing authenticated
+invite service. The remote owner runs `assemble room attend --provider <id>`
+and supplies the URL through hidden stdin. The attendee exchanges the invite
+for a scoped session, opens the same `/ws?ticket=...` protocol as browsers and
+server-owned bridges, and maintains the provider session. Providers do not
+poll or execute network commands. Codex attendees use the persistent Codex CLI
+app-server protocol so a brand-new empty workspace does not depend on TUI trust
+screen scraping; `codex exec` and `resume --last` remain forbidden.
+
+Mobile is a browser client of the same HTTPS/WSS server. Provider processes run
+on macOS, Linux, or Windows hosts; Windows terminal providers use ConPTY through
+the optional `pywinpty` dependency.
 
 ## Provider Runtime And Message Extraction
 

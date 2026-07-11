@@ -996,6 +996,7 @@ def register_room_routes(router: Router) -> None:
             )
             return
         try:
+            client_type = str(payload.get("client_type") or "browser")
             invite = create_room_invite(
                 room_url=ctx.handler._local_server_url(),
                 meeting_id=str(payload.get("meeting_id") or ""),
@@ -1004,7 +1005,10 @@ def register_room_routes(router: Router) -> None:
                 ttl_seconds=int(payload.get("ttl_seconds") or 600),
                 invite_scope=str(payload.get("invite_scope") or "room"),
                 permission_mode=str(payload.get("permission_mode") or ""),
-                max_uses=int(payload.get("max_uses", 0)),
+                max_uses=1 if client_type == "agent_bridge" else int(payload.get("max_uses", 0)),
+                participant_type="agent" if client_type == "agent_bridge" else str(payload.get("participant_type") or "human"),
+                client_type=client_type,
+                provider_kind=str(payload.get("provider_kind") or "manual"),
             )
         except (ValueError, TypeError) as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))

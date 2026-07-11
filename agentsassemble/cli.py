@@ -7,6 +7,7 @@ import os
 import re
 import shlex
 import signal
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -1658,6 +1659,42 @@ def build_parser() -> argparse.ArgumentParser:
     room_status = room_subparsers.add_parser("status", parents=[room_server], help="Show one room's persisted state.")
     room_status.add_argument("room_id")
     room_status.add_argument("--json", action="store_true", dest="as_json")
+
+    room_prune = room_subparsers.add_parser(
+        "prune-empty", help="Safely remove rooms that contain no conversation, agents, guests, or artifacts."
+    )
+    room_prune.add_argument("--output-root", default=".agentsassemble")
+    prune_mode = room_prune.add_mutually_exclusive_group(required=True)
+    prune_mode.add_argument("--dry-run", action="store_true")
+    prune_mode.add_argument("--apply", action="store_true")
+    room_prune.add_argument("--json", action="store_true", dest="as_json")
+
+    room_migrate_legacy = room_subparsers.add_parser(
+        "migrate-legacy-messages",
+        help="Import preserved legacy meeting messages into the canonical room event store.",
+    )
+    room_migrate_legacy.add_argument("--output-root", default=".agentsassemble")
+    migrate_legacy_mode = room_migrate_legacy.add_mutually_exclusive_group(required=True)
+    migrate_legacy_mode.add_argument("--dry-run", action="store_true")
+    migrate_legacy_mode.add_argument("--apply", action="store_true")
+    room_migrate_legacy.add_argument("--json", action="store_true", dest="as_json")
+
+    room_attend = room_subparsers.add_parser(
+        "attend",
+        help="Join an agent-owned room invite over the canonical WebSocket; reads the invite URL from hidden stdin.",
+    )
+    room_attend.add_argument("--provider", required=True, help="Native provider id such as codex, antigravity, or opencode.")
+    room_attend.add_argument("--display-name", default="")
+    room_attend.add_argument("--workspace", default="", help="Optional workspace; the default is an empty temporary directory.")
+    room_attend.add_argument("--model", default="")
+    room_attend.add_argument("--effort", default="")
+    room_attend.add_argument("--service-tier", default="")
+    room_attend.add_argument("--variant", default="")
+    room_attend.add_argument(
+        "--permission-mode",
+        choices=["meeting_read_only", "workspace_write"],
+        default="meeting_read_only",
+    )
 
     for room_command in ("join", "resume"):
         room_join = room_subparsers.add_parser(
@@ -8448,6 +8485,43 @@ def run_sessions_command(args: argparse.Namespace) -> int:
 
 
 def run_room_command(args: argparse.Namespace) -> int:
+    if args.room_command == "migrate-legacy-messages":
+        from agentsassemble.legacy_room_migration import migrate_legacy_messages
+
+        try:
+            result = migrate_legacy_messages(Path(args.output_root), apply=bool(args.apply))
+        except (OSError, ValueError, sqlite3.Error, json.JSONDecodeError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        if args.as_json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(
+                f"{result['status']}: {result['message_count']} message(s) "
+                f"from {result['room_count']} room(s)"
+            )
+            for room in result["rooms"]:
+                print(f"- {room['room_id']}: {room['message_count']}")
+            if result.get("backup_dir"):
+                print(f"backup: {result['backup_dir']}")
+        return 0
+    if args.room_command == "prune-empty":
+        from agentsassemble.room_prune import prune_empty_rooms
+
+        try:
+            result = prune_empty_rooms(Path(args.output_root), apply=bool(args.apply))
+        except (OSError, ValueError, sqlite3.Error, json.JSONDecodeError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        if args.as_json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(f"{result['status']}: {len(result['candidate_room_ids'])} empty room(s)")
+            for room_id in result["candidate_room_ids"]:
+                print(f"- {room_id}")
+            if result.get("backup_dir"):
+                print(f"backup: {result['backup_dir']}")
+        return 0
     if args.room_command == "list":
         query = urllib.parse.urlencode({"include_archived": "true"} if args.include_archived else {})
         path = "/api/rooms" + (f"?{query}" if query else "")
@@ -8534,6 +8608,19 @@ def run_room_command(args: argparse.Namespace) -> int:
                 f"in {args.room_id} · process: {process_status}"
             )
         return 0
+    if args.room_command == "attend":
+        from agentsassemble.room_attendee import run_attendee_from_cli
+
+        return run_attendee_from_cli(
+            provider_id=str(args.provider),
+            display_name=str(args.display_name or ""),
+            workspace=str(args.workspace or ""),
+            model=str(args.model or ""),
+            reasoning_effort=str(args.effort or ""),
+            service_tier=str(args.service_tier or ""),
+            variant=str(args.variant or ""),
+            permission_mode=str(args.permission_mode or "meeting_read_only"),
+        )
     if args.room_command == "smoke":
         live_cli_providers = [
             clean_lobby_text(provider, limit=128)

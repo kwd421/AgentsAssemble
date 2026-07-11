@@ -60,13 +60,14 @@ class TestRoomSayIdentity(unittest.TestCase):
         })
         self.assertIn("invite_token", invite)
         packet = invite["remote_client_packet"]
-        self.assertEqual(packet["packet_kind"], "native_remote_room_client_entry_packet")
-        self.assertEqual(packet["env"]["AGENTSASSEMBLE_AGENT_ID"], "review-guest")
-        self.assertEqual(packet["http"]["say"]["url"], f"{self.url}/api/room/say")
+        self.assertEqual(packet["packet_kind"], "agent_attendee_entry_packet")
+        self.assertEqual(packet["agent"]["agent_id"], "review-guest")
+        self.assertNotIn("env", packet)
+        self.assertNotIn("http", packet)
 
         # 2. Join
         join = self._post("/api/room-invite/join", {
-            "invite_token": packet["env"]["AGENTSASSEMBLE_INVITE_TOKEN"],
+            "invite_token": invite["invite_token"],
             "meeting_id": "test-m",
         })
         self.assertEqual(join["status"], "admitted")
@@ -136,12 +137,12 @@ class TestRoomSayIdentity(unittest.TestCase):
         self.assertEqual(companion["meeting_id"], "friend-room")
         self.assertEqual(companion["agent_id"], "friend-ai")
         packet = companion["remote_client_packet"]
-        self.assertEqual(packet["packet_kind"], "native_remote_room_client_entry_packet")
+        self.assertEqual(packet["packet_kind"], "agent_attendee_entry_packet")
         self.assertEqual(packet["agent"]["meeting_id"], "friend-room")
         self.assertEqual(packet["agent"]["agent_id"], "friend-ai")
 
         ai_join = self._post("/api/room-invite/join", {
-            "invite_token": packet["env"]["AGENTSASSEMBLE_INVITE_TOKEN"],
+            "invite_token": companion["invite_token"],
         })
         self.assertEqual(ai_join["participant_type"], "remote")
         ai_session_token = ai_join["session_token"]

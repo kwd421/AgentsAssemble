@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TextIO
 
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.process_environment import sanitized_provider_environment
 
 
 class GrokAcpRuntime:
@@ -103,8 +104,7 @@ class GrokAcpRuntime:
                 self.state_dir.chmod(0o700)
             except OSError:
                 pass
-            process_env = os.environ.copy()
-            process_env.update(self.env)
+            process_env = sanitized_provider_environment(self.env)
             process_env.update(
                 {
                     "GROK_HOME": str(self.state_dir),

@@ -216,6 +216,8 @@ def create_room_invite(
     participant_type: str = "human",
     permission_mode: str = "",
     max_uses: int = 0,
+    client_type: str = "browser",
+    provider_kind: str = "manual",
 ) -> dict[str, object]:
     """Create an invite token for a remote client to join the room.
 
@@ -229,6 +231,10 @@ def create_room_invite(
     clean_display_name = clean_lobby_text(display_name, limit=128) or clean_agent_id
     clean_invite_scope = normalize_invite_scope(invite_scope)
     clean_participant_type = _normalize_invite_participant_type(participant_type)
+    clean_client_type = _normalize_invite_client_type(client_type)
+    clean_provider_kind = clean_lobby_text(provider_kind, limit=64) or "manual"
+    if clean_client_type == "agent_bridge":
+        clean_participant_type = "remote"
     # max_uses: 0 = unlimited (Discord-style open link, the default), 1 = single-use,
     # N > 1 = capped reuse. Reusable invites mint a unique participant id per join.
     clean_max_uses = max(0, int(max_uses)) if isinstance(max_uses, (int, float)) else 0
@@ -243,7 +249,7 @@ def create_room_invite(
         meeting_id=meeting_id,
         agent_id=clean_agent_id,
         display_name=clean_display_name,
-        provider_kind="manual",
+        provider_kind=clean_provider_kind,
         secret=secret,
         ttl_seconds=ttl_seconds,
         permission_mode=resolved_permission_mode,
@@ -262,6 +268,8 @@ def create_room_invite(
             "meeting_id": meeting_id,
             "invite_scope": clean_invite_scope,
             "participant_type": clean_participant_type,
+            "client_type": clean_client_type,
+            "provider_kind": clean_provider_kind,
             "permission_mode": resolved_permission_mode,
             "max_uses": clean_max_uses,
             "use_count": 0,
@@ -285,6 +293,8 @@ def create_room_invite(
         "display_name": clean_display_name,
         "invite_scope": clean_invite_scope,
         "participant_type": clean_participant_type,
+        "client_type": clean_client_type,
+        "provider_kind": clean_provider_kind,
         "permission_mode": resolved_permission_mode,
         "max_uses": clean_max_uses,
         "expires_at": packet["expires_at"],
@@ -325,8 +335,7 @@ def _room_usage_guide(
 ) -> dict[str, object]:
     """First-visit manual returned with every join, so a newly admitted agent
     (or script) knows how to participate without guessing at the API."""
-    base = str(room_url or "").rstrip("/")
-    auth = "Authorization: Bearer <session_token from this join response>"
+    del room_url
     owner_line = (
         f" Your owner is '{owner_display_name}' — treat their instructions with priority and represent them well."
         if owner_display_name
@@ -335,44 +344,13 @@ def _room_usage_guide(
     return {
         "welcome": (
             f"You joined room '{meeting_id}' as '{display_name}' ({agent_id}). "
-            "This is a multi-agent chat room. Your identity is enforced server-side; "
-            "you only need the session_token from this response."
+            "This is a shared multi-agent chat room. Your identity is enforced by the attendee process."
             + owner_line
         ),
         "how_to": [
-            {
-                "action": "read_room",
-                "request": f"GET {base}/api/room/lobby",
-                "headers": auth,
-                "note": (
-                    "Returns a snapshot of recent messages — poll this to follow the conversation. "
-                    f"Do NOT GET {base}/api/room/events expecting JSON; it is a server-sent-events stream and will hang plain HTTP clients."
-                ),
-            },
-            {
-                "action": "post_message",
-                "request": f"POST {base}/api/room/say",
-                "headers": auth,
-                "body": {"message": "<your message>"},
-                "note": "One message per call. HTTP 403 'muted by room host' means the host muted you; you can still read.",
-            },
-            {
-                "action": "vote_in_poll",
-                "request": f"POST {base}/api/room/say",
-                "headers": auth,
-                "body": {"kind": "vote_cast", "vote_id": "<vote_id from the poll event>", "vote_choice": "<option text or 1-based number>"},
-                "note": (
-                    "Polls appear as events with kind 'vote' (question + options + vote_id). "
-                    "Cast or change your ballot with kind 'vote_cast'; latest cast wins. "
-                    f"Check standings via GET {base}/api/room/vote?vote_id=<vote_id>."
-                ),
-            },
-            {
-                "action": "leave",
-                "request": f"POST {base}/api/room-invite/leave",
-                "headers": auth,
-                "note": "Call once when you are done; it revokes your session token.",
-            },
+            "Wait for room turns delivered by the attendee process; do not poll or inspect the server.",
+            "Reply naturally to the recent conversation. Your final assistant reply is posted automatically.",
+            "Do not inspect local project files, environment variables, credentials, or backend details.",
         ],
         "etiquette": [
             "Match the language of the recent messages in the room (한국어 방이면 한국어로).",
@@ -427,6 +405,12 @@ def join_room_with_invite(
         invite_participant_type = _normalize_invite_participant_type(
             invite_info.get("participant_type") if invite_info else "human"
         )
+        invite_client_type = _normalize_invite_client_type(
+            invite_info.get("client_type") if invite_info else "browser"
+        )
+        invite_provider_kind = clean_lobby_text(
+            invite_info.get("provider_kind") if invite_info else "manual", limit=64
+        ) or "manual"
         # max_uses: 1 = single-use (also the safe default for unknown/legacy
         # invites whose pending record was lost), 0 = unlimited, N > 1 = capped.
         max_uses = int(invite_info.get("max_uses", 1)) if invite_info else 1
@@ -470,6 +454,8 @@ def join_room_with_invite(
     # Caller-declared type (browser human vs AI packet) wins over the invite's
     # default; "agent"/"ai" normalize to the roster's "remote" participant type.
     resolved_participant_type = normalize_participant_type(participant_type, default="") or invite_participant_type
+    if invite_client_type == "agent_bridge":
+        resolved_participant_type = "remote"
     stable_user: dict[str, object] | None = None
     if reusable:
         stable_user = resolve_device_user(
@@ -507,6 +493,8 @@ def join_room_with_invite(
         meeting_id=resolved_meeting_id,
         invite_scope=invite_scope,
         participant_type=resolved_participant_type,
+        client_type=invite_client_type,
+        provider_kind=invite_provider_kind,
     )
 
     return {
@@ -517,13 +505,15 @@ def join_room_with_invite(
         "meeting_id": resolved_meeting_id,
         "invite_scope": invite_scope,
         "participant_type": resolved_participant_type,
+        "client_type": invite_client_type,
+        "provider_kind": invite_provider_kind,
         "owner_display_name": clean_owner_display_name,
         "stable_identity": stable_user is not None,
         # The server operator's account moderates from any entrance (public
         # URL included) — the join response tells the client to unlock those
         # controls for this session.
         "operator": bool(stable_user and stable_user.get("is_operator")),
-        "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
+        "connection_kind": "native_cli_bridge" if invite_client_type == "agent_bridge" else NATIVE_REMOTE_ROOM_CLIENT_KIND,
         "expires_at": _active_sessions[_session_fingerprint(session_token)]["expires_at"],
         "guide": _room_usage_guide(
             room_url=get_public_url() or str(claims.get("room_url") or ""),
@@ -605,6 +595,8 @@ def active_sessions_summary() -> list[dict[str, object]]:
                 "meeting_id": session["meeting_id"],
                 "invite_scope": session.get("invite_scope", ROOM_INVITE_SCOPE),
                 "participant_type": _normalize_invite_participant_type(session.get("participant_type")),
+                "client_type": _normalize_invite_client_type(session.get("client_type")),
+                "provider_kind": clean_lobby_text(session.get("provider_kind"), limit=64),
                 "joined_at": session["joined_at"],
                 "expires_at": session["expires_at"],
             })
@@ -642,6 +634,8 @@ def pending_invites_summary() -> list[dict[str, object]]:
                 "meeting_id": info["meeting_id"],
                 "invite_scope": info.get("invite_scope", ROOM_INVITE_SCOPE),
                 "participant_type": _normalize_invite_participant_type(info.get("participant_type")),
+                "client_type": _normalize_invite_client_type(info.get("client_type")),
+                "provider_kind": clean_lobby_text(info.get("provider_kind"), limit=64),
                 "expires_at": info["expires_at"],
                 "created_at": info["created_at"],
                 "revoked": info["revoked"],
@@ -656,6 +650,8 @@ def _issue_session_token(
     meeting_id: str,
     invite_scope: str = ROOM_INVITE_SCOPE,
     participant_type: str = "human",
+    client_type: str = "browser",
+    provider_kind: str = "manual",
 ) -> str:
     """Generate and store a session token."""
     now = datetime.now(UTC)
@@ -667,7 +663,13 @@ def _issue_session_token(
         "meeting_id": meeting_id,
         "invite_scope": normalize_invite_scope(invite_scope),
         "participant_type": _normalize_invite_participant_type(participant_type),
-        "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
+        "client_type": _normalize_invite_client_type(client_type),
+        "provider_kind": clean_lobby_text(provider_kind, limit=64) or "manual",
+        "connection_kind": (
+            "native_cli_bridge"
+            if _normalize_invite_client_type(client_type) == "agent_bridge"
+            else NATIVE_REMOTE_ROOM_CLIENT_KIND
+        ),
         "joined_at": now.isoformat(),
         "expires_at": (now + timedelta(seconds=SESSION_TOKEN_TTL_SECONDS)).isoformat(),
     }
@@ -696,6 +698,10 @@ def _session_fingerprint(token: str) -> str:
 
 def _nonce_fingerprint(nonce: str) -> str:
     return hashlib.sha256(str(nonce or "").encode("utf-8")).hexdigest()
+
+
+def _normalize_invite_client_type(value: object) -> str:
+    return "agent_bridge" if str(value or "").strip() == "agent_bridge" else "browser"
 
 
 def _load_state_locked() -> None:

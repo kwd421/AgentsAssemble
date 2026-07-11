@@ -308,7 +308,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("roleOverrides={roleOverrides}", room_connection_source)
         self.assertIn("onRoleChange={onRoleChange}", room_connection_source)
         self.assertIn("agentSession?: RoomAgentSession;", member_source)
-        self.assertIn("<AgentSessionDetails session={entry.agentSession}", member_source)
+        self.assertIn(
+            "<AgentSessionDetails session={entry.agentSession}",
+            " ".join(member_source.split()),
+        )
         self.assertIn("<h3>Agent Session</h3>", agent_session_details_source)
         self.assertIn("title=\"세션 일시정지\"", agent_session_details_source)
         self.assertIn("title=\"세션 재개\"", agent_session_details_source)
@@ -1527,7 +1530,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("onCreateCompanionAiPacket={() => void createCompanionAiPacket()}", app_source)
         self.assertIn("guestReadOnly", app_source)
         self.assertIn("canPostMessages={lobbyPostingState.canPost}", app_source)
-        self.assertIn("visibleChannels = guestLocked", app_source)
+        self.assertIn(
+            'const visibleChannels = CHANNELS.filter((item) => item.id === "lobby")',
+            app_source,
+        )
         self.assertIn("{!guestLocked && (", room_rail_source)
         self.assertIn('aria-label="친구와 DM"', room_rail_source)
         self.assertIn(
@@ -1622,7 +1628,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("연결된 세션 없음", room_panel_source)
         self.assertNotIn("dc-room-live-cli-card", room_panel_source)
         self.assertIn("agentSessions={agentSessions}", room_panel_source)
-        self.assertIn("<AgentSessionDetails session={entry.agentSession}", member_source)
+        self.assertIn(
+            "<AgentSessionDetails session={entry.agentSession}",
+            " ".join(member_source.split()),
+        )
         self.assertIn("Agent Session", agent_session_details_source)
         self.assertNotIn("startFlow", room_panel_source)
         self.assertNotIn("stopFlow", room_panel_source)

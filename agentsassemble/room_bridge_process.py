@@ -13,6 +13,9 @@ import time
 from typing import Callable
 
 from agentsassemble.native_cli_providers import NativeCliProviderSpec, validate_native_cli_provider_spec
+from agentsassemble.process_environment import sanitized_child_environment
+from agentsassemble.provider_secrets import PROVIDER_SECRETS
+from agentsassemble.opencode_runtime import OpenCodeServerProcess
 
 
 BridgeExitListener = Callable[[str, str, int, str], None]
@@ -36,6 +39,7 @@ class _BridgeHandle:
     stderr_tail: bytearray = field(default_factory=bytearray)
     stderr_lock: threading.Lock = field(default_factory=threading.Lock)
     stderr_thread: threading.Thread | None = None
+    provider_process_shared: bool = False
 
 
 class NativeCliBridgeProcessManager:
@@ -47,14 +51,17 @@ class NativeCliBridgeProcessManager:
         *,
         popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
         executable_resolver: Callable[[str], str | None] = shutil.which,
+        secret_resolver: Callable[[str], str] = PROVIDER_SECRETS.get,
         on_exit: BridgeExitListener | None = None,
     ) -> None:
         self.output_root = Path(output_root)
         self._popen_factory = popen_factory
         self._resolve_executable = executable_resolver
+        self._secret_resolver = secret_resolver
         self._on_exit = on_exit
         self._lock = threading.RLock()
         self._handles: dict[tuple[str, str], _BridgeHandle] = {}
+        self._opencode_server: OpenCodeServerProcess | None = None
 
     def set_exit_listener(self, listener: BridgeExitListener | None) -> None:
         with self._lock:
@@ -85,9 +92,22 @@ class NativeCliBridgeProcessManager:
             raise ValueError("Agent Bridge server URL is required.")
         if ticket_issuer is None:
             raise ValueError("Agent Bridge ticket issuer is required.")
-        executable = self._resolve(spec.command[0] if spec.command else "")
+        credential = ""
+        provider_endpoint = ""
+        provider_server_pid: int | None = None
+        if spec.normalized_provider_kind() == "deepseek_api":
+            credential = self._secret_resolver("deepseek")
+            if not credential:
+                raise RuntimeError("credential_missing")
+            executable = "server-owned-api"
+        else:
+            executable = self._resolve(spec.command[0] if spec.command else "")
         if not executable:
             raise FileNotFoundError(f"configured command missing: {spec.command[0] if spec.command else ''}")
+        if spec.normalized_provider_kind() == "opencode_server":
+            opencode = self._ensure_opencode_server(executable)
+            provider_endpoint = opencode.endpoint
+            provider_server_pid = opencode.process.pid if opencode.process is not None else None
         identity = {
             "agent_id": spec.agent_id,
             "display_name": spec.display_name,
@@ -98,6 +118,7 @@ class NativeCliBridgeProcessManager:
             "meeting_id": room_id,
             "session_id": session_id,
             "provider_kind": spec.normalized_provider_kind(),
+            "runtime_kind": spec.runtime_kind,
             "operator": False,
         }
         ticket = str(ticket_issuer(identity) or "")
@@ -116,6 +137,12 @@ class NativeCliBridgeProcessManager:
             "provider_kind": spec.normalized_provider_kind(),
             "command": list(spec.command),
             "cwd": spec.cwd,
+            "model": spec.model,
+            "reasoning_effort": spec.reasoning_effort,
+            "service_tier": spec.service_tier,
+            "variant": spec.variant,
+            "permission_mode": spec.permission_mode,
+            "transport": spec.transport,
             "quiet_seconds": spec.quiet_seconds,
             "input_mode": spec.input_mode,
             "submit_newline": spec.submit_newline,
@@ -126,9 +153,13 @@ class NativeCliBridgeProcessManager:
             "startup_timeout_seconds": spec.startup_timeout_seconds,
             "startup_accept_contains": spec.startup_accept_contains,
             "startup_accept_keys": spec.startup_accept_keys,
+            "startup_input": spec.startup_input,
             "turn_timeout_seconds": spec.turn_timeout_seconds,
             "runtime_profile_key": runtime_profile_key,
             "runtime_state_dir": str(profile_dir / "provider-state"),
+            "credential_stdin": bool(credential),
+            "provider_endpoint": provider_endpoint,
+            "provider_server_pid": provider_server_pid,
         }
         config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         stdout_path.touch(exist_ok=True)
@@ -138,8 +169,7 @@ class NativeCliBridgeProcessManager:
                 path.chmod(0o600)
             except OSError:
                 pass
-        env = os.environ.copy()
-        env.update(
+        env = sanitized_child_environment(
             {
                 "AGENTSASSEMBLE_BRIDGE_SERVER_URL": server_url,
                 "AGENTSASSEMBLE_BRIDGE_TICKET": ticket,
@@ -152,13 +182,23 @@ class NativeCliBridgeProcessManager:
         command = [sys.executable, "-m", "agentsassemble.room_agent_bridge"]
         process = self._popen_factory(
             command,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE if credential else subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             cwd=package_root,
             env=env,
             start_new_session=True,
         )
+        if credential:
+            stream = getattr(process, "stdin", None)
+            if stream is None:
+                process.terminate()
+                raise RuntimeError("Agent Bridge did not expose credential stdin.")
+            try:
+                stream.write(credential.encode("utf-8") + b"\n")
+                stream.flush()
+            finally:
+                stream.close()
         handle = _BridgeHandle(
             room_id=room_id,
             session_id=session_id,
@@ -168,6 +208,7 @@ class NativeCliBridgeProcessManager:
             config_path=config_path,
             stdout_path=stdout_path,
             stderr_path=stderr_path,
+            provider_process_shared=spec.normalized_provider_kind() == "opencode_server",
         )
         with self._lock:
             self._handles[key] = handle
@@ -212,12 +253,17 @@ class NativeCliBridgeProcessManager:
         self._finish_stderr(handle)
         with self._lock:
             self._handles.pop(key, None)
-        provider_alive = _terminate_provider_process(provider_pid, timeout_seconds=timeout_seconds)
+        provider_alive = (
+            _process_group_alive(int(provider_pid or 0))
+            if handle.provider_process_shared and int(provider_pid or 0) > 0
+            else _terminate_provider_process(provider_pid, timeout_seconds=timeout_seconds)
+        )
         return {
             "stopped": True,
-            "alive": process.poll() is None or provider_alive,
+            "alive": process.poll() is None,
             "bridge_pid": process.pid,
             "provider_alive": provider_alive,
+            "provider_process_shared": handle.provider_process_shared,
         }
 
     def close(self) -> None:
@@ -228,6 +274,7 @@ class NativeCliBridgeProcessManager:
                 self.stop(room_id, session_id)
             except Exception:
                 continue
+        self._stop_opencode_server()
 
     def health(self, room_id: str, session_id: str) -> dict[str, object]:
         with self._lock:
@@ -323,6 +370,27 @@ class NativeCliBridgeProcessManager:
         if path.is_absolute():
             return str(path) if path.is_file() else ""
         return str(self._resolve_executable(executable) or "")
+
+    def _ensure_opencode_server(self, executable: str) -> OpenCodeServerProcess:
+        with self._lock:
+            current = self._opencode_server
+            if current is not None and current.process is not None and current.process.poll() is None:
+                return current
+            handle = OpenCodeServerProcess(
+                cwd=self.output_root,
+                executable=executable,
+                popen_factory=self._popen_factory,
+            )
+            self._opencode_server = handle
+        handle.start()
+        return handle
+
+    def _stop_opencode_server(self) -> None:
+        with self._lock:
+            handle = self._opencode_server
+            self._opencode_server = None
+        if handle is not None:
+            handle.stop()
 
     @staticmethod
     def _launch_payload(

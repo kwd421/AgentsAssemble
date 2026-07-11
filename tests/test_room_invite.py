@@ -55,10 +55,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
 
         self.assertTrue(str(invite["join_url"]).startswith("https://shared-room.example.com/join?token="))
         self.assertEqual(invite["remote_client_packet"]["join_url"], invite["join_url"])
-        self.assertEqual(
-            invite["remote_client_packet"]["env"]["AGENTSASSEMBLE_ROOM_URL"],
-            "https://shared-room.example.com",
-        )
+        self.assertNotIn("env", invite["remote_client_packet"])
 
     def test_create_invite_returns_remote_client_entry_packet(self):
         invite = create_room_invite(
@@ -69,18 +66,16 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
         )
 
         packet = invite["remote_client_packet"]
-        self.assertEqual(packet["packet_kind"], "native_remote_room_client_entry_packet")
+        self.assertEqual(packet["packet_kind"], "agent_attendee_entry_packet")
         self.assertEqual(packet["agent"]["agent_id"], "guest-1")
         self.assertEqual(packet["agent"]["display_name"], "Guest One")
-        self.assertEqual(packet["env"]["AGENTSASSEMBLE_ROOM_URL"], "http://192.168.1.10:8765")
-        self.assertEqual(packet["env"]["AGENTSASSEMBLE_INVITE_TOKEN"], invite["invite_token"])
-        self.assertEqual(packet["http"]["join"]["url"], "http://192.168.1.10:8765/api/room-invite/join")
-        self.assertEqual(packet["http"]["read_lobby"]["url"], "http://192.168.1.10:8765/api/room/lobby")
-        self.assertEqual(packet["http"]["say"]["url"], "http://192.168.1.10:8765/api/room/say")
-        self.assertEqual(packet["http"]["say"]["json"]["message"], "<message>")
+        self.assertNotIn("env", packet)
+        self.assertNotIn("http", packet)
+        self.assertEqual(packet["attend"]["command"], "assemble room attend --provider <provider>")
+        self.assertEqual(packet["attend"]["live_transport"], "websocket_push")
         self.assertEqual(packet["admission_contract"]["identity_proof"], "hmac_sha256_invite_token")
-        self.assertEqual(packet["execution_contract"]["provider_execution"], "not_started_by_invite")
-        self.assertTrue(packet["safety"]["contains_invite_token"])
+        self.assertEqual(packet["admission_contract"]["provider_execution"], "not_started_by_invite")
+        self.assertFalse(packet["safety"]["contains_invite_token"])
         self.assertFalse(packet["safety"]["contains_session_token"])
 
     def test_join_with_valid_token(self):

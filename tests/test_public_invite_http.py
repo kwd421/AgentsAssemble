@@ -87,7 +87,8 @@ class PublicInviteHttpTests(unittest.TestCase):
                 server.server_close()
 
         self.assertTrue(invite["join_url"].startswith("https://shared-room.example.com/join?token="))
-        self.assertEqual(invite["remote_client_packet"]["env"]["AGENTSASSEMBLE_ROOM_URL"], "https://shared-room.example.com")
+        self.assertNotIn("env", invite["remote_client_packet"])
+        self.assertEqual(invite["remote_client_packet"]["attend"]["live_transport"], "websocket_push")
 
     def test_host_token_bootstrap_rejects_untrusted_public_request(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -420,10 +421,8 @@ class PublicInviteHttpTests(unittest.TestCase):
                         companion = json.loads(response.read().decode("utf-8"))
                     self.assertEqual(companion["meeting_id"], "friend-room")
                     self.assertEqual(companion["agent_id"], "friend-ai")
-                    self.assertEqual(
-                        companion["remote_client_packet"]["env"]["AGENTSASSEMBLE_ROOM_URL"],
-                        "https://shared-room.example.com",
-                    )
+                    self.assertNotIn("env", companion["remote_client_packet"])
+                    self.assertFalse(companion["remote_client_packet"]["safety"]["contains_invite_token"])
                 finally:
                     server.shutdown()
                     server.server_close()
@@ -630,9 +629,9 @@ class PublicInviteHttpTests(unittest.TestCase):
             serialized = json.dumps(companion, ensure_ascii=False)
             self.assertEqual(companion["meeting_id"], "friend-room")
             self.assertEqual(packet["agent"]["meeting_id"], "friend-room")
-            self.assertEqual(packet["env"]["AGENTSASSEMBLE_MEETING_ID"], "friend-room")
-            self.assertEqual(packet["env"]["AGENTSASSEMBLE_ROOM_URL"], base)
-            self.assertEqual(packet["execution_contract"]["provider_execution"], "not_started_by_invite")
+            self.assertNotIn("env", packet)
+            self.assertNotIn("http", packet)
+            self.assertEqual(packet["attend"]["invite_input"], "hidden_stdin")
             self.assertEqual(packet["admission_contract"]["provider_execution"], "not_started_by_invite")
             self.assertFalse(packet["safety"]["contains_session_token"])
             self.assertFalse(packet["safety"]["provider_executed"])

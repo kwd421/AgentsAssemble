@@ -12,10 +12,11 @@ from agentsassemble.native_cli_providers import (
     NativeCliProviderSpec,
     UnsupportedNativeCliProvider,
     default_native_cli_provider_specs,
-    native_cli_provider_catalog_payload,
+    native_cli_provider_definition,
     native_cli_provider_spec_from_payload,
     validate_native_cli_provider_spec,
 )
+from agentsassemble.provider_capabilities import provider_catalog_payload
 from agentsassemble.room_invite import revoke_sessions_for_participant
 from agentsassemble.room_commands import (
     RoomCommandValidationError,
@@ -119,7 +120,7 @@ class RoomRealtimeController:
             previous_participant = self.store.participant(clean_room_id, spec.agent_id)
             requested_profile_key = spec.runtime_profile_key()
             if (
-                previous_session.get("runtime_status") in {"starting", "idle", "busy", "recovering"}
+                previous_session.get("runtime_status") in {"starting", "idle", "busy", "paused", "recovering"}
                 and previous_session.get("runtime_profile_key") != requested_profile_key
             ):
                 raise RoomCommandRejected(
@@ -165,7 +166,9 @@ class RoomRealtimeController:
     def connect(self, identity: dict[str, object]) -> RoomSocketChannel:
         room_id = clean_lobby_text(identity.get("meeting_id"), limit=128)
         self.ensure_room(room_id)
-        if identity.get("client_type") != "agent_bridge":
+        if identity.get("client_type") == "agent_bridge":
+            self._ensure_external_bridge_session(room_id, identity)
+        else:
             participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
             if participant_id:
                 self.store.upsert_participant(
@@ -179,6 +182,81 @@ class RoomRealtimeController:
                     },
                 )
         return self.broker.connect(identity)
+
+    def _ensure_external_bridge_session(self, room_id: str, identity: dict[str, object]) -> None:
+        participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
+        if not participant_id:
+            return
+        display_name = clean_lobby_text(identity.get("display_name"), limit=64) or participant_id
+        provider_kind = clean_lobby_text(identity.get("provider_kind"), limit=64) or "external_agent"
+        spec = NativeCliProviderSpec(
+            agent_id=participant_id,
+            display_name=display_name,
+            command=("external-attendee",),
+            cwd=".",
+            provider_kind=provider_kind,
+            runtime_kind="external_bridge",
+            transport="websocket",
+            default_responder=True,
+        )
+        with self._lock:
+            self._providers_by_room.setdefault(room_id, {})[participant_id] = spec
+        if self.store.session(room_id, participant_id):
+            return
+        self.store.upsert_participant(
+            room_id,
+            {
+                "participant_id": participant_id,
+                "display_name": display_name,
+                "participant_type": "agent",
+                "role": "agent",
+                "owner_id": "operator-local",
+                "provider_kind": provider_kind,
+                "connection_kind": "native_cli_bridge",
+                "status": "joined",
+            },
+        )
+        self.store.upsert_session(
+            room_id,
+            {
+                "session_id": participant_id,
+                "participant_id": participant_id,
+                "display_name": display_name,
+                "status": "available",
+                "provider_kind": provider_kind,
+                "runtime_kind": "external_bridge",
+                "connection_kind": "native_cli_bridge",
+                "runtime_profile_key": spec.runtime_profile_key(),
+                "enabled": True,
+                "runtime_status": "starting",
+                "pending_event_ids": [],
+                "inflight_event_ids": [],
+                "turn_count": 0,
+                "last_provider_sync_event_id": "",
+                "last_provider_sync_seq": 0,
+                "last_seen_event_id": "",
+                "last_seen_seq": 0,
+                "bootstrap_cutoff_seq": 0,
+                "external_owned": True,
+                "pty": False,
+                "transport": "websocket",
+                "is_one_shot": False,
+            },
+        )
+        self.store.append_event(
+            room_id,
+            "participant_joined",
+            participant_id=participant_id,
+            session_id=participant_id,
+        )
+        self.store.append_event(
+            room_id,
+            "agent_session_created",
+            participant_id=participant_id,
+            session_id=participant_id,
+            provider_kind=provider_kind,
+            external_owned=True,
+        )
 
     def disconnect(self, channel: RoomSocketChannel) -> None:
         identity = channel.identity
@@ -264,7 +342,7 @@ class RoomRealtimeController:
             "has_more_before": has_more_before,
             "resume_gap": resume_gap,
             "snapshot_mode": snapshot_mode,
-            "available_providers": native_cli_provider_catalog_payload(),
+            "available_providers": provider_catalog_payload(),
             "capabilities": self.capabilities(identity),
         }
 
@@ -510,6 +588,9 @@ class RoomRealtimeController:
                 server_url=server_url,
                 ticket_issuer=ticket_issuer,
             )
+        if action == "agent.configure":
+            self._require_capability(identity, "agent.control")
+            return self._configure_agent(room_id, payload)
         if action in {"agent.start", "agent.pause", "agent.resume", "agent.stop", "agent.interrupt"}:
             self._require_capability(identity, "agent.control")
             agent_id = self._payload_agent_id(payload)
@@ -680,6 +761,41 @@ class RoomRealtimeController:
                 ticket_issuer=ticket_issuer,
             )
         return result
+
+    def _configure_agent(self, room_id: str, payload: dict[str, object]) -> dict[str, object]:
+        agent_id = self._payload_agent_id(payload)
+        current = self.store.session(room_id, agent_id)
+        if not current:
+            raise RoomCommandRejected(f"Agent session {agent_id} was not found.", code="not_found")
+        if current.get("runtime_status") in {"starting", "idle", "busy", "paused", "recovering", "stopping"}:
+            raise RoomCommandRejected(
+                "Stop this Agent Session before changing its runtime settings.",
+                code="runtime_profile_conflict",
+            )
+        requested_provider = clean_lobby_text(
+            payload.get("provider_id") or payload.get("provider_kind") or current.get("provider_kind"),
+            limit=64,
+        )
+        existing_provider = clean_lobby_text(current.get("provider_kind"), limit=64)
+        definition = native_cli_provider_definition(requested_provider)
+        if definition is None or definition.provider_kind != existing_provider:
+            raise RoomCommandRejected(
+                "An existing Agent Session cannot change provider kind; remove it and create a new session.",
+                code="provider_mismatch",
+            )
+        merged = {
+            **payload,
+            "agent_id": agent_id,
+            "provider_id": definition.provider_id,
+            "display_name": payload.get("display_name") or current.get("display_name") or agent_id,
+            "workspace": payload.get("workspace") or current.get("workspace") or ".",
+        }
+        try:
+            spec = native_cli_provider_spec_from_payload(merged)
+        except (UnsupportedNativeCliProvider, ValueError) as error:
+            raise RoomCommandRejected(str(error), code="invalid_runtime_profile") from error
+        session = self.register_provider(room_id, spec)
+        return {"status": "configured", "agent_session": session}
 
     def _resume_agent(
         self,
@@ -933,6 +1049,7 @@ class RoomRealtimeController:
             model=clean_lobby_text(payload.get("model"), limit=128) or session.get("model") or "",
             started_at=clean_lobby_text(payload.get("started_at"), limit=128) or _now(),
             last_error="",
+            **_runtime_profile_fields(payload, include_model=False),
             **_runtime_diagnostic_fields(payload),
         )
         if previous_participant.get("status") != "joined":
@@ -951,6 +1068,7 @@ class RoomRealtimeController:
             if key in payload
         }
         fields.update(_runtime_diagnostic_fields(payload))
+        fields.update(_runtime_profile_fields(payload))
         updated = self.store.update_session_fields(room_id, str(session["session_id"]), **fields)
         self._publish_session_state(room_id, updated)
         return {"agent_session": self._public_session(updated)}
@@ -1235,6 +1353,8 @@ class RoomRealtimeController:
             participant_id=agent_id,
             session_id=str(session["session_id"]),
             instruction="Reply naturally to the new room messages. Return only the text that should appear in the room.",
+            max_recent_events=50 if session.get("external_owned") else None,
+            max_prompt_chars=64_000 if session.get("external_owned") else None,
         )
         provider_events = [event for event in list(packet.get("events") or []) if isinstance(event, dict)]
         provider_context_event_ids = [
@@ -1386,14 +1506,18 @@ class RoomRealtimeController:
                 agent_id,
                 display_name=spec.display_name,
                 provider_kind=spec.normalized_provider_kind(),
-                runtime_kind="live_cli",
+                runtime_kind=spec.runtime_kind,
                 connection_kind="native_cli_bridge",
                 command_configured=list(spec.command),
                 workspace=str(Path(spec.cwd).expanduser().resolve()),
                 model=spec.model,
+                reasoning_effort=spec.reasoning_effort,
+                service_tier=spec.service_tier,
+                variant=spec.variant,
+                permission_mode=spec.permission_mode,
                 runtime_profile_key=spec.runtime_profile_key(),
-                pty=True,
-                transport="pty",
+                pty=spec.transport in {"pty", "conpty"},
+                transport=spec.transport,
                 is_one_shot=False,
                 **cursor_updates,
             )
@@ -1415,11 +1539,15 @@ class RoomRealtimeController:
                 "display_name": spec.display_name,
                 "status": "available",
                 "provider_kind": spec.normalized_provider_kind(),
-                "runtime_kind": "live_cli",
+                "runtime_kind": spec.runtime_kind,
                 "connection_kind": "native_cli_bridge",
                 "command_configured": list(spec.command),
                 "workspace": str(Path(spec.cwd).expanduser().resolve()),
                 "model": spec.model,
+                "reasoning_effort": spec.reasoning_effort,
+                "service_tier": spec.service_tier,
+                "variant": spec.variant,
+                "permission_mode": spec.permission_mode,
                 "runtime_profile_key": spec.runtime_profile_key(),
                 "enabled": False,
                 "runtime_status": "stopped",
@@ -1432,8 +1560,8 @@ class RoomRealtimeController:
                 "last_seen_seq": latest_public_seq,
                 "bootstrap_cutoff_seq": latest_public_seq,
                 "recovery_attempt_count": 0,
-                "pty": True,
-                "transport": "pty",
+                "pty": spec.transport in {"pty", "conpty"},
+                "transport": spec.transport,
                 "is_one_shot": False,
             },
         )
@@ -1534,6 +1662,25 @@ def _runtime_diagnostic_fields(diagnostics: object) -> dict[str, object]:
         "message_source": clean_lobby_text(values.get("message_source"), limit=128),
         "message_source_strict": bool(values.get("message_source_strict", False)),
     }
+
+
+def _runtime_profile_fields(values: object, *, include_model: bool = True) -> dict[str, object]:
+    payload = values if isinstance(values, dict) else {}
+    limits = {
+        "model": 128,
+        "reasoning_effort": 32,
+        "service_tier": 32,
+        "variant": 64,
+        "permission_mode": 64,
+    }
+    fields: dict[str, object] = {}
+    for key, limit in limits.items():
+        if key == "model" and not include_model:
+            continue
+        value = clean_lobby_text(payload.get(key), limit=limit)
+        if value:
+            fields[key] = value
+    return fields
 
 
 def _public_runtime_diagnostics(diagnostics: object) -> dict[str, object]:

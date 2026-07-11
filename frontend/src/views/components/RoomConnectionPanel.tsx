@@ -7,6 +7,7 @@ import {
   type RoomAgentSession,
 } from "../../api";
 import type { AgentQuotaVisibilityViewer } from "../../lib/agentQuotaVisibility";
+import type { NativeCliProviderAvailability } from "../../roomSocketClient";
 import MemberList, { type RoleId } from "./MemberList";
 
 type RoomSummary = {
@@ -44,6 +45,11 @@ type RoomConnectionPanelProps = {
   ) => void | Promise<void>;
   onParticipantKick?: (participantId: string) => void | Promise<void>;
   onParticipantMute?: (participantId: string, muted: boolean) => void | Promise<void>;
+  availableProviders?: NativeCliProviderAvailability[];
+  onAgentConfigure?: (
+    session: RoomAgentSession,
+    settings: Record<string, string>
+  ) => void | Promise<void>;
 };
 
 function mutedChannelCount(
@@ -76,6 +82,8 @@ export default function RoomConnectionPanel({
   onAgentControl,
   onParticipantKick,
   onParticipantMute,
+  availableProviders = [],
+  onAgentConfigure,
 }: RoomConnectionPanelProps) {
   const mutedCount = mutedChannelCount(channelNotifications);
 
@@ -151,6 +159,8 @@ export default function RoomConnectionPanel({
         hideSearch={memberSearchQuery !== undefined}
         agentSessions={agentSessions}
         onAgentControl={capabilities["agent.control"] ? onAgentControl : undefined}
+        availableProviders={availableProviders}
+        onAgentConfigure={capabilities["agent.control"] ? onAgentConfigure : undefined}
       />
     </div>
   );

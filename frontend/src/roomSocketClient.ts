@@ -63,19 +63,38 @@ export interface NativeCliProviderAvailability {
   id: string;
   display_name: string;
   provider_kind: string;
-  runtime_kind: "live_cli";
+  runtime_kind: "live_cli" | "opencode" | "api";
   connection_kind: "native_cli_bridge";
   executable: string;
   default_model: string;
   interactive: true;
   startable: boolean;
+  available: boolean;
+  resolved_executable?: string;
+  discovery_status?: "ok" | "fallback" | "static" | "unavailable";
+  discovery_error?: string;
+  controls: ProviderControl[];
+}
+
+export interface ProviderControlOption {
+  value: string;
+  label: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ProviderControl {
+  key: string;
+  label: string;
+  kind: "select" | "combobox";
+  options: ProviderControlOption[];
+  default_value: string;
 }
 
 export interface RoomSocketSnapshot {
   op: "snapshot";
   stream: "room_events";
   room: ServerRoom | Record<string, unknown>;
-  participants: Array<Record<string, unknown>>;
+  participants: RoomMember[];
   agent_sessions: RoomAgentSession[];
   active_turns: Array<Record<string, unknown>>;
   events: RoomEvent[];

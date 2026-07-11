@@ -18,6 +18,12 @@ class NativeCliProviderSpec:
     cwd: str = "."
     provider_kind: str = ""
     model: str = ""
+    reasoning_effort: str = ""
+    service_tier: str = ""
+    variant: str = ""
+    permission_mode: str = "meeting_read_only"
+    runtime_kind: str = "live_cli"
+    transport: str = "pty"
     default_responder: bool = True
     quiet_seconds: float = 4.0
     input_mode: str = "line"
@@ -29,6 +35,7 @@ class NativeCliProviderSpec:
     startup_timeout_seconds: float = 20.0
     startup_accept_contains: str = ""
     startup_accept_keys: str = "\r"
+    startup_input: str = ""
     turn_timeout_seconds: float = 180.0
 
     def normalized_provider_kind(self) -> str:
@@ -41,6 +48,12 @@ class NativeCliProviderSpec:
                 "command": list(self.command),
                 "cwd": str(Path(self.cwd).expanduser().resolve()),
                 "model": self.model,
+                "reasoning_effort": self.reasoning_effort,
+                "service_tier": self.service_tier,
+                "variant": self.variant,
+                "permission_mode": self.permission_mode,
+                "runtime_kind": self.runtime_kind,
+                "transport": self.transport,
                 "quiet_seconds": self.quiet_seconds,
                 "input_mode": self.input_mode,
                 "submit_newline": self.submit_newline,
@@ -51,6 +64,7 @@ class NativeCliProviderSpec:
                 "startup_timeout_seconds": self.startup_timeout_seconds,
                 "startup_accept_contains": self.startup_accept_contains,
                 "startup_accept_keys": self.startup_accept_keys,
+                "startup_input": self.startup_input,
                 "turn_timeout_seconds": self.turn_timeout_seconds,
             },
             ensure_ascii=True,
@@ -66,9 +80,15 @@ class NativeCliProviderDefinition:
     display_name: str
     provider_kind: str
     executable: str
-    command_builder: Callable[[str], tuple[str, ...]]
+    command_builder: Callable[[str, str, str, str, str], tuple[str, ...]]
     aliases: tuple[str, ...] = ()
     default_model: str = ""
+    default_reasoning_effort: str = ""
+    default_service_tier: str = ""
+    default_variant: str = ""
+    default_permission_mode: str = "meeting_read_only"
+    runtime_kind: str = "live_cli"
+    transport: str = "pty"
     input_mode: str = "line"
     startup_accept_contains: str = ""
 
@@ -79,19 +99,42 @@ class NativeCliProviderDefinition:
         display_name: str | None = None,
         cwd: str | Path = ".",
         model: str = "",
+        reasoning_effort: str = "",
+        service_tier: str = "",
+        variant: str = "",
+        permission_mode: str = "",
         default_responder: bool = True,
     ) -> NativeCliProviderSpec:
         selected_model = clean_lobby_text(model, limit=128) or self.default_model
+        selected_effort = clean_lobby_text(reasoning_effort, limit=32) or self.default_reasoning_effort
+        selected_service_tier = clean_lobby_text(service_tier, limit=32) or self.default_service_tier
+        selected_variant = clean_lobby_text(variant, limit=64) or self.default_variant
+        selected_permission = (
+            clean_lobby_text(permission_mode, limit=64) or self.default_permission_mode
+        )
         return NativeCliProviderSpec(
             agent_id=clean_lobby_text(agent_id, limit=128) or self.provider_id,
             display_name=clean_lobby_text(display_name, limit=128) or self.display_name,
-            command=self.command_builder(selected_model),
+            command=self.command_builder(
+                selected_model,
+                selected_effort,
+                selected_service_tier,
+                selected_variant,
+                selected_permission,
+            ),
             cwd=str(Path(cwd).expanduser().resolve()),
             provider_kind=self.provider_kind,
             model=selected_model,
+            reasoning_effort=selected_effort,
+            service_tier=selected_service_tier,
+            variant=selected_variant,
+            permission_mode=selected_permission,
+            runtime_kind=self.runtime_kind,
+            transport=self.transport,
             default_responder=default_responder,
             input_mode=self.input_mode,
             startup_accept_contains=self.startup_accept_contains,
+            startup_input="/fast\r" if self.provider_id == "claude" and selected_service_tier == "fast" else "",
         )
 
     def public_payload(self) -> dict[str, object]:
@@ -99,7 +142,7 @@ class NativeCliProviderDefinition:
             "id": self.provider_id,
             "display_name": self.display_name,
             "provider_kind": self.provider_kind,
-            "runtime_kind": "live_cli",
+            "runtime_kind": self.runtime_kind,
             "connection_kind": "native_cli_bridge",
             "executable": self.executable,
             "default_model": self.default_model,
@@ -112,47 +155,124 @@ class UnsupportedNativeCliProvider(ValueError):
     pass
 
 
-def _codex_command(model: str) -> tuple[str, ...]:
-    return (
+def _codex_command(
+    model: str,
+    effort: str,
+    service_tier: str,
+    _variant: str,
+    permission_mode: str,
+) -> tuple[str, ...]:
+    approval, sandbox = _codex_permissions(permission_mode)
+    command = [
         "codex",
         "--no-alt-screen",
         "--ask-for-approval",
-        "never",
+        approval,
         "--sandbox",
-        "read-only",
+        sandbox,
         "--model",
-        model or "gpt-5.3-codex-spark",
-    )
+        model or "gpt-5.6-luna",
+    ]
+    if effort:
+        command.extend(("-c", f'model_reasoning_effort="{effort}"'))
+    if service_tier and service_tier != "default":
+        command.extend(("-c", f'service_tier="{service_tier}"'))
+    return tuple(command)
 
 
-def _antigravity_command(_model: str) -> tuple[str, ...]:
-    return ("agy", "--sandbox")
+def _antigravity_command(
+    model: str,
+    _effort: str,
+    _service_tier: str,
+    _variant: str,
+    permission_mode: str,
+) -> tuple[str, ...]:
+    command = ["agy"]
+    if model:
+        command.extend(("--model", model))
+    if permission_mode == "workspace_write":
+        command.extend(("--mode", "accept-edits"))
+    else:
+        command.extend(("--mode", "plan", "--sandbox"))
+    return tuple(command)
 
 
-def _grok_command(_model: str) -> tuple[str, ...]:
-    return ("grok", "agent", "stdio")
+def _grok_command(
+    model: str,
+    effort: str,
+    _service_tier: str,
+    _variant: str,
+    _permission_mode: str,
+) -> tuple[str, ...]:
+    command = ["grok"]
+    if model:
+        command.extend(("--model", model))
+    if effort:
+        command.extend(("--reasoning-effort", effort))
+    command.extend(("agent", "stdio"))
+    return tuple(command)
 
 
-def _claude_command(model: str) -> tuple[str, ...]:
-    return (
+def _claude_command(
+    model: str,
+    effort: str,
+    service_tier: str,
+    _variant: str,
+    permission_mode: str,
+) -> tuple[str, ...]:
+    command = [
         "claude",
         "--model",
         model or "haiku",
-        "--tools",
-        "",
-        "--safe-mode",
-    )
+    ]
+    if effort:
+        command.extend(("--effort", effort))
+    command.extend(("--permission-mode", _claude_permission_mode(permission_mode), "--tools", "", "--safe-mode"))
+    del service_tier  # Fast is applied as the interactive /fast startup command by the bridge runtime.
+    return tuple(command)
+
+
+def _codex_permissions(permission_mode: str) -> tuple[str, str]:
+    if permission_mode == "workspace_write":
+        return "on-request", "workspace-write"
+    return "never", "read-only"
+
+
+def _claude_permission_mode(permission_mode: str) -> str:
+    return "acceptEdits" if permission_mode == "workspace_write" else "plan"
+
+
+def _opencode_command(
+    _model: str,
+    _effort: str,
+    _service_tier: str,
+    _variant: str,
+    _permission_mode: str,
+) -> tuple[str, ...]:
+    return ("opencode",)
+
+
+def _deepseek_command(
+    _model: str,
+    _effort: str,
+    _service_tier: str,
+    _variant: str,
+    _permission_mode: str,
+) -> tuple[str, ...]:
+    return ("deepseek-api",)
 
 
 NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
     NativeCliProviderDefinition(
         provider_id="codex",
-        display_name="Codex Spark",
+        display_name="Codex Luna",
         provider_kind="codex_live_session",
         executable="codex",
         command_builder=_codex_command,
         aliases=("codex_live_session",),
-        default_model="gpt-5.3-codex-spark",
+        default_model="gpt-5.6-luna",
+        default_reasoning_effort="low",
+        default_service_tier="default",
         input_mode="bracketed_paste",
         startup_accept_contains="Do you trust",
     ),
@@ -163,6 +283,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         executable="agy",
         command_builder=_antigravity_command,
         aliases=("agy", "antigravity_live_session"),
+        default_model="Gemini 3.5 Flash (Medium)",
         input_mode="bracketed_paste",
         startup_accept_contains="Do you trust",
     ),
@@ -173,6 +294,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         executable="grok",
         command_builder=_grok_command,
         aliases=("grok_live_session",),
+        default_model="grok-4.5",
     ),
     NativeCliProviderDefinition(
         provider_id="claude",
@@ -182,14 +304,45 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         command_builder=_claude_command,
         aliases=("claude_code",),
         default_model="haiku",
+        default_reasoning_effort="high",
+        default_service_tier="default",
         input_mode="bracketed_paste",
         startup_accept_contains="Do you trust",
     ),
 )
 
+STRUCTURED_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
+    NativeCliProviderDefinition(
+        provider_id="opencode",
+        display_name="OpenCode",
+        provider_kind="opencode_server",
+        executable="opencode",
+        command_builder=_opencode_command,
+        aliases=("opencode_server",),
+        default_model="opencode-go/glm-5.2",
+        runtime_kind="opencode",
+        transport="http",
+    ),
+    NativeCliProviderDefinition(
+        provider_id="deepseek",
+        display_name="DeepSeek API",
+        provider_kind="deepseek_api",
+        executable="",
+        command_builder=_deepseek_command,
+        aliases=("deepseek_api",),
+        default_model="deepseek-v4-flash",
+        default_reasoning_effort="high",
+        default_variant="thinking",
+        runtime_kind="api",
+        transport="https",
+    ),
+)
+
+PROVIDER_CATALOG = (*NATIVE_CLI_PROVIDER_CATALOG, *STRUCTURED_PROVIDER_CATALOG)
+
 _PROVIDER_BY_ALIAS = {
     alias.casefold(): definition
-    for definition in NATIVE_CLI_PROVIDER_CATALOG
+    for definition in PROVIDER_CATALOG
     for alias in (definition.provider_id, definition.provider_kind, definition.executable, *definition.aliases)
 }
 
@@ -199,7 +352,7 @@ def native_cli_provider_definition(value: object) -> NativeCliProviderDefinition
 
 
 def native_cli_provider_catalog_payload() -> list[dict[str, object]]:
-    return [definition.public_payload() for definition in NATIVE_CLI_PROVIDER_CATALOG]
+    return [definition.public_payload() for definition in PROVIDER_CATALOG]
 
 
 def default_native_cli_provider_specs(*, workspace: str | Path = ".") -> list[NativeCliProviderSpec]:
@@ -223,6 +376,14 @@ def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeC
         display_name=display_name,
         cwd=workspace or ".",
         model=clean_lobby_text(payload.get("model") or payload.get("model_id"), limit=128),
+        reasoning_effort=clean_lobby_text(
+            payload.get("reasoning_effort") or payload.get("effort"), limit=32
+        ),
+        service_tier=clean_lobby_text(payload.get("service_tier"), limit=32),
+        variant=clean_lobby_text(payload.get("variant"), limit=64),
+        permission_mode=clean_lobby_text(
+            payload.get("permission_mode") or payload.get("permission_option"), limit=64
+        ),
     )
     validate_native_cli_provider_spec(spec)
     return spec
@@ -245,7 +406,15 @@ def native_cli_provider_spec_from_config(
         index = command.index("--model")
         model = command[index + 1] if index + 1 < len(command) else ""
     if not command and definition is not None:
-        command = definition.command_builder(model or definition.default_model)
+        command = definition.command_builder(
+            model or definition.default_model,
+            clean_lobby_text(payload.get("reasoning_effort") or payload.get("effort"), limit=32)
+            or definition.default_reasoning_effort,
+            clean_lobby_text(payload.get("service_tier"), limit=32) or definition.default_service_tier,
+            clean_lobby_text(payload.get("variant"), limit=64) or definition.default_variant,
+            clean_lobby_text(payload.get("permission_mode"), limit=64)
+            or definition.default_permission_mode,
+        )
     if not command:
         raise ValueError(f"live CLI provider {agent_id} command is required")
     spec = NativeCliProviderSpec(
@@ -257,6 +426,18 @@ def native_cli_provider_spec_from_config(
         provider_kind=clean_lobby_text(payload.get("provider_kind"), limit=64)
         or (definition.provider_kind if definition else f"{agent_id}_live_session"),
         model=model or (definition.default_model if definition else ""),
+        reasoning_effort=clean_lobby_text(payload.get("reasoning_effort") or payload.get("effort"), limit=32)
+        or (definition.default_reasoning_effort if definition else ""),
+        service_tier=clean_lobby_text(payload.get("service_tier"), limit=32)
+        or (definition.default_service_tier if definition else ""),
+        variant=clean_lobby_text(payload.get("variant"), limit=64)
+        or (definition.default_variant if definition else ""),
+        permission_mode=clean_lobby_text(payload.get("permission_mode"), limit=64)
+        or (definition.default_permission_mode if definition else "meeting_read_only"),
+        runtime_kind=clean_lobby_text(payload.get("runtime_kind"), limit=32)
+        or (definition.runtime_kind if definition else "live_cli"),
+        transport=clean_lobby_text(payload.get("transport"), limit=32)
+        or (definition.transport if definition else "pty"),
         default_responder=bool(payload.get("default_responder", False)),
         quiet_seconds=_float_value(payload.get("quiet_seconds"), 4.0),
         input_mode=clean_lobby_text(payload.get("input_mode"), limit=64)
@@ -286,12 +467,13 @@ def validate_native_cli_provider_spec(spec: NativeCliProviderSpec) -> None:
         command_parts = {str(part).casefold() for part in spec.command[1:]}
         if not {"agent", "stdio"}.issubset(command_parts):
             raise ValueError("Grok Agent Sessions require grok agent stdio; PTY fallback is disabled.")
+    if spec.permission_mode not in {"meeting_read_only", "workspace_write"}:
+        raise ValueError(f"Unsupported native CLI permission mode: {spec.permission_mode}")
     is_claude = executable == "claude" or spec.normalized_provider_kind() == "claude_code"
-    if not is_claude:
-        return
-    forbidden = [part for part in spec.command[1:] if part in {"-p", "--print"} or part.startswith("--print=")]
-    if forbidden:
-        raise ValueError("Claude Code Agent Sessions require interactive mode; print mode is forbidden.")
+    if is_claude:
+        forbidden = [part for part in spec.command[1:] if part in {"-p", "--print"} or part.startswith("--print=")]
+        if forbidden:
+            raise ValueError("Claude Code Agent Sessions require interactive mode; print mode is forbidden.")
 
 
 def _slug_agent_id(value: str) -> str:

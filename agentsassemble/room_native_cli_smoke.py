@@ -377,7 +377,9 @@ def _smoke_provider(
         except Exception as stop_error:
             result["last_error"] = str(result.get("last_error") or stop_error)
         _wait_until(lambda: not _pid_alive(provider_pid) and not _pid_alive(bridge_pid), timeout_seconds=5.0)
-        result["alive_after_stop"] = _pid_alive(provider_pid) or _pid_alive(bridge_pid) or bool(
+        provider_process_shared = spec.normalized_provider_kind() == "opencode_server"
+        result["shared_provider_alive_after_agent_stop"] = provider_process_shared and _pid_alive(provider_pid)
+        result["alive_after_stop"] = (not provider_process_shared and _pid_alive(provider_pid)) or _pid_alive(bridge_pid) or bool(
             manager.health("general", spec.agent_id).get("running")
         )
         bridge_stderr = _stderr_diagnostics(stderr_path)
@@ -699,7 +701,9 @@ def _smoke_agent_conversation(
                     result["last_error"] = str(stop_error)
                     result["status"] = "error"
             _wait_until(lambda: not _pid_alive(provider_pid) and not _pid_alive(bridge_pid), timeout_seconds=5.0)
-            provider_result["alive_after_stop"] = _pid_alive(provider_pid) or _pid_alive(bridge_pid) or bool(
+            provider_process_shared = spec.normalized_provider_kind() == "opencode_server"
+            provider_result["shared_provider_alive_after_agent_stop"] = provider_process_shared and _pid_alive(provider_pid)
+            provider_result["alive_after_stop"] = (not provider_process_shared and _pid_alive(provider_pid)) or _pid_alive(bridge_pid) or bool(
                 manager.health("general", spec.agent_id).get("running")
             )
             if verify_controls:

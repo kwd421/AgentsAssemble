@@ -15,6 +15,7 @@ from typing import Any, Callable, Iterable, Protocol
 from uuid import uuid4
 
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.process_environment import sanitized_provider_environment
 from agentsassemble.room_context import (
     DEFAULT_ROOM_CONTEXT_CHARS,
     DEFAULT_ROOM_CONTEXT_MESSAGES,
@@ -1238,6 +1239,7 @@ class CodexAppServerRuntime:
             text=True,
             errors="replace",
             bufsize=1,
+            env=sanitized_provider_environment(),
         )
 
     def _reset_stderr_drain_state(self) -> None:

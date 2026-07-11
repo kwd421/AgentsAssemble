@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { LobbyEvent, RoomAgentSession, RoomEvent, SideChatEvent } from "./api";
+import type { LobbyEvent, RoomAgentSession, RoomEvent, RoomMember, SideChatEvent } from "./api";
 import {
   openRoomSocket,
   type NativeCliProviderAvailability,
@@ -72,6 +72,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   const [eventsByRoom, setEventsByRoom] = useState<Record<string, RoomEvent[]>>({});
   const [historyByRoom, setHistoryByRoom] = useState<Record<string, CanonicalRoomHistoryState>>({});
   const [sessionsByRoom, setSessionsByRoom] = useState<Record<string, RoomAgentSession[]>>({});
+  const [participantsByRoom, setParticipantsByRoom] = useState<Record<string, RoomMember[]>>({});
   const [capabilitiesByRoom, setCapabilitiesByRoom] = useState<Record<string, Record<string, boolean>>>({});
   const [providersByRoom, setProvidersByRoom] = useState<
     Record<string, NativeCliProviderAvailability[]>
@@ -140,6 +141,20 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     const currentSocket = openSocket(auth, ["room_events", "side_chat"], {
       onRoomSnapshot: (snapshot) => {
         if (!connectionIsCurrent()) return;
+        setParticipantsByRoom((previous) => ({
+          ...previous,
+          [roomId]: (snapshot.participants || []).map((participant) => ({
+            ...participant,
+            meeting_id: participant.meeting_id || roomId,
+            provider_kind: participant.provider_kind || "",
+            connection_kind: participant.connection_kind || "",
+            source:
+              participant.source ||
+              (participant.role !== "human" ? "agent_session" : "room"),
+            created_at: participant.created_at || "",
+            updated_at: participant.updated_at || "",
+          })),
+        }));
         setSessionsByRoom((previous) => ({
           ...previous,
           [roomId]: snapshot.agent_sessions || [],
@@ -229,6 +244,18 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     [socket]
   );
 
+  const sendAgentConfigure = useCallback(
+    async (session: RoomAgentSession, settings: Record<string, string>) => {
+      if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
+      await socket.command("agent.configure", {
+        agent_id: session.participant_id,
+        provider_kind: session.provider_kind,
+        ...settings,
+      });
+    },
+    [socket]
+  );
+
   const sendParticipantKick = useCallback(
     async (participantId: string) => {
       if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
@@ -258,6 +285,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     membershipRevision,
     events,
     timelineEvents,
+    participants: participantsByRoom[roomId] || [],
     agentSessions: sessionsByRoom[roomId] || [],
     capabilities: capabilitiesByRoom[roomId] || {},
     availableProviders: providersByRoom[roomId] || [],
@@ -265,6 +293,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     history: historyByRoom[roomId] || EMPTY_HISTORY,
     loadHistory,
     sendAgentControl,
+    sendAgentConfigure,
     sendParticipantKick,
     sendParticipantMute,
   };

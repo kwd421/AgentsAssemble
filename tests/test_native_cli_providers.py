@@ -18,9 +18,10 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
             specs = {spec.agent_id: spec for spec in default_native_cli_provider_specs(workspace=temp_dir)}
 
         self.assertEqual(list(specs), ["codex", "antigravity", "grok", "claude"])
-        self.assertEqual(specs["codex"].model, "gpt-5.3-codex-spark")
+        self.assertEqual(specs["codex"].model, "gpt-5.6-luna")
+        self.assertEqual(specs["codex"].reasoning_effort, "low")
         self.assertEqual(specs["claude"].model, "haiku")
-        self.assertEqual(specs["grok"].command, ("grok", "agent", "stdio"))
+        self.assertEqual(specs["grok"].command, ("grok", "--model", "grok-4.5", "agent", "stdio"))
         self.assertNotIn("-p", specs["claude"].command)
         self.assertNotIn("--print", specs["claude"].command)
         tools_index = specs["claude"].command.index("--tools")
@@ -82,7 +83,10 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
     def test_public_catalog_is_safe_and_unknown_provider_is_clear(self):
         payload = native_cli_provider_catalog_payload()
 
-        self.assertEqual([provider["id"] for provider in payload], ["codex", "antigravity", "grok", "claude"])
+        self.assertEqual(
+            [provider["id"] for provider in payload],
+            ["codex", "antigravity", "grok", "claude", "opencode", "deepseek"],
+        )
         self.assertTrue(all(provider["interactive"] for provider in payload))
         self.assertTrue(all("command" not in provider for provider in payload))
         with self.assertRaises(UnsupportedNativeCliProvider):
