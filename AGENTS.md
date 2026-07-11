@@ -6,16 +6,30 @@ The goal is not to make code look architecturally impressive. The goal is to mak
 
 ## Project Product Memory
 
-Before changing live-agent, provider, memory, meeting-record, or GUI behavior,
-read `docs/product/OPERATING_MODEL.md` together with the closest topic doc:
-`docs/live-session-room-model.md`, `docs/provider-architecture.md`,
-`docs/live-agent-ops.md`, or `docs/roadmap.md`.
+Before changing room, provider, Agent Session, invite, media, moderation, or GUI
+behavior, read `docs/product/CURRENT_SYSTEM.md`. It is the short current-system
+orientation and documentation map.
 
-`docs/product/OPERATING_MODEL.md` records current product boundaries such as
-discovery not being execution, real provider CLIs requiring explicit approval,
-agent-private context staying provider-owned, shared meeting memory staying
-AgentsAssemble-owned, and Work Mode / Play Mode remaining separate unless an
-explicit promote action is designed.
+Then read the closest implementation and its tests. Open a detailed topic
+document only when the change touches the boundary named in that document's
+status header. Do not load `docs/live-agent-ops.md`, roadmap documents, reports,
+or legacy references as mandatory startup context.
+
+Detailed security, context-ownership, official-record, and Work/Play policy
+remains in `docs/product/OPERATING_MODEL.md`; consult it when the change touches
+those boundaries rather than loading it for every room or GUI edit.
+
+Documentation precedence:
+
+1. The user's current request and explicit product decisions.
+2. `docs/product/CURRENT_SYSTEM.md` for the active product and architecture.
+3. A current topic document for detailed invariants.
+4. Reports and research as evidence, not authority.
+5. Legacy documents only for the legacy path being changed.
+
+If a current document disagrees with code or another current document, verify
+the behavior and reconcile the conflict instead of silently choosing the most
+convenient source.
 
 ## Operating Summary
 

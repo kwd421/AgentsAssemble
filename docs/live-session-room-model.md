@@ -1,5 +1,12 @@
 # Live Session Room Model
 
+Status: mixed current invariants and historical design context
+
+Read when: changing legacy session/meeting semantics or tracing the origin of a
+room rule. The canonical implementation authority is
+`docs/live-cli-room-current-architecture.md`; start with
+`docs/product/CURRENT_SYSTEM.md`.
+
 AgentsAssemble must model a shared council room, not a survey runner that interviews agents one at a time.
 
 Current new MVP surface: **local interactive CLI-first #general MVP**.

@@ -1,5 +1,12 @@
 # Provider Architecture
 
+Status: mixed current provider boundaries and legacy adapter reference
+
+Read when: changing provider families, capability mapping, or a legacy provider
+adapter. For the active Agent Bridge path, start with
+`docs/product/CURRENT_SYSTEM.md` and
+`docs/live-cli-room-current-architecture.md`.
+
 AgentsAssemble should support many providers without making the meeting runner know each provider's internal rules.
 
 Current new MVP model: **local interactive CLI-first #general MVP**.

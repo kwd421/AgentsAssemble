@@ -1,5 +1,11 @@
 # AgentsAssemble Operating Model
 
+Status: current detailed product-policy reference
+
+Read when: changing security, context ownership, official-record, Work/Play, or
+public GUI policy. For ordinary implementation orientation, start with
+`docs/product/CURRENT_SYSTEM.md`.
+
 This document records the product memory that should survive chat context loss.
 It is intentionally small: use it to orient agents before changing live-session,
 provider, memory, or GUI behavior.

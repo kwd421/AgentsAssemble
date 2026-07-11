@@ -1,5 +1,11 @@
 # Live Agent Ops
 
+Status: legacy resident and operator command reference
+
+Read when: operating or modifying the legacy resident runner, its polling tools,
+or historical meeting controls. It is not required startup context for the
+canonical Agent Session room. Start with `docs/product/CURRENT_SYSTEM.md`.
+
 This is a historical operator checklist for the legacy resident live-agent
 slice. The normal product path is now turn-based Agent Sessions through the
 room UI and `assemble room ...`. Legacy runnable commands are hidden/disabled

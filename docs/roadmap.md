@@ -1,5 +1,11 @@
 # AgentsAssemble Roadmap
 
+Status: future direction, not current implementation authority
+
+Read when: planning future work. Do not treat roadmap entries as permission to
+change the active product; start implementation work from
+`docs/product/CURRENT_SYSTEM.md`.
+
 This roadmap freezes the current product direction so new features do not sprawl faster than the council engine can support them.
 
 The current v0.1 release-hardening bar lives in
