@@ -2,6 +2,12 @@
 
 Date: 2026-07-11
 
+Evidence snapshot: `b43d03369e747b431f5197f8f9ee193c3b712bf3`
+
+This report records the audit and the first extraction checkpoint. Later
+refactor commits superseded some metrics without changing the findings. The
+verified final metrics for that pass are recorded in the appendix below.
+
 ## Purpose
 
 This audit identifies code and test structures that make safe changes difficult
@@ -350,3 +356,17 @@ another cohesive legacy GUI registrar or a preparatory side-chat boundary, each
 in its own behavior-preserving commit. Before broader lifecycle work, clean the
 suite's resource warnings and replace the highest-churn source-string tests so
 future refactors fail on behavior rather than file placement.
+
+## Verified Final Appendix
+
+Evidence commit: `3d45e67c5e15961e63afc1ccc55579169f85c4d6`
+
+- `App.tsx`: 1,992 lines;
+- Python: 2,849 tests passed in 383 seconds with `ResourceWarning` promoted to
+  errors and no finalizer warnings;
+- frontend: 18 test files and 80 tests passed;
+- static UI and architecture contracts: 74 tests passed;
+- production frontend build passed with a 696.76 kB main JavaScript chunk.
+
+These values supersede the intermediate counts in `Refactor Outcome`; the
+historical table remains unchanged so the audit evidence is reproducible.

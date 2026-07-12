@@ -98,6 +98,9 @@ A completed media path must:
 - Do not inherit arbitrary host credentials into provider child environments.
 - Do not describe PTY screen scraping as a structured provider protocol.
 - Do not claim real smoke success without running the real provider path.
+- Direct non-loopback GUI bind is disabled by default. Public access uses a
+  loopback bind plus the authenticated tunnel; unsafe direct exposure requires
+  an explicit operator flag and is not a production deployment mode.
 - Do not push, delete user data, expose a tunnel, or mutate credentials without
   the user's explicit request.
 
@@ -161,6 +164,7 @@ the browser-visible flow rather than proving only that a backend function works.
 | --- | --- | --- |
 | `docs/live-cli-room-current-architecture.md` | current implementation | Changing canonical room protocol, state, lifecycle, or provider bridge |
 | `docs/product/OPERATING_MODEL.md` | current detailed policy | Changing security, memory, official-record, or mode boundaries |
+| `docs/product/RUNTIME_OWNERSHIP.md` | current ownership map | Changing provider process, Agent Session, recovery, or legacy resident ownership |
 | `docs/provider-architecture.md` | mixed provider reference | Changing provider families or legacy provider adapters |
 | `docs/live-session-room-model.md` | mixed design history | Changing legacy room semantics or tracing why a rule exists |
 | `docs/live-agent-ops.md` | legacy/operator reference | Operating or modifying legacy resident commands |
