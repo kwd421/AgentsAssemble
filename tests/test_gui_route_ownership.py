@@ -2,7 +2,8 @@ import ast
 import unittest
 from collections import defaultdict
 from pathlib import Path
-from urllib.parse import unquote
+
+from agentsassemble.gui_router import match_route_template
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -120,23 +121,6 @@ def _dynamic_route_owners() -> dict[tuple[str, str], set[Path]]:
     return dict(owners)
 
 
-def _match_dynamic_route(template: str, path: str) -> dict[str, str] | None:
-    template_parts = template.strip("/").split("/")
-    path_parts = path.strip("/").split("/")
-    if len(template_parts) != len(path_parts):
-        return None
-    values: dict[str, str] = {}
-    for expected, actual in zip(template_parts, path_parts, strict=True):
-        if expected.startswith("{") and expected.endswith("}"):
-            decoded = unquote(actual)
-            if not decoded:
-                return None
-            values[expected[1:-1]] = decoded
-        elif expected != actual:
-            return None
-    return values
-
-
 class GuiRouteOwnershipTests(unittest.TestCase):
     def test_registered_routes_do_not_shadow_retained_legacy_exact_routes(self) -> None:
         overlap = _registered_exact_routes().intersection(_legacy_exact_routes())
@@ -163,11 +147,11 @@ class GuiRouteOwnershipTests(unittest.TestCase):
         template = "/api/live-agent-processes/{group_id}/stop"
 
         self.assertEqual(
-            _match_dynamic_route(template, "/api/live-agent-processes/group%2Fone/stop"),
+            match_route_template(template, "/api/live-agent-processes/group%2Fone/stop"),
             {"group_id": "group/one"},
         )
-        self.assertIsNone(_match_dynamic_route(template, "/api/live-agent-processes/group/stop/extra"))
-        self.assertIsNone(_match_dynamic_route(template, "/api/not-live-agent-processes/group/stop"))
+        self.assertIsNone(match_route_template(template, "/api/live-agent-processes/group/stop/extra"))
+        self.assertIsNone(match_route_template(template, "/api/not-live-agent-processes/group/stop"))
 
 
 if __name__ == "__main__":

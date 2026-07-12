@@ -64,6 +64,27 @@ class RouterDispatchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             router.add("GET", "/api/dup", lambda ctx: None)
 
+    def test_dynamic_dispatch_uses_production_template_matcher(self):
+        router = Router()
+        seen = []
+
+        @router.post_dynamic("/api/groups/{group_id}/stop")
+        def stop(ctx, path_params):
+            seen.append(path_params)
+            ctx.send_json({"stopped": path_params["group_id"]})
+
+        handler = FakeHandler()
+        self.assertTrue(router.dispatch("POST", _context(handler, "/api/groups/group%2Fone/stop")))
+        self.assertEqual(seen, [{"group_id": "group/one"}])
+        self.assertEqual(handler.sent_json, {"stopped": "group/one"})
+        self.assertFalse(router.dispatch("POST", _context(FakeHandler(), "/api/not-groups/group/stop")))
+
+    def test_duplicate_dynamic_registration_is_rejected(self):
+        router = Router()
+        router.add_dynamic("POST", "/api/groups/{group_id}/stop", lambda _ctx, _params: None)
+        with self.assertRaises(ValueError):
+            router.add_dynamic("POST", "/api/groups/{group_id}/stop", lambda _ctx, _params: None)
+
 
 class RequestContextBodyTests(unittest.TestCase):
     def test_read_json_body_parses_dict(self):

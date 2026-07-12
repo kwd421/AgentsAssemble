@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from agentsassemble.room_invite import verify_host_token, verify_session_token
 from agentsassemble.room_users import participant_is_operator
@@ -191,6 +192,7 @@ class RequestContext:
 
 
 RouteHandler = Callable[[RequestContext], None]
+DynamicRouteHandler = Callable[[RequestContext, dict[str, str]], None]
 
 
 class Router:
@@ -198,6 +200,7 @@ class Router:
 
     def __init__(self) -> None:
         self._routes: dict[str, dict[str, RouteHandler]] = {}
+        self._dynamic_routes: dict[str, dict[str, DynamicRouteHandler]] = {}
 
     def add(self, method: str, path: str, handler: RouteHandler) -> None:
         method_routes = self._routes.setdefault(method.upper(), {})
@@ -221,6 +224,19 @@ class Router:
     def delete(self, path: str) -> Callable[[RouteHandler], RouteHandler]:
         return self._decorator("DELETE", path)
 
+    def add_dynamic(self, method: str, template: str, handler: DynamicRouteHandler) -> None:
+        method_routes = self._dynamic_routes.setdefault(method.upper(), {})
+        if template in method_routes:
+            raise ValueError(f"duplicate dynamic route registration: {method} {template}")
+        method_routes[template] = handler
+
+    def post_dynamic(self, template: str) -> Callable[[DynamicRouteHandler], DynamicRouteHandler]:
+        def register(handler: DynamicRouteHandler) -> DynamicRouteHandler:
+            self.add_dynamic("POST", template, handler)
+            return handler
+
+        return register
+
     def routes(self) -> list[tuple[str, str]]:
         return [
             (method, path)
@@ -228,10 +244,39 @@ class Router:
             for path in sorted(method_routes)
         ]
 
+    def dynamic_routes(self) -> list[tuple[str, str]]:
+        return [
+            (method, template)
+            for method, method_routes in sorted(self._dynamic_routes.items())
+            for template in sorted(method_routes)
+        ]
+
     def dispatch(self, method: str, ctx: RequestContext) -> bool:
         """Run the registered handler; False when no route matches (legacy fallback)."""
         handler = self._routes.get(method.upper(), {}).get(ctx.path)
-        if handler is None:
-            return False
-        handler(ctx)
-        return True
+        if handler is not None:
+            handler(ctx)
+            return True
+        for template, dynamic_handler in self._dynamic_routes.get(method.upper(), {}).items():
+            path_params = match_route_template(template, ctx.path)
+            if path_params is not None:
+                dynamic_handler(ctx, path_params)
+                return True
+        return False
+
+
+def match_route_template(template: str, path: str) -> dict[str, str] | None:
+    template_parts = template.strip("/").split("/")
+    path_parts = path.strip("/").split("/")
+    if len(template_parts) != len(path_parts):
+        return None
+    values: dict[str, str] = {}
+    for expected, actual in zip(template_parts, path_parts, strict=True):
+        if expected.startswith("{") and expected.endswith("}"):
+            decoded = unquote(actual)
+            if not decoded:
+                return None
+            values[expected[1:-1]] = decoded
+        elif expected != actual:
+            return None
+    return values
