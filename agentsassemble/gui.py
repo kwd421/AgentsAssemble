@@ -65,6 +65,10 @@ from agentsassemble.gui_legacy_live_agent_read_http import (
     LegacyLiveAgentReadDeps,
     register_legacy_live_agent_read_routes,
 )
+from agentsassemble.gui_legacy_live_agent_session_http import (
+    LegacySessionHttpDeps,
+    register_legacy_group_session_mutation_routes,
+)
 from agentsassemble.gui_observability_http import register_observability_routes
 from agentsassemble.gui_public_invite_http import register_public_invite_admin_routes
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
@@ -142,6 +146,10 @@ from agentsassemble.legacy_live_agent_session_projection import (
     session_check_operation_details as _session_check_operation_details,
     session_start_operation_details as _session_start_operation_details,
     session_stop_operation_details as _session_stop_operation_details,
+)
+from agentsassemble.legacy_live_agent_session_service import (
+    LegacyLiveAgentSessionMutationService,
+    LegacySessionMutationActions,
 )
 from agentsassemble.live_agent_settings import (
     update_live_agent_config_options,
@@ -7814,6 +7822,34 @@ def _make_handler(
     ) -> dict[str, object] | None:
         return ctx.handler._operation_json_payload(operation=operation_name, target_id="")
 
+    legacy_session_service = LegacyLiveAgentSessionMutationService(
+        output_root,
+        processes=live_agent_process_supervisor,
+        session_runs=live_agent_session_run_controller,
+        actions=LegacySessionMutationActions(
+            start=live_agent_session_start_payload,
+            ensure=live_agent_session_ensure_payload,
+            resume=live_agent_session_resume_payload,
+            resume_agent=live_agent_session_resume_agent_payload,
+            agent_timing=live_agent_session_agent_timing_payload,
+            agent_options=live_agent_session_agent_options_payload,
+            check=live_agent_session_check_payload,
+            restart=live_agent_session_restart_payload,
+            recover=live_agent_session_recover_payload,
+            stop=live_agent_session_stop_payload,
+            stop_agent=live_agent_session_stop_agent_payload,
+        ),
+        record_operation=record_live_agent_operation,
+    )
+    register_legacy_group_session_mutation_routes(
+        route_table,
+        deps=LegacySessionHttpDeps(
+            service=legacy_session_service,
+            read_operation_payload=_late_operation_json_payload,
+            default_server_url=lambda ctx: ctx.handler._request_server_url(),
+        ),
+    )
+
     register_mafia_routes(route_table, read_operation_payload=_late_operation_json_payload)
 
     class AgentsAssembleHandler(GuiResponseMethods, BaseHTTPRequestHandler):
@@ -8441,108 +8477,6 @@ def _make_handler(
                 )
                 self._send_json(created)
                 return
-            if parsed.path == "/api/live-agent-sessions/start":
-                payload = self._operation_json_payload(operation="session.start")
-                if payload is None:
-                    return
-                try:
-                    session = live_agent_session_start_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                        default_server=self._request_server_url(),
-                    )
-                except (OSError, ValueError) as error:
-                    safe_error = _session_start_error_message(error)
-                    safe_details = _session_start_error_details(payload, error)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session.start",
-                        status="failed",
-                        target_id=str(safe_details.get("meeting_id") or ""),
-                        error=safe_error,
-                        details=safe_details,
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="session.start",
-                    status=_session_start_operation_status(session),
-                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
-                    summary=_session_start_operation_summary(session),
-                    details=_session_start_operation_details(session),
-                )
-                self._send_json(session)
-                return
-            if parsed.path == "/api/live-agent-sessions/ensure":
-                payload = self._operation_json_payload(operation="session.ensure")
-                if payload is None:
-                    return
-                try:
-                    session = live_agent_session_ensure_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                        default_server=self._request_server_url(),
-                    )
-                except (OSError, ValueError) as error:
-                    safe_error = _session_ensure_error_message(error)
-                    safe_details = _session_start_error_details(payload, error)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session.ensure",
-                        status="failed",
-                        target_id=str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
-                        error=safe_error,
-                        details=safe_details,
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="session.ensure",
-                    status=_session_start_operation_status(session),
-                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
-                    summary=_session_ensure_operation_summary(session),
-                    details=_session_start_operation_details(session),
-                )
-                self._send_json(session)
-                return
-            if parsed.path == "/api/live-agent-sessions/resume":
-                payload = self._operation_json_payload(operation="session.resume")
-                if payload is None:
-                    return
-                try:
-                    session = live_agent_session_resume_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                        default_server=self._request_server_url(),
-                    )
-                except (OSError, ValueError) as error:
-                    safe_error = _session_resume_error_message(error)
-                    safe_details = _session_start_error_details(payload, error)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session.resume",
-                        status="failed",
-                        target_id=str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
-                        error=safe_error,
-                        details=safe_details,
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="session.resume",
-                    status=_session_start_operation_status(session),
-                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
-                    summary=_session_resume_operation_summary(session),
-                    details=_session_start_operation_details(session),
-                )
-                self._send_json(session)
-                return
             if parsed.path == "/api/live-agent-sessions/resume-agent":
                 payload = self._operation_json_payload(operation="session.resume_agent")
                 if payload is None:
@@ -8644,145 +8578,6 @@ def _make_handler(
                         "fast_mode": session.get("fast_mode"),
                         "config_path": str(session.get("config_path") or ""),
                     },
-                )
-                self._send_json(session)
-                return
-            if parsed.path == "/api/live-agent-sessions/check":
-                payload = self._operation_json_payload(operation="session.check")
-                if payload is None:
-                    return
-                try:
-                    session = live_agent_session_check_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                    )
-                except (OSError, ValueError) as error:
-                    safe_error = _session_check_error_message(error)
-                    safe_details = _session_start_error_details(payload, error)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session.check",
-                        status="failed",
-                        target_id=str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
-                        error=safe_error,
-                        details=safe_details,
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="session.check",
-                    status=_session_check_operation_status(session),
-                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
-                    summary=_session_check_operation_summary(session),
-                    details=_session_check_operation_details(session),
-                )
-                self._send_json(session)
-                return
-            if parsed.path == "/api/live-agent-sessions/restart":
-                payload = self._operation_json_payload(operation="session.restart")
-                if payload is None:
-                    return
-                try:
-                    session = live_agent_session_restart_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                    )
-                except (OSError, ValueError) as error:
-                    safe_error = _session_restart_error_message(error)
-                    safe_details = _session_start_error_details(payload, error)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session.restart",
-                        status="failed",
-                        target_id=str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
-                        error=safe_error,
-                        details=safe_details,
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="session.restart",
-                    status=_session_start_operation_status(session),
-                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
-                    summary=_session_restart_operation_summary(session),
-                    details=_session_start_operation_details(session),
-                )
-                self._send_json(session)
-                return
-            if parsed.path == "/api/live-agent-sessions/recover":
-                payload = self._operation_json_payload(operation="session.recover")
-                if payload is None:
-                    return
-                try:
-                    session = live_agent_session_recover_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                    )
-                except (OSError, ValueError) as error:
-                    safe_error = _session_recover_error_message(error)
-                    safe_details = _session_start_error_details(payload, error)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session.recover",
-                        status="failed",
-                        target_id=str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
-                        error=safe_error,
-                        details=safe_details,
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="session.recover",
-                    status=_session_start_operation_status(session),
-                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
-                    summary=_session_recover_operation_summary(session),
-                    details=_session_start_operation_details(session),
-                )
-                self._send_json(session)
-                return
-            if parsed.path == "/api/live-agent-sessions/stop":
-                payload = self._operation_json_payload(operation="session.stop")
-                if payload is None:
-                    return
-                try:
-                    session = live_agent_session_stop_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                    )
-                except (OSError, ValueError) as error:
-                    safe_error = _session_stop_error_message(error)
-                    safe_details = _session_start_error_details(payload, error)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session.stop",
-                        status="failed",
-                        target_id=str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
-                        error=safe_error,
-                        details=safe_details,
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
-                    return
-                stopped_runs = live_agent_session_run_controller.mark_matching_stopped(
-                    meeting_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
-                    group_id=str(session.get("group_id") or payload.get("group_id") or ""),
-                    reason="session.stop",
-                )
-                if stopped_runs:
-                    session["session_runs"] = stopped_runs
-                record_live_agent_operation(
-                    output_root,
-                    operation="session.stop",
-                    status=_session_stop_operation_status(session),
-                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
-                    summary=_session_stop_operation_summary(session),
-                    details=_session_stop_operation_details(session),
                 )
                 self._send_json(session)
                 return
