@@ -1,0 +1,422 @@
+"""Canonical room roster, moderation, and channel/media-adjacent routes."""
+from __future__ import annotations
+
+import threading
+from collections.abc import Callable
+from http import HTTPStatus
+
+from agentsassemble.agent_sessions import (
+    enqueue_agent_session_auto_turn_for_lobby_event,
+)
+from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payload
+from agentsassemble.live_agents import read_live_agents
+from agentsassemble.meeting_events import (
+    append_lobby_event_to_file,
+    clean_lobby_text,
+    read_lobby_events,
+    read_lobby_events_after,
+)
+from agentsassemble.room_channels import (
+    ChannelError,
+    add_channel,
+    channel_stream_filename,
+    find_channel,
+    remove_channel,
+    rename_channel,
+    reorder_channels,
+)
+from agentsassemble.room_invite import (
+    active_sessions_summary,
+    revoke_sessions_for_participant,
+)
+from agentsassemble.room_members import (
+    is_room_member_muted,
+    remove_room_member,
+    room_members_payload,
+    set_room_member_muted,
+    upsert_room_member,
+)
+from agentsassemble.room_settings import room_settings_payload, update_room_settings
+from agentsassemble.room_speech import (
+    ActorIdentity,
+    GovernedLobbySayRejected,
+    ensure_lobby_say_allowed,
+    governed_channel_say,
+)
+from agentsassemble.voice_presence import (
+    join_voice,
+    leave_all_voice,
+    leave_voice,
+    voice_participants,
+)
+
+
+_CHANNEL_LOBBY_LOCK = threading.Lock()
+_LOCAL_OPERATOR_PARTICIPANT_ID = "operator-local"
+_LOCAL_OPERATOR_DISPLAY_DEFAULT = "호스트"
+
+
+def register_moderation_media_routes(
+    router: Router,
+    *,
+    process_start_allowed: Callable[[RequestContext], bool],
+    agent_turn_adapter: Callable[..., object],
+    speech_rejection_status: Callable[[str], HTTPStatus],
+) -> None:
+    """Register roster, moderation, custom channel, and voice presence routes."""
+
+    def _members_payload(ctx: RequestContext, meeting_id: str) -> dict[str, object]:
+        return room_members_payload(
+            ctx.deps.output_root,
+            read_live_agents(ctx.deps.output_root),
+            meeting_id=meeting_id,
+            sessions=active_sessions_summary(),
+        )
+
+    @router.get("/api/events/roster")
+    def roster_events_stream(ctx: RequestContext) -> None:
+        ctx.handler._send_sse_stream(
+            "roster",
+            "roster",
+            meeting_id=ctx.query_value("meeting_id"),
+            last_event_id=None,
+        )
+
+    @router.get("/api/room-members")
+    def room_members(ctx: RequestContext) -> None:
+        if (
+            not ctx.handler._request_uses_loopback_host()
+            and ctx.session() is None
+            and not ctx.is_host()
+        ):
+            ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+            return
+        ctx.send_json(_members_payload(ctx, ctx.query_value("meeting_id")))
+
+    @router.post("/api/room-members")
+    def room_members_upsert(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        try:
+            member = upsert_room_member(ctx.deps.output_root, payload)
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+        ctx.send_json(
+            {
+                "member": member,
+                **_members_payload(ctx, str(member.get("meeting_id") or "")),
+            }
+        )
+
+    @router.post("/api/room-members/mute")
+    def room_members_mute(ctx: RequestContext) -> None:
+        if not ctx.require_moderator():
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        try:
+            member = set_room_member_muted(
+                ctx.deps.output_root,
+                meeting_id=str(payload.get("meeting_id") or ""),
+                participant_id=str(payload.get("participant_id") or ""),
+                muted=bool(payload.get("muted", True)),
+            )
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+        ctx.send_json(
+            {
+                "member": member,
+                **_members_payload(ctx, str(member.get("meeting_id") or "")),
+            }
+        )
+
+    @router.post("/api/room-members/kick")
+    def room_members_kick(ctx: RequestContext) -> None:
+        if not ctx.require_moderator():
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        kick_meeting_id = str(payload.get("meeting_id") or "")
+        kick_participant_id = str(payload.get("participant_id") or "")
+        if not kick_participant_id.strip():
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "participant_id is required")
+            return
+        revoked_sessions = revoke_sessions_for_participant(kick_meeting_id, kick_participant_id)
+        removed_member = remove_room_member(ctx.deps.output_root, kick_meeting_id, kick_participant_id)
+        leave_all_voice(kick_meeting_id, kick_participant_id)
+        expelled_agent = False
+        if any(
+            clean_lobby_text(agent.get("agent_id"), limit=128) == clean_lobby_text(kick_participant_id, limit=128)
+            and (
+                not kick_meeting_id.strip()
+                or clean_lobby_text(agent.get("meeting_id"), limit=128) == clean_lobby_text(kick_meeting_id, limit=128)
+            )
+            for agent in read_live_agents(ctx.deps.output_root)
+        ):
+            try:
+                expel_live_agent_from_room_payload(
+                    ctx.deps.output_root,
+                    ctx.deps.process_supervisor,
+                    {"meeting_id": kick_meeting_id, "agent_id": kick_participant_id},
+                )
+                expelled_agent = True
+            except (OSError, ValueError):
+                expelled_agent = False
+        ctx.send_json(
+            {
+                "status": "kicked",
+                "participant_id": kick_participant_id,
+                "revoked_sessions": revoked_sessions,
+                "removed_member": removed_member,
+                "expelled_agent": expelled_agent,
+                **_members_payload(ctx, kick_meeting_id),
+            }
+        )
+
+    def _channels_for(output_root, meeting_id: str) -> list[dict[str, object]]:
+        payload = room_settings_payload(output_root, room_id=meeting_id)
+        settings = payload.get("settings") if isinstance(payload, dict) else {}
+        channels = settings.get("channels") if isinstance(settings, dict) else None
+        return list(channels) if isinstance(channels, list) else []
+
+    def _channel_error(ctx: RequestContext, error: ChannelError) -> None:
+        status = {
+            "not_found": HTTPStatus.NOT_FOUND,
+            "duplicate": HTTPStatus.CONFLICT,
+            "limit": HTTPStatus.CONFLICT,
+        }.get(error.category, HTTPStatus.BAD_REQUEST)
+        ctx.send_error(status, str(error))
+
+    @router.get("/api/room-channels")
+    def room_channels_list(ctx: RequestContext) -> None:
+        if (
+            not ctx.handler._request_uses_loopback_host()
+            and ctx.session() is None
+            and not ctx.is_host()
+        ):
+            ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+            return
+        meeting_id = ctx.query_value("meeting_id") or ctx.query_value("room_id")
+        ctx.send_json({"room_id": meeting_id, "channels": _channels_for(ctx.deps.output_root, meeting_id)})
+
+    @router.post("/api/room-channels")
+    def room_channels_mutate(ctx: RequestContext) -> None:
+        if not ctx.require_moderator():
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        meeting_id = str(payload.get("meeting_id") or payload.get("room_id") or "")
+        if not meeting_id.strip():
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "meeting_id is required")
+            return
+        action = str(payload.get("action") or "").strip().lower()
+        output_root = ctx.deps.output_root
+        current = _channels_for(output_root, meeting_id)
+        created: dict[str, object] | None = None
+        try:
+            if action == "create":
+                current, created = add_channel(
+                    current,
+                    name=payload.get("name"),
+                    channel_type=payload.get("type") or payload.get("channel_type") or "text",
+                )
+            elif action == "rename":
+                current = rename_channel(current, str(payload.get("channel_id") or ""), payload.get("name"))
+            elif action in {"delete", "remove"}:
+                current = remove_channel(current, str(payload.get("channel_id") or ""))
+            elif action == "reorder":
+                ordered = payload.get("ordered_ids") or payload.get("orderedIds") or []
+                current = reorder_channels(current, [str(item) for item in ordered] if isinstance(ordered, list) else [])
+            else:
+                ctx.send_error(HTTPStatus.BAD_REQUEST, "unknown channel action")
+                return
+        except ChannelError as error:
+            _channel_error(ctx, error)
+            return
+        saved = update_room_settings(output_root, {"room_id": meeting_id, "channels": current})
+        result_settings = saved.get("settings") if isinstance(saved, dict) else {}
+        channels = result_settings.get("channels") if isinstance(result_settings, dict) else None
+        response: dict[str, object] = {
+            "room_id": meeting_id,
+            "channels": list(channels) if isinstance(channels, list) else [],
+        }
+        if created is not None:
+            response["channel"] = created
+        ctx.send_json(response)
+
+    def _channel_caller(ctx: RequestContext, payload_meeting_id: str = "", *, write: bool = False):
+        session = ctx.session()
+        if session is not None:
+            if write and session.get("invite_scope") == "read_only":
+                ctx.send_error(HTTPStatus.FORBIDDEN, "read-only invite session cannot post")
+                return None, None
+            return str(session.get("meeting_id") or ""), session
+        if ctx.handler._request_uses_loopback_host() or ctx.is_host():
+            return str(payload_meeting_id or ""), None
+        ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+        return None, None
+
+    def _resolve_channel(ctx: RequestContext, meeting_id: str, channel_id: str, *, want_type: str):
+        channel = find_channel(_channels_for(ctx.deps.output_root, meeting_id), channel_id)
+        if channel is None:
+            ctx.send_error(HTTPStatus.NOT_FOUND, "unknown channel")
+            return None
+        if str(channel.get("type")) != want_type:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, f"channel is not a {want_type} channel")
+            return None
+        return channel
+
+    def _voice_caller_identity(session: dict[str, object] | None, payload: dict[str, object]) -> tuple[str, str]:
+        if session is not None:
+            return (
+                str(session.get("agent_id") or ""),
+                str(session.get("display_name") or session.get("agent_id") or ""),
+            )
+        return (
+            _LOCAL_OPERATOR_PARTICIPANT_ID,
+            clean_lobby_text(payload.get("name"), limit=80) or _LOCAL_OPERATOR_DISPLAY_DEFAULT,
+        )
+
+    @router.get("/api/room/channel-lobby")
+    def room_channel_lobby(ctx: RequestContext) -> None:
+        meeting_id, _session = _channel_caller(ctx, ctx.query_value("room_id") or ctx.query_value("meeting_id"))
+        if meeting_id is None:
+            return
+        channel_id = str(ctx.query_value("channel_id") or "")
+        if _resolve_channel(ctx, meeting_id, channel_id, want_type="text") is None:
+            return
+        filename = channel_stream_filename(channel_id)
+        if not filename:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "invalid channel id")
+            return
+        path = ctx.deps.output_root / filename
+        after_event_id = ctx.query_value("after").strip()
+        events = read_lobby_events_after(path, after_event_id) if after_event_id else read_lobby_events(path, limit=80)
+        ctx.send_json({"events": events, "channel_id": channel_id})
+
+    @router.post("/api/room/channel-say")
+    def room_channel_say(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        meeting_id, session = _channel_caller(
+            ctx, str(payload.get("meeting_id") or payload.get("room_id") or ""), write=True
+        )
+        if meeting_id is None:
+            return
+        if session is not None:
+            identity = ActorIdentity.from_mapping(session)
+            try:
+                ensure_lobby_say_allowed(
+                    ctx.deps.output_root,
+                    identity,
+                    is_muted=is_room_member_muted,
+                )
+            except GovernedLobbySayRejected as rejected:
+                message = (
+                    "read-only invite session cannot post"
+                    if rejected.category == "read_only"
+                    else "muted by room host"
+                )
+                ctx.send_error(HTTPStatus.FORBIDDEN, message)
+                return
+        else:
+            identity = ActorIdentity(
+                agent_id=_LOCAL_OPERATOR_PARTICIPANT_ID,
+                display_name=clean_lobby_text(payload.get("name"), limit=80)
+                or _LOCAL_OPERATOR_DISPLAY_DEFAULT,
+                participant_type="human",
+                meeting_id=meeting_id,
+            )
+        channel_id = str(payload.get("channel_id") or "")
+        if _resolve_channel(ctx, meeting_id, channel_id, want_type="text") is None:
+            return
+        filename = channel_stream_filename(channel_id)
+        if not filename:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "invalid channel id")
+            return
+        path = ctx.deps.output_root / filename
+        try:
+            with _CHANNEL_LOBBY_LOCK:
+                event = governed_channel_say(
+                    ctx.deps.output_root,
+                    channel_path=path,
+                    identity=identity,
+                    payload=payload,
+                    append_channel_event=append_lobby_event_to_file,
+                    is_muted=is_room_member_muted,
+                    side="mine" if session is None else "other",
+                    policy_already_checked=True,
+                )
+        except GovernedLobbySayRejected as rejected:
+            ctx.send_error(speech_rejection_status(rejected.category), str(rejected))
+            return
+        if process_start_allowed(ctx):
+            enqueue_agent_session_auto_turn_for_lobby_event(
+                ctx.deps.output_root,
+                event,
+                turn_adapter=agent_turn_adapter,
+            )
+        ctx.send_json({"event": event, "channel_id": channel_id})
+
+    def _voice_presence_response(ctx: RequestContext, meeting_id: str, channel_id: str) -> None:
+        ctx.send_json(
+            {"channel_id": channel_id, "participants": voice_participants(meeting_id, channel_id)}
+        )
+
+    @router.get("/api/room/voice")
+    def room_voice_presence(ctx: RequestContext) -> None:
+        meeting_id, _session = _channel_caller(ctx, ctx.query_value("room_id") or ctx.query_value("meeting_id"))
+        if meeting_id is None:
+            return
+        channel_id = str(ctx.query_value("channel_id") or "")
+        if _resolve_channel(ctx, meeting_id, channel_id, want_type="voice") is None:
+            return
+        _voice_presence_response(ctx, meeting_id, channel_id)
+
+    @router.post("/api/room/voice/join")
+    def room_voice_join(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        meeting_id, session = _channel_caller(
+            ctx, str(payload.get("meeting_id") or payload.get("room_id") or ""), write=True
+        )
+        if meeting_id is None:
+            return
+        channel_id = str(payload.get("channel_id") or "")
+        if _resolve_channel(ctx, meeting_id, channel_id, want_type="voice") is None:
+            return
+        participant_id, display_name = _voice_caller_identity(session, payload)
+        join_voice(
+            meeting_id,
+            channel_id,
+            participant_id,
+            display_name=display_name,
+            self_muted=bool(payload.get("muted", False)),
+        )
+        _voice_presence_response(ctx, meeting_id, channel_id)
+
+    @router.post("/api/room/voice/leave")
+    def room_voice_leave(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        meeting_id, session = _channel_caller(
+            ctx, str(payload.get("meeting_id") or payload.get("room_id") or "")
+        )
+        if meeting_id is None:
+            return
+        channel_id = str(payload.get("channel_id") or "")
+        participant_id, _ = _voice_caller_identity(session, payload)
+        leave_voice(meeting_id, channel_id, participant_id)
+        ctx.send_json(
+            {"channel_id": channel_id, "participants": voice_participants(meeting_id, channel_id)}
+        )

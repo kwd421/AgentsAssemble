@@ -14,6 +14,62 @@ Generated output, dependencies, `.agentsassemble` runtime data and user-owned
 untracked files were excluded. The scan covered `agentsassemble`, `frontend/src`,
 `tests`, and `scripts`.
 
+## Refactor Outcome
+
+The first verified refactor pass completed across 2026-07-11 and 2026-07-12.
+It preserved product behavior while moving independently owned concerns behind
+explicit modules.
+
+| Baseline hotspot | Before | After | New owner boundary |
+| --- | ---: | ---: | --- |
+| `agent_sessions.py` | 3,513 | 2,207 | `room_turn_context.py`, `codex_app_server_runtime.py` |
+| `cli.py` | 8,732 | 7,097 | `cli_parser_common.py`, domain `cli_parser_*.py` modules |
+| `frontend/src/api.ts` | 2,421 | 990 | `frontend/src/api/` domain clients and shared HTTP adapter |
+| `MemberList.tsx` | 1,741 | 494 | typed member rows, diagnostics, identity and session-control components |
+| `App.tsx` | 2,988 | 2,865 | guest admission lifecycle in `app/useRoomAdmission.ts` |
+| `test_cli_timeout.py` | 16,248 | 45 | 15 domain suites; legacy direct command still runs all 404 tests |
+| `test_gui_server.py` | 22,491 | 55 | 21 domain suites; compatibility loader runs all 384 current tests |
+
+Additional results:
+
+- canonical room HTTP registration is now split across four domain registrars;
+- HTTP response delivery and WebSocket upgrade lifecycle are isolated from the
+  large GUI request handler;
+- the frontend API compatibility barrel retains the same 169 exports;
+- moved Python runtime/context definitions are AST-identical to the baseline;
+- compatibility imports for moved Agent Session runtime/context names are
+  regression-tested, while shared provider normalization has one implementation;
+- split GUI tests retain 383/383 test bodies and split CLI tests retain
+  404/404, including the original platform guards; one GUI compatibility test
+  was added after the split;
+- the frontend TypeScript runtime-test compiler now resolves `.tsx` and
+  directory `index.ts` imports and keeps output inside its temporary root;
+- one real defect found during refactoring was fixed: frontend API requests and
+  guest-session handling now use one shared `ApiError`, so a 401 can actually
+  expire the guest session;
+- remembered-profile auto-join is tested for success, persisted-session
+  recovery and failure; a token-level guard now prevents failed auto-joins from
+  retrying forever;
+- Agent Session resume labels and room-channel wire normalization each have one
+  shared implementation instead of drifting copies;
+- `MemberList` now has a behavioral render test that follows the real parent
+  wiring into the extracted detail modal and Agent Session controls.
+
+Verification evidence:
+
+- `python3 -m unittest discover -s tests -t .`: 2,816 passed;
+- final Agent Session and CLI regression pass after deduplication: 491 passed;
+- narrow compatibility-loader discovery: CLI 404 passed; GUI 384 passed;
+- `npm --prefix frontend test`: 28 passed;
+- `npm --prefix frontend run build`: passed;
+- canonical desktop/mobile Playwright flow: passed;
+- `git diff --check`: passed.
+
+The suite still emits pre-existing resource warnings for some unclosed test
+HTTP errors, SQLite connections and temporary directories. The Vite build also
+reports a 689.03 kB JavaScript chunk. These are explicit follow-up debt, not
+silently treated as clean.
+
 ## Repository Size
 
 | Area | Files | Lines | Files >= 500 | Files >= 1,000 | Files >= 2,000 |
@@ -28,7 +84,7 @@ That amount of coverage is not inherently bad. The maintainability problem is
 that a large share is concentrated in a few files and some tests assert source
 text rather than behavior.
 
-## Highest-Risk Production Files
+## Baseline Highest-Risk Production Files
 
 ### 1. `agentsassemble/gui.py` - 11,847 lines
 
@@ -58,7 +114,7 @@ Recommended split, preserving URLs and behavior:
 5. Replace the `do_POST()` conditional chain incrementally, one tested domain at
    a time. Do not rewrite the server framework in the same change.
 
-### 2. `agentsassemble/cli.py` - 8,732 lines
+### 2. `agentsassemble/cli.py` - 8,732 baseline lines
 
 Evidence:
 
@@ -67,15 +123,16 @@ Evidence:
 - 70 `run_*` or handler-style definitions;
 - 336 total function definitions.
 
-The CLI owns too many command families in one parser and dispatch module.
-Registration and command behavior should be split by product domain while the
-top-level CLI keeps shared parser construction and dispatch.
+Parser registration has now been split by product domain without circular
+imports. The remaining 7,097-line file is still a command-execution monolith;
+future extraction should follow execution side-effect ownership rather than
+re-splitting the parser.
 
 Recommended domains: `room`, `provider`, `legacy_live_agent`, `meeting`,
 `persona`, and diagnostics/smoke. Preserve command names, help text and exit
 codes.
 
-### 3. `frontend/src/App.tsx` - 2,988 lines
+### 3. `frontend/src/App.tsx` - 2,988 baseline lines
 
 Evidence:
 
@@ -91,25 +148,23 @@ friends, invites, room settings, shell navigation, provider controls and
 responsive panels. The risk is not JSX length but effect ownership: unrelated
 state transitions can invalidate each other and are difficult to test alone.
 
-Recommended extraction order:
+Guest admission is now isolated and behavior-tested. Recommended remaining
+extraction order:
 
 1. `useRoomDirectory()` for room list, active room and stale dock cleanup.
 2. `useRoomConnection(roomId)` for ticket, reconnect and canonical snapshot.
-3. `useGuestAdmission()` for join profile and guest session persistence.
-4. `useRoomInvites()` and `useFriends()` for those independent lifecycles.
+3. `useRoomInvites()` and `useFriends()` for those independent lifecycles.
 5. Leave top-level layout composition in `App`.
 
 Do not move state into a global store merely to reduce line count. Extract each
 hook only when its ownership and test boundary are clear.
 
-### 4. `frontend/src/api.ts` - 2,421 lines
+### 4. `frontend/src/api.ts` - 2,421 baseline lines
 
-This is a broad client catalog spanning current and legacy endpoints. Split by
-server domain and keep shared fetch, error and authentication primitives in one
-small base module. The frontend API modules should mirror route ownership so a
-room protocol change does not require searching an all-product client file.
+Completed: domain modules now own room, history, Agent Session, invite and
+moderation calls. `api.ts` remains a compatibility barrel plus legacy APIs.
 
-### 5. `frontend/src/views/components/MemberList.tsx` - 1,741 lines
+### 5. `frontend/src/views/components/MemberList.tsx` - 1,741 baseline lines
 
 Evidence:
 
@@ -118,9 +173,8 @@ Evidence:
 - participant rows, moderation, provider settings and Agent Session controls are
   coupled in one file.
 
-Split the modal by human/agent detail sections while preserving one canonical
-participant model and one moderation command path. Do not fork separate roster
-implementations for humans and agents.
+Completed: one canonical participant entry type remains, while row rendering,
+diagnostics, identity settings and session controls have focused owners.
 
 ### 6. `agentsassemble/room_realtime.py` - 2,193 lines
 
@@ -140,16 +194,16 @@ method groups:
 The upcoming autonomous-attention work is a good natural boundary for the first
 extraction. It should not be added as another large block in this controller.
 
-### 7. `agentsassemble/agent_sessions.py` - 3,513 lines
+### 7. `agentsassemble/agent_sessions.py` - 3,513 baseline lines
 
 This file mixes provider runtime implementation, command execution, room turn
 packet construction, provider-visible prompt formatting, media manifest
 selection and legacy compatibility. `CodexAppServerRuntime` spans 677 lines and
 `run_agent_session_turn_payload()` spans 304 lines.
 
-First separate room context/media packet construction from provider process
-execution. Do not combine that refactor with changing the provider-visible
-contract.
+Completed: room context/media packet construction and Codex app-server process
+lifecycle are separate modules with compatibility exports. Their moved ASTs
+match the baseline.
 
 ### 8. `frontend/src/index.css` - 6,484 lines
 
@@ -175,7 +229,7 @@ Use screenshot comparison across desktop and mobile after every extraction.
 | `live_agent_sessions.py` | 2,016 | Legacy lifecycle and current compatibility must be mapped first |
 | `persona_cards.py` | 1,660 | Parsing, safety and projection are related; split only at proven boundaries |
 | `room_native_cli_smoke.py` | 1,447 | Provider-specific smoke drivers are natural candidates after schema tests |
-| `gui_room_http.py` | 1,165 | Already an extraction, but `register_room_routes()` is still 1,016 lines |
+| `gui_room_http.py` | 213 now | Domain registrars own behavior; coordinator keeps explicit historical import compatibility |
 
 Legacy modules should be marked and isolated before investing in internal
 cleanup. Deleting a retired path is better than making it beautifully modular.
@@ -186,8 +240,8 @@ cleanup. Deleting a retired path is better than making it beautifully modular.
 
 | Test file | Lines | Test methods |
 | --- | ---: | ---: |
-| `test_gui_server.py` | 22,491 | 383 |
-| `test_cli_timeout.py` | 16,248 | 404 |
+| `test_gui_server.py` | 55 compatibility loader | 384 current tests across domain suites |
+| `test_cli_timeout.py` | 45 compatibility loader | 404 across domain suites |
 | `test_live_agent_runner.py` | 5,352 | many under one 5,248-line class |
 | `test_live_agent_processes.py` | 4,487 | many under one 4,394-line class |
 | `test_live_agent_sessions.py` | 4,138 | several multi-thousand-line classes |
@@ -237,23 +291,25 @@ only if it makes the next behavior change easier to locate and test.
 
 ## Recommended Sequence
 
-1. Adopt the short current-system document and stop mandatory loading of large
-   historical references.
-2. Split the two largest test files by domain without changing assertions.
-3. Replace low-signal static UI assertions incrementally with behavioral tests.
-4. Extract canonical room routes from `gui.py`, then provider and legacy routes.
-5. Break CLI parser registration into domain modules without changing commands.
-6. Extract React lifecycle hooks from `App.tsx` and detail sections from
-   `MemberList.tsx`.
+1. Completed: adopt the short current-system orientation document.
+2. Completed: split the two largest test files without changing test bodies.
+3. In progress: replace low-signal static UI assertions with behavioral tests;
+   the guest 401 lifecycle now has a real React hook test.
+4. In progress: canonical room routes, response delivery and WebSocket upgrade
+   are extracted; legacy GUI routes remain in `gui.py`.
+5. Completed: break CLI parser registration into domain modules without
+   changing commands.
+6. In progress: guest admission and member detail responsibilities are
+   extracted; `App.tsx` still owns several independent lifecycles.
 7. Introduce the new attention coordinator as a focused module rather than
    expanding `RoomRealtimeController`.
 8. Classify legacy live-agent modules as retained or removable before refactoring
    them.
 
-## Immediate Decision
+## Next Decision
 
-Do not attempt a repository-wide file split in one change. The safest first code
-slice is test-file organization, because it improves targeted verification
-without changing product behavior. The first production slice should then be
-canonical room route extraction from `gui.py`, protected by those smaller route
-tests.
+Do not continue splitting solely to reduce line counts. The next safe slices are
+legacy GUI route isolation and one additional `App.tsx` lifecycle hook, each in
+its own behavior-preserving commit. Before that work, clean the suite's resource
+warnings and replace the highest-churn source-string tests so future refactors
+fail on behavior rather than file placement.

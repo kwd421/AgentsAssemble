@@ -1,6 +1,8 @@
 import unittest
 from pathlib import Path
 
+from tests.frontend_api_source import api_barrel_source, api_module_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RETIRED_STATIC_DIR = ROOT / "agentsassemble" / "static"
@@ -14,6 +16,19 @@ def frontend_source() -> str:
 
 def frontend_file(relative_path: str) -> str:
     return (FRONTEND_DIR / relative_path).read_text()
+
+
+def member_components_source() -> str:
+    return "\n".join(
+        [
+            frontend_file("views/components/MemberList.tsx"),
+            *(
+                path.read_text()
+                for path in sorted((FRONTEND_DIR / "views/components/member").glob("*"))
+                if path.suffix in {".ts", ".tsx"}
+            ),
+        ]
+    )
 
 
 def react_lobby_external_participation_section() -> str:
@@ -159,7 +174,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('agent.last_reply_at ? `reply ${shortDateTime(agent.last_reply_at)}` : ""', source)
         self.assertIn('return { label: "승인됨", tone: "online" };', source)
         self.assertIn('return { label: "승인 대기", tone: "idle" };', source)
-        member_source = frontend_file("views/components/MemberList.tsx")
+        member_source = member_components_source()
         self.assertIn("providerExecutionLabel(agent)", member_source)
         self.assertIn("실행 방식", member_source)
         self.assertIn("Agent Session state is attached", member_source)
@@ -189,7 +204,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn('<p className="text-[14px] leading-relaxed text-text-secondary preserve-words">\n            <DiscordText', live_source)
 
     def test_react_lobby_event_type_includes_attachment_metadata_contract(self):
-        api_source = frontend_file("api.ts")
+        api_source = api_module_source("roomHistory")
 
         self.assertIn("export interface LobbyAttachmentRef", api_source)
         self.assertIn("id: string;", api_source)
@@ -202,7 +217,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("attachments?: LobbyAttachmentRef[];", api_source)
 
     def test_react_side_chat_uses_separate_room_contract(self):
-        api_source = frontend_file("api.ts")
+        api_source = api_module_source("roomHistory")
+        api_barrel = api_barrel_source()
         app_source = frontend_file("App.tsx")
         live_source = frontend_file("views/LiveView.tsx")
         side_chat_source = frontend_file("views/components/SideChatDock.tsx")
@@ -214,13 +230,11 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('"/api/side-chat"', api_source)
         self.assertIn("export function postSideChatMessage", api_source)
         self.assertIn("flow_meeting_id: meetingId", api_source)
-        self.assertIn("export function subscribeSideChat", api_source)
-        self.assertIn('`/api/events/side-chat${queryString({ meeting_id: meetingId })}`', api_source)
-        self.assertIn('source.addEventListener("side_chat"', api_source)
+        self.assertIn("export function subscribeSideChat", api_barrel)
+        self.assertIn('`/api/events/side-chat${queryString({ meeting_id: meetingId })}`', api_barrel)
+        self.assertIn('source.addEventListener("side_chat"', api_barrel)
 
-        side_chat_api = api_source[
-            api_source.index("export function fetchSideChat") : api_source.index("export function fetchLiveAgentFlow")
-        ]
+        side_chat_api = api_source[api_source.index("export function fetchSideChat") :]
         self.assertNotIn('"/api/lobby"', side_chat_api)
         self.assertNotIn("/api/lobby/promote", api_source)
 
@@ -269,9 +283,11 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("promote", side_chat_source)
 
     def test_react_discord_member_panel_uses_persisted_room_roles(self):
-        api_source = frontend_file("api.ts")
+        api_source = api_module_source("room")
         app_source = frontend_file("App.tsx")
-        member_source = frontend_file("views/components/MemberList.tsx")
+        member_source = member_components_source()
+        member_list_entry_source = frontend_file("views/components/MemberList.tsx")
+        member_detail_source = frontend_file("views/components/member/MemberDetailModal.tsx")
         room_connection_source = frontend_file("views/components/RoomConnectionPanel.tsx")
         agent_session_details_source = frontend_file("views/components/AgentSessionDetails.tsx")
         user_panel_source = frontend_file("views/components/UserPanel.tsx")
@@ -308,6 +324,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("roleOverrides={roleOverrides}", room_connection_source)
         self.assertIn("onRoleChange={onRoleChange}", room_connection_source)
         self.assertIn("agentSession?: RoomAgentSession;", member_source)
+        self.assertIn('import MemberDetailModal from "./member/MemberDetailModal";', member_list_entry_source)
+        self.assertIn("<MemberDetailModal", member_list_entry_source)
+        self.assertIn('import AgentSessionDetails', member_detail_source)
+        self.assertIn("<AgentSessionDetails", member_detail_source)
         self.assertIn(
             "<AgentSessionDetails session={entry.agentSession}",
             " ".join(member_source.split()),
@@ -357,7 +377,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('aria-label={`${entry.displayName} 역할`}', member_source)
 
     def test_react_discord_home_friends_uses_persisted_room_friends(self):
-        api_source = frontend_file("api.ts")
+        room_api_source = api_module_source("room")
+        moderation_api_source = api_module_source("moderation")
         app_source = frontend_file("App.tsx")
         sidebar_source = frontend_file("views/components/HomeSidebar.tsx")
         home_source = frontend_file("views/FriendsView.tsx")
@@ -369,20 +390,21 @@ class StaticUiAssetTests(unittest.TestCase):
         room_rail_source = frontend_file("views/components/RoomRail.tsx")
         css = (FRONTEND_DIR / "index.css").read_text()
 
-        self.assertIn("export interface RoomFriend", api_source)
-        self.assertIn("export interface RoomFriendDmEvent", api_source)
-        self.assertIn("export interface RoomMember", api_source)
-        self.assertIn('export type ParticipantType = "human" | "subscription_ai" | "api" | "local" | "remote" | "unknown";', api_source)
-        self.assertIn("export function fetchRoomFriends", api_source)
-        self.assertIn("export function addRoomFriend", api_source)
-        self.assertIn("export function deleteRoomFriend", api_source)
-        self.assertIn("export function fetchRoomFriendDm", api_source)
-        self.assertIn("export function postRoomFriendDm", api_source)
-        self.assertIn('"/api/room-friends/dm"', api_source)
-        self.assertIn("export function fetchRoomMembers", api_source)
-        self.assertIn("export function upsertRoomMember", api_source)
-        self.assertIn('"/api/room-friends"', api_source)
-        self.assertIn('"/api/room-members"', api_source)
+        self.assertIn("export interface RoomFriend", room_api_source)
+        self.assertIn("export interface RoomFriendDmEvent", room_api_source)
+        self.assertIn("export interface RoomMember", room_api_source)
+        self.assertIn('export type ParticipantType = "human" | "subscription_ai" | "api" | "local" | "remote" | "unknown";', room_api_source)
+        self.assertIn("export function fetchRoomFriends", room_api_source)
+        self.assertIn("export function addRoomFriend", room_api_source)
+        self.assertIn("export function deleteRoomFriend", room_api_source)
+        self.assertIn("export function fetchRoomFriendDm", room_api_source)
+        self.assertIn("export function postRoomFriendDm", room_api_source)
+        self.assertIn('"/api/room-friends/dm"', room_api_source)
+        self.assertIn("export function fetchRoomMembers", room_api_source)
+        self.assertIn("export function upsertRoomMember", moderation_api_source)
+        self.assertIn('"/api/room-friends"', room_api_source)
+        self.assertIn("`/api/room-members${queryString", room_api_source)
+        self.assertIn('"/api/room-members"', moderation_api_source)
         self.assertIn("export function roomFriendSearchValues(friend: RoomFriend): string[]", friend_search_source)
         self.assertIn("const typeMeta = participantTypeMeta(friend.participant_type);", friend_search_source)
         self.assertIn("friend.handle", friend_search_source)
@@ -501,7 +523,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("persistRoomDockItems(rooms.map(persistableRoom))", app_source)
         self.assertIn("initialOperatorRooms", room_dock_model_source)
 
-        member_list_source = frontend_file("views/components/MemberList.tsx")
+        member_list_source = member_components_source()
         self.assertIn("function memberStatusLabel(member: RoomMember)", member_list_source)
         self.assertIn("return presenceStatusLabel(member.status);", member_list_source)
         self.assertIn("memberStatusLabel(member)", member_list_source)
@@ -689,7 +711,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn(".dc-head-popover-actions", css)
 
     def test_react_user_panel_uses_persisted_discord_profile(self):
-        api_source = frontend_file("api.ts")
+        api_source = api_module_source("room")
         user_panel_source = frontend_file("views/components/UserPanel.tsx")
         settings_panel_source = frontend_file("views/components/UserSettingsPanel.tsx")
         user_profile_model_source = frontend_file("lib/userProfileModel.ts")
@@ -782,7 +804,8 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_react_discord_room_sidebar_uses_real_invite_and_context_actions(self):
         app_source = frontend_file("App.tsx")
-        api_source = frontend_file("api.ts")
+        room_api_source = api_module_source("room")
+        invite_api_source = api_module_source("invites")
         room_dock_model_source = frontend_file("lib/roomDockModel.ts")
         room_rail_source = frontend_file("views/components/RoomRail.tsx")
         channel_menu_source = frontend_file("views/components/ChannelContextMenu.tsx")
@@ -870,8 +893,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("로컬 미리보기 복사", invite_modal_source)
         self.assertNotIn("보안 링크 복사", invite_modal_source)
         self.assertIn("외부 공유에는 공개 URL 기반 보안 초대 링크가 필요합니다.", invite_modal_source)
-        self.assertIn("postJsonHost<RoomInviteCreateResponse>", api_source)
-        self.assertIn("fetchPublicInviteStatus", api_source)
+        self.assertIn("postJsonHost<RoomInviteCreateResponse>", invite_api_source)
+        self.assertIn("fetchPublicInviteStatus", invite_api_source)
         self.assertIn('import { inviteFriendButtonLabel, isExternalInviteUrl } from "../../lib/roomInviteCopy";', invite_modal_source)
         self.assertIn("inviteFriendButtonLabel({ status, isAiFriend, readOnlyInvite })", invite_modal_source)
         self.assertIn("inviteFriendDmMessage", app_source)
@@ -943,9 +966,9 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('if (event.key === "Escape") onClose();', settings_source)
         self.assertIn('window.addEventListener("keydown", closeOnEscape);', settings_source)
         self.assertIn('window.removeEventListener("keydown", closeOnEscape);', settings_source)
-        self.assertIn("type ChannelSettings", api_source)
-        self.assertIn("channelSettings: Record<string, ChannelSettings>;", api_source)
-        self.assertIn("channel_settings", api_source)
+        self.assertIn("type ChannelSettings", room_api_source)
+        self.assertIn("channelSettings: Record<string, ChannelSettings>;", room_api_source)
+        self.assertIn("channel_settings", room_api_source)
         self.assertIn("roomChannelSettings", app_source)
         self.assertIn("openChannelMenu", app_source)
         self.assertIn("markChannelRead", app_source)
@@ -972,18 +995,19 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("dc-invite-packet-textarea", css)
 
     def test_react_lobby_sse_uses_shared_parser_and_merge_helpers(self):
-        api_source = frontend_file("api.ts")
+        api_source = api_module_source("roomHistory")
+        api_barrel = api_barrel_source()
         lobby_source = frontend_file("views/LobbyView.tsx")
         live_source = frontend_file("views/LiveView.tsx")
 
         self.assertIn("export function parseLobbyStreamData", api_source)
         self.assertIn("export function mergeLobbyEvents", api_source)
         self.assertIn("export function mergeLobbyEventsByCreatedAt", api_source)
-        self.assertIn('new EventSource(`/api/events/lobby${queryString({ meeting_id: meetingId })}`)', api_source)
-        self.assertIn('source.addEventListener("lobby"', api_source)
+        self.assertIn('new EventSource(`/api/events/lobby${queryString({ meeting_id: meetingId })}`)', api_barrel)
+        self.assertIn('source.addEventListener("lobby"', api_barrel)
         self.assertIn('data.stream !== "lobby"', api_source)
         self.assertIn('event.channel !== "lobby"', api_source)
-        self.assertIn("const events = parseLobbyStreamData(raw);", api_source)
+        self.assertIn("const events = parseLobbyStreamData(raw);", api_barrel)
 
         self.assertIn("mergeLobbyEvents", lobby_source)
         self.assertNotIn("function mergeLobbyEvents", lobby_source)
@@ -1067,23 +1091,24 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("/tmp/", sources)
 
     def test_react_lobby_composer_uploads_attachments_then_posts_lobby(self):
-        api_source = frontend_file("api.ts")
+        history_api_source = api_module_source("roomHistory")
+        http_api_source = api_module_source("http")
         lobby_source = frontend_file("views/LobbyView.tsx")
         composer_source = frontend_file("views/components/LobbyComposer.tsx")
 
-        self.assertIn("export function uploadLobbyAttachment", api_source)
-        self.assertIn('"/api/attachments"', api_source)
-        self.assertIn("FileReader", api_source)
-        self.assertIn("readAsDataURL", api_source)
-        self.assertIn('split(",", 2)', api_source)
-        self.assertIn("data_base64", api_source)
-        self.assertIn("export function postLobbyMessage", api_source)
-        self.assertIn('"/api/lobby"', api_source)
-        self.assertIn("name,", api_source)
-        self.assertIn("side,", api_source)
-        self.assertIn("kind,", api_source)
-        self.assertIn("message,", api_source)
-        self.assertIn("attachments,", api_source)
+        self.assertIn("export function uploadLobbyAttachment", history_api_source)
+        self.assertIn('"/api/attachments"', history_api_source)
+        self.assertIn("FileReader", http_api_source)
+        self.assertIn("readAsDataURL", http_api_source)
+        self.assertIn('split(",", 2)', http_api_source)
+        self.assertIn("data_base64", history_api_source)
+        self.assertIn("export function postLobbyMessage", history_api_source)
+        self.assertIn('"/api/lobby"', history_api_source)
+        self.assertIn("name,", history_api_source)
+        self.assertIn("side,", history_api_source)
+        self.assertIn("kind,", history_api_source)
+        self.assertIn("message,", history_api_source)
+        self.assertIn("attachments,", history_api_source)
 
         self.assertIn("import LobbyComposer", lobby_source)
         self.assertIn("<LobbyComposer", lobby_source)
@@ -1176,7 +1201,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("첨부는 한 메시지에 8개까지", model_source)
 
     def test_react_lobby_composer_does_not_leak_raw_bytes_into_event_ui(self):
-        api_source = frontend_file("api.ts")
+        api_source = api_module_source("roomHistory")
         lobby_source = frontend_file("views/LobbyView.tsx")
         composer_source = frontend_file("views/components/LobbyComposer.tsx")
         event_ui_source = lobby_source + "\n" + frontend_file("views/components/LobbyAttachments.tsx")
@@ -1454,7 +1479,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("사이드챗", app_source)
 
     def test_react_lobby_external_participation_wraps_safe_join_brief_endpoint(self):
-        api_source = frontend_file("api.ts")
+        api_source = api_barrel_source()
         admin_source = frontend_file("views/AdminPanel.tsx")
         section = react_lobby_external_participation_section()
 
@@ -1477,7 +1502,9 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_react_public_join_route_renders_guest_only_invite_panel(self):
         app_source = frontend_file("App.tsx")
-        api_source = frontend_file("api.ts")
+        admission_source = frontend_file("app/useRoomAdmission.ts")
+        invite_api_source = api_module_source("invites")
+        history_api_source = api_module_source("roomHistory")
         lobby_source = frontend_file("views/LobbyView.tsx")
         lobby_composer_source = frontend_file("views/components/LobbyComposer.tsx")
         room_connection_source = frontend_file("views/components/RoomConnectionPanel.tsx")
@@ -1513,15 +1540,15 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("pendingGuestDisplayName", app_source)
         self.assertIn("pendingGuestAvatarImage", app_source)
         self.assertIn("if (guestExpired || guestJoinPending)", app_source)
-        self.assertIn("guestSession?.sessionToken && isUnauthorizedApiError(flowError)", app_source)
-        self.assertIn("joinRoomInvite({", app_source)
-        self.assertIn("displayName: pendingGuestDisplayName", app_source)
-        self.assertIn("avatarImage: pendingGuestAvatarImage", app_source)
-        self.assertIn("const restoredSession = loadRoomGuestSession();", app_source)
-        self.assertIn("restoredSession?.inviteToken === guestJoinToken", app_source)
-        self.assertIn("persistRoomGuestSession(nextSession)", app_source)
+        self.assertIn("guestSession?.sessionToken && isUnauthorizedApiError(flowError)", admission_source)
+        self.assertIn("joinRoomInvite({", admission_source)
+        self.assertIn("displayName: pendingGuestDisplayName", admission_source)
+        self.assertIn("avatarImage: pendingGuestAvatarImage", admission_source)
+        self.assertIn("const restoredSession = loadRoomGuestSession();", admission_source)
+        self.assertIn("restoredSession?.inviteToken === guestJoinToken", admission_source)
+        self.assertIn("persistRoomGuestSession(nextSession)", admission_source)
         self.assertIn("guestProfile={guestPanelProfile}", app_source)
-        self.assertIn("guestSession?.avatarImage", app_source)
+        self.assertIn("guestSession?.avatarImage", admission_source)
         self.assertIn("roomSessionToken={lobbyPostingState.sessionToken}", app_source)
         self.assertIn("onCreateCompanionAiPacket={() => void createCompanionAiPacket()}", app_source)
         self.assertIn("guestReadOnly", app_source)
@@ -1540,11 +1567,11 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("RoomInviteModal", app_source)
         self.assertIn("보안 초대 링크는 공개 URL이 설정된 뒤 생성됩니다.", invite_modal_source)
         self.assertNotIn("RoomInvitePanel", app_source)
-        self.assertIn("export function joinRoomInvite", api_source)
-        self.assertIn("export function fetchRoomLobby", api_source)
-        self.assertIn("export function postRoomSay", api_source)
-        self.assertIn("export function createCompanionRoomInvite", api_source)
-        self.assertIn("export function leaveRoomInvite", api_source)
+        self.assertIn("export function joinRoomInvite", invite_api_source)
+        self.assertIn("export function fetchRoomLobby", history_api_source)
+        self.assertIn("export function postRoomSay", history_api_source)
+        self.assertIn("export function createCompanionRoomInvite", invite_api_source)
+        self.assertIn("export function leaveRoomInvite", invite_api_source)
         self.assertIn("roomSessionToken ? fetchRoomLobby(roomSessionToken) : fetchLobby(activeRoom.meetingId)", lobby_source)
         self.assertIn("const lobbyRequest = roomSessionToken ? fetchRoomLobby(roomSessionToken) : fetchLobby(activeRoom.meetingId);", lobby_source)
         self.assertIn("roomSessionToken={roomSessionToken}", lobby_source)
@@ -1553,7 +1580,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("? await postRoomSay", lobby_composer_source)
         self.assertIn("AI 세션 패킷 만들기", room_connection_source)
         self.assertIn("guestAiPacketPreview", room_connection_source)
-        self.assertIn("persistRoomGuestSession(null)", app_source)
+        self.assertIn("persistRoomGuestSession(null)", admission_source)
+        self.assertIn("clearGuestSession()", app_source)
         self.assertIn("async function leaveRoom", app_source)
         self.assertIn('await roomSocket.command("participant.leave", {})', app_source)
         self.assertIn('url.pathname = "/join";', app_source)
@@ -1563,7 +1591,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("uploadLobbyAttachment", join_profile_source)
 
     def test_react_member_panel_groups_agents_by_owner_and_supports_profile_crop(self):
-        member_source = frontend_file("views/components/MemberList.tsx")
+        member_source = member_components_source()
+        member_list_entry_source = frontend_file("views/components/MemberList.tsx")
+        member_detail_source = frontend_file("views/components/member/MemberDetailModal.tsx")
+        identity_settings_source = frontend_file("views/components/member/AgentIdentitySettings.tsx")
         agent_settings_source = frontend_file("lib/agentProfileSettings.ts")
         cropper_source = frontend_file("views/components/ImageCropper.tsx")
         css = (FRONTEND_DIR / "index.css").read_text()
@@ -1581,6 +1612,11 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("프로필 사진 편집", member_source)
         self.assertIn("ImageCropper", member_source)
         self.assertIn("uploadLobbyAttachment", member_source)
+        self.assertIn('import MemberDetailModal from "./member/MemberDetailModal";', member_list_entry_source)
+        self.assertIn("<MemberDetailModal", member_list_entry_source)
+        self.assertIn('import AgentIdentitySettings from "./AgentIdentitySettings";', member_detail_source)
+        self.assertIn("<AgentIdentitySettings", member_detail_source)
+        self.assertIn("ImageCropper", identity_settings_source)
         self.assertIn("avatarImage", agent_settings_source)
         self.assertIn("displayName", agent_settings_source)
         self.assertIn("agentsassemble.agentProfiles.v1", agent_settings_source)
@@ -1614,12 +1650,18 @@ class StaticUiAssetTests(unittest.TestCase):
     def test_default_room_panel_does_not_expose_legacy_play_runner(self):
         lobby_source = frontend_file("views/LobbyView.tsx")
         room_panel_source = frontend_file("views/components/RoomConnectionPanel.tsx")
-        member_source = frontend_file("views/components/MemberList.tsx")
+        member_source = member_components_source()
+        member_list_entry_source = frontend_file("views/components/MemberList.tsx")
+        member_detail_source = frontend_file("views/components/member/MemberDetailModal.tsx")
         agent_session_details_source = frontend_file("views/components/AgentSessionDetails.tsx")
 
         self.assertNotIn("연결된 세션 없음", room_panel_source)
         self.assertNotIn("dc-room-live-cli-card", room_panel_source)
         self.assertIn("agentSessions={agentSessions}", room_panel_source)
+        self.assertIn('import MemberDetailModal from "./member/MemberDetailModal";', member_list_entry_source)
+        self.assertIn("<MemberDetailModal", member_list_entry_source)
+        self.assertIn('import AgentSessionDetails', member_detail_source)
+        self.assertIn("<AgentSessionDetails", member_detail_source)
         self.assertIn(
             "<AgentSessionDetails session={entry.agentSession}",
             " ".join(member_source.split()),
@@ -1753,7 +1795,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("/Users/", admin_source)
 
     def test_react_admin_surfaces_shared_memory_health_without_raw_context(self):
-        api_source = frontend_file("api.ts")
+        api_source = api_barrel_source()
         admin_source = frontend_file("views/AdminPanel.tsx")
         self.assertIn("export interface LiveAgentSharedMemoryHealth", api_source)
         self.assertIn("shared_memory?: LiveAgentSharedMemoryHealth;", api_source)
@@ -1820,7 +1862,7 @@ class StaticUiAssetTests(unittest.TestCase):
     def test_react_admin_local_resources_has_no_unsafe_fields_or_actions(self):
         admin_source = frontend_file("views/AdminPanel.tsx")
         label_source = frontend_file("lib/localResourceLabels.ts")
-        api_source = frontend_file("api.ts")
+        api_source = api_barrel_source()
         resource_ui_source = admin_source + "\n" + label_source
 
         for forbidden in [
@@ -2015,7 +2057,7 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_react_live_tab_subscribes_to_meeting_sse_without_route_flip_or_provider_start(self):
         source = frontend_source()
-        api_source = frontend_file("api.ts")
+        api_source = api_barrel_source()
         app_source = frontend_file("App.tsx")
         live_source = frontend_file("views/LiveView.tsx")
 

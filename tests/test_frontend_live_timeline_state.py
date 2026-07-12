@@ -18,28 +18,14 @@ class FrontendLiveTimelineStateTests(unittest.TestCase):
             import os from "node:os";
             import path from "node:path";
             import { pathToFileURL } from "node:url";
-            import ts from "./frontend/node_modules/typescript/lib/typescript.js";
-
-            async function compileSource(sourcePath, outPath, replacements = []) {
-              let source = await fs.readFile(sourcePath, "utf8");
-              for (const [from, to] of replacements) source = source.replaceAll(from, to);
-              const compiled = ts.transpileModule(source, {
-                compilerOptions: {
-                  module: ts.ModuleKind.ES2022,
-                  target: ts.ScriptTarget.ES2022,
-                },
-              }).outputText;
-              await fs.writeFile(outPath, compiled, "utf8");
-            }
+            import { compileTypeScriptModule } from "./tests/frontend_api_runtime_helpers.mjs";
 
             const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "aa-live-timeline-state-"));
-            await compileSource(path.resolve("frontend/src/api.ts"), path.join(tempDir, "api.mjs"));
-            await compileSource(
+            const timelinePath = await compileTypeScriptModule(
               path.resolve("frontend/src/lib/liveTimelineState.ts"),
-              path.join(tempDir, "liveTimelineState.mjs"),
-              [["../api", "./api.mjs"]]
+              tempDir,
             );
-            const timeline = await import(pathToFileURL(path.join(tempDir, "liveTimelineState.mjs")).href);
+            const timeline = await import(pathToFileURL(timelinePath).href);
 
             const eventA = {
               id: "live-a",

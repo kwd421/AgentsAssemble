@@ -1,6 +1,8 @@
 import unittest
 from pathlib import Path
 
+from tests.frontend_api_source import api_module_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -14,7 +16,7 @@ def frontend_file(relative_path: str) -> str:
 
 class ReactLobbyContractTests(unittest.TestCase):
     def test_lobby_chat_exposes_attachment_upload_and_preview_contract(self):
-        api_source = frontend_file("api.ts")
+        api_source = api_module_source("roomHistory")
         lobby_source = frontend_file("views/LobbyView.tsx")
         live_source = frontend_file("views/LiveView.tsx")
         composer_source = frontend_file("views/components/LobbyComposer.tsx")

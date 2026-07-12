@@ -43,7 +43,7 @@ class LegacyReactParityInventoryTests(unittest.TestCase):
                 if expected_wrappers != actual_wrappers:
                     mismatched_wrappers.append(
                         f"{entry.route.method} {entry.route.path} expected {sorted(expected_wrappers)} "
-                        f"from appendix but api.ts has {sorted(actual_wrappers)}"
+                        f"from appendix but the API modules have {sorted(actual_wrappers)}"
                     )
             elif expected_wrappers:
                 wrongly_labeled.append(
@@ -71,6 +71,13 @@ class LegacyReactParityInventoryTests(unittest.TestCase):
 
         missing = sorted(name for name in surface_wrappers if name not in api_wrappers)
         self.assertEqual([], missing)
+
+    def test_modular_api_routes_report_their_concrete_owner_modules(self):
+        owners = _parse_api_ts_route_owners(ROOT / "frontend" / "src" / "api.ts")
+
+        self.assertEqual("roomHistory.ts", owners[Route("/api/attachments", "POST", "exact")].name)
+        self.assertEqual("invites.ts", owners[Route("/api/room-invite/create", "POST", "exact")].name)
+        self.assertEqual("agentSessions.ts", owners[Route("/api/agent-sessions/resume", "POST", "exact")].name)
 
     def test_default_and_react_surface_labels_are_documented(self):
         matrix_text = (ROOT / "docs" / "product" / "legacy-react-parity-matrix.md").read_text(encoding="utf-8")
@@ -183,24 +190,25 @@ def _normalize_gui_literal(path: str) -> str:
 
 
 def _parse_api_ts_routes(path: Path) -> set[Route]:
-    text = path.read_text(encoding="utf-8")
     routes: set[Route] = set()
-    for matched_path, method, _wrapper in _api_ts_route_refs(text):
+    for matched_path, method, _wrapper, _owner in _api_ts_route_refs_with_owners(path):
         routes.add(_route_from_api_ts_ref(matched_path, method))
     return routes
 
 
 def _parse_api_ts_wrappers_by_route(path: Path) -> dict[Route, set[str]]:
-    text = path.read_text(encoding="utf-8")
     wrappers_by_route: dict[Route, set[str]] = defaultdict(set)
-    for matched_path, method, wrapper in _api_ts_route_refs(text):
+    for matched_path, method, wrapper, _owner in _api_ts_route_refs_with_owners(path):
         wrappers_by_route[_route_from_api_ts_ref(matched_path, method)].add(wrapper)
     return dict(wrappers_by_route)
 
 
 def _parse_api_ts_exported_functions(path: Path) -> set[str]:
-    text = path.read_text(encoding="utf-8")
-    return set(re.findall(r"\bexport (?:async )?function ([A-Za-z0-9_]+)\(", text))
+    functions: set[str] = set()
+    for module_path in _api_module_paths(path):
+        text = module_path.read_text(encoding="utf-8")
+        functions.update(re.findall(r"\bexport (?:async )?function ([A-Za-z0-9_]+)\(", text))
+    return functions
 
 
 def _route_from_api_ts_ref(path: str, method: str) -> Route:
@@ -217,20 +225,64 @@ def _api_ts_route_refs(text: str) -> list[tuple[str, str, str]]:
     lines = text.splitlines()
     refs: list[tuple[str, str, str]] = []
     current_function = ""
+    current_method = "GET"
     for line in lines:
         function_match = re.search(r"\bexport (?:async )?function ([A-Za-z0-9_]+)\(", line)
         if function_match:
             current_function = function_match.group(1)
+            current_method = "GET"
+        if current_function and "postJson" in line:
+            current_method = "POST"
+        elif current_function and "EventSource" in line:
+            current_method = "GET_SSE"
         if 'method: "DELETE"' in line:
             continue
         for matched_path in re.findall(r'["`](/api/[^"`]+)["`]', line):
-            method = "GET"
-            if "postJson" in line:
-                method = "POST"
-            elif "EventSource" in line:
-                method = "GET_SSE"
-            refs.append((matched_path, method, current_function))
+            refs.append((matched_path, current_method, current_function))
     return refs
+
+
+def _api_ts_route_refs_with_owners(path: Path) -> list[tuple[str, str, str, Path]]:
+    refs: list[tuple[str, str, str, Path]] = []
+    for module_path in _api_module_paths(path):
+        refs.extend((*ref, module_path) for ref in _api_ts_route_refs(module_path.read_text(encoding="utf-8")))
+    return refs
+
+
+def _parse_api_ts_route_owners(path: Path) -> dict[Route, Path]:
+    owners: dict[Route, Path] = {}
+    for matched_path, method, _wrapper, owner in _api_ts_route_refs_with_owners(path):
+        owners[_route_from_api_ts_ref(matched_path, method)] = owner
+    return owners
+
+
+def _api_module_paths(entry_path: Path) -> list[Path]:
+    """Follow only local export-star and named re-exports from the API barrel."""
+    pending = [entry_path.resolve()]
+    visited: set[Path] = set()
+    modules: list[Path] = []
+    while pending:
+        module_path = pending.pop()
+        if module_path in visited:
+            continue
+        visited.add(module_path)
+        modules.append(module_path)
+        text = module_path.read_text(encoding="utf-8")
+        for specifier in re.findall(
+            r"export\s+(?:\*|\{[^}]*\})\s+from\s+[\"'](\.[^\"']+)[\"']",
+            text,
+            flags=re.DOTALL,
+        ):
+            resolved = _resolve_api_module(module_path, specifier)
+            if resolved is not None:
+                pending.append(resolved)
+    return sorted(modules)
+
+
+def _resolve_api_module(module_path: Path, specifier: str) -> Path | None:
+    base = (module_path.parent / specifier).resolve()
+    candidates = [base, base.with_suffix(".ts"), base.with_suffix(".tsx"), base / "index.ts"]
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
 
 
 def _normalize_api_ts_path(path: str) -> str:

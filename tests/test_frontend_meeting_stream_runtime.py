@@ -18,18 +18,10 @@ class FrontendMeetingStreamRuntimeTests(unittest.TestCase):
             import os from "node:os";
             import path from "node:path";
             import { pathToFileURL } from "node:url";
-            import ts from "./frontend/node_modules/typescript/lib/typescript.js";
+            import { compileTypeScriptModule } from "./tests/frontend_api_runtime_helpers.mjs";
 
-            const source = await fs.readFile(path.resolve("frontend/src/api.ts"), "utf8");
-            const compiled = ts.transpileModule(source, {
-              compilerOptions: {
-                module: ts.ModuleKind.ES2022,
-                target: ts.ScriptTarget.ES2022,
-              },
-            }).outputText;
             const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "aa-meeting-stream-"));
-            const modulePath = path.join(tempDir, "api.mjs");
-            await fs.writeFile(modulePath, compiled, "utf8");
+            const modulePath = await compileTypeScriptModule(path.resolve("frontend/src/api.ts"), tempDir);
             const api = await import(pathToFileURL(modulePath).href);
 
             const delta = api.parseMeetingStreamData(JSON.stringify({

@@ -1,6 +1,8 @@
 import unittest
 from pathlib import Path
 
+from tests.frontend_api_source import api_barrel_source, api_module_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -11,11 +13,12 @@ def read_frontend(path: str) -> str:
 
 class FrontendAgentCreateFlowTests(unittest.TestCase):
     def test_api_exposes_canonical_provider_profile_and_credential_contract(self):
-        source = read_frontend("api.ts")
+        source = api_barrel_source()
+        agent_session_source = api_module_source("agentSessions")
 
-        self.assertIn("reasoningEffort", source)
-        self.assertIn("serviceTier", source)
-        self.assertIn("permissionMode", source)
+        self.assertIn("reasoningEffort", agent_session_source)
+        self.assertIn("serviceTier", agent_session_source)
+        self.assertIn("permissionMode", agent_session_source)
         self.assertIn("fetchDeepSeekCredentialStatus", source)
         self.assertIn('"/api/provider-credentials/deepseek"', source)
         self.assertNotIn("speed_options", source)

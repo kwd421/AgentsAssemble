@@ -109,14 +109,19 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | --- | --- |
 | Room persistence and sequence | `room_store.py`, `room_database.py`, `room_types.py` |
 | WebSocket commands and ACL | `room_commands.py`, `ws_room_session.py`, `room_realtime.py` |
-| Routing and provider context | `room_routing.py`, `room_context.py`, `agent_sessions.py` |
+| Routing and provider context | `room_routing.py`, `room_context.py`, `room_turn_context.py` |
 | Fanout and bridge delivery | `room_event_broker.py`, `room_agent_bridge.py` |
 | Provider catalog and settings | `native_cli_providers.py`, `provider_capabilities.py` |
-| Provider process lifecycle | `room_bridge_process.py`, `live_cli.py`, provider runtime module |
+| Codex app-server lifecycle | `codex_app_server_runtime.py`; compatibility exports in `agent_sessions.py` |
+| Other provider process lifecycle | `room_bridge_process.py`, `live_cli.py`, provider adapter module |
 | Invites and attendance | `room_invite.py`, `room_attendee.py` |
 | Provider credentials | `provider_secrets.py`, provider credential routes |
-| React room state | `frontend/src/App.tsx`, `frontend/src/api.ts` |
-| Message and roster UI | `frontend/src/views/LobbyView.tsx`, `frontend/src/views/components/` |
+| GUI HTTP response/WebSocket transport | `gui_response.py`, `gui_ws_http.py`; composition in `gui.py` |
+| Canonical room HTTP routes | `gui_room_*_http.py`; coordinator in `gui_room_http.py` |
+| CLI parser registration | `cli_parser_common.py`, `cli_parser_*.py`; dispatch in `cli.py` |
+| React room state | `frontend/src/App.tsx`, `frontend/src/app/`, `useCanonicalRoom.ts` |
+| Frontend API client | `frontend/src/api/`; compatibility barrel in `frontend/src/api.ts` |
+| Message and roster UI | `frontend/src/views/LobbyView.tsx`, `frontend/src/views/components/member/` |
 
 Read the nearest tests before changing behavior. Prefer behavioral tests over
 source-string assertions.

@@ -43,7 +43,6 @@ import {
   fetchWorkroomQueueEvidence,
   fetchSideChat,
   generatePublicInviteHostToken,
-  joinRoomInvite,
   loadHostToken,
   postRoomFriendDm,
   clearHostToken,
@@ -79,6 +78,7 @@ import {
   type PublicInviteStatus,
 } from "./api";
 import { usePoll } from "./hooks";
+import { useRoomAdmission } from "./app/useRoomAdmission";
 import { useCanonicalRoom } from "./useCanonicalRoom";
 import AdminPanel from "./views/AdminPanel";
 import BoardView from "./views/BoardView";
@@ -127,7 +127,6 @@ import {
   mergeServerRoomsIntoDock,
   persistableRoom,
   roomFromFlow,
-  roomFromGuestSession,
   roomHasAgent,
   roomSettingsKey,
   type RoomDockItem,
@@ -138,27 +137,13 @@ import {
   loadAgentActivityVisibility,
   persistAgentActivityVisibility,
 } from "./lib/agentActivityPreferences";
-import {
-  loadRoomGuestSession,
-  persistRoomGuestSession,
-  roomGuestSessionExpired,
-  roomGuestSessionFromJoinPayload,
-  type RoomGuestSession,
-} from "./lib/roomGuestSession";
-import {
-  getOrCreateDeviceToken,
-  loadRememberedGuestProfile,
-  rememberGuestProfile,
-} from "./lib/deviceIdentity";
+import { getOrCreateDeviceToken } from "./lib/deviceIdentity";
 import {
   inviteFriendDmMessage,
   remoteClientPacketPreview,
   secureInviteCopyTarget,
 } from "./lib/roomInviteCopy";
-import {
-  GUEST_SESSION_EXPIRED_MESSAGE,
-  isUnauthorizedApiError,
-} from "./lib/apiErrors";
+import { GUEST_SESSION_EXPIRED_MESSAGE } from "./lib/apiErrors";
 import { roomPostingState } from "./lib/roomGuestPosting";
 import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
 import { isActivePresence } from "./lib/presenceStatus";
@@ -404,14 +389,6 @@ export default function App() {
   const [startupRoute] = useState(createStartupRoute);
   const guestInvite = startupRoute.guestInvite;
   const guestJoinToken = startupRoute.guestJoinToken;
-  const [guestSession, setGuestSession] = useState<RoomGuestSession | null>(
-    () => startupRoute.guestSession
-  );
-  const [guestExpired, setGuestExpired] = useState(false);
-  const [guestJoinRequested, setGuestJoinRequested] = useState(false);
-  const [pendingGuestDisplayName, setPendingGuestDisplayName] = useState("Guest");
-  const [pendingGuestAvatarImage, setPendingGuestAvatarImage] = useState("");
-  const guestLocked = Boolean(guestInvite || guestSession || guestJoinToken || guestExpired);
   // A fixed Channel ("lobby"/"live"/...) OR a custom channel id (opaque "c…").
   const [channel, setChannel] = useState<string>(() => {
     if (
@@ -444,9 +421,10 @@ export default function App() {
   const [inviteFriendStatuses, setInviteFriendStatuses] = useState<Record<string, string>>({});
   const [inviteRemoteClientPacket, setInviteRemoteClientPacket] =
     useState<InviteRemoteClientPacketState>({ friendName: "", preview: "" });
-  const [guestJoinStatus, setGuestJoinStatus] = useState("");
   const [guestAiPacketPreview, setGuestAiPacketPreview] = useState("");
   const [guestAiPacketStatus, setGuestAiPacketStatus] = useState("");
+  const [flowData, setFlowData] = useState<FlowResponse | null>(null);
+  const [flowError, setFlowError] = useState<Error | null>(null);
   const [roomAppearances, setRoomAppearances] = useState<Record<string, RoomAppearance>>(() =>
     loadRoomAppearances()
   );
@@ -506,28 +484,41 @@ export default function App() {
   const [sideChatError, setSideChatError] = useState<Error | null>(null);
   const [sideChatThread, setSideChatThread] = useState<SideChatThreadContext | null>(null);
 
-  const guestMeetingId = guestSession?.meetingId || guestInvite?.meetingId || "";
-  const guestJoinPending = Boolean(guestJoinToken && guestSession?.inviteToken !== guestJoinToken);
-  const guestReadOnly =
-    guestInvite?.inviteScope === "read_only" || guestSession?.inviteScope === "read_only";
-  const guestPanelProfile = guestLocked
-    ? {
-        displayName:
-          guestSession?.displayName ||
-          (guestJoinPending ? "입장 확인 중" : guestExpired ? "게스트 세션 만료" : "게스트"),
-        avatarLabel:
-          (guestSession?.displayName || guestSession?.agentId || "G").slice(0, 1).toUpperCase() || "G",
-        avatarImage: guestSession?.avatarImage,
-        statusLabel: guestExpired
-          ? "세션 만료"
-          : guestJoinPending
-          ? "초대 확인 중"
-          : guestSession?.sessionToken
-          ? "게스트로 접속"
-          : "읽기 전용 미리보기",
-        expired: guestExpired,
-      }
-    : undefined;
+  const onGuestRoomJoined = useCallback((room: RoomDockItem) => {
+    setRooms([room]);
+    setActiveRoomId(room.id);
+    setChannel("lobby");
+  }, []);
+  const onGuestAdmissionReset = useCallback(() => {
+    setChannel("lobby");
+    setGuestAiPacketPreview("");
+    setGuestAiPacketStatus("");
+  }, []);
+  const {
+    guestSession,
+    guestExpired,
+    guestJoinRequested,
+    pendingGuestDisplayName,
+    pendingGuestAvatarImage,
+    guestJoinStatus,
+    guestLocked,
+    guestMeetingId,
+    guestJoinPending,
+    guestReadOnly,
+    guestPanelProfile,
+    setPendingGuestDisplayName,
+    setPendingGuestAvatarImage,
+    requestGuestJoin,
+    expireGuestSession,
+    clearGuestSession,
+  } = useRoomAdmission({
+    guestInvite,
+    guestJoinToken,
+    initialSession: startupRoute.guestSession,
+    flowError,
+    onRoomJoined: onGuestRoomJoined,
+    onResetToLobby: onGuestAdmissionReset,
+  });
   const lobbyPostingState = useMemo(
     () =>
       roomPostingState({
@@ -551,8 +542,6 @@ export default function App() {
     },
     [guestExpired, guestJoinPending, guestMeetingId, guestSession?.sessionToken]
   );
-  const [flowData, setFlowData] = useState<FlowResponse | null>(null);
-  const [flowError, setFlowError] = useState<Error | null>(null);
   const refreshFlow = useCallback(() => {
     flowFetcher()
       .then((payload) => {
@@ -713,114 +702,6 @@ export default function App() {
     }),
     [guestLocked, guestOwnedAgentIds, localProcessAgentIds]
   );
-  const expireGuestSession = useCallback(() => {
-    persistRoomGuestSession(null);
-    setGuestSession(null);
-    setGuestExpired(true);
-    setGuestJoinStatus(GUEST_SESSION_EXPIRED_MESSAGE);
-    setGuestAiPacketPreview("");
-    setGuestAiPacketStatus("");
-    setChannel("lobby");
-  }, []);
-
-  useEffect(() => {
-    if (guestLocked && guestSession?.sessionToken && isUnauthorizedApiError(flowError)) {
-      expireGuestSession();
-    }
-  }, [expireGuestSession, flowError, guestLocked, guestSession?.sessionToken]);
-
-  // Returning guests skip the profile panel: a remembered device profile
-  // auto-rejoins with the same identity (the server keeps the participant id
-  // stable via the device token).
-  // A stored session for THIS invite only counts as "already joined" while it's
-  // still valid; an expired one must re-join (reopening the link otherwise
-  // reused a dead token and showed "session expired" forever).
-  const guestAlreadyJoinedThisInvite = Boolean(
-    guestJoinToken &&
-      guestSession?.inviteToken === guestJoinToken &&
-      !roomGuestSessionExpired(guestSession)
-  );
-
-  useEffect(() => {
-    if (!guestJoinToken || guestAlreadyJoinedThisInvite) return;
-    if (guestJoinRequested || guestExpired) return;
-    const remembered = loadRememberedGuestProfile();
-    if (!remembered) return;
-    setPendingGuestDisplayName(remembered.displayName);
-    setPendingGuestAvatarImage(remembered.avatarImage || "");
-    setGuestJoinRequested(true);
-  }, [guestAlreadyJoinedThisInvite, guestExpired, guestJoinRequested, guestJoinToken]);
-
-  useEffect(() => {
-    if (!guestJoinToken || guestAlreadyJoinedThisInvite) return;
-    if (!guestJoinRequested) return;
-    let cancelled = false;
-    setGuestJoinStatus("초대 링크로 방에 입장 중...");
-    joinRoomInvite({
-      inviteToken: guestJoinToken,
-      displayName: pendingGuestDisplayName,
-      avatarImage: pendingGuestAvatarImage,
-      deviceToken: getOrCreateDeviceToken(),
-      participantType: "human",
-    })
-      .then((payload) => {
-        if (cancelled) return;
-        const nextSession = roomGuestSessionFromJoinPayload(guestJoinToken, {
-          ...payload,
-          avatar_image_url: payload.avatar_image_url || pendingGuestAvatarImage,
-        });
-        persistRoomGuestSession(nextSession);
-        rememberGuestProfile({
-          displayName: nextSession.displayName || pendingGuestDisplayName,
-          avatarImage: nextSession.avatarImage || pendingGuestAvatarImage || undefined,
-        });
-        setGuestSession(nextSession);
-        setGuestExpired(false);
-        setGuestJoinRequested(false);
-        const joinedRoom = roomFromGuestSession(nextSession);
-        setRooms([joinedRoom]);
-        setActiveRoomId(joinedRoom.id);
-        setChannel("lobby");
-        setGuestJoinStatus("");
-        try {
-          window.history.replaceState({}, "", window.location.pathname || "/join");
-        } catch {
-          // URL cleanup is best-effort; the session is already stored in memory.
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          const restoredSession = loadRoomGuestSession();
-          if (restoredSession?.inviteToken === guestJoinToken) {
-            setGuestSession(restoredSession);
-            setGuestExpired(false);
-            const restoredRoom = roomFromGuestSession(restoredSession);
-            setRooms([restoredRoom]);
-            setActiveRoomId(restoredRoom.id);
-            setChannel("lobby");
-            setGuestJoinStatus("");
-            try {
-              window.history.replaceState({}, "", window.location.pathname || "/join");
-            } catch {
-              // URL cleanup is best-effort; the restored session remains in memory.
-            }
-            return;
-          }
-          setGuestJoinStatus(error instanceof Error ? error.message : "초대 링크 입장 실패");
-          setGuestJoinRequested(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    guestAlreadyJoinedThisInvite,
-    guestJoinRequested,
-    guestJoinToken,
-    pendingGuestAvatarImage,
-    pendingGuestDisplayName,
-  ]);
-
   useEffect(() => {
     if (guestLocked) return;
     persistRoomDockItems(rooms.map(persistableRoom));
@@ -1533,8 +1414,7 @@ export default function App() {
     await roomSocket.command("participant.leave", {});
     removeAcknowledgedRoom(roomId);
     if (guestLocked) {
-      persistRoomGuestSession(null);
-      setGuestSession(null);
+      clearGuestSession();
       const url = new URL(window.location.href);
       url.pathname = "/join";
       url.search = "";
@@ -2453,10 +2333,7 @@ export default function App() {
           busy={guestJoinRequested}
           onDisplayNameChange={setPendingGuestDisplayName}
           onAvatarImageChange={setPendingGuestAvatarImage}
-          onJoin={() => {
-            setGuestJoinStatus("");
-            setGuestJoinRequested(true);
-          }}
+          onJoin={requestGuestJoin}
         />
       )}
 

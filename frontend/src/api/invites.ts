@@ -1,0 +1,165 @@
+import type { RoomAppearance } from "../lib/roomAppearance";
+import {
+  fetchJson,
+  postJson,
+  postJsonHost,
+  postJsonWithToken,
+} from "./http";
+
+export interface RoomInviteCreateResponse {
+  invite_id: string;
+  invite_token: string;
+  meeting_id: string;
+  agent_id: string;
+  display_name: string;
+  invite_scope: RoomAppearance["inviteScope"];
+  expires_at: string;
+  room_url: string;
+  join_url?: string;
+  remote_client_packet?: Record<string, unknown>;
+  client_type?: string;
+  provider_kind?: string;
+}
+
+export interface RoomInviteJoinResponse {
+  status: string;
+  session_token: string;
+  agent_id: string;
+  display_name: string;
+  avatar_image_url?: string;
+  meeting_id: string;
+  invite_scope: RoomAppearance["inviteScope"];
+  connection_kind: string;
+  expires_at: string;
+  operator?: boolean;
+  room_label?: string;
+  room_topic?: string;
+  room_created_at?: string;
+}
+
+export interface PublicInviteStatus {
+  public_url: string;
+  host_token_configured: boolean;
+  host_gate_required: boolean;
+  can_generate_host_token: boolean;
+  tunnel?: {
+    available?: boolean;
+    running?: boolean;
+    phase?: "stopped" | "starting" | "running" | string;
+    public_url?: string;
+    local_url?: string;
+    last_error?: string;
+    recent_log?: string[];
+  };
+}
+
+export interface PublicInviteStatusResponse extends PublicInviteStatus {}
+
+export interface PublicInviteActionResponse {
+  status: string;
+  host_token?: string;
+  host_token_configured?: boolean;
+  public_url?: string;
+  public_invite?: PublicInviteStatus;
+}
+
+export function createRoomInvite({
+  meetingId,
+  agentId,
+  displayName,
+  inviteScope = "room",
+  ttlSeconds = 604800,
+  clientType = "browser",
+  providerKind = "manual",
+  maxUses = 0,
+}: {
+  meetingId: string;
+  agentId: string;
+  displayName: string;
+  inviteScope?: RoomAppearance["inviteScope"];
+  ttlSeconds?: number;
+  clientType?: "browser" | "agent_bridge";
+  providerKind?: string;
+  maxUses?: number;
+}) {
+  return postJsonHost<RoomInviteCreateResponse>("/api/room-invite/create", {
+    meeting_id: meetingId,
+    agent_id: agentId,
+    display_name: displayName,
+    invite_scope: inviteScope,
+    ttl_seconds: ttlSeconds,
+    client_type: clientType,
+    provider_kind: providerKind,
+    max_uses: maxUses,
+  });
+}
+
+export function fetchPublicInviteStatus() {
+  return fetchJson<PublicInviteStatusResponse>("/api/public-invite/status");
+}
+
+export function generatePublicInviteHostToken() {
+  return postJsonHost<PublicInviteActionResponse>("/api/public-invite/host-token", {});
+}
+
+export function configurePublicInvitePublicUrl(publicUrl: string) {
+  return postJsonHost<PublicInviteActionResponse>("/api/public-invite/public-url", {
+    public_url: publicUrl,
+  });
+}
+
+export function startPublicInviteTunnel() {
+  return postJsonHost<PublicInviteActionResponse>("/api/public-invite/tunnel/start", {});
+}
+
+export function stopPublicInviteTunnel() {
+  return postJsonHost<PublicInviteActionResponse>("/api/public-invite/tunnel/stop", {});
+}
+
+export function joinRoomInvite({
+  inviteToken,
+  displayName,
+  avatarImage,
+  deviceToken,
+  participantType = "human",
+}: {
+  inviteToken: string;
+  displayName?: string;
+  avatarImage?: string;
+  deviceToken?: string;
+  participantType?: "human" | "agent";
+}) {
+  return postJson<RoomInviteJoinResponse>("/api/room-invite/join", {
+    invite_token: inviteToken,
+    display_name: displayName,
+    avatar_image_url: avatarImage,
+    device_token: deviceToken,
+    participant_type: participantType,
+  });
+}
+
+export function createCompanionRoomInvite({
+  sessionToken,
+  agentId,
+  displayName,
+  ttlSeconds = 600,
+}: {
+  sessionToken: string;
+  agentId: string;
+  displayName: string;
+  ttlSeconds?: number;
+}) {
+  return postJsonWithToken<RoomInviteCreateResponse>(
+    "/api/room-invite/companion",
+    {
+      agent_id: agentId,
+      display_name: displayName,
+      ttl_seconds: ttlSeconds,
+    },
+    sessionToken
+  );
+}
+
+export function leaveRoomInvite({ sessionToken }: { sessionToken: string }) {
+  return postJsonWithToken<{ status: string }>("/api/room-invite/leave", {}, sessionToken);
+}

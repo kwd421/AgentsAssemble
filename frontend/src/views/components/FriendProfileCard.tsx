@@ -11,21 +11,12 @@ import {
   processGroupCanControlSingleAgent,
   processGroupIndividualControlReason,
 } from "../../lib/liveAgentProcessControls";
+import { agentSessionResumeStatus } from "../../lib/agentSessionStatus";
 import { participantTypeMeta } from "../../lib/participantTypes";
 import { presenceStatusLabel } from "../../lib/presenceStatus";
 
 function friendInitial(friend: RoomFriend) {
   return (friend.display_name || friend.handle || "?").slice(0, 1).toUpperCase();
-}
-
-function agentSessionResumeStatus(response: { state_status?: string; process_status?: string; status?: string }) {
-  if (response.process_status === "resumed" || response.process_status === "launched") {
-    return "Agent Session process resumed";
-  }
-  if (response.process_status === "unsupported") return "Agent Session state attached · process unsupported";
-  if (response.process_status === "failed") return "Agent Session state attached · process failed";
-  if (response.process_status === "not_started") return "Agent Session state attached only";
-  return `Agent Session ${response.state_status || response.status || "attached"}`;
 }
 
 export default function FriendProfileCard({

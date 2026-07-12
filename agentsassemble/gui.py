@@ -55,7 +55,14 @@ from agentsassemble.live_agent_frontend_create import (
 from agentsassemble.provider_sessions import list_provider_sessions
 from agentsassemble.provider_secrets import PROVIDER_SECRETS
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
+from agentsassemble.gui_response import (
+    GuiResponseMethods,
+    _last_payload_event_id,
+    _rewrite_react_app_index,
+    _sse_event,
+)
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.gui_ws_http import handle_ws_upgrade
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_realtime import (
     RoomCommandRejected,
@@ -1768,15 +1775,6 @@ def read_side_chat(
 
 def append_side_chat_event(output_root: Path, event: dict[str, object]) -> dict[str, object]:
     return append_side_chat_event_to_file(output_root / "side_chat.jsonl", event)
-
-
-def _sse_event(event_name: str, payload: dict[str, object], event_id: str | None = None) -> bytes:
-    lines = []
-    if event_id:
-        lines.append(f"id: {event_id}")
-    lines.append(f"event: {event_name}")
-    lines.append(f"data: {json.dumps(payload, ensure_ascii=False)}")
-    return ("\n".join(lines) + "\n\n").encode("utf-8")
 
 
 def _meeting_not_found_error(meeting_id: str) -> ValueError:
@@ -8351,7 +8349,7 @@ def _make_handler(
     route_table = Router()
     register_room_routes(route_table)
 
-    class AgentsAssembleHandler(BaseHTTPRequestHandler):
+    class AgentsAssembleHandler(GuiResponseMethods, BaseHTTPRequestHandler):
         def _request_is_trusted(self, *, path: str, method: str) -> bool:
             return _request_trusted(
                 self.server.server_address[0],
@@ -11464,158 +11462,15 @@ def _make_handler(
             )
             self._send_json({"status": response_status, "session_run": session_run})
 
-        def _send_react_app_index(self, frontend_root: Path) -> None:
-            index_path = frontend_root / "index.html"
-            if not frontend_dist_status(frontend_root).static_available:
-                self._send_error(HTTPStatus.SERVICE_UNAVAILABLE, REACT_APP_MISSING_BUILD_MESSAGE)
-                return
-            html = index_path.read_text(encoding="utf-8")
-            data = _rewrite_react_app_index(html).encode("utf-8")
-            self._send_bytes(data, "text/html; charset=utf-8", cache_control="no-cache")
-
-        def _send_file(
-            self,
-            path: Path,
-            content_type: str | None = None,
-            *,
-            cache_control: str = "no-store",
-        ) -> None:
-            if not path.exists() or not path.is_file():
-                self._send_error(HTTPStatus.NOT_FOUND, "File not found")
-                return
-            guessed = content_type or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-            data = path.read_bytes()
-            self._send_bytes(data, guessed, cache_control=cache_control)
-
-        def _send_bytes(self, data: bytes, content_type: str, *, cache_control: str) -> None:
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", cache_control)
-            self.end_headers()
-            self.wfile.write(data)
-
-        def _send_attachment_file(self, path: Path, metadata: dict[str, object], *, inline: bool) -> None:
-            if not path.exists() or not path.is_file():
-                self._send_error(HTTPStatus.NOT_FOUND, "Attachment not found")
-                return
-            filename = str(metadata.get("filename") or path.name)
-            content_type = str(metadata.get("content_type") or mimetypes.guess_type(path.name)[0] or "application/octet-stream")
-            safe_inline = inline and content_type in INLINE_SAFE_IMAGE_TYPES
-            data = path.read_bytes()
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Content-Disposition", attachment_content_disposition(filename, inline=safe_inline))
-            self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(data)
-
-        def _send_json(self, payload: dict[str, object]) -> None:
-            data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self._send_public_invite_cors_headers()
-            self.end_headers()
-            self.wfile.write(data)
-
-        def _send_sse_snapshot(self, event_name: str, payload: dict[str, object]) -> None:
-            data = _sse_event(event_name, payload, event_id=_last_payload_event_id(payload))
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "close")
-            self._send_public_invite_cors_headers()
-            self.end_headers()
-            self.wfile.write(data)
-
         def _handle_ws_upgrade(self, query: dict) -> None:
             """Upgrade the one authenticated room socket used by browsers and bridges."""
-            import select
-
-            if not is_websocket_upgrade(self.headers):
-                self._send_error(HTTPStatus.BAD_REQUEST, "WebSocket upgrade required")
-                return
-            ticket = (query.get("ticket") or [""])[0]
-            session = ws_ticket_store.consume(ticket)
-            if not session:
-                self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired ws ticket")
-                return
-            session_token = str(session.pop(WS_SESSION_TOKEN_KEY, "") or "")
-            key = str(self.headers.get("Sec-WebSocket-Key") or "")
-            if not key:
-                self._send_error(HTTPStatus.BAD_REQUEST, "missing Sec-WebSocket-Key")
-                return
-            identity = {
-                "agent_id": str(session.get("agent_id") or ""),
-                "display_name": str(session.get("display_name") or ""),
-                "participant_type": str(session.get("participant_type") or "human"),
-                "client_type": str(session.get("client_type") or session.get("connection_kind") or "browser"),
-                "invite_scope": str(session.get("invite_scope") or "read_write"),
-                "meeting_id": str(session.get("meeting_id") or ""),
-                "operator": bool(session.get("operator")),
-                "session_id": str(session.get("session_id") or session.get("agent_id") or ""),
-                "provider_kind": str(session.get("provider_kind") or ""),
-            }
-            self.close_connection = True
-            self.send_response(HTTPStatus.SWITCHING_PROTOCOLS)
-            self.send_header("Upgrade", "websocket")
-            self.send_header("Connection", "Upgrade")
-            self.send_header("Sec-WebSocket-Accept", compute_accept_key(key))
-            self.end_headers()
-            self.wfile.flush()
-            channel = room_realtime_controller.connect(identity)
-            ws = WsRoomSession(identity=identity, deps=_ws_room_deps(channel, self), session_token=session_token)
-            assembler = MessageAssembler()
-            sock = self.connection
-            def _send_all(frames: list[bytes]) -> bool:
-                # Deliver outbound frames; a send failure (client already gone)
-                # must NOT abort processing — the important side effects (append,
-                # status) already ran in handle_frame. Returns False if the peer
-                # is gone so the loop can wind down after the batch is processed.
-                for frame in frames:
-                    try:
-                        sock.sendall(frame)
-                    except (BrokenPipeError, ConnectionResetError, OSError):
-                        return False
-                return True
-
-            try:
-                while not ws.closed:
-                    if channel.closed:
-                        break
-                    ready, _, _ = select.select([sock, channel], [], [], SSE_EVENT_POLL_INTERVAL_SECONDS)
-                    if sock in ready:
-                        data = sock.recv(65536)
-                        if not data:
-                            break  # client closed the TCP connection
-                        assembler.feed(data)
-                        # Process EVERY received frame first (side effects: say
-                        # append, thinking status) — then send. A say followed by
-                        # an immediate client close must still append.
-                        outbound: list[bytes] = []
-                        for opcode, payload in assembler.messages():
-                            outbound.extend(ws.handle_frame(opcode, payload))
-                        if not _send_all(outbound):
-                            break
-                    if channel in ready:
-                        pushed = [encode_text(json.dumps(message, ensure_ascii=False)) for message in channel.drain()]
-                        if not _send_all(pushed):
-                            break
-                    if not _send_all(ws.poll()):
-                        break
-            except WebSocketProtocolError:
-                try:
-                    sock.sendall(encode_close(CLOSE_PROTOCOL_ERROR))
-                except OSError:
-                    pass
-            except (BrokenPipeError, ConnectionResetError, OSError, ValueError):
-                pass
-            finally:
-                room_realtime_controller.disconnect(channel)
+            return handle_ws_upgrade(
+                self,
+                query,
+                ws_ticket_store=ws_ticket_store,
+                room_realtime_controller=room_realtime_controller,
+                ws_room_deps_factory=_ws_room_deps,
+            )
 
         def _send_sse_stream(
             self,
@@ -11787,17 +11642,6 @@ def _make_handler(
     return AgentsAssembleHandler
 
 
-def _last_payload_event_id(payload: dict[str, object]) -> str | None:
-    events = payload.get("events")
-    if not isinstance(events, list) or not events:
-        return None
-    latest = events[-1]
-    if not isinstance(latest, dict):
-        return None
-    event_id = latest.get("id")
-    return event_id if isinstance(event_id, str) and event_id else None
-
-
 def _sse_frame_id(frame: str) -> str:
     for line in frame.splitlines():
         if line.startswith("id:"):
@@ -11841,7 +11685,3 @@ def _react_app_content_type(path: Path) -> str:
 
 def _react_app_cache_control(path: Path) -> str:
     return "no-cache"
-
-
-def _rewrite_react_app_index(html: str) -> str:
-    return html.replace('src="/assets/', 'src="/app/assets/').replace('href="/assets/', 'href="/app/assets/')

@@ -5,9 +5,27 @@ from unittest.mock import patch
 from io import StringIO
 
 from agentsassemble.cli import build_parser, main, run_room_command
+from agentsassemble.agent_sessions import (
+    DEFAULT_ROOM_CONTEXT_CHARS,
+    DEFAULT_ROOM_CONTEXT_MESSAGES,
+    ProcessFactory,
+    project_room_context,
+)
+from agentsassemble.codex_app_server_runtime import ProcessFactory as RuntimeProcessFactory
+from agentsassemble.room_context import (
+    DEFAULT_ROOM_CONTEXT_CHARS as ContextChars,
+    DEFAULT_ROOM_CONTEXT_MESSAGES as ContextMessages,
+    project_room_context as context_project_room_context,
+)
 
 
 class AgentSessionCliTests(unittest.TestCase):
+    def test_agent_session_refactor_preserves_public_context_and_process_names(self):
+        self.assertIs(ProcessFactory, RuntimeProcessFactory)
+        self.assertEqual(DEFAULT_ROOM_CONTEXT_CHARS, ContextChars)
+        self.assertEqual(DEFAULT_ROOM_CONTEXT_MESSAGES, ContextMessages)
+        self.assertIs(project_room_context, context_project_room_context)
+
     def test_demo_free_chat_mode_is_rejected(self):
         with patch("sys.stderr", new_callable=StringIO), self.assertRaises(SystemExit):
             build_parser().parse_args(["demo", "--meeting-mode", "free-chat"])
