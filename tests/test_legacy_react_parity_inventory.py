@@ -236,7 +236,7 @@ def _api_ts_route_refs(text: str) -> list[tuple[str, str, str]]:
         elif current_function and "EventSource" in line:
             current_method = "GET_SSE"
         if 'method: "DELETE"' in line:
-            continue
+            current_method = "DELETE"
         for matched_path in re.findall(r'["`](/api/[^"`]+)["`]', line):
             refs.append((matched_path, current_method, current_function))
     return refs

@@ -28,11 +28,13 @@ explicit modules.
 | `MemberList.tsx` | 1,741 | 494 | typed member rows, diagnostics, identity and session-control components |
 | `App.tsx` | 2,988 | 2,865 | guest admission lifecycle in `app/useRoomAdmission.ts` |
 | `test_cli_timeout.py` | 16,248 | 45 | 15 domain suites; legacy direct command still runs all 404 tests |
-| `test_gui_server.py` | 22,491 | 55 | 21 domain suites; compatibility loader runs all 384 current tests |
+| `test_gui_server.py` | 22,491 | 56 | 22 domain suites; compatibility loader runs all 393 current tests |
 
 Additional results:
 
 - canonical room HTTP registration is now split across four domain registrars;
+- provider catalogs and DeepSeek credential GET/POST/DELETE now use a focused
+  HTTP registrar while `provider_secrets.py` remains the secret owner;
 - HTTP response delivery and WebSocket upgrade lifecycle are isolated from the
   large GUI request handler;
 - the frontend API compatibility barrel retains the same 169 exports;
@@ -50,6 +52,8 @@ Additional results:
 - remembered-profile auto-join is tested for success, persisted-session
   recovery and failure; a token-level guard now prevents failed auto-joins from
   retrying forever;
+- credential route tests cover local lifecycle, remote moderator rejection,
+  remote HTTP rejection, forwarded HTTPS acceptance and key non-disclosure;
 - Agent Session resume labels and room-channel wire normalization each have one
   shared implementation instead of drifting copies;
 - `MemberList` now has a behavioral render test that follows the real parent
@@ -57,9 +61,9 @@ Additional results:
 
 Verification evidence:
 
-- `python3 -m unittest discover -s tests -t .`: 2,816 passed;
+- `python3 -m unittest discover -s tests -t .`: 2,825 passed;
 - final Agent Session and CLI regression pass after deduplication: 491 passed;
-- narrow compatibility-loader discovery: CLI 404 passed; GUI 384 passed;
+- narrow compatibility-loader discovery: CLI 404 passed; GUI 393 passed;
 - `npm --prefix frontend test`: 28 passed;
 - `npm --prefix frontend run build`: passed;
 - canonical desktop/mobile Playwright flow: passed;
@@ -102,6 +106,9 @@ construction, authentication, room routes, provider controls, legacy meeting
 routes, tunnel behavior, process supervision, friends, Mafia and other domains.
 A maintainer changing one endpoint must load unrelated route and lifecycle
 context.
+
+The current file is 11,646 lines after room, transport and provider
+catalog/credential routes were extracted. It remains the highest-risk module.
 
 Recommended split, preserving URLs and behavior:
 
@@ -240,7 +247,7 @@ cleanup. Deleting a retired path is better than making it beautifully modular.
 
 | Test file | Lines | Test methods |
 | --- | ---: | ---: |
-| `test_gui_server.py` | 55 compatibility loader | 384 current tests across domain suites |
+| `test_gui_server.py` | 56 compatibility loader | 393 current tests across domain suites |
 | `test_cli_timeout.py` | 45 compatibility loader | 404 across domain suites |
 | `test_live_agent_runner.py` | 5,352 | many under one 5,248-line class |
 | `test_live_agent_processes.py` | 4,487 | many under one 4,394-line class |

@@ -53,7 +53,11 @@ from agentsassemble.live_agent_frontend_create import (
     frontend_live_agent_options_payload,
 )
 from agentsassemble.provider_sessions import list_provider_sessions
-from agentsassemble.provider_secrets import PROVIDER_SECRETS
+from agentsassemble.gui_provider_http import (
+    model_catalog_payload,
+    provider_catalog_payload,
+    register_provider_routes,
+)
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
 from agentsassemble.gui_response import (
     GuiResponseMethods,
@@ -251,7 +255,6 @@ from agentsassemble.meeting_events import (
     write_live_state,
 )
 from agentsassemble.room_store import RoomStore
-from agentsassemble.adapters import default_provider_registry
 from agentsassemble.models import ProviderConfig, Role
 from agentsassemble.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS, SSE_KEEPALIVE_INTERVAL_SECONDS
 
@@ -1908,22 +1911,6 @@ def send_lobby_message_to_remote_bridge(
         )
     except GovernedLobbySayRejected as rejected:
         raise ValueError(str(rejected)) from rejected
-
-
-def provider_catalog_payload() -> dict[str, object]:
-    return {"providers": default_provider_registry().catalog()}
-
-
-def model_catalog_payload() -> dict[str, object]:
-    """API-provider lane catalog (master plan 1단계 B) for model selection (2단계).
-
-    Distinct from provider_catalog_payload (the CLI/runtime provider registry):
-    this is the static OpenAI-compatible model catalog (NVIDIA/OpenRouter/LM
-    Studio/BYOK) the GUI offers when launching an `api_call` agent. Keys are never
-    exposed — only a `key_present` boolean per provider."""
-    from agentsassemble import provider_catalog
-
-    return provider_catalog.catalog_payload()
 
 
 def provider_health_payload(payload: dict[str, object]) -> dict[str, object]:
@@ -8349,6 +8336,11 @@ def _make_handler(
     route_table = Router()
     register_room_routes(route_table)
 
+    def _late_provider_credentials_allowed(ctx: RequestContext) -> bool:
+        return ctx.handler._provider_credentials_allowed()
+
+    register_provider_routes(route_table, credentials_allowed=_late_provider_credentials_allowed)
+
     class AgentsAssembleHandler(GuiResponseMethods, BaseHTTPRequestHandler):
         def _request_is_trusted(self, *, path: str, method: str) -> bool:
             return _request_trusted(
@@ -8479,17 +8471,6 @@ def _make_handler(
                     meeting_id=str(query.get("meeting_id", [""])[0] or ""),
                     last_event_id=self._last_event_id(query),
                 )
-                return
-            if path == "/api/providers":
-                self._send_json(provider_catalog_payload())
-                return
-            if path == "/api/provider-credentials/deepseek":
-                if not self._provider_credentials_allowed():
-                    return
-                self._send_json(PROVIDER_SECRETS.status("deepseek"))
-                return
-            if path == "/api/model-catalog":
-                self._send_json(model_catalog_payload())
                 return
             if path == "/api/room-settings":
                 self._send_json(room_settings_payload(output_root, room_id=str(query.get("room_id", [""])[0] or "")))
@@ -8800,25 +8781,6 @@ def _make_handler(
                     session_token = ""
                 ticket = ws_ticket_store.issue(session, session_token=session_token)
                 self._send_json({"ticket": ticket, "ttl_seconds": WS_TICKET_TTL_SECONDS})
-                return
-            if parsed.path == "/api/provider-credentials/deepseek":
-                if not self._provider_credentials_allowed():
-                    return
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                try:
-                    status = PROVIDER_SECRETS.set("deepseek", str(payload.get("api_key") or ""))
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                except RuntimeError:
-                    self._send_error(HTTPStatus.SERVICE_UNAVAILABLE, "secure_store_unavailable")
-                    return
-                self._send_json(status)
                 return
             if parsed.path == "/api/demo":
                 result = run_demo_meeting(adapter_name="mock", output_root=output_root)
@@ -11291,10 +11253,7 @@ def _make_handler(
                 self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
                 return
             query = parse_qs(parsed.query)
-            if parsed.path == "/api/provider-credentials/deepseek":
-                if not self._provider_credentials_allowed():
-                    return
-                self._send_json(PROVIDER_SECRETS.delete("deepseek"))
+            if route_table.dispatch("DELETE", RequestContext(self, route_deps, parsed, query)):
                 return
             if parsed.path == "/api/room-friends":
                 try:

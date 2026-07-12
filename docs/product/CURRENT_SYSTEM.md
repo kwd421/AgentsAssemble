@@ -112,6 +112,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Routing and provider context | `room_routing.py`, `room_context.py`, `room_turn_context.py` |
 | Fanout and bridge delivery | `room_event_broker.py`, `room_agent_bridge.py` |
 | Provider catalog and settings | `native_cli_providers.py`, `provider_capabilities.py` |
+| Provider catalog/credential HTTP | `gui_provider_http.py`; secret storage in `provider_secrets.py` |
 | Codex app-server lifecycle | `codex_app_server_runtime.py`; compatibility exports in `agent_sessions.py` |
 | Other provider process lifecycle | `room_bridge_process.py`, `live_cli.py`, provider adapter module |
 | Invites and attendance | `room_invite.py`, `room_attendee.py` |

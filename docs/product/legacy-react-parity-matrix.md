@@ -212,6 +212,7 @@ surface rather than silently counted as React parity.
 | `/api/provider-sessions` | GET | exact | `-` | no | Legacy provider-session discovery; the canonical room snapshot now supplies provider capabilities. |
 | `/api/provider-credentials/deepseek` | GET | exact | `fetchDeepSeekCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
 | `/api/provider-credentials/deepseek` | POST | exact | `setDeepSeekCredential()` | yes | Stores a DeepSeek key in the host secure store; the input is cleared by React after submission. |
+| `/api/provider-credentials/deepseek` | DELETE | exact | `deleteDeepSeekCredential()` | yes | Deletes the DeepSeek key from the host secure store; the response never returns the credential value. |
 | `/api/room-events/stream` | GET | sse | `-` | no | Legacy/read-only SSE compatibility endpoint. React receives canonical RoomStore snapshots and events from `/ws?ticket=...`. |
 | `/api/host/claim` | POST | exact | `claimHostDevice()` | yes | Host-token gated: binds this device's stable identity to the operator account so its sessions moderate from any entrance. |
 | `/api/live-agent-create/options` | GET | exact | `-` | no | Legacy create options; canonical provider controls arrive in the room WebSocket snapshot. |
