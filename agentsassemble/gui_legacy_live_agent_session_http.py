@@ -20,7 +20,7 @@ class LegacySessionHttpDeps:
     default_server_url: Callable[[RequestContext], str]
 
 
-def register_legacy_group_session_mutation_routes(
+def register_legacy_session_mutation_routes(
     router: Router,
     *,
     deps: LegacySessionHttpDeps,
@@ -77,3 +77,23 @@ def register_legacy_group_session_mutation_routes(
     @router.post("/api/live-agent-sessions/stop")
     def stop(ctx: RequestContext) -> None:
         execute(ctx, "stop", deps.service.stop)
+
+    @router.post("/api/live-agent-sessions/resume-agent")
+    def resume_agent(ctx: RequestContext) -> None:
+        execute(
+            ctx,
+            "resume_agent",
+            lambda payload: deps.service.resume_agent(payload, default_server=deps.default_server_url(ctx)),
+        )
+
+    @router.post("/api/live-agent-sessions/agent-timing")
+    def agent_timing(ctx: RequestContext) -> None:
+        execute(ctx, "agent_timing", deps.service.agent_timing)
+
+    @router.post("/api/live-agent-sessions/agent-options")
+    def agent_options(ctx: RequestContext) -> None:
+        execute(ctx, "agent_options", deps.service.agent_options)
+
+    @router.post("/api/live-agent-sessions/stop-agent")
+    def stop_agent(ctx: RequestContext) -> None:
+        execute(ctx, "stop_agent", deps.service.stop_agent)

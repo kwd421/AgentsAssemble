@@ -2,15 +2,15 @@ import unittest
 
 from agentsassemble.gui_legacy_live_agent_session_http import (
     LegacySessionHttpDeps,
-    register_legacy_group_session_mutation_routes,
+    register_legacy_session_mutation_routes,
 )
 from agentsassemble.gui_router import Router
 
 
 class GuiLegacyLiveAgentSessionHttpTests(unittest.TestCase):
-    def test_group_session_registrar_owns_exactly_seven_mutation_routes(self) -> None:
+    def test_session_registrar_owns_all_group_and_agent_mutation_routes(self) -> None:
         router = Router()
-        register_legacy_group_session_mutation_routes(
+        register_legacy_session_mutation_routes(
             router,
             deps=LegacySessionHttpDeps(
                 service=object(),  # type: ignore[arg-type]
@@ -29,6 +29,10 @@ class GuiLegacyLiveAgentSessionHttpTests(unittest.TestCase):
                 ("POST", "/api/live-agent-sessions/restart"),
                 ("POST", "/api/live-agent-sessions/recover"),
                 ("POST", "/api/live-agent-sessions/stop"),
+                ("POST", "/api/live-agent-sessions/resume-agent"),
+                ("POST", "/api/live-agent-sessions/agent-timing"),
+                ("POST", "/api/live-agent-sessions/agent-options"),
+                ("POST", "/api/live-agent-sessions/stop-agent"),
             },
         )
 

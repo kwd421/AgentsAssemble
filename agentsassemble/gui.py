@@ -67,7 +67,7 @@ from agentsassemble.gui_legacy_live_agent_read_http import (
 )
 from agentsassemble.gui_legacy_live_agent_session_http import (
     LegacySessionHttpDeps,
-    register_legacy_group_session_mutation_routes,
+    register_legacy_session_mutation_routes,
 )
 from agentsassemble.gui_observability_http import register_observability_routes
 from agentsassemble.gui_public_invite_http import register_public_invite_admin_routes
@@ -7841,7 +7841,7 @@ def _make_handler(
         ),
         record_operation=record_live_agent_operation,
     )
-    register_legacy_group_session_mutation_routes(
+    register_legacy_session_mutation_routes(
         route_table,
         deps=LegacySessionHttpDeps(
             service=legacy_session_service,
@@ -8476,151 +8476,6 @@ def _make_handler(
                     },
                 )
                 self._send_json(created)
-                return
-            if parsed.path == "/api/live-agent-sessions/resume-agent":
-                payload = self._operation_json_payload(operation="session.resume_agent")
-                if payload is None:
-                    return
-                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
-                try:
-                    session = live_agent_session_resume_agent_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                        default_server=self._request_server_url(),
-                    )
-                except (OSError, ValueError) as error:
-                    safe_error = _session_resume_error_message(error)
-                    safe_details = _session_start_error_details(payload, error)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session.resume_agent",
-                        status="failed",
-                        target_id=agent_id or str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
-                        error=safe_error,
-                        details={**safe_details, "agent_id": agent_id},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details={**safe_details, "agent_id": agent_id})
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="session.resume_agent",
-                    status=_session_start_operation_status(session),
-                    target_id=str(session.get("agent_id") or agent_id or session.get("meeting_id") or ""),
-                    summary=_session_resume_operation_summary(session),
-                    details={**_session_start_operation_details(session), "agent_id": str(session.get("agent_id") or agent_id)},
-                )
-                self._send_json(session)
-                return
-            if parsed.path == "/api/live-agent-sessions/agent-timing":
-                payload = self._operation_json_payload(operation="session.agent_timing")
-                if payload is None:
-                    return
-                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
-                try:
-                    session = live_agent_session_agent_timing_payload(output_root, payload)
-                except (OSError, ValueError) as error:
-                    safe_error = str(error)
-                    safe_details = _session_start_error_details(payload, error)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session.agent_timing",
-                        status="failed",
-                        target_id=agent_id or str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
-                        error=safe_error,
-                        details={**safe_details, "agent_id": agent_id},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details={**safe_details, "agent_id": agent_id})
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="session.agent_timing",
-                    status="updated",
-                    target_id=str(session.get("agent_id") or agent_id),
-                    summary=f"poll_interval={session.get('poll_interval')}",
-                    details={
-                        "agent_id": str(session.get("agent_id") or agent_id),
-                        "poll_interval": session.get("poll_interval"),
-                        "config_path": str(session.get("config_path") or ""),
-                    },
-                )
-                self._send_json(session)
-                return
-            if parsed.path == "/api/live-agent-sessions/agent-options":
-                payload = self._operation_json_payload(operation="session.agent_options")
-                if payload is None:
-                    return
-                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
-                try:
-                    session = live_agent_session_agent_options_payload(output_root, payload)
-                except (OSError, ValueError) as error:
-                    safe_error = str(error)
-                    safe_details = _session_start_error_details(payload, error)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session.agent_options",
-                        status="failed",
-                        target_id=agent_id or str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
-                        error=safe_error,
-                        details={**safe_details, "agent_id": agent_id},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details={**safe_details, "agent_id": agent_id})
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="session.agent_options",
-                    status="updated",
-                    target_id=str(session.get("agent_id") or agent_id),
-                    summary=f"permission_option={session.get('permission_option')} fast_mode={session.get('fast_mode')}",
-                    details={
-                        "agent_id": str(session.get("agent_id") or agent_id),
-                        "permission_option": session.get("permission_option"),
-                        "fast_mode": session.get("fast_mode"),
-                        "config_path": str(session.get("config_path") or ""),
-                    },
-                )
-                self._send_json(session)
-                return
-            if parsed.path == "/api/live-agent-sessions/stop-agent":
-                payload = self._operation_json_payload(operation="session.stop_agent")
-                if payload is None:
-                    return
-                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
-                try:
-                    session = live_agent_session_stop_agent_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                    )
-                except (OSError, ValueError) as error:
-                    safe_error = _session_stop_error_message(error)
-                    safe_details = _session_start_error_details(payload, error)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session.stop_agent",
-                        status="failed",
-                        target_id=agent_id or str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
-                        error=safe_error,
-                        details={**safe_details, "agent_id": agent_id},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details={**safe_details, "agent_id": agent_id})
-                    return
-                stopped_runs = live_agent_session_run_controller.mark_matching_stopped(
-                    meeting_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
-                    group_id=str(session.get("group_id") or payload.get("group_id") or ""),
-                    reason="session.stop_agent",
-                )
-                if stopped_runs:
-                    session["session_runs"] = stopped_runs
-                record_live_agent_operation(
-                    output_root,
-                    operation="session.stop_agent",
-                    status=_session_stop_operation_status(session),
-                    target_id=str(session.get("agent_id") or agent_id or session.get("meeting_id") or ""),
-                    summary=_session_stop_operation_summary(session),
-                    details={**_session_stop_operation_details(session), "agent_id": str(session.get("agent_id") or agent_id)},
-                )
-                self._send_json(session)
                 return
             if parsed.path == "/api/live-agent-room/expel":
                 payload = self._operation_json_payload(operation="frontend_agent.expel")
