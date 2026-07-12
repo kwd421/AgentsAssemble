@@ -30,7 +30,6 @@ import {
   fetchRoomChannels,
   createRoomChannel,
   ensureRoomMeeting,
-  fetchRoomMembers,
   fetchMeetingLifecycle,
   fetchWorkroomQueueEvidence,
   applyMeetingStreamUpdate,
@@ -60,6 +59,7 @@ import { useRoomDirectory } from "./app/useRoomDirectory";
 import { useActiveMafiaGame } from "./app/useActiveMafiaGame";
 import { useRoomSideChat } from "./app/useRoomSideChat";
 import { useRoomInviteController } from "./app/useRoomInviteController";
+import { useRoomMembers } from "./app/useRoomMembers";
 import { useRoomSettingsController } from "./app/useRoomSettingsController";
 import type { HomeFilter } from "./app/friendsDirectoryTypes";
 import { useCanonicalRoom } from "./useCanonicalRoom";
@@ -348,7 +348,6 @@ export default function App() {
   const [guestAiPacketStatus, setGuestAiPacketStatus] = useState("");
   const [flowData, setFlowData] = useState<FlowResponse | null>(null);
   const [flowError, setFlowError] = useState<Error | null>(null);
-  const [roomMembersByRoom, setRoomMembersByRoom] = useState<Record<string, RoomMember[]>>({});
   const [agentActivityVisibility, setAgentActivityVisibility] = useState(
     loadAgentActivityVisibility
   );
@@ -490,18 +489,6 @@ export default function App() {
     8000
   );
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? EMPTY_ROOM;
-  const handleRoomMembersChanged = useCallback((room: RoomDockItem, members: RoomMember[]) => {
-    setRoomMembersByRoom((previous) => ({
-      ...previous,
-      [roomSettingsKey(room)]: members,
-    }));
-  }, []);
-  const roomSettings = useRoomSettingsController({
-    activeRoom,
-    onRoomMetadataLoaded: updateRoomByMeetingId,
-    onMembersChanged: handleRoomMembersChanged,
-  });
-  const roomAppearances = roomSettings.appearances;
   const activeSideChatMeetingId = activeRoom.meetingId || "";
   const {
     error: sideChatError,
@@ -549,10 +536,24 @@ export default function App() {
     onSideChat: handleSideChatRealtimeEvents,
     onError: handleSideChatError,
   });
+  const roomMembers = useRoomMembers({
+    activeRoom,
+    canonicalParticipants: canonicalRoom.participants,
+    membershipRevision: canonicalRoom.membershipRevision,
+    sessionToken: guestSession?.sessionToken || "",
+  });
+  const activeRoomMembers = roomMembers.activeMembers;
+  const refreshMembers = roomMembers.refresh;
+  const roomSettings = useRoomSettingsController({
+    activeRoom,
+    onRoomMetadataLoaded: updateRoomByMeetingId,
+    onMembersChanged: roomMembers.replaceMembers,
+  });
+  const roomAppearances = roomSettings.appearances;
   const roomInvite = useRoomInviteController({
     guestLocked,
     availableProviders: canonicalRoom.availableProviders,
-    onMembersChanged: handleRoomMembersChanged,
+    onMembersChanged: roomMembers.replaceMembers,
   });
   const {
     modal: inviteModal,
@@ -610,15 +611,6 @@ export default function App() {
   });
 
   const activeRoomKey = roomSettingsKey(activeRoom);
-  const activeRoomMembers = useMemo(() => {
-    const byId = new Map(
-      (roomMembersByRoom[activeRoomKey] || []).map((member) => [member.participant_id, member])
-    );
-    canonicalRoom.participants.forEach((participant) => {
-      byId.set(participant.participant_id, participant);
-    });
-    return [...byId.values()];
-  }, [activeRoomKey, canonicalRoom.participants, roomMembersByRoom]);
   const agents: LiveAgent[] = activeRoomMembers
     .filter(
       (member) =>
@@ -840,26 +832,10 @@ export default function App() {
     },
     []
   );
-  const refreshMembers = useCallback(() => {
-    if (!activeRoom.meetingId) return;
-    // Through the public entrance the roster endpoint requires the guest
-    // session token; the local console reads it without one.
-    fetchRoomMembers(activeRoom.meetingId, guestSession?.sessionToken || "")
-      .then((payload) => {
-        setRoomMembersByRoom((previous) => ({
-          ...previous,
-          [activeRoomKey]: payload.members || [],
-        }));
-      })
-      .catch(() => {
-        // Roster refresh is best-effort; a transient miss should not blank the room.
-      });
-  }, [activeRoom.meetingId, activeRoomKey, guestSession?.sessionToken]);
   const refreshSessionSurfaces = useCallback(() => {
     refreshProcesses();
     refreshFlow();
-    refreshMembers();
-  }, [refreshFlow, refreshMembers, refreshProcesses]);
+  }, [refreshFlow, refreshProcesses]);
   const refreshSessionAndMembers = useCallback(() => {
     refreshSessionSurfaces();
     refreshMembers();
@@ -1274,7 +1250,7 @@ export default function App() {
     ? localPreviewInviteUrlForRoom(inviteModalRoom)
     : "";
   const inviteModalMembers = inviteModalRoom
-    ? roomMembersByRoom[roomSettingsKey(inviteModalRoom)] || []
+    ? roomMembers.cachedMembersFor(inviteModalRoom)
     : [];
   const activeAppearance = roomSettings.appearanceFor(activeRoom);
   const activeRoomStyle = useMemo(() => roomAppearanceStyle(activeAppearance), [activeAppearance]);
@@ -1369,10 +1345,6 @@ export default function App() {
     if (guestLocked) return;
     refreshProcesses();
   }, [guestLocked, refreshProcesses, activeRoom.meetingId]);
-
-  useEffect(() => {
-    refreshMembers();
-  }, [canonicalRoom.membershipRevision, refreshMembers]);
 
   function updateMemberRole(memberId: string, role: RoomMember["role"]) {
     roomSettings.updateMemberRole(activeRoom, activeRoomMembers, memberId, role);
