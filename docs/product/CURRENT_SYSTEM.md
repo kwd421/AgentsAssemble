@@ -2,7 +2,7 @@
 
 Status: current starting point
 
-Updated: 2026-07-11
+Updated: 2026-07-12
 
 Read this file before changing rooms, Agent Sessions, providers, invites,
 moderation, media, or the React room UI. It is intentionally short. Follow its
@@ -122,10 +122,13 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Room settings HTTP | `gui_room_settings_http.py`; persistence and normalization in `room_settings.py` |
 | Friends, direct-message and local-profile HTTP | `gui_social_http.py`; direct-message process callback wired in `gui.py` |
 | Play Mode Mafia HTTP | `gui_mafia_http.py`; game state and rules in `mafia_game.py` |
-| Side-chat storage and room scoping | `side_chat.py`; event normalization in `meeting_events.py`; transport in `gui.py` |
+| Side-chat storage and room scoping | `side_chat.py`; event normalization in `meeting_events.py`; HTTP/SSE routes in `gui_side_chat_http.py` |
 | CLI parser registration | `cli_parser_common.py`, `cli_parser_*.py`; dispatch in `cli.py` |
-| React room state | `frontend/src/App.tsx`, `frontend/src/app/`, `useCanonicalRoom.ts` |
+| Canonical React transport and sequenced history | `frontend/src/useCanonicalRoom.ts`, `frontend/src/roomSocketClient.ts` |
+| React room composition | `frontend/src/App.tsx`; domain state belongs in focused hooks under `frontend/src/app/` |
 | Room directory cache and hydration | `frontend/src/app/useRoomDirectory.ts`, `frontend/src/lib/roomDockModel.ts` |
+| Room members, settings, channels, invites, and side chat | `frontend/src/app/useRoomMembers.ts`, `useRoomSettingsController.ts`, `useRoomChannels.ts`, `useRoomInviteController.ts`, `useRoomSideChat.ts` |
+| Typing versus visible agent activity policy | `frontend/src/lib/roomTypingIndicators.ts`, `agentActivityPreferences.ts` |
 | Friends directory and DM selection | `frontend/src/app/useFriendsDirectory.ts`, `frontend/src/views/FriendsView.tsx` |
 | Active Play Mode Mafia game lifecycle | `frontend/src/app/useActiveMafiaGame.ts`; presentation in `App.tsx` and `LiveView.tsx` |
 | Frontend API client | `frontend/src/api/`; compatibility barrel in `frontend/src/api.ts` |
