@@ -48,6 +48,12 @@ def _rewrite_react_app_index(html: str) -> str:
 class GuiResponseMethods:
     """Transport-only response methods mixed into the request handler."""
 
+    def handle(self) -> None:
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+
     def _send_react_app_index(self, frontend_root: Path) -> None:
         index_path = frontend_root / "index.html"
         if not frontend_dist_status(frontend_root).static_available:

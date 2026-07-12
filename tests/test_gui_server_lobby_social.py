@@ -742,11 +742,12 @@ class GuiServerLobbySocialTests(unittest.TestCase):
                 )
                 with self.assertRaises(HTTPError) as error_context:
                     urlopen(request, timeout=4)
+                error_code = error_context.exception.code
+                error_context.exception.close()
+                self.assertEqual(error_code, HTTPStatus.UNAUTHORIZED)
             finally:
                 server.shutdown()
                 server.server_close()
-
-        self.assertEqual(error_context.exception.code, HTTPStatus.UNAUTHORIZED)
 
 
     def test_live_agent_flow_status_restores_latest_flow_from_lobby_log(self):
@@ -1625,6 +1626,9 @@ class GuiServerLobbySocialTests(unittest.TestCase):
                 )
                 with self.assertRaises(HTTPError) as error_context:
                     urlopen(bad_request, timeout=4)
+                error_code = error_context.exception.code
+                error_context.exception.close()
+                self.assertEqual(error_code, 400)
             finally:
                 server.shutdown()
                 server.server_close()
@@ -1640,7 +1644,6 @@ class GuiServerLobbySocialTests(unittest.TestCase):
             self.assertEqual(remote_member["role"], "agent")
             self.assertEqual(remote_member["participant_type"], "remote")
             self.assertEqual(other_room_payload["members"], [])
-            self.assertEqual(error_context.exception.code, 400)
 
 
     def test_legacy_side_chat_lines_are_read_as_side_chat_channel(self):

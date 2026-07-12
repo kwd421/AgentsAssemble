@@ -822,13 +822,20 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                 base = f"http://127.0.0.1:{server.server_port}"
                 with self.assertRaises(HTTPError) as rebind:
                     urlopen(Request(f"{base}/api/lobby", headers={"Host": "evil.example.com"}), timeout=4)
-                self.assertEqual(rebind.exception.code, 403)
+                rebind_code = rebind.exception.code
+                rebind.exception.close()
+                self.assertEqual(rebind_code, 403)
                 with self.assertRaises(HTTPError) as csrf:
                     urlopen(Request(f"{base}/api/lobby", headers={"Origin": "http://evil.example.com"}), timeout=4)
-                self.assertEqual(csrf.exception.code, 403)
+                csrf_code = csrf.exception.code
+                csrf.exception.close()
+                self.assertEqual(csrf_code, 403)
                 # Loopback host with a non-matching port and loopback origin remain allowed.
-                ok = urlopen(Request(f"{base}/api/lobby", headers={"Host": "localhost:1", "Origin": base}), timeout=4)
-                self.assertEqual(ok.status, 200)
+                with urlopen(
+                    Request(f"{base}/api/lobby", headers={"Host": "localhost:1", "Origin": base}),
+                    timeout=4,
+                ) as ok:
+                    self.assertEqual(ok.status, 200)
             finally:
                 server.shutdown()
                 server.server_close()
