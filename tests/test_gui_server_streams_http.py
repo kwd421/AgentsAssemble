@@ -140,6 +140,37 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
             self.assertLess(elapsed_seconds, 0.7)
 
 
+    def test_side_chat_sse_streams_only_the_requested_room(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            room_a = append_side_chat_event(
+                root,
+                {"name": "A", "message": "room-a only", "flow_meeting_id": "room-a"},
+            )
+            append_side_chat_event(
+                root,
+                {"name": "B", "message": "room-b only", "flow_meeting_id": "room-b"},
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/events/side-chat?meeting_id=room-a",
+                    timeout=4,
+                ) as response:
+                    frame = _read_sse_frame(response)
+                time.sleep(0.2)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertIn("event: side_chat", frame)
+            self.assertIn(str(room_a["id"]), frame)
+            self.assertIn("room-a only", frame)
+            self.assertNotIn("room-b only", frame)
+
+
     def test_sse_client_disconnect_does_not_log_connection_reset_traceback(self):
         stderr = StringIO()
         with tempfile.TemporaryDirectory() as temp_dir:

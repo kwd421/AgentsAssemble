@@ -1260,7 +1260,7 @@ class GuiServerLobbySocialTests(unittest.TestCase):
             self.assertEqual([event["message"] for event in room_a_payload["events"]], ["room-a only"])
             self.assertEqual([event["message"] for event in room_b_payload["events"]], ["room-b only"])
 
-    def test_side_chat_post_uses_gui_module_globals_after_handler_construction(self):
+    def test_side_chat_post_uses_route_module_storage_after_handler_construction(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             handler_class = _make_handler(root)
@@ -1271,8 +1271,14 @@ class GuiServerLobbySocialTests(unittest.TestCase):
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                with patch("agentsassemble.gui.append_side_chat_event", return_value=injected_event) as append_mock:
-                    with patch("agentsassemble.gui.read_side_chat", return_value=injected_events) as read_mock:
+                with patch(
+                    "agentsassemble.gui_side_chat_http.append_side_chat_event",
+                    return_value=injected_event,
+                ) as append_mock:
+                    with patch(
+                        "agentsassemble.gui_side_chat_http.read_side_chat",
+                        return_value=injected_events,
+                    ) as read_mock:
                         request = Request(
                             f"http://127.0.0.1:{server.server_port}/api/side-chat",
                             data=json.dumps(payload).encode("utf-8"),

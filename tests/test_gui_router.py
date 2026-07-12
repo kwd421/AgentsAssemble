@@ -80,6 +80,11 @@ class RequestContextBodyTests(unittest.TestCase):
     def test_read_json_body_empty_is_empty_dict(self):
         self.assertEqual(_context(FakeHandler()).read_json_body(), {})
 
+    def test_read_json_body_can_preserve_legacy_empty_object_coercion(self):
+        handler = FakeHandler(body=b"[1, 2]")
+        self.assertEqual(_context(handler).read_json_body(coerce_non_object=True), {})
+        self.assertIsNone(handler.sent_error)
+
 
 class RequestContextIdentityTests(unittest.TestCase):
     def setUp(self):

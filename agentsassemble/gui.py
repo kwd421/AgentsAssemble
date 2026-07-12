@@ -64,6 +64,7 @@ from agentsassemble.gui_observability_http import register_observability_routes
 from agentsassemble.gui_public_invite_http import register_public_invite_admin_routes
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
 from agentsassemble.gui_room_settings_http import register_room_settings_routes
+from agentsassemble.gui_side_chat_http import register_side_chat_routes
 from agentsassemble.gui_social_http import register_room_friend_profile_routes
 from agentsassemble.gui_response import (
     GuiResponseMethods,
@@ -243,8 +244,6 @@ from agentsassemble.meeting_events import (
 )
 from agentsassemble.side_chat import (
     _filter_side_chat_events_for_meeting,
-    _side_chat_scope_id,
-    append_side_chat_event,
     read_side_chat,
 )
 from agentsassemble.room_store import RoomStore
@@ -8266,6 +8265,7 @@ def _make_handler(
     route_table = Router()
     register_room_routes(route_table)
     register_room_settings_routes(route_table)
+    register_side_chat_routes(route_table)
 
     def _late_room_friend_direct_dm(ctx: RequestContext, payload: dict[str, object]) -> dict[str, object]:
         return room_friend_direct_dm_payload(
@@ -8421,19 +8421,6 @@ def _make_handler(
                 self._send_sse_stream(
                     "lobby",
                     "lobby",
-                    meeting_id=str(query.get("meeting_id", [""])[0] or ""),
-                    last_event_id=self._last_event_id(query),
-                )
-                return
-            if path == "/api/side-chat":
-                self._send_json(
-                    {"events": read_side_chat(output_root, meeting_id=str(query.get("meeting_id", [""])[0] or ""))}
-                )
-                return
-            if path == "/api/events/side-chat":
-                self._send_sse_stream(
-                    "side_chat",
-                    "side_chat",
                     meeting_id=str(query.get("meeting_id", [""])[0] or ""),
                     last_event_id=self._last_event_id(query),
                 )
@@ -8780,24 +8767,6 @@ def _make_handler(
                         "events": read_lobby(
                             output_root,
                             meeting_id=clean_lobby_text(event.get("flow_meeting_id"), limit=128),
-                        ),
-                    }
-                )
-                return
-            if parsed.path == "/api/side-chat":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                event = append_side_chat_event(output_root, payload if isinstance(payload, dict) else {})
-                self._send_json(
-                    {
-                        "event": event,
-                        "events": read_side_chat(
-                            output_root,
-                            meeting_id=_side_chat_scope_id(event.get("flow_meeting_id")),
                         ),
                     }
                 )

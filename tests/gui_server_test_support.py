@@ -28,7 +28,6 @@ from agentsassemble.gui import (
     list_meetings,
     provider_catalog_payload,
     read_lobby,
-    read_side_chat,
     serve_gui,
     codex_session_invite_payload,
     codex_sessions_payload,
@@ -54,7 +53,6 @@ from agentsassemble.gui import (
     live_agent_session_ensure_payload,
     _attach_session_auto_rounds_if_requested,
     send_lobby_message_to_remote_bridge,
-    append_side_chat_event,
 )
 from agentsassemble.gui_room_http import register_room_routes
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
@@ -77,6 +75,7 @@ from agentsassemble.room_invite import (
     set_runtime_public_url,
 )
 from agentsassemble.room_store import RoomStore
+from agentsassemble.side_chat import append_side_chat_event, read_side_chat
 from agentsassemble.room_members import set_room_member_muted
 from agentsassemble.room_users import (
     configure_room_users_store,

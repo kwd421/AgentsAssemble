@@ -76,7 +76,7 @@ class RequestContext:
     def send_error(self, status: HTTPStatus, message: str) -> None:
         self.handler._send_error(status, message)
 
-    def read_json_body(self) -> dict[str, object] | None:
+    def read_json_body(self, *, coerce_non_object: bool = False) -> dict[str, object] | None:
         """Parse the JSON request body; sends 400 and returns None when bad."""
         length = int(self.headers.get("Content-Length", "0") or "0")
         try:
@@ -84,10 +84,32 @@ class RequestContext:
         except json.JSONDecodeError:
             self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
             return None
+        if not isinstance(payload, dict) and coerce_non_object:
+            return {}
         if not isinstance(payload, dict):
             self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
             return None
         return payload
+
+    def last_event_id(self) -> str | None:
+        """Return the SSE resume cursor from the header or query string."""
+        return self.handler._last_event_id(self.query)
+
+    def send_sse_stream(
+        self,
+        event_name: str,
+        stream: str,
+        *,
+        meeting_id: str | None = None,
+        last_event_id: str | None = None,
+    ) -> None:
+        """Delegate a legacy SSE stream to the server transport."""
+        self.handler._send_sse_stream(
+            event_name,
+            stream,
+            meeting_id=meeting_id,
+            last_event_id=last_event_id,
+        )
 
     # -- identity (R2-b): host / invited session / anonymous ---------------
     def bearer_token(self) -> str:
