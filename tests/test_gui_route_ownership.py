@@ -1,11 +1,26 @@
 import ast
 import unittest
+from collections import defaultdict
 from pathlib import Path
+from urllib.parse import unquote
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 GUI_SOURCE = REPOSITORY_ROOT / "agentsassemble" / "gui.py"
 GUI_ROUTE_MODULES = tuple(sorted((REPOSITORY_ROOT / "agentsassemble").glob("gui*_http.py")))
+DYNAMIC_ROUTE_HELPERS = {
+    "_live_agent_process_action_path": ("POST", "/api/live-agent-processes/{group_id}/{action}"),
+    "_live_agent_session_run_action_path": ("POST", "/api/live-agent-session-runs/{run_id}/{action}"),
+}
+EXPECTED_LEGACY_DYNAMIC_ROUTES = {
+    ("POST", "/api/live-agent-processes/{group_id}/stop"),
+    ("POST", "/api/live-agent-processes/{group_id}/restart"),
+    ("POST", "/api/live-agent-processes/{group_id}/recover"),
+    ("POST", "/api/live-agent-session-runs/{run_id}/pause"),
+    ("POST", "/api/live-agent-session-runs/{run_id}/resume"),
+    ("POST", "/api/live-agent-session-runs/{run_id}/stop"),
+    ("POST", "/api/live-agent-session-runs/{run_id}/retry-now"),
+}
 
 
 def _registered_exact_routes() -> set[tuple[str, str]]:
@@ -38,17 +53,17 @@ def _legacy_exact_routes() -> set[tuple[str, str]]:
             self.method = previous_method
 
         def visit_Compare(self, node: ast.Compare) -> None:
-            if self.method and len(node.ops) == 1 and isinstance(node.ops[0], ast.Eq):
+            if not self.method or len(node.ops) != 1:
+                self.generic_visit(node)
+                return
+            operator = node.ops[0]
+            if isinstance(operator, ast.Eq):
                 operands = [node.left, *node.comparators]
-                names = {_operand_name(operand) for operand in operands}
-                if names.intersection({"path", "parsed.path", "self.path"}):
+                if any(_operand_name(operand) in {"path", "parsed.path", "self.path"} for operand in operands):
                     for operand in operands:
-                        if (
-                            isinstance(operand, ast.Constant)
-                            and isinstance(operand.value, str)
-                            and operand.value.startswith("/")
-                        ):
-                            routes.add((self.method, operand.value))
+                        routes.update((self.method, path) for path in _literal_paths(operand))
+            elif isinstance(operator, ast.In) and _operand_name(node.left) in {"path", "parsed.path", "self.path"}:
+                routes.update((self.method, path) for path in _literal_paths(node.comparators[0]))
             self.generic_visit(node)
 
     LegacyRouteVisitor().visit(tree)
@@ -63,6 +78,65 @@ def _operand_name(node: ast.expr) -> str:
     return ""
 
 
+def _literal_paths(node: ast.expr) -> set[str]:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("/"):
+        return {node.value}
+    if isinstance(node, (ast.Set, ast.Tuple, ast.List)):
+        return {
+            value.value
+            for value in node.elts
+            if isinstance(value, ast.Constant) and isinstance(value.value, str) and value.value.startswith("/")
+        }
+    return set()
+
+
+def _dynamic_route_owners() -> dict[tuple[str, str], set[Path]]:
+    owners: dict[tuple[str, str], set[Path]] = defaultdict(set)
+    for source_path in (GUI_SOURCE, *GUI_ROUTE_MODULES):
+        tree = ast.parse(source_path.read_text(encoding="utf-8"))
+
+        class DynamicRouteVisitor(ast.NodeVisitor):
+            method = ""
+
+            def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+                previous_method = self.method
+                if node.name in {"do_GET", "do_POST", "do_DELETE"}:
+                    self.method = node.name.removeprefix("do_")
+                self.generic_visit(node)
+                self.method = previous_method
+
+            def visit_Call(self, node: ast.Call) -> None:
+                helper_name = node.func.id if isinstance(node.func, ast.Name) else ""
+                route_family = DYNAMIC_ROUTE_HELPERS.get(helper_name)
+                if route_family and len(node.args) >= 2:
+                    default_method, template = route_family
+                    action_node = node.args[1]
+                    if isinstance(action_node, ast.Constant) and isinstance(action_node.value, str):
+                        method = self.method or default_method
+                        owners[(method, template.replace("{action}", action_node.value))].add(source_path)
+                self.generic_visit(node)
+
+        DynamicRouteVisitor().visit(tree)
+    return dict(owners)
+
+
+def _match_dynamic_route(template: str, path: str) -> dict[str, str] | None:
+    template_parts = template.strip("/").split("/")
+    path_parts = path.strip("/").split("/")
+    if len(template_parts) != len(path_parts):
+        return None
+    values: dict[str, str] = {}
+    for expected, actual in zip(template_parts, path_parts, strict=True):
+        if expected.startswith("{") and expected.endswith("}"):
+            decoded = unquote(actual)
+            if not decoded:
+                return None
+            values[expected[1:-1]] = decoded
+        elif expected != actual:
+            return None
+    return values
+
+
 class GuiRouteOwnershipTests(unittest.TestCase):
     def test_registered_routes_do_not_shadow_retained_legacy_exact_routes(self) -> None:
         overlap = _registered_exact_routes().intersection(_legacy_exact_routes())
@@ -72,6 +146,28 @@ class GuiRouteOwnershipTests(unittest.TestCase):
             set(),
             "Move an exact route to the Router or retain it in the legacy chain, never both.",
         )
+
+    def test_legacy_exact_inventory_detects_literal_membership_routes(self) -> None:
+        routes = _legacy_exact_routes()
+
+        self.assertIn(("GET", "/join"), routes)
+        self.assertIn(("GET", "/app"), routes)
+
+    def test_dynamic_route_inventory_is_explicit_and_has_one_owner(self) -> None:
+        owners = _dynamic_route_owners()
+
+        self.assertEqual(set(owners), EXPECTED_LEGACY_DYNAMIC_ROUTES)
+        self.assertTrue(all(len(route_owners) == 1 for route_owners in owners.values()))
+
+    def test_dynamic_route_matcher_rejects_false_prefixes_and_decodes_ids(self) -> None:
+        template = "/api/live-agent-processes/{group_id}/stop"
+
+        self.assertEqual(
+            _match_dynamic_route(template, "/api/live-agent-processes/group%2Fone/stop"),
+            {"group_id": "group/one"},
+        )
+        self.assertIsNone(_match_dynamic_route(template, "/api/live-agent-processes/group/stop/extra"))
+        self.assertIsNone(_match_dynamic_route(template, "/api/not-live-agent-processes/group/stop"))
 
 
 if __name__ == "__main__":
