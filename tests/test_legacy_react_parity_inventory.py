@@ -233,6 +233,8 @@ def _api_ts_route_refs(text: str) -> list[tuple[str, str, str]]:
             current_method = "GET"
         if current_function and "postJson" in line:
             current_method = "POST"
+        elif current_function and "deleteJson" in line:
+            current_method = "DELETE"
         elif current_function and "EventSource" in line:
             current_method = "GET_SSE"
         if 'method: "DELETE"' in line:

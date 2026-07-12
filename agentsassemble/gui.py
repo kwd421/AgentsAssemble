@@ -59,6 +59,7 @@ from agentsassemble.gui_provider_http import (
     register_provider_routes,
 )
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
+from agentsassemble.gui_social_http import register_room_friend_profile_routes
 from agentsassemble.gui_response import (
     GuiResponseMethods,
     _last_payload_event_id,
@@ -175,9 +176,7 @@ from agentsassemble.room_friend_dms import (
     append_live_agent_dm_reply,
     enqueue_room_friend_direct_dm,
     read_live_agent_dm_events,
-    room_friend_dm_payload,
 )
-from agentsassemble.room_friends import delete_room_friend, room_friends_payload, upsert_room_friend
 from agentsassemble.identity_store import default_identity_db_path
 from agentsassemble.room_members import is_room_member_muted, mark_thinking, room_members_payload
 from agentsassemble.room_speech import (
@@ -221,7 +220,6 @@ from agentsassemble.room_users import (
 )
 from agentsassemble.room_settings import room_settings_payload, update_room_settings
 from agentsassemble.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
-from agentsassemble.user_profile import read_user_profile, update_user_profile
 from agentsassemble.room_invite import (
     active_sessions_summary,
     configure_room_invite_store,
@@ -8336,6 +8334,16 @@ def _make_handler(
     route_table = Router()
     register_room_routes(route_table)
 
+    def _late_room_friend_direct_dm(ctx: RequestContext, payload: dict[str, object]) -> dict[str, object]:
+        return room_friend_direct_dm_payload(
+            ctx.deps.output_root,
+            ctx.deps.process_supervisor,
+            payload,
+            default_server=ctx.handler._request_server_url(),
+        )
+
+    register_room_friend_profile_routes(route_table, post_direct_dm=_late_room_friend_direct_dm)
+
     def _late_provider_credentials_allowed(ctx: RequestContext) -> bool:
         return ctx.handler._provider_credentials_allowed()
 
@@ -8474,23 +8482,6 @@ def _make_handler(
                 return
             if path == "/api/room-settings":
                 self._send_json(room_settings_payload(output_root, room_id=str(query.get("room_id", [""])[0] or "")))
-                return
-            if path == "/api/room-friends/dm":
-                try:
-                    self._send_json(
-                        room_friend_dm_payload(
-                            output_root,
-                            str(query.get("friend_id", [""])[0] or ""),
-                        )
-                    )
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                return
-            if path == "/api/room-friends":
-                self._send_json(room_friends_payload(output_root, read_live_agents(output_root)))
-                return
-            if path == "/api/user-profile":
-                self._send_json(read_user_profile(output_root))
                 return
             if path == "/api/live-agents":
                 self._send_json(
@@ -8913,58 +8904,6 @@ def _make_handler(
                     self._send_json(update_room_settings(output_root, payload))
                 except ValueError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                return
-            if parsed.path == "/api/room-friends/dm":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                try:
-                    self._send_json(
-                        room_friend_direct_dm_payload(
-                            output_root,
-                            live_agent_process_supervisor,
-                            payload,
-                            default_server=self._request_server_url(),
-                        )
-                    )
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                return
-            if parsed.path == "/api/room-friends":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                friend = upsert_room_friend(output_root, payload)
-                self._send_json(
-                    {
-                        "friend": friend,
-                        **room_friends_payload(output_root, read_live_agents(output_root)),
-                    }
-                )
-                return
-            if parsed.path == "/api/user-profile":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                self._send_json(update_user_profile(output_root, payload))
                 return
             if parsed.path == "/api/lobby/remote":
                 length = int(self.headers.get("Content-Length", "0") or "0")
@@ -11254,19 +11193,6 @@ def _make_handler(
                 return
             query = parse_qs(parsed.query)
             if route_table.dispatch("DELETE", RequestContext(self, route_deps, parsed, query)):
-                return
-            if parsed.path == "/api/room-friends":
-                try:
-                    deleted = delete_room_friend(output_root, str(query.get("friend_id", [""])[0] or ""))
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                self._send_json(
-                    {
-                        "deleted": deleted,
-                        **room_friends_payload(output_root, read_live_agents(output_root)),
-                    }
-                )
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")
 

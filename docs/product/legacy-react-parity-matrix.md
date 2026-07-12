@@ -192,8 +192,9 @@ surface rather than silently counted as React parity.
 | `/api/public-invite/tunnel/stop` | POST | exact | `stopPublicInviteTunnel()` | yes | React invite modal can stop the current public tunnel through the host-token-gated endpoint. |
 | `/api/release-health` | GET | exact | `fetchReleaseHealth()` | yes | React read-only release health catalog. |
 | `/api/release-health/queue` | GET | exact | `fetchReleaseHealthQueue()` | yes | React read-only release-health latest status projection. |
-| `/api/room-friends` | GET | exact | `fetchRoomFriends(), deleteRoomFriend()` | yes | React home/friends screen reads persisted friends and active-session suggestions; the same query-shaped route is used by the saved-friend delete wrapper. |
+| `/api/room-friends` | GET | exact | `fetchRoomFriends()` | yes | React home/friends screen reads persisted friends and active-session suggestions. |
 | `/api/room-friends` | POST | exact | `addRoomFriend()` | yes | React home/friends screen persists people, subscription AI, API, Local, remote, and unknown participants. |
+| `/api/room-friends` | DELETE | exact | `deleteRoomFriend()` | yes | React home/friends screen removes one persisted saved friend by friend id. |
 | `/api/room-friends/dm` | GET | exact | `fetchRoomFriendDm()` | yes | React profile panel reads the direct DM log and delivery state for a saved friend id only. |
 | `/api/room-friends/dm` | POST | exact | `postRoomFriendDm()` | yes | React profile panel queues a direct AI DM for saved AI friends mapped to a live-agent id, optionally resuming only an existing host-approved session group; it does not send Discord messages, write lobby events, or create room membership. |
 | `/api/live-agents/{agent_id}/dm-reply` | POST | prefix | `-` | no | Resident runners, CLI, and MCP participants reply to one queued direct DM event; the reply is stored only in the friend DM log and advances the agent's DM cursor. |

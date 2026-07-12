@@ -28,22 +28,25 @@ explicit modules.
 | `MemberList.tsx` | 1,741 | 494 | typed member rows, diagnostics, identity and session-control components |
 | `App.tsx` | 2,988 | 2,801 | guest admission, room directory and friends/DM lifecycles in focused `app/` hooks |
 | `test_cli_timeout.py` | 16,248 | 45 | 15 domain suites; legacy direct command still runs all 404 tests |
-| `test_gui_server.py` | 22,491 | 56 | 22 domain suites; compatibility loader runs all 393 current tests |
+| `test_gui_server.py` | 22,491 | 57 | 23 domain suites; compatibility loader runs all 401 current tests |
 
 Additional results:
 
 - canonical room HTTP registration is now split across four domain registrars;
 - provider catalogs and DeepSeek credential GET/POST/DELETE now use a focused
   HTTP registrar while `provider_secrets.py` remains the secret owner;
+- friends, direct-message and local-profile GET/POST/DELETE routes now use one
+  focused HTTP registrar; the process-owning direct-message callback remains a
+  late-bound dependency in `gui.py`;
 - HTTP response delivery and WebSocket upgrade lifecycle are isolated from the
   large GUI request handler;
 - the frontend API compatibility barrel retains the same 169 exports;
 - moved Python runtime/context definitions are AST-identical to the baseline;
 - compatibility imports for moved Agent Session runtime/context names are
   regression-tested, while shared provider normalization has one implementation;
-- split GUI tests retain 383/383 test bodies and split CLI tests retain
-  404/404, including the original platform guards; one GUI compatibility test
-  was added after the split;
+- split GUI tests retain the original test bodies and split CLI tests retain
+  404/404, including the original platform guards; focused behavioral route
+  coverage brings the GUI compatibility loader to 401 tests;
 - the frontend TypeScript runtime-test compiler now resolves `.tsx` and
   directory `index.ts` imports and keeps output inside its temporary root;
 - one real defect found during refactoring was fixed: frontend API requests and
@@ -74,9 +77,9 @@ Additional results:
 
 Verification evidence:
 
-- `python3 -m unittest discover -s tests -t .`: 2,825 passed;
+- `python3 -m unittest discover -s tests -t .`: 2,833 passed;
 - final Agent Session and CLI regression pass after deduplication: 491 passed;
-- narrow compatibility-loader discovery: CLI 404 passed; GUI 393 passed;
+- narrow compatibility-loader discovery: CLI 404 passed; GUI 401 passed;
 - `npm --prefix frontend test`: 50 passed;
 - `npm --prefix frontend run build`: passed;
 - canonical desktop/mobile Playwright flow: passed;
@@ -120,8 +123,9 @@ routes, tunnel behavior, process supervision, friends, Mafia and other domains.
 A maintainer changing one endpoint must load unrelated route and lifecycle
 context.
 
-The current file is 11,646 lines after room, transport and provider
-catalog/credential routes were extracted. It remains the highest-risk module.
+The current file is 11,572 lines after room, transport, provider
+catalog/credential and social/profile routes were extracted. It remains the
+highest-risk module.
 
 Recommended split, preserving URLs and behavior:
 
@@ -262,7 +266,7 @@ cleanup. Deleting a retired path is better than making it beautifully modular.
 
 | Test file | Lines | Test methods |
 | --- | ---: | ---: |
-| `test_gui_server.py` | 56 compatibility loader | 393 current tests across domain suites |
+| `test_gui_server.py` | 57 compatibility loader | 401 current tests across domain suites |
 | `test_cli_timeout.py` | 45 compatibility loader | 404 across domain suites |
 | `test_live_agent_runner.py` | 5,352 | many under one 5,248-line class |
 | `test_live_agent_processes.py` | 4,487 | many under one 4,394-line class |

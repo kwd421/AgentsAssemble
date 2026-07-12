@@ -32,6 +32,7 @@ _DOMAIN_MODULES = (
     "session_recovery",
     "moderation_finalization",
     "lobby_social",
+    "social_http",
     "streams_http",
     "provider_http",
 )
