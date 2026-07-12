@@ -2162,6 +2162,58 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertEqual(packet["provider_visible_event_count"], 12)
         self.assertEqual(packet["last_provider_sync_event_id_after"], source["id"])
 
+    def test_prompt_budget_does_not_advance_cursor_past_omitted_events(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-a",
+                "session_id": "session-a",
+                "provider_kind": "codex_live_session",
+            },
+        )
+        store.upsert_session(
+            "room-a",
+            {
+                **store.session("room-a", "session-a"),
+                "bootstrap_done": True,
+                "recovery_required": True,
+                "room_memory": {"summary": "memory " * 900},
+            },
+        )
+        first = store.append_event(
+            "room-a",
+            "message_final",
+            participant_id="human",
+            content="FIRST-INCLUDED " + ("a" * 300),
+        )
+        second = store.append_event(
+            "room-a",
+            "message_final",
+            participant_id="human",
+            content="SECOND-DEFERRED " + ("b" * 300),
+        )
+
+        packet = build_room_turn_packet(
+            self.output_root,
+            room_id="room-a",
+            participant_id="agent-a",
+            session_id="session-a",
+            instruction="Reply to what you can see.",
+            max_prompt_chars=650,
+        )
+
+        included_ids = [event["id"] for event in packet["events"]]
+        self.assertEqual(included_ids, [first["id"]])
+        self.assertIn("FIRST-INCLUDED", packet["provider_input"])
+        self.assertNotIn("SECOND-DEFERRED", packet["provider_input"])
+        self.assertEqual(packet["provider_visible_event_count"], 1)
+        self.assertEqual(packet["last_provider_sync_event_id_after"], first["id"])
+        self.assertEqual(packet["last_provider_sync_seq_after"], first["seq"])
+        self.assertLess(first["seq"], second["seq"])
+
     def test_media_is_not_implicitly_sent_without_selection_or_room_reference(self):
         store = RoomStore(self.output_root)
         store.create_room("room-a")
@@ -2190,6 +2242,51 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         self.assertEqual(packet["media_manifest"], [])
         self.assertEqual([item["id"] for item in selected_packet["media_manifest"]], [media["id"]])
+
+    def test_provider_media_manifest_projects_only_allowlisted_keys(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        result = resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-a",
+                "session_id": "session-a",
+                "provider_kind": "codex_live_session",
+            },
+        )
+        store.append_event(
+            "room-a",
+            "media_attached",
+            media={
+                "id": "media-safe",
+                "filename": "safe.png",
+                "content_type": "image/png",
+                "size": 12,
+                "supported": True,
+                "representation": "native",
+                "path": "/private/secret.png",
+                "local_path": "/private/secret-2.png",
+                "signed_url": "https://example.invalid/private-token",
+                "storage_locator": "bucket/private",
+            },
+        )
+
+        packet = build_room_turn_packet(
+            self.output_root,
+            room_id="room-a",
+            participant_id=result["participant"]["participant_id"],
+            session_id="session-a",
+            instruction="Describe it.",
+            media_ids=["media-safe"],
+        )
+
+        self.assertEqual(
+            set(packet["media_manifest"][0]),
+            {"id", "filename", "content_type", "size", "supported", "representation"},
+        )
+        self.assertNotIn("/private/", str(packet))
+        self.assertNotIn("private-token", str(packet))
 
     def test_provider_sync_cursor_advances_after_success_and_not_after_failure(self):
         store = RoomStore(self.output_root)

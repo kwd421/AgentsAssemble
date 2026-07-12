@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from agentsassemble.meeting_events import clean_lobby_text
@@ -14,6 +15,22 @@ from agentsassemble.room_store import RoomStore
 DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS = DEFAULT_ROOM_CONTEXT_MESSAGES
 DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS = 20000
 UNSUPPORTED_MEDIA_AUDIT_NOTE = "Unsupported media is listed for audit only; do not claim you viewed unsupported files."
+MODEL_VISIBLE_MEDIA_KEYS = (
+    "id",
+    "filename",
+    "content_type",
+    "size",
+    "supported",
+    "representation",
+)
+
+
+@dataclass(frozen=True)
+class BoundedProviderContext:
+    provider_input: str
+    events: tuple[dict[str, object], ...]
+    media_manifest: tuple[dict[str, object], ...]
+    room_memory_included: bool
 
 
 def _agent_turn_prompt(packet: dict[str, object]) -> str:
@@ -85,43 +102,29 @@ def build_room_turn_packet(
     unsupported_media = [media for media in media_manifest if not bool(media.get("supported"))]
     room_memory = room_memory_from_session(session)
     summary = dict(room_memory)
-    if recovery_required:
-        provider_input = build_provider_recovery_input(
-            instruction=instruction,
-            room_identity=room_identity,
-            room_memory=room_memory,
-            room_delta=provider_projection.text,
-            media_manifest=media_manifest,
-            unsupported_media=unsupported_media,
-        )
-        input_mode = "recovery"
-        bootstrap_included = False
-        recovery_summary_included = True
-    elif not bootstrap_done:
-        provider_input = build_provider_bootstrap_input(
-            instruction=instruction,
-            room_identity=room_identity,
-            room_memory=room_memory,
-            room_delta=provider_projection.text,
-            media_manifest=media_manifest,
-            unsupported_media=unsupported_media,
-        )
-        input_mode = "bootstrap"
-        bootstrap_included = True
-        recovery_summary_included = bool(room_memory.get("summary") or room_memory.get("decisions") or room_memory.get("open_questions"))
-    else:
-        provider_input = build_provider_turn_input(
-            instruction=instruction,
-            room_identity=room_identity,
-            room_delta=provider_projection.text,
-            media_manifest=media_manifest,
-            unsupported_media=unsupported_media,
-        )
-        input_mode = "delta" if provider_projection.text else "current_only"
-        bootstrap_included = False
-        recovery_summary_included = False
-    latest_delta_event_id = clean_lobby_text(provider_projection.latest_event_id, limit=128)
-    latest_delta_seq = int(provider_projection.latest_seq or last_provider_sync_seq)
+    input_mode = "recovery" if recovery_required else "bootstrap" if not bootstrap_done else "delta"
+    bounded_context = _fit_provider_context(
+        input_mode=input_mode,
+        instruction=instruction,
+        room_identity=room_identity,
+        room_memory=room_memory,
+        events=provider_events,
+        omitted_event_count=provider_projection.omitted_message_count,
+        media_manifest=media_manifest,
+        prompt_limit=prompt_limit,
+    )
+    provider_input = bounded_context.provider_input
+    provider_events = list(bounded_context.events)
+    media_manifest = list(bounded_context.media_manifest)
+    unsupported_media = [media for media in media_manifest if not bool(media.get("supported"))]
+    room_delta_included = bool(provider_events)
+    if input_mode == "delta" and not room_delta_included:
+        input_mode = "current_only"
+    bootstrap_included = input_mode == "bootstrap"
+    recovery_summary_included = bounded_context.room_memory_included
+    latest_event = provider_events[-1] if provider_events else {}
+    latest_delta_event_id = clean_lobby_text(latest_event.get("id"), limit=128)
+    latest_delta_seq = _nonnegative_int(latest_event.get("seq")) or last_provider_sync_seq
     packet = {
         "room_id": room_id,
         "participant_id": participant_id,
@@ -145,7 +148,7 @@ def build_room_turn_packet(
         "last_provider_sync_seq_after": latest_delta_seq,
         "bootstrap_cutoff_seq": _nonnegative_int(session.get("bootstrap_cutoff_seq")),
         "bootstrap_included": bootstrap_included,
-        "room_delta_included": bool(provider_projection.text),
+        "room_delta_included": room_delta_included,
         "recovery_summary_included": recovery_summary_included,
         "recent_event_count": len(provider_events),
         "max_recent_events": recent_limit,
@@ -310,7 +313,12 @@ def _selected_media_manifest(
         media_id = clean_lobby_text(media.get("id"), limit=128)
         if not media_id:
             continue
-        item = dict(media)
+        item = {
+            key: media[key]
+            for key in MODEL_VISIBLE_MEDIA_KEYS
+            if key in media and media[key] not in (None, "", [], {})
+        }
+        item["id"] = media_id
         manifest_by_id[media_id] = item
         ordered.append(item)
     selected_ids = _clean_text_list(media_ids, limit=128)
@@ -368,22 +376,156 @@ def _clean_text_list(value: object, *, limit: int) -> list[str]:
 
 
 def _bound_room_turn_packet(packet: dict[str, object], prompt_limit: int) -> dict[str, object]:
-    provider_input = _bound_provider_input(str(packet.get("provider_input") or ""), prompt_limit)
+    provider_input = str(packet.get("provider_input") or "")
+    if len(provider_input) > prompt_limit:
+        raise ValueError("provider input exceeds max_prompt_chars after structural budgeting")
     events = list(packet.get("events") if isinstance(packet.get("events"), list) else [])
-    bounded_packet = {
+    return {
         **packet,
         "provider_input": provider_input,
         "provider_visible_chars": len(provider_input),
+        "events": events,
+        "event_count_in_packet": len(events),
     }
-    while events and len(_agent_turn_prompt({**bounded_packet, "events": events})) > prompt_limit:
-        events.pop(0)
-    return {**bounded_packet, "events": events, "event_count_in_packet": len(events)}
 
 
-def _bound_provider_input(provider_input: str, prompt_limit: int) -> str:
-    if len(provider_input) <= prompt_limit:
-        return provider_input
-    omission = "[Earlier provider context omitted]\n"
-    if prompt_limit <= len(omission):
-        return provider_input[-prompt_limit:]
-    return omission + provider_input[-(prompt_limit - len(omission)) :]
+def _fit_provider_context(
+    *,
+    input_mode: str,
+    instruction: str,
+    room_identity: dict[str, object],
+    room_memory: dict[str, object],
+    events: list[dict[str, object]],
+    omitted_event_count: int,
+    media_manifest: list[dict[str, object]],
+    prompt_limit: int,
+) -> BoundedProviderContext:
+    included_events = list(events)
+    included_media = list(media_manifest)
+    included_memory = dict(room_memory)
+
+    def render() -> str:
+        room_delta = _provider_events_text(included_events, omitted_event_count=omitted_event_count)
+        unsupported = [media for media in included_media if not bool(media.get("supported"))]
+        if input_mode == "recovery":
+            return build_provider_recovery_input(
+                instruction=instruction,
+                room_identity=room_identity,
+                room_memory=included_memory,
+                room_delta=room_delta,
+                media_manifest=included_media,
+                unsupported_media=unsupported,
+            )
+        if input_mode == "bootstrap":
+            return build_provider_bootstrap_input(
+                instruction=instruction,
+                room_identity=room_identity,
+                room_memory=included_memory,
+                room_delta=room_delta,
+                media_manifest=included_media,
+                unsupported_media=unsupported,
+            )
+        return build_provider_turn_input(
+            instruction=instruction,
+            room_identity=room_identity,
+            room_delta=room_delta,
+            media_manifest=included_media,
+            unsupported_media=unsupported,
+        )
+
+    provider_input = render()
+    if len(provider_input) > prompt_limit and _room_memory_text(included_memory):
+        included_memory = {}
+        provider_input = render()
+    while included_events and len(provider_input) > prompt_limit:
+        included_events.pop()
+        provider_input = render()
+    if len(provider_input) > prompt_limit and included_media:
+        included_media = []
+        provider_input = render()
+    if len(provider_input) > prompt_limit:
+        provider_input = _fit_required_provider_input(
+            input_mode=input_mode,
+            instruction=instruction,
+            room_identity=room_identity,
+            prompt_limit=prompt_limit,
+        )
+    return BoundedProviderContext(
+        provider_input=provider_input,
+        events=tuple(included_events),
+        media_manifest=tuple(included_media),
+        room_memory_included=bool(_room_memory_text(included_memory)),
+    )
+
+
+def _fit_required_provider_input(
+    *,
+    input_mode: str,
+    instruction: str,
+    room_identity: dict[str, object],
+    prompt_limit: int,
+) -> str:
+    clean_instruction = clean_lobby_text(instruction, limit=2000)
+
+    def render(required_instruction: str, identity: dict[str, object]) -> str:
+        if input_mode == "recovery":
+            return build_provider_recovery_input(
+                instruction=required_instruction,
+                room_identity=identity,
+                room_memory={},
+            )
+        if input_mode == "bootstrap":
+            return build_provider_bootstrap_input(
+                instruction=required_instruction,
+                room_identity=identity,
+                room_memory={},
+            )
+        return build_provider_turn_input(
+            instruction=required_instruction,
+            room_identity=identity,
+        )
+
+    identity_candidates = [
+        room_identity,
+        {**room_identity, "participant_id": ""},
+        {
+            "display_name": clean_lobby_text(room_identity.get("display_name"), limit=40),
+            "room_name": clean_lobby_text(room_identity.get("room_name"), limit=64),
+            "participant_id": "",
+        },
+    ]
+    for identity in identity_candidates:
+        candidate = render(clean_instruction, identity)
+        if len(candidate) <= prompt_limit:
+            return candidate
+
+    low = 0
+    high = len(clean_instruction)
+    best = ""
+    compact_identity = identity_candidates[-1]
+    while low <= high:
+        midpoint = (low + high) // 2
+        candidate = render(clean_instruction[:midpoint].rstrip(), compact_identity)
+        if len(candidate) <= prompt_limit:
+            best = candidate
+            low = midpoint + 1
+        else:
+            high = midpoint - 1
+    if not best:
+        raise ValueError("max_prompt_chars is too small for required provider context")
+    return best
+
+
+def _provider_events_text(events: list[dict[str, object]], *, omitted_event_count: int) -> str:
+    lines: list[str] = []
+    if omitted_event_count:
+        lines.append(f"- [omitted {omitted_event_count} earlier room update(s)]")
+    for event in events:
+        speaker = clean_lobby_text(
+            event.get("display_name") or event.get("participant_id") or event.get("actor_id"),
+            limit=64,
+        ) or "room"
+        content = clean_lobby_text(event.get("content"), limit=4000)
+        if content:
+            lines.append(f"- {speaker}: {content}")
+    return "\n".join(lines)
