@@ -83,7 +83,6 @@ describe("useRoomAdmission", () => {
         guestInvite: null,
         guestJoinToken: "invite-1",
         initialSession: null,
-        flowError: null,
         onRoomJoined,
         onResetToLobby: vi.fn(),
       })
@@ -118,7 +117,6 @@ describe("useRoomAdmission", () => {
         guestInvite: null,
         guestJoinToken: "invite-1",
         initialSession: null,
-        flowError: null,
         onRoomJoined,
         onResetToLobby: vi.fn(),
       })
@@ -141,7 +139,6 @@ describe("useRoomAdmission", () => {
         guestInvite: null,
         guestJoinToken: "invite-1",
         initialSession: null,
-        flowError: null,
         onRoomJoined,
         onResetToLobby,
       })
@@ -153,32 +150,33 @@ describe("useRoomAdmission", () => {
     expect(result.current.guestJoinRequested).toBe(false);
   });
 
-  it("expires and clears a stored guest session after a canonical 401 error", async () => {
+  it("keeps a stored guest session independent from legacy surface errors", async () => {
     persistRoomGuestSession(SESSION);
     const onResetToLobby = vi.fn();
     const onRoomJoined = vi.fn();
     const { result, rerender } = renderHook(
-      ({ flowError }: { flowError: Error | null }) =>
-        useRoomAdmission({
+      ({ unrelatedError }: { unrelatedError: Error | null }) => {
+        void unrelatedError;
+        return useRoomAdmission({
           guestInvite: null,
           guestJoinToken: "invite-1",
           initialSession: SESSION,
-          flowError,
           onRoomJoined,
           onResetToLobby,
-        }),
-      { initialProps: { flowError: null as Error | null } }
+        });
+      },
+      { initialProps: { unrelatedError: null as Error | null } }
     );
 
     expect(result.current.guestExpired).toBe(false);
     await act(async () => {
-      rerender({ flowError: new ApiError(401, "expired") });
+      rerender({ unrelatedError: new ApiError(401, "legacy flow unavailable") });
     });
 
-    await waitFor(() => expect(result.current.guestExpired).toBe(true));
-    expect(result.current.guestSession).toBeNull();
-    expect(loadRoomGuestSession()).toBeNull();
-    expect(onResetToLobby).toHaveBeenCalledOnce();
+    expect(result.current.guestExpired).toBe(false);
+    expect(result.current.guestSession).toEqual(SESSION);
+    expect(loadRoomGuestSession()).toEqual(SESSION);
+    expect(onResetToLobby).not.toHaveBeenCalled();
     expect(onRoomJoined).not.toHaveBeenCalled();
   });
 });

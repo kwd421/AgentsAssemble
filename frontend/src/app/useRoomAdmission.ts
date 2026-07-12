@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { joinRoomInvite, type RoomInviteJoinResponse } from "../api";
-import { GUEST_SESSION_EXPIRED_MESSAGE, isUnauthorizedApiError } from "../lib/apiErrors";
+import { GUEST_SESSION_EXPIRED_MESSAGE } from "../lib/apiErrors";
 import { getOrCreateDeviceToken, loadRememberedGuestProfile, rememberGuestProfile } from "../lib/deviceIdentity";
 import { roomFromGuestSession, type RoomDockItem } from "../lib/roomDockModel";
 import {
@@ -15,7 +15,6 @@ type RoomAdmissionOptions = {
   guestInvite: RoomDockItem | null;
   guestJoinToken: string;
   initialSession: RoomGuestSession | null;
-  flowError: Error | null;
   onRoomJoined: (room: RoomDockItem) => void;
   onResetToLobby: () => void;
 };
@@ -24,7 +23,6 @@ export function useRoomAdmission({
   guestInvite,
   guestJoinToken,
   initialSession,
-  flowError,
   onRoomJoined,
   onResetToLobby,
 }: RoomAdmissionOptions) {
@@ -112,12 +110,6 @@ export function useRoomAdmission({
     },
     [onRoomJoined, pendingGuestDisplayName]
   );
-
-  useEffect(() => {
-    if (guestLocked && guestSession?.sessionToken && isUnauthorizedApiError(flowError)) {
-      expireGuestSession();
-    }
-  }, [expireGuestSession, flowError, guestLocked, guestSession?.sessionToken]);
 
   useEffect(() => {
     if (!guestJoinToken || guestAlreadyJoinedThisInvite) return;

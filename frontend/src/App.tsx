@@ -398,7 +398,6 @@ export default function App() {
     guestInvite,
     guestJoinToken,
     initialSession: startupRoute.guestSession,
-    flowError,
     onRoomJoined: onGuestRoomJoined,
     onResetToLobby: onGuestAdmissionReset,
   });

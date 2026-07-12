@@ -1479,7 +1479,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("pendingGuestDisplayName", app_source)
         self.assertIn("pendingGuestAvatarImage", app_source)
         self.assertIn("if (guestExpired || guestJoinPending)", app_source)
-        self.assertIn("guestSession?.sessionToken && isUnauthorizedApiError(flowError)", admission_source)
+        self.assertNotIn("flowError", admission_source)
         self.assertIn("joinRoomInvite({", admission_source)
         self.assertIn("displayName: pendingGuestDisplayName", admission_source)
         self.assertIn("avatarImage: pendingGuestAvatarImage", admission_source)
