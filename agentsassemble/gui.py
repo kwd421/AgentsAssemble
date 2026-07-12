@@ -73,6 +73,10 @@ from agentsassemble.gui_legacy_live_agent_session_http import (
     LegacySessionHttpDeps,
     register_legacy_session_mutation_routes,
 )
+from agentsassemble.gui_legacy_live_agent_session_run_http import (
+    LegacySessionRunHttpDeps,
+    register_legacy_session_run_basic_routes,
+)
 from agentsassemble.gui_observability_http import register_observability_routes
 from agentsassemble.gui_public_invite_http import register_public_invite_admin_routes
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
@@ -170,6 +174,7 @@ from agentsassemble.legacy_live_agent_session_service import (
     LegacyLiveAgentSessionMutationService,
     LegacySessionMutationActions,
 )
+from agentsassemble.legacy_live_agent_session_run_service import LegacyLiveAgentSessionRunMutationService
 from agentsassemble.live_agent_settings import (
     update_live_agent_config_options,
     update_live_agent_config_poll_interval,
@@ -7770,6 +7775,17 @@ def _make_handler(
             default_server_url=lambda ctx: ctx.handler._request_server_url(),
         ),
     )
+    register_legacy_session_run_basic_routes(
+        route_table,
+        deps=LegacySessionRunHttpDeps(
+            service=LegacyLiveAgentSessionRunMutationService(
+                output_root,
+                session_runs=live_agent_session_run_controller,
+                record_operation=record_live_agent_operation,
+            ),
+            read_operation_payload=_late_operation_json_payload,
+        ),
+    )
 
     register_mafia_routes(route_table, read_operation_payload=_late_operation_json_payload)
 
@@ -8136,18 +8152,6 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json({"event": event, "events": read_lobby(output_root)})
-                return
-            session_run_pause_id = _live_agent_session_run_action_path(parsed.path, "pause")
-            if session_run_pause_id is not None or parsed.path == "/api/live-agent-session-runs/pause":
-                self._handle_session_run_action("pause", session_run_pause_id)
-                return
-            session_run_resume_id = _live_agent_session_run_action_path(parsed.path, "resume")
-            if session_run_resume_id is not None or parsed.path == "/api/live-agent-session-runs/resume":
-                self._handle_session_run_action("resume", session_run_resume_id)
-                return
-            session_run_stop_id = _live_agent_session_run_action_path(parsed.path, "stop")
-            if session_run_stop_id is not None or parsed.path == "/api/live-agent-session-runs/stop":
-                self._handle_session_run_action("stop", session_run_stop_id)
                 return
             session_run_retry_now_id = _live_agent_session_run_action_path(parsed.path, "retry-now")
             if session_run_retry_now_id is not None or parsed.path == "/api/live-agent-session-runs/retry-now":
@@ -9688,65 +9692,6 @@ def _make_handler(
 
         def _local_server_url(self) -> str:
             return _local_server_url(self.server.server_address)
-
-        def _handle_session_run_action(self, command: str, path_run_id: str | None) -> None:
-            operation = f"session_run.{command}"
-            payload = self._operation_json_payload(operation=operation, target_id=path_run_id or "")
-            if payload is None:
-                return
-            run_id = path_run_id or str(payload.get("run_id") or "").strip()
-            target_details = _session_run_action_target_details(payload)
-            try:
-                if not run_id:
-                    target_run = _latest_session_run_for_action_target(live_agent_session_run_controller, payload)
-                    run_id = str(target_run.get("run_id") or "")
-                if command == "pause":
-                    session_run = live_agent_session_run_controller.pause_run(run_id)
-                    response_status = "paused"
-                    summary = "paused durable live-agent session run"
-                elif command == "resume":
-                    session_run = live_agent_session_run_controller.resume_run(run_id)
-                    response_status = "resumed"
-                    summary = "resumed durable live-agent session run"
-                elif command == "stop":
-                    session_run = live_agent_session_run_controller.stop_run(run_id, reason="operator_stop")
-                    response_status = "stopped"
-                    summary = "stopped durable live-agent session run"
-                else:
-                    raise ValueError(f"Unsupported session-run action: {command}")
-            except (OSError, ValueError) as error:
-                safe_error = _session_ensure_error_message(error)
-                failed_details = {"session_run_id": run_id}
-                failed_details.update({key: value for key, value in target_details.items() if value})
-                record_live_agent_operation(
-                    output_root,
-                    operation=operation,
-                    status="failed",
-                    target_id=run_id or target_details["meeting_id"],
-                    error=safe_error,
-                    details=failed_details,
-                )
-                self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=failed_details)
-                return
-
-            operation_details = {
-                "session_run_id": str(session_run.get("run_id") or run_id),
-                "meeting_id": str(session_run.get("meeting_id") or ""),
-                "group_id": str(session_run.get("group_id") or ""),
-                "run_status": str(session_run.get("status") or ""),
-                "phase": str(session_run.get("phase") or ""),
-            }
-            if command == "pause":
-                operation_details["paused_status"] = str(session_run.get("paused_status") or "")
-            record_live_agent_operation(
-                output_root,
-                operation=operation,
-                status="success",
-                target_id=str(session_run.get("run_id") or run_id),
-                summary=summary,
-                details=operation_details,
-            )
-            self._send_json({"status": response_status, "session_run": session_run})
 
         def _handle_ws_upgrade(self, query: dict) -> None:
             """Upgrade the one authenticated room socket used by browsers and bridges."""
