@@ -59,6 +59,7 @@ from agentsassemble.gui_provider_http import (
     register_provider_routes,
 )
 from agentsassemble.gui_mafia_http import register_mafia_routes
+from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
 from agentsassemble.gui_public_invite_http import register_public_invite_admin_routes
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
 from agentsassemble.gui_room_settings_http import register_room_settings_routes
@@ -89,7 +90,7 @@ from agentsassemble.live_agent_self_managed import (
 from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
-from agentsassemble.live_agent_quota import LIVE_AGENT_QUOTA_FIELDS, quota_viewer_for_host, quota_viewer_for_session
+from agentsassemble.live_agent_quota import LIVE_AGENT_QUOTA_FIELDS
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
 from agentsassemble.live_agent_settings import (
@@ -8317,6 +8318,17 @@ def _make_handler(
         local_server_url=lambda ctx: ctx.handler._local_server_url(),
     )
 
+    register_live_agent_flow_routes(
+        route_table,
+        flow=live_agent_flow_supervisor,
+        is_loopback_request=lambda ctx: ctx.handler._request_uses_loopback_host(),
+        read_operation_payload=lambda ctx, operation: ctx.handler._operation_json_payload(
+            operation=operation,
+            target_id="",
+        ),
+        record_operation=record_live_agent_operation,
+    )
+
     def _late_operation_json_payload(
         ctx: RequestContext,
         operation_name: str,
@@ -8461,28 +8473,6 @@ def _make_handler(
                         agent_ids=query.get("agent_id", []),
                         statuses=query.get("status", []),
                         safe=_payload_bool(query.get("safe", [""])[0]),
-                    )
-                )
-                return
-            if path == "/api/live-agent-flow":
-                session_token = self._extract_session_token()
-                session = verify_session_token(session_token) if session_token else None
-                if session_token and not session:
-                    self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
-                    return
-                if not session and not self._request_uses_loopback_host():
-                    self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
-                    return
-                flow_meeting_id = (
-                    str(session.get("meeting_id") or "")
-                    if session
-                    else str(query.get("meeting_id", [""])[0] or "")
-                )
-                quota_viewer = quota_viewer_for_session(session) if session else quota_viewer_for_host()
-                self._send_json(
-                    live_agent_flow_supervisor.status(
-                        meeting_id=flow_meeting_id,
-                        quota_viewer=quota_viewer,
                     )
                 )
                 return
@@ -8870,43 +8860,6 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json({"event": event, "events": read_lobby(output_root)})
-                return
-            if parsed.path == "/api/live-agent-flow/start":
-                payload = self._operation_json_payload(operation="flow.start", target_id="")
-                if payload is None:
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="flow.start",
-                    status="failed",
-                    target_id=clean_lobby_text(payload.get("meeting_id"), limit=128),
-                    summary="Play/free flow is disabled; use turn-based Agent Sessions.",
-                    details={
-                        "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
-                        "topic": clean_lobby_text(payload.get("topic"), limit=ROOM_TOPIC_LIMIT),
-                    },
-                )
-                self._send_error(HTTPStatus.GONE, "Play/free flow is disabled; use turn-based Agent Sessions.")
-                return
-            if parsed.path == "/api/live-agent-flow/stop":
-                payload = self._operation_json_payload(operation="flow.stop", target_id="")
-                if payload is None:
-                    return
-                result = live_agent_flow_supervisor.stop(payload)
-                flow = result.get("flow") if isinstance(result.get("flow"), dict) else {}
-                record_live_agent_operation(
-                    output_root,
-                    operation="flow.stop",
-                    status="success",
-                    target_id=clean_lobby_text(flow.get("meeting_id"), limit=128),
-                    summary="stopped Play Mode flow",
-                    details={
-                        "meeting_id": clean_lobby_text(flow.get("meeting_id"), limit=128),
-                        "flow_id": clean_lobby_text(flow.get("flow_id"), limit=128),
-                        "flow_status": clean_lobby_text(flow.get("status"), limit=64),
-                    },
-                )
-                self._send_json(result)
                 return
             session_run_pause_id = _live_agent_session_run_action_path(parsed.path, "pause")
             if session_run_pause_id is not None or parsed.path == "/api/live-agent-session-runs/pause":
@@ -10996,13 +10949,6 @@ def _make_handler(
                 return f"http://{host}"
             address = self.server.server_address
             return f"http://{address[0]}:{address[1]}"
-
-        def _extract_session_token(self) -> str:
-            """Extract bearer session token from Authorization header."""
-            auth = self.headers.get("Authorization") or ""
-            if auth.startswith("Bearer "):
-                return auth.removeprefix("Bearer ").strip()
-            return ""
 
         def _verify_host_token(self) -> bool:
             """Check host token from X-Host-Token header or Authorization Bearer.
