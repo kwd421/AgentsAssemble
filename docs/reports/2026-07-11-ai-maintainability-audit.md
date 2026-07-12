@@ -26,7 +26,7 @@ explicit modules.
 | `cli.py` | 8,732 | 7,097 | `cli_parser_common.py`, domain `cli_parser_*.py` modules |
 | `frontend/src/api.ts` | 2,421 | 990 | `frontend/src/api/` domain clients and shared HTTP adapter |
 | `MemberList.tsx` | 1,741 | 494 | typed member rows, diagnostics, identity and session-control components |
-| `App.tsx` | 2,988 | 2,865 | guest admission lifecycle in `app/useRoomAdmission.ts` |
+| `App.tsx` | 2,988 | 2,841 | guest admission and friends/DM lifecycles in focused `app/` hooks |
 | `test_cli_timeout.py` | 16,248 | 45 | 15 domain suites; legacy direct command still runs all 404 tests |
 | `test_gui_server.py` | 22,491 | 56 | 22 domain suites; compatibility loader runs all 393 current tests |
 
@@ -52,6 +52,13 @@ Additional results:
 - remembered-profile auto-join is tested for success, persisted-session
   recovery and failure; a token-level guard now prevents failed auto-joins from
   retrying forever;
+- one `useFriendsDirectory` instance now owns friend loading, mutations,
+  selection, DM state and category transitions for the sidebar, directory and
+  invite UI; the controlled `FriendsView` retains presentation-only form and
+  search state;
+- friends/DM behavior tests cover disabled guest projection, refresh/mutation
+  races, serialized mutations, exact filter transitions, stale selection
+  reconciliation and delete fallback selection;
 - credential route tests cover local lifecycle, remote moderator rejection,
   remote HTTP rejection, forwarded HTTPS acceptance and key non-disclosure;
 - Agent Session resume labels and room-channel wire normalization each have one
@@ -64,7 +71,7 @@ Verification evidence:
 - `python3 -m unittest discover -s tests -t .`: 2,825 passed;
 - final Agent Session and CLI regression pass after deduplication: 491 passed;
 - narrow compatibility-loader discovery: CLI 404 passed; GUI 393 passed;
-- `npm --prefix frontend test`: 28 passed;
+- `npm --prefix frontend test`: 39 passed;
 - `npm --prefix frontend run build`: passed;
 - canonical desktop/mobile Playwright flow: passed;
 - `git diff --check`: passed.
@@ -155,13 +162,14 @@ friends, invites, room settings, shell navigation, provider controls and
 responsive panels. The risk is not JSX length but effect ownership: unrelated
 state transitions can invalidate each other and are difficult to test alone.
 
-Guest admission is now isolated and behavior-tested. Recommended remaining
+Guest admission and the friends/DM directory are now isolated and
+behavior-tested. Recommended remaining
 extraction order:
 
 1. `useRoomDirectory()` for room list, active room and stale dock cleanup.
 2. `useRoomConnection(roomId)` for ticket, reconnect and canonical snapshot.
-3. `useRoomInvites()` and `useFriends()` for those independent lifecycles.
-5. Leave top-level layout composition in `App`.
+3. `useRoomInvites()` for the invite lifecycle.
+4. Leave top-level layout composition in `App`.
 
 Do not move state into a global store merely to reduce line count. Extract each
 hook only when its ownership and test boundary are clear.
@@ -306,8 +314,9 @@ only if it makes the next behavior change easier to locate and test.
    are extracted; legacy GUI routes remain in `gui.py`.
 5. Completed: break CLI parser registration into domain modules without
    changing commands.
-6. In progress: guest admission and member detail responsibilities are
-   extracted; `App.tsx` still owns several independent lifecycles.
+6. In progress: guest admission, friends/DM, and member detail responsibilities
+   are extracted; `App.tsx` still owns room directory, invite and shell
+   lifecycles.
 7. Introduce the new attention coordinator as a focused module rather than
    expanding `RoomRealtimeController`.
 8. Classify legacy live-agent modules as retained or removable before refactoring

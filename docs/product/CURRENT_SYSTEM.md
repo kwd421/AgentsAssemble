@@ -121,6 +121,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Canonical room HTTP routes | `gui_room_*_http.py`; coordinator in `gui_room_http.py` |
 | CLI parser registration | `cli_parser_common.py`, `cli_parser_*.py`; dispatch in `cli.py` |
 | React room state | `frontend/src/App.tsx`, `frontend/src/app/`, `useCanonicalRoom.ts` |
+| Friends directory and DM selection | `frontend/src/app/useFriendsDirectory.ts`, `frontend/src/views/FriendsView.tsx` |
 | Frontend API client | `frontend/src/api/`; compatibility barrel in `frontend/src/api.ts` |
 | Message and roster UI | `frontend/src/views/LobbyView.tsx`, `frontend/src/views/components/member/` |
 

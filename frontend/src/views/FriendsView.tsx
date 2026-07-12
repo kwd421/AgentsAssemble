@@ -1,22 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bot, Search, UserPlus, Users } from "lucide-react";
 import {
-  addRoomFriend,
-  deleteRoomFriend,
-  fetchRoomFriends,
   type LiveAgentProcessGroup,
   type ParticipantType,
   type RoomFriend,
   type RoomFriendsResponse,
 } from "../api";
+import type { FriendListFilter } from "../app/friendsDirectoryTypes";
 import { roomFriendMatchesSearch } from "../lib/friendSearch";
 import { PARTICIPANT_TYPE_OPTIONS } from "../lib/participantTypes";
 import { isActivePresence } from "../lib/presenceStatus";
 import FriendDmPanel from "./components/FriendDmPanel";
 import FriendProfileCard from "./components/FriendProfileCard";
 import FriendRow from "./components/FriendRow";
-
-export type FriendListFilter = "online" | "all" | "add";
 
 function friendMatchesDirectory(
   friend: RoomFriend,
@@ -39,59 +35,58 @@ function friendMatchesDirectory(
 export default function FriendsView({
   typeFilter,
   filter,
-  onFilterChange,
-  onFriendsChanged,
+  payload,
+  loading,
+  status,
+  busyId,
+  addDraftName,
+  onShowDirectory,
+  onSelectFriend,
+  onOpenFriendDm,
+  onShowFriendProfile,
+  onAddCandidate,
+  onAddManual,
+  onDeleteFriend,
   selectedFriendId,
   activeDmFriendId,
-  initialDisplayName = "",
-  onActiveDmFriendChange,
-  onSelectFriend,
   processGroups = [],
   onSessionActionComplete,
   onStartAddAgent,
 }: {
   typeFilter: ParticipantType | null;
   filter: FriendListFilter;
-  initialDisplayName?: string;
-  onFilterChange: (filter: FriendListFilter) => void;
-  onFriendsChanged?: (payload: RoomFriendsResponse) => void;
-  selectedFriendId?: string;
-  activeDmFriendId?: string;
-  onActiveDmFriendChange?: (friendId: string) => void;
-  onSelectFriend?: (friend: RoomFriend) => void;
+  payload: RoomFriendsResponse;
+  loading: boolean;
+  status: string;
+  busyId: string;
+  addDraftName: string;
+  onShowDirectory: (filter: FriendListFilter) => void;
+  onSelectFriend: (friend: RoomFriend) => void;
+  onOpenFriendDm: (friend: RoomFriend) => void;
+  onShowFriendProfile: (friend: RoomFriend) => void;
+  onAddCandidate: (friend: RoomFriend) => Promise<boolean>;
+  onAddManual: (draft: {
+    displayName: string;
+    participantType: ParticipantType;
+    providerKind: string;
+  }) => Promise<boolean>;
+  onDeleteFriend: (friend: RoomFriend, preferredNextVisibleFriendId?: string) => Promise<boolean>;
+  selectedFriendId: string;
+  activeDmFriendId: string;
   processGroups?: LiveAgentProcessGroup[];
   onSessionActionComplete?: () => void;
   onStartAddAgent?: () => void;
 }) {
-  const [payload, setPayload] = useState<RoomFriendsResponse>({ friends: [], candidates: [] });
   const [query, setQuery] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [participantType, setParticipantType] = useState<ParticipantType>("subscription_ai");
   const [providerKind, setProviderKind] = useState("");
-  const [status, setStatus] = useState("");
-  const [busyId, setBusyId] = useState("");
-  const [loading, setLoading] = useState(true);
   const [dmFocusSignal, setDmFocusSignal] = useState(0);
 
-  function refresh() {
-    setLoading(true);
-    fetchRoomFriends()
-      .then((next) => {
-        setPayload(next);
-        onFriendsChanged?.(next);
-        setStatus("");
-      })
-      .catch((error) => {
-        setStatus(error instanceof Error ? error.message : "친구 목록을 불러오지 못했습니다");
-      })
-      .finally(() => setLoading(false));
-  }
-
-  useEffect(refresh, []);
   useEffect(() => {
     if (filter !== "add") return;
-    setDisplayName(initialDisplayName);
-  }, [filter, initialDisplayName]);
+    setDisplayName(addDraftName);
+  }, [addDraftName, filter]);
 
   const visibleFriends = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -123,104 +118,39 @@ export default function FriendsView({
   );
   const profileFriend = activeDmFriend || selectedFriend;
 
-  function showDirectory(nextFilter: FriendListFilter) {
-    onFilterChange(nextFilter);
-    onActiveDmFriendChange?.("");
-  }
-
   function openFriendDm(friend: RoomFriend) {
-    onSelectFriend?.(friend);
-    onActiveDmFriendChange?.(friend.friend_id);
+    onOpenFriendDm(friend);
     setDmFocusSignal((value) => value + 1);
   }
 
-  function showAddedFriend(friend: RoomFriend) {
-    onSelectFriend?.(friend);
-    onActiveDmFriendChange?.("");
-    onFilterChange("all");
-  }
-
   function showFriendProfile(friend: RoomFriend) {
-    onSelectFriend?.(friend);
-    onActiveDmFriendChange?.("");
+    onShowFriendProfile(friend);
   }
 
   async function handleAddCandidate(friend: RoomFriend) {
-    setBusyId(friend.friend_id);
-    setStatus("");
-    try {
-      const result = await addRoomFriend(friend);
-      const nextPayload = {
-        friends: result.friends,
-        candidates: payload.candidates.filter((candidate) => candidate.friend_id !== friend.friend_id),
-      };
-      setPayload(nextPayload);
-      onFriendsChanged?.(nextPayload);
-      showAddedFriend(result.friend);
-      setStatus(`${friend.display_name} 추가됨`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "친구 추가 실패");
-    } finally {
-      setBusyId("");
-    }
+    await onAddCandidate(friend);
   }
 
   async function handleAddManual() {
-    const name = displayName.trim();
-    if (!name) {
-      setStatus("이름을 입력하세요");
-      return;
-    }
-    setBusyId("manual");
-    setStatus("");
-    try {
-      const result = await addRoomFriend({
-        display_name: name,
-        participant_type: participantType,
-        provider_kind: providerKind.trim(),
-        status: "offline",
-        source: "manual",
-      });
-      const nextPayload = { ...payload, friends: result.friends };
-      setPayload(nextPayload);
-      onFriendsChanged?.(nextPayload);
-      showAddedFriend(result.friend);
+    const added = await onAddManual({ displayName, participantType, providerKind });
+    if (added) {
       setDisplayName("");
       setProviderKind("");
-      setStatus(`${name} 추가됨`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "친구 추가 실패");
-    } finally {
-      setBusyId("");
     }
   }
 
   async function handleDeleteFriend(friend: RoomFriend) {
-    const busyKey = `delete:${friend.friend_id}`;
-    setBusyId(busyKey);
-    setStatus("");
-    try {
-      const result = await deleteRoomFriend(friend.friend_id);
-      const nextSelection =
-        result.friends.find((candidate) =>
-          friendMatchesDirectory(candidate, { typeFilter, filter, needle: query.trim().toLowerCase() })
-        ) || null;
-      const shouldMoveSelection =
-        selectedFriendId === friend.friend_id || activeDmFriendId === friend.friend_id;
-      setPayload({ friends: result.friends, candidates: result.candidates });
-      onFriendsChanged?.(result);
-      if (activeDmFriendId === friend.friend_id) {
-        onActiveDmFriendChange?.("");
-      }
-      if (shouldMoveSelection && nextSelection) {
-        onSelectFriend?.(nextSelection);
-      }
-      setStatus(`${friend.display_name} 삭제됨`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "친구 삭제 실패");
-    } finally {
-      setBusyId("");
-    }
+    const nextSelection =
+      payload.friends.find(
+        (candidate) =>
+          candidate.friend_id !== friend.friend_id &&
+          friendMatchesDirectory(candidate, {
+            typeFilter,
+            filter,
+            needle: query.trim().toLowerCase(),
+          })
+      ) || null;
+    await onDeleteFriend(friend, nextSelection?.friend_id);
   }
 
   return (
@@ -231,17 +161,17 @@ export default function FriendsView({
           <span>친구</span>
         </div>
         <nav className="dc-friends-tabs" aria-label="친구 필터">
-          <button type="button" data-active={filter === "online" && !activeDmFriend} onClick={() => showDirectory("online")}>
+          <button type="button" data-active={filter === "online" && !activeDmFriend} onClick={() => onShowDirectory("online")}>
             온라인
           </button>
-          <button type="button" data-active={filter === "all" && !activeDmFriend} onClick={() => showDirectory("all")}>
+          <button type="button" data-active={filter === "all" && !activeDmFriend} onClick={() => onShowDirectory("all")}>
             모두
           </button>
           <button
             type="button"
             className="add-tab"
             data-active={filter === "add" && !activeDmFriend}
-            onClick={() => showDirectory("add")}
+            onClick={() => onShowDirectory("add")}
           >
             친구 추가하기
           </button>
@@ -369,7 +299,6 @@ export default function FriendsView({
             processGroups={processGroups}
             onSessionActionComplete={() => {
               onSessionActionComplete?.();
-              refresh();
             }}
           />
         </aside>

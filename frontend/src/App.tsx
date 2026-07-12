@@ -33,7 +33,6 @@ import {
   fetchRoomChannels,
   fetchRooms,
   createRoomChannel,
-  fetchRoomFriends,
   fetchRoomSettings,
   ensureRoomMeeting,
   claimHostDevice,
@@ -73,16 +72,17 @@ import {
   type ConversationMode,
   type RoomChannel,
   type RoomFriend,
-  type RoomFriendsResponse,
   type RoomMember,
   type PublicInviteStatus,
 } from "./api";
 import { usePoll } from "./hooks";
 import { useRoomAdmission } from "./app/useRoomAdmission";
+import { useFriendsDirectory } from "./app/useFriendsDirectory";
+import type { HomeFilter } from "./app/friendsDirectoryTypes";
 import { useCanonicalRoom } from "./useCanonicalRoom";
 import AdminPanel from "./views/AdminPanel";
 import BoardView from "./views/BoardView";
-import FriendsView, { type FriendListFilter } from "./views/FriendsView";
+import FriendsView from "./views/FriendsView";
 import LiveView from "./views/LiveView";
 import CustomChannelView from "./views/CustomChannelView";
 import CreateChannelModal from "./views/components/CreateChannelModal";
@@ -94,7 +94,6 @@ import type { ChannelHeaderActions } from "./views/components/ChannelHeader";
 import AgentCreateModal from "./views/components/AgentCreateModal";
 import GuestJoinProfilePanel from "./views/components/GuestJoinProfilePanel";
 import HomeSidebar from "./views/components/HomeSidebar";
-import type { HomeFilter } from "./views/components/HomeSidebar";
 import type { RoleId } from "./views/components/MemberList";
 import RoomConnectionPanel from "./views/components/RoomConnectionPanel";
 import RoomInviteModal from "./views/components/RoomInviteModal";
@@ -399,8 +398,6 @@ export default function App() {
     }
     return startupRoute.initialChannel;
   });
-  const [homeFilter, setHomeFilter] = useState<HomeFilter>("friends");
-  const [friendListFilter, setFriendListFilter] = useState<FriendListFilter>("online");
   const [adminOpen, setAdminOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(true);
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>("room-info");
@@ -428,13 +425,6 @@ export default function App() {
   const [roomAppearances, setRoomAppearances] = useState<Record<string, RoomAppearance>>(() =>
     loadRoomAppearances()
   );
-  const [homeFriendsPayload, setHomeFriendsPayload] = useState<RoomFriendsResponse>({
-    friends: [],
-    candidates: [],
-  });
-  const [selectedHomeFriendId, setSelectedHomeFriendId] = useState("");
-  const [activeHomeDmFriendId, setActiveHomeDmFriendId] = useState("");
-  const [friendAddDraftName, setFriendAddDraftName] = useState("");
   const [roomMemberRoles, setRoomMemberRoles] = useState<Record<string, Record<string, string>>>({});
   const [roomMembersByRoom, setRoomMembersByRoom] = useState<Record<string, RoomMember[]>>({});
   const [roomChannelSettings, setRoomChannelSettings] = useState<
@@ -519,6 +509,28 @@ export default function App() {
     onRoomJoined: onGuestRoomJoined,
     onResetToLobby: onGuestAdmissionReset,
   });
+  const {
+    payload: homeFriendsPayload,
+    loading: friendsLoading,
+    status: friendsStatus,
+    busyId: friendsBusyId,
+    homeFilter,
+    friendListFilter,
+    selectedFriendId: selectedHomeFriendId,
+    activeDmFriendId: activeHomeDmFriendId,
+    addDraftName: friendAddDraftName,
+    refresh: refreshFriendsDirectory,
+    changeHomeFilter: changeFriendsHomeFilter,
+    showDirectory: showFriendsDirectory,
+    selectHomeFriend: selectFriendsHomeFriend,
+    selectFriend: selectDirectoryFriend,
+    openFriendDm: openDirectoryFriendDm,
+    showFriendProfile: showDirectoryFriendProfile,
+    openAddFriend: openFriendsAddView,
+    addCandidate: addFriendsCandidate,
+    addManual: addFriendsManual,
+    deleteFriend: deleteDirectoryFriend,
+  } = useFriendsDirectory({ enabled: !guestLocked });
   const lobbyPostingState = useMemo(
     () =>
       roomPostingState({
@@ -980,6 +992,10 @@ export default function App() {
     refreshSessionSurfaces();
     refreshMembers();
   }, [refreshSessionSurfaces, refreshMembers]);
+  const refreshSessionAndMembersWithFriends = useCallback(() => {
+    refreshSessionAndMembers();
+    void refreshFriendsDirectory();
+  }, [refreshFriendsDirectory, refreshSessionAndMembers]);
   const refreshCustomChannels = useCallback(() => {
     if (!activeRoom.meetingId) return;
     fetchRoomChannels(activeRoom.meetingId, guestSession?.sessionToken || "")
@@ -1201,51 +1217,16 @@ export default function App() {
     closeMobileOverlays();
   }
 
-  useEffect(() => {
-    if (guestLocked) return;
-    let cancelled = false;
-    fetchRoomFriends()
-      .then((payload) => {
-        if (!cancelled) {
-          setHomeFriendsPayload(payload);
-          setSelectedHomeFriendId((previous) => previous || payload.friends[0]?.friend_id || "");
-        }
-      })
-      .catch(() => {
-        // The central friends view will surface load errors when opened.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [guestLocked]);
-
   function changeHomeFilter(filter: HomeFilter) {
-    setHomeFilter(filter);
-    setActiveHomeDmFriendId("");
-    setFriendListFilter((previous) => {
-      if (previous !== "add") return previous;
-      return filter === "friends" ? "online" : "all";
-    });
+    changeFriendsHomeFilter(filter);
   }
 
   function selectHomeFriend(friend: RoomFriend, intent: "profile" | "dm" = "profile") {
-    setSelectedHomeFriendId(friend.friend_id);
     setChannel("friends");
     setAdminOpen(false);
     setChannelMenu(null);
     closeMobileOverlays();
-    setFriendListFilter("all");
-    if (intent === "dm") {
-      setActiveHomeDmFriendId(friend.friend_id);
-      setHomeFilter("friends");
-      return;
-    }
-    if (friend.participant_type === "human") setHomeFilter("human");
-    else if (friend.participant_type === "subscription_ai") setHomeFilter("subscription_ai");
-    else if (friend.participant_type === "api") setHomeFilter("api");
-    else if (friend.participant_type === "local") setHomeFilter("local");
-    else if (friend.participant_type === "remote") setHomeFilter("remote");
-    else setHomeFilter("friends");
+    selectFriendsHomeFriend(friend, intent);
   }
 
   function openAddFriendView(draftName = "") {
@@ -1253,10 +1234,7 @@ export default function App() {
     setAdminOpen(false);
     setChannelMenu(null);
     closeMobileOverlays();
-    setHomeFilter("friends");
-    setActiveHomeDmFriendId("");
-    setFriendAddDraftName(draftName.trim());
-    setFriendListFilter("add");
+    openFriendsAddView(draftName);
   }
 
   async function addFreshRoom() {
@@ -2617,24 +2595,22 @@ export default function App() {
           <FriendsView
             typeFilter={homeFilter === "friends" ? null : homeFilter}
             filter={friendListFilter}
-            initialDisplayName={friendAddDraftName}
-            onFilterChange={setFriendListFilter}
-            onFriendsChanged={(payload) => {
-              const friendIds = new Set(payload.friends.map((friend) => friend.friend_id));
-              setHomeFriendsPayload(payload);
-              setSelectedHomeFriendId((previous) => {
-                if (previous && friendIds.has(previous)) return previous;
-                if (previous) return "";
-                return payload.friends[0]?.friend_id || "";
-              });
-              setActiveHomeDmFriendId((previous) => (previous && friendIds.has(previous) ? previous : ""));
-            }}
+            payload={homeFriendsPayload}
+            loading={friendsLoading}
+            status={friendsStatus}
+            busyId={friendsBusyId}
+            addDraftName={friendAddDraftName}
+            onShowDirectory={showFriendsDirectory}
             selectedFriendId={selectedHomeFriendId}
             activeDmFriendId={activeHomeDmFriendId}
-            onActiveDmFriendChange={setActiveHomeDmFriendId}
-            onSelectFriend={(friend) => setSelectedHomeFriendId(friend.friend_id)}
+            onSelectFriend={selectDirectoryFriend}
+            onOpenFriendDm={openDirectoryFriendDm}
+            onShowFriendProfile={showDirectoryFriendProfile}
+            onAddCandidate={addFriendsCandidate}
+            onAddManual={addFriendsManual}
+            onDeleteFriend={deleteDirectoryFriend}
             processGroups={processData?.groups || []}
-            onSessionActionComplete={refreshSessionAndMembers}
+            onSessionActionComplete={refreshSessionAndMembersWithFriends}
             onStartAddAgent={openAgentCreate}
           />
         ) : adminOpen ? (

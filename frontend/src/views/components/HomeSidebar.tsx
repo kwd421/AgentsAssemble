@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Bot, Cloud, Compass, Cpu, Plus, Search, User, Users, Wifi } from "lucide-react";
 import type { RoomFriend } from "../../api";
+import type { HomeFilter } from "../../app/friendsDirectoryTypes";
 import { roomFriendMatchesSearch } from "../../lib/friendSearch";
 import UserPanel from "./UserPanel";
 
@@ -12,8 +13,6 @@ const HOME_ITEMS = [
   { id: "remote", label: "Remote", icon: Wifi },
   { id: "human", label: "사람", icon: User },
 ] as const;
-
-export type HomeFilter = (typeof HOME_ITEMS)[number]["id"];
 
 export default function HomeSidebar({
   activeFilter,
