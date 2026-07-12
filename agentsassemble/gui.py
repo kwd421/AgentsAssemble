@@ -60,6 +60,7 @@ from agentsassemble.gui_provider_http import (
 )
 from agentsassemble.gui_mafia_http import register_mafia_routes
 from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
+from agentsassemble.gui_legacy_lobby_http import register_legacy_lobby_routes
 from agentsassemble.gui_observability_http import register_observability_routes
 from agentsassemble.gui_public_invite_http import register_public_invite_admin_routes
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
@@ -8267,6 +8268,18 @@ def _make_handler(
     register_room_settings_routes(route_table)
     register_side_chat_routes(route_table)
 
+    def _enqueue_legacy_lobby_auto_turn(event: dict[str, object]) -> None:
+        enqueue_agent_session_auto_turn_for_lobby_event(
+            output_root,
+            event,
+            turn_adapter=_local_agent_session_turn_adapter,
+        )
+
+    register_legacy_lobby_routes(
+        route_table,
+        enqueue_auto_turn=_enqueue_legacy_lobby_auto_turn,
+    )
+
     def _late_room_friend_direct_dm(ctx: RequestContext, payload: dict[str, object]) -> dict[str, object]:
         return room_friend_direct_dm_payload(
             ctx.deps.output_root,
@@ -8416,14 +8429,6 @@ def _make_handler(
                 return
             if path == "/api/meetings":
                 self._send_json({"meetings": list_meetings(output_root)})
-                return
-            if path == "/api/events/lobby":
-                self._send_sse_stream(
-                    "lobby",
-                    "lobby",
-                    meeting_id=str(query.get("meeting_id", [""])[0] or ""),
-                    last_event_id=self._last_event_id(query),
-                )
                 return
             if path == "/api/live-agents":
                 self._send_json(
@@ -8735,41 +8740,6 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json(result)
-                return
-            if parsed.path == "/api/lobby":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                try:
-                    payload = lobby_payload_with_attachments(output_root, payload)
-                except AttachmentError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                event = append_lobby_event(
-                    output_root,
-                    payload,
-                    allow_flow_metadata=_public_lobby_allows_room_scope(payload),
-                )
-                enqueue_agent_session_auto_turn_for_lobby_event(
-                    output_root,
-                    event,
-                    turn_adapter=_local_agent_session_turn_adapter,
-                )
-                self._send_json(
-                    {
-                        "event": event,
-                        "events": read_lobby(
-                            output_root,
-                            meeting_id=clean_lobby_text(event.get("flow_meeting_id"), limit=128),
-                        ),
-                    }
-                )
                 return
             if parsed.path == "/api/lobby/remote":
                 length = int(self.headers.get("Content-Length", "0") or "0")

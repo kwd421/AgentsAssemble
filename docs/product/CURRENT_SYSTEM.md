@@ -119,6 +119,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Provider credentials | `provider_secrets.py`, provider credential routes |
 | GUI HTTP response/WebSocket transport | `gui_response.py`, `gui_ws_http.py`; composition in `gui.py` |
 | Canonical room HTTP routes | `gui_room_*_http.py`; coordinator in `gui_room_http.py` |
+| Legacy lobby POST/SSE compatibility | `gui_legacy_lobby_http.py`; do not attach new canonical behavior here |
 | Room settings HTTP | `gui_room_settings_http.py`; persistence and normalization in `room_settings.py` |
 | Friends, direct-message and local-profile HTTP | `gui_social_http.py`; direct-message process callback wired in `gui.py` |
 | Play Mode Mafia HTTP | `gui_mafia_http.py`; game state and rules in `mafia_game.py` |
