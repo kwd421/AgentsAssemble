@@ -35,6 +35,7 @@ _DOMAIN_MODULES = (
     "social_http",
     "streams_http",
     "provider_http",
+    "mafia_http",
 )
 
 

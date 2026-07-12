@@ -120,6 +120,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | GUI HTTP response/WebSocket transport | `gui_response.py`, `gui_ws_http.py`; composition in `gui.py` |
 | Canonical room HTTP routes | `gui_room_*_http.py`; coordinator in `gui_room_http.py` |
 | Friends, direct-message and local-profile HTTP | `gui_social_http.py`; direct-message process callback wired in `gui.py` |
+| Play Mode Mafia HTTP | `gui_mafia_http.py`; game state and rules in `mafia_game.py` |
 | CLI parser registration | `cli_parser_common.py`, `cli_parser_*.py`; dispatch in `cli.py` |
 | React room state | `frontend/src/App.tsx`, `frontend/src/app/`, `useCanonicalRoom.ts` |
 | Room directory cache and hydration | `frontend/src/app/useRoomDirectory.ts`, `frontend/src/lib/roomDockModel.ts` |

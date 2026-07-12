@@ -58,6 +58,7 @@ from agentsassemble.gui_provider_http import (
     provider_catalog_payload,
     register_provider_routes,
 )
+from agentsassemble.gui_mafia_http import register_mafia_routes
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
 from agentsassemble.gui_social_http import register_room_friend_profile_routes
 from agentsassemble.gui_response import (
@@ -153,14 +154,6 @@ from agentsassemble.live_meeting_memory import (
     write_live_meeting_memory_artifacts,
 )
 from agentsassemble.live_transcript import projected_live_transcript_text
-from agentsassemble.mafia_game import (
-    cast_mafia_vote,
-    mafia_game_payload,
-    post_mafia_chat,
-    resolve_mafia_phase,
-    start_mafia_game,
-    submit_mafia_action,
-)
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.meeting_lifecycle import infer_live_status, project_meeting_lifecycle
 from agentsassemble.provider_health import provider_health_report
@@ -8349,6 +8342,14 @@ def _make_handler(
 
     register_provider_routes(route_table, credentials_allowed=_late_provider_credentials_allowed)
 
+    def _late_operation_json_payload(
+        ctx: RequestContext,
+        operation_name: str,
+    ) -> dict[str, object] | None:
+        return ctx.handler._operation_json_payload(operation=operation_name, target_id="")
+
+    register_mafia_routes(route_table, read_operation_payload=_late_operation_json_payload)
+
     class AgentsAssembleHandler(GuiResponseMethods, BaseHTTPRequestHandler):
         def _request_is_trusted(self, *, path: str, method: str) -> bool:
             return _request_trusted(
@@ -8515,18 +8516,6 @@ def _make_handler(
                         quota_viewer=quota_viewer,
                     )
                 )
-                return
-            if path == "/api/play/mafia":
-                try:
-                    game = mafia_game_payload(
-                        output_root,
-                        str(query.get("game_id", [""])[0] or ""),
-                        viewer_agent_id=str(query.get("viewer_agent_id", [""])[0] or ""),
-                    )
-                except ValueError as error:
-                    self._send_error(HTTPStatus.NOT_FOUND, str(error))
-                    return
-                self._send_json({"game": game})
                 return
             if path == "/api/live-agent-health":
                 self._send_json(
@@ -8927,81 +8916,6 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json({"event": event, "events": read_lobby(output_root)})
-                return
-            if parsed.path == "/api/play/mafia/start":
-                payload = self._operation_json_payload(operation="mafia.start", target_id="")
-                if payload is None:
-                    return
-                try:
-                    game = start_mafia_game(output_root, payload)
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                self._send_json({"game": game})
-                return
-            if parsed.path == "/api/play/mafia/chat":
-                payload = self._operation_json_payload(operation="mafia.chat", target_id="")
-                if payload is None:
-                    return
-                try:
-                    event = post_mafia_chat(output_root, payload)
-                    game = mafia_game_payload(
-                        output_root,
-                        str(payload.get("game_id") or ""),
-                        viewer_agent_id=str(payload.get("viewer_agent_id") or payload.get("speaker_id") or ""),
-                    )
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                self._send_json({"event": event, "game": game})
-                return
-            if parsed.path == "/api/play/mafia/vote":
-                payload = self._operation_json_payload(operation="mafia.vote", target_id="")
-                if payload is None:
-                    return
-                try:
-                    event = cast_mafia_vote(output_root, payload)
-                    game = mafia_game_payload(
-                        output_root,
-                        str(payload.get("game_id") or ""),
-                        viewer_agent_id=str(payload.get("viewer_agent_id") or payload.get("voter_id") or ""),
-                    )
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                self._send_json({"event": event, "game": game})
-                return
-            if parsed.path == "/api/play/mafia/action":
-                payload = self._operation_json_payload(operation="mafia.action", target_id="")
-                if payload is None:
-                    return
-                try:
-                    event = submit_mafia_action(output_root, payload)
-                    game = mafia_game_payload(
-                        output_root,
-                        str(payload.get("game_id") or ""),
-                        viewer_agent_id=str(payload.get("viewer_agent_id") or payload.get("actor_id") or ""),
-                    )
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                self._send_json({"event": event, "game": game})
-                return
-            if parsed.path == "/api/play/mafia/resolve":
-                payload = self._operation_json_payload(operation="mafia.resolve", target_id="")
-                if payload is None:
-                    return
-                try:
-                    resolved = resolve_mafia_phase(output_root, payload)
-                    game = mafia_game_payload(
-                        output_root,
-                        str(resolved.get("game_id") or payload.get("game_id") or ""),
-                        viewer_agent_id=str(payload.get("viewer_agent_id") or ""),
-                    )
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                self._send_json({"game": game})
                 return
             if parsed.path == "/api/live-agent-flow/start":
                 payload = self._operation_json_payload(operation="flow.start", target_id="")
