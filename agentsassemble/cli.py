@@ -213,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
             output_root=Path(args.output_root),
             public_url=args.public_url,
             host_token=args.host_token,
+            unsafe_expose_control_plane=args.unsafe_expose_control_plane,
             start_public_tunnel=args.start_public_tunnel,
             live_agent_config=Path(args.live_agent_config) if args.live_agent_config else None,
             live_agent_group_id=args.live_agent_group_id,

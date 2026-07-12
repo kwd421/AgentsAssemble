@@ -265,6 +265,7 @@ class CliTimeoutCoreTests(unittest.TestCase):
                     "https://shared-room.example.com",
                     "--host-token",
                     "host-secret",
+                    "--unsafe-expose-control-plane",
                     "--start-public-tunnel",
                 ]
             )
@@ -274,6 +275,7 @@ class CliTimeoutCoreTests(unittest.TestCase):
         kwargs = serve_gui.call_args.kwargs
         self.assertEqual(kwargs["public_url"], "https://shared-room.example.com")
         self.assertEqual(kwargs["host_token"], "host-secret")
+        self.assertTrue(kwargs["unsafe_expose_control_plane"])
         self.assertTrue(kwargs["start_public_tunnel"])
 
     def test_sessions_list_outputs_codex_session_index_as_json(self):

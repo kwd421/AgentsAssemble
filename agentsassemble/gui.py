@@ -1180,6 +1180,7 @@ def serve_gui(
     *,
     public_url: str = "",
     host_token: str = "",
+    unsafe_expose_control_plane: bool = False,
     start_public_tunnel: bool = False,
     live_agent_config: Path | None = None,
     live_agent_group_id: str = "",
@@ -1189,6 +1190,12 @@ def serve_gui(
     live_agent_stale_restart_after_seconds: float = 0.0,
     frontend_dist_root: Path | None = None,
 ) -> None:
+    if not _is_loopback_host(host) and not unsafe_expose_control_plane:
+        raise ValueError(
+            "Direct non-loopback GUI bind is disabled because it exposes the local control plane. "
+            "Use a loopback bind with the public tunnel, or pass --unsafe-expose-control-plane "
+            "only on an isolated trusted network."
+        )
     root = output_root or Path(".agentsassemble")
     process_supervisor = LiveAgentProcessSupervisor(root)
     session_run_controller = LiveAgentSessionRunController(root)
@@ -1212,8 +1219,8 @@ def serve_gui(
     server = ThreadingHTTPServer((host, port), handler)
     if not _is_loopback_host(host):
         print(
-            f"WARNING: AgentsAssemble GUI bound to non-loopback host {host!r}; the control "
-            "plane is unauthenticated and can launch local processes. Expose it only on trusted networks."
+            f"WARNING: AgentsAssemble GUI explicitly bound to non-loopback host {host!r}; the control "
+            "plane is unauthenticated and can launch local processes. This unsafe mode is for isolated networks only."
         )
     try:
         if host_token:
@@ -8107,10 +8114,9 @@ def _request_trusted(
     path: str = "",
     method: str = "GET",
 ) -> bool:
-    # A non-loopback bind is an explicit operator choice to expose the
-    # unauthenticated control plane (see the startup warning), so the loopback
-    # allowlist is only enforced for the default loopback bind, where it blocks
-    # DNS-rebinding/CSRF driven by a browser.
+    # serve_gui permits this branch only after the operator explicitly opts in
+    # to unsafe direct exposure. The loopback allowlist remains the default
+    # DNS-rebinding/CSRF boundary.
     if not _is_loopback_host(bound_host):
         return True
     host_trusted = _host_header_is_trusted(host_header)

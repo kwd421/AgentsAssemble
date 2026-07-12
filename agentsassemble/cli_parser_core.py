@@ -56,6 +56,11 @@ def register_core_parsers(subparsers: argparse._SubParsersAction) -> None:
     gui.add_argument("--public-url", default="", help="Public HTTP(S) base URL used for external /join?token= invite links.")
     gui.add_argument("--host-token", default="", help="Runtime host token for public invite management endpoints.")
     gui.add_argument(
+        "--unsafe-expose-control-plane",
+        action="store_true",
+        help="Allow a direct non-loopback bind that exposes the unauthenticated local control plane.",
+    )
+    gui.add_argument(
         "--start-public-tunnel",
         "--public-tunnel",
         action="store_true",

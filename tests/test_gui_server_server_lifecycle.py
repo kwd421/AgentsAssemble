@@ -18,6 +18,10 @@ from tests.gui_server_test_support import (
 
 class GuiServerLifecycleTests(unittest.TestCase):
 
+    def test_serve_gui_rejects_non_loopback_bind_without_explicit_unsafe_opt_in(self):
+        with self.assertRaisesRegex(ValueError, "Direct non-loopback GUI bind is disabled"):
+            serve_gui(host="0.0.0.0", port=0)
+
     def test_serve_gui_closes_live_agent_process_supervisor(self):
         class FakeServer:
             def __init__(self, address, handler):
