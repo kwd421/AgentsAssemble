@@ -292,12 +292,6 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("roleOverrides={activeMemberRoles}", app_source)
         self.assertIn("onRoleChange={updateMemberRole}", app_source)
         self.assertIn("channelNotifications={activeChannelSettings}", app_source)
-        self.assertIn("const existingMember = activeRoomMembers.find", app_source)
-        self.assertIn("void upsertRoomMember({", app_source)
-        self.assertIn("role,", app_source)
-        self.assertIn("const key = roomSettingsKey(activeRoom);", app_source)
-        self.assertIn("[key]: payload.members || []", app_source)
-        self.assertIn("[activeRoomKey]: settings.memberRoles", app_source)
 
         self.assertIn("방 연결 정보", app_source)
         self.assertNotIn("PLAY_ACTIVITIES", room_connection_source)
@@ -482,7 +476,6 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("activeRoomMembers.forEach((member) => appendMemberMentionables(names, seen, member));", app_source)
         self.assertIn("mentionables={scopedMentionables}", app_source)
         self.assertIn("[activeRoomKey]: payload.members || []", app_source)
-        self.assertIn("[key]: payload.members || []", app_source)
         self.assertNotIn("inviteFriendToActiveRoom", app_source)
         self.assertNotIn("onInviteFriendToRoom", app_source)
         self.assertIn("members={activeRoomMembers}", app_source)
@@ -926,11 +919,9 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("type ChannelSettings", room_api_source)
         self.assertIn("channelSettings: Record<string, ChannelSettings>;", room_api_source)
         self.assertIn("channel_settings", room_api_source)
-        self.assertIn("roomChannelSettings", app_source)
         self.assertIn("openChannelMenu", app_source)
         self.assertIn("markChannelRead", app_source)
         self.assertIn("setChannelNotifications", app_source)
-        self.assertIn("channelSettings={roomChannelSettings[roomSettingsKey(settingsModalRoom)] || {}}", app_source)
         self.assertIn("onChannelSettingChange", app_source)
         self.assertIn("data-muted", app_source)
 
@@ -1112,12 +1103,13 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_react_shell_identifies_discord_room_client_without_legacy_link(self):
         app_source = frontend_file("App.tsx")
+        room_connection_source = frontend_file("views/components/RoomConnectionPanel.tsx")
         css = (FRONTEND_DIR / "index.css").read_text()
 
         self.assertIn("HomeSidebar", app_source)
         self.assertIn("FriendsView", app_source)
         self.assertIn("RoomSettingsModal", app_source)
-        self.assertIn("MemberList", app_source)
+        self.assertIn("MemberList", room_connection_source)
         self.assertNotIn("ops-client-marker", app_source)
         self.assertNotIn("Local-first", app_source)
         self.assertNotIn("빠른 시작", app_source)

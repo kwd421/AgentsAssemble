@@ -29,13 +29,10 @@ import {
   fetchLiveAgentProcesses,
   fetchRoomChannels,
   createRoomChannel,
-  fetchRoomSettings,
   ensureRoomMeeting,
   fetchRoomMembers,
   fetchMeetingLifecycle,
   fetchWorkroomQueueEvidence,
-  saveRoomSettings,
-  upsertRoomMember,
   applyMeetingStreamUpdate,
   initialMeetingStreamState,
   meetingLiveEventsToTimelineEvents,
@@ -52,7 +49,6 @@ import {
   type LobbyEvent,
   type ChannelNotificationSetting,
   type ChannelSettings,
-  type ConversationMode,
   type RoomChannel,
   type RoomFriend,
   type RoomMember,
@@ -64,6 +60,7 @@ import { useRoomDirectory } from "./app/useRoomDirectory";
 import { useActiveMafiaGame } from "./app/useActiveMafiaGame";
 import { useRoomSideChat } from "./app/useRoomSideChat";
 import { useRoomInviteController } from "./app/useRoomInviteController";
+import { useRoomSettingsController } from "./app/useRoomSettingsController";
 import type { HomeFilter } from "./app/friendsDirectoryTypes";
 import { useCanonicalRoom } from "./useCanonicalRoom";
 import AdminPanel from "./views/AdminPanel";
@@ -80,7 +77,6 @@ import type { ChannelHeaderActions } from "./views/components/ChannelHeader";
 import AgentCreateModal from "./views/components/AgentCreateModal";
 import GuestJoinProfilePanel from "./views/components/GuestJoinProfilePanel";
 import HomeSidebar from "./views/components/HomeSidebar";
-import type { RoleId } from "./views/components/MemberList";
 import RoomConnectionPanel from "./views/components/RoomConnectionPanel";
 import RoomInviteModal from "./views/components/RoomInviteModal";
 import MobileRoomInfoPanel from "./views/components/MobileRoomInfoPanel";
@@ -89,13 +85,7 @@ import type { RoomMenuState } from "./views/components/RoomRail";
 import RoomSettingsModal from "./views/components/RoomSettingsModal";
 import SideChatDock from "./views/components/SideChatDock";
 import UserPanel from "./views/components/UserPanel";
-import {
-  completeRoomAppearance,
-  loadRoomAppearances,
-  persistRoomAppearances,
-  roomAppearanceStyle,
-  type RoomAppearance,
-} from "./lib/roomAppearance";
+import { roomAppearanceStyle } from "./lib/roomAppearance";
 import {
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
@@ -358,18 +348,7 @@ export default function App() {
   const [guestAiPacketStatus, setGuestAiPacketStatus] = useState("");
   const [flowData, setFlowData] = useState<FlowResponse | null>(null);
   const [flowError, setFlowError] = useState<Error | null>(null);
-  const [roomAppearances, setRoomAppearances] = useState<Record<string, RoomAppearance>>(() =>
-    loadRoomAppearances()
-  );
-  const [roomMemberRoles, setRoomMemberRoles] = useState<Record<string, Record<string, string>>>({});
   const [roomMembersByRoom, setRoomMembersByRoom] = useState<Record<string, RoomMember[]>>({});
-  const [roomChannelSettings, setRoomChannelSettings] = useState<
-    Record<string, Record<string, ChannelSettings>>
-  >({});
-  const [roomConversationModes, setRoomConversationModes] = useState<
-    Record<string, ConversationMode>
-  >({});
-  const [roomMaxRelayTurns, setRoomMaxRelayTurns] = useState<Record<string, number>>({});
   const [agentActivityVisibility, setAgentActivityVisibility] = useState(
     loadAgentActivityVisibility
   );
@@ -511,6 +490,18 @@ export default function App() {
     8000
   );
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? EMPTY_ROOM;
+  const handleRoomMembersChanged = useCallback((room: RoomDockItem, members: RoomMember[]) => {
+    setRoomMembersByRoom((previous) => ({
+      ...previous,
+      [roomSettingsKey(room)]: members,
+    }));
+  }, []);
+  const roomSettings = useRoomSettingsController({
+    activeRoom,
+    onRoomMetadataLoaded: updateRoomByMeetingId,
+    onMembersChanged: handleRoomMembersChanged,
+  });
+  const roomAppearances = roomSettings.appearances;
   const activeSideChatMeetingId = activeRoom.meetingId || "";
   const {
     error: sideChatError,
@@ -558,16 +549,10 @@ export default function App() {
     onSideChat: handleSideChatRealtimeEvents,
     onError: handleSideChatError,
   });
-  const handleInvitedRoomMembers = useCallback((room: RoomDockItem, members: RoomMember[]) => {
-    setRoomMembersByRoom((previous) => ({
-      ...previous,
-      [roomSettingsKey(room)]: members,
-    }));
-  }, []);
   const roomInvite = useRoomInviteController({
     guestLocked,
     availableProviders: canonicalRoom.availableProviders,
-    onMembersChanged: handleInvitedRoomMembers,
+    onMembersChanged: handleRoomMembersChanged,
   });
   const {
     modal: inviteModal,
@@ -981,7 +966,7 @@ export default function App() {
     agentActivityVisibility,
     scopedAgents,
   ]);
-  const activeChannelSettings = roomChannelSettings[activeRoomKey] || {};
+  const activeChannelSettings = roomSettings.channelSettingsFor(activeRoom);
   const activeCustomChannels = roomCustomChannels[activeRoomKey] || [];
   const activeCustomChannel = activeCustomChannels.find((item) => item.id === channel) || null;
   const menuRoom = roomMenu ? rooms.find((room) => room.id === roomMenu.roomId) : undefined;
@@ -1283,9 +1268,7 @@ export default function App() {
     : undefined;
   const settingsModalInitialSectionId = settingsModal?.initialSectionId;
   const inviteModalAppearance = inviteModalRoom
-    ? completeRoomAppearance(
-        roomAppearances[roomSettingsKey(inviteModalRoom)] || roomAppearances[inviteModalRoom.id]
-      )
+    ? roomSettings.appearanceFor(inviteModalRoom)
     : undefined;
   const localPreviewUrl = inviteModalRoom
     ? localPreviewInviteUrlForRoom(inviteModalRoom)
@@ -1293,9 +1276,7 @@ export default function App() {
   const inviteModalMembers = inviteModalRoom
     ? roomMembersByRoom[roomSettingsKey(inviteModalRoom)] || []
     : [];
-  const activeAppearance = completeRoomAppearance(
-    roomAppearances[activeRoomKey] || roomAppearances[activeRoom.id]
-  );
+  const activeAppearance = roomSettings.appearanceFor(activeRoom);
   const activeRoomStyle = useMemo(() => roomAppearanceStyle(activeAppearance), [activeAppearance]);
   const shellStyle = useMemo(
     () =>
@@ -1305,7 +1286,7 @@ export default function App() {
       }) as CSSProperties,
     [activeRoomStyle, channelSidebarWidth]
   );
-  const activeMemberRoles = roomMemberRoles[activeRoomKey] || {};
+  const activeMemberRoles = roomSettings.memberRolesFor(activeRoom);
 
   function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return;
@@ -1381,48 +1362,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!activeRoom.meetingId) return;
-    let cancelled = false;
-    fetchRoomSettings(activeRoom.meetingId)
-      .then((settings) => {
-        if (cancelled) return;
-        if (settings.label || settings.topic || settings.shortLabel) {
-          updateRoomByMeetingId(activeRoom.meetingId, {
-            ...(settings.label ? { label: settings.label } : {}),
-            ...(settings.topic ? { topic: settings.topic } : {}),
-            ...(settings.shortLabel ? { shortLabel: settings.shortLabel } : {}),
-          });
-        }
-        setRoomAppearances((previous) => ({
-          ...previous,
-          [activeRoomKey]: settings.appearance,
-        }));
-        setRoomMemberRoles((previous) => ({
-          ...previous,
-          [activeRoomKey]: settings.memberRoles,
-        }));
-        setRoomChannelSettings((previous) => ({
-          ...previous,
-          [activeRoomKey]: settings.channelSettings,
-        }));
-        setRoomConversationModes((previous) => ({
-          ...previous,
-          [activeRoomKey]: settings.conversationMode,
-        }));
-        setRoomMaxRelayTurns((previous) => ({
-          ...previous,
-          [activeRoomKey]: settings.maxRelayTurns,
-        }));
-      })
-      .catch(() => {
-        // Room settings are a UI enhancement; an unavailable endpoint should not blank the room.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeRoom.meetingId, activeRoomKey, updateRoomByMeetingId]);
-
-  useEffect(() => {
     refreshFlow();
   }, [refreshFlow, activeRoom.meetingId]);
 
@@ -1435,82 +1374,12 @@ export default function App() {
     refreshMembers();
   }, [canonicalRoom.membershipRevision, refreshMembers]);
 
-  function persistRoomSettings(
-    room: RoomDockItem,
-    nextAppearance: RoomAppearance,
-    nextRoles?: Record<string, string>,
-    nextChannels?: Record<string, ChannelSettings>,
-    nextConversationMode?: ConversationMode,
-    nextMaxRelayTurns?: number
-  ) {
-    void saveRoomSettings({
-      roomId: room.meetingId,
-      label: room.label,
-      topic: room.topic,
-      shortLabel: room.shortLabel,
-      appearance: nextAppearance,
-      memberRoles: nextRoles ?? roomMemberRoles[roomSettingsKey(room)] ?? {},
-      channelSettings: nextChannels ?? roomChannelSettings[roomSettingsKey(room)] ?? {},
-      conversationMode:
-        nextConversationMode ?? roomConversationModes[roomSettingsKey(room)] ?? "ordered",
-      maxRelayTurns: nextMaxRelayTurns ?? roomMaxRelayTurns[roomSettingsKey(room)] ?? 6,
-    }).catch(() => {
-      // Saving is reflected again by the next explicit settings read; keep the optimistic UI state.
-    });
-  }
-
-  function updateRoomAppearance(room: RoomDockItem, updates: Partial<RoomAppearance>) {
-    const key = roomSettingsKey(room);
-    const previousAppearance = completeRoomAppearance(roomAppearances[key] || roomAppearances[room.id]);
-    const nextAppearance = completeRoomAppearance({ ...previousAppearance, ...updates });
-    setRoomAppearances((previous) => {
-      const next = {
-        ...previous,
-        [key]: nextAppearance,
-      };
-      persistRoomAppearances(next);
-      return next;
-    });
-    persistRoomSettings(room, nextAppearance);
-  }
-
-  function updateMemberRole(memberId: string, role: RoleId) {
-    const key = roomSettingsKey(activeRoom);
-    const nextRoles = { ...activeMemberRoles, [memberId]: role };
-    setRoomMemberRoles((previous) => ({ ...previous, [key]: nextRoles }));
-    persistRoomSettings(activeRoom, activeAppearance, nextRoles);
-    const existingMember = activeRoomMembers.find((member) => member.participant_id === memberId);
-    if (existingMember && activeRoom.meetingId) {
-      void upsertRoomMember({
-        ...existingMember,
-        meeting_id: activeRoom.meetingId,
-        role,
-      })
-        .then((payload) => {
-          setRoomMembersByRoom((previous) => ({
-            ...previous,
-            [key]: payload.members || [],
-          }));
-        })
-        .catch(() => {
-          // Keep the optimistic role grouping; the next members refresh can reconcile persistence.
-        });
-    }
+  function updateMemberRole(memberId: string, role: RoomMember["role"]) {
+    roomSettings.updateMemberRole(activeRoom, activeRoomMembers, memberId, role);
   }
 
   function updateChannelSetting(channelId: string, updates: Partial<ChannelSettings>) {
-    const key = roomSettingsKey(activeRoom);
-    const currentSetting = activeChannelSettings[channelId];
-    const nextSetting: ChannelSettings = {
-      notifications: updates.notifications ?? currentSetting?.notifications ?? "default",
-      lastReadAt: updates.lastReadAt ?? currentSetting?.lastReadAt,
-    };
-    const nextChannelSettings = {
-      ...activeChannelSettings,
-      [channelId]: nextSetting,
-    };
-    setRoomChannelSettings((previous) => ({ ...previous, [key]: nextChannelSettings }));
-    persistRoomSettings(activeRoom, activeAppearance, activeMemberRoles, nextChannelSettings);
+    roomSettings.updateChannelSetting(activeRoom, channelId, updates);
   }
 
   function markChannelRead(channelId: string) {
@@ -1627,12 +1496,10 @@ export default function App() {
         <RoomSettingsModal
           room={settingsModalRoom}
           initialSectionId={settingsModalInitialSectionId}
-          appearance={completeRoomAppearance(
-            roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
-          )}
-          channelSettings={roomChannelSettings[roomSettingsKey(settingsModalRoom)] || {}}
-          conversationMode={roomConversationModes[roomSettingsKey(settingsModalRoom)] || "ordered"}
-          maxRelayTurns={roomMaxRelayTurns[roomSettingsKey(settingsModalRoom)] || 6}
+          appearance={roomSettings.appearanceFor(settingsModalRoom)}
+          channelSettings={roomSettings.channelSettingsFor(settingsModalRoom)}
+          conversationMode={roomSettings.conversationModeFor(settingsModalRoom)}
+          maxRelayTurns={roomSettings.maxRelayTurnsFor(settingsModalRoom)}
           canInvite={!guestLocked}
           onClose={() => setSettingsModal(null)}
           onInvite={() => {
@@ -1642,63 +1509,18 @@ export default function App() {
           onRoomChange={(updates) => {
             const nextRoom = { ...settingsModalRoom, ...updates };
             updateRoom(settingsModalRoom.id, updates);
-            persistRoomSettings(
-              nextRoom,
-              completeRoomAppearance(
-                roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
-              )
-            );
+            roomSettings.persist(nextRoom);
           }}
-          onAppearanceChange={(updates) => updateRoomAppearance(settingsModalRoom, updates)}
-          onChannelSettingChange={(channelId, updates) => {
-            const key = roomSettingsKey(settingsModalRoom);
-            const previousSettings = roomChannelSettings[key] || {};
-            const currentSetting = previousSettings[channelId];
-            const nextSetting: ChannelSettings = {
-              notifications: updates.notifications ?? currentSetting?.notifications ?? "default",
-              lastReadAt: updates.lastReadAt ?? currentSetting?.lastReadAt,
-            };
-            const nextSettings = {
-              ...previousSettings,
-              [channelId]: nextSetting,
-            };
-            setRoomChannelSettings((previous) => ({ ...previous, [key]: nextSettings }));
-            persistRoomSettings(
-              settingsModalRoom,
-              completeRoomAppearance(
-                roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
-              ),
-              roomMemberRoles[key] || {},
-              nextSettings
-            );
-          }}
-          onConversationModeChange={(mode) => {
-            const key = roomSettingsKey(settingsModalRoom);
-            setRoomConversationModes((previous) => ({ ...previous, [key]: mode }));
-            persistRoomSettings(
-              settingsModalRoom,
-              completeRoomAppearance(
-                roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
-              ),
-              roomMemberRoles[key] || {},
-              roomChannelSettings[key] || {},
-              mode
-            );
-          }}
-          onMaxRelayTurnsChange={(turns) => {
-            const key = roomSettingsKey(settingsModalRoom);
-            setRoomMaxRelayTurns((previous) => ({ ...previous, [key]: turns }));
-            persistRoomSettings(
-              settingsModalRoom,
-              completeRoomAppearance(
-                roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
-              ),
-              roomMemberRoles[key] || {},
-              roomChannelSettings[key] || {},
-              roomConversationModes[key] || "ordered",
-              turns
-            );
-          }}
+          onAppearanceChange={(updates) => roomSettings.updateAppearance(settingsModalRoom, updates)}
+          onChannelSettingChange={(channelId, updates) =>
+            roomSettings.updateChannelSetting(settingsModalRoom, channelId, updates)
+          }
+          onConversationModeChange={(mode) =>
+            roomSettings.updateConversationMode(settingsModalRoom, mode)
+          }
+          onMaxRelayTurnsChange={(turns) =>
+            roomSettings.updateMaxRelayTurns(settingsModalRoom, turns)
+          }
           onDeleteRoom={(confirmationName) => deleteRoom(settingsModalRoom.id, confirmationName)}
         />
       )}
