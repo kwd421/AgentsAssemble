@@ -33,6 +33,7 @@ _DOMAIN_MODULES = (
     "moderation_finalization",
     "lobby_social",
     "social_http",
+    "room_settings_http",
     "streams_http",
     "provider_http",
     "mafia_http",

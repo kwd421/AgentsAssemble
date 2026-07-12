@@ -60,6 +60,7 @@ from agentsassemble.gui_provider_http import (
 )
 from agentsassemble.gui_mafia_http import register_mafia_routes
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
+from agentsassemble.gui_room_settings_http import register_room_settings_routes
 from agentsassemble.gui_social_http import register_room_friend_profile_routes
 from agentsassemble.gui_response import (
     GuiResponseMethods,
@@ -211,7 +212,6 @@ from agentsassemble.room_users import (
     upsert_room,
     user_for_participant,
 )
-from agentsassemble.room_settings import room_settings_payload, update_room_settings
 from agentsassemble.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
 from agentsassemble.room_invite import (
     active_sessions_summary,
@@ -8295,6 +8295,7 @@ def _make_handler(
     )
     route_table = Router()
     register_room_routes(route_table)
+    register_room_settings_routes(route_table)
 
     def _late_room_friend_direct_dm(ctx: RequestContext, payload: dict[str, object]) -> dict[str, object]:
         return room_friend_direct_dm_payload(
@@ -8449,9 +8450,6 @@ def _make_handler(
                     meeting_id=str(query.get("meeting_id", [""])[0] or ""),
                     last_event_id=self._last_event_id(query),
                 )
-                return
-            if path == "/api/room-settings":
-                self._send_json(room_settings_payload(output_root, room_id=str(query.get("room_id", [""])[0] or "")))
                 return
             if path == "/api/live-agents":
                 self._send_json(
@@ -8847,21 +8845,6 @@ def _make_handler(
                         ),
                     }
                 )
-                return
-            if parsed.path == "/api/room-settings":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                try:
-                    self._send_json(update_room_settings(output_root, payload))
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                 return
             if parsed.path == "/api/lobby/remote":
                 length = int(self.headers.get("Content-Length", "0") or "0")
