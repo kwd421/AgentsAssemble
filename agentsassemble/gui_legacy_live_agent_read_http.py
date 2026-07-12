@@ -1,0 +1,132 @@
+"""Read-only HTTP projection for the retained legacy resident control surface."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from http import HTTPStatus
+
+from agentsassemble.gui_router import RequestContext, Router
+
+
+PayloadBuilder = Callable[..., dict[str, object]]
+
+
+@dataclass(frozen=True)
+class LegacyLiveAgentReadDeps:
+    processes: object
+    session_runs: object
+    session_run_monitor: object | None
+    agents_payload: PayloadBuilder
+    health_payload: PayloadBuilder
+    readiness_payload: PayloadBuilder
+    processes_payload: PayloadBuilder
+    process_events_payload: PayloadBuilder
+    operations_payload: PayloadBuilder
+    session_runs_payload: PayloadBuilder
+    readiness_error_message: Callable[[Exception], str]
+
+
+def register_legacy_live_agent_read_routes(
+    router: Router,
+    *,
+    deps: LegacyLiveAgentReadDeps,
+) -> None:
+    @router.get("/api/live-agents")
+    def live_agents(ctx: RequestContext) -> None:
+        ctx.send_json(
+            deps.agents_payload(
+                ctx.deps.output_root,
+                meeting_id=ctx.query_value("meeting_id"),
+                agent_ids=ctx.query.get("agent_id", []),
+                statuses=ctx.query.get("status", []),
+                safe=_query_bool(ctx.query_value("safe")),
+            )
+        )
+
+    @router.get("/api/live-agent-health")
+    def live_agent_health(ctx: RequestContext) -> None:
+        ctx.send_json(
+            deps.health_payload(
+                ctx.deps.output_root,
+                deps.processes,
+                session_run_monitor=deps.session_run_monitor,
+            )
+        )
+
+    @router.get("/api/live-agent-sessions/readiness")
+    def live_agent_session_readiness(ctx: RequestContext) -> None:
+        meeting_id = ctx.query_value("meeting_id")
+        group_id = ctx.query_value("group_id")
+        try:
+            ctx.send_json(
+                deps.readiness_payload(
+                    ctx.deps.output_root,
+                    deps.processes,
+                    meeting_id=meeting_id,
+                    group_id=group_id,
+                )
+            )
+        except (OSError, ValueError) as error:
+            ctx.send_error(
+                HTTPStatus.BAD_REQUEST,
+                deps.readiness_error_message(error),
+                details={"requested_meeting_id": meeting_id, "group_id": group_id},
+            )
+
+    @router.get("/api/live-agent-processes")
+    def live_agent_processes(ctx: RequestContext) -> None:
+        ctx.send_json(deps.processes_payload(deps.processes, output_root=ctx.deps.output_root))
+
+    @router.get("/api/live-agent-process-events")
+    def live_agent_process_events(ctx: RequestContext) -> None:
+        ctx.send_json(
+            deps.process_events_payload(
+                ctx.deps.output_root,
+                limit=_query_limit(ctx, default=50),
+                group_id=ctx.query_value("group_id"),
+                scan_limit=ctx.query_value("scan_limit"),
+            )
+        )
+
+    @router.get("/api/live-agent-operations")
+    def live_agent_operations(ctx: RequestContext) -> None:
+        ctx.send_json(
+            deps.operations_payload(
+                ctx.deps.output_root,
+                limit=_query_limit(ctx, default=50),
+                operation=ctx.query_value("operation"),
+                target_id=ctx.query_value("target_id"),
+                status=ctx.query_value("status"),
+                scan_limit=ctx.query_value("scan_limit"),
+                scan_tail=_query_bool(ctx.query_value("scan_tail")),
+            )
+        )
+
+    @router.get("/api/live-agent-session-runs")
+    def live_agent_session_runs(ctx: RequestContext) -> None:
+        ctx.send_json(
+            deps.session_runs_payload(
+                deps.session_runs,
+                limit=_query_limit(ctx, default=50),
+                run_id=ctx.query_value("run_id"),
+                meeting_id=ctx.query_value("meeting_id"),
+                group_id=ctx.query_value("group_id"),
+                include_readiness=_query_bool(ctx.query_value("include_readiness")),
+                output_root=ctx.deps.output_root,
+                process_supervisor=deps.processes,
+            )
+        )
+
+
+def _query_limit(ctx: RequestContext, *, default: int) -> int:
+    try:
+        return int(ctx.query_value("limit", str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _query_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return isinstance(value, str) and value.strip().lower() in {"1", "true", "yes", "on"}

@@ -73,8 +73,17 @@ class RequestContext:
     def send_json(self, payload: dict[str, object]) -> None:
         self.handler._send_json(payload)
 
-    def send_error(self, status: HTTPStatus, message: str) -> None:
-        self.handler._send_error(status, message)
+    def send_error(
+        self,
+        status: HTTPStatus,
+        message: str,
+        *,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        if details is None:
+            self.handler._send_error(status, message)
+            return
+        self.handler._send_error(status, message, details=details)
 
     def read_json_body(self, *, coerce_non_object: bool = False) -> dict[str, object] | None:
         """Parse the JSON request body; sends 400 and returns None when bad."""

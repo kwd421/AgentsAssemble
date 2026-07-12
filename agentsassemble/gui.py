@@ -61,6 +61,10 @@ from agentsassemble.gui_provider_http import (
 from agentsassemble.gui_mafia_http import register_mafia_routes
 from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
 from agentsassemble.gui_legacy_lobby_http import register_legacy_lobby_routes
+from agentsassemble.gui_legacy_live_agent_read_http import (
+    LegacyLiveAgentReadDeps,
+    register_legacy_live_agent_read_routes,
+)
 from agentsassemble.gui_observability_http import register_observability_routes
 from agentsassemble.gui_public_invite_http import register_public_invite_admin_routes
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
@@ -8040,6 +8044,22 @@ def _make_handler(
     )
 
     register_observability_routes(route_table, processes=live_agent_process_supervisor)
+    register_legacy_live_agent_read_routes(
+        route_table,
+        deps=LegacyLiveAgentReadDeps(
+            processes=live_agent_process_supervisor,
+            session_runs=live_agent_session_run_controller,
+            session_run_monitor=session_run_monitor,
+            agents_payload=live_agents_payload,
+            health_payload=live_agent_health_payload,
+            readiness_payload=live_agent_session_readiness_payload,
+            processes_payload=live_agent_processes_payload,
+            process_events_payload=live_agent_process_events_payload,
+            operations_payload=live_agent_operations_payload,
+            session_runs_payload=live_agent_session_runs_payload,
+            readiness_error_message=_session_check_error_message,
+        ),
+    )
 
     def _late_operation_json_payload(
         ctx: RequestContext,
@@ -8156,46 +8176,6 @@ def _make_handler(
             if path == "/api/meetings":
                 self._send_json({"meetings": list_meetings(output_root)})
                 return
-            if path == "/api/live-agents":
-                self._send_json(
-                    live_agents_payload(
-                        output_root,
-                        meeting_id=str(query.get("meeting_id", [""])[0] or ""),
-                        agent_ids=query.get("agent_id", []),
-                        statuses=query.get("status", []),
-                        safe=_payload_bool(query.get("safe", [""])[0]),
-                    )
-                )
-                return
-            if path == "/api/live-agent-health":
-                self._send_json(
-                    live_agent_health_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        session_run_monitor=session_run_monitor,
-                    )
-                )
-                return
-            if path == "/api/live-agent-sessions/readiness":
-                try:
-                    self._send_json(
-                        live_agent_session_readiness_payload(
-                            output_root,
-                            live_agent_process_supervisor,
-                            meeting_id=str(query.get("meeting_id", [""])[0] or ""),
-                            group_id=str(query.get("group_id", [""])[0] or ""),
-                        )
-                    )
-                except (OSError, ValueError) as error:
-                    details = {
-                        "requested_meeting_id": str(query.get("meeting_id", [""])[0] or ""),
-                        "group_id": str(query.get("group_id", [""])[0] or ""),
-                    }
-                    self._send_error(HTTPStatus.BAD_REQUEST, _session_check_error_message(error), details=details)
-                return
-            if path == "/api/live-agent-processes":
-                self._send_json(live_agent_processes_payload(live_agent_process_supervisor, output_root=output_root))
-                return
             if path == "/api/live-agent-create/options":
                 self._send_json(frontend_live_agent_options_payload(default_workspace=Path.cwd()))
                 return
@@ -8210,43 +8190,6 @@ def _make_handler(
                             workspace=clean_lobby_text(workspace, limit=512),
                         )
                     }
-                )
-                return
-            if path == "/api/live-agent-process-events":
-                self._send_json(
-                    live_agent_process_events_payload(
-                        output_root,
-                        limit=self._limit(query, default=50),
-                        group_id=str(query.get("group_id", [""])[0] or ""),
-                        scan_limit=query.get("scan_limit", [""])[0],
-                    )
-                )
-                return
-            if path == "/api/live-agent-operations":
-                self._send_json(
-                    live_agent_operations_payload(
-                        output_root,
-                        limit=self._limit(query, default=50),
-                        operation=str(query.get("operation", [""])[0] or ""),
-                        target_id=str(query.get("target_id", [""])[0] or ""),
-                        status=str(query.get("status", [""])[0] or ""),
-                        scan_limit=query.get("scan_limit", [""])[0],
-                        scan_tail=_payload_bool(query.get("scan_tail", [""])[0]),
-                    )
-                )
-                return
-            if path == "/api/live-agent-session-runs":
-                self._send_json(
-                    live_agent_session_runs_payload(
-                        live_agent_session_run_controller,
-                        limit=self._limit(query, default=50),
-                        run_id=str(query.get("run_id", [""])[0] or ""),
-                        meeting_id=str(query.get("meeting_id", [""])[0] or ""),
-                        group_id=str(query.get("group_id", [""])[0] or ""),
-                        include_readiness=_payload_bool(query.get("include_readiness", [""])[0]),
-                        output_root=output_root,
-                        process_supervisor=live_agent_process_supervisor,
-                    )
                 )
                 return
             live_agent_room_id = _live_agent_action_path(path, "room")
