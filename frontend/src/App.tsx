@@ -25,27 +25,17 @@ import {
 } from "lucide-react";
 import {
   createCompanionRoomInvite,
-  createRoomInvite,
-  configurePublicInvitePublicUrl,
   fetchLiveAgentFlow,
   fetchLiveAgentProcesses,
-  fetchPublicInviteStatus,
   fetchRoomChannels,
   createRoomChannel,
   fetchRoomSettings,
   ensureRoomMeeting,
-  claimHostDevice,
   fetchRoomMembers,
   fetchMeetingLifecycle,
   fetchWorkroomQueueEvidence,
-  generatePublicInviteHostToken,
-  loadHostToken,
   postRoomFriendDm,
-  clearHostToken,
-  saveHostToken,
   saveRoomSettings,
-  startPublicInviteTunnel,
-  stopPublicInviteTunnel,
   upsertRoomMember,
   applyMeetingStreamUpdate,
   initialMeetingStreamState,
@@ -67,7 +57,6 @@ import {
   type RoomChannel,
   type RoomFriend,
   type RoomMember,
-  type PublicInviteStatus,
 } from "./api";
 import { usePoll } from "./hooks";
 import { useRoomAdmission } from "./app/useRoomAdmission";
@@ -75,6 +64,7 @@ import { useFriendsDirectory } from "./app/useFriendsDirectory";
 import { useRoomDirectory } from "./app/useRoomDirectory";
 import { useActiveMafiaGame } from "./app/useActiveMafiaGame";
 import { useRoomSideChat } from "./app/useRoomSideChat";
+import { useRoomInviteController } from "./app/useRoomInviteController";
 import type { HomeFilter } from "./app/friendsDirectoryTypes";
 import { useCanonicalRoom } from "./useCanonicalRoom";
 import AdminPanel from "./views/AdminPanel";
@@ -130,11 +120,9 @@ import {
   loadAgentActivityVisibility,
   persistAgentActivityVisibility,
 } from "./lib/agentActivityPreferences";
-import { getOrCreateDeviceToken } from "./lib/deviceIdentity";
 import {
   inviteFriendDmMessage,
   remoteClientPacketPreview,
-  secureInviteCopyTarget,
 } from "./lib/roomInviteCopy";
 import { GUEST_SESSION_EXPIRED_MESSAGE } from "./lib/apiErrors";
 import { roomPostingState } from "./lib/roomGuestPosting";
@@ -166,15 +154,6 @@ type MobilePanelDragState = {
   startX: number;
   startY: number;
   sidebarOpen: boolean;
-};
-
-type InviteModalState = {
-  roomId: string;
-} | null;
-
-type InviteRemoteClientPacketState = {
-  friendName: string;
-  preview: string;
 };
 
 type RoomSettingsSectionId =
@@ -377,19 +356,9 @@ export default function App() {
   const [activeRoomId, setActiveRoomId] = useState(() => startupRoute.activeRoomId);
   const [roomMenu, setRoomMenu] = useState<RoomMenuState>(null);
   const [channelMenu, setChannelMenu] = useState<ChannelMenuState>(null);
-  const [inviteModal, setInviteModal] = useState<InviteModalState>(null);
   const [settingsModal, setSettingsModal] = useState<RoomSettingsState>(null);
   const [agentCreateOpen, setAgentCreateOpen] = useState(false);
-  const [inviteCopyStatus, setInviteCopyStatus] = useState("");
-  const [secureInviteUrl, setSecureInviteUrl] = useState("");
-  const [agentInviteUrl, setAgentInviteUrl] = useState("");
-  const [agentInviteProviderId, setAgentInviteProviderId] = useState("codex");
-  const [publicInviteStatus, setPublicInviteStatus] = useState<PublicInviteStatus | null>(null);
-  const [publicInviteUrlDraft, setPublicInviteUrlDraft] = useState("");
-  const [hostTokenDraft, setHostTokenDraft] = useState("");
   const [inviteFriendStatuses, setInviteFriendStatuses] = useState<Record<string, string>>({});
-  const [inviteRemoteClientPacket, setInviteRemoteClientPacket] =
-    useState<InviteRemoteClientPacketState>({ friendName: "", preview: "" });
   const [guestAiPacketPreview, setGuestAiPacketPreview] = useState("");
   const [guestAiPacketStatus, setGuestAiPacketStatus] = useState("");
   const [flowData, setFlowData] = useState<FlowResponse | null>(null);
@@ -594,6 +563,40 @@ export default function App() {
     onSideChat: handleSideChatRealtimeEvents,
     onError: handleSideChatError,
   });
+  const roomInvite = useRoomInviteController({
+    guestLocked,
+    availableProviders: canonicalRoom.availableProviders,
+  });
+  const {
+    modal: inviteModal,
+    copyStatus: inviteCopyStatus,
+    secureInviteUrl,
+    agentInviteUrl,
+    agentInviteProviderId,
+    publicInviteStatus,
+    publicUrlDraft: publicInviteUrlDraft,
+    hostTokenDraft,
+    remoteClientPacket: inviteRemoteClientPacket,
+    invitePublicUrl,
+    hostTokenRequired: inviteHostTokenRequired,
+    open: openInviteModal,
+    close: closeInviteModal,
+    setAgentInviteProviderId,
+    setPublicUrlDraft: setPublicInviteUrlDraft,
+    setHostTokenDraft,
+    setRemoteClientPacket: setInviteRemoteClientPacket,
+    createSecureInviteForRoom,
+    configurePublicUrl: configureInvitePublicUrl,
+    saveHostTokenFromDraft,
+    startTunnel: startInviteTunnel,
+    stopTunnel: stopInviteTunnel,
+    generateSecureInvite: generateInviteLink,
+    generateAgentInvite: generateAgentInviteLink,
+    copyAgentInvite: copyAgentInviteLink,
+    copySecureInvite: copyInviteLink,
+    copyLocalPreview: copyLocalPreviewLink,
+    copyRemoteClientPacket,
+  } = roomInvite;
   const roomSocket = canonicalRoom.socket;
   const activeRoomAgentSessions = canonicalRoom.agentSessions;
   const activeRoomCapabilities = canonicalRoom.capabilities;
@@ -1168,13 +1171,8 @@ export default function App() {
     setChannel("lobby");
     setAdminOpen(false);
     closeMobileOverlays();
-    setInviteModal({ roomId });
-    setInviteCopyStatus("");
-    setSecureInviteUrl("");
-    setAgentInviteUrl("");
-    setHostTokenDraft(loadHostToken());
+    openInviteModal(roomId);
     setInviteFriendStatuses({});
-    setInviteRemoteClientPacket({ friendName: "", preview: "" });
     setRoomMenu(null);
     setChannelMenu(null);
   }
@@ -1185,58 +1183,6 @@ export default function App() {
     setRoomMenu(null);
     setChannelMenu(null);
   }
-
-  useEffect(() => {
-    if (!inviteModal) return;
-    let cancelled = false;
-    setSecureInviteUrl("");
-    setInviteCopyStatus("");
-    setHostTokenDraft(loadHostToken());
-    fetchPublicInviteStatus()
-      .then((status) => {
-        if (cancelled) return;
-        setPublicInviteStatus(status);
-        setPublicInviteUrlDraft(status.public_url || status.tunnel?.public_url || "");
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setInviteCopyStatus(error instanceof Error ? error.message : "공개 초대 상태를 불러오지 못했습니다.");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [inviteModal?.roomId]);
-
-  // Host (non-guest) moderation — mute/kick — is host-token gated. Acquire and
-  // cache the token once on load so the local operator can moderate without first
-  // having to open the invite modal. With the token in hand, also claim this
-  // device for the operator account, so the same person keeps moderation rights
-  // when entering through the public URL as a guest.
-  useEffect(() => {
-    if (guestLocked) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        if (!loadHostToken()) {
-          const status = await fetchPublicInviteStatus();
-          if (cancelled) return;
-          setPublicInviteStatus(status);
-          if (status.host_token_configured || status.can_generate_host_token) {
-            await ensureHostTokenForInvite(status);
-          }
-        }
-        if (!cancelled && loadHostToken()) {
-          await claimHostDevice({ deviceToken: getOrCreateDeviceToken() });
-        }
-      } catch {
-        // Best-effort; moderation actions surface a clear error if the token is missing.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [guestLocked]);
 
   function openRoomSettings(roomId: string, initialSectionId: RoomSettingsSectionId = "settings-overview") {
     if (guestLocked) return;
@@ -1303,323 +1249,6 @@ export default function App() {
     });
     setRoomCustomChannels((previous) => ({ ...previous, [activeRoomKey]: result.channels }));
     if (result.channel) goToChannel(result.channel.id);
-  }
-
-  async function refreshPublicInviteState() {
-    const status = await fetchPublicInviteStatus();
-    setPublicInviteStatus(status);
-    if (status.public_url || status.tunnel?.public_url) {
-      setPublicInviteUrlDraft(status.public_url || status.tunnel?.public_url || "");
-    }
-    return status;
-  }
-
-  async function ensureHostTokenForInvite(status: PublicInviteStatus | null) {
-    const existingToken = loadHostToken();
-    if (existingToken) return existingToken;
-    if (status && (!status.host_token_configured || status.can_generate_host_token)) {
-      const payload = await generatePublicInviteHostToken();
-      if (payload.host_token) {
-        saveHostToken(payload.host_token);
-        setHostTokenDraft(payload.host_token);
-      }
-      if (payload.public_invite) setPublicInviteStatus(payload.public_invite);
-      return payload.host_token || "";
-    }
-    try {
-      const payload = await generatePublicInviteHostToken();
-      if (payload.host_token) {
-        saveHostToken(payload.host_token);
-        setHostTokenDraft(payload.host_token);
-        if (payload.public_invite) setPublicInviteStatus(payload.public_invite);
-        return payload.host_token;
-      }
-    } catch {
-      // Existing operator-provided host tokens still require manual entry.
-    }
-    throw new Error("Host token required");
-  }
-
-  function inviteErrorLooksLikeHostToken(error: unknown) {
-    const message = error instanceof Error ? error.message.toLowerCase() : "";
-    return message.includes("host token") || message.includes("forbidden");
-  }
-
-  async function regenerateHostTokenForInvite() {
-    clearHostToken();
-    setHostTokenDraft("");
-    const status = await refreshPublicInviteState();
-    const token = await ensureHostTokenForInvite(status);
-    if (!token) throw new Error("Host token required");
-    return token;
-  }
-
-  async function waitForPublicInviteTunnelReady() {
-    for (let attempt = 0; attempt < 18; attempt += 1) {
-      const nextStatus = await refreshPublicInviteState();
-      if (nextStatus.public_url && nextStatus.tunnel?.phase === "running") {
-        return nextStatus;
-      }
-      if (nextStatus.tunnel?.phase === "stopped" || nextStatus.tunnel?.last_error) {
-        return nextStatus;
-      }
-      await new Promise((resolve) => window.setTimeout(resolve, 1000));
-    }
-    return refreshPublicInviteState();
-  }
-
-  async function preparePublicInviteForSecureLink() {
-    let status = await refreshPublicInviteState();
-    await ensureHostTokenForInvite(status);
-    if (status.public_url) return status;
-    if (!status.tunnel?.available) {
-      throw new Error("공개 URL을 만들 수 없습니다. cloudflared를 설치하거나 공개 URL을 입력하세요.");
-    }
-    setInviteCopyStatus("공개 터널 준비 중...");
-    let started;
-    try {
-      started = await startPublicInviteTunnel();
-    } catch (error) {
-      if (!inviteErrorLooksLikeHostToken(error)) throw error;
-      await regenerateHostTokenForInvite();
-      started = await startPublicInviteTunnel();
-    }
-    if (started.public_invite) {
-      setPublicInviteStatus(started.public_invite);
-      status = started.public_invite;
-    }
-    if (status.public_url && status.tunnel?.phase === "running") return status;
-    const readyStatus = await waitForPublicInviteTunnelReady();
-    if (readyStatus.public_url && readyStatus.tunnel?.phase === "running") {
-      return readyStatus;
-    }
-    throw new Error(
-      readyStatus.tunnel?.last_error ||
-        "공개 터널이 아직 초대 URL을 보고하지 않았습니다. 잠시 후 다시 눌러 주세요."
-    );
-  }
-
-  async function requirePublicInviteReady() {
-    const status = await preparePublicInviteForSecureLink();
-    if (!status.public_url) {
-      throw new Error("공개 URL을 먼저 설정하세요. Paste public URL / Start tunnel first.");
-    }
-    if (status.tunnel?.phase === "starting" && !status.tunnel.public_url) {
-      throw new Error("터널 시작 중입니다. 공개 URL이 표시될 때까지 기다려 주세요.");
-    }
-    await ensureHostTokenForInvite(status);
-    return status;
-  }
-
-  async function createSecureInviteForRoom({
-    room,
-    agentId,
-    displayName,
-    inviteScope,
-  }: {
-    room: RoomDockItem;
-    agentId: string;
-    displayName: string;
-    inviteScope: RoomAppearance["inviteScope"];
-  }) {
-    await requirePublicInviteReady();
-    const localPreviewUrl = localPreviewInviteUrlForRoom(room);
-    let invite;
-    try {
-      invite = await createRoomInvite({
-        meetingId: room.meetingId,
-        agentId,
-        displayName,
-        inviteScope,
-      });
-    } catch (error) {
-      if (!inviteErrorLooksLikeHostToken(error)) throw error;
-      await regenerateHostTokenForInvite();
-      invite = await createRoomInvite({
-        meetingId: room.meetingId,
-        agentId,
-        displayName,
-        inviteScope,
-      });
-    }
-    const target = secureInviteCopyTarget({
-      joinUrl: invite.join_url || "",
-      localPreviewUrl,
-    });
-    if (!target.copyUrl) {
-      throw new Error(target.status);
-    }
-    setSecureInviteUrl(target.copyUrl);
-    return { invite, target };
-  }
-
-  async function configureInvitePublicUrl() {
-    const publicUrl = publicInviteUrlDraft.trim();
-    if (!publicUrl) {
-      setInviteCopyStatus("공개 URL을 먼저 입력하세요.");
-      return;
-    }
-    setInviteCopyStatus("공개 URL 설정 중...");
-    try {
-      const status = publicInviteStatus || (await refreshPublicInviteState());
-      await ensureHostTokenForInvite(status);
-      let payload;
-      try {
-        payload = await configurePublicInvitePublicUrl(publicUrl);
-      } catch (error) {
-        if (!inviteErrorLooksLikeHostToken(error)) throw error;
-        await regenerateHostTokenForInvite();
-        payload = await configurePublicInvitePublicUrl(publicUrl);
-      }
-      if (payload.public_invite) {
-        setPublicInviteStatus(payload.public_invite);
-      } else {
-        await refreshPublicInviteState();
-      }
-      setInviteCopyStatus("공개 URL 설정됨");
-    } catch (error) {
-      setInviteCopyStatus(error instanceof Error ? error.message : "공개 URL 설정 실패");
-    }
-  }
-
-  async function saveHostTokenFromDraft() {
-    const token = hostTokenDraft.trim();
-    if (!token) {
-      setInviteCopyStatus("Host token required");
-      return;
-    }
-    saveHostToken(token);
-    setInviteCopyStatus("Host token saved");
-    try {
-      await refreshPublicInviteState();
-    } catch {
-      // Token save is still useful even if a transient status request fails.
-    }
-  }
-
-  async function startInviteTunnel() {
-    setInviteCopyStatus("터널 시작 중...");
-    try {
-      const status = publicInviteStatus || (await refreshPublicInviteState());
-      await ensureHostTokenForInvite(status);
-      let started;
-      try {
-        started = await startPublicInviteTunnel();
-      } catch (error) {
-        if (!inviteErrorLooksLikeHostToken(error)) throw error;
-        await regenerateHostTokenForInvite();
-        started = await startPublicInviteTunnel();
-      }
-      if (started.host_token) {
-        saveHostToken(started.host_token);
-        setHostTokenDraft(started.host_token);
-      }
-      if (started.public_invite) setPublicInviteStatus(started.public_invite);
-      const latest = await waitForPublicInviteTunnelReady();
-      setInviteCopyStatus(
-        latest.public_url
-          ? "터널 공개 URL 준비됨"
-          : latest.tunnel?.last_error || "터널이 아직 공개 URL을 보고하지 않았습니다."
-      );
-    } catch (error) {
-      setInviteCopyStatus(error instanceof Error ? error.message : "터널 시작 실패");
-    }
-  }
-
-  async function stopInviteTunnel() {
-    setInviteCopyStatus("터널 중지 중...");
-    try {
-      const payload = await stopPublicInviteTunnel();
-      if (payload.public_invite) setPublicInviteStatus(payload.public_invite);
-      else await refreshPublicInviteState();
-      setInviteCopyStatus("터널 중지됨");
-    } catch (error) {
-      setInviteCopyStatus(error instanceof Error ? error.message : "터널 중지 실패");
-    }
-  }
-
-  async function generateInviteLink(room: RoomDockItem) {
-    const inviteScope =
-      completeRoomAppearance(roomAppearances[roomSettingsKey(room)] || roomAppearances[room.id])
-        .inviteScope ||
-      room.inviteScope ||
-      "room";
-    setInviteCopyStatus("보안 초대 링크 생성 중...");
-    try {
-      const { target } = await createSecureInviteForRoom({
-        room,
-        agentId: "guest",
-        displayName: "Guest",
-        inviteScope,
-      });
-      setInviteCopyStatus(target.copyUrl ? "보안 초대 링크 생성됨" : target.status);
-    } catch (error) {
-      setInviteCopyStatus(error instanceof Error ? error.message : "보안 초대 링크 생성 실패");
-    }
-  }
-
-  async function generateAgentInviteLink(room: RoomDockItem) {
-    const provider = canonicalRoom.availableProviders.find(
-      (candidate) => candidate.id === agentInviteProviderId
-    );
-    if (!provider) {
-      setInviteCopyStatus("초대할 provider를 선택하세요");
-      return;
-    }
-    setInviteCopyStatus("Agent Session 초대 링크 생성 중...");
-    try {
-      await requirePublicInviteReady();
-      const invite = await createRoomInvite({
-        meetingId: room.meetingId,
-        agentId: `${provider.id}-guest`,
-        displayName: provider.display_name,
-        inviteScope: "room",
-        ttlSeconds: 600,
-        clientType: "agent_bridge",
-        providerKind: provider.provider_kind,
-        maxUses: 1,
-      });
-      const target = secureInviteCopyTarget({
-        joinUrl: invite.join_url || "",
-        localPreviewUrl: localPreviewInviteUrlForRoom(room),
-      });
-      if (!target.copyUrl) throw new Error(target.status);
-      setAgentInviteUrl(target.copyUrl);
-      setInviteCopyStatus("Agent Session 1회용 초대 링크 생성됨");
-    } catch (error) {
-      setInviteCopyStatus(error instanceof Error ? error.message : "Agent Session 초대 생성 실패");
-    }
-  }
-
-  async function copyAgentInviteLink() {
-    if (!agentInviteUrl) return;
-    const copied = await copyText(agentInviteUrl);
-    setInviteCopyStatus(copied ? "Agent Session 초대 링크 복사됨" : "초대 링크 복사 실패");
-  }
-
-  async function copyInviteLink(room: RoomDockItem) {
-    const target = secureInviteCopyTarget({
-      joinUrl: secureInviteUrl,
-      localPreviewUrl: localPreviewInviteUrlForRoom(room),
-    });
-    if (!target.copyUrl) {
-      setInviteCopyStatus(target.status);
-      return;
-    }
-    const copied = await copyText(target.copyUrl);
-    setInviteCopyStatus(copied ? target.status : "보안 초대 링크 복사 실패");
-  }
-
-  async function copyLocalPreviewLink(room: RoomDockItem) {
-    const copied = await copyText(localPreviewInviteUrlForRoom(room));
-    setInviteCopyStatus(copied ? "로컬 미리보기 복사됨" : "로컬 미리보기 복사 실패");
-  }
-
-  async function copyRemoteClientPacket() {
-    if (!inviteRemoteClientPacket.preview) return;
-    setInviteCopyStatus("");
-    const copied = await copyText(inviteRemoteClientPacket.preview);
-    setInviteCopyStatus(copied ? "AI 입장 패킷 복사됨" : "패킷 복사 실패");
   }
 
   async function createCompanionAiPacket() {
@@ -1727,8 +1356,6 @@ export default function App() {
   const localPreviewUrl = inviteModalRoom
     ? localPreviewInviteUrlForRoom(inviteModalRoom)
     : "";
-  const invitePublicUrl = publicInviteStatus?.public_url || publicInviteStatus?.tunnel?.public_url || "";
-  const inviteHostTokenRequired = Boolean(publicInviteStatus?.host_token_configured && !loadHostToken());
   const inviteModalMembers = inviteModalRoom
     ? roomMembersByRoom[roomSettingsKey(inviteModalRoom)] || []
     : [];
@@ -2033,8 +1660,13 @@ export default function App() {
           copyStatus={inviteCopyStatus}
           remoteClientPacketPreview={inviteRemoteClientPacket.preview}
           remoteClientPacketFriendName={inviteRemoteClientPacket.friendName}
-          onClose={() => setInviteModal(null)}
-          onGenerateSecureInvite={() => void generateInviteLink(inviteModalRoom)}
+          onClose={closeInviteModal}
+          onGenerateSecureInvite={() =>
+            void generateInviteLink(
+              inviteModalRoom,
+              inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room"
+            )
+          }
           onCopy={() => void copyInviteLink(inviteModalRoom)}
           onAgentInviteProviderChange={setAgentInviteProviderId}
           onGenerateAgentInvite={() => void generateAgentInviteLink(inviteModalRoom)}

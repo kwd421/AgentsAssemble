@@ -145,17 +145,6 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn(".dc-mobile-info-panel", css)
         self.assertIn(".dc-composer-button[data-accessory=\"gif\"]", css)
 
-    def test_public_invite_ui_recovers_from_stale_runtime_host_token(self):
-        app_source = frontend_file("App.tsx")
-
-        self.assertIn("clearHostToken", app_source)
-        self.assertIn("function inviteErrorLooksLikeHostToken", app_source)
-        self.assertIn("async function regenerateHostTokenForInvite()", app_source)
-        self.assertIn("await regenerateHostTokenForInvite();", app_source)
-        self.assertIn("payload = await configurePublicInvitePublicUrl(publicUrl);", app_source)
-        self.assertIn("started = await startPublicInviteTunnel();", app_source)
-        self.assertIn("invite = await createRoomInvite({", app_source)
-
     def test_react_lobby_preserves_agent_owned_room_evidence(self):
         source = frontend_source()
 
@@ -835,10 +824,6 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("localPreviewInviteUrlForRoom", app_source)
         self.assertIn("RoomInviteModal", app_source)
         self.assertIn('inviteScope={inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room"}', app_source)
-        self.assertIn("async function preparePublicInviteForSecureLink()", app_source)
-        self.assertIn('setInviteCopyStatus("공개 터널 준비 중...")', app_source)
-        self.assertIn("started = await startPublicInviteTunnel();", app_source)
-        self.assertIn("const status = await preparePublicInviteForSecureLink();", app_source)
         self.assertIn("const inviteModalMembers = inviteModalRoom", app_source)
         self.assertIn("roomMembersByRoom[roomSettingsKey(inviteModalRoom)] || []", app_source)
         self.assertIn("members={inviteModalMembers}", app_source)
