@@ -278,6 +278,17 @@ class CliTimeoutCoreTests(unittest.TestCase):
         self.assertTrue(kwargs["unsafe_expose_control_plane"])
         self.assertTrue(kwargs["start_public_tunnel"])
 
+    def test_gui_reports_non_loopback_policy_error_without_traceback(self):
+        with patch("agentsassemble.cli.serve_gui", side_effect=ValueError("Direct non-loopback GUI bind is disabled")):
+            stderr = StringIO()
+            with patch("sys.stderr", stderr):
+                exit_code = main(["gui", "--host", "0.0.0.0"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("error: Direct non-loopback GUI bind is disabled", stderr.getvalue())
+        self.assertIn("hint: bind to 127.0.0.1", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
     def test_sessions_list_outputs_codex_session_index_as_json(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             codex_home = Path(temp_dir) / ".codex"

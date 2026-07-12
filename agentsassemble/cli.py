@@ -207,21 +207,27 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     if args.command == "gui":
-        serve_gui(
-            host=args.host,
-            port=args.port,
-            output_root=Path(args.output_root),
-            public_url=args.public_url,
-            host_token=args.host_token,
-            unsafe_expose_control_plane=args.unsafe_expose_control_plane,
-            start_public_tunnel=args.start_public_tunnel,
-            live_agent_config=Path(args.live_agent_config) if args.live_agent_config else None,
-            live_agent_group_id=args.live_agent_group_id,
-            live_agent_auto_restart=args.live_agent_auto_restart,
-            live_agent_max_restarts=args.live_agent_max_restarts,
-            live_agent_restart_backoff_seconds=args.live_agent_restart_backoff_seconds,
-            live_agent_stale_restart_after_seconds=args.live_agent_stale_restart_after_seconds,
-        )
+        try:
+            serve_gui(
+                host=args.host,
+                port=args.port,
+                output_root=Path(args.output_root),
+                public_url=args.public_url,
+                host_token=args.host_token,
+                unsafe_expose_control_plane=args.unsafe_expose_control_plane,
+                start_public_tunnel=args.start_public_tunnel,
+                live_agent_config=Path(args.live_agent_config) if args.live_agent_config else None,
+                live_agent_group_id=args.live_agent_group_id,
+                live_agent_auto_restart=args.live_agent_auto_restart,
+                live_agent_max_restarts=args.live_agent_max_restarts,
+                live_agent_restart_backoff_seconds=args.live_agent_restart_backoff_seconds,
+                live_agent_stale_restart_after_seconds=args.live_agent_stale_restart_after_seconds,
+            )
+        except ValueError as error:
+            print(f"error: {error}", file=sys.stderr)
+            if "non-loopback GUI bind" in str(error):
+                print("hint: bind to 127.0.0.1 and use the authenticated public tunnel", file=sys.stderr)
+            return 2
         return 0
     if args.command == "frontend-info":
         return run_frontend_info_command(args)
