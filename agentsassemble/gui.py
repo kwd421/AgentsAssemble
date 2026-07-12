@@ -118,6 +118,26 @@ from agentsassemble.legacy_live_agent_health import (
     safe_health_timestamp as _safe_session_run_health_timestamp,
     safe_process_group_id as _safe_process_group_id,
 )
+from agentsassemble.legacy_live_agent_session_control import (
+    session_check_error_message as _session_check_error_message,
+    session_check_operation_status as _session_check_operation_status,
+    session_check_operation_summary as _session_check_operation_summary,
+    session_ensure_error_message as _session_ensure_error_message,
+    session_ensure_operation_summary as _session_ensure_operation_summary,
+    session_recover_error_message as _session_recover_error_message,
+    session_recover_operation_summary as _session_recover_operation_summary,
+    session_restart_error_message as _session_restart_error_message,
+    session_restart_operation_summary as _session_restart_operation_summary,
+    session_resume_error_message as _session_resume_error_message,
+    session_resume_operation_summary as _session_resume_operation_summary,
+    session_start_error_details as _session_start_error_details,
+    session_start_error_message as _session_start_error_message,
+    session_start_operation_status as _session_start_operation_status,
+    session_start_operation_summary as _session_start_operation_summary,
+    session_stop_error_message as _session_stop_error_message,
+    session_stop_operation_status as _session_stop_operation_status,
+    session_stop_operation_summary as _session_stop_operation_summary,
+)
 from agentsassemble.live_agent_settings import (
     update_live_agent_config_options,
     update_live_agent_config_poll_interval,
@@ -7357,21 +7377,6 @@ def _session_reply_probe_operation_details(reply_probe: dict[str, object]) -> di
     }
 
 
-def _session_start_operation_status(session: dict[str, object]) -> str:
-    if _operation_result_status(session.get("status")) != "ready":
-        return "degraded"
-    reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
-    if reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
-        return "degraded"
-    auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
-    if auto_rounds is not None and _operation_result_status(auto_rounds.get("status")) not in {"answered", "complete"}:
-        return "degraded"
-    finalization = session.get("finalization") if isinstance(session.get("finalization"), dict) else None
-    if finalization is not None and _operation_result_status(finalization.get("status")) not in {"finalized", "already_finalized"}:
-        return "degraded"
-    return "success"
-
-
 def _session_run_retry_now_operation_status(session_run: dict[str, object], *, reconciled: bool) -> str:
     if not reconciled:
         return "success"
@@ -7403,127 +7408,6 @@ def _latest_session_run_for_action_target(
     if not runs:
         raise ValueError("No matching live-agent session run for meeting group target.")
     return runs[-1]
-
-
-def _session_start_operation_summary(session: dict[str, object]) -> str:
-    if _operation_result_status(session.get("status")) != "ready":
-        return "resident live-agent session is still connecting"
-    reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
-    if reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
-        return "started resident live-agent session with degraded reply probe"
-    auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
-    if auto_rounds is None:
-        return "started resident live-agent session"
-    if _operation_result_status(auto_rounds.get("status")) in {"answered", "complete"}:
-        return "started resident live-agent session and ran remaining rounds"
-    return "started resident live-agent session with degraded remaining rounds"
-
-
-def _session_resume_operation_summary(session: dict[str, object]) -> str:
-    if _operation_result_status(session.get("status")) != "ready":
-        return "resident live-agent session is still reconnecting"
-    reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
-    if reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
-        return "resumed resident live-agent session with degraded reply probe"
-    auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
-    if auto_rounds is None:
-        return "resumed resident live-agent session"
-    if _operation_result_status(auto_rounds.get("status")) in {"answered", "complete"}:
-        return "resumed resident live-agent session and ran remaining rounds"
-    return "resumed resident live-agent session with degraded remaining rounds"
-
-
-def _session_ensure_operation_summary(session: dict[str, object]) -> str:
-    action = clean_lobby_text(session.get("action"), limit=64) or "unknown"
-    if action == "none":
-        return "resident live-agent session already ready"
-    if _operation_result_status(session.get("status")) != "ready":
-        return f"resident live-agent session ensure still connecting via {action}"
-    reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
-    if reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
-        return f"ensured resident live-agent session via {action} with degraded reply probe"
-    auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
-    if auto_rounds is None:
-        return f"ensured resident live-agent session via {action}"
-    if _operation_result_status(auto_rounds.get("status")) in {"answered", "complete"}:
-        return f"ensured resident live-agent session via {action} and ran remaining rounds"
-    return f"ensured resident live-agent session via {action} with degraded remaining rounds"
-
-
-def _session_stop_operation_status(session: dict[str, object]) -> str:
-    return "success" if _operation_result_status(session.get("status")) == "stopped" else "degraded"
-
-
-def _session_check_operation_status(session: dict[str, object]) -> str:
-    return "success" if _operation_result_status(session.get("status")) == "ready" else "degraded"
-
-
-def _session_stop_operation_summary(session: dict[str, object]) -> str:
-    if _operation_result_status(session.get("status")) == "stopped":
-        return "stopped resident live-agent session"
-    return "resident live-agent session is still stopping"
-
-
-def _session_check_operation_summary(session: dict[str, object]) -> str:
-    if _operation_result_status(session.get("status")) == "ready":
-        return "checked ready resident live-agent session"
-    return "checked degraded resident live-agent session"
-
-
-def _session_restart_operation_summary(session: dict[str, object]) -> str:
-    if _operation_result_status(session.get("status")) == "ready":
-        reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
-        if reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
-            return "restarted resident live-agent session with degraded reply probe"
-        auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
-        if auto_rounds is None:
-            return "restarted resident live-agent session"
-        if _operation_result_status(auto_rounds.get("status")) in {"answered", "complete"}:
-            return "restarted resident live-agent session and ran remaining rounds"
-        return "restarted resident live-agent session with degraded remaining rounds"
-    return "resident live-agent session is still reconnecting after restart"
-
-
-def _session_recover_operation_summary(session: dict[str, object]) -> str:
-    if _operation_result_status(session.get("status")) == "ready":
-        reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
-        if reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
-            return "recovered resident live-agent session with degraded reply probe"
-        auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
-        if auto_rounds is None:
-            return "recovered resident live-agent session"
-        if _operation_result_status(auto_rounds.get("status")) in {"answered", "complete"}:
-            return "recovered resident live-agent session and ran remaining rounds"
-        return "recovered resident live-agent session with degraded remaining rounds"
-    return "resident live-agent session is still reconnecting after recovery"
-
-
-def _session_start_error_message(error: Exception) -> str:
-    return _session_error_message(error, action="start")
-
-
-def _session_resume_error_message(error: Exception) -> str:
-    return _session_error_message(error, action="resume")
-
-
-def _session_ensure_error_message(error: Exception) -> str:
-    return _session_error_message(error, action="ensure")
-
-
-def _session_restart_error_message(error: Exception) -> str:
-    return _session_error_message(error, action="restart")
-
-
-def _session_recover_error_message(error: Exception) -> str:
-    return _session_error_message(error, action="recover")
-
-
-def _session_check_error_message(error: Exception) -> str:
-    return _session_error_message(error, action="check")
-
-
-def _session_stop_error_message(error: Exception) -> str:
-    return _session_error_message(error, action="stop")
 
 
 def _process_start_error_message(error: Exception) -> str:
@@ -7628,32 +7512,6 @@ def _looks_sensitive_process_control_error(message: str) -> bool:
     if re.search(r"(^|[\s=])(?:/|~/|\./|\.\./)\S+", message):
         return True
     return bool(re.search(r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)", message))
-
-
-def _session_error_message(error: Exception, *, action: str) -> str:
-    message = str(error).replace("\r", " ").replace("\n", " ").strip()
-    fallback = f"Resident live-agent session {action} failed."
-    if _looks_sensitive_session_error(message):
-        return f"Resident live-agent session {action} failed: details redacted."
-    return message[:500] or fallback
-
-
-def _looks_sensitive_session_error(message: str) -> bool:
-    lowered = message.casefold()
-    return "/" in message or "\\" in message or ".json" in lowered or "command" in lowered
-
-
-def _session_start_error_details(payload: dict[str, object], error: Exception) -> dict[str, object]:
-    details = {"group_id": clean_lobby_text(payload.get("group_id"), limit=128)}
-    recoverable_meeting_id = clean_lobby_text(getattr(error, "meeting_id", ""), limit=128)
-    if recoverable_meeting_id:
-        details["meeting_id"] = recoverable_meeting_id
-        details["recoverable_meeting_id"] = recoverable_meeting_id
-        return details
-    requested_meeting_id = clean_lobby_text(payload.get("meeting_id"), limit=128)
-    if requested_meeting_id:
-        details["requested_meeting_id"] = requested_meeting_id
-    return details
 
 
 def _turn_round_request_operation_details(payload: dict[str, object], meeting_id: str) -> dict[str, object]:
