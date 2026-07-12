@@ -2260,11 +2260,11 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             "media_attached",
             media={
                 "id": "media-safe",
-                "filename": "safe.png",
-                "content_type": "image/png",
-                "size": 12,
-                "supported": True,
-                "representation": "native",
+                "filename": "/private/folder/safe.png",
+                "content_type": {"unexpected": "image/png"},
+                "size": -12,
+                "supported": "yes",
+                "representation": {"unexpected": "native"},
                 "path": "/private/secret.png",
                 "local_path": "/private/secret-2.png",
                 "signed_url": "https://example.invalid/private-token",
@@ -2283,10 +2283,98 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         self.assertEqual(
             set(packet["media_manifest"][0]),
-            {"id", "filename", "content_type", "size", "supported", "representation"},
+            {"id", "filename", "content_type", "size", "supported"},
         )
+        self.assertEqual(packet["media_manifest"][0]["filename"], "safe.png")
+        self.assertEqual(packet["media_manifest"][0]["content_type"], "application/octet-stream")
+        self.assertEqual(packet["media_manifest"][0]["size"], 0)
+        self.assertFalse(packet["media_manifest"][0]["supported"])
         self.assertNotIn("/private/", str(packet))
         self.assertNotIn("private-token", str(packet))
+
+    def test_implicit_media_is_removed_when_its_source_event_does_not_fit(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        result = resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-a",
+                "session_id": "session-a",
+                "provider_kind": "codex_live_session",
+            },
+        )
+        store.upsert_session(
+            "room-a",
+            {**store.session("room-a", "session-a"), "bootstrap_done": True},
+        )
+        store.append_event(
+            "room-a",
+            "media_attached",
+            media={
+                "id": "media-deferred",
+                "filename": "deferred.png",
+                "content_type": "image/png",
+                "size": 10,
+                "supported": True,
+            },
+        )
+        store.append_event(
+            "room-a",
+            "message_final",
+            participant_id="human",
+            content="first message " + ("a" * 4000),
+        )
+        store.append_event(
+            "room-a",
+            "message_final",
+            participant_id="human",
+            content="look at media-deferred " + ("b" * 4000),
+        )
+
+        packet = build_room_turn_packet(
+            self.output_root,
+            room_id="room-a",
+            participant_id=result["participant"]["participant_id"],
+            session_id="session-a",
+            instruction="Reply.",
+            max_prompt_chars=500,
+        )
+
+        self.assertNotIn("media-deferred", packet["provider_input"])
+        self.assertEqual(packet["media_manifest"], [])
+
+    def test_too_small_prompt_budget_never_sends_an_empty_instruction(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        result = resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-a",
+                "session_id": "session-a",
+                "provider_kind": "codex_live_session",
+            },
+        )
+
+        with self.assertRaisesRegex(ValueError, "too small for required provider context"):
+            build_room_turn_packet(
+                self.output_root,
+                room_id="room-a",
+                participant_id=result["participant"]["participant_id"],
+                session_id="session-a",
+                instruction="Required instruction.",
+                max_prompt_chars=100,
+            )
+
+        with self.assertRaisesRegex(ValueError, "instruction is required"):
+            build_room_turn_packet(
+                self.output_root,
+                room_id="room-a",
+                participant_id=result["participant"]["participant_id"],
+                session_id="session-a",
+                instruction="",
+            )
 
     def test_provider_sync_cursor_advances_after_success_and_not_after_failure(self):
         store = RoomStore(self.output_root)

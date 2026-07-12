@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,14 +16,8 @@ from agentsassemble.room_store import RoomStore
 DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS = DEFAULT_ROOM_CONTEXT_MESSAGES
 DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS = 20000
 UNSUPPORTED_MEDIA_AUDIT_NOTE = "Unsupported media is listed for audit only; do not claim you viewed unsupported files."
-MODEL_VISIBLE_MEDIA_KEYS = (
-    "id",
-    "filename",
-    "content_type",
-    "size",
-    "supported",
-    "representation",
-)
+MODEL_VISIBLE_MEDIA_REPRESENTATIONS = {"native", "text", "metadata", "unsupported"}
+MAX_MODEL_VISIBLE_MEDIA_SIZE = 1_000_000_000_000
 
 
 @dataclass(frozen=True)
@@ -57,6 +52,9 @@ def build_room_turn_packet(
     max_recent_events: object = None,
     max_prompt_chars: object = None,
 ) -> dict[str, object]:
+    clean_instruction = clean_lobby_text(instruction, limit=2000)
+    if not clean_instruction:
+        raise ValueError("Agent Session turn instruction is required")
     store = RoomStore(output_root)
     session = store.session(room_id, session_id)
     participant = store.participant(room_id, participant_id)
@@ -105,12 +103,13 @@ def build_room_turn_packet(
     input_mode = "recovery" if recovery_required else "bootstrap" if not bootstrap_done else "delta"
     bounded_context = _fit_provider_context(
         input_mode=input_mode,
-        instruction=instruction,
+        instruction=clean_instruction,
         room_identity=room_identity,
         room_memory=room_memory,
         events=provider_events,
         omitted_event_count=provider_projection.omitted_message_count,
         media_manifest=media_manifest,
+        media_selection_is_explicit=bool(_clean_text_list(media_ids, limit=128)),
         prompt_limit=prompt_limit,
     )
     provider_input = bounded_context.provider_input
@@ -157,7 +156,7 @@ def build_room_turn_packet(
         "media_supported_count": len([media for media in media_manifest if bool(media.get("supported"))]),
         "media_unsupported_count": len(unsupported_media),
         "media_notes": [UNSUPPORTED_MEDIA_AUDIT_NOTE] if unsupported_media else [],
-        "current_turn_instruction": clean_lobby_text(instruction, limit=2000),
+        "current_turn_instruction": clean_instruction,
         "settings": {
             "model": session.get("model", ""),
             "effort": session.get("effort", ""),
@@ -313,12 +312,7 @@ def _selected_media_manifest(
         media_id = clean_lobby_text(media.get("id"), limit=128)
         if not media_id:
             continue
-        item = {
-            key: media[key]
-            for key in MODEL_VISIBLE_MEDIA_KEYS
-            if key in media and media[key] not in (None, "", [], {})
-        }
-        item["id"] = media_id
+        item = _model_visible_media(media, media_id=media_id)
         manifest_by_id[media_id] = item
         ordered.append(item)
     selected_ids = _clean_text_list(media_ids, limit=128)
@@ -398,6 +392,7 @@ def _fit_provider_context(
     events: list[dict[str, object]],
     omitted_event_count: int,
     media_manifest: list[dict[str, object]],
+    media_selection_is_explicit: bool,
     prompt_limit: int,
 ) -> BoundedProviderContext:
     included_events = list(events)
@@ -439,6 +434,8 @@ def _fit_provider_context(
         provider_input = render()
     while included_events and len(provider_input) > prompt_limit:
         included_events.pop()
+        if not media_selection_is_explicit:
+            included_media = _media_referenced_by_events(included_media, included_events)
         provider_input = render()
     if len(provider_input) > prompt_limit and included_media:
         included_media = []
@@ -499,7 +496,7 @@ def _fit_required_provider_input(
         if len(candidate) <= prompt_limit:
             return candidate
 
-    low = 0
+    low = 1
     high = len(clean_instruction)
     best = ""
     compact_identity = identity_candidates[-1]
@@ -514,6 +511,50 @@ def _fit_required_provider_input(
     if not best:
         raise ValueError("max_prompt_chars is too small for required provider context")
     return best
+
+
+def _model_visible_media(media: dict[str, object], *, media_id: str) -> dict[str, object]:
+    filename_value = media.get("filename")
+    filename = ""
+    if isinstance(filename_value, str):
+        filename = clean_lobby_text(filename_value, limit=256).replace("\\", "/").rsplit("/", 1)[-1]
+    content_type_value = media.get("content_type")
+    content_type = clean_lobby_text(content_type_value, limit=128) if isinstance(content_type_value, str) else ""
+    if not re.fullmatch(r"[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+", content_type):
+        content_type = "application/octet-stream"
+    size_value = media.get("size")
+    try:
+        size = int(size_value) if not isinstance(size_value, bool) else 0
+    except (TypeError, ValueError, OverflowError):
+        size = 0
+    item: dict[str, object] = {
+        "id": media_id,
+        "filename": filename or media_id,
+        "content_type": content_type,
+        "size": min(MAX_MODEL_VISIBLE_MEDIA_SIZE, max(0, size)),
+        "supported": media.get("supported") is True,
+    }
+    representation = media.get("representation")
+    if isinstance(representation, str):
+        clean_representation = clean_lobby_text(representation, limit=32).lower()
+        if clean_representation in MODEL_VISIBLE_MEDIA_REPRESENTATIONS:
+            item["representation"] = clean_representation
+    return item
+
+
+def _media_referenced_by_events(
+    media_manifest: list[dict[str, object]],
+    events: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    event_text = "\n".join(clean_lobby_text(event.get("content"), limit=4000) for event in events).lower()
+    return [
+        media
+        for media in media_manifest
+        if (
+            clean_lobby_text(media.get("id"), limit=128).lower() in event_text
+            or clean_lobby_text(media.get("filename"), limit=256).lower() in event_text
+        )
+    ]
 
 
 def _provider_events_text(events: list[dict[str, object]], *, omitted_event_count: int) -> str:
