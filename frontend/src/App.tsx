@@ -31,7 +31,6 @@ import {
   fetchLiveAgentProcesses,
   fetchPublicInviteStatus,
   fetchRoomChannels,
-  fetchRooms,
   createRoomChannel,
   fetchRoomSettings,
   ensureRoomMeeting,
@@ -78,6 +77,7 @@ import {
 import { usePoll } from "./hooks";
 import { useRoomAdmission } from "./app/useRoomAdmission";
 import { useFriendsDirectory } from "./app/useFriendsDirectory";
+import { useRoomDirectory } from "./app/useRoomDirectory";
 import type { HomeFilter } from "./app/friendsDirectoryTypes";
 import { useCanonicalRoom } from "./useCanonicalRoom";
 import AdminPanel from "./views/AdminPanel";
@@ -118,13 +118,10 @@ import {
   persistSidebarWidth,
   resizedSidebarWidth,
 } from "./lib/sidebarResizeModel";
-import { persistRoomDockItems } from "./lib/roomDockPersistence";
 import {
   createFreshRoom,
   createStartupRoute,
   localPreviewInviteUrlForRoom,
-  mergeServerRoomsIntoDock,
-  persistableRoom,
   roomFromFlow,
   roomHasAgent,
   roomSettingsKey,
@@ -401,7 +398,21 @@ export default function App() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(true);
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>("room-info");
-  const [rooms, setRooms] = useState<RoomDockItem[]>(() => startupRoute.startupRooms);
+  const startupHostEnabled =
+    !startupRoute.guestInvite && !startupRoute.guestSession && !startupRoute.guestJoinToken;
+  const {
+    rooms,
+    replaceRooms,
+    prependRoom,
+    mergeFlowRoom,
+    markRoomRead: markRoomDirectoryRead,
+    removeRoom,
+    updateRoom,
+    updateRoomByMeetingId,
+  } = useRoomDirectory({
+    initialRooms: startupRoute.startupRooms,
+    hostEnabled: startupHostEnabled,
+  });
   const [activeRoomId, setActiveRoomId] = useState(() => startupRoute.activeRoomId);
   const [roomMenu, setRoomMenu] = useState<RoomMenuState>(null);
   const [channelMenu, setChannelMenu] = useState<ChannelMenuState>(null);
@@ -475,10 +486,10 @@ export default function App() {
   const [sideChatThread, setSideChatThread] = useState<SideChatThreadContext | null>(null);
 
   const onGuestRoomJoined = useCallback((room: RoomDockItem) => {
-    setRooms([room]);
+    replaceRooms([room]);
     setActiveRoomId(room.id);
     setChannel("lobby");
-  }, []);
+  }, [replaceRooms]);
   const onGuestAdmissionReset = useCallback(() => {
     setChannel("lobby");
     setGuestAiPacketPreview("");
@@ -716,44 +727,9 @@ export default function App() {
   );
   useEffect(() => {
     if (guestLocked) return;
-    persistRoomDockItems(rooms.map(persistableRoom));
-  }, [guestLocked, rooms]);
-
-  useEffect(() => {
-    if (guestLocked) return;
-    let cancelled = false;
-    fetchRooms(true)
-      .then((payload) => {
-        if (cancelled) return;
-        setRooms((previous) => mergeServerRoomsIntoDock(previous, payload.rooms || []));
-      })
-      .catch(() => {
-        // localStorage remains a fast-path cache when the server room registry is unavailable.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [guestLocked]);
-
-  useEffect(() => {
-    if (guestLocked) return;
     const flowRoom = roomFromFlow(flow);
-    if (!flowRoom) return;
-    setRooms((previous) => {
-      const existingIndex = previous.findIndex((room) => room.meetingId === flowRoom.meetingId);
-      if (existingIndex >= 0) {
-        const next = [...previous];
-        next[existingIndex] = {
-          ...next[existingIndex],
-          label: next[existingIndex].label || flowRoom.label,
-          topic: flowRoom.topic,
-        };
-        return next;
-      }
-      const [firstRoom, ...restRooms] = previous;
-      return firstRoom ? [firstRoom, flowRoom, ...restRooms] : [flowRoom];
-    });
-  }, [flow.meeting_id, flow.topic, guestLocked]);
+    mergeFlowRoom(flowRoom);
+  }, [flow.meeting_id, flow.topic, guestLocked, mergeFlowRoom]);
 
   useEffect(() => {
     if (!roomMenu && !channelMenu) return;
@@ -1242,7 +1218,7 @@ export default function App() {
     const room = createFreshRoom();
     try {
       await ensureRoomMeeting(room.meetingId, room.label);
-      setRooms((previous) => [room, ...previous]);
+      prependRoom(room);
       setActiveRoomId(room.id);
       setAdminOpen(false);
       setChannel("lobby");
@@ -1282,9 +1258,7 @@ export default function App() {
 
   function markRoomRead(roomId: string) {
     const readAt = new Date().toISOString();
-    setRooms((previous) =>
-      previous.map((room) => (room.id === roomId ? { ...room, createdAt: readAt } : room))
-    );
+    markRoomDirectoryRead(roomId, readAt);
     setRoomMenu(null);
     setChannelMenu(null);
   }
@@ -1374,8 +1348,7 @@ export default function App() {
   }
 
   function removeAcknowledgedRoom(roomId: string) {
-    const remainingRooms = rooms.filter((room) => room.id !== roomId);
-    setRooms(remainingRooms);
+    const remainingRooms = removeRoom(roomId);
     if (activeRoom.id === roomId) {
       setActiveRoomId(remainingRooms[0]?.id || "");
       setChannel("lobby");
@@ -1953,18 +1926,11 @@ export default function App() {
       .then((settings) => {
         if (cancelled) return;
         if (settings.label || settings.topic || settings.shortLabel) {
-          setRooms((previous) =>
-            previous.map((room) =>
-              room.meetingId === activeRoom.meetingId
-                ? {
-                    ...room,
-                    label: settings.label || room.label,
-                    topic: settings.topic || room.topic,
-                    shortLabel: settings.shortLabel || room.shortLabel,
-                  }
-                : room
-            )
-          );
+          updateRoomByMeetingId(activeRoom.meetingId, {
+            ...(settings.label ? { label: settings.label } : {}),
+            ...(settings.topic ? { topic: settings.topic } : {}),
+            ...(settings.shortLabel ? { shortLabel: settings.shortLabel } : {}),
+          });
         }
         setRoomAppearances((previous) => ({
           ...previous,
@@ -1993,7 +1959,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeRoom.meetingId, activeRoomKey]);
+  }, [activeRoom.meetingId, activeRoomKey, updateRoomByMeetingId]);
 
   useEffect(() => {
     refreshFlow();
@@ -2007,12 +1973,6 @@ export default function App() {
   useEffect(() => {
     refreshMembers();
   }, [canonicalRoom.membershipRevision, refreshMembers]);
-
-  function updateRoom(roomId: string, updates: Partial<RoomDockItem>) {
-    setRooms((previous) =>
-      previous.map((room) => (room.id === roomId ? { ...room, ...updates } : room))
-    );
-  }
 
   function persistRoomSettings(
     room: RoomDockItem,

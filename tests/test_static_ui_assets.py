@@ -389,6 +389,7 @@ class StaticUiAssetTests(unittest.TestCase):
         friend_search_source = frontend_file("lib/friendSearch.ts")
         room_dock_source = frontend_file("lib/roomDockPersistence.ts")
         room_dock_model_source = frontend_file("lib/roomDockModel.ts")
+        room_directory_source = frontend_file("app/useRoomDirectory.ts")
         room_rail_source = frontend_file("views/components/RoomRail.tsx")
         css = (FRONTEND_DIR / "index.css").read_text()
 
@@ -502,8 +503,11 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("inviteFriendToActiveRoom", app_source)
         self.assertNotIn("onInviteFriendToRoom", app_source)
         self.assertIn("members={activeRoomMembers}", app_source)
+        self.assertIn("useRoomDirectory", app_source)
+        self.assertNotIn("useCanonicalRoom", room_directory_source)
+        self.assertNotIn("participant.leave", room_directory_source)
+        self.assertNotIn("room.delete", room_directory_source)
         self.assertIn("loadRoomDockItems", room_dock_model_source)
-        self.assertIn("persistRoomDockItems(rooms.map(persistableRoom))", app_source)
         self.assertIn("initialOperatorRooms", room_dock_model_source)
 
         member_list_source = member_components_source()
