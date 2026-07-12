@@ -197,6 +197,7 @@ class TestRoomSayIdentity(unittest.TestCase):
             urlopen(request, timeout=4)
 
         self.assertEqual(rejected.exception.code, 409)
+        rejected.exception.close()
 
 
 if __name__ == "__main__":

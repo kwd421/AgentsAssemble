@@ -117,9 +117,11 @@ class RoomChannelStreamTests(unittest.TestCase):
             with self.assertRaises(HTTPError) as ctx:
                 self._say(base, token, voice_id, "안돼")
             self.assertEqual(ctx.exception.code, 400)  # not a text channel
+            ctx.exception.close()
             with self.assertRaises(HTTPError) as ctx:
                 self._say(base, token, "cffffffffffff", "유령")
             self.assertEqual(ctx.exception.code, 404)  # unknown channel
+            ctx.exception.close()
 
     def test_loopback_local_console_reads_and_says_without_session(self):
         # The local operator console (loopback, no session) shares the channel

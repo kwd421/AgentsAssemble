@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -39,7 +40,7 @@ def find_legacy_message_imports(output_root: Path) -> list[LegacyRoomImport]:
     root = output_root.expanduser().resolve()
     store = RoomStore(root)
     imports: list[LegacyRoomImport] = []
-    with sqlite3.connect(store.database_path) as connection:
+    with closing(sqlite3.connect(store.database_path)) as connection:
         connection.row_factory = sqlite3.Row
         room_rows = connection.execute("SELECT room_id FROM rooms ORDER BY room_id").fetchall()
         for row in room_rows:
@@ -85,7 +86,7 @@ def migrate_legacy_messages(output_root: Path, *, apply: bool) -> dict[str, obje
 
     imported = 0
     participants = 0
-    with sqlite3.connect(store.database_path, isolation_level=None) as connection:
+    with closing(sqlite3.connect(store.database_path, isolation_level=None)) as connection:
         connection.execute("BEGIN IMMEDIATE")
         try:
             for room_import in imports:
@@ -354,5 +355,5 @@ def _path_timestamp(path: Path) -> str:
 def _backup_database(source: Path, target: Path) -> None:
     if not source.exists():
         return
-    with sqlite3.connect(source) as source_db, sqlite3.connect(target) as target_db:
+    with closing(sqlite3.connect(source)) as source_db, closing(sqlite3.connect(target)) as target_db:
         source_db.backup(target_db)

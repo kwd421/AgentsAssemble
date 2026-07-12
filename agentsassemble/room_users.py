@@ -38,6 +38,15 @@ _store: IdentityStore | None = None
 _ephemeral_dir: tempfile.TemporaryDirectory | None = None
 
 
+def _clear_store_locked() -> None:
+    global _store, _ephemeral_dir
+    ephemeral_dir = _ephemeral_dir
+    _store = None
+    _ephemeral_dir = None
+    if ephemeral_dir is not None:
+        ephemeral_dir.cleanup()
+
+
 def configure_room_users_store(path: str | os.PathLike[str] | None) -> None:
     """Point identity storage at a DB path (or a legacy users.json location).
 
@@ -46,9 +55,8 @@ def configure_room_users_store(path: str | os.PathLike[str] | None) -> None:
     """
     global _store, _ephemeral_dir
     with _state_lock:
-        _ephemeral_dir = None
+        _clear_store_locked()
         if not path:
-            _store = None
             return
         target = Path(path)
         if target.suffix == ".json":
@@ -201,5 +209,4 @@ def reset_state() -> None:
     """Reset module state. For testing only."""
     global _store, _ephemeral_dir
     with _state_lock:
-        _store = None
-        _ephemeral_dir = None
+        _clear_store_locked()

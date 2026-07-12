@@ -147,6 +147,7 @@ class VoicePresenceHttpTests(unittest.TestCase):
             with self.assertRaises(HTTPError) as ctx:
                 self._post(base, "/api/room/voice/join", token, {"channel_id": text_id})
             self.assertEqual(ctx.exception.code, 400)
+            ctx.exception.close()
 
 
 if __name__ == "__main__":

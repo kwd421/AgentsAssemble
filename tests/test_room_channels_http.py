@@ -88,6 +88,7 @@ class RoomChannelsHttpTests(unittest.TestCase):
             with self.assertRaises(HTTPError) as ctx:
                 self._post(base, {"meeting_id": "r1", "action": "create", "name": "x"}, host_token="wrong")
             self.assertEqual(ctx.exception.code, 403)
+            ctx.exception.close()
 
     def test_error_categories_map_to_status(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -96,12 +97,15 @@ class RoomChannelsHttpTests(unittest.TestCase):
             with self.assertRaises(HTTPError) as ctx:
                 self._post(base, {"meeting_id": "r1", "action": "create", "name": "   "})
             self.assertEqual(ctx.exception.code, 400)  # empty name
+            ctx.exception.close()
             with self.assertRaises(HTTPError) as ctx:
                 self._post(base, {"meeting_id": "r1", "action": "delete", "channel_id": "ghost"})
             self.assertEqual(ctx.exception.code, 404)  # unknown channel
+            ctx.exception.close()
             with self.assertRaises(HTTPError) as ctx:
                 self._post(base, {"meeting_id": "r1", "action": "wat"})
             self.assertEqual(ctx.exception.code, 400)  # unknown action
+            ctx.exception.close()
 
 
 if __name__ == "__main__":
