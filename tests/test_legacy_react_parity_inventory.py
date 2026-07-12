@@ -91,11 +91,13 @@ def _parse_router_module_routes(module_path: Path) -> set[Route]:
     """Routes registered on the R2 route table (@router.get/post/delete)."""
     routes: set[Route] = set()
     for line in module_path.read_text(encoding="utf-8").splitlines():
-        match = re.search(r'@router\.(get|post|delete)\("(/api/[^"]+)"\)', line.strip())
+        match = re.search(r'@router\.(get|post|delete|post_dynamic)\("(/api/[^"]+)"\)', line.strip())
         if match:
-            method = match.group(1).upper()
+            registration = match.group(1)
+            method = "POST" if registration == "post_dynamic" else registration.upper()
             route_path = _normalize_gui_literal(match.group(2))
-            routes.add(Route(route_path, method, _handler_form(route_path)))
+            handler_form = "prefix" if registration == "post_dynamic" else _handler_form(route_path)
+            routes.add(Route(route_path, method, handler_form))
     return routes
 
 
