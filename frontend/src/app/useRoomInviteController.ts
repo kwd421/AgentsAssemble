@@ -7,16 +7,25 @@ import {
   fetchPublicInviteStatus,
   generatePublicInviteHostToken,
   loadHostToken,
+  postRoomFriendDm,
   saveHostToken,
   startPublicInviteTunnel,
   stopPublicInviteTunnel,
+  upsertRoomMember,
   type PublicInviteStatus,
+  type RoomFriend,
+  type RoomMember,
 } from "../api";
 import type { NativeCliProviderAvailability } from "../roomSocketClient";
 import { getOrCreateDeviceToken } from "../lib/deviceIdentity";
-import { secureInviteCopyTarget } from "../lib/roomInviteCopy";
+import {
+  inviteFriendDmMessage,
+  remoteClientPacketPreview,
+  secureInviteCopyTarget,
+} from "../lib/roomInviteCopy";
 import { localPreviewInviteUrlForRoom, type RoomDockItem } from "../lib/roomDockModel";
 import type { RoomAppearance } from "../lib/roomAppearance";
+import { isActivePresence } from "../lib/presenceStatus";
 
 type InviteModalState = { roomId: string } | null;
 
@@ -28,6 +37,7 @@ type InviteRemoteClientPacketState = {
 type UseRoomInviteControllerOptions = {
   guestLocked: boolean;
   availableProviders: NativeCliProviderAvailability[];
+  onMembersChanged: (room: RoomDockItem, members: RoomMember[]) => void;
 };
 
 async function copyText(value: string) {
@@ -63,6 +73,7 @@ function inviteErrorLooksLikeHostToken(error: unknown) {
 export function useRoomInviteController({
   guestLocked,
   availableProviders,
+  onMembersChanged,
 }: UseRoomInviteControllerOptions) {
   const [modal, setModal] = useState<InviteModalState>(null);
   const [copyStatus, setCopyStatus] = useState("");
@@ -72,6 +83,7 @@ export function useRoomInviteController({
   const [publicInviteStatus, setPublicInviteStatus] = useState<PublicInviteStatus | null>(null);
   const [publicUrlDraft, setPublicUrlDraft] = useState("");
   const [hostTokenDraft, setHostTokenDraft] = useState("");
+  const [friendStatuses, setFriendStatuses] = useState<Record<string, string>>({});
   const [remoteClientPacket, setRemoteClientPacket] =
     useState<InviteRemoteClientPacketState>({ friendName: "", preview: "" });
 
@@ -81,6 +93,7 @@ export function useRoomInviteController({
     setSecureInviteUrl("");
     setAgentInviteUrl("");
     setHostTokenDraft(loadHostToken());
+    setFriendStatuses({});
     setRemoteClientPacket({ friendName: "", preview: "" });
   }
 
@@ -416,6 +429,78 @@ export function useRoomInviteController({
     setCopyStatus(copied ? "AI 입장 패킷 복사됨" : "패킷 복사 실패");
   }
 
+  async function inviteFriend({
+    friend,
+    room,
+    appearance,
+  }: {
+    friend: RoomFriend;
+    room: RoomDockItem;
+    appearance?: RoomAppearance;
+  }) {
+    const friendId = friend.friend_id;
+    setFriendStatuses((previous) => ({ ...previous, [friendId]: "초대 중" }));
+    try {
+      const isAiFriend = friend.participant_type !== "human";
+      const isLiveSession = isActivePresence(friend.status);
+      const inviteScope = appearance?.inviteScope || room.inviteScope || "room";
+      const readOnlyInvite = inviteScope === "read_only";
+      const participantId = friend.source_agent_id || friend.friend_id;
+      const memberStatus = isAiFriend ? (isLiveSession ? friend.status : "pending") : "invited";
+      const { invite, target } = await createSecureInviteForRoom({
+        room,
+        agentId: participantId,
+        displayName: friend.display_name,
+        inviteScope,
+      });
+      const packetPreview = isAiFriend
+        ? remoteClientPacketPreview(invite.remote_client_packet)
+        : "";
+      setRemoteClientPacket({
+        friendName: packetPreview ? friend.display_name : "",
+        preview: packetPreview,
+      });
+      const memberPayload = await upsertRoomMember({
+        meeting_id: room.meetingId,
+        participant_id: participantId,
+        display_name: friend.display_name,
+        role: isAiFriend ? "agent" : "human",
+        participant_type: friend.participant_type,
+        provider_kind: friend.provider_kind,
+        connection_kind: friend.connection_kind,
+        status: memberStatus,
+        source: "friend_invite",
+      });
+      onMembersChanged(room, memberPayload.members || []);
+      if (isAiFriend) {
+        await postRoomFriendDm({
+          friendId,
+          name: "AgentsAssemble",
+          side: "mine",
+          message: inviteFriendDmMessage({
+            roomLabel: room.label,
+            link: target.copyUrl,
+            isAiFriend,
+            isLiveSession,
+            readOnlyInvite,
+          }),
+        });
+      }
+      setFriendStatuses((previous) => ({
+        ...previous,
+        [friendId]: isAiFriend ? (isLiveSession ? "호출됨" : "실행 필요") : "초대됨",
+      }));
+    } catch (error) {
+      setFriendStatuses((previous) => ({
+        ...previous,
+        [friendId]:
+          error instanceof Error
+            ? error.message
+            : "초대 실패. 공개 URL과 host 권한 설정을 확인하세요.",
+      }));
+    }
+  }
+
   return {
     modal,
     copyStatus,
@@ -425,6 +510,7 @@ export function useRoomInviteController({
     publicInviteStatus,
     publicUrlDraft,
     hostTokenDraft,
+    friendStatuses,
     remoteClientPacket,
     invitePublicUrl: publicInviteStatus?.public_url || publicInviteStatus?.tunnel?.public_url || "",
     hostTokenRequired: Boolean(publicInviteStatus?.host_token_configured && !loadHostToken()),
@@ -433,7 +519,6 @@ export function useRoomInviteController({
     setAgentInviteProviderId,
     setPublicUrlDraft,
     setHostTokenDraft,
-    setRemoteClientPacket,
     createSecureInviteForRoom,
     configurePublicUrl,
     saveHostTokenFromDraft,
@@ -445,5 +530,6 @@ export function useRoomInviteController({
     copySecureInvite,
     copyLocalPreview,
     copyRemoteClientPacket,
+    inviteFriend,
   };
 }

@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { Hash } from "lucide-react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PublicInviteStatus } from "../api";
+import type { PublicInviteStatus, RoomFriend } from "../api";
 import type { RoomDockItem } from "../lib/roomDockModel";
 import { useRoomInviteController } from "./useRoomInviteController";
 
@@ -13,9 +13,12 @@ const apiMocks = vi.hoisted(() => ({
   fetchPublicInviteStatus: vi.fn(),
   generatePublicInviteHostToken: vi.fn(),
   loadHostToken: vi.fn(),
+  onMembersChanged: vi.fn(),
+  postRoomFriendDm: vi.fn(),
   saveHostToken: vi.fn(),
   startPublicInviteTunnel: vi.fn(),
   stopPublicInviteTunnel: vi.fn(),
+  upsertRoomMember: vi.fn(),
 }));
 
 vi.mock("../api", async () => ({
@@ -52,13 +55,17 @@ function deferred<T>() {
 
 function renderInviteController() {
   return renderHook(() =>
-    useRoomInviteController({ guestLocked: true, availableProviders: [] })
+    useRoomInviteController({
+      guestLocked: true,
+      availableProviders: [],
+      onMembersChanged: apiMocks.onMembersChanged,
+    })
   );
 }
 
 describe("useRoomInviteController", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     apiMocks.fetchPublicInviteStatus.mockResolvedValue(publicStatus);
     apiMocks.loadHostToken.mockReturnValue("host-token");
   });
@@ -89,17 +96,57 @@ describe("useRoomInviteController", () => {
     expect(hook.result.current.publicInviteStatus?.public_url).toBe("https://current.example.com");
   });
 
-  it("clears room-scoped links and packets when another invite modal opens", () => {
+  it("invites an active AI friend and clears room-scoped state for the next modal", async () => {
+    const friend: RoomFriend = {
+      friend_id: "friend:codex",
+      display_name: "Codex Friend",
+      handle: "codex",
+      participant_type: "subscription_ai",
+      provider_kind: "codex",
+      connection_kind: "agent_session",
+      source_agent_id: "codex-friend",
+      last_meeting_id: "",
+      status: "online",
+      source: "test",
+      created_at: "2026-07-12T00:00:00Z",
+      updated_at: "2026-07-12T00:00:00Z",
+    };
+    apiMocks.createRoomInvite.mockResolvedValue({
+      invite_id: "invite-friend",
+      invite_token: "token-friend",
+      meeting_id: room.meetingId,
+      agent_id: friend.source_agent_id,
+      display_name: friend.display_name,
+      invite_scope: "room",
+      expires_at: "2026-07-13T00:00:00Z",
+      room_url: "https://room.example.com",
+      join_url: "https://room.example.com/join?token=token-friend",
+      remote_client_packet: { attend: { room: room.meetingId } },
+    });
+    apiMocks.upsertRoomMember.mockResolvedValue({ members: [{ participant_id: "codex-friend" }] });
+    apiMocks.postRoomFriendDm.mockResolvedValue({});
     const hook = renderInviteController();
     act(() => hook.result.current.open("room-1"));
-    act(() =>
-      hook.result.current.setRemoteClientPacket({ friendName: "Agent", preview: "packet" })
+
+    await act(async () => {
+      await hook.result.current.inviteFriend({ friend, room });
+    });
+
+    expect(apiMocks.upsertRoomMember).toHaveBeenCalledWith(
+      expect.objectContaining({ meeting_id: room.meetingId, participant_id: "codex-friend" })
     );
-    expect(hook.result.current.remoteClientPacket.preview).toBe("packet");
+    expect(apiMocks.onMembersChanged).toHaveBeenCalledWith(
+      room,
+      [{ participant_id: "codex-friend" }]
+    );
+    expect(apiMocks.postRoomFriendDm).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.friendStatuses[friend.friend_id]).toBe("호출됨");
+    expect(hook.result.current.remoteClientPacket.preview).toContain('"attend"');
 
     act(() => hook.result.current.open("room-2"));
 
     expect(hook.result.current.remoteClientPacket).toEqual({ friendName: "", preview: "" });
+    expect(hook.result.current.friendStatuses).toEqual({});
     expect(hook.result.current.secureInviteUrl).toBe("");
     expect(hook.result.current.agentInviteUrl).toBe("");
   });

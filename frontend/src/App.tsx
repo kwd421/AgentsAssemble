@@ -34,7 +34,6 @@ import {
   fetchRoomMembers,
   fetchMeetingLifecycle,
   fetchWorkroomQueueEvidence,
-  postRoomFriendDm,
   saveRoomSettings,
   upsertRoomMember,
   applyMeetingStreamUpdate,
@@ -120,10 +119,7 @@ import {
   loadAgentActivityVisibility,
   persistAgentActivityVisibility,
 } from "./lib/agentActivityPreferences";
-import {
-  inviteFriendDmMessage,
-  remoteClientPacketPreview,
-} from "./lib/roomInviteCopy";
+import { remoteClientPacketPreview } from "./lib/roomInviteCopy";
 import { GUEST_SESSION_EXPIRED_MESSAGE } from "./lib/apiErrors";
 import { roomPostingState } from "./lib/roomGuestPosting";
 import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
@@ -358,7 +354,6 @@ export default function App() {
   const [channelMenu, setChannelMenu] = useState<ChannelMenuState>(null);
   const [settingsModal, setSettingsModal] = useState<RoomSettingsState>(null);
   const [agentCreateOpen, setAgentCreateOpen] = useState(false);
-  const [inviteFriendStatuses, setInviteFriendStatuses] = useState<Record<string, string>>({});
   const [guestAiPacketPreview, setGuestAiPacketPreview] = useState("");
   const [guestAiPacketStatus, setGuestAiPacketStatus] = useState("");
   const [flowData, setFlowData] = useState<FlowResponse | null>(null);
@@ -563,9 +558,16 @@ export default function App() {
     onSideChat: handleSideChatRealtimeEvents,
     onError: handleSideChatError,
   });
+  const handleInvitedRoomMembers = useCallback((room: RoomDockItem, members: RoomMember[]) => {
+    setRoomMembersByRoom((previous) => ({
+      ...previous,
+      [roomSettingsKey(room)]: members,
+    }));
+  }, []);
   const roomInvite = useRoomInviteController({
     guestLocked,
     availableProviders: canonicalRoom.availableProviders,
+    onMembersChanged: handleInvitedRoomMembers,
   });
   const {
     modal: inviteModal,
@@ -576,6 +578,7 @@ export default function App() {
     publicInviteStatus,
     publicUrlDraft: publicInviteUrlDraft,
     hostTokenDraft,
+    friendStatuses: inviteFriendStatuses,
     remoteClientPacket: inviteRemoteClientPacket,
     invitePublicUrl,
     hostTokenRequired: inviteHostTokenRequired,
@@ -584,8 +587,6 @@ export default function App() {
     setAgentInviteProviderId,
     setPublicUrlDraft: setPublicInviteUrlDraft,
     setHostTokenDraft,
-    setRemoteClientPacket: setInviteRemoteClientPacket,
-    createSecureInviteForRoom,
     configurePublicUrl: configureInvitePublicUrl,
     saveHostTokenFromDraft,
     startTunnel: startInviteTunnel,
@@ -596,6 +597,7 @@ export default function App() {
     copySecureInvite: copyInviteLink,
     copyLocalPreview: copyLocalPreviewLink,
     copyRemoteClientPacket,
+    inviteFriend: inviteFriendToRoom,
   } = roomInvite;
   const roomSocket = canonicalRoom.socket;
   const activeRoomAgentSessions = canonicalRoom.agentSessions;
@@ -1172,7 +1174,6 @@ export default function App() {
     setAdminOpen(false);
     closeMobileOverlays();
     openInviteModal(roomId);
-    setInviteFriendStatuses({});
     setRoomMenu(null);
     setChannelMenu(null);
   }
@@ -1272,73 +1273,6 @@ export default function App() {
     if (!guestAiPacketPreview) return;
     const copied = await copyText(guestAiPacketPreview);
     setGuestAiPacketStatus(copied ? "AI 입장 패킷 복사됨" : "AI 입장 패킷 복사 실패");
-  }
-
-  async function inviteFriendToRoom(friend: RoomFriend) {
-    if (!inviteModalRoom) return;
-    const friendId = friend.friend_id;
-    const inviteRoomKey = roomSettingsKey(inviteModalRoom);
-    setInviteFriendStatuses((previous) => ({ ...previous, [friendId]: "초대 중" }));
-    try {
-      let link = "";
-      const isAiFriend = friend.participant_type !== "human";
-      const isLiveSession = isActivePresence(friend.status);
-      const inviteScope = inviteModalAppearance?.inviteScope || inviteModalRoom.inviteScope || "room";
-      const readOnlyInvite = inviteScope === "read_only";
-      const participantId = friend.source_agent_id || friend.friend_id;
-      const memberStatus = isAiFriend ? (isLiveSession ? friend.status : "pending") : "invited";
-      let remotePacketPreview = "";
-      const { invite, target } = await createSecureInviteForRoom({
-        room: inviteModalRoom,
-        agentId: participantId,
-        displayName: friend.display_name,
-        inviteScope,
-      });
-      link = target.copyUrl;
-      remotePacketPreview = isAiFriend ? remoteClientPacketPreview(invite.remote_client_packet) : "";
-      setInviteRemoteClientPacket({
-        friendName: remotePacketPreview ? friend.display_name : "",
-        preview: remotePacketPreview,
-      });
-      const memberPayload = await upsertRoomMember({
-        meeting_id: inviteModalRoom.meetingId,
-        participant_id: participantId,
-        display_name: friend.display_name,
-        role: isAiFriend ? "agent" : "human",
-        participant_type: friend.participant_type,
-        provider_kind: friend.provider_kind,
-        connection_kind: friend.connection_kind,
-        status: memberStatus,
-        source: "friend_invite",
-      });
-      setRoomMembersByRoom((previous) => ({
-        ...previous,
-        [inviteRoomKey]: memberPayload.members || [],
-      }));
-      if (isAiFriend) {
-        await postRoomFriendDm({
-          friendId,
-          name: "AgentsAssemble",
-          side: "mine",
-          message: inviteFriendDmMessage({
-            roomLabel: inviteModalRoom.label,
-            link,
-            isAiFriend,
-            isLiveSession,
-            readOnlyInvite,
-          }),
-        });
-      }
-      setInviteFriendStatuses((previous) => ({
-        ...previous,
-        [friendId]: isAiFriend ? (isLiveSession ? "호출됨" : "실행 필요") : "초대됨",
-      }));
-    } catch (error) {
-      setInviteFriendStatuses((previous) => ({
-        ...previous,
-        [friendId]: error instanceof Error ? error.message : "초대 실패. 공개 URL과 host 권한 설정을 확인하세요.",
-      }));
-    }
   }
 
   const toggleMembers = useCallback(() => setMembersOpen((value) => !value), []);
@@ -1679,7 +1613,13 @@ export default function App() {
           onStartTunnel={() => void startInviteTunnel()}
           onStopTunnel={() => void stopInviteTunnel()}
           onCopyRemoteClientPacket={() => void copyRemoteClientPacket()}
-          onInviteFriend={(friend) => void inviteFriendToRoom(friend)}
+          onInviteFriend={(friend) =>
+            void inviteFriendToRoom({
+              friend,
+              room: inviteModalRoom,
+              appearance: inviteModalAppearance,
+            })
+          }
         />
       )}
 
