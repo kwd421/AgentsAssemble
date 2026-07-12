@@ -138,6 +138,11 @@ from agentsassemble.legacy_live_agent_session_control import (
     session_stop_operation_status as _session_stop_operation_status,
     session_stop_operation_summary as _session_stop_operation_summary,
 )
+from agentsassemble.legacy_live_agent_session_projection import (
+    session_check_operation_details as _session_check_operation_details,
+    session_start_operation_details as _session_start_operation_details,
+    session_stop_operation_details as _session_stop_operation_details,
+)
 from agentsassemble.live_agent_settings import (
     update_live_agent_config_options,
     update_live_agent_config_poll_interval,
@@ -7225,82 +7230,6 @@ def _real_session_smoke_has_explicit_configs(payload: dict[str, object]) -> bool
     )
 
 
-def _session_start_operation_details(session: dict[str, object]) -> dict[str, object]:
-    connection = session.get("connection") if isinstance(session.get("connection"), dict) else {}
-    process = session.get("process") if isinstance(session.get("process"), dict) else {}
-    offline = session.get("offline") if isinstance(session.get("offline"), dict) else {}
-    ownership = session.get("ownership") if isinstance(session.get("ownership"), dict) else {}
-    details = {
-        "result_status": _operation_result_status(session.get("status")),
-        "meeting_id": clean_lobby_text(session.get("meeting_id"), limit=128),
-        "group_id": clean_lobby_text(session.get("group_id"), limit=128),
-        "expected_agent_count": _payload_nonnegative_int(connection.get("expected"), 0),
-        "connected_agent_count": _payload_nonnegative_int(connection.get("connected"), 0),
-        "agent_ids": _safe_payload_strings(connection.get("agent_ids"), limit=64),
-        "connected_agent_ids": _safe_payload_strings(connection.get("connected_agent_ids"), limit=64),
-        "attention": _safe_payload_strings(connection.get("attention"), limit=128),
-        "process_status": clean_lobby_text(process.get("status"), limit=64),
-        "process_agent_ids": _safe_payload_strings(process.get("agent_ids"), limit=64),
-        "process_attention": _safe_payload_strings(process.get("attention"), limit=128),
-        "ownership_attention": _safe_payload_strings(ownership.get("attention"), limit=128),
-    }
-    ensure_action = clean_lobby_text(session.get("action"), limit=64)
-    if ensure_action:
-        details["ensure_action"] = ensure_action
-    ensure_reason = _safe_session_ensure_reason(session.get("ensure_reason"))
-    if ensure_reason:
-        details["ensure_reason"] = ensure_reason
-    if offline:
-        details.update(
-            {
-                "offline_agent_count": _payload_nonnegative_int(offline.get("offline"), 0),
-                "offline_agent_ids": _safe_payload_strings(offline.get("offline_agent_ids"), limit=64),
-                "offline_attention": _safe_payload_strings(offline.get("attention"), limit=128),
-            }
-        )
-    reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
-    if reply_probe is not None:
-        details.update(_session_reply_probe_operation_details(reply_probe))
-    auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
-    if auto_rounds is not None:
-        details.update(_session_auto_rounds_operation_details(auto_rounds, str(session.get("meeting_id") or "")))
-    finalization = session.get("finalization") if isinstance(session.get("finalization"), dict) else None
-    if finalization is not None:
-        details.update(_rounds_finalization_operation_details(finalization, str(session.get("meeting_id") or "")))
-    return details
-
-
-def _safe_session_ensure_reason(value: object) -> str:
-    reason = clean_lobby_text(value, limit=64)
-    return reason if reason in SESSION_ENSURE_REASONS else ""
-
-
-def _session_stop_operation_details(session: dict[str, object]) -> dict[str, object]:
-    offline = session.get("offline") if isinstance(session.get("offline"), dict) else {}
-    process = session.get("process") if isinstance(session.get("process"), dict) else {}
-    session_runs = session.get("session_runs") if isinstance(session.get("session_runs"), list) else []
-    stopped_session_run_ids = [
-        clean_lobby_text(run.get("run_id"), limit=64)
-        for run in session_runs
-        if isinstance(run, dict) and run.get("status") == "stopped" and clean_lobby_text(run.get("run_id"), limit=64)
-    ]
-    return {
-        "result_status": _operation_result_status(session.get("status")),
-        "meeting_id": clean_lobby_text(session.get("meeting_id"), limit=128),
-        "group_id": clean_lobby_text(session.get("group_id"), limit=128),
-        "expected_agent_count": _payload_nonnegative_int(offline.get("expected"), 0),
-        "offline_agent_count": _payload_nonnegative_int(offline.get("offline"), 0),
-        "agent_ids": _safe_payload_strings(offline.get("agent_ids"), limit=64),
-        "offline_agent_ids": _safe_payload_strings(offline.get("offline_agent_ids"), limit=64),
-        "attention": _safe_payload_strings(offline.get("attention"), limit=128),
-        "process_status": clean_lobby_text(process.get("status"), limit=64),
-        "process_agent_ids": _safe_payload_strings(process.get("agent_ids"), limit=64),
-        "process_attention": _safe_payload_strings(process.get("attention"), limit=128),
-        "session_run_stopped_count": len(stopped_session_run_ids),
-        "session_run_ids": stopped_session_run_ids[:10],
-    }
-
-
 def _meeting_finalize_operation_details(result: dict[str, object], meeting_id: str) -> dict[str, object]:
     details = {
         "result_status": _operation_result_status(result.get("status")),
@@ -7335,46 +7264,6 @@ def _shared_memory_operation_details(memory: dict[str, object]) -> dict[str, obj
 
 def _memory_item_count(value: object) -> int:
     return len(value) if isinstance(value, list) else 0
-
-
-def _session_check_operation_details(session: dict[str, object]) -> dict[str, object]:
-    return _session_start_operation_details(session)
-
-
-def _session_auto_rounds_operation_details(auto_rounds: dict[str, object], meeting_id: str) -> dict[str, object]:
-    rounds_details = _turn_rounds_operation_details(auto_rounds, meeting_id)
-    return {
-        "auto_rounds_status": _operation_result_status(auto_rounds.get("status")),
-        "auto_rounds_reason": clean_lobby_text(auto_rounds.get("reason"), limit=128),
-        "auto_rounds_meeting_id": rounds_details["meeting_id"],
-        "auto_rounds_round_count": rounds_details["round_count"],
-        "auto_rounds_answered_round_count": rounds_details["answered_round_count"],
-        "auto_rounds_completed_round_count": rounds_details["completed_round_count"],
-        "auto_rounds_timeout_round_count": rounds_details["timeout_round_count"],
-        "auto_rounds_skipped_round_count": rounds_details["skipped_round_count"],
-        "auto_rounds_stopped_round_count": rounds_details["stopped_round_count"],
-        "auto_rounds_stopped": rounds_details["stopped"],
-        "auto_rounds_round_ids": rounds_details["round_ids"],
-        "auto_rounds_statuses": rounds_details["statuses"],
-        "auto_rounds_role_ids": rounds_details["role_ids"],
-        "auto_rounds_timeout_seconds": rounds_details["timeout_seconds"],
-        "auto_rounds_max_rounds": rounds_details["max_rounds"],
-    }
-
-
-def _session_reply_probe_operation_details(reply_probe: dict[str, object]) -> dict[str, object]:
-    return {
-        "reply_probe_status": _operation_result_status(reply_probe.get("status")),
-        "reply_probe_reason": clean_lobby_text(reply_probe.get("reason"), limit=128),
-        "reply_probe_agent_ids": _safe_payload_strings(reply_probe.get("agent_ids"), limit=64),
-        "reply_probe_statuses": _probe_statuses(reply_probe.get("probes")),
-        "reply_probe_count": _payload_nonnegative_int(reply_probe.get("probe_count"), 0),
-        "reply_probe_ok_count": _payload_nonnegative_int(reply_probe.get("ok_count"), 0),
-        "reply_probe_timeout_count": _payload_nonnegative_int(reply_probe.get("timeout_count"), 0),
-        "reply_probe_failed_count": _payload_nonnegative_int(reply_probe.get("failed_count"), 0),
-        "reply_probe_skipped_count": _payload_nonnegative_int(reply_probe.get("skipped_count"), 0),
-        "reply_probe_timeout_seconds": _payload_nonnegative_float(reply_probe.get("timeout_seconds"), 0.0),
-    }
 
 
 def _session_run_retry_now_operation_status(session_run: dict[str, object], *, reconciled: bool) -> str:
