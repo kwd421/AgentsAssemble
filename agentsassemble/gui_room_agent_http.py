@@ -41,8 +41,8 @@ def register_agent_session_routes(
         payload = ctx.read_json_body()
         if payload is None:
             return
-        if bool(payload.get("start")) and not process_start_allowed(ctx):
-            ctx.send_error(HTTPStatus.FORBIDDEN, "Agent Session process start requires local operator or host authorization")
+        if not process_start_allowed(ctx):
+            ctx.send_error(HTTPStatus.FORBIDDEN, "Agent Session control requires local operator or host authorization")
             return
         try:
             ctx.send_json(
@@ -60,8 +60,8 @@ def register_agent_session_routes(
         payload = ctx.read_json_body()
         if payload is None:
             return
-        if bool(payload.get("start")) and not process_start_allowed(ctx):
-            ctx.send_error(HTTPStatus.FORBIDDEN, "Agent Session process start requires local operator or host authorization")
+        if not process_start_allowed(ctx):
+            ctx.send_error(HTTPStatus.FORBIDDEN, "Agent Session control requires local operator or host authorization")
             return
         try:
             ctx.send_json(

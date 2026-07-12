@@ -214,9 +214,59 @@ class GuiServerRoomRouteTests(unittest.TestCase):
 
             self.assertEqual(
                 denied.sent_error,
-                (HTTPStatus.FORBIDDEN, "Agent Session process start requires local operator or host authorization"),
+                (HTTPStatus.FORBIDDEN, "Agent Session control requires local operator or host authorization"),
             )
             self.assertEqual(RoomStore(root).participants("session-room"), [])
+
+    def test_agent_session_http_mutations_require_authorization_without_process_start(self):
+        reset_room_invite_state()
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            for path, payload in (
+                (
+                    "/api/agent-sessions",
+                    {"room_id": "session-room", "agent_id": "agent-1", "provider_kind": "codex_live_session"},
+                ),
+                (
+                    "/api/agent-sessions/resume",
+                    {"room_id": "session-room", "agent_id": "agent-1", "session_id": "session-1"},
+                ),
+            ):
+                with self.subTest(path=path):
+                    denied = _dispatch_room_route(
+                        root,
+                        path=path,
+                        method="POST",
+                        payload=payload,
+                        loopback=False,
+                    )
+                    self.assertEqual(
+                        denied.sent_error,
+                        (HTTPStatus.FORBIDDEN, "Agent Session control requires local operator or host authorization"),
+                    )
+
+            self.assertEqual(RoomStore(root).participants("session-room"), [])
+
+    def test_agent_session_http_mutation_accepts_host_credential(self):
+        reset_room_invite_state()
+        self.addCleanup(reset_room_invite_state)
+        reset_room_users_state()
+        set_runtime_host_token("host-secret")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            created = _dispatch_room_route(
+                root,
+                path="/api/agent-sessions",
+                method="POST",
+                payload={"room_id": "session-room", "agent_id": "agent-1", "provider_kind": "codex_live_session"},
+                headers={"X-Host-Token": "host-secret"},
+                loopback=False,
+            )
+
+            self.assertIsNone(created.sent_error)
+            self.assertEqual(created.sent_json["status"], "created")
 
 
     def test_agent_session_http_resume_start_uses_process_service_runner(self):
@@ -331,7 +381,8 @@ class GuiServerRoomRouteTests(unittest.TestCase):
 
             self.assertEqual(turned["turn_status"], "finished")
             self.assertEqual(packets[0]["command"][-1], "-")
-            self.assertIn('"current_turn_instruction": "Answer now."', packets[0]["prompt"])
+            self.assertIn("[Your turn]\nAnswer now.", packets[0]["prompt"])
+            self.assertNotIn('"session_id"', packets[0]["prompt"])
             event_types = [event["type"] for event in RoomStore(root).read_events("session-room")]
             self.assertIn("turn_started", event_types)
             self.assertIn("message_delta", event_types)
@@ -408,7 +459,8 @@ class GuiServerRoomRouteTests(unittest.TestCase):
 
             self.assertEqual(first["participant_id"], "agent-a")
             self.assertEqual(second["participant_id"], "agent-b")
-            self.assertIn('"current_turn_instruction": "Respond to the latest room message."', packets[0]["prompt"])
+            self.assertIn("[Your turn]\nRespond to the latest room message.", packets[0]["prompt"])
+            self.assertNotIn('"session_id"', packets[0]["prompt"])
             self.assertIn("첫 질문", packets[0]["prompt"])
             event_types = [event["type"] for event in RoomStore(root).read_events("session-room")]
             self.assertIn("turn_queued", event_types)

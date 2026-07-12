@@ -30,6 +30,7 @@ from agentsassemble.agent_sessions import (
     stream_room_sse_frames,
 )
 from agentsassemble.room_store import RoomStore
+from agentsassemble.room_turn_context import _agent_turn_prompt
 
 
 class AgentSessionRoomStoreTests(unittest.TestCase):
@@ -441,7 +442,8 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         command, prompt, timeout_seconds = calls[0]
         self.assertEqual(command[-1], "-")
         self.assertIn("codex", command[0])
-        self.assertIn('"current_turn_instruction": "Use command."', prompt)
+        self.assertIn("[Your turn]\nUse command.", prompt)
+        self.assertNotIn('"session_id"', prompt)
         self.assertEqual(timeout_seconds, 12)
         self.assertEqual(RoomStore(self.output_root).read_events("room-a")[-2]["content"], "command answer")
 
@@ -482,7 +484,8 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
 
         def fake_streamer(command, prompt, timeout_seconds):
             self.assertEqual(command[-1], "-")
-            self.assertIn('"current_turn_instruction": "Stream."', prompt)
+            self.assertIn("[Your turn]\nStream.", prompt)
+            self.assertNotIn('"session_id"', prompt)
             yield {"type": "message_delta", "content": "hello "}
             yield {"type": "message_delta", "content": "world"}
             yield {"type": "message_final", "content": "hello world"}
@@ -2293,12 +2296,42 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         media_path = Path(media["path"])
         self.assertTrue(media_path.exists())
         self.assertEqual(media_path.read_bytes(), b"<svg></svg>")
-        self.assertEqual(packet["media_manifest"][0]["path"], str(media_path))
+        self.assertNotIn("path", packet["media_manifest"][0])
         self.assertEqual(packet["media_manifest"][0]["size"], len(b"<svg></svg>"))
         self.assertFalse(packet["media_manifest"][0]["supported"])
         self.assertIn("Unsupported media", packet["media_notes"][0])
         self.assertIn("unsupported_media", [event["type"] for event in store.read_events("room-a")])
         self.assertNotIn(str(Path.cwd()), str(packet))
+
+    def test_provider_prompt_bound_applies_to_actual_fallback_text(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a", label="A" * 500)
+        result = resume_agent_session_payload(
+            self.output_root,
+            {
+                "room_id": "room-a",
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "display_name": "B" * 500,
+                "provider_kind": "codex_live_session",
+            },
+        )
+        store.append_event("room-a", "message_final", actor_id="human", content="C" * 5000)
+
+        packet = build_room_turn_packet(
+            self.output_root,
+            room_id="room-a",
+            participant_id=result["participant"]["participant_id"],
+            session_id="session-1",
+            instruction="Important final instruction.",
+            max_prompt_chars=800,
+        )
+
+        prompt = _agent_turn_prompt(packet)
+        self.assertLessEqual(len(prompt), 800)
+        self.assertEqual(packet["provider_visible_chars"], len(prompt))
+        self.assertIn("Important final instruction.", prompt)
+        self.assertNotIn(str(self.output_root), prompt)
 
     def test_sse_stream_yields_new_appended_event_after_idle_heartbeat(self):
         store = RoomStore(self.output_root)

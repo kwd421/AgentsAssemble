@@ -17,6 +17,9 @@ UNSUPPORTED_MEDIA_AUDIT_NOTE = "Unsupported media is listed for audit only; do n
 
 
 def _agent_turn_prompt(packet: dict[str, object]) -> str:
+    provider_input = str(packet.get("provider_input") or "")
+    if provider_input:
+        return provider_input
     return (
         "You are answering one AgentsAssemble room turn. Read the JSON packet, "
         "use only the room-visible context and supported media manifest, follow "
@@ -79,11 +82,6 @@ def build_room_turn_packet(
         media_ids=media_ids,
         room_delta_text=provider_projection.text,
     )
-    for media in media_manifest:
-        media_id = clean_lobby_text(media.get("id"), limit=128)
-        filename = Path(clean_lobby_text(media.get("filename"), limit=256)).name
-        if media_id and filename:
-            media["path"] = str(store.rooms_root / room_id / "media" / media_id / filename)
     unsupported_media = [media for media in media_manifest if not bool(media.get("supported"))]
     room_memory = room_memory_from_session(session)
     summary = dict(room_memory)
@@ -370,7 +368,22 @@ def _clean_text_list(value: object, *, limit: int) -> list[str]:
 
 
 def _bound_room_turn_packet(packet: dict[str, object], prompt_limit: int) -> dict[str, object]:
+    provider_input = _bound_provider_input(str(packet.get("provider_input") or ""), prompt_limit)
     events = list(packet.get("events") if isinstance(packet.get("events"), list) else [])
-    while events and len(_agent_turn_prompt({**packet, "events": events})) > prompt_limit:
+    bounded_packet = {
+        **packet,
+        "provider_input": provider_input,
+        "provider_visible_chars": len(provider_input),
+    }
+    while events and len(_agent_turn_prompt({**bounded_packet, "events": events})) > prompt_limit:
         events.pop(0)
-    return {**packet, "events": events, "event_count_in_packet": len(events)}
+    return {**bounded_packet, "events": events, "event_count_in_packet": len(events)}
+
+
+def _bound_provider_input(provider_input: str, prompt_limit: int) -> str:
+    if len(provider_input) <= prompt_limit:
+        return provider_input
+    omission = "[Earlier provider context omitted]\n"
+    if prompt_limit <= len(omission):
+        return provider_input[-prompt_limit:]
+    return omission + provider_input[-(prompt_limit - len(omission)) :]
