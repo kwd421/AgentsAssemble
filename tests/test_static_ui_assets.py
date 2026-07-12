@@ -238,8 +238,6 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn('"/api/lobby"', side_chat_api)
         self.assertNotIn("/api/lobby/promote", api_source)
 
-        self.assertIn("sideChatEvents", app_source)
-        self.assertIn("fetchSideChat(activeSideChatMeetingId)", app_source)
         self.assertIn("events={displayedSideChatEvents}", app_source)
         self.assertIn("meetingId={activeSideChatMeetingId}", app_source)
 
@@ -1292,24 +1290,16 @@ class StaticUiAssetTests(unittest.TestCase):
         side_chat_model_source = frontend_file("lib/sideChatThreadModel.ts")
         css = (FRONTEND_DIR / "index.css").read_text()
 
-        self.assertIn("type SideChatThreadContext", app_source)
-        self.assertIn("const [sideChatThread, setSideChatThread]", app_source)
         self.assertIn("function openSideChatThread(event: LobbyEvent)", app_source)
         self.assertIn("function closeSideChatThread()", app_source)
         self.assertIn('setRightPanelMode("side-chat")', app_source)
-        self.assertIn("sourceEventId: event.id", app_source)
         self.assertIn("const LOBBY_CHANNEL_LABEL", app_source)
-        self.assertIn("channelLabel: LOBBY_CHANNEL_LABEL", app_source)
         self.assertNotIn("channelLabel: activeRoom.label", app_source)
         self.assertIn("threadContext={sideChatThread}", app_source)
         self.assertIn("onCloseThread={closeSideChatThread}", app_source)
         self.assertIn("사이드챗", app_source)
         self.assertIn("onOpenSideThread={openSideChatThread}", app_source)
-        self.assertIn("sideChatEventsForThreadContext", app_source)
-        self.assertIn("const displayedSideChatEvents = sideChatEventsForThreadContext(sideChatEvents, sideChatThread);", app_source)
         self.assertIn("events={displayedSideChatEvents}", app_source)
-        self.assertIn("const sideChatThreadSummaries = useMemo(", app_source)
-        self.assertIn("threadSummariesForSideChat(sideChatEvents)", app_source)
         self.assertIn("threadSummaries={sideChatThreadSummaries}", app_source)
         self.assertNotIn("function threadSummariesForSideChat(events: SideChatEvent[])", app_source)
 

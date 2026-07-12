@@ -38,7 +38,6 @@ import {
   fetchRoomMembers,
   fetchMeetingLifecycle,
   fetchWorkroomQueueEvidence,
-  fetchSideChat,
   generatePublicInviteHostToken,
   loadHostToken,
   postRoomFriendDm,
@@ -50,7 +49,6 @@ import {
   upsertRoomMember,
   applyMeetingStreamUpdate,
   initialMeetingStreamState,
-  mergeSideChatEvents,
   meetingLiveEventsToTimelineEvents,
   meetingStreamStateForActiveMeeting,
   subscribeMeetingEvents,
@@ -63,7 +61,6 @@ import {
   type WorkroomQueueEvidence,
   type MafiaGame,
   type LobbyEvent,
-  type SideChatEvent,
   type ChannelNotificationSetting,
   type ChannelSettings,
   type ConversationMode,
@@ -77,6 +74,7 @@ import { useRoomAdmission } from "./app/useRoomAdmission";
 import { useFriendsDirectory } from "./app/useFriendsDirectory";
 import { useRoomDirectory } from "./app/useRoomDirectory";
 import { useActiveMafiaGame } from "./app/useActiveMafiaGame";
+import { useRoomSideChat } from "./app/useRoomSideChat";
 import type { HomeFilter } from "./app/friendsDirectoryTypes";
 import { useCanonicalRoom } from "./useCanonicalRoom";
 import AdminPanel from "./views/AdminPanel";
@@ -142,11 +140,6 @@ import { GUEST_SESSION_EXPIRED_MESSAGE } from "./lib/apiErrors";
 import { roomPostingState } from "./lib/roomGuestPosting";
 import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
 import { isActivePresence } from "./lib/presenceStatus";
-import {
-  sideChatEventsForThreadContext,
-  threadSummariesForSideChat,
-  type SideChatThreadContext,
-} from "./lib/sideChatThreadModel";
 
 type Channel = "friends" | "lobby" | "live" | "board" | "records";
 type MobileRoomInfoInitialMode = "info" | "side-chat";
@@ -436,9 +429,6 @@ export default function App() {
     initialMeetingStreamState("")
   );
   const [meetingStreamError, setMeetingStreamError] = useState<Error | null>(null);
-  const [sideChatEvents, setSideChatEvents] = useState<SideChatEvent[]>([]);
-  const [sideChatError, setSideChatError] = useState<Error | null>(null);
-  const [sideChatThread, setSideChatThread] = useState<SideChatThreadContext | null>(null);
 
   const onGuestRoomJoined = useCallback((room: RoomDockItem) => {
     replaceRooms([room]);
@@ -557,6 +547,18 @@ export default function App() {
     8000
   );
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? EMPTY_ROOM;
+  const activeSideChatMeetingId = activeRoom.meetingId || "";
+  const {
+    error: sideChatError,
+    selectedThread: sideChatThread,
+    displayedEvents: displayedSideChatEvents,
+    threadSummaries: sideChatThreadSummaries,
+    handleRealtimeEvents: handleSideChatRealtimeEvents,
+    handlePostedEvents: handleSideChatPosted,
+    handleRealtimeError: handleSideChatError,
+    selectThread: selectSideChatThread,
+    clearThread: clearSideChatThread,
+  } = useRoomSideChat({ meetingId: activeSideChatMeetingId });
   // Rooms-as-server-objects: when a room becomes active, promote it to a
   // server-backed meeting (idempotent) so adding agents / roster / lobby always
   // have a real meeting to bind to instead of failing with "Meeting not found".
@@ -589,15 +591,8 @@ export default function App() {
     roomId: activeRoom.meetingId || "",
     auth: canonicalRoomAuth,
     viewerParticipantId: guestSession?.agentId || "operator-local",
-    onSideChat: (incoming) => {
-      setSideChatError(null);
-      setSideChatEvents((previous) => mergeSideChatEvents(previous, incoming));
-    },
-    onError: (errorValue) => {
-      if (errorValue instanceof Error && errorValue.message.includes("Side chat")) {
-        setSideChatError(errorValue);
-      }
-    },
+    onSideChat: handleSideChatRealtimeEvents,
+    onError: handleSideChatError,
   });
   const roomSocket = canonicalRoom.socket;
   const activeRoomAgentSessions = canonicalRoom.agentSessions;
@@ -620,7 +615,6 @@ export default function App() {
   const sendAgentConfigure = canonicalRoom.sendAgentConfigure;
   const sendParticipantKick = canonicalRoom.sendParticipantKick;
   const sendParticipantMute = canonicalRoom.sendParticipantMute;
-  const activeSideChatMeetingId = activeRoom.meetingId || "";
   const { mafiaGame: scopedMafiaGame, refreshMafia } = useActiveMafiaGame({
     activeMeetingId: activeRoom.meetingId,
   });
@@ -783,39 +777,8 @@ export default function App() {
     };
   }, [adminOpen, channel, flow.meeting_id]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setSideChatEvents([]);
-    setSideChatError(null);
-    fetchSideChat(activeSideChatMeetingId)
-      .then((payload) => {
-        if (cancelled) return;
-        if (Array.isArray(payload.events)) {
-          setSideChatEvents(payload.events);
-        }
-        setSideChatError(null);
-      })
-      .catch((errorValue) => {
-        if (!cancelled) {
-          setSideChatError(errorValue instanceof Error ? errorValue : new Error("Side chat unavailable"));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSideChatMeetingId]);
-
-  const handleSideChatPosted = useCallback((events: SideChatEvent[]) => {
-    setSideChatEvents((previous) => mergeSideChatEvents(previous, events));
-  }, []);
-
   function openSideChatThread(event: LobbyEvent) {
-    setSideChatThread({
-      sourceEventId: event.id,
-      sourceName: event.name || "Room",
-      sourceMessage: event.message || "",
-      channelLabel: LOBBY_CHANNEL_LABEL,
-    });
+    selectSideChatThread(event, LOBBY_CHANNEL_LABEL);
     if (mobileViewportIsActive()) {
       setMobileSidebarOpen(false);
       setMobileRoomInfoInitialMode("side-chat");
@@ -827,7 +790,7 @@ export default function App() {
   }
 
   function closeSideChatThread() {
-    setSideChatThread(null);
+    clearSideChatThread();
     setRightPanelMode("side-chat");
   }
 
@@ -928,11 +891,6 @@ export default function App() {
   useEffect(() => {
     refreshCustomChannels();
   }, [refreshCustomChannels]);
-  const displayedSideChatEvents = sideChatEventsForThreadContext(sideChatEvents, sideChatThread);
-  const sideChatThreadSummaries = useMemo(
-    () => threadSummariesForSideChat(sideChatEvents),
-    [sideChatEvents]
-  );
   const scopedMentionables = useMemo(
     () => {
       const seen = new Set<string>();
@@ -1130,7 +1088,6 @@ export default function App() {
     setAdminOpen(false);
     setChannel("lobby");
     setRightPanelMode("room-info");
-    setSideChatThread(null);
     setRoomMenu(null);
     setChannelMenu(null);
     closeMobileOverlays();
