@@ -111,6 +111,7 @@ import { GUEST_SESSION_EXPIRED_MESSAGE } from "./lib/apiErrors";
 import { roomPostingState } from "./lib/roomGuestPosting";
 import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
 import { isActivePresence } from "./lib/presenceStatus";
+import { roomTypingNames } from "./lib/roomTypingIndicators";
 
 type Channel = "friends" | "lobby" | "live" | "board" | "records";
 type MobileRoomInfoInitialMode = "info" | "side-chat";
@@ -853,79 +854,25 @@ export default function App() {
     [activeRoomMembers, scopedAgents]
   );
   const scopedOnlineCount = scopedAgents.filter((agent) => isActivePresence(agent.status)).length;
-  // Participants currently generating a reply (status "working") — drives the
-  // lobby typing indicator. Covers both managed live-agents and WS residents
-  // (whose roster status flips to "working" via the thinking signal).
-  const typingNames = useMemo(() => {
-    const names: string[] = [];
-    const seen = new Set<string>();
-    const activeTurnHasVisibleOutput = Boolean(
-      activeAgentSessionProgress?.turnId &&
-        activeRoomCanonicalEvents.some(
-          (event) =>
-            event.type === "message_delta" &&
-            event.turn_id === activeAgentSessionProgress.turnId &&
-            Boolean(String(event.content || "").trim())
-        )
-    );
-    const activeParticipantId = activeAgentSessionProgress?.participantId || "";
-    const activeDisplayNames = new Set(
-      activeTurnHasVisibleOutput
-        ? [
-            activeAgentSessionProgress?.displayName || "",
-            activeRoomAgentSessions.find(
-              (candidate) => candidate.participant_id === activeParticipantId
-            )?.display_name || "",
-            activeRoomMembers.find(
-              (candidate) => candidate.participant_id === activeParticipantId
-            )?.display_name || "",
-          ].filter(Boolean)
-        : []
-    );
-    const add = (name: string) => {
-      const trimmed = name.trim();
-      if (trimmed && !activeDisplayNames.has(trimmed) && !seen.has(trimmed)) {
-        seen.add(trimmed);
-        names.push(trimmed);
-      }
-    };
-    scopedAgents.forEach((agent) => {
-      if (agent.status === "working") add(agent.display_name || agent.agent_id);
-    });
-    activeRoomMembers.forEach((member) => {
-      if (member.thinking) add(member.display_name || member.participant_id);
-    });
-    if (activeAgentSessionProgress && !activeTurnHasVisibleOutput) {
-      const hasVisibleThinking = activeRoomCanonicalEvents.some(
-        (event) =>
-          ["thinking_delta", "activity_delta"].includes(event.type) &&
-          event.turn_id === activeAgentSessionProgress.turnId &&
-          Boolean(String(event.content || "").trim()) &&
-          agentActivityIsVisible(agentActivityVisibility, activeAgentSessionProgress.participantId)
-      );
-      if (!hasVisibleThinking) {
-        const session = activeRoomAgentSessions.find(
-          (candidate) => candidate.participant_id === activeAgentSessionProgress.participantId
-        );
-        const participant = activeRoomMembers.find(
-          (candidate) => candidate.participant_id === activeAgentSessionProgress.participantId
-        );
-        add(
-          session?.display_name ||
-            participant?.display_name ||
-            activeAgentSessionProgress.displayName
-        );
-      }
-    }
-    return names;
-  }, [
-    activeAgentSessionProgress,
-    activeRoomAgentSessions,
-    activeRoomCanonicalEvents,
-    activeRoomMembers,
-    agentActivityVisibility,
-    scopedAgents,
-  ]);
+  const typingNames = useMemo(
+    () =>
+      roomTypingNames({
+        agents: scopedAgents,
+        members: activeRoomMembers,
+        sessions: activeRoomAgentSessions,
+        events: activeRoomCanonicalEvents,
+        progress: activeAgentSessionProgress,
+        activityVisibility: agentActivityVisibility,
+      }),
+    [
+      activeAgentSessionProgress,
+      activeRoomAgentSessions,
+      activeRoomCanonicalEvents,
+      activeRoomMembers,
+      agentActivityVisibility,
+      scopedAgents,
+    ]
+  );
   const activeChannelSettings = roomSettings.channelSettingsFor(activeRoom);
   const activeCustomChannels = roomChannels.activeChannels;
   const activeCustomChannel = roomChannels.activeChannelFor(channel);
