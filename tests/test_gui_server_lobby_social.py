@@ -1259,6 +1259,34 @@ class GuiServerLobbySocialTests(unittest.TestCase):
             self.assertEqual([event["message"] for event in room_a_payload["events"]], ["room-a only"])
             self.assertEqual([event["message"] for event in room_b_payload["events"]], ["room-b only"])
 
+    def test_side_chat_post_uses_gui_module_globals_after_handler_construction(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            handler_class = _make_handler(root)
+            payload = {"name": "나", "side": "mine", "message": "patched", "flow_meeting_id": "room-a"}
+            injected_event = {"id": "injected-event", "flow_meeting_id": "room-a"}
+            injected_events = [injected_event]
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler_class)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch("agentsassemble.gui.append_side_chat_event", return_value=injected_event) as append_mock:
+                    with patch("agentsassemble.gui.read_side_chat", return_value=injected_events) as read_mock:
+                        request = Request(
+                            f"http://127.0.0.1:{server.server_port}/api/side-chat",
+                            data=json.dumps(payload).encode("utf-8"),
+                            headers={"Content-Type": "application/json"},
+                            method="POST",
+                        )
+                        with urlopen(request, timeout=4) as response:
+                            response_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            append_mock.assert_called_once_with(root, payload)
+            read_mock.assert_called_once_with(root, meeting_id="room-a")
+            self.assertEqual(response_payload, {"event": injected_event, "events": injected_events})
 
     def test_room_friends_api_saves_friends_and_suggests_live_agents(self):
         with tempfile.TemporaryDirectory() as temp_dir:

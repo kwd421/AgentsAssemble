@@ -28,7 +28,7 @@ explicit modules.
 | `MemberList.tsx` | 1,741 | 494 | typed member rows, diagnostics, identity and session-control components |
 | `App.tsx` | 2,988 | 2,744 | guest admission, room directory, friends/DM and active Mafia lifecycles in focused `app/` hooks |
 | `test_cli_timeout.py` | 16,248 | 45 | 15 domain suites; legacy direct command still runs all 404 tests |
-| `test_gui_server.py` | 22,491 | 58 | 24 domain suites; compatibility loader runs all 408 current tests |
+| `test_gui_server.py` | 22,491 | 58 | 24 domain suites; compatibility loader runs all 409 current tests |
 
 Additional results:
 
@@ -40,6 +40,9 @@ Additional results:
   late-bound dependency in `gui.py`;
 - Play Mode Mafia GET/POST routes now use a focused HTTP registrar while game
   rules and persisted game state remain owned by `mafia_game.py`;
+- side-chat output-root storage and room-scoped filtering now live in
+  `side_chat.py`; event normalization remains in `meeting_events.py` and
+  transport orchestration remains in `gui.py`;
 - HTTP response delivery and WebSocket upgrade lifecycle are isolated from the
   large GUI request handler;
 - the frontend API compatibility barrel retains the same 169 exports;
@@ -48,7 +51,7 @@ Additional results:
   regression-tested, while shared provider normalization has one implementation;
 - split GUI tests retain the original test bodies and split CLI tests retain
   404/404, including the original platform guards; focused behavioral route
-  coverage brings the GUI compatibility loader to 408 tests;
+  coverage brings the GUI compatibility loader to 409 tests;
 - the frontend TypeScript runtime-test compiler now resolves `.tsx` and
   directory `index.ts` imports and keeps output inside its temporary root;
 - one real defect found during refactoring was fixed: frontend API requests and
@@ -82,9 +85,9 @@ Additional results:
 
 Verification evidence:
 
-- `python3 -m unittest discover -s tests -t .`: 2,839 passed;
+- `python3 -m unittest discover -s tests -t .`: 2,840 passed;
 - final Agent Session and CLI regression pass after deduplication: 491 passed;
-- narrow compatibility-loader discovery: CLI 404 passed; GUI 408 passed;
+- narrow compatibility-loader discovery: CLI 404 passed; GUI 409 passed;
 - `npm --prefix frontend test`: 62 passed;
 - `npm --prefix frontend run build`: passed;
 - canonical desktop/mobile Playwright flow: passed;
@@ -128,9 +131,9 @@ routes, tunnel behavior, process supervision, friends, Mafia and other domains.
 A maintainer changing one endpoint must load unrelated route and lifecycle
 context.
 
-The current file is 11,486 lines after room, transport, provider
-catalog/credential, social/profile and Play Mode Mafia routes were extracted.
-It remains the highest-risk module.
+The current file is 11,455 lines after room, transport, provider
+catalog/credential, social/profile, Play Mode Mafia and side-chat storage
+responsibilities were extracted. It remains the highest-risk module.
 
 Recommended split, preserving URLs and behavior:
 
@@ -271,7 +274,7 @@ cleanup. Deleting a retired path is better than making it beautifully modular.
 
 | Test file | Lines | Test methods |
 | --- | ---: | ---: |
-| `test_gui_server.py` | 58 compatibility loader | 408 current tests across domain suites |
+| `test_gui_server.py` | 58 compatibility loader | 409 current tests across domain suites |
 | `test_cli_timeout.py` | 45 compatibility loader | 404 across domain suites |
 | `test_live_agent_runner.py` | 5,352 | many under one 5,248-line class |
 | `test_live_agent_processes.py` | 4,487 | many under one 4,394-line class |
