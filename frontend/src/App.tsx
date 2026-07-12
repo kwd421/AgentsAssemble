@@ -27,8 +27,6 @@ import {
   createCompanionRoomInvite,
   fetchLiveAgentFlow,
   fetchLiveAgentProcesses,
-  fetchRoomChannels,
-  createRoomChannel,
   ensureRoomMeeting,
   fetchMeetingLifecycle,
   fetchWorkroomQueueEvidence,
@@ -48,7 +46,6 @@ import {
   type LobbyEvent,
   type ChannelNotificationSetting,
   type ChannelSettings,
-  type RoomChannel,
   type RoomFriend,
   type RoomMember,
 } from "./api";
@@ -59,6 +56,7 @@ import { useRoomDirectory } from "./app/useRoomDirectory";
 import { useActiveMafiaGame } from "./app/useActiveMafiaGame";
 import { useRoomSideChat } from "./app/useRoomSideChat";
 import { useRoomInviteController } from "./app/useRoomInviteController";
+import { useRoomChannels } from "./app/useRoomChannels";
 import { useRoomMembers } from "./app/useRoomMembers";
 import { useRoomSettingsController } from "./app/useRoomSettingsController";
 import type { HomeFilter } from "./app/friendsDirectoryTypes";
@@ -100,7 +98,6 @@ import {
   localPreviewInviteUrlForRoom,
   roomFromFlow,
   roomHasAgent,
-  roomSettingsKey,
   type RoomDockItem,
 } from "./lib/roomDockModel";
 import { roomRailMenuPosition } from "./lib/roomRailMenuPosition";
@@ -351,9 +348,6 @@ export default function App() {
   const [agentActivityVisibility, setAgentActivityVisibility] = useState(
     loadAgentActivityVisibility
   );
-  const [roomCustomChannels, setRoomCustomChannels] = useState<
-    Record<string, RoomChannel[]>
-  >({});
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const [collapsedChannelSections, setCollapsedChannelSections] = useState<Record<string, boolean>>(
     {}
@@ -489,6 +483,10 @@ export default function App() {
     8000
   );
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? EMPTY_ROOM;
+  const roomChannels = useRoomChannels({
+    activeRoom,
+    sessionToken: guestSession?.sessionToken || "",
+  });
   const activeSideChatMeetingId = activeRoom.meetingId || "";
   const {
     error: sideChatError,
@@ -610,7 +608,6 @@ export default function App() {
     activeMeetingId: activeRoom.meetingId,
   });
 
-  const activeRoomKey = roomSettingsKey(activeRoom);
   const agents: LiveAgent[] = activeRoomMembers
     .filter(
       (member) =>
@@ -844,19 +841,6 @@ export default function App() {
     refreshSessionAndMembers();
     void refreshFriendsDirectory();
   }, [refreshFriendsDirectory, refreshSessionAndMembers]);
-  const refreshCustomChannels = useCallback(() => {
-    if (!activeRoom.meetingId) return;
-    fetchRoomChannels(activeRoom.meetingId, guestSession?.sessionToken || "")
-      .then((channels) => {
-        setRoomCustomChannels((previous) => ({ ...previous, [activeRoomKey]: channels }));
-      })
-      .catch(() => {
-        // Channel list is additive UI; an unavailable endpoint must not blank the room.
-      });
-  }, [activeRoom.meetingId, activeRoomKey, guestSession?.sessionToken]);
-  useEffect(() => {
-    refreshCustomChannels();
-  }, [refreshCustomChannels]);
   const scopedMentionables = useMemo(
     () => {
       const seen = new Set<string>();
@@ -943,8 +927,8 @@ export default function App() {
     scopedAgents,
   ]);
   const activeChannelSettings = roomSettings.channelSettingsFor(activeRoom);
-  const activeCustomChannels = roomCustomChannels[activeRoomKey] || [];
-  const activeCustomChannel = activeCustomChannels.find((item) => item.id === channel) || null;
+  const activeCustomChannels = roomChannels.activeChannels;
+  const activeCustomChannel = roomChannels.activeChannelFor(channel);
   const menuRoom = roomMenu ? rooms.find((room) => room.id === roomMenu.roomId) : undefined;
   const menuChannel = channelMenu
     ? CHANNELS.find((item) => item.id === channelMenu.channelId)
@@ -1194,7 +1178,7 @@ export default function App() {
   function goToChannel(next: string) {
     // Guests stay out of the operator-only fixed surfaces (live/board/records/
     // friends), but custom channels are shared spaces they can enter.
-    const isCustom = (roomCustomChannels[activeRoomKey] || []).some((item) => item.id === next);
+    const isCustom = roomChannels.isActiveCustomChannel(next);
     const guestBlocked = guestLocked && next !== "lobby" && !isCustom;
     setChannel(guestBlocked ? "lobby" : next);
     setAdminOpen(false);
@@ -1203,14 +1187,8 @@ export default function App() {
   }
 
   async function createChannel(params: { name: string; type: "text" | "voice" }) {
-    const result = await createRoomChannel({
-      meetingId: activeRoom.meetingId,
-      name: params.name,
-      type: params.type,
-      sessionToken: guestSession?.sessionToken || undefined,
-    });
-    setRoomCustomChannels((previous) => ({ ...previous, [activeRoomKey]: result.channels }));
-    if (result.channel) goToChannel(result.channel.id);
+    const channel = await roomChannels.create(params);
+    if (channel) goToChannel(channel.id);
   }
 
   async function createCompanionAiPacket() {
