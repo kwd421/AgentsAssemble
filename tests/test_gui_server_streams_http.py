@@ -1267,7 +1267,10 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                with patch("agentsassemble.gui.local_resource_snapshot_payload", return_value=payload, create=True) as snapshot_payload:
+                with patch(
+                    "agentsassemble.gui_observability_http.cached_local_resource_snapshot",
+                    return_value=payload,
+                ) as snapshot_payload:
                     with urlopen(f"http://127.0.0.1:{server.server_port}/api/local-resources", timeout=4) as response:
                         response_payload = json.loads(response.read().decode("utf-8"))
             finally:
@@ -1275,7 +1278,7 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                 server.server_close()
 
             self.assertEqual(response_payload, payload)
-            snapshot_payload.assert_called_once()
+            snapshot_payload.assert_called_once_with(supervised_pids=set())
 
 
     def test_release_health_endpoint_returns_catalog_only(self):

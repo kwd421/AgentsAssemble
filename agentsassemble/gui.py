@@ -60,6 +60,7 @@ from agentsassemble.gui_provider_http import (
 )
 from agentsassemble.gui_mafia_http import register_mafia_routes
 from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
+from agentsassemble.gui_observability_http import register_observability_routes
 from agentsassemble.gui_public_invite_http import register_public_invite_admin_routes
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
 from agentsassemble.gui_room_settings_http import register_room_settings_routes
@@ -115,7 +116,6 @@ from agentsassemble.live_agent_processes import (
     clean_live_agent_group_id,
     read_live_agent_process_event_history,
 )
-from agentsassemble.local_resources import cached_local_resource_snapshot
 from agentsassemble.live_agent_probe import PROBE_REPLY_EVENT_TAIL_LIMIT, run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_play_presets import build_play_preset_turns
 from agentsassemble.live_agent_review_checkpoints import write_review_checkpoint_artifacts
@@ -167,7 +167,6 @@ from agentsassemble.frontend_runtime import (
     default_frontend_dist_root,
     frontend_dist_status,
 )
-from agentsassemble.release_health import release_health_catalog_payload, release_health_queue_payload
 from agentsassemble.room_friend_dms import (
     append_live_agent_dm_reply,
     enqueue_room_friend_direct_dm,
@@ -4472,34 +4471,6 @@ def live_agent_health_payload(
     return payload
 
 
-def local_resource_snapshot_payload(process_supervisor: LiveAgentProcessSupervisor) -> dict[str, object]:
-    return cached_local_resource_snapshot(supervised_pids=_live_agent_supervised_pids(process_supervisor))
-
-
-def _live_agent_supervised_pids(process_supervisor: LiveAgentProcessSupervisor) -> set[int]:
-    pids: set[int] = set()
-    try:
-        groups = process_supervisor.snapshot_groups()
-    except Exception:
-        return pids
-    for group in _as_dict_list(groups):
-        status = str(group.get("status") or "")
-        if status not in {"running", "restarting"}:
-            continue
-        pid = _safe_positive_int(group.get("pid"))
-        if pid is not None:
-            pids.add(pid)
-    return pids
-
-
-def _safe_positive_int(value: object) -> int | None:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
-
-
 def _live_agent_admission_health_summary(output_root: Path, agents: list[dict[str, object]]) -> dict[str, object]:
     visible_agents = [agent for agent in agents if not _is_diagnostic_agent(agent)]
     safe_payload = safe_live_agent_roster_payload(
@@ -8329,6 +8300,8 @@ def _make_handler(
         record_operation=record_live_agent_operation,
     )
 
+    register_observability_routes(route_table, processes=live_agent_process_supervisor)
+
     def _late_operation_json_payload(
         ctx: RequestContext,
         operation_name: str,
@@ -8484,15 +8457,6 @@ def _make_handler(
                         session_run_monitor=session_run_monitor,
                     )
                 )
-                return
-            if path == "/api/local-resources":
-                self._send_json(local_resource_snapshot_payload(live_agent_process_supervisor))
-                return
-            if path == "/api/release-health":
-                self._send_json(release_health_catalog_payload())
-                return
-            if path == "/api/release-health/queue":
-                self._send_json(release_health_queue_payload(output_root=output_root))
                 return
             if path == "/api/live-agent-sessions/readiness":
                 try:
