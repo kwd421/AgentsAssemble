@@ -65,6 +65,10 @@ from agentsassemble.gui_legacy_live_agent_read_http import (
     LegacyLiveAgentReadDeps,
     register_legacy_live_agent_read_routes,
 )
+from agentsassemble.gui_legacy_live_agent_process_http import (
+    LegacyProcessHttpDeps,
+    register_legacy_process_mutation_routes,
+)
 from agentsassemble.gui_legacy_live_agent_session_http import (
     LegacySessionHttpDeps,
     register_legacy_session_mutation_routes,
@@ -132,6 +136,10 @@ from agentsassemble.legacy_live_agent_process_control import (
     process_stop_error_message as _process_stop_error_message,
     process_stop_running_error_message as _process_stop_running_error_message,
     process_stop_running_operation_status as _process_stop_running_operation_status,
+)
+from agentsassemble.legacy_live_agent_process_service import (
+    LegacyLiveAgentProcessMutationService,
+    LegacyProcessMutationActions,
 )
 from agentsassemble.legacy_live_agent_session_control import (
     session_check_error_message as _session_check_error_message,
@@ -7710,8 +7718,9 @@ def _make_handler(
     def _late_operation_json_payload(
         ctx: RequestContext,
         operation_name: str,
+        target_id: str = "",
     ) -> dict[str, object] | None:
-        return ctx.handler._operation_json_payload(operation=operation_name, target_id="")
+        return ctx.handler._operation_json_payload(operation=operation_name, target_id=target_id)
 
     legacy_session_service = LegacyLiveAgentSessionMutationService(
         output_root,
@@ -7736,6 +7745,27 @@ def _make_handler(
         route_table,
         deps=LegacySessionHttpDeps(
             service=legacy_session_service,
+            read_operation_payload=_late_operation_json_payload,
+            default_server_url=lambda ctx: ctx.handler._request_server_url(),
+        ),
+    )
+
+    legacy_process_service = LegacyLiveAgentProcessMutationService(
+        output_root,
+        processes=live_agent_process_supervisor,
+        actions=LegacyProcessMutationActions(
+            start=start_live_agent_process_payload,
+            stop_running=stop_running_live_agent_processes_payload,
+            stop=stop_live_agent_process_payload,
+            restart=restart_live_agent_process_payload,
+            recover=recover_live_agent_process_payload,
+        ),
+        record_operation=record_live_agent_operation,
+    )
+    register_legacy_process_mutation_routes(
+        route_table,
+        deps=LegacyProcessHttpDeps(
+            service=legacy_process_service,
             read_operation_payload=_late_operation_json_payload,
             default_server_url=lambda ctx: ctx.handler._request_server_url(),
         ),
@@ -8931,105 +8961,6 @@ def _make_handler(
                 )
                 self._send_json(engagement)
                 return
-            if parsed.path == "/api/live-agent-processes/start":
-                payload = self._operation_json_payload(operation="process.start")
-                if payload is None:
-                    return
-                try:
-                    started = start_live_agent_process_payload(
-                        live_agent_process_supervisor,
-                        payload,
-                        default_server=self._request_server_url(),
-                        output_root=output_root,
-                    )
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="process.start",
-                        status="failed",
-                        target_id=_operation_group_id(payload),
-                        error=str(error),
-                        details={
-                            "group_id": _operation_group_id(payload),
-                            "auto_restart": _payload_bool(payload.get("auto_restart")),
-                            "max_restarts": _payload_nonnegative_int(payload.get("max_restarts"), 0),
-                            "restart_backoff_seconds": _payload_nonnegative_float(
-                                payload.get("restart_backoff_seconds"),
-                                5.0,
-                            ),
-                            "stale_restart_after_seconds": _payload_nonnegative_float(
-                                payload.get("stale_restart_after_seconds"),
-                                0.0,
-                            ),
-                        },
-                    )
-                    self._send_error(
-                        HTTPStatus.BAD_REQUEST,
-                        _process_start_error_message(error),
-                        details={"group_id": _operation_group_id(payload)},
-                    )
-                    return
-                group = started.get("group") if isinstance(started.get("group"), dict) else {}
-                record_live_agent_operation(
-                    output_root,
-                    operation="process.start",
-                    status="success",
-                    target_id=_operation_group_id(payload, group),
-                    summary="started live-agent process group",
-                    details={
-                        "group_id": _operation_group_id(payload, group),
-                        "group_status": str(group.get("status") or ""),
-                        "auto_restart": _payload_bool(payload.get("auto_restart")),
-                        "max_restarts": _payload_nonnegative_int(payload.get("max_restarts"), 0),
-                        "restart_backoff_seconds": _payload_nonnegative_float(
-                            payload.get("restart_backoff_seconds"),
-                            5.0,
-                        ),
-                        "stale_restart_after_seconds": _payload_nonnegative_float(
-                            payload.get("stale_restart_after_seconds"),
-                            0.0,
-                        ),
-                    },
-                )
-                self._send_json(started)
-                return
-            if parsed.path == "/api/live-agent-processes/stop-running":
-                payload = self._operation_json_payload(operation="process.stop_running", target_id="running-groups")
-                if payload is None:
-                    return
-                try:
-                    stopped = stop_running_live_agent_processes_payload(
-                        live_agent_process_supervisor,
-                        output_root=output_root,
-                    )
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="process.stop_running",
-                        status="failed",
-                        target_id="running-groups",
-                        error=str(error),
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, _process_stop_running_error_message(error))
-                    return
-                result = stopped.get("result") if isinstance(stopped.get("result"), dict) else {}
-                record_live_agent_operation(
-                    output_root,
-                    operation="process.stop_running",
-                    status=_process_stop_running_operation_status(result),
-                    target_id="running-groups",
-                    summary="stopped running live-agent process groups",
-                    details={
-                        "stopped_count": _payload_nonnegative_int(result.get("stopped_count"), 0),
-                        "failed_count": _payload_nonnegative_int(result.get("failed_count"), 0),
-                        "skipped_count": _payload_nonnegative_int(result.get("skipped_count"), 0),
-                        "stopped_group_ids": _operation_group_ids(result.get("stopped")),
-                        "failed_group_ids": _operation_group_ids(result.get("failed")),
-                        **_process_bulk_offline_operation_details(result.get("stopped")),
-                    },
-                )
-                self._send_json(stopped)
-                return
             if parsed.path == "/api/live-agent-preflight":
                 payload = self._operation_json_payload(operation="preflight.check")
                 if payload is None:
@@ -9408,119 +9339,6 @@ def _make_handler(
                     },
                 )
                 self._send_json(readiness)
-                return
-            live_agent_process_stop_id = _live_agent_process_action_path(parsed.path, "stop")
-            if live_agent_process_stop_id is not None:
-                try:
-                    stopped = stop_live_agent_process_payload(
-                        live_agent_process_supervisor,
-                        live_agent_process_stop_id,
-                        output_root=output_root,
-                    )
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="process.stop",
-                        status="failed",
-                        target_id=live_agent_process_stop_id,
-                        error=str(error),
-                        details={"group_id": live_agent_process_stop_id},
-                    )
-                    self._send_error(
-                        HTTPStatus.BAD_REQUEST,
-                        _process_stop_error_message(error),
-                        details={"group_id": live_agent_process_stop_id},
-                    )
-                    return
-                group = stopped.get("group") if isinstance(stopped.get("group"), dict) else {}
-                record_live_agent_operation(
-                    output_root,
-                    operation="process.stop",
-                    status="success",
-                    target_id=_operation_group_id({}, group) or live_agent_process_stop_id,
-                    summary="stopped live-agent process group",
-                    details={
-                        "group_id": _operation_group_id({}, group) or live_agent_process_stop_id,
-                        "group_status": str(group.get("status") or ""),
-                        **_process_offline_operation_details(group.get("offline")),
-                    },
-                )
-                self._send_json(stopped)
-                return
-            live_agent_process_restart_id = _live_agent_process_action_path(parsed.path, "restart")
-            if live_agent_process_restart_id is not None:
-                try:
-                    restarted = restart_live_agent_process_payload(
-                        live_agent_process_supervisor,
-                        live_agent_process_restart_id,
-                        output_root=output_root,
-                    )
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="process.restart",
-                        status="failed",
-                        target_id=live_agent_process_restart_id,
-                        error=str(error),
-                        details={"group_id": live_agent_process_restart_id},
-                    )
-                    self._send_error(
-                        HTTPStatus.BAD_REQUEST,
-                        _process_restart_error_message(error),
-                        details={"group_id": live_agent_process_restart_id},
-                    )
-                    return
-                group = restarted.get("group") if isinstance(restarted.get("group"), dict) else {}
-                record_live_agent_operation(
-                    output_root,
-                    operation="process.restart",
-                    status="success",
-                    target_id=_operation_group_id({}, group) or live_agent_process_restart_id,
-                    summary="restarted live-agent process group",
-                    details={
-                        "group_id": _operation_group_id({}, group) or live_agent_process_restart_id,
-                        "group_status": str(group.get("status") or ""),
-                    },
-                )
-                self._send_json(restarted)
-                return
-            live_agent_process_recover_id = _live_agent_process_action_path(parsed.path, "recover")
-            if live_agent_process_recover_id is not None:
-                try:
-                    recovered = recover_live_agent_process_payload(
-                        live_agent_process_supervisor,
-                        live_agent_process_recover_id,
-                        output_root=output_root,
-                    )
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="process.recover",
-                        status="failed",
-                        target_id=live_agent_process_recover_id,
-                        error=str(error),
-                        details={"group_id": live_agent_process_recover_id},
-                    )
-                    self._send_error(
-                        HTTPStatus.BAD_REQUEST,
-                        _process_recover_error_message(error),
-                        details={"group_id": live_agent_process_recover_id},
-                    )
-                    return
-                group = recovered.get("group") if isinstance(recovered.get("group"), dict) else {}
-                record_live_agent_operation(
-                    output_root,
-                    operation="process.recover",
-                    status="success",
-                    target_id=_operation_group_id({}, group) or live_agent_process_recover_id,
-                    summary="recovered live-agent process group",
-                    details={
-                        "group_id": _operation_group_id({}, group) or live_agent_process_recover_id,
-                        "group_status": str(group.get("status") or ""),
-                        "previous_status": str(group.get("recovered_from_status") or ""),
-                    },
-                )
-                self._send_json(recovered)
                 return
             live_agent_probe_id = _live_agent_action_path(parsed.path, "probe")
             if live_agent_probe_id is not None:

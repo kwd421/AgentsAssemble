@@ -107,6 +107,14 @@ def _dynamic_route_owners() -> dict[tuple[str, str], set[Path]]:
                 self.method = previous_method
 
             def visit_Call(self, node: ast.Call) -> None:
+                if (
+                    isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "post_dynamic"
+                    and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and isinstance(node.args[0].value, str)
+                ):
+                    owners[("POST", node.args[0].value)].add(source_path)
                 helper_name = node.func.id if isinstance(node.func, ast.Name) else ""
                 route_family = DYNAMIC_ROUTE_HELPERS.get(helper_name)
                 if route_family and len(node.args) >= 2:
