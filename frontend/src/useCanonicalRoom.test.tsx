@@ -7,6 +7,7 @@ import type {
   RoomSocketHandlers,
   RoomSocketSnapshot,
 } from "./roomSocketClient";
+import { ApiError } from "./lib/apiErrors";
 import { useCanonicalRoom } from "./useCanonicalRoom";
 
 function event(sequence: number, type: string, content = ""): RoomEvent {
@@ -200,5 +201,35 @@ describe("useCanonicalRoom", () => {
     act(() => handlersByRoom.get("general")?.onClose?.());
 
     expect(result.current.connectionState).toBe("connected");
+  });
+
+  it("expires a guest only when the canonical room connection is unauthorized", async () => {
+    let handlers: RoomSocketHandlers | undefined;
+    const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {
+      handlers = nextHandlers;
+      return {
+        close: vi.fn(),
+        ready: () => false,
+        command: vi.fn(),
+        say: vi.fn(),
+        historyBefore: vi.fn(),
+      } satisfies RoomSocketHandle;
+    });
+    const onUnauthorized = vi.fn();
+    renderHook(() =>
+      useCanonicalRoom({
+        roomId: "general",
+        auth: { kind: "session", sessionToken: "guest-session" },
+        openSocket,
+        onUnauthorized,
+      })
+    );
+    await waitFor(() => expect(openSocket).toHaveBeenCalledOnce());
+
+    act(() => handlers?.onError?.(new Error("legacy flow unavailable")));
+    expect(onUnauthorized).not.toHaveBeenCalled();
+
+    act(() => handlers?.onError?.(new ApiError(401, "invalid or expired session")));
+    expect(onUnauthorized).toHaveBeenCalledOnce();
   });
 });

@@ -12,6 +12,7 @@ import {
   projectRoomEventsToTimeline,
   type AgentSessionProgress,
 } from "./lib/roomEventProjection";
+import { isUnauthorizedApiError } from "./lib/apiErrors";
 
 export type CanonicalRoomHistoryState = {
   oldestSeq: number;
@@ -29,6 +30,7 @@ type OpenRoomSocket = (
 type CanonicalRoomCallbacks = {
   onSideChat?: (events: SideChatEvent[]) => void;
   onError?: (error: Event | Error) => void;
+  onUnauthorized?: () => void;
 };
 
 export type UseCanonicalRoomOptions = CanonicalRoomCallbacks & {
@@ -71,7 +73,11 @@ type ApplyRoomEventsOptions = {
 export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   const { roomId, auth, viewerParticipantId = "", openSocket = openRoomSocket } = options;
   const callbacksRef = useRef<CanonicalRoomCallbacks>({});
-  callbacksRef.current = { onSideChat: options.onSideChat, onError: options.onError };
+  callbacksRef.current = {
+    onSideChat: options.onSideChat,
+    onError: options.onError,
+    onUnauthorized: options.onUnauthorized,
+  };
   const connectionGenerationRef = useRef(0);
 
   const eventsRef = useRef<Record<string, RoomEvent[]>>({});
@@ -223,6 +229,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         if (!connectionIsCurrent()) return;
         const error = errorValue instanceof Error ? errorValue : new Error("Room connection failed.");
         setLastError(error);
+        if (isUnauthorizedApiError(error)) callbacksRef.current.onUnauthorized?.();
         callbacksRef.current.onError?.(errorValue);
       },
     });

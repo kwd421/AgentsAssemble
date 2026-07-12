@@ -533,6 +533,7 @@ export default function App() {
     viewerParticipantId: guestSession?.agentId || "operator-local",
     onSideChat: handleSideChatRealtimeEvents,
     onError: handleSideChatError,
+    onUnauthorized: guestLocked ? expireGuestSession : undefined,
   });
   const roomMembers = useRoomMembers({
     activeRoom,
