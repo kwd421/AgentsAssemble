@@ -122,6 +122,17 @@ from agentsassemble.legacy_live_agent_health import (
     safe_health_timestamp as _safe_session_run_health_timestamp,
     safe_process_group_id as _safe_process_group_id,
 )
+from agentsassemble.legacy_live_agent_process_control import (
+    looks_sensitive_process_control_error as _looks_sensitive_process_control_error,
+    process_bulk_offline_operation_details as _process_bulk_offline_operation_details,
+    process_offline_operation_details as _process_offline_operation_details,
+    process_recover_error_message as _process_recover_error_message,
+    process_restart_error_message as _process_restart_error_message,
+    process_start_error_message as _process_start_error_message,
+    process_stop_error_message as _process_stop_error_message,
+    process_stop_running_error_message as _process_stop_running_error_message,
+    process_stop_running_operation_status as _process_stop_running_operation_status,
+)
 from agentsassemble.legacy_live_agent_session_control import (
     session_check_error_message as _session_check_error_message,
     session_check_operation_status as _session_check_operation_status,
@@ -6262,71 +6273,6 @@ def _operation_group_ids(records: object) -> list[str]:
     return group_ids
 
 
-def _process_offline_operation_details(summary: object) -> dict[str, object]:
-    if not isinstance(summary, dict):
-        return {}
-    expected = _payload_nonnegative_int(summary.get("expected"), 0)
-    offline = _payload_nonnegative_int(summary.get("offline"), 0)
-    skipped = _payload_nonnegative_int(summary.get("skipped"), 0)
-    offline_agent_ids = _safe_payload_strings(summary.get("offline_agent_ids"), limit=64)
-    attention = _process_offline_attention(summary.get("attention"))
-    if expected <= 0 and offline <= 0 and skipped <= 0 and not offline_agent_ids and not attention:
-        return {}
-    return {
-        "offline_expected_agent_count": expected,
-        "offline_agent_count": offline,
-        "offline_skipped_agent_count": skipped,
-        "offline_agent_ids": offline_agent_ids,
-        "offline_attention": attention,
-    }
-
-
-def _process_bulk_offline_operation_details(records: object) -> dict[str, object]:
-    if not isinstance(records, list):
-        return {}
-    expected = 0
-    offline = 0
-    skipped = 0
-    offline_agent_ids: list[str] = []
-    attention: list[str] = []
-    for record in records:
-        if not isinstance(record, dict):
-            continue
-        summary = record.get("offline")
-        if not isinstance(summary, dict):
-            continue
-        expected += _payload_nonnegative_int(summary.get("expected"), 0)
-        offline += _payload_nonnegative_int(summary.get("offline"), 0)
-        skipped += _payload_nonnegative_int(summary.get("skipped"), 0)
-        offline_agent_ids.extend(_safe_payload_strings(summary.get("offline_agent_ids"), limit=64))
-        attention.extend(_process_offline_attention(summary.get("attention")))
-    if expected <= 0 and offline <= 0 and skipped <= 0 and not offline_agent_ids and not attention:
-        return {}
-    return {
-        "offline_expected_agent_count": expected,
-        "offline_agent_count": offline,
-        "offline_skipped_agent_count": skipped,
-        "offline_agent_ids": offline_agent_ids,
-        "offline_attention": attention,
-    }
-
-
-def _process_offline_attention(value: object) -> list[str]:
-    attention: list[str] = []
-    for item in _as_dict_list(value):
-        agent_id = clean_lobby_text(item.get("agent_id"), limit=64)
-        status = clean_lobby_text(item.get("status"), limit=64)
-        if agent_id and status:
-            attention.append(f"{agent_id}:{status}")
-    return attention
-
-
-def _process_stop_running_operation_status(result: dict[str, object]) -> str:
-    failed_count = _payload_nonnegative_int(result.get("failed_count"), 0)
-    stopped_count = _payload_nonnegative_int(result.get("stopped_count"), 0)
-    return "success" if failed_count == 0 else "degraded" if stopped_count else "failed"
-
-
 def _operation_agent_engagement(output_root: Path, agent_id: str) -> str:
     for agent in read_live_agents(output_root):
         if str(agent.get("agent_id") or "") == agent_id:
@@ -7307,26 +7253,6 @@ def _latest_session_run_for_action_target(
     return runs[-1]
 
 
-def _process_start_error_message(error: Exception) -> str:
-    return _process_control_error_message(error, action="start")
-
-
-def _process_stop_error_message(error: Exception) -> str:
-    return _process_control_error_message(error, action="stop")
-
-
-def _process_restart_error_message(error: Exception) -> str:
-    return _process_control_error_message(error, action="restart")
-
-
-def _process_recover_error_message(error: Exception) -> str:
-    return _process_control_error_message(error, action="recover")
-
-
-def _process_stop_running_error_message(error: Exception) -> str:
-    return _process_control_error_message(error, action="stop running groups")
-
-
 def _safe_diagnostic_report_payload(report: dict[str, object]) -> dict[str, object]:
     safe = dict(report)
     has_failed_config_load = _diagnostic_report_has_failed_config_load(safe)
@@ -7374,41 +7300,6 @@ def _safe_diagnostic_check_payload(check: object, *, redact_config_load: bool) -
 
 def _looks_sensitive_operator_diagnostic_text(message: str) -> bool:
     return _looks_sensitive_process_control_error(message)
-
-
-def _process_control_error_message(error: Exception, *, action: str) -> str:
-    message = str(error).replace("\r", " ").replace("\n", " ").strip()
-    fallback = f"Resident process group failed to {action}."
-    if _looks_sensitive_process_control_error(message):
-        return f"Resident process group failed to {action}: details redacted."
-    return message[:500] or fallback
-
-
-def _looks_sensitive_process_control_error(message: str) -> bool:
-    lowered = message.casefold()
-    markers = (
-        "authorization",
-        "bearer ",
-        "secret",
-        "token",
-        "api-key",
-        "apikey",
-        "x-api-key",
-        "password",
-        "http://",
-        "https://",
-        "env:",
-        ".json",
-        ".env",
-        ".toml",
-    )
-    if any(marker in lowered for marker in markers):
-        return True
-    if "\\" in message or "--" in message:
-        return True
-    if re.search(r"(^|[\s=])(?:/|~/|\./|\.\./)\S+", message):
-        return True
-    return bool(re.search(r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)", message))
 
 
 def _turn_round_request_operation_details(payload: dict[str, object], meeting_id: str) -> dict[str, object]:
