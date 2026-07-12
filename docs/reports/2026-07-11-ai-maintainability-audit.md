@@ -26,7 +26,7 @@ explicit modules.
 | `cli.py` | 8,732 | 7,097 | `cli_parser_common.py`, domain `cli_parser_*.py` modules |
 | `frontend/src/api.ts` | 2,421 | 990 | `frontend/src/api/` domain clients and shared HTTP adapter |
 | `MemberList.tsx` | 1,741 | 494 | typed member rows, diagnostics, identity and session-control components |
-| `App.tsx` | 2,988 | 2,801 | guest admission, room directory and friends/DM lifecycles in focused `app/` hooks |
+| `App.tsx` | 2,988 | 2,744 | guest admission, room directory, friends/DM and active Mafia lifecycles in focused `app/` hooks |
 | `test_cli_timeout.py` | 16,248 | 45 | 15 domain suites; legacy direct command still runs all 404 tests |
 | `test_gui_server.py` | 22,491 | 58 | 24 domain suites; compatibility loader runs all 408 current tests |
 
@@ -67,6 +67,9 @@ Additional results:
 - `useRoomDirectory` now owns room-list persistence, server hydration and pure
   directory mutations while active-room selection and canonical socket commands
   remain in `App`;
+- `useActiveMafiaGame` now owns query/storage initialization, active-room
+  scoping, polling and missing-game cleanup; its behavioral tests replace the
+  old `App.tsx` source-string guard;
 - room-directory tests cover guest isolation, hydration cancellation, bounded
   stale-snapshot retry, flow insertion, acknowledged removal and persistence
   safety;
@@ -79,10 +82,10 @@ Additional results:
 
 Verification evidence:
 
-- `python3 -m unittest discover -s tests -t .`: 2,840 passed;
+- `python3 -m unittest discover -s tests -t .`: 2,839 passed;
 - final Agent Session and CLI regression pass after deduplication: 491 passed;
 - narrow compatibility-loader discovery: CLI 404 passed; GUI 408 passed;
-- `npm --prefix frontend test`: 50 passed;
+- `npm --prefix frontend test`: 62 passed;
 - `npm --prefix frontend run build`: passed;
 - canonical desktop/mobile Playwright flow: passed;
 - `git diff --check`: passed.
@@ -273,7 +276,7 @@ cleanup. Deleting a retired path is better than making it beautifully modular.
 | `test_live_agent_runner.py` | 5,352 | many under one 5,248-line class |
 | `test_live_agent_processes.py` | 4,487 | many under one 4,394-line class |
 | `test_live_agent_sessions.py` | 4,138 | several multi-thousand-line classes |
-| `test_static_ui_assets.py` | 2,093 | 52 source-oriented tests |
+| `test_static_ui_assets.py` | 2,107 | 51 source-oriented tests |
 
 The two largest test files contain 787 test methods. A maintainer cannot infer
 which subset protects one endpoint or command without searching a monolith.
@@ -327,9 +330,9 @@ only if it makes the next behavior change easier to locate and test.
    are extracted; legacy GUI routes remain in `gui.py`.
 5. Completed: break CLI parser registration into domain modules without
    changing commands.
-6. In progress: guest admission, room-directory data, friends/DM, and member
-   detail responsibilities are extracted; `App.tsx` still owns active-room
-   transport, invite and shell lifecycles.
+6. In progress: guest admission, room-directory data, friends/DM, active Mafia,
+   and member detail responsibilities are extracted; `App.tsx` still owns
+   active-room transport, invite and shell lifecycles.
 7. Introduce the new attention coordinator as a focused module rather than
    expanding `RoomRealtimeController`.
 8. Classify legacy live-agent modules as retained or removable before refactoring
@@ -338,7 +341,7 @@ only if it makes the next behavior change easier to locate and test.
 ## Next Decision
 
 Do not continue splitting solely to reduce line counts. The next safe slices are
-legacy GUI route isolation and one additional `App.tsx` lifecycle hook, each in
-its own behavior-preserving commit. Before that work, clean the suite's resource
-warnings and replace the highest-churn source-string tests so future refactors
-fail on behavior rather than file placement.
+another cohesive legacy GUI registrar or a preparatory side-chat boundary, each
+in its own behavior-preserving commit. Before broader lifecycle work, clean the
+suite's resource warnings and replace the highest-churn source-string tests so
+future refactors fail on behavior rather than file placement.

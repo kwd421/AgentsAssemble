@@ -36,7 +36,6 @@ import {
   ensureRoomMeeting,
   claimHostDevice,
   fetchRoomMembers,
-  fetchMafiaGame,
   fetchMeetingLifecycle,
   fetchWorkroomQueueEvidence,
   fetchSideChat,
@@ -63,7 +62,6 @@ import {
   type LifecycleProjection,
   type WorkroomQueueEvidence,
   type MafiaGame,
-  type MafiaGameResponse,
   type LobbyEvent,
   type SideChatEvent,
   type ChannelNotificationSetting,
@@ -78,6 +76,7 @@ import { usePoll } from "./hooks";
 import { useRoomAdmission } from "./app/useRoomAdmission";
 import { useFriendsDirectory } from "./app/useFriendsDirectory";
 import { useRoomDirectory } from "./app/useRoomDirectory";
+import { useActiveMafiaGame } from "./app/useActiveMafiaGame";
 import type { HomeFilter } from "./app/friendsDirectoryTypes";
 import { useCanonicalRoom } from "./useCanonicalRoom";
 import AdminPanel from "./views/AdminPanel";
@@ -252,37 +251,6 @@ const EMPTY_ROOM: RoomDockItem = {
 
 const MOBILE_SWIPE_THRESHOLD = 42;
 const MOBILE_SWIPE_VERTICAL_TOLERANCE = 80;
-const STORED_MAFIA_GAME_ID_KEY = "agentsassemble.mafiaGameId";
-
-function loadStoredMafiaGameId(): string {
-  try {
-    return localStorage.getItem(STORED_MAFIA_GAME_ID_KEY) || "";
-  } catch {
-    return "";
-  }
-}
-
-function saveStoredMafiaGameId(gameId: string) {
-  try {
-    localStorage.setItem(STORED_MAFIA_GAME_ID_KEY, gameId);
-  } catch {
-    // Browser storage can be unavailable in restricted contexts; in-memory state still works.
-  }
-}
-
-function clearStoredMafiaGameId() {
-  try {
-    localStorage.removeItem(STORED_MAFIA_GAME_ID_KEY);
-  } catch {
-    // Clearing is best-effort when browser storage is restricted.
-  }
-}
-
-function isMafiaGameMissingError(errorValue: unknown): boolean {
-  const message = errorValue instanceof Error ? errorValue.message : String(errorValue || "");
-  return message.includes("Mafia game was not found") || message.includes("404");
-}
-
 function channelNotificationSummary(setting?: ChannelSettings): string {
   return `현재 알림: ${CHANNEL_NOTIFICATION_LABELS[setting?.notifications || "default"]}`;
 }
@@ -464,19 +432,6 @@ export default function App() {
   const [channelSidebarWidth, setChannelSidebarWidth] = useState(loadSidebarWidth);
   const sidebarResizeRef = useRef<SidebarResizeState | null>(null);
   const mobilePanelDragRef = useRef<MobilePanelDragState | null>(null);
-  const [mafiaGameId, setMafiaGameId] = useState(() => {
-    try {
-      const query = new URLSearchParams(window.location.search);
-      const queryGameId = query.get("mafia") || query.get("mafiaGameId") || "";
-      if (queryGameId) {
-        saveStoredMafiaGameId(queryGameId);
-        return queryGameId;
-      }
-      return loadStoredMafiaGameId();
-    } catch {
-      return "";
-    }
-  });
   const [meetingStreamState, setMeetingStreamState] = useState<MeetingStreamState>(() =>
     initialMeetingStreamState("")
   );
@@ -666,19 +621,9 @@ export default function App() {
   const sendParticipantKick = canonicalRoom.sendParticipantKick;
   const sendParticipantMute = canonicalRoom.sendParticipantMute;
   const activeSideChatMeetingId = activeRoom.meetingId || "";
-  const activeMafiaGameId = mafiaGameId === activeRoom.meetingId ? mafiaGameId : "";
-  const mafiaFetcher = useCallback((): Promise<MafiaGameResponse> => {
-    if (!activeMafiaGameId) return Promise.resolve({ game: null });
-    return fetchMafiaGame(activeMafiaGameId, "host").catch((errorValue) => {
-      if (isMafiaGameMissingError(errorValue)) {
-        clearStoredMafiaGameId();
-        setMafiaGameId("");
-        return { game: null };
-      }
-      throw errorValue;
-    });
-  }, [activeMafiaGameId]);
-  const [mafiaData, , , refreshMafia] = usePoll<MafiaGameResponse>(mafiaFetcher, 3500);
+  const { mafiaGame: scopedMafiaGame, refreshMafia } = useActiveMafiaGame({
+    activeMeetingId: activeRoom.meetingId,
+  });
 
   const activeRoomKey = roomSettingsKey(activeRoom);
   const activeRoomMembers = useMemo(() => {
@@ -904,8 +849,6 @@ export default function App() {
   const liveTimelineEvents = flowEvents.length ? flowEvents : officialTimelineEvents;
 
   const flowRunning = flow.status === "running";
-  const mafiaGame = mafiaData?.game ?? null;
-  const scopedMafiaGame = mafiaGame?.game_id === activeRoom.meetingId ? mafiaGame : null;
   const activeRoomFlowVisible = Boolean(flow.meeting_id && flow.meeting_id === activeRoom.meetingId);
   const scopedFlow = activeRoomFlowVisible
     ? flow

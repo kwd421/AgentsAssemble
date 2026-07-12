@@ -125,6 +125,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | React room state | `frontend/src/App.tsx`, `frontend/src/app/`, `useCanonicalRoom.ts` |
 | Room directory cache and hydration | `frontend/src/app/useRoomDirectory.ts`, `frontend/src/lib/roomDockModel.ts` |
 | Friends directory and DM selection | `frontend/src/app/useFriendsDirectory.ts`, `frontend/src/views/FriendsView.tsx` |
+| Active Play Mode Mafia game lifecycle | `frontend/src/app/useActiveMafiaGame.ts`; presentation in `App.tsx` and `LiveView.tsx` |
 | Frontend API client | `frontend/src/api/`; compatibility barrel in `frontend/src/api.ts` |
 | Message and roster UI | `frontend/src/views/LobbyView.tsx`, `frontend/src/views/components/member/` |
 

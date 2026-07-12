@@ -820,7 +820,6 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("export function roomFromMafiaParams", room_dock_model_source)
         self.assertIn('const initialChannel: StartupRoute["initialChannel"] =', room_dock_model_source)
         self.assertIn('guestInvite || directRoom ? "lobby" : mafiaRoom ? "live" : "friends";', room_dock_model_source)
-        self.assertIn("mafiaGame?.game_id === activeRoom.meetingId", app_source)
         self.assertIn("mafiaGame={scopedMafiaGame}", app_source)
         self.assertIn("<RoomRail", app_source)
         self.assertIn('aria-label="룸 레일"', room_rail_source)
@@ -1661,19 +1660,6 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("게임 / 액티비티", lobby_source)
         self.assertNotIn("대화 시작", lobby_source)
         self.assertNotIn("마피아 시작", lobby_source)
-
-    def test_react_mafia_game_poll_is_scoped_to_active_room_and_clears_missing_game(self):
-        app_source = frontend_file("App.tsx")
-
-        self.assertIn("STORED_MAFIA_GAME_ID_KEY", app_source)
-        self.assertIn("clearStoredMafiaGameId", app_source)
-        self.assertIn("isMafiaGameMissingError", app_source)
-        self.assertIn("const activeMafiaGameId", app_source)
-        self.assertIn("mafiaGameId === activeRoom.meetingId ? mafiaGameId : \"\"", app_source)
-        self.assertIn("fetchMafiaGame(activeMafiaGameId, \"host\")", app_source)
-        self.assertIn("clearStoredMafiaGameId();", app_source)
-        self.assertIn("setMafiaGameId(\"\");", app_source)
-        self.assertNotIn("return fetchMafiaGame(mafiaGameId, \"host\");", app_source)
 
     def test_react_lobby_external_participation_states_provider_startup_and_token_boundaries(self):
         section = react_lobby_external_participation_section()
