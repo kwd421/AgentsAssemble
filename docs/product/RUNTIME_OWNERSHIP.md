@@ -33,6 +33,7 @@ features.
 
 | Legacy concern | Current owner | Direction |
 | --- | --- | --- |
+| Safe health status and diagnostic projection policy | `legacy_live_agent_health.py` | retain while legacy controls exist |
 | Polling resident loop | `live_agent_runner.py` | inventory and deprecate |
 | Run-group process supervision | `live_agent_processes.py` | isolate; do not merge with canonical bridge manager |
 | Meeting/config session composition | `live_agent_sessions.py` | compatibility freeze |
