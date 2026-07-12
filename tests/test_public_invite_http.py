@@ -57,6 +57,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                         ),
                         timeout=4,
                     )
+                self.addCleanup(error_context.exception.close)
                 error_payload = json.loads(error_context.exception.read().decode("utf-8"))
             finally:
                 server.shutdown()
@@ -108,6 +109,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                         ),
                         timeout=4,
                     )
+                self.addCleanup(error_context.exception.close)
             finally:
                 server.shutdown()
                 server.server_close()
@@ -174,6 +176,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                         ),
                         timeout=4,
                     )
+                self.addCleanup(error_context.exception.close)
                 error_payload = json.loads(error_context.exception.read().decode("utf-8"))
             finally:
                 server.shutdown()
@@ -266,6 +269,7 @@ class PublicInviteHttpTests(unittest.TestCase):
 
                     with self.assertRaises(HTTPError) as blocked_operator_route:
                         urlopen(Request(f"{base}/api/lobby", headers=public_headers), timeout=4)
+                    self.addCleanup(blocked_operator_route.exception.close)
                     self.assertEqual(blocked_operator_route.exception.code, 403)
 
                     for blocked_path in (
@@ -274,6 +278,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                     ):
                         with self.assertRaises(HTTPError) as blocked_private_get:
                             urlopen(Request(f"{base}{blocked_path}", headers=public_headers), timeout=4)
+                        self.addCleanup(blocked_private_get.exception.close)
                         self.assertEqual(blocked_private_get.exception.code, 403)
 
                     with urlopen(
@@ -311,6 +316,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                             ),
                             timeout=4,
                         )
+                    self.addCleanup(unauthenticated_room_say.exception.close)
                     self.assertEqual(unauthenticated_room_say.exception.code, 401)
 
                     with self.assertRaises(HTTPError) as blocked_lobby_post:
@@ -322,6 +328,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                             ),
                             timeout=4,
                         )
+                    self.addCleanup(blocked_lobby_post.exception.close)
                     self.assertEqual(blocked_lobby_post.exception.code, 403)
 
                     for blocked_path in ("/api/side-chat", "/api/room-friends/dm"):
@@ -334,6 +341,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                                 ),
                                 timeout=4,
                             )
+                        self.addCleanup(blocked_private_post.exception.close)
                         self.assertEqual(blocked_private_post.exception.code, 403)
 
                     with urlopen(
@@ -393,6 +401,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                             ),
                             timeout=4,
                         )
+                    self.addCleanup(read_only_room_say.exception.close)
                     self.assertEqual(read_only_room_say.exception.code, 403)
 
                     with self.assertRaises(HTTPError) as read_only_companion:
@@ -407,6 +416,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                             ),
                             timeout=4,
                         )
+                    self.addCleanup(read_only_companion.exception.close)
                     self.assertEqual(read_only_companion.exception.code, 403)
 
                     with urlopen(
@@ -493,6 +503,7 @@ class PublicInviteHttpTests(unittest.TestCase):
 
                 with self.assertRaises(HTTPError) as blocked_operator_route:
                     urlopen(Request(f"{base}/api/lobby", headers=null_origin_headers), timeout=4)
+                self.addCleanup(blocked_operator_route.exception.close)
                 self.assertEqual(blocked_operator_route.exception.code, 403)
 
                 blocked_preflight = Request(
@@ -505,6 +516,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                 )
                 with self.assertRaises(HTTPError) as blocked_preflight_context:
                     urlopen(blocked_preflight, timeout=4)
+                self.addCleanup(blocked_preflight_context.exception.close)
                 self.assertEqual(blocked_preflight_context.exception.code, 403)
             finally:
                 server.shutdown()
@@ -569,6 +581,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                         ),
                         timeout=4,
                     )
+                self.addCleanup(reused_invite.exception.close)
                 self.assertEqual(reused_invite.exception.code, 403)
             finally:
                 restarted.shutdown()
@@ -695,6 +708,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                     base = f"http://127.0.0.1:{server.server_port}"
                     with self.assertRaises(HTTPError) as unauthenticated:
                         urlopen(_json_request(f"{base}/api/public-invite/host-token", {}), timeout=4)
+                    self.addCleanup(unauthenticated.exception.close)
                     self.assertEqual(unauthenticated.exception.code, 403)
 
                     with urlopen(

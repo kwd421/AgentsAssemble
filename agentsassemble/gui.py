@@ -59,6 +59,7 @@ from agentsassemble.gui_provider_http import (
     register_provider_routes,
 )
 from agentsassemble.gui_mafia_http import register_mafia_routes
+from agentsassemble.gui_public_invite_http import register_public_invite_admin_routes
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
 from agentsassemble.gui_room_settings_http import register_room_settings_routes
 from agentsassemble.gui_social_http import register_room_friend_profile_routes
@@ -220,9 +221,6 @@ from agentsassemble.room_invite import (
     generate_runtime_host_token,
     get_host_token,
     get_public_url,
-    has_runtime_host_token,
-    host_gate_required,
-    normalize_public_room_url,
     set_runtime_host_token,
     set_runtime_public_url,
     verify_host_token,
@@ -8312,6 +8310,13 @@ def _make_handler(
 
     register_provider_routes(route_table, credentials_allowed=_late_provider_credentials_allowed)
 
+    register_public_invite_admin_routes(
+        route_table,
+        tunnel=invite_tunnel_manager,
+        is_local_operator=lambda ctx: ctx.handler._request_is_local_operator(),
+        local_server_url=lambda ctx: ctx.handler._local_server_url(),
+    )
+
     def _late_operation_json_payload(
         ctx: RequestContext,
         operation_name: str,
@@ -8434,9 +8439,6 @@ def _make_handler(
                     meeting_id=str(query.get("meeting_id", [""])[0] or ""),
                     last_event_id=self._last_event_id(query),
                 )
-                return
-            if path == "/api/public-invite/status":
-                self._send_json(self._public_invite_status())
                 return
             if path == "/api/side-chat":
                 self._send_json(
@@ -9780,83 +9782,6 @@ def _make_handler(
                 )
                 self._send_json(live_agent)
                 return
-            if parsed.path == "/api/public-invite/host-token":
-                if get_host_token():
-                    provided_host_token = (self.headers.get("X-Host-Token") or "").strip()
-                    if not provided_host_token:
-                        auth_header = self.headers.get("Authorization") or ""
-                        if auth_header.startswith("Bearer "):
-                            provided_host_token = auth_header.removeprefix("Bearer ").strip()
-                    if not verify_host_token(provided_host_token):
-                        if has_runtime_host_token() and self._request_is_local_operator():
-                            token = generate_runtime_host_token()
-                            self._send_json({
-                                "status": "regenerated",
-                                "host_token": token,
-                                "host_token_configured": True,
-                                "public_invite": self._public_invite_status(),
-                            })
-                            return
-                        self._send_error(HTTPStatus.FORBIDDEN, "host token required")
-                        return
-                    self._send_json({"status": "already_configured", "host_token_configured": True})
-                    return
-                if not self._request_is_local_operator():
-                    self._send_error(HTTPStatus.FORBIDDEN, "host token can only be generated from the local operator UI")
-                    return
-                if get_public_url():
-                    self._send_error(HTTPStatus.FORBIDDEN, "host token must be configured before public URL mode")
-                    return
-                token = generate_runtime_host_token()
-                self._send_json({
-                    "status": "generated",
-                    "host_token": token,
-                    "host_token_configured": True,
-                    "public_invite": self._public_invite_status(),
-                })
-                return
-            if parsed.path == "/api/public-invite/public-url":
-                if not get_host_token():
-                    self._send_error(HTTPStatus.FORBIDDEN, "host token must be configured before public URL")
-                    return
-                if not self._verify_host_token():
-                    return
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                try:
-                    public_url = set_runtime_public_url(normalize_public_room_url(str(payload.get("public_url") or "")))
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                self._send_json({"status": "configured", "public_url": public_url, "public_invite": self._public_invite_status()})
-                return
-            if parsed.path == "/api/public-invite/tunnel/start":
-                generated_host_token = ""
-                if not get_host_token():
-                    if not self._request_is_local_operator():
-                        self._send_error(HTTPStatus.FORBIDDEN, "host token must be configured before starting a public tunnel")
-                        return
-                    generated_host_token = generate_runtime_host_token()
-                if not generated_host_token and not self._verify_host_token():
-                    return
-                invite_tunnel_manager.set_local_url(self._local_server_url())
-                payload = {"status": "ok", "public_invite": self._public_invite_status(invite_tunnel_manager.start())}
-                if generated_host_token:
-                    payload["host_token"] = generated_host_token
-                self._send_json(payload)
-                return
-            if parsed.path == "/api/public-invite/tunnel/stop":
-                if not self._verify_host_token():
-                    return
-                self._send_json({"status": "ok", "public_invite": self._public_invite_status(invite_tunnel_manager.stop())})
-                return
             if parsed.path == "/api/live-agent-join-brief":
                 length = int(self.headers.get("Content-Length", "0") or "0")
                 try:
@@ -11136,20 +11061,6 @@ def _make_handler(
             if verify_host_token(token):
                 return operator_user_id()
             return ""
-
-        def _public_invite_status(self, tunnel_status: dict[str, object] | None = None) -> dict[str, object]:
-            tunnel = tunnel_status or invite_tunnel_manager.status()
-            token_configured = bool(get_host_token())
-            return {
-                "host_token_configured": token_configured,
-                "host_gate_required": host_gate_required(),
-                "public_url": get_public_url(),
-                "tunnel": tunnel,
-                "can_generate_host_token": (
-                    (not token_configured and not bool(get_public_url()))
-                    or (has_runtime_host_token() and self._request_is_local_operator())
-                ),
-            }
 
         def _local_server_url(self) -> str:
             return _local_server_url(self.server.server_address)
