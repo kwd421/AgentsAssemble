@@ -18,7 +18,7 @@ from agentsassemble.room_users import operator_user_id
 def register_agent_session_routes(
     router: Router,
     *,
-    process_start_allowed: Callable[[RequestContext], bool],
+    agent_session_control_allowed: Callable[[RequestContext], bool],
     process_command_runner: Callable[[list[str]], dict[str, object]],
     turn_adapter: Callable[..., object],
     turn_command_runner: Callable[..., object],
@@ -32,7 +32,7 @@ def register_agent_session_routes(
     ) -> AgentSessionProcessService:
         if not bool(payload.get("start")) or bool(payload.get("dry_run")):
             return AgentSessionProcessService()
-        if not process_start_allowed(ctx):
+        if not agent_session_control_allowed(ctx):
             return AgentSessionProcessService()
         return AgentSessionProcessService(command_runner=process_command_runner)
 
@@ -41,7 +41,7 @@ def register_agent_session_routes(
         payload = ctx.read_json_body()
         if payload is None:
             return
-        if not process_start_allowed(ctx):
+        if not agent_session_control_allowed(ctx):
             ctx.send_error(HTTPStatus.FORBIDDEN, "Agent Session control requires local operator or host authorization")
             return
         try:
@@ -60,7 +60,7 @@ def register_agent_session_routes(
         payload = ctx.read_json_body()
         if payload is None:
             return
-        if not process_start_allowed(ctx):
+        if not agent_session_control_allowed(ctx):
             ctx.send_error(HTTPStatus.FORBIDDEN, "Agent Session control requires local operator or host authorization")
             return
         try:
@@ -83,7 +83,7 @@ def register_agent_session_routes(
         payload = ctx.read_json_body()
         if payload is None:
             return
-        if not process_start_allowed(ctx):
+        if not agent_session_control_allowed(ctx):
             ctx.send_error(HTTPStatus.FORBIDDEN, "Agent Session turn requires local operator or host authorization")
             return
         try:
@@ -110,7 +110,7 @@ def register_agent_session_routes(
         payload = ctx.read_json_body()
         if payload is None:
             return
-        if not process_start_allowed(ctx):
+        if not agent_session_control_allowed(ctx):
             ctx.send_error(HTTPStatus.FORBIDDEN, "Agent Session turn requires local operator or host authorization")
             return
         try:

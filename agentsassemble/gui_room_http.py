@@ -147,15 +147,15 @@ def _local_agent_session_turn_adapter(session: dict[str, object], packet: dict[s
     yield from _CODEX_APP_SERVER_RUNTIMES.send_turn(session, packet)
 
 
-def _process_start_allowed(ctx: RequestContext) -> bool:
+def _agent_session_control_allowed(ctx: RequestContext) -> bool:
     has_host_token = bool(ctx.provided_host_token())
     return ctx.handler._request_uses_loopback_host() or (has_host_token and ctx.is_host()) or ctx.is_operator_session()
 
 
 # Resolve public adapter patch points at call time; route registration otherwise
 # captures the original function and breaks existing runtime/test overrides.
-def _late_process_start_allowed(ctx: RequestContext) -> bool:
-    return _process_start_allowed(ctx)
+def _late_agent_session_control_allowed(ctx: RequestContext) -> bool:
+    return _agent_session_control_allowed(ctx)
 
 
 def _late_speech_rejection_status(category: str) -> HTTPStatus:
@@ -191,13 +191,13 @@ def register_room_routes(router: Router) -> None:
 
     register_room_history_routes(
         router,
-        process_start_allowed=_late_process_start_allowed,
+        agent_session_control_allowed=_late_agent_session_control_allowed,
         agent_turn_adapter=_late_agent_session_turn_adapter,
         speech_rejection_status=_late_speech_rejection_status,
     )
     register_agent_session_routes(
         router,
-        process_start_allowed=_late_process_start_allowed,
+        agent_session_control_allowed=_late_agent_session_control_allowed,
         process_command_runner=_late_agent_session_command_runner,
         turn_adapter=_late_agent_session_turn_adapter,
         turn_command_runner=_late_agent_session_turn_command_runner,
@@ -206,7 +206,7 @@ def register_room_routes(router: Router) -> None:
     register_room_lifecycle_routes(router)
     register_moderation_media_routes(
         router,
-        process_start_allowed=_late_process_start_allowed,
+        agent_session_control_allowed=_late_agent_session_control_allowed,
         agent_turn_adapter=_late_agent_session_turn_adapter,
         speech_rejection_status=_late_speech_rejection_status,
     )

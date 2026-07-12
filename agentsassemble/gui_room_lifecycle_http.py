@@ -32,7 +32,7 @@ from agentsassemble.room_members import is_room_member_muted
 def register_room_history_routes(
     router: Router,
     *,
-    process_start_allowed: Callable[[RequestContext], bool],
+    agent_session_control_allowed: Callable[[RequestContext], bool],
     agent_turn_adapter: Callable[..., object],
     speech_rejection_status: Callable[[str], HTTPStatus],
 ) -> None:
@@ -168,7 +168,7 @@ def register_room_history_routes(
         except GovernedLobbySayRejected as rejected:
             ctx.send_error(speech_rejection_status(rejected.category), str(rejected))
             return
-        if process_start_allowed(ctx):
+        if agent_session_control_allowed(ctx):
             enqueue_agent_session_auto_turn_for_lobby_event(
                 ctx.deps.output_root,
                 event,
