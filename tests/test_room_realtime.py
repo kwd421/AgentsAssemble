@@ -2,6 +2,7 @@ import tempfile
 import subprocess
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agentsassemble.room_realtime import (
     NativeCliProviderSpec,
@@ -916,6 +917,116 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertTrue(requested["assigned"])
         self.assertIn("새 참가자도 봐야 하는 최근 공개 대화", assignment["provider_input"])
         self.assertIn(topic["id"], assignment["provider_context_event_ids"])
+
+    def test_prompt_budget_defers_unseen_pending_event_to_immediate_next_turn(self):
+        self._command("start-deferred", "agent.start", {"agent_id": "codex"})
+        identity, channel = self._connect_bridge()
+        channel.drain()
+        store = RoomStore(self.root)
+        store.update_session_fields(
+            "general",
+            "codex",
+            runtime_status="busy",
+            bootstrap_done=True,
+        )
+        first = self._command(
+            "pending-first",
+            "message.send",
+            {"content": "FIRST-PENDING " + ("a" * 4000), "target_agent_id": "codex"},
+        )["result"]["event"]
+        second = self._command(
+            "pending-second",
+            "message.send",
+            {"content": "SECOND-PENDING " + ("b" * 4000), "target_agent_id": "codex"},
+        )["result"]["event"]
+        store.update_session_fields("general", "codex", runtime_status="idle")
+
+        bounded_packets = [
+            {
+                "provider_input": "FIRST-PENDING",
+                "events": [first],
+                "last_provider_sync_event_id_after": first["id"],
+                "last_provider_sync_seq_after": first["seq"],
+                "provider_visible_chars": len("FIRST-PENDING"),
+                "provider_visible_event_count": 1,
+                "input_mode": "delta",
+            },
+            {
+                "provider_input": "SECOND-PENDING",
+                "events": [second],
+                "last_provider_sync_event_id_after": second["id"],
+                "last_provider_sync_seq_after": second["seq"],
+                "provider_visible_chars": len("SECOND-PENDING"),
+                "provider_visible_event_count": 1,
+                "input_mode": "delta",
+            },
+        ]
+
+        with patch("agentsassemble.room_realtime.build_room_turn_packet", side_effect=bounded_packets):
+            self.assertTrue(self.controller._assign_pending("general", "codex"))
+            first_assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+            during_first = store.session("general", "codex")
+
+            self.assertEqual(first_assignment["source_event_id"], first["id"])
+            self.assertEqual(during_first["inflight_event_ids"], [first["id"]])
+            self.assertEqual(during_first["pending_event_ids"], [second["id"]])
+
+            self._command(
+                "finish-first-deferred",
+                "message.final",
+                {"turn_id": first_assignment["turn_id"], "content": "first reply"},
+                identity,
+            )
+            second_assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+
+        during_second = store.session("general", "codex")
+        self.assertEqual(second_assignment["source_event_id"], second["id"])
+        self.assertEqual(during_second["inflight_event_ids"], [second["id"]])
+        self.assertEqual(during_second["pending_event_ids"], [])
+        self.assertEqual(during_second["last_provider_sync_event_id"], first["id"])
+
+    def test_failed_bounded_turn_restores_inflight_and_deferred_pending_events(self):
+        self._command("start-failed-deferred", "agent.start", {"agent_id": "codex"})
+        identity, channel = self._connect_bridge()
+        channel.drain()
+        store = RoomStore(self.root)
+        store.update_session_fields("general", "codex", runtime_status="busy", bootstrap_done=True)
+        first = self._command(
+            "failed-pending-first",
+            "message.send",
+            {"content": "FIRST-FAIL " + ("a" * 4000), "target_agent_id": "codex"},
+        )["result"]["event"]
+        second = self._command(
+            "failed-pending-second",
+            "message.send",
+            {"content": "SECOND-FAIL " + ("b" * 4000), "target_agent_id": "codex"},
+        )["result"]["event"]
+        store.update_session_fields("general", "codex", runtime_status="idle")
+
+        bounded_packet = {
+            "provider_input": "FIRST-FAIL",
+            "events": [first],
+            "last_provider_sync_event_id_after": first["id"],
+            "last_provider_sync_seq_after": first["seq"],
+            "provider_visible_chars": len("FIRST-FAIL"),
+            "provider_visible_event_count": 1,
+            "input_mode": "delta",
+        }
+
+        with patch("agentsassemble.room_realtime.build_room_turn_packet", return_value=bounded_packet):
+            self.assertTrue(self.controller._assign_pending("general", "codex"))
+            assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+
+        self._command(
+            "fail-bounded-turn",
+            "turn.failed",
+            {"turn_id": assignment["turn_id"], "message": "ordinary provider failure"},
+            identity,
+        )
+        failed = store.session("general", "codex")
+
+        self.assertEqual(failed["inflight_event_ids"], [])
+        self.assertEqual(failed["pending_event_ids"], [first["id"], second["id"]])
 
     def test_bridge_delta_and_final_create_only_canonical_turn_events(self):
         self._command("req-start", "agent.start", {"agent_id": "codex"})

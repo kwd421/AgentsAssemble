@@ -1714,13 +1714,19 @@ class RoomRealtimeController:
             for event in provider_events
             if clean_lobby_text(event.get("participant_id") or event.get("actor_id"), limit=128)
         ]
-        input_up_to_event_id = clean_lobby_text(packet.get("last_provider_sync_event_id_after"), limit=128) or pending[-1]
-        source_event = self.store.event_by_id(room_id, pending[-1])
+        input_up_to_event_id = clean_lobby_text(packet.get("last_provider_sync_event_id_after"), limit=128)
         input_up_to_seq = _safe_bounded_int(
             packet.get("last_provider_sync_seq_after"),
-            default=int(source_event.get("seq") or 0),
+            default=0,
             minimum=0,
         )
+        inflight, deferred = self._partition_pending_events(room_id, pending, input_up_to_seq=input_up_to_seq)
+        if not inflight:
+            return False
+        active_source_event_id = inflight[-1]
+        source_event = self.store.event_by_id(room_id, active_source_event_id)
+        input_up_to_event_id = input_up_to_event_id or active_source_event_id
+        relay_depth = int(session.get("pending_relay_depth") or 0)
         dispatched_at = _now()
         updated = self.store.update_session_fields(
             room_id,
@@ -1728,13 +1734,13 @@ class RoomRealtimeController:
             runtime_status="busy",
             turn_phase="thinking",
             active_turn_id=turn_id,
-            active_source_event_id=pending[-1],
-            active_relay_depth=int(session.get("pending_relay_depth") or 0),
+            active_source_event_id=active_source_event_id,
+            active_relay_depth=relay_depth,
             input_up_to_event_id=input_up_to_event_id,
             input_up_to_seq=input_up_to_seq,
-            inflight_event_ids=pending,
-            pending_event_ids=[],
-            pending_relay_depth=0,
+            inflight_event_ids=inflight,
+            pending_event_ids=deferred,
+            pending_relay_depth=relay_depth if deferred else 0,
             latency={
                 "queued_at": source_event.get("created_at") or dispatched_at,
                 "dispatch_started_at": dispatched_at,
@@ -1751,7 +1757,7 @@ class RoomRealtimeController:
             participant_id=agent_id,
             session_id=session["session_id"],
             turn_id=turn_id,
-            source_event_id=pending[-1],
+            source_event_id=active_source_event_id,
             provider_visible_chars=packet.get("provider_visible_chars"),
             provider_visible_event_count=packet.get("provider_visible_event_count"),
             provider_context_event_ids=provider_context_event_ids,
@@ -1773,7 +1779,7 @@ class RoomRealtimeController:
             "participant_id": agent_id,
             "session_id": session["session_id"],
             "turn_id": turn_id,
-            "source_event_id": pending[-1],
+            "source_event_id": active_source_event_id,
             "input_up_to_event_id": input_up_to_event_id,
             "input_up_to_seq": input_up_to_seq,
             "provider_input": packet.get("provider_input") or "",
@@ -1797,6 +1803,24 @@ class RoomRealtimeController:
             last_error="Agent bridge disconnected before turn assignment.",
         )
         return False
+
+    def _partition_pending_events(
+        self,
+        room_id: str,
+        pending: list[str],
+        *,
+        input_up_to_seq: int,
+    ) -> tuple[list[str], list[str]]:
+        inflight: list[str] = []
+        deferred: list[str] = []
+        for event_id in pending:
+            event = self.store.event_by_id(room_id, event_id)
+            event_seq = _safe_bounded_int(event.get("seq"), default=0, minimum=0)
+            if event_seq and event_seq <= input_up_to_seq:
+                inflight.append(event_id)
+            else:
+                deferred.append(event_id)
+        return inflight, deferred
 
     def _publish_session_state(self, room_id: str, session: dict[str, object]) -> dict[str, object]:
         if not session:
