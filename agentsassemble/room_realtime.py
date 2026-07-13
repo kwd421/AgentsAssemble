@@ -1642,6 +1642,12 @@ class RoomRealtimeController:
         content = clean_lobby_text(event.get("content"), limit=12000).casefold()
         explicitly_routed = "@all" in content or any(f"@{agent_id.casefold()}" in content for agent_id in providers)
         if continuous and not explicitly_routed and targets:
+            targets = tuple(
+                agent_id
+                for agent_id in targets
+                if self._continuous_target_is_available(room_id, agent_id)
+            )
+        if continuous and not explicitly_routed and targets:
             ordered = sorted(providers)
             if decision.actor_id in ordered:
                 start = (ordered.index(decision.actor_id) + 1) % len(ordered)
@@ -1660,6 +1666,16 @@ class RoomRealtimeController:
                 event,
                 relay_depth=decision.relay_depth + (1 if continuous or decision.actor_type == "agent" else 0),
             )
+
+    def _continuous_target_is_available(self, room_id: str, agent_id: str) -> bool:
+        participant = self.store.participant(room_id, agent_id)
+        session = self.store.session(room_id, agent_id)
+        return bool(
+            session
+            and session.get("enabled")
+            and participant.get("status") not in {"kicked", "left"}
+            and not participant.get("muted")
+        )
 
     def _queue_event(
         self,

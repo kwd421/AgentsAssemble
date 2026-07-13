@@ -367,6 +367,26 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         finals = [event for event in RoomStore(self.root).read_events("general") if event.get("type") == "message_final"]
         self.assertEqual([event.get("participant_id") for event in finals[-3:]], ["operator-local", "codex", "peer"])
 
+    def test_continuous_room_mode_skips_removed_and_stopped_speakers(self):
+        self.controller.register_provider("general", _spec("removed"))
+        self.controller.register_provider("general", _spec("stopped"))
+        self.controller.register_provider("general", _spec("active"))
+        self._command("kick-removed", "participant.kick", {"participant_id": "removed"})
+        self._command("start-stopped", "agent.start", {"agent_id": "stopped"})
+        self._command("stop-stopped", "agent.stop", {"agent_id": "stopped"})
+        _active_identity, active_channel = self._connect_bridge("active")
+        update_room_settings(
+            self.root,
+            {"room_id": "general", "conversation_mode": "continuous", "max_relay_turns": 2},
+        )
+
+        self._command("continuous-active-topic", "message.send", {"content": "활성 참가자만 이어서 말해"})
+
+        assignment = next(message for message in active_channel.drain() if message.get("op") == "turn.assign")
+        self.assertTrue(assignment["turn_id"])
+        self.assertEqual(RoomStore(self.root).session("general", "removed")["pending_event_ids"], [])
+        self.assertEqual(RoomStore(self.root).session("general", "stopped")["pending_event_ids"], [])
+
     def test_zero_width_silence_finishes_without_message_or_continuous_relay(self):
         self.controller.register_provider("general", _spec("peer"))
         codex_identity, codex_channel = self._connect_bridge("codex")
