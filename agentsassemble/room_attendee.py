@@ -103,6 +103,9 @@ class AgentAttendee:
                 if bridge.run() != 0:
                     raise RuntimeError("Agent Bridge cleanup failed.")
                 if bridge.remote_stop_requested:
+                    # A successful remote-stop bridge run already stopped and
+                    # verified the provider runtime before reporting completion.
+                    self._runtime = None
                     break
                 orientation = ""
                 self._bridge = None

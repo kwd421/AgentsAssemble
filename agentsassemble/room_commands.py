@@ -22,6 +22,7 @@ ROOM_COMMAND_ACTIONS = frozenset(
         "participant.leave",
         "bridge.ready",
         "bridge.health",
+        "bridge.stopped",
         "turn.state",
         "turn.decline",
         "activity.update",

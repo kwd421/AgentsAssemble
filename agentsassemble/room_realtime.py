@@ -11,6 +11,10 @@ from typing import Callable, Protocol
 from uuid import uuid4
 
 from agentsassemble.agent_sessions import build_room_turn_packet
+from agentsassemble.bridge_stop_confirmation import (
+    BridgeStopConfirmationError,
+    ExternalBridgeStopCoordinator,
+)
 from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
 from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
 from agentsassemble.native_cli_providers import (
@@ -129,6 +133,7 @@ class RoomRealtimeController:
         default_room_id: str = "general",
         max_agent_relay_depth: int = 2,
         recovery_delay_seconds: float = 1.0,
+        external_stop_timeout_seconds: float = 2.0,
         recovery_scheduler: RecoveryScheduler | None = None,
         provider_catalog: ProviderCatalog | None = None,
     ) -> None:
@@ -139,6 +144,9 @@ class RoomRealtimeController:
         self.default_room_id = clean_lobby_text(default_room_id, limit=128) or "general"
         self.max_agent_relay_depth = max(0, int(max_agent_relay_depth))
         self.recovery_delay_seconds = max(0.0, float(recovery_delay_seconds))
+        self._external_stop_confirmations = ExternalBridgeStopCoordinator(
+            timeout_seconds=external_stop_timeout_seconds,
+        )
         self._recovery_scheduler = recovery_scheduler or _schedule_daemon_timer
         self.provider_catalog = provider_catalog or PROVIDER_CAPABILITIES
         default_providers = {
@@ -644,6 +652,25 @@ class RoomRealtimeController:
         request_id = command.request_id
         action = command.action
         payload = command.payload
+        if action == "bridge.stopped":
+            self._require_bridge(identity)
+            try:
+                result = self._external_stop_confirmations.confirm(
+                    room_id,
+                    clean_lobby_text(identity.get("agent_id"), limit=128),
+                    generation=int(identity.get("bridge_generation") or 0),
+                    payload=payload,
+                )
+            except BridgeStopConfirmationError as error:
+                raise RoomCommandRejected(str(error), code=error.code) from error
+            return {
+                "op": "ack",
+                "request_id": request_id,
+                "accepted": True,
+                "action": action,
+                "result": result,
+                "deduplicated": False,
+            }
         self.ensure_room(room_id)
         if action == "room.history":
             if identity.get("client_type") == "agent_bridge":
@@ -707,6 +734,7 @@ class RoomRealtimeController:
             )
 
     def close(self) -> CleanupReport:
+        self._external_stop_confirmations.cancel_all()
         with self._lock:
             if self._closed:
                 return self.last_cleanup_report
@@ -1379,6 +1407,24 @@ class RoomRealtimeController:
         session = self.store.session(room_id, agent_id)
         if not session:
             raise RoomCommandRejected(f"Agent session {agent_id} was not found.", code="not_found")
+        ownership = clean_lobby_text(session.get("process_ownership"), limit=32) or (
+            "external" if session.get("external_owned") else "server"
+        )
+        if (
+            session.get("runtime_status") in {"stopped", "available"}
+            and not self.broker.has_bridge(room_id, agent_id)
+            and not session.get("bridge_handle_id")
+        ):
+            return {
+                "agent_session": self._public_session(session),
+                "process": {
+                    "stopped": True,
+                    "alive": False,
+                    "ownership": ownership,
+                    "already_stopped": True,
+                },
+                "revoked_sessions": 0,
+            }
         key = (room_id, agent_id)
         recovery_handle = self._recovery_handles.pop(key, None)
         cancel = getattr(recovery_handle, "cancel", None)
@@ -1386,36 +1432,104 @@ class RoomRealtimeController:
             cancel()
         if disable:
             self._launch_contexts.pop(key, None)
-        ownership = clean_lobby_text(session.get("process_ownership"), limit=32) or (
-            "external" if session.get("external_owned") else "server"
-        )
         self.store.update_session_fields(
             room_id,
             agent_id,
             runtime_status="stopping",
             enabled=False if disable else bool(session.get("enabled")),
         )
+        if ownership == "external":
+            try:
+                stopped = self._external_stop_confirmations.request(
+                    room_id,
+                    agent_id,
+                    generation=int(session.get("bridge_generation") or 0),
+                    send=lambda message: self.broker.direct_to_bridge(room_id, agent_id, message),
+                )
+            except BridgeStopConfirmationError as error:
+                revoked_sessions = (
+                    revoke_sessions_for_participant(room_id, agent_id) if disable else 0
+                )
+                self.broker.disconnect_participant(room_id, agent_id)
+                self._mark_agent_stop_unconfirmed(
+                    room_id,
+                    agent_id,
+                    session,
+                    disable=disable,
+                    message=str(error),
+                    error_code=error.code,
+                )
+                raise RoomCommandRejected(str(error), code=error.code) from error
+            revoked_sessions = (
+                revoke_sessions_for_participant(room_id, agent_id) if disable else 0
+            )
+            self.broker.disconnect_participant(room_id, agent_id)
+            return self._finalize_agent_stop(
+                room_id,
+                agent_id,
+                session,
+                disable=disable,
+                process={**stopped, "alive": False, "ownership": "external", "confirmed": True},
+                revoked_sessions=revoked_sessions,
+            )
+
         self.broker.direct_to_bridge(room_id, agent_id, {"op": "agent.control", "action": "stop"})
-        revoked_sessions = (
-            revoke_sessions_for_participant(room_id, agent_id)
-            if ownership == "external" and disable
-            else 0
-        )
-        stopped = {"stopped": ownership == "external", "alive": False, "ownership": ownership}
-        if self.bridge_manager is not None and ownership == "server":
+        try:
+            if self.bridge_manager is None:
+                raise RuntimeError("Agent bridge manager is unavailable.")
             stopped = self.bridge_manager.stop(
                 room_id,
                 agent_id,
                 handle_id=clean_lobby_text(session.get("bridge_handle_id"), limit=128),
             )
+        except Exception as error:
+            message = clean_lobby_text(error, limit=1000) or "Server-owned provider shutdown failed."
+            self._mark_agent_stop_unconfirmed(
+                room_id,
+                agent_id,
+                session,
+                disable=disable,
+                message=message,
+                error_code="runtime_stop_failed",
+            )
+            raise RoomCommandRejected(message, code="runtime_stop_failed") from error
+        if stopped.get("stopped") is not True or stopped.get("alive") is True:
+            message = "Server-owned bridge handle did not confirm provider shutdown."
+            self._mark_agent_stop_unconfirmed(
+                room_id,
+                agent_id,
+                session,
+                disable=disable,
+                message=message,
+                error_code="runtime_stop_unconfirmed",
+            )
+            raise RoomCommandRejected(message, code="runtime_stop_unconfirmed")
+        return self._finalize_agent_stop(
+            room_id,
+            agent_id,
+            session,
+            disable=disable,
+            process={**stopped, "ownership": "server", "confirmed": True},
+            revoked_sessions=0,
+        )
+
+    def _mark_agent_stop_unconfirmed(
+        self,
+        room_id: str,
+        agent_id: str,
+        session: dict[str, object],
+        *,
+        disable: bool,
+        message: str,
+        error_code: str,
+    ) -> dict[str, object]:
         pending = _dedupe_text_list([*list(session.get("inflight_event_ids") or []), *list(session.get("pending_event_ids") or [])])
-        handle_lost = ownership == "server" and not bool(stopped.get("stopped"))
         updated = self.store.update_session_fields(
             room_id,
             agent_id,
-            status="detached",
+            status="unavailable",
             enabled=False if disable else bool(session.get("enabled")),
-            runtime_status="disconnected" if handle_lost else "stopped",
+            runtime_status="disconnected",
             pid=None,
             bridge_pid=None,
             bridge_handle_id="",
@@ -1424,8 +1538,54 @@ class RoomRealtimeController:
             turn_phase="",
             inflight_event_ids=[],
             pending_event_ids=pending,
-            last_error="Server-owned bridge handle was lost; no PID fallback was attempted." if handle_lost else "",
-            recovery_required=handle_lost,
+            last_error=message,
+            recovery_required=True,
+            recovery_attempt_count=0,
+        )
+        participant = self.store.participant(room_id, agent_id)
+        if participant:
+            self.store.update_participant_fields(room_id, agent_id, status="detached")
+        self.store.append_event(
+            room_id,
+            "error",
+            participant_id=agent_id,
+            session_id=agent_id,
+            content=message,
+            error_code=error_code,
+            recovery_required=True,
+        )
+        self._publish_session_state(room_id, updated)
+        return updated
+
+    def _finalize_agent_stop(
+        self,
+        room_id: str,
+        agent_id: str,
+        session: dict[str, object],
+        *,
+        disable: bool,
+        process: dict[str, object],
+        revoked_sessions: int,
+    ) -> dict[str, object]:
+        pending = _dedupe_text_list(
+            [*list(session.get("inflight_event_ids") or []), *list(session.get("pending_event_ids") or [])]
+        )
+        updated = self.store.update_session_fields(
+            room_id,
+            agent_id,
+            status="detached",
+            enabled=False if disable else bool(session.get("enabled")),
+            runtime_status="stopped",
+            pid=None,
+            bridge_pid=None,
+            bridge_handle_id="",
+            provider_session_active=False,
+            active_turn_id="",
+            turn_phase="",
+            inflight_event_ids=[],
+            pending_event_ids=pending,
+            last_error="",
+            recovery_required=False,
             recovery_attempt_count=0,
         )
         participant = self.store.participant(room_id, agent_id)
@@ -1441,7 +1601,7 @@ class RoomRealtimeController:
         self._publish_session_state(room_id, updated)
         return {
             "agent_session": self._public_session(updated),
-            "process": stopped,
+            "process": process,
             "revoked_sessions": revoked_sessions,
         }
 
@@ -1495,12 +1655,19 @@ class RoomRealtimeController:
         participant = self.store.participant(room_id, participant_id)
         if not participant:
             raise RoomCommandRejected(f"Participant {participant_id} was not found.", code="not_found")
+        stop_warning = ""
         if participant.get("role") == "agent":
             session = self.store.session(room_id, participant_id)
             if session and session.get("runtime_status") not in {"stopped", "available"}:
-                self._stop_agent(room_id, participant_id)
+                try:
+                    self._stop_agent(room_id, participant_id)
+                except RoomCommandRejected as error:
+                    # Moderation must still revoke room access even when an
+                    # external process cannot prove its local cleanup.
+                    stop_warning = f"{error.code}: {error}"
             self._providers_by_room.get(room_id, {}).pop(participant_id, None)
         revoked_sessions = revoke_sessions_for_participant(room_id, participant_id)
+        self.broker.disconnect_participant(room_id, participant_id)
         removed_member = remove_room_member(self.output_root, room_id, participant_id)
         leave_all_voice(room_id, participant_id)
         updated = self.store.update_participant_fields(room_id, participant_id, status="kicked")
@@ -1509,6 +1676,7 @@ class RoomRealtimeController:
             "participant": updated,
             "revoked_sessions": revoked_sessions,
             "removed_member": bool(removed_member),
+            "cleanup_warning": stop_warning,
         }
 
     def _mute_participant(self, room_id: str, participant_id: str, muted: bool) -> dict[str, object]:
@@ -1572,14 +1740,36 @@ class RoomRealtimeController:
         confirmation = str(payload.get("confirmation_name") or "")
         if confirmation != room_name:
             raise RoomCommandRejected("The confirmation name does not match the server name.", code="confirmation_mismatch")
+        cleanup_failures: list[str] = []
+        cleanup_warnings: list[str] = []
         for session in list(self.store.sessions(room_id)):
             session_id = clean_lobby_text(session.get("session_id"), limit=128)
-            if not session_id:
+            if not session_id or session.get("runtime_status") in {"stopped", "available"}:
+                continue
+            ownership = clean_lobby_text(session.get("process_ownership"), limit=32) or (
+                "external" if session.get("external_owned") else "server"
+            )
+            if ownership == "external" and not self.broker.has_bridge(room_id, session_id):
+                revoke_sessions_for_participant(room_id, session_id)
+                self.broker.disconnect_participant(room_id, session_id)
+                cleanup_warnings.append(
+                    f"{session_id}: external bridge was disconnected; room access was revoked without "
+                    "claiming provider shutdown"
+                )
                 continue
             try:
                 self._stop_agent(room_id, session_id)
-            except (RoomCommandRejected, ValueError):
-                continue
+            except (RoomCommandRejected, ValueError) as error:
+                if ownership == "external":
+                    cleanup_warnings.append(f"{session_id}: {error}")
+                else:
+                    cleanup_failures.append(f"{session_id}: {error}")
+        if cleanup_failures:
+            raise RoomCommandRejected(
+                "Room deletion stopped because Agent Session cleanup failed: "
+                + "; ".join(cleanup_failures),
+                code="room_cleanup_failed",
+            )
         self.broker.broadcast_control(
             room_id,
             {"op": "room_deleted", "room_id": room_id, "room_name": room_name},
@@ -1595,7 +1785,12 @@ class RoomRealtimeController:
             if path.exists() and path.is_dir():
                 shutil.rmtree(path)
         threading.Timer(0.1, lambda: self.broker.disconnect_room(room_id)).start()
-        return {"room_id": room_id, "deleted": True, **revoked}
+        return {
+            "room_id": room_id,
+            "deleted": True,
+            "cleanup_warnings": cleanup_warnings,
+            **revoked,
+        }
 
     def _is_room_owner(self, identity: dict[str, object], room_id: str) -> bool:
         store = identity_store_for_output_root(self.output_root)

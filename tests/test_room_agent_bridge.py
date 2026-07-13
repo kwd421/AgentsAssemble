@@ -55,9 +55,11 @@ class FakeRuntime:
         self.stop_count = 0
         self.sent = []
         self.interrupted = False
+        self.running = False
 
     def start(self):
         self.start_count += 1
+        self.running = True
         return self.health()
 
     def send(self, text):
@@ -90,11 +92,12 @@ class FakeRuntime:
     def stop(self, *, timeout_seconds=2.0):
         del timeout_seconds
         self.stop_count += 1
+        self.running = False
 
     def health(self):
         return {
             "pid": 4242,
-            "running": True,
+            "running": self.running,
             "pty": True,
             "transport": "pty",
             "provider_session_active": True,
@@ -402,6 +405,41 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertEqual(ready["service_tier"], "default")
         self.assertEqual(ready["permission_mode"], "meeting_read_only")
 
+    def test_confirmed_remote_stop_stops_external_runtime_before_reporting(self):
+        client = FakeClient()
+        runtime = FakeRuntime()
+        bridge = RoomAgentBridge(
+            client,
+            runtime,
+            room_id="general",
+            participant_id="codex",
+            session_id="codex",
+            receive_sleep_seconds=0.005,
+            stop_runtime_on_exit=False,
+        )
+        thread = threading.Thread(target=bridge.run, daemon=True)
+        thread.start()
+        _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
+
+        client.messages.append(
+            {
+                "op": "agent.control",
+                "action": "stop",
+                "control_id": "stop-control-1",
+                "require_confirmation": True,
+            }
+        )
+        _wait_for(lambda: any(action == "bridge.stopped" for action, _, _ in client.commands))
+        thread.join(timeout=2)
+
+        confirmation = next(
+            payload for action, payload, _ in client.commands if action == "bridge.stopped"
+        )
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(runtime.stop_count, 1)
+        self.assertEqual(confirmation["control_id"], "stop-control-1")
+        self.assertTrue(confirmation["stopped"])
+
     def test_runtime_stop_failure_returns_nonzero_cleanup_report(self):
         client = FakeClient()
         runtime = StopFailingRuntime()
@@ -419,7 +457,14 @@ class RoomAgentBridgeTests(unittest.TestCase):
             thread = threading.Thread(target=lambda: exits.append(bridge.run()), daemon=True)
             thread.start()
             _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
-            client.messages.append({"op": "agent.control", "action": "stop"})
+            client.messages.append(
+                {
+                    "op": "agent.control",
+                    "action": "stop",
+                    "control_id": "failed-stop-control",
+                    "require_confirmation": True,
+                }
+            )
             thread.join(timeout=2)
 
         self.assertFalse(thread.is_alive())
@@ -428,6 +473,12 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertEqual(bridge.last_cleanup_report.failures[0].stage, "runtime.stop")
         self.assertEqual(bridge.last_cleanup_report.orphaned_handle_ids, ["codex"])
         self.assertIn("runtime.stop", stderr.getvalue())
+        confirmation = next(
+            payload for action, payload, _ in client.commands if action == "bridge.stopped"
+        )
+        self.assertEqual(confirmation["control_id"], "failed-stop-control")
+        self.assertFalse(confirmation["stopped"])
+        self.assertEqual(confirmation["error_code"], "runtime_stop_failed")
 
     def test_invalid_adapter_activity_is_dropped_and_counted(self):
         client = FakeClient()

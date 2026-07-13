@@ -118,6 +118,8 @@ class RoomAgentBridge:
         self._activity_invalid_count = 0
         self._run_thread: threading.Thread | None = None
         self.remote_stop_requested = False
+        self.remote_stop_control_id = ""
+        self.remote_stop_confirmation_required = False
         self.last_cleanup_report = CleanupReport("room_agent_bridge")
 
     def run(self) -> int:
@@ -137,7 +139,7 @@ class RoomAgentBridge:
         finally:
             self._stop.set()
             cleanup = CleanupReport("room_agent_bridge")
-            if self._stop_runtime_on_exit:
+            if self._stop_runtime_on_exit or self.remote_stop_requested:
                 try:
                     self.runtime.stop(timeout_seconds=2.0)
                     cleanup.record_success()
@@ -160,6 +162,25 @@ class RoomAgentBridge:
                     )
                 else:
                     cleanup.record_success()
+            if self.remote_stop_confirmation_required:
+                stopped = cleanup.ok and not _runtime_still_running(self.runtime)
+                try:
+                    self._command(
+                        "bridge.stopped",
+                        {
+                            "control_id": self.remote_stop_control_id,
+                            "stopped": stopped,
+                            "error_code": "" if stopped else "runtime_stop_failed",
+                            "message": "" if stopped else "Provider shutdown could not be confirmed.",
+                        },
+                        wait_for_ack=False,
+                    )
+                except Exception as error:
+                    cleanup.record_failure(
+                        "bridge.stopped",
+                        error,
+                        handle_id=self.session_id,
+                    )
             try:
                 self.client.close()
                 cleanup.record_success()
@@ -197,7 +218,20 @@ class RoomAgentBridge:
                 self._command("bridge.health", {**diagnostics, "last_error": str(error)})
             return
         if action == "stop":
+            require_confirmation = message.get("require_confirmation") is True
+            control_id = clean_lobby_text(message.get("control_id"), limit=128)
+            if require_confirmation and not control_id:
+                self._fail_protocol(
+                    BridgeProtocolError(
+                        "A confirmed stop requires control_id.",
+                        code="stop_control_id_missing",
+                        fatal=True,
+                    )
+                )
+                return
             self.remote_stop_requested = True
+            self.remote_stop_confirmation_required = require_confirmation
+            self.remote_stop_control_id = control_id
             self._stop.set()
 
     def _start_turn(self, assignment: dict[str, object]) -> None:

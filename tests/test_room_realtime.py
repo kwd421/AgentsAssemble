@@ -2,6 +2,8 @@ import io
 import tempfile
 import subprocess
 import json
+import threading
+import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -243,6 +245,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             bridge_manager=self.manager,
             recovery_scheduler=self.recovery_scheduler,
             provider_catalog=self.provider_catalog,
+            external_stop_timeout_seconds=0.2,
         )
 
     def tearDown(self):
@@ -267,6 +270,13 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
 
     def _connect_bridge(self, agent_id="codex"):
+        session = self.controller.store.session("general", agent_id)
+        if session and not session.get("bridge_handle_id"):
+            self.controller.store.update_session_fields(
+                "general",
+                agent_id,
+                bridge_handle_id=f"handle-{agent_id}",
+            )
         identity = _bridge_identity(agent_id)
         channel = self.controller.connect(identity)
         channel.subscribe({"room_events"})
@@ -285,6 +295,46 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             identity,
         )
         return identity, channel
+
+    def _confirmed_external_stop(self, identity, channel, *, request_id="external-stop"):
+        results: list[dict[str, object]] = []
+        errors: list[BaseException] = []
+
+        def stop() -> None:
+            try:
+                results.append(
+                    self._command(request_id, "agent.stop", {"agent_id": identity["agent_id"]})
+                )
+            except BaseException as error:
+                errors.append(error)
+
+        thread = threading.Thread(target=stop, daemon=True)
+        thread.start()
+        control = None
+        deadline = time.time() + 2.0
+        while time.time() < deadline and control is None:
+            control = next(
+                (
+                    message
+                    for message in channel.drain()
+                    if message.get("op") == "agent.control" and message.get("action") == "stop"
+                ),
+                None,
+            )
+            if control is None:
+                time.sleep(0.005)
+        self.assertIsNotNone(control)
+        self._command(
+            f"confirm-{request_id}",
+            "bridge.stopped",
+            {"control_id": control["control_id"], "stopped": True},
+            identity,
+        )
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+        if errors:
+            raise errors[0]
+        return results[0]
 
     def test_message_command_uses_server_identity_and_is_deduplicated(self):
         first = self._command("req-message", "message.send", {"content": "@codex hello"})
@@ -398,13 +448,79 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             "agentsassemble.room_realtime.revoke_sessions_for_participant",
             return_value=1,
         ) as revoke_sessions:
-            stopped = self._command("external-stop", "agent.stop", {"agent_id": "external"})["result"]
+            stopped = self._confirmed_external_stop(identity, channel)["result"]
         self.assertEqual(self.manager.stops, [])
         self.assertEqual(stopped["process"]["ownership"], "external")
         self.assertEqual(stopped["revoked_sessions"], 1)
         revoke_sessions.assert_called_once_with("general", "external")
         self.assertEqual(RoomStore(self.root).session("general", "external")["reported_provider_pid"], 1)
         self.controller.disconnect(channel)
+
+    def test_external_stop_timeout_is_not_reported_as_stopped(self):
+        identity = _bridge_identity("external-timeout")
+        identity["provider_kind"] = "codex"
+        channel = self.controller.connect(identity)
+        self._command(
+            "external-timeout-ready",
+            "bridge.ready",
+            _external_ready_payload(),
+            identity,
+        )
+
+        with patch(
+            "agentsassemble.room_realtime.revoke_sessions_for_participant",
+            return_value=1,
+        ) as revoke_sessions:
+            with self.assertRaises(RoomCommandRejected) as timeout:
+                self._command(
+                    "external-timeout-stop",
+                    "agent.stop",
+                    {"agent_id": "external-timeout"},
+                )
+
+        stopped = RoomStore(self.root).session("general", "external-timeout")
+        self.assertEqual(timeout.exception.code, "external_stop_unconfirmed")
+        self.assertEqual(stopped["runtime_status"], "disconnected")
+        self.assertTrue(stopped["recovery_required"])
+        self.assertFalse(stopped["enabled"])
+        self.assertTrue(channel.closed)
+        revoke_sessions.assert_called_once_with("general", "external-timeout")
+
+    def test_stale_stop_confirmation_does_not_create_a_room(self):
+        identity = _bridge_identity("external-stale")
+        identity["meeting_id"] = "missing-room"
+
+        with self.assertRaises(RoomCommandRejected) as stale:
+            self._command(
+                "stale-stop-confirmation",
+                "bridge.stopped",
+                {"control_id": "stop-not-pending", "stopped": True},
+                identity,
+            )
+
+        self.assertEqual(stale.exception.code, "stale_stop_confirmation")
+        self.assertEqual(RoomStore(self.root).room("missing-room"), {})
+
+    def test_kick_revokes_a_nonresponsive_external_bridge_with_a_cleanup_warning(self):
+        identity = _bridge_identity("external-kick-timeout")
+        identity["provider_kind"] = "codex"
+        channel = self.controller.connect(identity)
+        self._command(
+            "external-kick-timeout-ready",
+            "bridge.ready",
+            _external_ready_payload(),
+            identity,
+        )
+
+        kicked = self._command(
+            "external-kick-timeout",
+            "participant.kick",
+            {"participant_id": "external-kick-timeout"},
+        )["result"]
+
+        self.assertEqual(kicked["participant"]["status"], "kicked")
+        self.assertIn("external_stop_unconfirmed", kicked["cleanup_warning"])
+        self.assertTrue(channel.closed)
 
     def test_server_shutdown_does_not_revoke_external_bridge_access(self):
         identity = _bridge_identity("external-shutdown")
@@ -468,7 +584,11 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 _external_ready_payload(pid=unrelated.pid),
                 identity,
             )
-            self._command("malicious-stop", "agent.stop", {"agent_id": "malicious-external"})
+            self._confirmed_external_stop(
+                identity,
+                channel,
+                request_id="malicious-stop",
+            )
             self.assertIsNone(unrelated.poll())
             self._command("malicious-kick", "participant.kick", {"participant_id": "malicious-external"})
             self.assertIsNone(unrelated.poll())
@@ -895,6 +1015,72 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse(artifact.exists())
         with self.assertRaises(ValueError):
             self.controller.ensure_room("general")
+
+    def test_room_delete_keeps_data_when_agent_cleanup_fails(self):
+        identity_store = identity_store_for_output_root(self.root)
+        identity_store.upsert_room(room_id="general", owner_id="owner-user", label="Council")
+        identity_store.resolve_credential_user(
+            "owner-device-cleanup",
+            user_id="owner-user",
+            participant_id="owner",
+            display_name="Owner",
+        )
+        owner = {**HOST, "agent_id": "owner"}
+        self.controller.connect(owner)
+        self._command("cleanup-start", "agent.start", {"agent_id": "codex"})
+        self.manager.stop_errors.append(RuntimeError("provider cleanup failed"))
+
+        with self.assertRaises(RoomCommandRejected) as blocked:
+            self._command(
+                "cleanup-delete",
+                "room.delete",
+                {"confirmation_name": "Council"},
+                owner,
+            )
+
+        self.assertEqual(blocked.exception.code, "room_cleanup_failed")
+        self.assertFalse(RoomStore(self.root).room_is_deleted("general"))
+        self.assertIsNotNone(identity_store.get_room("general"))
+        session = RoomStore(self.root).session("general", "codex")
+        self.assertEqual(session["runtime_status"], "disconnected")
+        self.assertTrue(session["recovery_required"])
+
+    def test_room_delete_revokes_disconnected_external_session_without_blocking(self):
+        identity_store = identity_store_for_output_root(self.root)
+        identity_store.upsert_room(room_id="general", owner_id="owner-user", label="Council")
+        identity_store.resolve_credential_user(
+            "owner-device-external-cleanup",
+            user_id="owner-user",
+            participant_id="owner",
+            display_name="Owner",
+        )
+        owner = {**HOST, "agent_id": "owner"}
+        self.controller.connect(owner)
+        self.controller.create_provider_session("general", _spec("external-disconnected"))
+        self.controller.store.update_session_fields(
+            "general",
+            "external-disconnected",
+            process_ownership="external",
+            external_owned=True,
+            runtime_status="disconnected",
+            recovery_required=True,
+        )
+
+        with patch(
+            "agentsassemble.room_realtime.revoke_sessions_for_participant",
+            return_value=1,
+        ) as revoke_sessions:
+            deleted = self._command(
+                "delete-disconnected-external",
+                "room.delete",
+                {"confirmation_name": "Council"},
+                owner,
+            )["result"]
+
+        self.assertTrue(deleted["deleted"])
+        self.assertIn("without claiming provider shutdown", deleted["cleanup_warnings"][0])
+        revoke_sessions.assert_called_once_with("general", "external-disconnected")
+        self.assertTrue(RoomStore(self.root).room_is_deleted("general"))
 
     def test_snapshot_capabilities_are_server_authoritative(self):
         operator_snapshot = self.controller.snapshot(HOST)

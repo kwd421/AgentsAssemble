@@ -593,7 +593,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertEqual(connect.call_count, 1)
-        runtime.stop.assert_called_once_with(timeout_seconds=2.0)
+        runtime.stop.assert_not_called()
 
     def test_attendee_rejects_an_agent_invite_without_an_explicit_provider(self):
         attendee = AgentAttendee(
