@@ -6,19 +6,18 @@ import signal
 import sys
 import threading
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
-from uuid import uuid4
 
 from agentsassemble.bridge_protocol import (
     BridgeProtocolError,
     BridgeReportRejected,
-    BridgeReportResponse,
     BridgeReportTimeout,
     TurnAssignmentEnvelope,
 )
+from agentsassemble.bridge_report_tracker import BridgeReportTracker
 from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
 from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
 from agentsassemble.provider_runtime_contracts import (
@@ -34,13 +33,6 @@ from agentsassemble.provider_runtime_config import (
 )
 from agentsassemble.provider_runtime_factory import runtime_from_config
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
-
-
-@dataclass
-class _PendingBridgeReport:
-    action: str
-    event: threading.Event = field(default_factory=threading.Event)
-    response: BridgeReportResponse | None = None
 
 
 class BridgeRuntime(Protocol):
@@ -80,10 +72,8 @@ class RoomAgentBridge:
         self._stop = threading.Event()
         self._worker_lock = threading.RLock()
         self._worker: threading.Thread | None = None
-        self._report_timeout_seconds = max(0.1, float(report_timeout_seconds))
+        self._report_tracker = BridgeReportTracker(timeout_seconds=report_timeout_seconds)
         self._runtime_profile = runtime_profile
-        self._report_lock = threading.RLock()
-        self._pending_reports: dict[str, _PendingBridgeReport] = {}
         self._diagnostics_lock = threading.RLock()
         self._activity_invalid_count = 0
         self._run_thread: threading.Thread | None = None
@@ -165,9 +155,7 @@ class RoomAgentBridge:
         self._stop.set()
 
     def _handle_message(self, message: dict[str, object]) -> None:
-        report = BridgeReportResponse.parse(message)
-        if report is not None:
-            self._resolve_report(report)
+        if self._report_tracker.resolve_message(message):
             return
         op = clean_lobby_text(message.get("op"), limit=64)
         if op == "turn.assign":
@@ -402,54 +390,24 @@ class RoomAgentBridge:
         *,
         wait_for_ack: bool = True,
     ) -> dict[str, object] | None:
-        request_id = f"bridge-{uuid4().hex[:20]}"
         if not wait_for_ack:
+            request_id = self._report_tracker.new_request_id()
             self.client.command(action, payload, request_id=request_id)
             return None
-        pending = _PendingBridgeReport(action=action)
-        with self._report_lock:
-            self._pending_reports[request_id] = pending
-        try:
-            self.client.command(action, payload, request_id=request_id)
-            response = self._wait_for_report(request_id, pending)
-        finally:
-            with self._report_lock:
-                self._pending_reports.pop(request_id, None)
-        if not response.accepted:
-            raise BridgeReportRejected(
-                response.message,
-                request_id=request_id,
-                action=action,
-                code=response.code,
-            )
-        return response.frame
+        pump = self._pump_report_messages if threading.current_thread() is self._run_thread else None
+        return self._report_tracker.request(
+            action,
+            send=lambda request_id: self.client.command(action, payload, request_id=request_id),
+            pump=pump,
+            is_closed=lambda: self.client.closed,
+            wait_interval_seconds=self.receive_sleep_seconds,
+        )
 
-    def _wait_for_report(
-        self,
-        request_id: str,
-        pending: _PendingBridgeReport,
-    ) -> BridgeReportResponse:
-        deadline = time.monotonic() + self._report_timeout_seconds
-        while not pending.event.is_set() and time.monotonic() < deadline and not self.client.closed:
-            if threading.current_thread() is self._run_thread:
-                messages = self.client.receive()
-                for message in messages:
-                    self._handle_message(message)
-                if not messages:
-                    pending.event.wait(min(self.receive_sleep_seconds, max(0.0, deadline - time.monotonic())))
-            else:
-                pending.event.wait(max(0.0, deadline - time.monotonic()))
-        if not pending.event.is_set() or pending.response is None:
-            raise BridgeReportTimeout(request_id=request_id, action=pending.action)
-        return pending.response
-
-    def _resolve_report(self, response: BridgeReportResponse) -> None:
-        with self._report_lock:
-            pending = self._pending_reports.get(response.request_id)
-            if pending is None:
-                return
-            pending.response = response
-            pending.event.set()
+    def _pump_report_messages(self) -> bool:
+        messages = self.client.receive()
+        for message in messages:
+            self._handle_message(message)
+        return bool(messages)
 
     def _fail_protocol(self, error: BridgeProtocolError) -> None:
         print(f"Agent Bridge protocol error: {error.code}", file=sys.stderr, flush=True)
