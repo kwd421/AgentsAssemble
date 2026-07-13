@@ -260,7 +260,7 @@ def _smoke_provider(
         start_request = client.command("agent.start", {"agent_id": spec.agent_id}, request_id=f"smoke-start-{spec.agent_id}-{uuid4().hex[:6]}")
         start_ack = _wait_ack(client, inbox, start_request, timeout_seconds=10.0)
         launch = dict(start_ack.get("result", {}).get("launch", {})) if isinstance(start_ack.get("result"), dict) else {}
-        manager_health = controller.bridge_manager.health("general", spec.agent_id) if controller.bridge_manager else {}
+        manager_health = controller.provider_process_health("general", spec.agent_id)
         bridge_pid = int(manager_health.get("bridge_pid") or 0)
         result["bridge_pid"] = bridge_pid or None
         session = _wait_session(controller, spec.agent_id, {"idle", "error"}, timeout_seconds=30.0)
@@ -506,7 +506,7 @@ def _smoke_agent_conversation(
             session = _wait_session(controller, spec.agent_id, {"idle", "error"}, timeout_seconds=30.0)
             if session.get("runtime_status") != "idle":
                 raise RuntimeError(f"{spec.agent_id}: {session.get('last_error') or 'provider did not become idle'}")
-            manager_health = controller.bridge_manager.health("general", spec.agent_id) if controller.bridge_manager else {}
+            manager_health = controller.provider_process_health("general", spec.agent_id)
             provider_result["bridge_pid"] = int(manager_health.get("bridge_pid") or 0) or None
             provider_pid = int(session.get("reported_provider_pid") or 0)
             if provider_pid <= 0:

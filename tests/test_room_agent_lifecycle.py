@@ -1,0 +1,197 @@
+import tempfile
+import threading
+import unittest
+from pathlib import Path
+
+from agentsassemble.cleanup_report import CleanupReport
+from agentsassemble.native_cli_providers import NativeCliProviderSpec
+from agentsassemble.room_agent_lifecycle import RoomAgentLifecycle
+from agentsassemble.room_event_broker import RoomEventBroker
+from agentsassemble.room_store import RoomStore
+
+
+class FakeBridgeManager:
+    def __init__(self) -> None:
+        self.starts: list[tuple[str, str]] = []
+        self.stops: list[tuple[str, str, str]] = []
+
+    def start(self, room_id, session, spec, *, server_url="", ticket_issuer=None):
+        self.starts.append((room_id, str(session["session_id"])))
+        return {
+            "bridge_pid": 321,
+            "bridge_handle_id": f"handle-{session['session_id']}",
+            "resolved_executable": f"/bin/{spec.agent_id}",
+            "runtime_profile_key": spec.runtime_profile_key(),
+            "runtime_reused": False,
+        }
+
+    def stop(self, room_id, session_id, *, timeout_seconds=2.0, handle_id=""):
+        self.stops.append((room_id, session_id, handle_id))
+        return {"stopped": True, "alive": False}
+
+    def health(self, room_id, session_id):
+        return {"running": not bool(self.stops), "room_id": room_id, "session_id": session_id}
+
+    def close(self):
+        return CleanupReport("fake_bridge_manager")
+
+
+class ScheduledCallback:
+    def __init__(self, callback):
+        self.callback = callback
+        self.cancelled = False
+
+    def cancel(self):
+        self.cancelled = True
+
+
+class ControlledScheduler:
+    def __init__(self) -> None:
+        self.pending: list[ScheduledCallback] = []
+
+    def __call__(self, _delay_seconds, callback):
+        scheduled = ScheduledCallback(callback)
+        self.pending.append(scheduled)
+        return scheduled
+
+    def run_next(self):
+        scheduled = self.pending.pop(0)
+        if not scheduled.cancelled:
+            scheduled.callback()
+
+
+class RoomAgentLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.store = RoomStore(self.root)
+        self.store.create_room("general", label="General")
+        self.store.upsert_participant(
+            "general",
+            {
+                "participant_id": "codex",
+                "display_name": "Codex",
+                "role": "agent",
+                "status": "joined",
+            },
+        )
+        self.store.upsert_session(
+            "general",
+            {
+                "session_id": "codex",
+                "participant_id": "codex",
+                "status": "detached",
+                "runtime_status": "stopped",
+                "enabled": False,
+                "process_ownership": "server",
+                "pending_event_ids": [],
+                "inflight_event_ids": [],
+            },
+        )
+        self.spec = NativeCliProviderSpec(
+            agent_id="codex",
+            display_name="Codex",
+            command=("codex",),
+            cwd=str(self.root),
+        )
+        self.manager = FakeBridgeManager()
+        self.broker = RoomEventBroker()
+        self.scheduler = ControlledScheduler()
+        self.published: list[dict[str, object]] = []
+        self.assigned: list[tuple[str, str]] = []
+        self.lifecycle = RoomAgentLifecycle(
+            store=self.store,
+            broker=self.broker,
+            bridge_manager=self.manager,
+            lock=threading.RLock(),
+            provider_lookup=lambda _room_id, _agent_id: self.spec,
+            ensure_provider_session=lambda _room_id, _spec: None,
+            revoke_participant_sessions=lambda _room_id, _participant_id: 0,
+            publish_session_state=lambda _room_id, session: self.published.append(dict(session)),
+            assign_pending=self._assign_pending,
+            is_closed=lambda: False,
+            recovery_delay_seconds=0.1,
+            external_stop_timeout_seconds=0.1,
+            recovery_scheduler=self.scheduler,
+        )
+
+    def tearDown(self):
+        self.broker.close()
+        self.temp.cleanup()
+
+    def _connect_bridge(self):
+        identity = {
+            "agent_id": "codex",
+            "session_id": "codex",
+            "client_type": "agent_bridge",
+            "meeting_id": "general",
+        }
+        channel = self.broker.connect(identity)
+        self.broker.activate_bridge(channel)
+        return channel
+
+    def _assign_pending(self, room_id, agent_id):
+        self.assigned.append((room_id, agent_id))
+        return True
+
+    def test_start_and_stop_use_the_owned_bridge_handle(self):
+        started = self.lifecycle.start("general", "codex", server_url="http://room", ticket_issuer=None)
+
+        self.assertFalse(started["runtime_reused"])
+        self.assertEqual(self.manager.starts, [("general", "codex")])
+        self.assertEqual(self.store.session("general", "codex")["bridge_handle_id"], "handle-codex")
+
+        stopped = self.lifecycle.stop("general", "codex")
+
+        self.assertEqual(self.manager.stops, [("general", "codex", "handle-codex")])
+        self.assertEqual(stopped["process"]["ownership"], "server")
+        self.assertTrue(stopped["process"]["confirmed"])
+        self.assertEqual(self.store.session("general", "codex")["runtime_status"], "stopped")
+
+    def test_pause_and_resume_preserve_the_connected_process(self):
+        self._connect_bridge()
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            status="attached",
+            runtime_status="idle",
+            enabled=True,
+        )
+
+        paused = self.lifecycle.pause("general", "codex")
+        resumed = self.lifecycle.resume("general", "codex", server_url="", ticket_issuer=None)
+
+        self.assertTrue(paused["process_preserved"])
+        self.assertTrue(resumed["process_reused"])
+        self.assertEqual(self.manager.starts, [])
+        self.assertEqual(self.manager.stops, [])
+        self.assertEqual(self.assigned, [("general", "codex")])
+        self.assertEqual(self.store.session("general", "codex")["runtime_status"], "idle")
+
+    def test_bridge_exit_requeues_inflight_work_and_schedules_one_restart(self):
+        self.lifecycle.start("general", "codex", server_url="http://room", ticket_issuer=None)
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            status="attached",
+            runtime_status="busy",
+            enabled=True,
+            inflight_event_ids=["evt-1"],
+            pending_event_ids=["evt-2"],
+        )
+
+        self.lifecycle.bridge_process_exited("general", "codex", 7, "provider crashed")
+
+        recovering = self.store.session("general", "codex")
+        self.assertEqual(recovering["runtime_status"], "recovering")
+        self.assertEqual(recovering["pending_event_ids"], ["evt-1", "evt-2"])
+        self.assertEqual(len(self.scheduler.pending), 1)
+
+        self.scheduler.run_next()
+
+        self.assertEqual(self.manager.starts, [("general", "codex"), ("general", "codex")])
+        self.assertEqual(self.store.session("general", "codex")["runtime_status"], "starting")
+
+
+if __name__ == "__main__":
+    unittest.main()
