@@ -6,7 +6,6 @@ import sqlite3
 import threading
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -21,17 +20,28 @@ from agentsassemble.room_database import (
 )
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
 from agentsassemble.room_repository import RoomTransaction
+from agentsassemble.room_repository_records import (
+    ACTIVE_PARTICIPANT_STATUSES,
+    build_room_event,
+    build_room_record,
+    clean_participant_id as _clean_participant_id,
+    clean_room_id as _clean_room_id,
+    clean_session_id as _clean_session_id,
+    merge_participant_record,
+    merge_session_record,
+    participant_status as _participant_status,
+    room_status as _room_status,
+    safe_media_filename as _safe_media_filename,
+    update_participant_record,
+    update_session_record,
+    utc_now as _now,
+)
 from agentsassemble.sqlite_attention_repository import (
     read_attention_jobs,
     read_attention_state,
     record_attention_evaluation,
     write_attention_state,
 )
-
-ROOM_STATUSES = {"active", "closed", "archived"}
-PARTICIPANT_STATUSES = {"joined", "left", "kicked", "exported", "detached"}
-SESSION_STATUSES = {"available", "attached", "detached", "unavailable", "error"}
-ACTIVE_PARTICIPANT_STATUSES = {"joined"}
 
 _STORE_REGISTRY_LOCK = threading.RLock()
 _STORE_LOCKS: dict[str, threading.RLock] = {}
@@ -703,7 +713,6 @@ class RoomStore:
         label: str,
         status: str,
     ) -> tuple[dict[str, object], bool]:
-        clean_status = _room_status(status)
         deleted = connection.execute(
             "SELECT deleted_at FROM deleted_rooms WHERE room_id = ?",
             (room_id,),
@@ -712,14 +721,7 @@ class RoomStore:
             raise ValueError(f"Room {room_id} was deleted and cannot be recreated implicitly.")
         row = connection.execute("SELECT data_json FROM rooms WHERE room_id = ?", (room_id,)).fetchone()
         existing = _row_payload(row)
-        now = _now()
-        room = {
-            "room_id": room_id,
-            "label": clean_lobby_text(label, limit=128) or str(existing.get("label") or ""),
-            "status": clean_status if existing.get("status") not in {"closed", "archived"} else existing["status"],
-            "created_at": str(existing.get("created_at") or now),
-            "updated_at": now,
-        }
+        room = build_room_record(room_id, label=label, status=status, existing=existing)
         connection.execute(
             """INSERT INTO rooms(room_id, label, status, archived, updated_at, data_json)
                VALUES(?, ?, ?, ?, ?, ?)
@@ -734,7 +736,7 @@ class RoomStore:
                 str(room["label"]),
                 str(room["status"]),
                 1 if room["status"] == "archived" else 0,
-                now,
+                str(room["updated_at"]),
                 _json_dumps(room),
             ),
         )
@@ -746,32 +748,13 @@ class RoomStore:
         room_id: str,
         participant: dict[str, object],
     ) -> tuple[dict[str, object], bool]:
-        participant_id = _clean_participant_id(
-            participant.get("participant_id") or participant.get("agent_id")
-        )
-        if not participant_id:
-            raise ValueError("participant_id is required.")
-        incoming = dict(participant)
-        incoming["room_id"] = room_id
-        incoming["participant_id"] = participant_id
-        incoming["status"] = _participant_status(incoming.get("status") or "joined")
-        incoming["display_name"] = clean_lobby_text(incoming.get("display_name"), limit=64) or participant_id
+        participant_id = _clean_participant_id(participant.get("participant_id") or participant.get("agent_id"))
         row = connection.execute(
             "SELECT data_json FROM participants WHERE room_id = ? AND participant_id = ?",
             (room_id, participant_id),
         ).fetchone()
         existing = _row_payload(row)
-        now = _now()
-        if existing:
-            updated = {
-                **existing,
-                **{key: value for key, value in incoming.items() if value not in ("", None, [], {})},
-                "updated_at": now,
-            }
-        else:
-            incoming.setdefault("created_at", now)
-            incoming["updated_at"] = now
-            updated = incoming
+        updated = merge_participant_record(room_id, participant, existing)
         self._write_participant(connection, updated)
         return updated, not bool(existing)
 
@@ -788,11 +771,7 @@ class RoomStore:
             (room_id, clean_participant_id),
         ).fetchone()
         participant = _row_payload(row)
-        if not participant:
-            raise ValueError(f"Participant {clean_participant_id} was not found.")
-        updated = {**participant, **updates, "updated_at": _now()}
-        if "status" in updates:
-            updated["status"] = _participant_status(updates.get("status"))
+        updated = update_participant_record(clean_participant_id, participant, dict(updates))
         self._write_participant(connection, updated)
         return updated
 
@@ -803,28 +782,12 @@ class RoomStore:
         session: dict[str, object],
     ) -> tuple[dict[str, object], bool]:
         session_id = _clean_session_id(session.get("session_id"))
-        if not session_id:
-            raise ValueError("session_id is required.")
-        incoming = dict(session)
-        incoming["room_id"] = room_id
-        incoming["session_id"] = session_id
-        incoming["status"] = _session_status(incoming.get("status") or "attached")
         row = connection.execute(
             "SELECT data_json FROM agent_sessions WHERE room_id = ? AND session_id = ?",
             (room_id, session_id),
         ).fetchone()
         existing = _row_payload(row)
-        now = _now()
-        if existing:
-            updated = {
-                **existing,
-                **{key: value for key, value in incoming.items() if value not in ("", None, [], {})},
-                "updated_at": now,
-            }
-        else:
-            incoming.setdefault("created_at", now)
-            incoming["updated_at"] = now
-            updated = incoming
+        updated = merge_session_record(room_id, session, existing)
         self._write_session(connection, updated)
         return updated, not bool(existing)
 
@@ -841,11 +804,7 @@ class RoomStore:
             (room_id, clean_session_id),
         ).fetchone()
         session = _row_payload(row)
-        if not session:
-            raise ValueError(f"Session {clean_session_id} was not found.")
-        updated = {**session, **updates, "updated_at": _now()}
-        if "status" in updates:
-            updated["status"] = _session_status(updates.get("status"))
+        updated = update_session_record(clean_session_id, session, dict(updates))
         self._write_session(connection, updated)
         return updated
 
@@ -903,51 +862,13 @@ class RoomStore:
         event_type: str,
         **payload: object,
     ) -> dict[str, object]:
-        clean_event_type = _clean_event_type(event_type)
         sequence = int(
             connection.execute(
                 "SELECT COALESCE(MAX(seq), 0) + 1 FROM room_events WHERE room_id = ?",
                 (room_id,),
             ).fetchone()[0]
         )
-        clean_payload = {
-            key: value
-            for key, value in payload.items()
-            if key not in {"v", "id", "seq", "room_id", "type", "created_at", "actor", "visibility"}
-            and value not in (None, "", [], {})
-        }
-        participant_id = clean_lobby_text(
-            payload.get("participant_id") or payload.get("actor_id"),
-            limit=128,
-        )
-        participant_type = clean_lobby_text(
-            payload.get("participant_type") or payload.get("actor_type"),
-            limit=32,
-        )
-        if participant_type == "user":
-            participant_type = "human"
-        if participant_id and not participant_type:
-            participant_type = "agent" if payload.get("participant_id") else "human"
-        visibility = clean_lobby_text(payload.get("visibility"), limit=32)
-        if visibility not in {VISIBLE, LEGACY_HIDDEN}:
-            visibility = VISIBLE
-        event: dict[str, object] = {
-            "v": 1,
-            "id": uuid4().hex[:12],
-            "seq": sequence,
-            "created_at": _now(),
-            "room_id": room_id,
-            "type": clean_event_type,
-            "actor": {
-                "participant_id": participant_id,
-                "participant_type": participant_type,
-            },
-            **clean_payload,
-        }
-        if visibility == VISIBLE:
-            event = _strip_private_event_fields(event)
-        if visibility != VISIBLE:
-            event["visibility"] = visibility
+        event, visibility, participant_id = build_room_event(room_id, event_type, sequence, dict(payload))
         connection.execute(
             """INSERT INTO room_events(
                    room_id, seq, event_id, event_type, actor_id, turn_id,
@@ -957,7 +878,7 @@ class RoomStore:
                 room_id,
                 sequence,
                 str(event["id"]),
-                clean_event_type,
+                str(event["type"]),
                 participant_id,
                 str(event.get("turn_id") or ""),
                 str(event["created_at"]),
@@ -1062,88 +983,9 @@ def _json_dumps(payload: object) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def _strip_private_event_fields(value: dict[str, object]) -> dict[str, object]:
-    hidden = {
-        "legacy_source_path",
-        "path",
-        "file_path",
-        "absolute_path",
-        "workspace",
-        "executable",
-        "argv",
-        "pid",
-        "bridge_pid",
-        "reported_provider_pid",
-        "provider_session_id",
-    }
-
-    def strip(item: object) -> object:
-        if isinstance(item, dict):
-            return {key: strip(child) for key, child in item.items() if key not in hidden}
-        if isinstance(item, list):
-            return [strip(child) for child in item]
-        return item
-
-    return dict(strip(value))
-
-
 def _database_signature(path: Path) -> tuple[int, int] | None:
     try:
         stat = path.stat()
     except OSError:
         return None
     return stat.st_dev, stat.st_ino
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _clean_room_id(value: object) -> str:
-    room_id = clean_lobby_text(value, limit=128)
-    if not room_id or room_id in {".", ".."} or "/" in room_id or "\\" in room_id or Path(room_id).name != room_id:
-        raise ValueError("room_id is required.")
-    return room_id
-
-
-def _clean_participant_id(value: object) -> str:
-    return clean_lobby_text(value, limit=128)
-
-
-def _clean_session_id(value: object) -> str:
-    return clean_lobby_text(value, limit=128)
-
-
-def _clean_event_type(value: object) -> str:
-    event_type = clean_lobby_text(value, limit=64)
-    if not event_type:
-        raise ValueError("event type is required.")
-    return event_type
-
-
-def _safe_media_filename(value: object) -> str:
-    name = Path(clean_lobby_text(value, limit=256)).name
-    if name in {"", ".", ".."}:
-        return ""
-    return name.replace("/", "_").replace("\\", "_")
-
-
-def _room_status(value: object) -> str:
-    status = clean_lobby_text(value, limit=32) or "active"
-    if status not in ROOM_STATUSES:
-        raise ValueError(f"Unsupported room status: {status}")
-    return status
-
-
-def _participant_status(value: object) -> str:
-    status = clean_lobby_text(value, limit=32) or "joined"
-    if status not in PARTICIPANT_STATUSES:
-        raise ValueError(f"Unsupported participant status: {status}")
-    return status
-
-
-def _session_status(value: object) -> str:
-    status = clean_lobby_text(value, limit=32) or "attached"
-    if status not in SESSION_STATUSES:
-        raise ValueError(f"Unsupported session status: {status}")
-    return status
