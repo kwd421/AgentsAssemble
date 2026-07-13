@@ -18,11 +18,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.attachments import (
     AttachmentError,
-    INLINE_SAFE_IMAGE_TYPES,
-    attachment_content_disposition,
     normalize_attachment_references,
-    read_attachment_file,
-    store_uploaded_attachment,
 )
 from agentsassemble.codex_sessions import (
     CODEX_LIVE_PROVIDER_ID,
@@ -58,6 +54,7 @@ from agentsassemble.gui_provider_http import (
     provider_catalog_payload,
     register_provider_routes,
 )
+from agentsassemble.gui_attachment_http import register_attachment_routes
 from agentsassemble.gui_mafia_http import register_mafia_routes
 from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
 from agentsassemble.gui_legacy_lobby_http import register_legacy_lobby_routes
@@ -324,7 +321,6 @@ from agentsassemble.side_chat import (
     _filter_side_chat_events_for_meeting,
     read_side_chat,
 )
-from agentsassemble.room_store import RoomStore
 from agentsassemble.models import ProviderConfig, Role
 from agentsassemble.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS, SSE_KEEPALIVE_INTERVAL_SECONDS
 
@@ -7393,6 +7389,7 @@ def _make_handler(
         ws_ticket_store=ws_ticket_store,
         is_local_operator=lambda ctx: ctx.handler._request_is_local_operator(),
     )
+    register_attachment_routes(route_table)
     register_room_routes(route_table)
     register_room_settings_routes(route_table)
     register_side_chat_routes(route_table)
@@ -7655,16 +7652,6 @@ def _make_handler(
             if path.startswith("/static/"):
                 self._send_error(HTTPStatus.NOT_FOUND, "Legacy static assets are retired.")
                 return
-            if path.startswith("/api/attachments/"):
-                attachment_id = unquote(path.removeprefix("/api/attachments/"))
-                try:
-                    metadata, file_path = read_attachment_file(output_root, attachment_id)
-                except AttachmentError as error:
-                    self._send_error(HTTPStatus.NOT_FOUND, str(error))
-                    return
-                inline = metadata.get("is_image") is True and "view" in query and "download" not in query
-                self._send_attachment_file(file_path, metadata, inline=inline)
-                return
             if path == "/api/meetings":
                 self._send_json({"meetings": list_meetings(output_root)})
                 return
@@ -7815,39 +7802,6 @@ def _make_handler(
             if parsed.path == "/api/demo":
                 result = run_demo_meeting(adapter_name="mock", output_root=output_root)
                 self._send_json({"meeting_id": result.meeting_id, "path": str(result.meeting_dir)})
-                return
-            if parsed.path == "/api/attachments":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                try:
-                    attachment = store_uploaded_attachment(output_root, payload)
-                except AttachmentError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                response = {"attachment": attachment}
-                room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
-                if room_id:
-                    try:
-                        _metadata, file_path = read_attachment_file(output_root, str(attachment.get("id") or ""))
-                        media = RoomStore(output_root).attach_media(
-                            room_id,
-                            filename=str(attachment.get("filename") or ""),
-                            content_type=str(attachment.get("content_type") or ""),
-                            data=file_path.read_bytes(),
-                            supported=str(attachment.get("content_type") or "") in INLINE_SAFE_IMAGE_TYPES,
-                        )
-                        response["room_media"] = media
-                    except (AttachmentError, OSError, ValueError) as error:
-                        self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                        return
-                self._send_json(response)
                 return
             if parsed.path == "/api/lobby/promote":
                 payload = self._operation_json_payload(operation=LOBBY_PROMOTION_OPERATION)

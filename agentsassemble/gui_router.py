@@ -125,6 +125,15 @@ class RequestContext:
             last_event_id=last_event_id,
         )
 
+    def send_attachment_file(
+        self,
+        file_path: Path,
+        metadata: dict[str, object],
+        *,
+        inline: bool,
+    ) -> None:
+        self.handler._send_attachment_file(file_path, metadata, inline=inline)
+
     # -- identity (R2-b): host / invited session / anonymous ---------------
     def bearer_token(self) -> str:
         auth = str(self.headers.get("Authorization") or "")
@@ -238,6 +247,13 @@ class Router:
     def post_dynamic(self, template: str) -> Callable[[DynamicRouteHandler], DynamicRouteHandler]:
         def register(handler: DynamicRouteHandler) -> DynamicRouteHandler:
             self.add_dynamic("POST", template, handler)
+            return handler
+
+        return register
+
+    def get_dynamic(self, template: str) -> Callable[[DynamicRouteHandler], DynamicRouteHandler]:
+        def register(handler: DynamicRouteHandler) -> DynamicRouteHandler:
+            self.add_dynamic("GET", template, handler)
             return handler
 
         return register

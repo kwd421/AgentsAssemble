@@ -12,7 +12,8 @@ GUI_ROUTE_MODULES = tuple(sorted((REPOSITORY_ROOT / "agentsassemble").glob("gui*
 DYNAMIC_ROUTE_HELPERS = {
     "_live_agent_process_action_path": ("POST", "/api/live-agent-processes/{group_id}/{action}"),
 }
-EXPECTED_LEGACY_DYNAMIC_ROUTES = {
+EXPECTED_DYNAMIC_ROUTES = {
+    ("GET", "/api/attachments/{attachment_id}"),
     ("POST", "/api/live-agent-processes/{group_id}/stop"),
     ("POST", "/api/live-agent-processes/{group_id}/restart"),
     ("POST", "/api/live-agent-processes/{group_id}/recover"),
@@ -108,12 +109,13 @@ def _dynamic_route_owners() -> dict[tuple[str, str], set[Path]]:
             def visit_Call(self, node: ast.Call) -> None:
                 if (
                     isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "post_dynamic"
+                    and node.func.attr in {"get_dynamic", "post_dynamic"}
                     and node.args
                     and isinstance(node.args[0], ast.Constant)
                     and isinstance(node.args[0].value, str)
                 ):
-                    owners[("POST", node.args[0].value)].add(source_path)
+                    method = node.func.attr.removesuffix("_dynamic").upper()
+                    owners[(method, node.args[0].value)].add(source_path)
                 helper_name = node.func.id if isinstance(node.func, ast.Name) else ""
                 route_family = DYNAMIC_ROUTE_HELPERS.get(helper_name)
                 if route_family and len(node.args) >= 2:
@@ -147,7 +149,7 @@ class GuiRouteOwnershipTests(unittest.TestCase):
     def test_dynamic_route_inventory_is_explicit_and_has_one_owner(self) -> None:
         owners = _dynamic_route_owners()
 
-        self.assertEqual(set(owners), EXPECTED_LEGACY_DYNAMIC_ROUTES)
+        self.assertEqual(set(owners), EXPECTED_DYNAMIC_ROUTES)
         self.assertTrue(all(len(route_owners) == 1 for route_owners in owners.values()))
 
     def test_dynamic_route_matcher_rejects_unsafe_segments_and_false_prefixes(self) -> None:

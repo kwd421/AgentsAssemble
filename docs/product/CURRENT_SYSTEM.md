@@ -127,6 +127,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Other provider process lifecycle | `room_bridge_process.py`, `live_cli.py`, provider adapter module |
 | Invites and attendance | `room_invite.py`, `room_attendee.py` |
 | Provider credentials | `provider_secrets.py`, provider credential routes |
+| Canonical attachment upload/download HTTP | `gui_attachment_http.py`; storage in `attachments.py`, room media in `room_store.py` |
 | GUI HTTP response/WebSocket transport | `gui_response.py`, `gui_ws_http.py`; composition in `gui.py` |
 | GUI Host/Origin and public-route trust policy | `gui_request_security.py` |
 | Durable legacy session-run monitor lifecycle | `session_run_monitor.py`; reconcile policy wiring in `gui.py` |
