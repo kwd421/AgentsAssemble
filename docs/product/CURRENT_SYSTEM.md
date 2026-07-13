@@ -43,7 +43,7 @@ RoomRealtimeController
 There is one authority for each concern:
 
 - room, participant, Agent Session, event, and command state:
-  controller-injected `RoomRepository` (`RoomStore` is the current SQLite implementation);
+  controller-injected `RoomRepository` (SQLite by default, or explicitly activated PostgreSQL);
 - live transport: canonical ticket-authenticated WebSocket;
 - browser state: canonical snapshot plus sequenced events;
 - provider process: one Agent Bridge and one persistent provider adapter;

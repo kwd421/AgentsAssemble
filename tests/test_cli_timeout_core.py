@@ -249,6 +249,39 @@ class CliTimeoutCoreTests(unittest.TestCase):
         self.assertEqual(kwargs["live_agent_max_restarts"], 3)
         self.assertEqual(kwargs["live_agent_restart_backoff_seconds"], 1.5)
         self.assertEqual(kwargs["live_agent_stale_restart_after_seconds"], 120.0)
+        self.assertEqual(kwargs["room_repository_backend"], "sqlite")
+
+    def test_gui_accepts_explicit_postgres_repository_environment(self):
+        with patch("agentsassemble.cli.serve_gui") as serve_gui:
+            exit_code = main(
+                [
+                    "gui",
+                    "--room-repository-backend",
+                    "postgresql",
+                    "--room-postgres-dsn-env",
+                    "ROOM_DATABASE_SECRET",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        kwargs = serve_gui.call_args.kwargs
+        self.assertEqual(kwargs["room_repository_backend"], "postgresql")
+        self.assertEqual(kwargs["room_postgres_dsn_env"], "ROOM_DATABASE_SECRET")
+
+    def test_gui_reports_unavailable_repository_without_traceback(self):
+        from agentsassemble.room_repository_factory import RoomRepositoryUnavailable
+
+        with patch(
+            "agentsassemble.cli.serve_gui",
+            side_effect=RoomRepositoryUnavailable("PostgreSQL room authority is not activated."),
+        ):
+            stderr = StringIO()
+            with patch("sys.stderr", stderr):
+                exit_code = main(["gui", "--room-repository-backend", "postgresql"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("authority is not activated", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_gui_accepts_public_invite_options(self):
         with patch("agentsassemble.cli.serve_gui") as serve_gui:

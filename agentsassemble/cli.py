@@ -111,6 +111,7 @@ from agentsassemble.live_agent_continuity_proof import (
 )
 from agentsassemble.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG
 from agentsassemble.room_native_cli_smoke import run_room_native_cli_smoke
+from agentsassemble.room_repository_factory import RoomRepositoryUnavailable
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.lobby_promotion import promote_lobby_events_to_official
@@ -244,6 +245,8 @@ def main(argv: list[str] | None = None) -> int:
                 host=args.host,
                 port=args.port,
                 output_root=Path(args.output_root),
+                room_repository_backend=args.room_repository_backend,
+                room_postgres_dsn_env=args.room_postgres_dsn_env,
                 public_url=args.public_url,
                 host_token=args.host_token,
                 unsafe_expose_control_plane=args.unsafe_expose_control_plane,
@@ -255,7 +258,7 @@ def main(argv: list[str] | None = None) -> int:
                 live_agent_restart_backoff_seconds=args.live_agent_restart_backoff_seconds,
                 live_agent_stale_restart_after_seconds=args.live_agent_stale_restart_after_seconds,
             )
-        except ValueError as error:
+        except (ValueError, RoomRepositoryUnavailable) as error:
             print(f"error: {error}", file=sys.stderr)
             if "non-loopback GUI bind" in str(error):
                 print("hint: bind to 127.0.0.1 and use the authenticated public tunnel", file=sys.stderr)

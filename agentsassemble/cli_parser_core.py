@@ -12,6 +12,10 @@ from agentsassemble.cli_parser_common import (
     parse_positive_int,
 )
 from agentsassemble.release_health import DEFAULT_RELEASE_HEALTH_TIMEOUT_SECONDS
+from agentsassemble.room_repository_factory import (
+    DEFAULT_POSTGRES_DSN_ENV,
+    ROOM_REPOSITORY_BACKENDS,
+)
 
 
 def register_core_parsers(subparsers: argparse._SubParsersAction) -> None:
@@ -53,6 +57,17 @@ def register_core_parsers(subparsers: argparse._SubParsersAction) -> None:
     gui.add_argument("--host", default="127.0.0.1")
     gui.add_argument("--port", type=int, default=8765)
     gui.add_argument("--output-root", default=".agentsassemble")
+    gui.add_argument(
+        "--room-repository-backend",
+        choices=sorted(ROOM_REPOSITORY_BACKENDS),
+        default="sqlite",
+        help="Canonical room storage backend. PostgreSQL must be migrated explicitly before startup.",
+    )
+    gui.add_argument(
+        "--room-postgres-dsn-env",
+        default=DEFAULT_POSTGRES_DSN_ENV,
+        help="Environment variable containing the PostgreSQL DSN; the DSN is never accepted on argv.",
+    )
     gui.add_argument("--public-url", default="", help="Public HTTP(S) base URL used for external /join?token= invite links.")
     gui.add_argument("--host-token", default="", help="Runtime host token for public invite management endpoints.")
     gui.add_argument(

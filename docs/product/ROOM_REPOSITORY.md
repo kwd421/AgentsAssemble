@@ -105,5 +105,8 @@ copies every canonical and attention table in one PostgreSQL transaction, and
 compares normalized table checksums plus per-room event sequence summaries
 before commit. The same transaction writes the PostgreSQL authority activation
 marker only after those checks pass. It never deletes or edits the SQLite
-source. GUI backend selection remains disabled until startup configuration is
-wired; the default continues to be SQLite.
+source. The GUI selects storage explicitly with
+`--room-repository-backend sqlite|postgresql`; PostgreSQL reads its DSN only
+from `--room-postgres-dsn-env`. Startup validates the head schema and authority
+marker and never auto-migrates or falls back to SQLite. SQLite remains the
+default.

@@ -269,6 +269,11 @@ from agentsassemble.room_friend_dms import (
 from agentsassemble.identity_store import default_identity_db_path
 from agentsassemble.room_members import is_room_member_muted, mark_thinking, room_members_payload
 from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room_repository_factory import (
+    DEFAULT_POSTGRES_DSN_ENV,
+    RoomRepositorySettings,
+    build_room_repository,
+)
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room_speech import (
     ActorIdentity,
@@ -1230,6 +1235,8 @@ def serve_gui(
     port: int = 8765,
     output_root: Path | None = None,
     *,
+    room_repository_backend: str = "sqlite",
+    room_postgres_dsn_env: str = DEFAULT_POSTGRES_DSN_ENV,
     public_url: str = "",
     host_token: str = "",
     unsafe_expose_control_plane: bool = False,
@@ -1249,6 +1256,11 @@ def serve_gui(
             "only on an isolated trusted network."
         )
     root = output_root or Path(".agentsassemble")
+    room_repository_settings = RoomRepositorySettings.from_environment(
+        backend=room_repository_backend,
+        postgres_dsn_env=room_postgres_dsn_env,
+    )
+    room_repository = build_room_repository(root, room_repository_settings)
     process_supervisor = LiveAgentProcessSupervisor(root)
     session_run_controller = LiveAgentSessionRunController(root)
     flow_supervisor = LiveAgentFlowSupervisor(root)
@@ -1267,6 +1279,7 @@ def serve_gui(
         flow_supervisor=flow_supervisor,
         frontend_dist_root=frontend_dist_root,
         public_tunnel_manager=public_tunnel_manager,
+        room_repository_override=room_repository,
     )
     server = ThreadingHTTPServer((host, port), handler)
     if not _is_loopback_host(host):
@@ -1301,7 +1314,11 @@ def serve_gui(
         session_run_monitor.start()
         if start_public_tunnel:
             public_tunnel_manager.start()
-        _print_gui_startup_banner(server_url, frontend_dist_root=frontend_dist_root)
+        _print_gui_startup_banner(
+            server_url,
+            frontend_dist_root=frontend_dist_root,
+            room_repository_backend=room_repository_settings.backend,
+        )
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nStopping AgentsAssemble GUI")
@@ -7240,10 +7257,16 @@ def _local_server_url(server_address: tuple[object, ...]) -> str:
     return f"http://{host}:{port}"
 
 
-def _print_gui_startup_banner(server_url: str, *, frontend_dist_root: Path | None = None) -> None:
+def _print_gui_startup_banner(
+    server_url: str,
+    *,
+    frontend_dist_root: Path | None = None,
+    room_repository_backend: str = "sqlite",
+) -> None:
     base_url = server_url.rstrip("/")
     dist_status = frontend_dist_status(frontend_dist_root)
     print(f"AgentsAssemble GUI: {base_url}")
+    print(f"- Room repository: {room_repository_backend}")
     if dist_status.static_available:
         print(f"- Operator console (default): {base_url}/ (React)")
         print(f"- Same Discord room client alias: {base_url}/app/")
