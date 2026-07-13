@@ -19,6 +19,7 @@ from typing import Callable
 from agentsassemble.room_websocket import (
     CLOSE_NORMAL,
     CLOSE_POLICY_VIOLATION,
+    CLOSE_PROTOCOL_ERROR,
     OP_CLOSE,
     OP_PING,
     OP_PONG,
@@ -184,9 +185,9 @@ class WsRoomSession:
         try:
             msg = json.loads(payload.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
-            return [self._error("bad_message", "Frame is not valid JSON.")]
+            return self._invalid_message("Frame is not valid JSON.")
         if not isinstance(msg, dict):
-            return [self._error("bad_message", "Message must be a JSON object.")]
+            return self._invalid_message("Message must be a JSON object.")
         op = str(msg.get("op") or "")
         if op == "subscribe":
             return self._on_subscribe(msg)
@@ -199,6 +200,13 @@ class WsRoomSession:
         if op == "ping":  # app-level ping (in addition to control-frame ping)
             return [encode_text(json.dumps({"op": "pong"}))]
         return [self._error("unknown_op", f"Unknown op: {op!r}")]
+
+    def _invalid_message(self, message: str) -> list[bytes]:
+        frames = [self._error("bad_message", message)]
+        if self.identity.get("client_type") == "agent_bridge":
+            self.closed = True
+            frames.append(encode_close(CLOSE_PROTOCOL_ERROR))
+        return frames
 
     def _on_thinking(self, msg: dict) -> list[bytes]:
         """A resident signals it started/finished generating. We mark its roster

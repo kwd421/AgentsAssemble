@@ -15,6 +15,7 @@ from agentsassemble.room_websocket import (
     OP_PING,
     OP_PONG,
     OP_TEXT,
+    WebSocketProtocolError,
     compute_accept_key,
     encode_frame,
     encode_text,
@@ -168,6 +169,26 @@ class ReceiveUnitTests(unittest.TestCase):
         # no queued data → recv returns b"" → closed
         self.assertEqual(client.receive(), [])
         self.assertTrue(client.closed)
+
+    def test_receive_invalid_server_json_closes_instead_of_ignoring_it(self):
+        client, sock = self._opened()
+        sock.queue_recv(encode_text("{not json"))
+
+        with self.assertRaisesRegex(WebSocketProtocolError, "invalid JSON"):
+            client.receive()
+
+        self.assertTrue(client.closed)
+        self.assertTrue(sock.closed)
+
+    def test_receive_non_object_server_json_closes_as_a_protocol_error(self):
+        client, sock = self._opened()
+        sock.queue_recv(encode_text(json.dumps(["not", "an", "object"])))
+
+        with self.assertRaisesRegex(WebSocketProtocolError, "JSON object"):
+            client.receive()
+
+        self.assertTrue(client.closed)
+        self.assertTrue(sock.closed)
 
 
 class LiveRoundTripTests(unittest.TestCase):

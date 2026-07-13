@@ -1699,6 +1699,61 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse((self.root / "rooms" / "general" / "live_cli_events.jsonl").exists())
         self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "idle")
 
+    def test_bridge_turn_phase_rejects_unknown_values_and_regression(self):
+        self._command("phase-start", "agent.start", {"agent_id": "codex"})
+        identity, channel = self._connect_bridge()
+        self._command("phase-prompt", "message.send", {"content": "@codex hello"})
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+        store = RoomStore(self.root)
+
+        with self.assertRaises(RoomCommandRejected) as unknown:
+            self._command(
+                "phase-unknown",
+                "turn.state",
+                {"turn_id": assignment["turn_id"], "phase": "waiting"},
+                identity,
+            )
+        self.assertEqual(unknown.exception.code, "turn_phase_invalid")
+        self.assertEqual(store.session("general", "codex")["turn_phase"], "thinking")
+
+        self._command(
+            "phase-delta",
+            "message.delta",
+            {"turn_id": assignment["turn_id"], "content": "hello"},
+            identity,
+        )
+        with self.assertRaises(RoomCommandRejected) as regressed:
+            self._command(
+                "phase-regression",
+                "turn.state",
+                {"turn_id": assignment["turn_id"], "phase": "thinking"},
+                identity,
+            )
+        self.assertEqual(regressed.exception.code, "turn_phase_invalid")
+        self.assertEqual(store.session("general", "codex")["turn_phase"], "streaming")
+
+    def test_bridge_terminal_report_rejects_a_corrupt_active_phase(self):
+        self._command("corrupt-phase-start", "agent.start", {"agent_id": "codex"})
+        identity, channel = self._connect_bridge()
+        self._command("corrupt-phase-prompt", "message.send", {"content": "@codex hello"})
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+        store = RoomStore(self.root)
+        store.update_session_fields("general", "codex", turn_phase="")
+        before = len(store.read_events("general"))
+
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self._command(
+                "corrupt-phase-final",
+                "message.final",
+                {"turn_id": assignment["turn_id"], "content": "must not publish"},
+                identity,
+            )
+
+        self.assertEqual(rejected.exception.code, "turn_phase_invalid")
+        events = store.read_events("general")
+        self.assertEqual(len(events), before)
+        self.assertFalse(any(event.get("content") == "must not publish" for event in events))
+
     def test_invalid_bridge_activity_is_rejected_without_an_event(self):
         self._command("req-start-invalid-activity", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()

@@ -1731,7 +1731,8 @@ class RoomRealtimeController:
 
     def _turn_state(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         agent_id, session = self._active_bridge_turn(identity, room_id, payload)
-        phase = clean_lobby_text(payload.get("phase"), limit=32) or "thinking"
+        phase = clean_lobby_text(payload.get("phase"), limit=32)
+        _validate_turn_phase_transition(session, phase)
         latency = _merged_latency(session.get("latency"), payload.get("latency"))
         updated = self.store.update_session_fields(
             room_id,
@@ -1753,10 +1754,11 @@ class RoomRealtimeController:
 
     def _message_delta(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         agent_id, session = self._active_bridge_turn(identity, room_id, payload)
+        current_phase = _require_active_turn_phase(session)
         content = _message_delta_text(payload.get("content"), limit=12000)
         if not has_room_visible_text(content):
             raise RoomCommandRejected("Delta content is required.", code="empty")
-        if session.get("turn_phase") != "streaming":
+        if current_phase != "streaming":
             self.store.update_session_fields(room_id, str(session["session_id"]), turn_phase="streaming")
             self.store.append_event(
                 room_id,
@@ -1784,6 +1786,7 @@ class RoomRealtimeController:
         payload: dict[str, object],
     ) -> dict[str, object]:
         agent_id, session = self._active_bridge_turn(identity, room_id, payload)
+        _require_active_turn_phase(session)
         category = clean_lobby_text(payload.get("category"), limit=32)
         status = clean_lobby_text(payload.get("status"), limit=32)
         if category not in _PUBLIC_ACTIVITY_LABELS or status not in {"started", "running", "completed"}:
@@ -1811,6 +1814,7 @@ class RoomRealtimeController:
 
     def _message_final(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         agent_id, session = self._active_bridge_turn(identity, room_id, payload)
+        _require_active_turn_phase(session)
         content = _room_message_text(payload.get("content"), limit=12000)
         active_turn_id = str(session["active_turn_id"])
         input_up_to_event_id = clean_lobby_text(session.get("input_up_to_event_id"), limit=128)
@@ -1926,6 +1930,7 @@ class RoomRealtimeController:
         payload: dict[str, object],
     ) -> dict[str, object]:
         _agent_id, session = self._active_bridge_turn(identity, room_id, payload)
+        _require_active_turn_phase(session)
         reason_code = clean_lobby_text(payload.get("reason_code"), limit=64)
         if reason_code not in SUPPORTED_DECLINE_REASONS:
             raise RoomCommandRejected("A supported decline reason is required.", code="invalid_decline_reason")
@@ -2005,12 +2010,18 @@ class RoomRealtimeController:
 
     def _turn_failed(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         agent_id, session = self._active_bridge_turn(identity, room_id, payload)
+        _require_active_turn_phase(session)
         interrupted = clean_lobby_text(payload.get("status"), limit=32) == "interrupted"
         requested_error_code = clean_lobby_text(payload.get("error_code"), limit=64)
         error_code = (
             requested_error_code
             if requested_error_code
-            in {"adapter_contract_error", "empty_provider_final", "provider_model_mismatch"}
+            in {
+                "adapter_contract_error",
+                "empty_provider_final",
+                "provider_model_mismatch",
+                "provider_model_unobserved",
+            }
             else ("interrupted" if interrupted else "provider_turn_failed")
         )
         content = clean_lobby_text(payload.get("message") or payload.get("content"), limit=4000) or "Provider turn failed."
@@ -2701,6 +2712,32 @@ def _merged_latency(existing: object, incoming: object) -> dict[str, object]:
     if isinstance(incoming, dict):
         base.update({key: value for key, value in incoming.items() if value not in (None, "")})
     return base
+
+
+_ACTIVE_TURN_PHASES = frozenset({"thinking", "streaming"})
+_TURN_PHASE_TRANSITIONS = {
+    "thinking": frozenset({"thinking", "streaming"}),
+    "streaming": frozenset({"streaming"}),
+}
+
+
+def _require_active_turn_phase(session: dict[str, object]) -> str:
+    phase = clean_lobby_text(session.get("turn_phase"), limit=32)
+    if phase not in _ACTIVE_TURN_PHASES:
+        raise RoomCommandRejected(
+            "The active turn has an invalid phase.",
+            code="turn_phase_invalid",
+        )
+    return phase
+
+
+def _validate_turn_phase_transition(session: dict[str, object], phase: str) -> None:
+    current = _require_active_turn_phase(session)
+    if phase not in _ACTIVE_TURN_PHASES or phase not in _TURN_PHASE_TRANSITIONS[current]:
+        raise RoomCommandRejected(
+            f"Turn phase cannot transition from {current} to {phase or 'empty'}.",
+            code="turn_phase_invalid",
+        )
 
 
 def _runtime_diagnostic_fields(diagnostics: object) -> dict[str, object]:

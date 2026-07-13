@@ -165,10 +165,22 @@ class WsRoomClient:
                 self.closed = True
             elif opcode == OP_TEXT:
                 try:
-                    out.append(json.loads(payload.decode("utf-8")))
-                except (ValueError, UnicodeDecodeError):
-                    continue
+                    message = json.loads(payload.decode("utf-8"))
+                except (ValueError, UnicodeDecodeError) as error:
+                    self._close_protocol_connection()
+                    raise WebSocketProtocolError("Server sent invalid JSON.") from error
+                if not isinstance(message, dict):
+                    self._close_protocol_connection()
+                    raise WebSocketProtocolError("Server message must be a JSON object.")
+                out.append(message)
         return out
+
+    def _close_protocol_connection(self) -> None:
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+        self.closed = True
 
     def _wait_for_say_ack(self, *, ack_rounds: int) -> dict:
         for _ in range(max(1, int(ack_rounds))):

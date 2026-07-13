@@ -355,6 +355,20 @@ class ControlAndMiscTests(unittest.TestCase):
         sess = _session(FakeDeps())
         msgs = text_messages(sess.handle_frame(OP_TEXT, b"{not json"))
         self.assertEqual(msgs[0]["category"], "bad_message")
+        self.assertFalse(sess.closed)
+
+    def test_bad_agent_bridge_json_errors_and_closes_the_protocol(self):
+        sess = _session(
+            FakeDeps(),
+            participant_type="agent",
+            client_type="agent_bridge",
+        )
+
+        frames = sess.handle_frame(OP_TEXT, b"{not json")
+
+        self.assertEqual(text_messages(frames)[0]["category"], "bad_message")
+        self.assertEqual([opcode for opcode, _ in server_frames(frames)], [OP_TEXT, OP_CLOSE])
+        self.assertTrue(sess.closed)
 
     def test_unknown_op_errors(self):
         sess = _session(FakeDeps())
