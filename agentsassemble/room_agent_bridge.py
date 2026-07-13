@@ -305,6 +305,10 @@ class RoomAgentBridge:
                 {
                     "turn_id": turn_id,
                     "content": final_content,
+                    "observed_model_id": clean_lobby_text(
+                        result.metadata.get("observed_model_id"),
+                        limit=128,
+                    ),
                     "message_source": result.metadata.get("message_source")
                     or result.metadata.get("source_kind")
                     or "terminal",

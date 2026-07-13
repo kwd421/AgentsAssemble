@@ -93,6 +93,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                                 "type": "assistant",
                                 "message": {
                                     "role": "assistant",
+                                    "model": "claude-sonnet-4-6",
                                     "content": [
                                         {"type": "thinking", "thinking": "private reasoning"},
                                         {"type": "tool_use", "name": "Read", "input": {"path": "/tmp/noise"}},
@@ -112,6 +113,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
         self.assertTrue(snapshot.complete)
         self.assertEqual(snapshot.content, "clean claude answer")
         self.assertEqual(snapshot.source_kind, "claude_session_jsonl")
+        self.assertEqual(snapshot.observed_model_id, "claude-sonnet-4-6")
 
     def test_claude_source_reports_api_error_instead_of_exposing_it_as_room_message(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -628,6 +630,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                                 "source": "MODEL",
                                 "type": "PLANNER_RESPONSE",
                                 "status": "DONE",
+                                "model": "Gemini 3.5 Flash (Medium)",
                                 "content": "clean antigravity answer",
                                 "thinking": "do not show as message",
                             }
@@ -642,6 +645,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
 
         self.assertTrue(snapshot.complete)
         self.assertEqual(snapshot.content, "clean antigravity answer")
+        self.assertEqual(snapshot.observed_model_id, "Gemini 3.5 Flash (Medium)")
 
     def test_antigravity_source_matches_delivered_input_inside_provider_metadata_wrapper(self):
         with tempfile.TemporaryDirectory() as temp_dir:

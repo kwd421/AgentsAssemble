@@ -541,6 +541,7 @@ class LiveCliRuntime:
             "metadata": {
                 "message_source": snapshot.source_kind,
                 "message_source_path": snapshot.source,
+                "observed_model_id": snapshot.observed_model_id,
             },
         }
 

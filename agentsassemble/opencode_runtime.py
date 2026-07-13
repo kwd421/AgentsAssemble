@@ -163,6 +163,7 @@ class OpenCodeRuntime:
         part_types: dict[str, str] = {}
         buffered_deltas: dict[tuple[str, str], list[str]] = {}
         emitted = ""
+        observed_model_id = ""
         activity_states: set[tuple[str, str]] = set()
         reasoning_active = False
 
@@ -219,6 +220,19 @@ class OpenCodeRuntime:
                     info = properties.get("info") if isinstance(properties.get("info"), dict) else {}
                     message_id = str(info.get("id") or "")
                     if str(info.get("role") or "") == "assistant" and message_id:
+                        model_value = info.get("model") if isinstance(info.get("model"), dict) else {}
+                        observed_provider = clean_lobby_text(
+                            info.get("providerID") or model_value.get("providerID"),
+                            limit=128,
+                        )
+                        observed_model = clean_lobby_text(
+                            info.get("modelID") or model_value.get("modelID") or model_value.get("id"),
+                            limit=128,
+                        )
+                        if observed_provider and observed_model:
+                            observed_model_id = f"{observed_provider}/{observed_model}"
+                        elif observed_model:
+                            observed_model_id = observed_model
                         assistant_message_ids.add(message_id)
                         for buffered_message_id, part_id in list(buffered_deltas):
                             if buffered_message_id == message_id:
@@ -270,7 +284,11 @@ class OpenCodeRuntime:
                 "actor_type": "agent",
                 "kind": "agent_message",
                 "content": content,
-                "metadata": {"message_source": "opencode_sse", "model": self.model},
+                "metadata": {
+                    "message_source": "opencode_sse",
+                    "model": self.model,
+                    "observed_model_id": observed_model_id,
+                },
             }
         except Exception as error:
             with self._lock:

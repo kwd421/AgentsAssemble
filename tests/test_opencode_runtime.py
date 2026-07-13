@@ -31,7 +31,17 @@ class OpenCodeRuntimeTests(unittest.TestCase):
         message_id = "message-1"
         stream = _Response(
             lines=[
-                _event("message.updated", {"sessionID": session_id, "info": {"id": message_id, "role": "assistant"}}),
+                _event(
+                    "message.updated",
+                    {
+                        "sessionID": session_id,
+                        "info": {
+                            "id": message_id,
+                            "role": "assistant",
+                            "model": {"providerID": "opencode-go", "modelID": "glm-5.2"},
+                        },
+                    },
+                ),
                 _event(
                     "message.part.updated",
                     {"sessionID": session_id, "part": {"id": "reasoning-1", "messageID": message_id, "type": "reasoning"}},
@@ -112,6 +122,7 @@ class OpenCodeRuntimeTests(unittest.TestCase):
 
         self.assertEqual("".join(deltas), "visible reply")
         self.assertEqual(result["content"], "visible reply")
+        self.assertEqual(result["metadata"]["observed_model_id"], "opencode-go/glm-5.2")
         self.assertNotIn("hidden plan", "".join(deltas))
         self.assertEqual(
             activities,

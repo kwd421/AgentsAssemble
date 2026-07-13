@@ -399,7 +399,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             captured["body"] = json.loads(request.data)
             return io.BytesIO(
                 b'data: {"choices":[{"delta":{"reasoning_content":"private"}}]}\n\n'
-                b'data: {"choices":[{"delta":{"content":"hello"}}]}\n\n'
+                b'data: {"model":"deepseek-v4-flash","choices":[{"delta":{"content":"hello"}}]}\n\n'
                 b'data: [DONE]\n\n'
             )
 
@@ -409,6 +409,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         result = runtime.read_output(timeout_seconds=2, on_delta=deltas.append)
 
         self.assertEqual(result["content"], "hello")
+        self.assertEqual(result["metadata"]["observed_model_id"], "deepseek-v4-flash")
         self.assertEqual(deltas, ["hello"])
         self.assertNotIn("private", json.dumps(result))
         self.assertNotIn("sk-private", json.dumps(runtime.health()))

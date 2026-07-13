@@ -64,7 +64,10 @@ class FakeRuntime:
         return {
             "outcome": "message",
             "content": "clean final",
-            "metadata": {"message_source": "fake-transcript"},
+            "metadata": {
+                "message_source": "fake-transcript",
+                "observed_model_id": "gpt-test-observed",
+            },
         }
     def interrupt(self):
         self.interrupted = True
@@ -268,6 +271,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
         finals = [payload for action, payload, _ in client.commands if action == "message.final"]
         self.assertEqual([payload["content"] for payload in finals], ["clean final", "clean final"])
         self.assertTrue(all(payload["message_source"] == "fake-transcript" for payload in finals))
+        self.assertTrue(all(payload["observed_model_id"] == "gpt-test-observed" for payload in finals))
         activities = [payload for action, payload, _ in client.commands if action == "activity.update"]
         self.assertEqual(
             activities,

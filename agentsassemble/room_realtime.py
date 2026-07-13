@@ -256,6 +256,7 @@ class RoomRealtimeController:
                 )
             self._providers_by_room.setdefault(clean_room_id, {})[spec.agent_id] = spec
             self._ensure_provider_session(clean_room_id, spec)
+            self.store.update_session_fields(clean_room_id, spec.agent_id, observed_model_id="")
             updated = self.store.session(clean_room_id, spec.agent_id)
             self.store.append_event(
                 clean_room_id,
@@ -1553,7 +1554,6 @@ class RoomRealtimeController:
             is_one_shot=bool(payload.get("is_one_shot", False)),
             started_at=health.started_at,
             last_error="",
-            **_runtime_profile_fields(payload, include_model=False),
             **_runtime_diagnostic_fields(payload),
         )
         if previous_participant.get("status") != "joined":
@@ -1584,7 +1584,6 @@ class RoomRealtimeController:
         if "pid" in payload:
             fields["reported_provider_pid"] = _safe_int_or_none(payload.get("pid"))
         fields.update(_runtime_diagnostic_fields(payload))
-        fields.update(_runtime_profile_fields(payload))
         updated = self.store.update_session_fields(room_id, str(session["session_id"]), **fields)
         self._publish_session_state(room_id, updated)
         return {"agent_session": self._public_session(updated)}
@@ -1673,6 +1672,34 @@ class RoomRealtimeController:
         relay_depth = int(session.get("active_relay_depth") or 0)
         latency = _merged_latency(session.get("latency"), payload.get("latency"))
         diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
+        observed_model_id = clean_lobby_text(payload.get("observed_model_id"), limit=128)
+        requested_model_id = clean_lobby_text(
+            session.get("requested_model_id") or session.get("model"),
+            limit=128,
+        )
+        selection_kind = clean_lobby_text(session.get("model_selection_kind"), limit=16) or "exact"
+        if (
+            observed_model_id
+            and requested_model_id
+            and selection_kind == "exact"
+            and observed_model_id != requested_model_id
+        ):
+            self._turn_failed(
+                identity,
+                room_id,
+                {
+                    "turn_id": active_turn_id,
+                    "message": (
+                        f"Provider reported model {observed_model_id}, but the session requested {requested_model_id}."
+                    ),
+                    "error_code": "provider_model_mismatch",
+                    "diagnostics": diagnostics,
+                },
+            )
+            raise RoomCommandRejected(
+                "Provider used a different model than the exact session selection.",
+                code="provider_model_mismatch",
+            )
         if not has_room_visible_text(content):
             self._turn_failed(
                 identity,
@@ -1687,6 +1714,12 @@ class RoomRealtimeController:
             raise RoomCommandRejected(
                 "Provider final message was empty.",
                 code="empty_provider_final",
+            )
+        if observed_model_id:
+            self.store.update_session_fields(
+                room_id,
+                str(session["session_id"]),
+                observed_model_id=observed_model_id,
             )
         event = self.store.append_event(
             room_id,
@@ -1806,7 +1839,8 @@ class RoomRealtimeController:
         requested_error_code = clean_lobby_text(payload.get("error_code"), limit=64)
         error_code = (
             requested_error_code
-            if requested_error_code in {"adapter_contract_error", "empty_provider_final"}
+            if requested_error_code
+            in {"adapter_contract_error", "empty_provider_final", "provider_model_mismatch"}
             else ("interrupted" if interrupted else "provider_turn_failed")
         )
         content = clean_lobby_text(payload.get("message") or payload.get("content"), limit=4000) or "Provider turn failed."
@@ -2266,6 +2300,7 @@ class RoomRealtimeController:
                 "workspace": str(Path(spec.cwd).expanduser().resolve()),
                 "model": spec.model,
                 "requested_model_id": spec.requested_model_id or spec.model,
+                "observed_model_id": "",
                 "model_selection_kind": spec.model_selection_kind,
                 "catalog_revision": spec.catalog_revision,
                 "reasoning_effort": spec.reasoning_effort,
@@ -2472,25 +2507,6 @@ def _runtime_diagnostic_fields(diagnostics: object) -> dict[str, object]:
         "message_source": clean_lobby_text(values.get("message_source"), limit=128),
         "message_source_strict": bool(values.get("message_source_strict", False)),
     }
-
-
-def _runtime_profile_fields(values: object, *, include_model: bool = True) -> dict[str, object]:
-    payload = values if isinstance(values, dict) else {}
-    limits = {
-        "model": 128,
-        "reasoning_effort": 32,
-        "service_tier": 32,
-        "variant": 64,
-        "permission_mode": 64,
-    }
-    fields: dict[str, object] = {}
-    for key, limit in limits.items():
-        if key == "model" and not include_model:
-            continue
-        value = clean_lobby_text(payload.get(key), limit=limit)
-        if value:
-            fields[key] = value
-    return fields
 
 
 def _public_runtime_diagnostics(diagnostics: object) -> dict[str, object]:

@@ -310,6 +310,7 @@ class GrokAcpRuntime:
                         "message_source": "grok_acp",
                         "source_kind": "grok_acp",
                         "stop_reason": result.get("stopReason") or "",
+                        "observed_model_id": self._model,
                     },
                 }
             raise TimeoutError(f"Grok ACP runtime timed out after {timeout_seconds} seconds.")

@@ -93,6 +93,7 @@ class DeepSeekApiRuntime:
             method="POST",
         )
         content_parts: list[str] = []
+        observed_model_id = ""
         try:
             response = self._opener(request, timeout=max(1.0, float(timeout_seconds)))
             with self._lock:
@@ -107,6 +108,8 @@ class DeepSeekApiRuntime:
                 if data == "[DONE]":
                     break
                 chunk = json.loads(data)
+                if isinstance(chunk, dict):
+                    observed_model_id = clean_lobby_text(chunk.get("model"), limit=128) or observed_model_id
                 choices = chunk.get("choices") if isinstance(chunk, dict) else None
                 delta = choices[0].get("delta") if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
                 text = str(delta.get("content") or "") if isinstance(delta, dict) else ""
@@ -129,7 +132,11 @@ class DeepSeekApiRuntime:
                 "actor_type": "agent",
                 "kind": "agent_message",
                 "content": content,
-                "metadata": {"message_source": "deepseek_sse", "model": self.model},
+                "metadata": {
+                    "message_source": "deepseek_sse",
+                    "model": self.model,
+                    "observed_model_id": observed_model_id,
+                },
             }
         except Exception as error:
             with self._lock:

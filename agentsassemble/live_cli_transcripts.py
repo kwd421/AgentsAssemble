@@ -23,6 +23,7 @@ class LiveCliMessageSnapshot:
     complete: bool = False
     source: str = ""
     source_kind: str = ""
+    observed_model_id: str = ""
     error: str = ""
 
 
@@ -262,17 +263,23 @@ class GrokSessionMessageSource(_JsonlOffsetMessageSource):
 
     def _extract_from_text(self, text: str, *, source: str) -> LiveCliMessageSnapshot:
         latest = ""
+        observed_model_id = ""
         for entry in _jsonl_objects(text):
             if str(entry.get("type") or "") != "assistant":
                 continue
             content = entry.get("content")
             if isinstance(content, str):
                 latest = _clean_grok_assistant_content(content)
+                observed_model_id = clean_lobby_text(
+                    entry.get("model") or entry.get("model_id") or entry.get("modelId"),
+                    limit=128,
+                ) or observed_model_id
         return LiveCliMessageSnapshot(
             content=latest,
             complete=bool(latest),
             source=source if latest else "",
             source_kind=self.source_kind,
+            observed_model_id=observed_model_id,
         )
 
     def _turn_input_texts(self, text: str) -> list[str]:
@@ -314,6 +321,7 @@ class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
 
     def _extract_from_text(self, text: str, *, source: str) -> LiveCliMessageSnapshot:
         latest = ""
+        observed_model_id = ""
         for entry in _jsonl_objects(text):
             if str(entry.get("source") or "") != "MODEL":
                 continue
@@ -324,11 +332,16 @@ class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
             content = clean_lobby_text(entry.get("content"), limit=12000)
             if content:
                 latest = content
+                observed_model_id = clean_lobby_text(
+                    entry.get("model") or entry.get("model_id") or entry.get("modelId"),
+                    limit=128,
+                ) or observed_model_id
         return LiveCliMessageSnapshot(
             content=latest,
             complete=bool(latest),
             source=source if latest else "",
             source_kind=self.source_kind,
+            observed_model_id=observed_model_id,
         )
 
     def _turn_input_texts(self, text: str) -> list[str]:
@@ -358,6 +371,7 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
 
     def _extract_from_text(self, text: str, *, source: str) -> LiveCliMessageSnapshot:
         messages: list[str] = []
+        observed_model_id = ""
         for entry in _jsonl_objects(text):
             if str(entry.get("type") or "") != "assistant":
                 continue
@@ -367,6 +381,10 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
                 raise LiveCliMessageExtractionError(detail or "Claude Code provider authentication failed.")
             if str(message.get("role") or "assistant") != "assistant":
                 continue
+            observed_model_id = clean_lobby_text(
+                message.get("model") or entry.get("model") or entry.get("model_id"),
+                limit=128,
+            ) or observed_model_id
             content = message.get("content")
             if isinstance(content, str):
                 piece = clean_lobby_text(content, limit=12000)
@@ -387,6 +405,7 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
             complete=bool(result),
             source=source if result else "",
             source_kind=self.source_kind,
+            observed_model_id=observed_model_id,
         )
 
     def _turn_input_texts(self, text: str) -> list[str]:

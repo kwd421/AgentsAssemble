@@ -614,6 +614,72 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         errors = [event for event in RoomStore(self.root).read_events("general") if event["type"] == "error"]
         self.assertEqual(errors[-1]["error_code"], "empty_provider_final")
 
+    def test_exact_model_mismatch_fails_before_publishing_message(self):
+        RoomStore(self.root).update_session_fields(
+            "general",
+            "codex",
+            model="gpt-exact-requested",
+            requested_model_id="gpt-exact-requested",
+            observed_model_id="",
+            model_selection_kind="exact",
+        )
+        identity, channel = self._connect_bridge("codex")
+        self._command("model-mismatch-topic", "message.send", {"content": "@codex answer"})
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self._command(
+                "model-mismatch-final",
+                "message.final",
+                {
+                    "turn_id": assignment["turn_id"],
+                    "content": "must not be published",
+                    "observed_model_id": "gpt-different-observed",
+                },
+                identity,
+            )
+
+        self.assertEqual(rejected.exception.code, "provider_model_mismatch")
+        events = RoomStore(self.root).read_events("general")
+        self.assertFalse(
+            any(event["type"] == "message_final" and event.get("content") == "must not be published" for event in events)
+        )
+        self.assertEqual(
+            next(event for event in reversed(events) if event["type"] == "error")["error_code"],
+            "provider_model_mismatch",
+        )
+        self.assertEqual(RoomStore(self.root).session("general", "codex")["observed_model_id"], "")
+
+    def test_alias_model_records_provider_observed_exact_model(self):
+        RoomStore(self.root).update_session_fields(
+            "general",
+            "codex",
+            model="sonnet",
+            requested_model_id="sonnet",
+            observed_model_id="",
+            model_selection_kind="alias",
+        )
+        identity, channel = self._connect_bridge("codex")
+        self._command("alias-model-topic", "message.send", {"content": "@codex answer"})
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+
+        result = self._command(
+            "alias-model-final",
+            "message.final",
+            {
+                "turn_id": assignment["turn_id"],
+                "content": "alias resolved",
+                "observed_model_id": "claude-sonnet-4-6",
+            },
+            identity,
+        )["result"]
+
+        self.assertEqual(result["event"]["content"], "alias resolved")
+        session = RoomStore(self.root).session("general", "codex")
+        self.assertEqual(session["requested_model_id"], "sonnet")
+        self.assertEqual(session["observed_model_id"], "claude-sonnet-4-6")
+        self.assertEqual(session["model_selection_kind"], "alias")
+
     def test_snapshot_and_visible_events_do_not_expose_process_or_path_fields(self):
         self.controller.store.update_session_fields(
             "general",
