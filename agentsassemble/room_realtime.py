@@ -723,6 +723,14 @@ class RoomRealtimeController:
                 server_url=server_url,
                 ticket_issuer=ticket_issuer,
             )
+        if action == "agent.readd":
+            self._require_capability(identity, "agent.control")
+            return self._readd_agent(
+                room_id,
+                payload,
+                server_url=server_url,
+                ticket_issuer=ticket_issuer,
+            )
         if action == "agent.configure":
             self._require_capability(identity, "agent.control")
             return self._configure_agent(room_id, payload)
@@ -903,6 +911,54 @@ class RoomRealtimeController:
             result["start"] = self._start_agent(
                 room_id,
                 spec.agent_id,
+                server_url=server_url,
+                ticket_issuer=ticket_issuer,
+            )
+        return result
+
+    def _readd_agent(
+        self,
+        room_id: str,
+        payload: dict[str, object],
+        *,
+        server_url: str,
+        ticket_issuer: Callable[[dict[str, object]], str] | None,
+    ) -> dict[str, object]:
+        agent_id = self._payload_agent_id(payload)
+        current = self.store.session(room_id, agent_id)
+        if not current:
+            raise RoomCommandRejected(f"Agent session {agent_id} was not found.", code="not_found")
+        if current.get("process_ownership") != "server":
+            raise RoomCommandRejected(
+                "External Agent Sessions must reconnect with their original invite.",
+                code="runtime_unavailable",
+            )
+        definition = native_cli_provider_definition(current.get("provider_kind"))
+        if definition is None:
+            raise RoomCommandRejected(
+                "This Agent Session provider is no longer available.",
+                code="unsupported_provider",
+            )
+        spec = definition.make_spec(
+            agent_id=agent_id,
+            display_name=clean_lobby_text(current.get("display_name"), limit=128) or agent_id,
+            cwd=clean_lobby_text(current.get("workspace"), limit=500) or ".",
+            model=clean_lobby_text(current.get("model"), limit=128),
+            reasoning_effort=clean_lobby_text(current.get("reasoning_effort"), limit=32),
+            service_tier=clean_lobby_text(current.get("service_tier"), limit=32),
+            variant=clean_lobby_text(current.get("variant"), limit=64),
+            permission_mode=clean_lobby_text(current.get("permission_mode"), limit=64),
+        )
+        session = self.register_provider(room_id, spec)
+        result: dict[str, object] = {
+            "status": "readded",
+            "agent_session": session,
+            "participant": self.store.participant(room_id, agent_id),
+        }
+        if bool(payload.get("start") or payload.get("start_now")):
+            result["start"] = self._start_agent(
+                room_id,
+                agent_id,
                 server_url=server_url,
                 ticket_issuer=ticket_issuer,
             )

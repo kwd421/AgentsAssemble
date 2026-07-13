@@ -1345,6 +1345,30 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertTrue(restarted["accepted"])
         self.assertEqual(RoomStore(self.root).participant("general", "codex")["status"], "detached")
 
+    def test_readd_reuses_stored_server_owned_session_profile(self):
+        store = RoomStore(self.root)
+        store.update_session_fields(
+            "general",
+            "codex",
+            provider_session_id="provider-session-1",
+            turn_count=7,
+        )
+        self._command("req-kick-before-readd", "participant.kick", {"participant_id": "codex"})
+
+        result = self._command(
+            "req-readd-existing",
+            "agent.readd",
+            {"agent_id": "codex", "start": True},
+        )["result"]
+        restored = store.session("general", "codex")
+
+        self.assertEqual(result["status"], "readded")
+        self.assertEqual(result["agent_session"]["participant_id"], "codex")
+        self.assertEqual(store.participant("general", "codex")["status"], "detached")
+        self.assertEqual(restored["provider_session_id"], "provider-session-1")
+        self.assertEqual(restored["turn_count"], 7)
+        self.assertEqual(restored["runtime_status"], "starting")
+
     def test_room_host_cannot_be_kicked(self):
         with self.assertRaises(RoomCommandRejected) as error:
             self._command("req-kick-host", "participant.kick", {"participant_id": "operator-local"})

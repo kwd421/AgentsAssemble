@@ -1427,22 +1427,30 @@ export default function App() {
         meetingId={activeRoom.meetingId}
         roomLabel={activeRoom.label}
         providers={canonicalRoom.availableProviders}
+        existingSessions={canonicalRoom.agentSessions}
         onClose={() => setAgentCreateOpen(false)}
         onCreate={async (request) => {
           if (!roomSocket?.ready()) {
             throw new Error("방 연결이 아직 준비되지 않았습니다");
           }
-          await roomSocket.command("agent.create", {
-            provider_id: request.providerId,
-            display_name: request.displayName,
-            workspace: request.workspacePath,
-            model: request.modelId || "",
-            reasoning_effort: request.reasoningEffort || "",
-            service_tier: request.serviceTier || "",
-            variant: request.variant || "",
-            permission_mode: request.permissionMode || "meeting_read_only",
-            start: Boolean(request.startNow),
-          });
+          if (request.sessionId) {
+            await roomSocket.command("agent.readd", {
+              agent_id: request.sessionId,
+              start: Boolean(request.startNow),
+            });
+          } else {
+            await roomSocket.command("agent.create", {
+              provider_id: request.providerId,
+              display_name: request.displayName,
+              workspace: request.workspacePath,
+              model: request.modelId || "",
+              reasoning_effort: request.reasoningEffort || "",
+              service_tier: request.serviceTier || "",
+              variant: request.variant || "",
+              permission_mode: request.permissionMode || "meeting_read_only",
+              start: Boolean(request.startNow),
+            });
+          }
         }}
         onCreated={() => refreshSessionSurfaces()}
       />

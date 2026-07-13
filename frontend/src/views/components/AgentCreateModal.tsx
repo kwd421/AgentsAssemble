@@ -11,12 +11,14 @@ import type {
   NativeCliProviderAvailability,
   ProviderControl,
 } from "../../roomSocketClient";
+import type { RoomAgentSession } from "../../api/agentSessions";
 
 type AgentCreateModalProps = {
   open: boolean;
   meetingId: string;
   roomLabel: string;
   providers: NativeCliProviderAvailability[];
+  existingSessions?: RoomAgentSession[];
   onClose: () => void;
   onCreate: (request: FrontendLiveAgentCreateRequest) => Promise<void>;
   onCreated?: () => void;
@@ -27,11 +29,13 @@ export default function AgentCreateModal({
   meetingId,
   roomLabel,
   providers,
+  existingSessions = [],
   onClose,
   onCreate,
   onCreated,
 }: AgentCreateModalProps) {
   const [providerId, setProviderId] = useState("codex");
+  const [existingSessionId, setExistingSessionId] = useState("");
   const [displayName, setDisplayName] = useState("Codex");
   const [workspacePath, setWorkspacePath] = useState(".");
   const [settings, setSettings] = useState<Record<string, string>>({});
@@ -43,6 +47,14 @@ export default function AgentCreateModal({
   const [credentialBusy, setCredentialBusy] = useState(false);
   const selectedProvider =
     providers.find((provider) => provider.id === providerId) || providers[0];
+  const reusableSessions = existingSessions.filter(
+    (session) =>
+      !session.external_owned &&
+      session.provider_kind === selectedProvider?.provider_kind &&
+      !["starting", "idle", "busy", "paused", "recovering", "stopping"].includes(
+        session.runtime_status
+      )
+  );
   const canCreate = Boolean(
     meetingId && selectedProvider?.startable && displayName.trim() && workspacePath.trim()
   );
@@ -63,6 +75,7 @@ export default function AgentCreateModal({
 
   function applyProvider(provider: NativeCliProviderAvailability) {
     setProviderId(provider.id);
+    setExistingSessionId("");
     setDisplayName(provider.display_name);
     setSettings(
       Object.fromEntries(
@@ -73,6 +86,21 @@ export default function AgentCreateModal({
       )
     );
     setStartNow(provider.startable);
+  }
+
+  function applyExistingSession(sessionId: string) {
+    setExistingSessionId(sessionId);
+    const session = existingSessions.find((item) => item.session_id === sessionId);
+    if (!session) return;
+    setDisplayName(session.display_name);
+    setSettings((previous) => ({
+      ...previous,
+      model: session.model || previous.model || "",
+      reasoning_effort: session.reasoning_effort || previous.reasoning_effort || "",
+      service_tier: session.service_tier || previous.service_tier || "",
+      variant: session.variant || previous.variant || "",
+      permission_mode: session.permission_mode || previous.permission_mode || "meeting_read_only",
+    }));
   }
 
   async function handleCreate() {
@@ -86,6 +114,7 @@ export default function AgentCreateModal({
       await onCreate({
         meetingId,
         providerId: selectedProvider.id,
+        sessionId: existingSessionId || undefined,
         displayName,
         workspacePath,
         modelId: settings.model || "",
@@ -159,9 +188,30 @@ export default function AgentCreateModal({
         </div>
 
         <div className="dc-agent-create-fields">
+          {reusableSessions.length > 0 && (
+            <label>
+              <span>기존 세션</span>
+              <select
+                aria-label="기존 세션"
+                value={existingSessionId}
+                onChange={(event) => applyExistingSession(event.currentTarget.value)}
+              >
+                <option value="">새 세션 만들기</option>
+                {reusableSessions.map((session) => (
+                  <option key={session.session_id} value={session.session_id}>
+                    {session.display_name} · {session.model || session.provider_kind}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             <span>이름</span>
-            <input value={displayName} onChange={(event) => setDisplayName(event.currentTarget.value)} />
+            <input
+              value={displayName}
+              disabled={Boolean(existingSessionId)}
+              onChange={(event) => setDisplayName(event.currentTarget.value)}
+            />
           </label>
           <label>
             <span>폴더</span>
@@ -169,6 +219,7 @@ export default function AgentCreateModal({
               <Folder size={16} />
               <input
                 value={workspacePath}
+                disabled={Boolean(existingSessionId)}
                 onChange={(event) => setWorkspacePath(event.currentTarget.value)}
                 placeholder="."
               />
@@ -179,6 +230,7 @@ export default function AgentCreateModal({
               key={`${selectedProvider.id}:${control.key}`}
               control={control}
               value={settings[control.key] || ""}
+              disabled={Boolean(existingSessionId)}
               onChange={(value) => setSettings((previous) => ({ ...previous, [control.key]: value }))}
             />
           ))}
@@ -258,10 +310,12 @@ function ProviderControlField({
   control,
   value,
   onChange,
+  disabled = false,
 }: {
   control: ProviderControl;
   value: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <label>
@@ -269,6 +323,7 @@ function ProviderControlField({
       <select
         aria-label={control.label}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.currentTarget.value)}
       >
         {(control.options || []).map((option) => (

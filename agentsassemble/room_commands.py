@@ -10,6 +10,7 @@ ROOM_COMMAND_ACTIONS = frozenset(
         "room.delete",
         "message.send",
         "agent.create",
+        "agent.readd",
         "agent.configure",
         "agent.start",
         "agent.pause",
