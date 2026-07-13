@@ -175,6 +175,7 @@ Agent Bridges use the same command envelope for:
 - `bridge.ready`
 - `bridge.health`
 - `turn.state`
+- `turn.decline`
 - `message.delta`
 - `message.final`
 - `turn.failed`
@@ -182,6 +183,13 @@ Agent Bridges use the same command envelope for:
 The server returns a correlated `ack` or `nack`. Command results are deduplicated
 by `request_id`, so reconnecting and resending an unresolved command does not
 run it twice.
+
+`turn.decline` is the only successful no-message outcome. Empty, whitespace-only,
+or zero-width `message.final` content fails the turn. Provider catalog discovery
+uses the same WebSocket for `provider_catalog_updated`; Agent Bridges do not
+receive catalog payloads. Session creation includes a catalog revision, and the
+server rejects stale revisions or options outside that revision before launching
+a provider.
 
 ### Subscription And Reconnect
 

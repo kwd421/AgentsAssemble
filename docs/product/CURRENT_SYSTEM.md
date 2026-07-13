@@ -60,10 +60,17 @@ Current providers receive a server-assigned turn containing a bounded room diff
 after their durable cursor. A turn reuses the existing provider process and must
 not launch a one-shot CLI.
 
-Known limitation: the current contract effectively means `turn assigned -> one
-visible reply`. It does not yet support passive observation or a clean
-`stay silent` decision. `continuous` mode is bounded automatic relay, not true
-autonomous participation.
+Known limitation: the current contract still assigns explicit turns rather than
+supporting passive observation. A structured runtime may now decline an assigned
+turn explicitly; blank or zero-width final messages are errors, not a silence
+signal. `continuous` mode is bounded automatic relay, not true autonomous
+participation.
+
+Provider controls are fail-closed. A cold browser snapshot may show catalog
+loading state, but cannot create a session until native discovery or an explicit
+static provider manifest produces a revision. Discovery completion is pushed on
+the canonical room WebSocket; `agent.create` must present that revision and the
+server validates every selected control against it.
 
 The researched next direction is an event-driven attention boundary that can
 select nobody, keep unselected models asleep, and assign a provider turn only
