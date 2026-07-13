@@ -74,9 +74,10 @@ class RouterDispatchTests(unittest.TestCase):
             ctx.send_json({"stopped": path_params["group_id"]})
 
         handler = FakeHandler()
-        self.assertTrue(router.dispatch("POST", _context(handler, "/api/groups/group%2Fone/stop")))
-        self.assertEqual(seen, [{"group_id": "group/one"}])
-        self.assertEqual(handler.sent_json, {"stopped": "group/one"})
+        self.assertTrue(router.dispatch("POST", _context(handler, "/api/groups/group-one/stop")))
+        self.assertEqual(seen, [{"group_id": "group-one"}])
+        self.assertEqual(handler.sent_json, {"stopped": "group-one"})
+        self.assertFalse(router.dispatch("POST", _context(FakeHandler(), "/api/groups/group%2Fone/stop")))
         self.assertFalse(router.dispatch("POST", _context(FakeHandler(), "/api/not-groups/group/stop")))
 
     def test_duplicate_dynamic_registration_is_rejected(self):
@@ -84,6 +85,20 @@ class RouterDispatchTests(unittest.TestCase):
         router.add_dynamic("POST", "/api/groups/{group_id}/stop", lambda _ctx, _params: None)
         with self.assertRaises(ValueError):
             router.add_dynamic("POST", "/api/groups/{group_id}/stop", lambda _ctx, _params: None)
+
+    def test_equivalent_dynamic_registration_is_rejected(self):
+        router = Router()
+        router.add_dynamic("POST", "/api/groups/{group_id}/stop", lambda _ctx, _params: None)
+        with self.assertRaises(ValueError):
+            router.add_dynamic("POST", "/api/groups/{name}/stop", lambda _ctx, _params: None)
+
+    def test_dynamic_dispatch_rejects_unsafe_decoded_segments(self):
+        router = Router()
+        router.add_dynamic("POST", "/api/groups/{group_id}/stop", lambda _ctx, _params: None)
+
+        for value in ("group%2Fone", "group%5Cone", "%2e", "%2e%2e", "%00", "a" * 257):
+            with self.subTest(value=value):
+                self.assertFalse(router.dispatch("POST", _context(FakeHandler(), f"/api/groups/{value}/stop")))
 
 
 class RequestContextBodyTests(unittest.TestCase):

@@ -226,7 +226,8 @@ class Router:
 
     def add_dynamic(self, method: str, template: str, handler: DynamicRouteHandler) -> None:
         method_routes = self._dynamic_routes.setdefault(method.upper(), {})
-        if template in method_routes:
+        route_shape = _dynamic_route_shape(template)
+        if any(_dynamic_route_shape(registered) == route_shape for registered in method_routes):
             raise ValueError(f"duplicate dynamic route registration: {method} {template}")
         method_routes[template] = handler
 
@@ -274,9 +275,26 @@ def match_route_template(template: str, path: str) -> dict[str, str] | None:
     for expected, actual in zip(template_parts, path_parts, strict=True):
         if expected.startswith("{") and expected.endswith("}"):
             decoded = unquote(actual)
-            if not decoded:
+            if not _valid_dynamic_route_value(decoded):
                 return None
             values[expected[1:-1]] = decoded
         elif expected != actual:
             return None
     return values
+
+
+def _dynamic_route_shape(template: str) -> tuple[str, ...]:
+    return tuple(
+        "{}" if part.startswith("{") and part.endswith("}") else part
+        for part in template.strip("/").split("/")
+    )
+
+
+def _valid_dynamic_route_value(value: str) -> bool:
+    return bool(value) and not (
+        "/" in value
+        or "\\" in value
+        or value in {".", ".."}
+        or any(ord(character) < 32 or ord(character) == 127 for character in value)
+        or len(value) > 256
+    )

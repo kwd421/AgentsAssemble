@@ -151,13 +151,16 @@ class GuiRouteOwnershipTests(unittest.TestCase):
         self.assertEqual(set(owners), EXPECTED_LEGACY_DYNAMIC_ROUTES)
         self.assertTrue(all(len(route_owners) == 1 for route_owners in owners.values()))
 
-    def test_dynamic_route_matcher_rejects_false_prefixes_and_decodes_ids(self) -> None:
+    def test_dynamic_route_matcher_rejects_unsafe_segments_and_false_prefixes(self) -> None:
         template = "/api/live-agent-processes/{group_id}/stop"
 
         self.assertEqual(
-            match_route_template(template, "/api/live-agent-processes/group%2Fone/stop"),
-            {"group_id": "group/one"},
+            match_route_template(template, "/api/live-agent-processes/group-one/stop"),
+            {"group_id": "group-one"},
         )
+        for value in ("group%2Fone", "group%5Cone", "%2e", "%2e%2e", "%00", "a" * 257):
+            with self.subTest(value=value):
+                self.assertIsNone(match_route_template(template, f"/api/live-agent-processes/{value}/stop"))
         self.assertIsNone(match_route_template(template, "/api/live-agent-processes/group/stop/extra"))
         self.assertIsNone(match_route_template(template, "/api/not-live-agent-processes/group/stop"))
 
