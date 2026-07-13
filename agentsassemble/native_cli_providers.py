@@ -208,6 +208,9 @@ class StoredProviderProfileError(ValueError):
         self.code = code
 
 
+_LEGACY_CLAUDE_STARTUP_READY_CONTAINS = "plan mode on"
+
+
 def native_cli_provider_spec_from_stored_session_strict(
     session: dict[str, object],
 ) -> NativeCliProviderSpec:
@@ -276,12 +279,26 @@ def native_cli_provider_spec_from_stored_session_strict(
         and spec.command == stored_command
         and replace(spec, transport="pty").runtime_profile_key() == required["runtime_profile_key"]
     )
+    legacy_claude_startup_profile = (
+        definition.provider_id == "claude"
+        and stored_transport == definition.transport
+        and spec.command == stored_command
+        and replace(
+            spec,
+            startup_ready_contains=_LEGACY_CLAUDE_STARTUP_READY_CONTAINS,
+        ).runtime_profile_key()
+        == required["runtime_profile_key"]
+    )
     if stored_transport != definition.transport and not legacy_grok_transport_profile:
         raise StoredProviderProfileError(
             "Stored Agent Session provider definition changed.",
             code="provider_definition_changed",
         )
-    if spec.command != stored_command or not (profile_matches or legacy_grok_transport_profile):
+    if spec.command != stored_command or not (
+        profile_matches
+        or legacy_grok_transport_profile
+        or legacy_claude_startup_profile
+    ):
         raise StoredProviderProfileError(
             "Stored Agent Session profile must be migrated before it can be reused.",
             code="profile_migration_required",
@@ -367,7 +384,9 @@ def _claude_command(
     ]
     if effort:
         command.extend(("--effort", effort))
-    command.extend(("--permission-mode", _claude_permission_mode(permission_mode), "--tools", "", "--safe-mode"))
+    if permission_mode == "workspace_write":
+        command.extend(("--permission-mode", "acceptEdits"))
+    command.extend(("--tools", "", "--safe-mode"))
     del service_tier  # Fast is applied as the interactive /fast startup command by the bridge runtime.
     return tuple(command)
 
@@ -376,10 +395,6 @@ def _codex_permissions(permission_mode: str) -> tuple[str, str]:
     if permission_mode == "workspace_write":
         return "on-request", "workspace-write"
     return "never", "read-only"
-
-
-def _claude_permission_mode(permission_mode: str) -> str:
-    return "acceptEdits" if permission_mode == "workspace_write" else "plan"
 
 
 def _opencode_command(
@@ -455,7 +470,6 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         model_observation_policy="required",
         input_mode="bracketed_paste",
         startup_accept_contains="Quick safety check",
-        startup_ready_contains="plan mode on",
     ),
 )
 

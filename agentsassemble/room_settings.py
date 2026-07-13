@@ -107,7 +107,7 @@ def public_room_settings(value: object, *, room_id: str) -> dict[str, object]:
     }
 
 
-CONVERSATION_MODES = {"ordered", "continuous"}
+CONVERSATION_MODES = {"ordered", "continuous", "ambient"}
 
 
 def clean_conversation_mode(value: object) -> str:

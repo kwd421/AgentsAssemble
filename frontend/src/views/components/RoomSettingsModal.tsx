@@ -193,13 +193,26 @@ export default function RoomSettingsModal({
                   <input
                     type="radio"
                     name="conversation-mode"
-                    checked={conversationMode === "continuous"}
-                    onChange={() => onConversationModeChange("continuous")}
+                    checked={conversationMode === "ambient"}
+                    onChange={() => onConversationModeChange("ambient")}
                   />
                   <span className="preserve-words">
-                    연쇄 대화 — 에이전트 발언을 다음 에이전트에게 자동으로 넘깁니다.
+                    자유 토론 — 메시지마다 필요한 에이전트 한 명만 말하고, AI끼리 이어지는 발언은 최대 2회로 제한합니다.
                   </span>
                 </label>
+                {conversationMode === "continuous" && (
+                  <label>
+                    <input
+                      type="radio"
+                      name="conversation-mode"
+                      checked
+                      onChange={() => onConversationModeChange("continuous")}
+                    />
+                    <span className="preserve-words">
+                      기존 연쇄 대화 — 이전 방과의 호환을 위해 유지되는 레거시 모드입니다.
+                    </span>
+                  </label>
+                )}
               </div>
               {conversationMode === "continuous" && (
                 <label>

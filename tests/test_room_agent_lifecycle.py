@@ -14,9 +14,11 @@ class FakeBridgeManager:
     def __init__(self) -> None:
         self.starts: list[tuple[str, str]] = []
         self.stops: list[tuple[str, str, str]] = []
+        self.running: set[tuple[str, str]] = set()
 
     def start(self, room_id, session, spec, *, server_url="", ticket_issuer=None):
         self.starts.append((room_id, str(session["session_id"])))
+        self.running.add((room_id, str(session["session_id"])))
         return {
             "bridge_pid": 321,
             "bridge_handle_id": f"handle-{session['session_id']}",
@@ -27,10 +29,15 @@ class FakeBridgeManager:
 
     def stop(self, room_id, session_id, *, timeout_seconds=2.0, handle_id=""):
         self.stops.append((room_id, session_id, handle_id))
+        self.running.discard((room_id, session_id))
         return {"stopped": True, "alive": False}
 
     def health(self, room_id, session_id):
-        return {"running": not bool(self.stops), "room_id": room_id, "session_id": session_id}
+        return {
+            "running": (room_id, session_id) in self.running,
+            "room_id": room_id,
+            "session_id": session_id,
+        }
 
     def close(self):
         return CleanupReport("fake_bridge_manager")
@@ -113,6 +120,17 @@ class RoomAgentLifecycleTests(unittest.TestCase):
             recovery_delay_seconds=0.1,
             external_stop_timeout_seconds=0.1,
             recovery_scheduler=self.scheduler,
+            prepare_session_reset=lambda _room_id, _session, *, pending_event_ids, retry: {
+                "pending_event_ids": list(pending_event_ids),
+                "pending_attention_job_id": "" if not retry else _session.get("active_attention_job_id", ""),
+                "pending_attention_lease_id": "" if not retry else _session.get("active_attention_lease_id", ""),
+                "pending_attention_source_event_id": (
+                    "" if not retry else _session.get("active_attention_source_event_id", "")
+                ),
+                "active_attention_job_id": "",
+                "active_attention_lease_id": "",
+                "active_attention_source_event_id": "",
+            },
         )
 
     def tearDown(self):
@@ -147,6 +165,21 @@ class RoomAgentLifecycleTests(unittest.TestCase):
         self.assertEqual(stopped["process"]["ownership"], "server")
         self.assertTrue(stopped["process"]["confirmed"])
         self.assertEqual(self.store.session("general", "codex")["runtime_status"], "stopped")
+
+    def test_close_does_not_overwrite_an_error_without_an_owned_runtime(self):
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            status="error",
+            runtime_status="error",
+            last_error="profile migration required",
+        )
+
+        report = self.lifecycle.close([("general", "codex")])
+
+        self.assertTrue(report.ok)
+        self.assertEqual(self.manager.stops, [])
+        self.assertEqual(self.store.session("general", "codex")["last_error"], "profile migration required")
 
     def test_pause_and_resume_preserve_the_connected_process(self):
         self._connect_bridge()

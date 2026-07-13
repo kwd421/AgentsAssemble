@@ -62,11 +62,11 @@ Current providers receive a server-assigned turn containing a bounded room diff
 after their durable cursor. A turn reuses the existing provider process and must
 not launch a one-shot CLI.
 
-Known limitation: the current contract still assigns explicit turns rather than
-supporting passive observation. A structured runtime may now decline an assigned
-turn explicitly; blank or zero-width final messages are errors, not a silence
-signal. `continuous` mode is bounded automatic relay, not true autonomous
-participation.
+Agent Bridges passively acknowledge canonical room events without invoking the
+provider, while provider context is still delivered only through a server-assigned
+turn. A structured runtime may decline an assigned turn explicitly; blank or
+zero-width final messages are errors, not a silence signal. `continuous` remains
+the bounded legacy relay mode.
 
 Provider controls are fail-closed. A cold browser snapshot may show catalog
 loading state, but cannot create a session until native discovery or an explicit
@@ -74,10 +74,11 @@ static provider manifest produces a revision. Discovery completion is pushed on
 the canonical room WebSocket; `agent.create` must present that revision and the
 server validates every selected control against it.
 
-An event-driven deterministic attention gate now records durable `selected`,
-`eligible`, or `silent` decisions in shadow mode. Shadow evaluation invokes no
-provider and does not alter the current `ordered` or `continuous` turn routing.
-Ambient participation is not active yet. Current contract:
+An event-driven deterministic attention gate records durable `selected`,
+`eligible`, or `silent` decisions. Existing `ordered` and `continuous` rooms use
+it in zero-token shadow mode. A room explicitly set to `ambient` uses one durable
+lease to wake one fair eligible speaker at a time, with an initial two-relay
+agent chain limit and no silent provider substitution. Current contract:
 `docs/product/ATTENTION_MODEL.md`; supporting research:
 `docs/reports/autonomous-room-participation-research.md`.
 

@@ -38,7 +38,9 @@ HOST = {
 class FakeBridgeManager:
     def __init__(self) -> None:
         self.starts: list[tuple[str, str]] = []
+        self.specs: list[NativeCliProviderSpec] = []
         self.stops: list[tuple[str, str]] = []
+        self.running: set[tuple[str, str]] = set()
         self.start_errors = []
         self.stop_errors = []
         self.close_called = False
@@ -48,6 +50,8 @@ class FakeBridgeManager:
         if self.start_errors:
             raise self.start_errors.pop(0)
         self.starts.append((room_id, str(session["session_id"])))
+        self.running.add((room_id, str(session["session_id"])))
+        self.specs.append(spec)
         return {
             "bridge_pid": 701,
             "bridge_handle_id": f"handle-{session['session_id']}",
@@ -59,7 +63,11 @@ class FakeBridgeManager:
         self.stops.append((room_id, session_id))
         if self.stop_errors:
             raise self.stop_errors.pop(0)
+        self.running.discard((room_id, session_id))
         return {"stopped": bool(handle_id), "alive": False}
+
+    def health(self, room_id, session_id):
+        return {"running": (room_id, session_id) in self.running}
 
     def close(self):
         self.close_called = True
@@ -192,8 +200,8 @@ class NativeCliProviderSpecTests(unittest.TestCase):
         self.assertIn("--model", specs["claude"].command)
         self.assertEqual(specs["claude"].permission_mode, "meeting_read_only")
         self.assertEqual(specs["claude"].startup_accept_contains, "Quick safety check")
-        self.assertEqual(specs["claude"].startup_ready_contains, "plan mode on")
-        self.assertIn("plan", specs["claude"].command)
+        self.assertEqual(specs["claude"].startup_ready_contains, "")
+        self.assertNotIn("plan", specs["claude"].command)
         self.assertNotIn("-p", specs["claude"].command)
         self.assertNotIn("--print", specs["claude"].command)
         for spec in specs.values():
@@ -269,6 +277,146 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             self.assertEqual(repository.room("general")["room_id"], "general")
         finally:
             controller.close()
+
+    def test_restart_restores_durable_provider_profile_before_default_seed(self):
+        profile_root = self.root / "durable-profile"
+        definition = native_cli_provider_definition("claude")
+        assert definition is not None
+        saved = definition.make_selected_spec(
+            agent_id="claude",
+            display_name="Claude",
+            cwd=profile_root,
+            model="claude-haiku-4-5",
+            reasoning_effort="low",
+            service_tier="default",
+            permission_mode="meeting_read_only",
+        )
+        default = definition.make_selected_spec(
+            agent_id="claude",
+            display_name="Claude",
+            cwd=profile_root,
+            model="claude-haiku-4-5",
+            reasoning_effort="high",
+            service_tier="default",
+            permission_mode="meeting_read_only",
+        )
+        first = RoomRealtimeController(
+            profile_root,
+            providers=[saved],
+            bridge_manager=FakeBridgeManager(),
+            provider_catalog=self.provider_catalog,
+        )
+        first.close()
+        manager = FakeBridgeManager()
+        restarted = RoomRealtimeController(
+            profile_root,
+            providers=[default],
+            bridge_manager=manager,
+            provider_catalog=self.provider_catalog,
+        )
+        try:
+            restarted.handle_command(
+                HOST,
+                {
+                    "op": "command",
+                    "request_id": "start-restored-profile",
+                    "action": "agent.start",
+                    "payload": {"agent_id": "claude"},
+                },
+            )
+            session = restarted.store.session("general", "claude")
+            self.assertEqual(session["reasoning_effort"], "low")
+            self.assertEqual(manager.specs[-1].reasoning_effort, "low")
+            self.assertEqual(manager.specs[-1].command, saved.command)
+        finally:
+            restarted.close()
+
+    def test_restart_clears_only_a_resolved_profile_migration_error(self):
+        profile_root = self.root / "legacy-claude-profile"
+        definition = native_cli_provider_definition("claude")
+        assert definition is not None
+        current = definition.make_selected_spec(
+            agent_id="claude",
+            display_name="Claude",
+            cwd=profile_root,
+            model="claude-haiku-4-5",
+            reasoning_effort="low",
+            service_tier="default",
+            permission_mode="meeting_read_only",
+        )
+        legacy = replace(current, startup_ready_contains="plan mode on")
+        first = RoomRealtimeController(
+            profile_root,
+            providers=[current],
+            bridge_manager=FakeBridgeManager(),
+            provider_catalog=self.provider_catalog,
+        )
+        first.close()
+        RoomStore(profile_root).update_session_fields(
+            "general",
+            "claude",
+            status="error",
+            runtime_status="error",
+            runtime_profile_key=legacy.runtime_profile_key(),
+            enabled=False,
+            recovery_required=True,
+            last_error="Stored Agent Session profile must be migrated before it can be reused.",
+        )
+
+        restarted = RoomRealtimeController(
+            profile_root,
+            providers=[current],
+            bridge_manager=FakeBridgeManager(),
+            provider_catalog=self.provider_catalog,
+        )
+        try:
+            restored = restarted.store.session("general", "claude")
+            self.assertEqual(restored["runtime_profile_key"], current.runtime_profile_key())
+            self.assertEqual(restored["runtime_status"], "stopped")
+            self.assertEqual(restored["status"], "available")
+            self.assertFalse(restored["recovery_required"])
+            self.assertEqual(restored["last_error"], "")
+        finally:
+            restarted.close()
+
+    def test_restart_does_not_claim_a_profileless_legacy_agent_session(self):
+        profile_root = self.root / "legacy-one-shot-session"
+        store = RoomStore(profile_root)
+        store.create_room("general", label="General")
+        store.upsert_participant(
+            "general",
+            {
+                "participant_id": "legacy-agent",
+                "display_name": "Legacy Agent",
+                "role": "agent",
+                "participant_type": "local",
+                "status": "joined",
+            },
+        )
+        store.upsert_session(
+            "general",
+            {
+                "session_id": "legacy-agent",
+                "participant_id": "legacy-agent",
+                "display_name": "Legacy Agent",
+                "provider_kind": "codex_live_session",
+                "status": "attached",
+            },
+        )
+
+        restarted = RoomRealtimeController(
+            profile_root,
+            providers=[],
+            bridge_manager=FakeBridgeManager(),
+            provider_catalog=self.provider_catalog,
+        )
+        try:
+            restored = restarted.store.session("general", "legacy-agent")
+            self.assertEqual(restored["status"], "attached")
+            self.assertNotIn("last_error", restored)
+            self.assertNotIn("legacy-agent", restarted._room_providers("general"))
+        finally:
+            restarted.close()
 
     def _command(self, request_id, action, payload=None, identity=None):
         command_payload = dict(payload or {})
@@ -395,6 +543,35 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(job["selected_participant_id"], "codex")
         self.assertEqual(assignment["source_event_id"], event["id"])
 
+    def test_bridge_observation_advances_only_to_a_committed_room_sequence(self):
+        identity, _channel = self._connect_bridge("codex")
+        event = self._command(
+            "observed-source",
+            "message.send",
+            {"content": "provider를 깨우지 않고 보는 메시지"},
+        )["result"]["event"]
+
+        result = self._command(
+            "observed-ack",
+            "room.observed",
+            {"through_seq": event["seq"]},
+            identity,
+        )["result"]
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self._command(
+                "observed-ahead",
+                "room.observed",
+                {"through_seq": event["seq"] + 100},
+                identity,
+            )
+
+        self.assertEqual(result["observed_through_seq"], event["seq"])
+        self.assertEqual(
+            self.controller.store.attention_state("general", "codex").last_observed_seq,
+            event["seq"],
+        )
+        self.assertEqual(rejected.exception.code, "observed_seq_invalid")
+
     def test_shadow_attention_failure_is_diagnostic_and_does_not_block_current_routing(self):
         with patch.object(
             self.controller._attention_coordinator,
@@ -414,25 +591,21 @@ class RoomRealtimeControllerTests(unittest.TestCase):
     def test_startup_reconciliation_moves_inflight_work_back_to_pending(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            store = RoomStore(root)
-            store.create_room("general", label="General")
-            store.upsert_participant(
+            definition = native_cli_provider_definition("codex")
+            self.assertIsNotNone(definition)
+            spec = definition.make_default_spec(cwd=root)
+            seed = RoomRealtimeController(root, providers=[spec], bridge_manager=FakeBridgeManager())
+            seed.close()
+            RoomStore(root).update_session_fields(
                 "general",
-                {"participant_id": "codex", "display_name": "Codex", "role": "agent", "status": "joined"},
+                "codex",
+                status="attached",
+                runtime_status="busy",
+                inflight_event_ids=["evt-inflight"],
+                pending_event_ids=["evt-pending"],
+                bridge_handle_id="lost-handle",
             )
-            store.upsert_session(
-                "general",
-                {
-                    "session_id": "codex",
-                    "participant_id": "codex",
-                    "status": "attached",
-                    "runtime_status": "busy",
-                    "inflight_event_ids": ["evt-inflight"],
-                    "pending_event_ids": ["evt-pending"],
-                    "bridge_handle_id": "lost-handle",
-                },
-            )
-            controller = RoomRealtimeController(root, providers=[_spec()], bridge_manager=FakeBridgeManager())
+            controller = RoomRealtimeController(root, providers=[spec], bridge_manager=FakeBridgeManager())
             recovered = RoomStore(root).session("general", "codex")
             controller.close()
         self.assertEqual(recovered["runtime_status"], "disconnected")
@@ -772,6 +945,124 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         finals = [event for event in RoomStore(self.root).read_events("general") if event.get("type") == "message_final"]
         self.assertEqual([event.get("participant_id") for event in finals[-3:]], ["operator-local", "codex", "peer"])
 
+    def test_ambient_mode_leases_one_fair_speaker_and_releases_each_turn(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        codex_identity, codex_channel = self._connect_bridge("codex")
+        peer_identity, peer_channel = self._connect_bridge("peer")
+        codex_channel.drain()
+        peer_channel.drain()
+        update_room_settings(
+            self.root,
+            {"room_id": "general", "conversation_mode": "ambient", "max_relay_turns": 2},
+        )
+
+        source = self._command(
+            "ambient-topic",
+            "message.send",
+            {"content": "백룸에서 살아남는 방법을 같이 이야기해봐"},
+        )["result"]["event"]
+        first = next(message for message in codex_channel.drain() if message.get("op") == "turn.assign")
+        self.assertFalse(any(message.get("op") == "turn.assign" for message in peer_channel.drain()))
+        first_job = self.controller.store.attention_jobs("general", mode="active")[-1]
+        first_session = self.controller.store.session("general", "codex")
+        first_lease_id = str(first_session["active_attention_lease_id"])
+        self.assertEqual(first_job["source_event_id"], source["id"])
+        self.assertEqual(first_job["status"], "leased")
+        self.assertEqual(first_job["selected_participant_id"], "codex")
+
+        codex_final = self._command(
+            "ambient-first-final",
+            "message.final",
+            {"turn_id": first["turn_id"], "content": "먼저 출구 표식을 남겨야 해."},
+            codex_identity,
+        )["result"]["event"]
+        second = next(message for message in peer_channel.drain() if message.get("op") == "turn.assign")
+        self.assertEqual(self.controller.store.attention_lease("general", first_lease_id)["status"], "released")
+        self.assertEqual(
+            self.controller.store.attention_jobs("general", mode="active")[0]["status"],
+            "completed",
+        )
+
+        self._command(
+            "ambient-second-final",
+            "message.final",
+            {"turn_id": second["turn_id"], "content": "그리고 소음을 최소화해야 해."},
+            peer_identity,
+        )
+        self.assertFalse(any(message.get("op") == "turn.assign" for message in codex_channel.drain()))
+        jobs = self.controller.store.attention_jobs("general", mode="active")
+        self.assertEqual([job["status"] for job in jobs], ["completed", "completed", "completed"])
+        self.assertEqual(jobs[-1]["reasons"], ["agent_chain_budget_exhausted"])
+        self.assertEqual(
+            self.controller.store.attention_state("general", "codex").last_spoke_seq,
+            codex_final["seq"],
+        )
+        self.assertEqual(self.controller.attention_active_diagnostics()["error_count"], 0)
+
+    def test_ambient_mode_does_not_replace_unavailable_explicit_target(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        _peer_identity, peer_channel = self._connect_bridge("peer")
+        peer_channel.drain()
+        update_room_settings(
+            self.root,
+            {"room_id": "general", "conversation_mode": "ambient", "max_relay_turns": 2},
+        )
+
+        self._command("ambient-unavailable", "message.send", {"content": "@codex 답해줘"})
+
+        self.assertFalse(any(message.get("op") == "turn.assign" for message in peer_channel.drain()))
+        job = self.controller.store.attention_jobs("general", mode="active")[-1]
+        self.assertEqual(job["outcome"], "silent")
+        self.assertIn("explicit_target_unavailable", job["reasons"])
+        self.assertEqual(self.controller.store.session("general", "peer")["pending_event_ids"], [])
+
+    def test_stopping_ambient_speaker_cancels_lease_and_drops_selected_work(self):
+        _identity, channel = self._connect_bridge("codex")
+        channel.drain()
+        update_room_settings(
+            self.root,
+            {"room_id": "general", "conversation_mode": "ambient"},
+        )
+        source = self._command(
+            "ambient-stop-source",
+            "message.send",
+            {"content": "이 대화는 중단할 거야"},
+        )["result"]["event"]
+        next(message for message in channel.drain() if message.get("op") == "turn.assign")
+        active = self.controller.store.session("general", "codex")
+        lease_id = str(active["active_attention_lease_id"])
+
+        self._command("ambient-stop", "agent.stop", {"agent_id": "codex"})
+
+        stopped = self.controller.store.session("general", "codex")
+        self.assertEqual(self.controller.store.attention_lease("general", lease_id)["status"], "cancelled")
+        self.assertEqual(
+            self.controller.store.attention_jobs("general", mode="active")[-1]["status"],
+            "cancelled",
+        )
+        self.assertNotIn(source["id"], stopped["pending_event_ids"])
+        self.assertEqual(stopped["active_attention_lease_id"], "")
+
+    def test_ambient_attention_failure_is_visible_and_never_uses_legacy_routing(self):
+        update_room_settings(
+            self.root,
+            {"room_id": "general", "conversation_mode": "ambient", "max_relay_turns": 2},
+        )
+        with patch.object(
+            self.controller._attention_coordinator,
+            "evaluate_active",
+            side_effect=RuntimeError("attention repository unavailable"),
+        ), self.assertLogs("agentsassemble.room_realtime", level="ERROR"):
+            self._command("ambient-error", "message.send", {"content": "이 메시지를 처리해"})
+
+        events = self.controller.store.read_events("general")
+        diagnostics = self.controller.attention_active_diagnostics()
+        self.assertEqual(diagnostics["error_count"], 1)
+        self.assertIn("attention repository unavailable", diagnostics["last_error"])
+        self.assertEqual(events[-1]["type"], "error")
+        self.assertEqual(events[-1]["error_code"], "ambient_attention_failed")
+        self.assertEqual(self.controller.store.session("general", "codex")["pending_event_ids"], [])
+
     def test_continuous_room_mode_skips_removed_and_stopped_speakers(self):
         self.controller.create_provider_session("general", _spec("removed"))
         self.controller.create_provider_session("general", _spec("stopped"))
@@ -1003,6 +1294,66 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(session["observed_model_id"], "claude-sonnet-4-6")
         self.assertEqual(session["model_selection_kind"], "alias")
         self.assertEqual(session["model_verification_status"], "resolved_alias")
+
+    def test_claude_release_accepts_the_provider_reported_snapshot_id(self):
+        RoomStore(self.root).update_session_fields(
+            "general",
+            "codex",
+            provider_kind="claude_code",
+            model="claude-haiku-4-5",
+            requested_model_id="claude-haiku-4-5",
+            observed_model_id="",
+            model_selection_kind="exact",
+            model_observation_policy="required",
+        )
+        identity, channel = self._connect_bridge("codex")
+        self._command("claude-snapshot-topic", "message.send", {"content": "@codex answer"})
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+
+        result = self._command(
+            "claude-snapshot-final",
+            "message.final",
+            {
+                "turn_id": assignment["turn_id"],
+                "content": "verified Haiku reply",
+                "observed_model_id": "claude-haiku-4-5-20251001",
+            },
+            identity,
+        )["result"]
+
+        self.assertEqual(result["event"]["content"], "verified Haiku reply")
+        session = RoomStore(self.root).session("general", "codex")
+        self.assertEqual(session["observed_model_id"], "claude-haiku-4-5-20251001")
+        self.assertEqual(session["model_verification_status"], "verified_provider_revision")
+
+    def test_claude_release_rejects_a_different_provider_release(self):
+        RoomStore(self.root).update_session_fields(
+            "general",
+            "codex",
+            provider_kind="claude_code",
+            model="claude-haiku-4-5",
+            requested_model_id="claude-haiku-4-5",
+            observed_model_id="",
+            model_selection_kind="exact",
+            model_observation_policy="required",
+        )
+        identity, channel = self._connect_bridge("codex")
+        self._command("claude-wrong-release-topic", "message.send", {"content": "@codex answer"})
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self._command(
+                "claude-wrong-release-final",
+                "message.final",
+                {
+                    "turn_id": assignment["turn_id"],
+                    "content": "must not be published",
+                    "observed_model_id": "claude-sonnet-4-6-20260217",
+                },
+                identity,
+            )
+
+        self.assertEqual(rejected.exception.code, "provider_model_mismatch")
 
     def test_snapshot_and_visible_events_do_not_expose_process_or_path_fields(self):
         self.controller.store.update_session_fields(
@@ -1264,6 +1615,11 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         identity, channel = self._connect_bridge()
         self._command("req-provider-retry-source", "message.send", {"content": "@codex retry provider"})
         first_assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+        self.controller.store.update_session_fields(
+            "general",
+            "codex",
+            active_relay_depth=2,
+        )
 
         self._command(
             "req-provider-exit",
@@ -1281,6 +1637,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         retry_assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
         self.assertIn("[Agent Session recovery]", retry_assignment["provider_input"])
         self.assertIn("retry provider", retry_assignment["provider_input"])
+        self.assertEqual(self.controller.store.session("general", "codex")["active_relay_depth"], 2)
         self.controller.store.update_session_fields("general", "codex", recovery_attempt_count=0)
 
         self._command(

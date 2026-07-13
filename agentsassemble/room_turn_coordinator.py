@@ -10,8 +10,13 @@ from uuid import uuid4
 from agentsassemble.cleanup_report import CleanupReport
 from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
 from agentsassemble.native_cli_providers import NativeCliProviderSpec
+from agentsassemble.provider_model_verification import (
+    model_observation_matches,
+    model_verification_status,
+)
 from agentsassemble.provider_runtime_contracts import SUPPORTED_DECLINE_REASONS
 from agentsassemble.room_errors import RoomCommandRejected
+from agentsassemble.room_attention import AttentionLeaseConflict
 from agentsassemble.room_event_broker import RoomEventBroker
 from agentsassemble.room_projection import (
     PUBLIC_ACTIVITY_LABELS,
@@ -22,6 +27,7 @@ from agentsassemble.room_projection import (
     runtime_diagnostic_fields,
 )
 from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room_turn_attention import RoomTurnAttention
 from agentsassemble.room_types import RoomEvent, TurnAssignment
 
 
@@ -57,6 +63,7 @@ class RoomTurnCoordinator:
         recovery_delay_seconds: float,
         recovery_scheduler: RecoveryScheduler,
         packet_builder: TurnPacketBuilder,
+        attention_owner_id: str = "",
     ) -> None:
         self.output_root = Path(output_root)
         self.store = store
@@ -69,6 +76,11 @@ class RoomTurnCoordinator:
         self.recovery_delay_seconds = max(0.0, float(recovery_delay_seconds))
         self._recovery_scheduler = recovery_scheduler
         self._packet_builder = packet_builder
+        self._turn_attention = RoomTurnAttention(
+            store,
+            provider_lookup=provider_lookup,
+            owner_id=attention_owner_id,
+        )
         self._recovery_handles: dict[tuple[str, str], object] = {}
 
     def close(self) -> CleanupReport:
@@ -133,6 +145,26 @@ class RoomTurnCoordinator:
                 "agent_session": public_session(current),
             }
 
+    def observe_room(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        agent_id, _session = self.bridge_session(identity, room_id)
+        through_seq = safe_bounded_int(payload.get("through_seq"), default=0, minimum=0)
+        if through_seq <= 0:
+            raise RoomCommandRejected("Observed room sequence is required.", code="observed_seq_invalid")
+        latest_seq = self.store.latest_event_sequence(room_id)
+        if through_seq > latest_seq:
+            raise RoomCommandRejected(
+                "Observed room sequence is ahead of the canonical event stream.",
+                code="observed_seq_invalid",
+            )
+        with self.store.transaction(room_id) as transaction:
+            state = transaction.advance_attention_state(agent_id, observed_seq=through_seq)
+        return {"observed_through_seq": state.last_observed_seq}
+
     def queue_event(
         self,
         room_id: str,
@@ -140,24 +172,37 @@ class RoomTurnCoordinator:
         event: RoomEvent | dict[str, object],
         *,
         relay_depth: int,
-    ) -> None:
+        attention_job_id: str = "",
+        attention_lease_id: str = "",
+    ) -> bool:
         session = self.store.session(room_id, agent_id)
         if not session:
-            return
+            return False
         event_id = clean_lobby_text(event.get("id"), limit=128)
         pending = dedupe_event_ids([*list(session.get("pending_event_ids") or []), event_id])
+        updates: dict[str, object] = {
+            "pending_event_ids": pending,
+            "pending_relay_depth": max(int(session.get("pending_relay_depth") or 0), relay_depth),
+        }
+        updates.update(
+            self._turn_attention.queue_fields(
+                event_id,
+                job_id=attention_job_id,
+                lease_id=attention_lease_id,
+            )
+        )
         session = self.store.update_session_fields(
             room_id,
             str(session["session_id"]),
-            pending_event_ids=pending,
-            pending_relay_depth=max(int(session.get("pending_relay_depth") or 0), relay_depth),
+            **updates,
         )
         if (
             session.get("enabled")
             and session.get("runtime_status") == "idle"
             and self.broker.has_bridge(room_id, agent_id)
         ):
-            self.assign_pending(room_id, agent_id)
+            return self.assign_pending(room_id, agent_id)
+        return False
 
     def assign_pending(self, room_id: str, agent_id: str) -> bool:
         session = self.store.session(room_id, agent_id)
@@ -216,18 +261,41 @@ class RoomTurnCoordinator:
         )
         if not partition.inflight:
             cleaned_pending = partition.deferred
-            if cleaned_pending != pending:
+            attention_fields = self._turn_attention.deferred_fields(
+                room_id,
+                session,
+                partition.deferred,
+            )
+            attention_changed = any(session.get(key) != value for key, value in attention_fields.items())
+            if cleaned_pending != pending or attention_changed:
                 self.store.update_session_fields(
                     room_id,
                     str(session["session_id"]),
                     pending_event_ids=cleaned_pending,
                     pending_relay_depth=int(session.get("pending_relay_depth") or 0) if cleaned_pending else 0,
+                    **attention_fields,
                 )
             return False
         active_source_event_id = partition.inflight[-1]
         source_event = self.store.event_by_id(room_id, active_source_event_id)
         input_up_to_event_id = input_up_to_event_id or active_source_event_id
         relay_depth = int(session.get("pending_relay_depth") or 0)
+        try:
+            attention_fields = self._turn_attention.assignment_fields(
+                room_id,
+                agent_id,
+                session,
+                inflight_event_ids=partition.inflight,
+                deferred_event_ids=partition.deferred,
+            )
+        except AttentionLeaseConflict as error:
+            failed = self.store.update_session_fields(
+                room_id,
+                str(session["session_id"]),
+                last_error=str(error),
+            )
+            self._publish_session_state(room_id, failed)
+            raise RoomCommandRejected(str(error), code="attention_lease_conflict") from error
         dispatched_at = now()
         updated = self.store.update_session_fields(
             room_id,
@@ -242,6 +310,7 @@ class RoomTurnCoordinator:
             inflight_event_ids=partition.inflight,
             pending_event_ids=partition.deferred,
             pending_relay_depth=relay_depth if partition.deferred else 0,
+            **attention_fields,
             latency={
                 "queued_at": source_event.get("created_at") or dispatched_at,
                 "dispatch_started_at": dispatched_at,
@@ -297,13 +366,58 @@ class RoomTurnCoordinator:
             status="unavailable",
             runtime_status="disconnected",
             active_turn_id="",
+            active_relay_depth=0,
             turn_phase="",
             input_up_to_seq=0,
             inflight_event_ids=[],
             pending_event_ids=[*partition.inflight, *partition.deferred],
+            **self._turn_attention.delivery_failed_fields(updated),
             last_error="Agent bridge disconnected before turn assignment.",
         )
         return False
+
+    def cancel_queued_attention(
+        self,
+        room_id: str,
+        agent_id: str,
+        *,
+        source_event_id: str,
+        lease_id: str,
+    ) -> None:
+        self._turn_attention.cancel_queued(
+            room_id,
+            agent_id,
+            source_event_id=source_event_id,
+            lease_id=lease_id,
+        )
+
+    def prepare_session_reset(
+        self,
+        room_id: str,
+        session: dict[str, object],
+        *,
+        pending_event_ids: list[str],
+        retry: bool,
+    ) -> dict[str, object]:
+        return self._turn_attention.prepare_session_reset(
+            room_id,
+            session,
+            pending_event_ids=pending_event_ids,
+            retry=retry,
+        )
+
+    def reconcile_session_attention(
+        self,
+        room_id: str,
+        session: dict[str, object],
+        *,
+        pending_event_ids: list[str],
+    ) -> dict[str, object]:
+        return self._turn_attention.reconcile_session(
+            room_id,
+            session,
+            pending_event_ids=pending_event_ids,
+        )
 
     def partition_pending_events(
         self,
@@ -475,6 +589,7 @@ class RoomTurnCoordinator:
         )
         selection_kind = clean_lobby_text(session.get("model_selection_kind"), limit=16) or "exact"
         observation_policy = clean_lobby_text(session.get("model_observation_policy"), limit=32) or "unavailable"
+        provider_kind = clean_lobby_text(session.get("provider_kind"), limit=64)
         if observation_policy == "required" and not observed_model_id:
             self.turn_failed(
                 identity,
@@ -494,7 +609,12 @@ class RoomTurnCoordinator:
             observed_model_id
             and requested_model_id
             and selection_kind == "exact"
-            and observed_model_id != requested_model_id
+            and not model_observation_matches(
+                requested_model_id=requested_model_id,
+                observed_model_id=observed_model_id,
+                selection_kind=selection_kind,
+                provider_kind=provider_kind,
+            )
         ):
             self.turn_failed(
                 identity,
@@ -534,24 +654,26 @@ class RoomTurnCoordinator:
                     observed_model_id=observed_model_id,
                     selection_kind=selection_kind,
                     observation_policy=observation_policy,
+                    provider_kind=provider_kind,
                 ),
             )
-        event = self.store.append_event(
-            room_id,
-            "message_final",
-            participant_id=agent_id,
-            participant_type="agent",
-            actor_id=agent_id,
-            actor_type="agent",
-            display_name=session.get("display_name") or agent_id,
-            avatar_image_url=session.get("avatar_image_url") or "",
-            session_id=session["session_id"],
-            turn_id=active_turn_id,
-            content=content,
-            source_event_id=session.get("active_source_event_id"),
-            relay_depth=relay_depth,
-            message_source=payload.get("message_source"),
-        )
+        with self.store.transaction(room_id) as transaction:
+            event = transaction.append_event(
+                "message_final",
+                participant_id=agent_id,
+                participant_type="agent",
+                actor_id=agent_id,
+                actor_type="agent",
+                display_name=session.get("display_name") or agent_id,
+                avatar_image_url=session.get("avatar_image_url") or "",
+                session_id=session["session_id"],
+                turn_id=active_turn_id,
+                content=content,
+                source_event_id=session.get("active_source_event_id"),
+                relay_depth=relay_depth,
+                message_source=payload.get("message_source"),
+            )
+            transaction.advance_attention_state(agent_id, spoke_seq=int(event["seq"]))
         finished, current = self._complete_active_turn(
             room_id,
             session,
@@ -619,24 +741,6 @@ class RoomTurnCoordinator:
             or "Provider turn failed."
         )
         diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
-        error = self.store.append_event(
-            room_id,
-            "error",
-            participant_id=agent_id,
-            session_id=session["session_id"],
-            turn_id=session["active_turn_id"],
-            content=content,
-            error_code=error_code,
-            diagnostics=public_runtime_diagnostics(diagnostics),
-        )
-        self.store.append_event(
-            room_id,
-            "turn_finished",
-            participant_id=agent_id,
-            session_id=session["session_id"],
-            turn_id=session["active_turn_id"],
-            status="interrupted" if interrupted else "error",
-        )
         pending = dedupe_event_ids(
             [*list(session.get("inflight_event_ids") or []), *list(session.get("pending_event_ids") or [])]
         )
@@ -648,24 +752,58 @@ class RoomTurnCoordinator:
             and self.broker.has_bridge(room_id, agent_id)
             and provider_process_exited(content, diagnostics)
         )
-        updated = self.store.update_session_fields(
-            room_id,
-            str(session["session_id"]),
-            status="attached" if interrupted or automatic_recovery else "error",
-            runtime_status="idle" if interrupted else ("recovering" if automatic_recovery else "error"),
-            turn_phase="",
-            active_turn_id="",
-            active_source_event_id="",
-            active_relay_depth=0,
-            input_up_to_event_id="",
-            input_up_to_seq=0,
-            inflight_event_ids=[],
-            pending_event_ids=pending,
-            recovery_required=not interrupted,
-            recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
-            last_error=content,
-            **runtime_diagnostic_fields(diagnostics),
+        active_attention_source = clean_lobby_text(
+            session.get("active_attention_source_event_id"),
+            limit=128,
         )
+        if active_attention_source and not automatic_recovery:
+            pending = [event_id for event_id in pending if event_id != active_attention_source]
+        with self.store.transaction(room_id) as transaction:
+            error = transaction.append_event(
+                "error",
+                participant_id=agent_id,
+                session_id=session["session_id"],
+                turn_id=session["active_turn_id"],
+                content=content,
+                error_code=error_code,
+                diagnostics=public_runtime_diagnostics(diagnostics),
+            )
+            transaction.append_event(
+                "turn_finished",
+                participant_id=agent_id,
+                session_id=session["session_id"],
+                turn_id=session["active_turn_id"],
+                status="interrupted" if interrupted else "error",
+            )
+            if not automatic_recovery:
+                self._turn_attention.resolve_active(
+                    transaction,
+                    session,
+                    status="cancelled",
+                )
+            attention_fields = (
+                self._turn_attention.delivery_failed_fields(session)
+                if automatic_recovery
+                else self._turn_attention.empty_fields()
+            )
+            updated = transaction.update_session_fields(
+                str(session["session_id"]),
+                status="attached" if interrupted or automatic_recovery else "error",
+                runtime_status="idle" if interrupted else ("recovering" if automatic_recovery else "error"),
+                turn_phase="",
+                active_turn_id="",
+                active_source_event_id="",
+                active_relay_depth=0,
+                input_up_to_event_id="",
+                input_up_to_seq=0,
+                inflight_event_ids=[],
+                pending_event_ids=pending,
+                **attention_fields,
+                recovery_required=not interrupted,
+                recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
+                last_error=content,
+                **runtime_diagnostic_fields(diagnostics),
+            )
         self._publish_session_state(room_id, updated)
         if automatic_recovery:
             key = (room_id, str(session["session_id"]))
@@ -688,15 +826,6 @@ class RoomTurnCoordinator:
         last_spoke_event_id: str = "",
     ) -> tuple[dict[str, object], dict[str, object]]:
         active_turn_id = str(session["active_turn_id"])
-        finished = self.store.append_event(
-            room_id,
-            "turn_finished",
-            participant_id=session["participant_id"],
-            session_id=session["session_id"],
-            turn_id=active_turn_id,
-            status=finish_status,
-            latency=latency,
-        )
         updates: dict[str, object] = {
             "status": "attached",
             "runtime_status": "idle",
@@ -707,6 +836,9 @@ class RoomTurnCoordinator:
             "input_up_to_event_id": "",
             "input_up_to_seq": 0,
             "inflight_event_ids": [],
+            "active_attention_job_id": "",
+            "active_attention_lease_id": "",
+            "active_attention_source_event_id": "",
             "last_provider_sync_event_id": (
                 input_up_to_event_id or session.get("last_provider_sync_event_id") or ""
             ),
@@ -723,11 +855,28 @@ class RoomTurnCoordinator:
         }
         if last_spoke_event_id:
             updates["last_spoke_event_id"] = last_spoke_event_id
-        self.store.update_session_fields(
-            room_id,
-            str(session["session_id"]),
-            **updates,
-        )
+        with self.store.transaction(room_id) as transaction:
+            finished = transaction.append_event(
+                "turn_finished",
+                participant_id=session["participant_id"],
+                session_id=session["session_id"],
+                turn_id=active_turn_id,
+                status=finish_status,
+                latency=latency,
+            )
+            self._turn_attention.resolve_active(
+                transaction,
+                session,
+                status="released",
+            )
+            transaction.advance_attention_state(
+                str(session["participant_id"]),
+                provider_sync_seq=input_up_to_seq,
+            )
+            transaction.update_session_fields(
+                str(session["session_id"]),
+                **updates,
+            )
         self.assign_pending(room_id, str(session["participant_id"]))
         current = self.store.session(room_id, str(session["session_id"]))
         self._publish_session_state(room_id, current)
@@ -775,22 +924,6 @@ def dedupe_event_ids(values: list[object]) -> list[str]:
         if text and text not in result:
             result.append(text)
     return result
-
-
-def model_verification_status(
-    *,
-    requested_model_id: str,
-    observed_model_id: str,
-    selection_kind: str,
-    observation_policy: str,
-) -> str:
-    if not observed_model_id:
-        return "pending" if observation_policy == "required" else "unavailable"
-    if selection_kind == "alias":
-        return "resolved_alias"
-    if requested_model_id and observed_model_id == requested_model_id:
-        return "verified"
-    return "mismatch"
 
 
 _ACTIVE_TURN_PHASES = frozenset({"thinking", "streaming"})

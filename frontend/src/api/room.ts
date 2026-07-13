@@ -16,7 +16,7 @@ import {
 
 export type { RoomChannel } from "./roomChannelCodec";
 
-export type ConversationMode = "ordered" | "continuous";
+export type ConversationMode = "ordered" | "ambient" | "continuous";
 
 export type ChannelNotificationSetting = "default" | "all" | "mentions" | "mute";
 
@@ -33,7 +33,7 @@ export interface RoomSettings {
   appearance: RoomAppearance;
   memberRoles: Record<string, string>;
   channelSettings: Record<string, ChannelSettings>;
-  // ordered: turn-based Agent Sessions are the only supported room mode for now.
+  // continuous is retained only for rooms that already use the legacy relay mode.
   conversationMode: ConversationMode;
   maxRelayTurns: number;
 }
@@ -217,7 +217,10 @@ function normalizeRoomSettings(payload: ApiRoomSettings | undefined, fallbackRoo
     },
     memberRoles: payload?.member_roles && typeof payload.member_roles === "object" ? payload.member_roles : {},
     channelSettings: normalizeChannelSettings(payload?.channel_settings),
-    conversationMode: payload?.conversation_mode === "continuous" ? "continuous" : "ordered",
+    conversationMode:
+      payload?.conversation_mode === "ambient" || payload?.conversation_mode === "continuous"
+        ? payload.conversation_mode
+        : "ordered",
     maxRelayTurns: Math.min(20, Math.max(2, Number(payload?.max_relay_turns || 6))),
   };
 }

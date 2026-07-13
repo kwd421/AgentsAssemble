@@ -1,6 +1,6 @@
 # Durable Attention Model
 
-Status: current contract; shadow evaluation only
+Status: current contract; opt-in ambient routing active
 
 Updated: 2026-07-14
 
@@ -15,9 +15,16 @@ select one participant, mark several as merely eligible for later policy, or
 select nobody. Silence must cost zero remote-provider calls and zero provider
 tokens.
 
-Shadow mode records decisions while the existing `ordered` or `continuous`
-routing still controls real turns. It must not change a visible message, launch
-a provider, or add a second room transport.
+`ordered` and legacy `continuous` rooms still use their existing routing while
+recording attention decisions in shadow mode. Shadow evaluation must not change
+a visible message, launch a provider, or add a second room transport.
+
+An explicitly configured `ambient` room uses the same durable evaluation to
+select and lease at most one speaker for each committed message. A plain human
+message may start a chain, and a committed agent reply may hand off to one other
+eligible agent. The initial agent-to-agent chain budget is two relays. A named
+target that is unavailable is reported as unavailable; another provider is not
+silently substituted.
 
 Current shadow policy selects one connected direct mention/reply/next-speaker
 target, marks multiple direct targets, `@all`, or a room-wide question as
@@ -50,7 +57,7 @@ back into one `last_seen` value.
 
 `attention_leases`
 : Exclusive, expiring authority for one participant to act on one selected job.
-  Shadow mode creates no active lease.
+  Shadow mode creates no active lease. Active ambient routing requires one.
 
 `scheduled_wakeups`
 : A durable future wake time for an explicit follow-up. The scheduler blocks
@@ -68,9 +75,14 @@ signals are self-authored events, paused or disconnected sessions, cooldown,
 recent speaking share, exhausted chain budget, and unsupported media-only input.
 
 An `@mention` selects who may answer; it does not hide the public message from
-other participants. A room-wide question can produce one selected speaker or
-an `eligible` shadow result. Ordinary agent output does not automatically force
-another provider call.
+other participants. A room-wide question produces one fair selected speaker in
+ambient mode or an `eligible` shadow result elsewhere. Ambient handoff may wake
+one agent for ordinary agent output until the chain budget is exhausted.
+
+The Agent Bridge acknowledges the highest canonical event sequence delivered
+to it with `room.observed`. This advances only `last_observed_seq`; it does not
+invoke the provider or spend provider tokens. Provider context advances only
+after an assigned turn completes or declines.
 
 ## State and Commit Rules
 
@@ -84,6 +96,17 @@ another provider call.
    lease explicitly; blank visible messages are never control flow.
 7. Rollback publishes no attention event and advances no cursor.
 
-PostgreSQL is not required for local shadow evaluation. Both SQLite and
-PostgreSQL must pass the same repository contract before ambient mode is enabled
-for hosted multi-worker use.
+SQLite and PostgreSQL implement the same attention transaction contract.
+PostgreSQL is explicitly configured rather than inferred, and hosted
+multi-worker operation still requires deployment-level lease and failover
+verification.
+
+## Current Limits
+
+- Ambient selection is deterministic and event-driven; there is no periodic
+  provider polling.
+- Scheduled follow-ups and conversation obligations are durable schema concepts
+  but are not active wake sources yet.
+- Pair cooldowns, per-room token budgets, and panel policies are not active.
+- Provider-native media delivery remains incomplete, so ambient routing must not
+  claim an agent viewed an attachment it did not receive.

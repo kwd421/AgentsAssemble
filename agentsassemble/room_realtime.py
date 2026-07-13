@@ -8,6 +8,7 @@ import threading
 import shutil
 from pathlib import Path
 from typing import Callable, Protocol
+from uuid import uuid4
 
 from agentsassemble.agent_sessions import build_room_turn_packet
 from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
@@ -57,6 +58,7 @@ from agentsassemble.room_floor_policy import (
     evaluate_agent_floor_eligibility,
 )
 from agentsassemble.room_members import is_room_member_muted, remove_room_member, set_room_member_muted
+from agentsassemble.provider_model_verification import model_verification_status as _model_verification_status
 from agentsassemble.room_projection import (
     public_event as _public_event,
     public_session,
@@ -69,7 +71,6 @@ from agentsassemble.room_store import RoomStore
 from agentsassemble.room_turn_coordinator import (
     RoomTurnCoordinator,
     dedupe_event_ids as _dedupe_text_list,
-    model_verification_status as _model_verification_status,
     room_message_text as _room_message_text,
 )
 from agentsassemble.room_types import RoomCommand, RoomEvent
@@ -77,6 +78,7 @@ from agentsassemble.voice_presence import leave_all_voice
 
 ROOM_SNAPSHOT_EVENT_LIMIT = 200
 ROOM_HISTORY_MAX_LIMIT = 200
+AMBIENT_AGENT_RELAY_DEPTH = 2
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -126,15 +128,18 @@ class RoomRealtimeController:
             if clean_lobby_text(spec.agent_id, limit=128)
         }
         self._providers_by_room: dict[str, dict[str, NativeCliProviderSpec]] = {
-            self.default_room_id: default_providers,
+            self.default_room_id: {},
         }
         self._lock = threading.RLock()
         self._event_listener_removers: dict[str, Callable[[], None]] = {}
         self._provider_catalog_remove = self.provider_catalog.subscribe(self._on_provider_catalog_update)
         self._closed = False
         self._attention_coordinator = RoomAttentionCoordinator(self.store)
+        self._attention_owner_id = f"room-realtime-{uuid4().hex}"
         self._attention_shadow_error_count = 0
         self._attention_shadow_last_error = ""
+        self._attention_active_error_count = 0
+        self._attention_active_last_error = ""
         self._turn_coordinator = RoomTurnCoordinator(
             self.output_root,
             store=self.store,
@@ -151,6 +156,7 @@ class RoomRealtimeController:
                 repository=self.store,
                 **kwargs,
             ),
+            attention_owner_id=self._attention_owner_id,
         )
         self._agent_lifecycle = RoomAgentLifecycle(
             store=self.store,
@@ -169,12 +175,18 @@ class RoomRealtimeController:
             recovery_delay_seconds=self.recovery_delay_seconds,
             external_stop_timeout_seconds=external_stop_timeout_seconds,
             recovery_scheduler=recovery_scheduler_impl,
+            prepare_session_reset=self._turn_coordinator.prepare_session_reset,
         )
         self.last_cleanup_report = CleanupReport("room_realtime_controller")
         self.ensure_room(self.default_room_id)
-        for spec in default_providers.values():
-            self._ensure_provider_session(self.default_room_id, spec)
         self._restore_server_owned_providers()
+        for agent_id, spec in default_providers.items():
+            if self.store.session(self.default_room_id, agent_id) or self.store.participant(
+                self.default_room_id, agent_id
+            ):
+                continue
+            self._providers_by_room[self.default_room_id][agent_id] = spec
+            self._ensure_provider_session(self.default_room_id, spec)
         self._reconcile_startup_sessions()
 
     def _restore_server_owned_providers(self) -> None:
@@ -188,7 +200,8 @@ class RoomRealtimeController:
                 agent_id = clean_lobby_text(session.get("participant_id"), limit=128)
                 if not agent_id or agent_id in self._room_providers(room_id):
                     continue
-                if session.get("process_ownership") != "server":
+                process_ownership = _restorable_process_ownership(session)
+                if process_ownership != "server":
                     continue
                 try:
                     spec = native_cli_provider_spec_from_stored_session_strict(session)
@@ -201,17 +214,38 @@ class RoomRealtimeController:
                         enabled=False,
                         recovery_required=True,
                         last_error=str(error),
+                        last_error_code=error.code,
                     )
                     continue
-                if (
+                profile_changed = (
                     session.get("runtime_profile_key") != spec.runtime_profile_key()
                     or session.get("transport") != spec.transport
-                ):
+                )
+                migration_blocked = session.get("last_error_code") == "profile_migration_required" or (
+                    not session.get("last_error_code")
+                    and session.get("last_error")
+                    == "Stored Agent Session profile must be migrated before it can be reused."
+                )
+                if profile_changed or migration_blocked:
+                    updates: dict[str, object] = {}
+                    if profile_changed:
+                        updates.update(
+                            runtime_profile_key=spec.runtime_profile_key(),
+                            transport=spec.transport,
+                        )
+                    if migration_blocked:
+                        updates.update(
+                            status="available",
+                            runtime_status="stopped",
+                            enabled=False,
+                            recovery_required=False,
+                            last_error="",
+                            last_error_code="",
+                        )
                     self.store.update_session_fields(
                         room_id,
                         agent_id,
-                        runtime_profile_key=spec.runtime_profile_key(),
-                        transport=spec.transport,
+                        **updates,
                     )
                 with self._lock:
                     self._providers_by_room.setdefault(room_id, {})[agent_id] = spec
@@ -283,6 +317,7 @@ class RoomRealtimeController:
                     observed_model_id="",
                     selection_kind=spec.model_selection_kind,
                     observation_policy=spec.model_observation_policy,
+                    provider_kind=spec.normalized_provider_kind(),
                 ),
             )
             updated = self.store.session(clean_room_id, spec.agent_id)
@@ -311,6 +346,11 @@ class RoomRealtimeController:
                         *list(session.get("pending_event_ids") or []),
                     ]
                 )
+                attention_reset = self._turn_coordinator.reconcile_session_attention(
+                    room_id,
+                    session,
+                    pending_event_ids=pending,
+                )
                 session_id = clean_lobby_text(session.get("session_id"), limit=128)
                 updated = self.store.update_session_fields(
                     room_id,
@@ -324,7 +364,7 @@ class RoomRealtimeController:
                     active_turn_id="",
                     turn_phase="",
                     inflight_event_ids=[],
-                    pending_event_ids=pending,
+                    **attention_reset,
                     recovery_required=True,
                     last_error="Server restarted without a current bridge lease or owned process handle.",
                 )
@@ -827,6 +867,8 @@ class RoomRealtimeController:
             return self._bridge_ready(identity, room_id, payload)
         if action == "bridge.health":
             return self._bridge_health(identity, room_id, payload)
+        if action == "room.observed":
+            return self._turn_coordinator.observe_room(identity, room_id, payload)
         if action == "turn.state":
             return self._turn_coordinator.turn_state(identity, room_id, payload)
         if action == "turn.decline":
@@ -1407,9 +1449,16 @@ class RoomRealtimeController:
     def _route_message_event(self, event: RoomEvent | dict[str, object]) -> None:
         room_id = clean_lobby_text(event.get("room_id"), limit=128)
         providers = self._room_providers(room_id)
-        self._record_shadow_attention(dict(event), providers)
         room_settings = room_settings_payload(self.output_root, room_id=room_id).get("settings")
         settings = room_settings if isinstance(room_settings, dict) else {}
+        if settings.get("conversation_mode") == "ambient":
+            self._route_ambient_event(
+                dict(event),
+                providers,
+                max_relay_turns=AMBIENT_AGENT_RELAY_DEPTH,
+            )
+            return
+        self._record_shadow_attention(dict(event), providers)
         continuous = settings.get("conversation_mode") == "continuous"
         max_relay_turns = int(settings.get("max_relay_turns") or self.max_agent_relay_depth)
         decision = route_message_targets(
@@ -1442,6 +1491,82 @@ class RoomRealtimeController:
                 relay_depth=decision.relay_depth + (1 if continuous or decision.actor_type == "agent" else 0),
             )
 
+    def _route_ambient_event(
+        self,
+        event: dict[str, object],
+        providers: dict[str, NativeCliProviderSpec],
+        *,
+        max_relay_turns: int,
+    ) -> None:
+        room_id = clean_lobby_text(event.get("room_id"), limit=128)
+        eligible_ids = tuple(
+            agent_id
+            for agent_id in providers
+            if self.agent_floor_eligibility(room_id, agent_id).eligible
+        )
+        try:
+            result = self._attention_coordinator.evaluate_active(
+                event,
+                candidate_ids=providers,
+                eligible_ids=eligible_ids,
+                last_spoke_sequences={
+                    agent_id: self.store.attention_state(room_id, agent_id).last_spoke_seq
+                    for agent_id in providers
+                },
+                max_agent_relay_depth=max_relay_turns,
+                owner_id=self._attention_owner_id,
+                lease_seconds=self._ambient_lease_seconds(providers, eligible_ids),
+            )
+            job = result.get("job") if isinstance(result.get("job"), dict) else {}
+            lease = result.get("lease") if isinstance(result.get("lease"), dict) else {}
+            selected = clean_lobby_text(job.get("selected_participant_id"), limit=128)
+            if not selected:
+                return
+            assigned = self._turn_coordinator.queue_event(
+                room_id,
+                selected,
+                event,
+                relay_depth=max(0, int(event.get("relay_depth") or 0)) + 1,
+                attention_job_id=clean_lobby_text(job.get("job_id"), limit=128),
+                attention_lease_id=clean_lobby_text(lease.get("lease_id"), limit=128),
+            )
+            if assigned:
+                return
+            self._turn_coordinator.cancel_queued_attention(
+                room_id,
+                selected,
+                source_event_id=clean_lobby_text(event.get("id"), limit=128),
+                lease_id=clean_lobby_text(lease.get("lease_id"), limit=128),
+            )
+            raise RuntimeError("Selected ambient speaker became unavailable before assignment.")
+        except Exception as error:
+            self._attention_active_error_count += 1
+            self._attention_active_last_error = str(error)
+            _LOGGER.exception(
+                "Active room attention evaluation failed",
+                extra={
+                    "room_id": room_id,
+                    "event_id": str(event.get("id") or ""),
+                },
+            )
+            self.store.append_event(
+                room_id,
+                "error",
+                content="Autonomous speaker selection failed.",
+                error_code="ambient_attention_failed",
+            )
+
+    @staticmethod
+    def _ambient_lease_seconds(
+        providers: dict[str, NativeCliProviderSpec],
+        eligible_ids: tuple[str, ...],
+    ) -> float:
+        timeout = max(
+            (float(providers[agent_id].turn_timeout_seconds) for agent_id in eligible_ids),
+            default=30.0,
+        )
+        return min(3600.0, max(60.0, timeout + 30.0))
+
     def _record_shadow_attention(
         self,
         event: dict[str, object],
@@ -1473,6 +1598,13 @@ class RoomRealtimeController:
             "mode": "shadow",
             "error_count": self._attention_shadow_error_count,
             "last_error": self._attention_shadow_last_error,
+        }
+
+    def attention_active_diagnostics(self) -> dict[str, object]:
+        return {
+            "mode": "active",
+            "error_count": self._attention_active_error_count,
+            "last_error": self._attention_active_last_error,
         }
 
     def agent_floor_eligibility(self, room_id: str, agent_id: str) -> AgentFloorEligibility:
@@ -1653,6 +1785,21 @@ class RoomRealtimeController:
     def _require_bridge(identity: dict[str, object]) -> None:
         if identity.get("client_type") != "agent_bridge":
             raise RoomCommandRejected("This command is reserved for an Agent Bridge.", code="permission_denied")
+
+
+def _restorable_process_ownership(session: dict[str, object]) -> str:
+    explicit = clean_lobby_text(session.get("process_ownership"), limit=32)
+    if explicit:
+        return explicit
+    if session.get("external_owned"):
+        return "external"
+    has_native_runtime_profile = bool(
+        session.get("runtime_kind")
+        and session.get("runtime_profile_key")
+        and session.get("command_configured")
+    )
+    return "server" if has_native_runtime_profile else ""
+
 
 def _external_runtime_profile_key(profile: ProviderRuntimeProfile) -> str:
     serialized = json.dumps(

@@ -77,7 +77,7 @@ class RoomSettingsTests(unittest.TestCase):
             "2026-06-03T10:20:30Z",
         )
 
-    def test_conversation_mode_is_turn_based_only(self):
+    def test_conversation_mode_accepts_ambient_and_preserves_legacy_continuous(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             default = update_room_settings(root, {"room_id": "resident-m1", "label": "Room"})
@@ -87,6 +87,13 @@ class RoomSettingsTests(unittest.TestCase):
             self.assertEqual(free["settings"]["label"], "Room")  # partial update preserved
             ordered = update_room_settings(root, {"room_id": "resident-m1", "conversation_mode": "ordered"})
             self.assertEqual(ordered["settings"]["conversation_mode"], "ordered")
+            ambient = update_room_settings(root, {"room_id": "resident-m1", "conversation_mode": "ambient"})
+            self.assertEqual(ambient["settings"]["conversation_mode"], "ambient")
+            continuous = update_room_settings(
+                root,
+                {"room_id": "resident-m1", "conversation_mode": "continuous"},
+            )
+            self.assertEqual(continuous["settings"]["conversation_mode"], "continuous")
             legacy = update_room_settings(root, {"room_id": "resident-m1", "conversation_mode": "turn"})
             self.assertEqual(legacy["settings"]["conversation_mode"], "ordered")
             bogus = update_room_settings(root, {"room_id": "resident-m1", "conversation_mode": "chaos"})

@@ -29,9 +29,28 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         self.assertEqual(specs["grok"].transport, "acp_stdio")
         self.assertNotIn("-p", specs["claude"].command)
         self.assertNotIn("--print", specs["claude"].command)
+        self.assertNotIn("--permission-mode", specs["claude"].command)
         tools_index = specs["claude"].command.index("--tools")
         self.assertEqual(specs["claude"].command[tools_index + 1], "")
         self.assertIn("--safe-mode", specs["claude"].command)
+
+    def test_claude_workspace_write_uses_native_accept_edits_mode(self):
+        definition = native_cli_provider_definition("claude")
+        self.assertIsNotNone(definition)
+
+        spec = definition.make_selected_spec(
+            agent_id="claude-write",
+            display_name="Claude Write",
+            cwd=".",
+            model="claude-haiku-4-5",
+            reasoning_effort="low",
+            service_tier="default",
+            permission_mode="workspace_write",
+        )
+
+        mode_index = spec.command.index("--permission-mode")
+        self.assertEqual(spec.command[mode_index + 1], "acceptEdits")
+        self.assertNotIn("plan", spec.command)
 
     def test_create_payload_aliases_use_the_same_catalog_definition(self):
         antigravity = native_cli_provider_spec_from_payload(
@@ -195,6 +214,75 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
             )
 
         self.assertEqual(raised.exception.code, "provider_definition_changed")
+
+    def test_legacy_claude_startup_marker_profile_is_migrated(self):
+        definition = native_cli_provider_definition("claude")
+        self.assertIsNotNone(definition)
+        spec = definition.make_selected_spec(
+            agent_id="claude-low",
+            display_name="Claude Low",
+            cwd="/tmp/workspace",
+            model="claude-haiku-4-5",
+            reasoning_effort="low",
+            service_tier="default",
+            permission_mode="meeting_read_only",
+        )
+        legacy_spec = replace(spec, startup_ready_contains="plan mode on")
+
+        restored = native_cli_provider_spec_from_stored_session_strict(
+            {
+                "participant_id": spec.agent_id,
+                "display_name": spec.display_name,
+                "provider_kind": spec.provider_kind,
+                "workspace": spec.cwd,
+                "model": spec.model,
+                "reasoning_effort": spec.reasoning_effort,
+                "service_tier": spec.service_tier,
+                "variant": spec.variant,
+                "permission_mode": spec.permission_mode,
+                "runtime_kind": spec.runtime_kind,
+                "transport": spec.transport,
+                "command_configured": list(spec.command),
+                "runtime_profile_key": legacy_spec.runtime_profile_key(),
+            }
+        )
+
+        self.assertEqual(restored.startup_ready_contains, "")
+        self.assertEqual(restored.runtime_profile_key(), spec.runtime_profile_key())
+
+    def test_unknown_claude_profile_change_still_requires_migration(self):
+        definition = native_cli_provider_definition("claude")
+        self.assertIsNotNone(definition)
+        spec = definition.make_selected_spec(
+            agent_id="claude-low",
+            display_name="Claude Low",
+            cwd="/tmp/workspace",
+            model="claude-haiku-4-5",
+            reasoning_effort="low",
+            service_tier="default",
+            permission_mode="meeting_read_only",
+        )
+
+        with self.assertRaises(StoredProviderProfileError) as raised:
+            native_cli_provider_spec_from_stored_session_strict(
+                {
+                    "participant_id": spec.agent_id,
+                    "display_name": spec.display_name,
+                    "provider_kind": spec.provider_kind,
+                    "workspace": spec.cwd,
+                    "model": spec.model,
+                    "reasoning_effort": spec.reasoning_effort,
+                    "service_tier": spec.service_tier,
+                    "variant": spec.variant,
+                    "permission_mode": spec.permission_mode,
+                    "runtime_kind": spec.runtime_kind,
+                    "transport": spec.transport,
+                    "command_configured": list(spec.command),
+                    "runtime_profile_key": "unknown-claude-profile",
+                }
+            )
+
+        self.assertEqual(raised.exception.code, "profile_migration_required")
 
     def test_public_catalog_is_safe_and_unknown_provider_is_clear(self):
         payload = native_cli_provider_catalog_payload()

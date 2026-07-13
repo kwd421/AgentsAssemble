@@ -380,6 +380,44 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertNotIn("/private/project", str(activities))
         self.assertNotIn("TOKEN", str(activities))
 
+    def test_room_event_batches_advance_observation_without_invoking_provider(self):
+        client = FakeClient()
+        runtime = FakeRuntime()
+        bridge = RoomAgentBridge(
+            client,
+            runtime,
+            room_id="general",
+            participant_id="codex",
+            session_id="codex",
+            receive_sleep_seconds=0.005,
+        )
+        thread = threading.Thread(target=bridge.run, daemon=True)
+        thread.start()
+        _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
+
+        with client._lock:
+            client.messages.extend(
+                [
+                    {
+                        "op": "event",
+                        "stream": "room_events",
+                        "events": [{"id": "event-4", "seq": 4, "type": "message_final"}],
+                    },
+                    {
+                        "op": "event",
+                        "stream": "room_events",
+                        "events": [{"id": "event-7", "seq": 7, "type": "agent_session_state"}],
+                    },
+                ]
+            )
+        _wait_for(lambda: any(action == "room.observed" for action, _, _ in client.commands))
+        client.messages.append({"op": "agent.control", "action": "stop"})
+        thread.join(timeout=2)
+
+        observations = [payload for action, payload, _ in client.commands if action == "room.observed"]
+        self.assertEqual(observations, [{"through_seq": 7}])
+        self.assertEqual(runtime.sent, [])
+
     def test_bridge_ready_reports_the_explicit_launch_profile(self):
         client = FakeClient()
         bridge = RoomAgentBridge(

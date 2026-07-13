@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.native_cli_providers import NativeCliProviderSpec
+from agentsassemble.room_attention import AttentionEvaluation
 from agentsassemble.room_errors import RoomCommandRejected
 from agentsassemble.room_event_broker import RoomEventBroker
 from agentsassemble.room_store import RoomStore
@@ -132,6 +133,24 @@ class RoomTurnCoordinatorTests(unittest.TestCase):
         self.assertEqual(assignment["turn_id"], session["active_turn_id"])
         self.assertEqual(assignment["provider_context_event_ids"], [included["id"]])
 
+    def test_delivery_failure_preserves_relay_depth_for_retry(self):
+        source = self._message("relay source")
+        self._set_packet(source)
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            pending_event_ids=[source["id"]],
+            pending_relay_depth=2,
+        )
+        self.broker.disconnect(self.channel)
+
+        self.assertFalse(self.coordinator.assign_pending("general", "codex"))
+
+        session = self.store.session("general", "codex")
+        self.assertEqual(session["pending_event_ids"], [source["id"]])
+        self.assertEqual(session["pending_relay_depth"], 2)
+        self.assertEqual(session.get("active_relay_depth", 0), 0)
+
     def test_final_message_advances_cursor_and_clears_active_turn_atomically(self):
         source = self._message("source")
         self._set_packet(source)
@@ -180,6 +199,66 @@ class RoomTurnCoordinatorTests(unittest.TestCase):
         self.assertEqual(stale.exception.code, "stale_bridge_generation")
         self.assertEqual(invalid.exception.code, "turn_phase_invalid")
         self.assertEqual(self.store.session("general", "codex")["turn_phase"], "thinking")
+
+    def test_restart_expires_old_attention_lease_and_reclaims_before_assignment(self):
+        source = self._message("ambient source")
+        self._set_packet(source)
+        evaluation = AttentionEvaluation(
+            room_id="general",
+            source_event_id=source["id"],
+            source_seq=source["seq"],
+            outcome="selected",
+            selected_participant_id="codex",
+            eligible_participant_ids=("codex",),
+            reasons=("ambient_human_message",),
+        )
+        with self.store.transaction("general") as transaction:
+            job = transaction.record_attention_evaluation(evaluation, mode="active", status="pending")
+            old_lease = transaction.claim_attention_job(
+                job["job_id"],
+                participant_id="codex",
+                owner_id="old-controller",
+                lease_seconds=300,
+            )
+            transaction.update_session_fields(
+                "codex",
+                runtime_status="busy",
+                active_turn_id="turn-before-restart",
+                inflight_event_ids=[source["id"]],
+                active_attention_job_id=job["job_id"],
+                active_attention_lease_id=old_lease["lease_id"],
+                active_attention_source_event_id=source["id"],
+            )
+
+        crashed = self.store.session("general", "codex")
+        fields = self.coordinator.reconcile_session_attention(
+            "general",
+            crashed,
+            pending_event_ids=[source["id"]],
+        )
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            runtime_status="idle",
+            active_turn_id="",
+            inflight_event_ids=[],
+            **fields,
+        )
+
+        self.assertEqual(
+            self.store.attention_lease("general", old_lease["lease_id"])["status"],
+            "expired",
+        )
+        self.assertEqual(fields["pending_attention_lease_id"], "")
+        self.assertTrue(self.coordinator.assign_pending("general", "codex"))
+        current = self.store.session("general", "codex")
+        new_lease_id = str(current["active_attention_lease_id"])
+        self.assertNotEqual(new_lease_id, old_lease["lease_id"])
+        self.assertEqual(self.store.attention_lease("general", new_lease_id)["status"], "active")
+        self.assertNotEqual(
+            self.store.attention_lease("general", new_lease_id)["owner_id"],
+            "old-controller",
+        )
 
 
 if __name__ == "__main__":

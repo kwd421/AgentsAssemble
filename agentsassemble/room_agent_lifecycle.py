@@ -47,6 +47,7 @@ SessionCallback = Callable[[str, dict[str, object]], object]
 PendingAssignment = Callable[[str, str], bool]
 EnsureProviderSession = Callable[[str, NativeCliProviderSpec], None]
 SessionRevoker = Callable[[str, str], int]
+PrepareSessionReset = Callable[..., dict[str, object]]
 
 
 class RoomAgentLifecycle:
@@ -68,6 +69,7 @@ class RoomAgentLifecycle:
         recovery_delay_seconds: float,
         external_stop_timeout_seconds: float,
         recovery_scheduler: RecoveryScheduler,
+        prepare_session_reset: PrepareSessionReset,
     ) -> None:
         self.store = store
         self.broker = broker
@@ -81,6 +83,7 @@ class RoomAgentLifecycle:
         self._is_closed = is_closed
         self.recovery_delay_seconds = max(0.0, float(recovery_delay_seconds))
         self._recovery_scheduler = recovery_scheduler
+        self._prepare_session_reset = prepare_session_reset
         self._external_stop_confirmations = ExternalBridgeStopCoordinator(
             timeout_seconds=external_stop_timeout_seconds,
         )
@@ -424,6 +427,12 @@ class RoomAgentLifecycle:
                 and recovery_attempt_count < 1
                 and key in self._launch_contexts
             )
+            attention_reset = self._prepare_session_reset(
+                room_id,
+                session,
+                pending_event_ids=pending,
+                retry=automatic_recovery,
+            )
             self.store.update_session_fields(
                 room_id,
                 session_id,
@@ -435,7 +444,7 @@ class RoomAgentLifecycle:
                 active_turn_id="",
                 turn_phase="",
                 inflight_event_ids=[],
-                pending_event_ids=pending,
+                **attention_reset,
                 recovery_required=True,
                 recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
                 last_error=message,
@@ -483,7 +492,15 @@ class RoomAgentLifecycle:
             session = self.store.session(room_id, agent_id)
             if session and session.get("process_ownership") != "server":
                 continue
-            if session and session.get("runtime_status") not in {"stopped", "available"}:
+            owns_live_runtime = bool(
+                session
+                and (
+                    session.get("bridge_handle_id")
+                    or self.broker.has_bridge(room_id, agent_id)
+                    or _bridge_manager_session_running(self.bridge_manager, room_id, agent_id)
+                )
+            )
+            if session and owns_live_runtime:
                 try:
                     self.stop(room_id, agent_id)
                     cleanup.record_success()
@@ -521,6 +538,12 @@ class RoomAgentLifecycle:
         pending = _dedupe_text_list(
             [*list(session.get("inflight_event_ids") or []), *list(session.get("pending_event_ids") or [])]
         )
+        attention_reset = self._prepare_session_reset(
+            room_id,
+            session,
+            pending_event_ids=pending,
+            retry=False,
+        )
         updated = self.store.update_session_fields(
             room_id,
             agent_id,
@@ -534,7 +557,7 @@ class RoomAgentLifecycle:
             active_turn_id="",
             turn_phase="",
             inflight_event_ids=[],
-            pending_event_ids=pending,
+            **attention_reset,
             last_error=message,
             recovery_required=True,
             recovery_attempt_count=0,
@@ -567,6 +590,12 @@ class RoomAgentLifecycle:
         pending = _dedupe_text_list(
             [*list(session.get("inflight_event_ids") or []), *list(session.get("pending_event_ids") or [])]
         )
+        attention_reset = self._prepare_session_reset(
+            room_id,
+            session,
+            pending_event_ids=pending,
+            retry=False,
+        )
         updated = self.store.update_session_fields(
             room_id,
             agent_id,
@@ -580,7 +609,7 @@ class RoomAgentLifecycle:
             active_turn_id="",
             turn_phase="",
             inflight_event_ids=[],
-            pending_event_ids=pending,
+            **attention_reset,
             last_error="",
             recovery_required=False,
             recovery_attempt_count=0,

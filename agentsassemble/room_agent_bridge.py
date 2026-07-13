@@ -77,6 +77,7 @@ class RoomAgentBridge:
         self._diagnostics_lock = threading.RLock()
         self._activity_invalid_count = 0
         self._run_thread: threading.Thread | None = None
+        self._last_observed_seq_reported = 0
         self.remote_stop_requested = False
         self.remote_stop_control_id = ""
         self.remote_stop_confirmation_required = False
@@ -92,10 +93,12 @@ class RoomAgentBridge:
                 if not messages:
                     self._stop.wait(self.receive_sleep_seconds)
                     continue
+                observed_seq = _latest_room_event_seq(messages)
                 for message in messages:
                     self._handle_message(message)
                     if self._stop.is_set():
                         break
+                self._report_observed_seq(observed_seq)
         finally:
             self._stop.set()
             cleanup = CleanupReport("room_agent_bridge")
@@ -405,9 +408,17 @@ class RoomAgentBridge:
 
     def _pump_report_messages(self) -> bool:
         messages = self.client.receive()
+        observed_seq = _latest_room_event_seq(messages)
         for message in messages:
             self._handle_message(message)
+        self._report_observed_seq(observed_seq)
         return bool(messages)
+
+    def _report_observed_seq(self, observed_seq: int) -> None:
+        if observed_seq <= self._last_observed_seq_reported:
+            return
+        self._command("room.observed", {"through_seq": observed_seq}, wait_for_ack=False)
+        self._last_observed_seq_reported = observed_seq
 
     def _fail_protocol(self, error: BridgeProtocolError) -> None:
         print(f"Agent Bridge protocol error: {error.code}", file=sys.stderr, flush=True)
@@ -512,6 +523,21 @@ def _runtime_still_running(runtime: BridgeRuntime) -> bool:
 
 def _room_message_text(value: object, *, limit: int) -> str:
     return str(value or "").replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")[:limit].strip()
+
+
+def _latest_room_event_seq(messages: list[dict[str, object]]) -> int:
+    latest = 0
+    for message in messages:
+        if (
+            clean_lobby_text(message.get("op"), limit=32) not in {"event", "snapshot"}
+            or clean_lobby_text(message.get("stream"), limit=32) != "room_events"
+        ):
+            continue
+        events = message.get("events") if isinstance(message.get("events"), list) else []
+        for event in events:
+            if isinstance(event, dict):
+                latest = max(latest, max(0, int(event.get("seq") or 0)))
+    return latest
 
 
 def main() -> int:
