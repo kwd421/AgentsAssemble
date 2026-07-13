@@ -15,6 +15,7 @@ class GuiLegacyLiveAgentSessionRunHttpTests(unittest.TestCase):
             deps=LegacySessionRunHttpDeps(
                 service=object(),  # type: ignore[arg-type]
                 read_operation_payload=lambda _ctx, _operation, _target: {},
+                default_server_url=lambda _ctx: "http://127.0.0.1:8765",
             ),
         )
 
@@ -25,6 +26,7 @@ class GuiLegacyLiveAgentSessionRunHttpTests(unittest.TestCase):
                 ("POST", "/api/live-agent-session-runs/resume"),
                 ("POST", "/api/live-agent-session-runs/stop"),
                 ("POST", "/api/live-agent-session-runs/retry-now"),
+                ("POST", "/api/live-agent-session-runs/ensure"),
             },
         )
         self.assertEqual(

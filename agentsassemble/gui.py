@@ -7779,6 +7779,7 @@ def _make_handler(
                 record_operation=record_live_agent_operation,
             ),
             read_operation_payload=_late_operation_json_payload,
+            default_server_url=lambda ctx: ctx.handler._request_server_url(),
         ),
     )
 
@@ -8147,49 +8148,6 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json({"event": event, "events": read_lobby(output_root)})
-                return
-            if parsed.path == "/api/live-agent-session-runs/ensure":
-                payload = self._operation_json_payload(operation="session_run.ensure")
-                if payload is None:
-                    return
-                session_run = live_agent_session_run_controller.begin_run(action="ensure", payload=dict(payload))
-                try:
-                    _assert_session_run_launch_approved(live_agent_process_supervisor, payload, self._request_server_url())
-                    session = live_agent_session_ensure_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                        default_server=self._request_server_url(),
-                    )
-                except (OSError, ValueError) as error:
-                    safe_error = _session_ensure_error_message(error)
-                    failed_run = live_agent_session_run_controller.fail_run(session_run["run_id"], safe_error)
-                    safe_details = _session_start_error_details(payload, error)
-                    safe_details["session_run_id"] = str(failed_run.get("run_id") or "")
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session_run.ensure",
-                        status="failed",
-                        target_id=str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
-                        error=safe_error,
-                        details=safe_details,
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
-                    return
-                finished_run = live_agent_session_run_controller.finish_run(session_run["run_id"], session=session)
-                session["session_run"] = finished_run
-                record_live_agent_operation(
-                    output_root,
-                    operation="session_run.ensure",
-                    status=_session_start_operation_status(session),
-                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
-                    summary="ensured durable live-agent session run",
-                    details={
-                        **_session_start_operation_details(session),
-                        "session_run_id": str(finished_run.get("run_id") or ""),
-                    },
-                )
-                self._send_json(session)
                 return
             if parsed.path == "/api/live-agent-create/check":
                 payload = self._operation_json_payload(operation="frontend_agent.check")
