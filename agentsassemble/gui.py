@@ -97,6 +97,7 @@ from agentsassemble.room_realtime import (
     RoomRealtimeController,
     default_native_cli_provider_specs,
 )
+from agentsassemble.session_run_monitor import PeriodicSessionRunMonitor, safe_monitor_error_type
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
 from agentsassemble.live_agent_room_admin import (
     delete_live_agent_session_payload,
@@ -1550,7 +1551,7 @@ def _session_run_monitor_should_reconcile(
     )
 
 
-class LiveAgentSessionRunMonitor:
+class LiveAgentSessionRunMonitor(PeriodicSessionRunMonitor):
     def __init__(
         self,
         output_root: Path,
@@ -1564,119 +1565,30 @@ class LiveAgentSessionRunMonitor:
         self.process_supervisor = process_supervisor
         self.session_run_controller = session_run_controller
         self.default_server = default_server
-        self.interval_seconds = _session_run_monitor_interval(interval_seconds)
-        self._lock = threading.Lock()
-        self._stop_event = threading.Event()
-        self._thread: threading.Thread | None = None
-        self._last_tick_at = ""
-        self._last_status = "not_started"
-        self._last_result_count = 0
-        self._last_error_type = ""
-
-    def start(self) -> None:
-        with self._lock:
-            if self._thread is not None and self._thread.is_alive():
-                return
-            self._stop_event = threading.Event()
-            thread = threading.Thread(
-                target=self._loop,
-                args=(self._stop_event,),
-                daemon=True,
-                name="AgentsAssembleLiveAgentSessionRunMonitor",
-            )
-            self._thread = thread
-            thread.start()
-
-    def stop(self, *, timeout_seconds: float | None = None) -> bool:
-        with self._lock:
-            stop_event = self._stop_event
-            thread = self._thread
-            self._thread = None
-        stop_event.set()
-        if thread is not None:
-            if timeout_seconds is None:
-                thread.join()
-            else:
-                thread.join(timeout=max(0.0, timeout_seconds))
-            return not thread.is_alive()
-        return True
-
-    def run_once(self) -> list[dict[str, object]]:
-        results = _reconcile_live_agent_session_runs(
-            self.output_root,
-            self.process_supervisor,
-            self.session_run_controller,
-            default_server=self.default_server,
-            summary="reconciled durable live-agent session runs during GUI runtime",
+        super().__init__(
+            reconcile_runs=lambda: _reconcile_live_agent_session_runs(
+                self.output_root,
+                self.process_supervisor,
+                self.session_run_controller,
+                default_server=self.default_server,
+                summary="reconciled durable live-agent session runs during GUI runtime",
+            ),
+            report_failure=self._report_failure,
+            interval_seconds=interval_seconds,
+            default_interval_seconds=DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
+            minimum_interval_seconds=MIN_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
         )
-        self._record_success(results)
-        return results
 
-    def snapshot(self) -> dict[str, object]:
-        with self._lock:
-            thread = self._thread
-            return {
-                "running": bool(thread is not None and thread.is_alive()),
-                "interval_seconds": self.interval_seconds,
-                "last_tick_at": self._last_tick_at,
-                "last_status": self._last_status,
-                "last_result_count": self._last_result_count,
-                "last_error_type": self._last_error_type,
-            }
-
-    def _loop(self, stop_event: threading.Event) -> None:
-        while not stop_event.is_set():
-            try:
-                self.run_once()
-            except Exception as error:
-                self._record_failure(error)
-            if stop_event.wait(self.interval_seconds):
-                break
-
-    def _record_failure(self, error: Exception) -> None:
-        with self._lock:
-            self._last_tick_at = datetime.now(UTC).isoformat()
-            self._last_status = "failed"
-            self._last_result_count = 0
-            self._last_error_type = _safe_session_run_monitor_error_type(error)
+    def _report_failure(self, error: Exception) -> None:
+        error_type = safe_monitor_error_type(error)
         record_live_agent_operation(
             self.output_root,
             operation="session_run.monitor",
             status="failed",
             summary="live-agent session-run monitor failed",
             error=SESSION_RUN_MONITOR_ERROR,
-            details={"error_type": _safe_session_run_monitor_error_type(error)},
+            details={"error_type": error_type},
         )
-
-    def _record_success(self, results: list[dict[str, object]]) -> None:
-        with self._lock:
-            self._last_tick_at = datetime.now(UTC).isoformat()
-            self._last_status = _session_run_monitor_result_status(results)
-            self._last_result_count = len(results)
-            self._last_error_type = ""
-
-
-def _session_run_monitor_result_status(results: list[dict[str, object]]) -> str:
-    if any(str(item.get("status") or "") == "failed" for item in results):
-        return "failed"
-    if any(str(item.get("status") or "") in {"running", "recovering", "starting", "degraded"} for item in results):
-        return "degraded"
-    return "ok"
-
-
-def _safe_session_run_monitor_error_type(error: Exception) -> str:
-    error_type = clean_lobby_text(type(error).__name__, limit=80)
-    return error_type if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,79}", error_type) else "Exception"
-
-
-def _session_run_monitor_interval(value: object) -> float:
-    try:
-        seconds = float(value)
-    except (TypeError, ValueError):
-        return DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS
-    if not math.isfinite(seconds):
-        return DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS
-    return max(MIN_SESSION_RUN_MONITOR_INTERVAL_SECONDS, seconds)
 
 
 def _read_optional(path: Path) -> str:

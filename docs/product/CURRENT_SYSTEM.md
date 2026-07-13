@@ -128,6 +128,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Invites and attendance | `room_invite.py`, `room_attendee.py` |
 | Provider credentials | `provider_secrets.py`, provider credential routes |
 | GUI HTTP response/WebSocket transport | `gui_response.py`, `gui_ws_http.py`; composition in `gui.py` |
+| Durable legacy session-run monitor lifecycle | `session_run_monitor.py`; reconcile policy wiring in `gui.py` |
 | Canonical room HTTP routes | `gui_room_*_http.py`; coordinator in `gui_room_http.py` |
 | Legacy lobby POST/SSE compatibility | `gui_legacy_lobby_http.py`; do not attach new canonical behavior here |
 | Legacy resident read-only HTTP projections | `gui_legacy_live_agent_read_http.py`; payload policy remains outside the registrar |
