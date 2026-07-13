@@ -413,10 +413,26 @@ class RoomRealtimeControllerTests(unittest.TestCase):
     def test_continuous_room_mode_skips_removed_and_stopped_speakers(self):
         self.controller.register_provider("general", _spec("removed"))
         self.controller.register_provider("general", _spec("stopped"))
+        self.controller.register_provider("general", _spec("disconnected"))
+        self.controller.register_provider("general", _spec("failed"))
         self.controller.register_provider("general", _spec("active"))
         self._command("kick-removed", "participant.kick", {"participant_id": "removed"})
         self._command("start-stopped", "agent.start", {"agent_id": "stopped"})
         self._command("stop-stopped", "agent.stop", {"agent_id": "stopped"})
+        self.controller.store.update_session_fields(
+            "general",
+            "disconnected",
+            status="unavailable",
+            runtime_status="disconnected",
+            enabled=True,
+        )
+        self.controller.store.update_session_fields(
+            "general",
+            "failed",
+            status="attached",
+            runtime_status="error",
+            enabled=True,
+        )
         _active_identity, active_channel = self._connect_bridge("active")
         update_room_settings(
             self.root,
@@ -429,6 +445,54 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertTrue(assignment["turn_id"])
         self.assertEqual(RoomStore(self.root).session("general", "removed")["pending_event_ids"], [])
         self.assertEqual(RoomStore(self.root).session("general", "stopped")["pending_event_ids"], [])
+        self.assertEqual(RoomStore(self.root).session("general", "disconnected")["pending_event_ids"], [])
+        self.assertEqual(RoomStore(self.root).session("general", "failed")["pending_event_ids"], [])
+
+    def test_continuous_floor_eligibility_requires_joined_idle_attached_bridge(self):
+        _identity, channel = self._connect_bridge("codex")
+        self.assertEqual(
+            self.controller.agent_floor_eligibility("general", "codex").reason_code,
+            "eligible",
+        )
+
+        for fields, expected in (
+            ({"participant_status": "detached"}, "participant_not_joined"),
+            ({"status": "unavailable"}, "session_not_attached"),
+            ({"enabled": False}, "session_disabled"),
+            ({"runtime_status": "busy"}, "runtime_busy"),
+            ({"runtime_status": "paused"}, "runtime_paused"),
+            ({"runtime_status": "recovering"}, "runtime_recovering"),
+            ({"runtime_status": "error"}, "runtime_error"),
+        ):
+            with self.subTest(expected=expected):
+                self.controller.store.update_participant_fields("general", "codex", status="joined")
+                self.controller.store.update_session_fields(
+                    "general",
+                    "codex",
+                    status="attached",
+                    enabled=True,
+                    runtime_status="idle",
+                )
+                if "participant_status" in fields:
+                    self.controller.store.update_participant_fields(
+                        "general", "codex", status=fields["participant_status"]
+                    )
+                else:
+                    self.controller.store.update_session_fields("general", "codex", **fields)
+                self.assertEqual(
+                    self.controller.agent_floor_eligibility("general", "codex").reason_code,
+                    expected,
+                )
+
+        self.controller.store.update_participant_fields("general", "codex", status="joined")
+        self.controller.store.update_session_fields(
+            "general", "codex", status="attached", enabled=True, runtime_status="idle"
+        )
+        self.controller.broker.disconnect(channel)
+        self.assertEqual(
+            self.controller.agent_floor_eligibility("general", "codex").reason_code,
+            "bridge_disconnected",
+        )
 
     def test_zero_width_silence_finishes_without_message_or_continuous_relay(self):
         self.controller.register_provider("general", _spec("peer"))

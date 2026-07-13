@@ -91,6 +91,12 @@ class _PendingEventPartition:
     invalid: list[str]
 
 
+@dataclass(frozen=True)
+class AgentFloorEligibility:
+    eligible: bool
+    reason_code: str
+
+
 class RoomCommandRejected(ValueError):
     def __init__(self, message: str, *, code: str = "rejected") -> None:
         super().__init__(message)
@@ -1760,16 +1766,19 @@ class RoomRealtimeController:
             targets = tuple(
                 agent_id
                 for agent_id in targets
-                if self._continuous_target_is_available(room_id, agent_id)
+                if self.agent_floor_eligibility(room_id, agent_id).eligible
             )
         if continuous and not explicitly_routed and targets:
             ordered = sorted(providers)
             if decision.actor_id in ordered:
                 start = (ordered.index(decision.actor_id) + 1) % len(ordered)
-                candidates = (ordered[(start + offset) % len(ordered)] for offset in range(len(ordered)))
-                next_agent = next((candidate for candidate in candidates if candidate in targets), targets[0])
+                candidates = [ordered[(start + offset) % len(ordered)] for offset in range(len(ordered))]
             else:
-                next_agent = targets[0]
+                candidates = ordered
+            eligible_candidates = [candidate for candidate in candidates if candidate in targets]
+            if not eligible_candidates:
+                raise RuntimeError("continuous_floor_invariant_violation")
+            next_agent = eligible_candidates[0]
             targets = (next_agent,)
         for agent_id in targets:
             participant = self.store.participant(room_id, agent_id)
@@ -1782,15 +1791,24 @@ class RoomRealtimeController:
                 relay_depth=decision.relay_depth + (1 if continuous or decision.actor_type == "agent" else 0),
             )
 
-    def _continuous_target_is_available(self, room_id: str, agent_id: str) -> bool:
+    def agent_floor_eligibility(self, room_id: str, agent_id: str) -> AgentFloorEligibility:
         participant = self.store.participant(room_id, agent_id)
         session = self.store.session(room_id, agent_id)
-        return bool(
-            session
-            and session.get("enabled")
-            and participant.get("status") not in {"kicked", "left"}
-            and not participant.get("muted")
-        )
+        if not participant or participant.get("status") != "joined":
+            return AgentFloorEligibility(False, "participant_not_joined")
+        if participant.get("muted") or is_room_member_muted(self.output_root, room_id, agent_id):
+            return AgentFloorEligibility(False, "participant_muted")
+        if not session:
+            return AgentFloorEligibility(False, "session_missing")
+        if session.get("status") != "attached":
+            return AgentFloorEligibility(False, "session_not_attached")
+        if not session.get("enabled"):
+            return AgentFloorEligibility(False, "session_disabled")
+        if session.get("runtime_status") != "idle":
+            return AgentFloorEligibility(False, f"runtime_{session.get('runtime_status') or 'unknown'}")
+        if not self.broker.has_bridge(room_id, agent_id):
+            return AgentFloorEligibility(False, "bridge_disconnected")
+        return AgentFloorEligibility(True, "eligible")
 
     def _queue_event(
         self,
