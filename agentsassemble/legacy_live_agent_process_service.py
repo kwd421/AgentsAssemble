@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,10 +53,13 @@ class LegacyLiveAgentProcessMutationService:
                 default_server=default_server,
                 output_root=self.output_root,
             )
-        except ValueError as error:
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
             safe_error = process_start_error_message(error)
             self._record("start", status="failed", target_id=group_id, error=safe_error, details={"group_id": group_id, **config})
             raise LegacyProcessMutationError(safe_error, details={"group_id": group_id}) from error
+        except Exception as error:
+            self._record_unexpected("start", group_id, error, details={"group_id": group_id, **config})
+            raise
         group = result.get("group") if isinstance(result.get("group"), dict) else {}
         result_group_id = _group_id(payload, group)
         self._record(
@@ -70,10 +74,13 @@ class LegacyLiveAgentProcessMutationService:
     def stop_running(self, _payload: dict[str, object]) -> dict[str, object]:
         try:
             stopped = self.actions.stop_running(self.processes, output_root=self.output_root)
-        except ValueError as error:
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
             safe_error = process_stop_running_error_message(error)
             self._record("stop_running", status="failed", target_id="running-groups", error=safe_error)
             raise LegacyProcessMutationError(safe_error) from error
+        except Exception as error:
+            self._record_unexpected("stop_running", "running-groups", error)
+            raise
         result = stopped.get("result") if isinstance(stopped.get("result"), dict) else {}
         self._record(
             "stop_running",
@@ -104,10 +111,13 @@ class LegacyLiveAgentProcessMutationService:
         error_message = {"stop": process_stop_error_message, "restart": process_restart_error_message, "recover": process_recover_error_message}[action]
         try:
             result = invoke(self.processes, group_id, output_root=self.output_root)
-        except ValueError as error:
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
             safe_error = error_message(error)
             self._record(action, status="failed", target_id=group_id, error=safe_error, details={"group_id": group_id})
             raise LegacyProcessMutationError(safe_error, details={"group_id": group_id}) from error
+        except Exception as error:
+            self._record_unexpected(action, group_id, error, details={"group_id": group_id})
+            raise
         group = result.get("group") if isinstance(result.get("group"), dict) else {}
         result_group_id = _group_id({}, group) or group_id
         details = {"group_id": result_group_id, "group_status": str(group.get("status") or "")}
@@ -126,6 +136,26 @@ class LegacyLiveAgentProcessMutationService:
 
     def _record(self, action: str, **fields: object) -> None:
         self.record_operation(self.output_root, operation=f"process.{action}", **fields)
+
+    def _record_unexpected(
+        self,
+        action: str,
+        target_id: str,
+        error: Exception,
+        *,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        self._record(
+            action,
+            status="failed",
+            target_id=target_id,
+            error="Unexpected process operation failure.",
+            details={
+                **(details or {}),
+                "failure_phase": action,
+                "exception_type": type(error).__name__,
+            },
+        )
 
 
 def _group_id(payload: dict[str, object], group: dict[str, object] | None = None) -> str:

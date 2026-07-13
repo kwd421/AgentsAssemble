@@ -120,6 +120,18 @@ class LegacyLiveAgentSessionRunMutationService:
                 target_run_id=str(scheduled_run.get("run_id") or run_id),
                 approve_real_providers=_payload_bool(payload.get("approve_real_providers")),
             )
+            target_run_id = str(scheduled_run.get("run_id") or run_id)
+            matching_results = [item for item in results if str(item.get("run_id") or "") == target_run_id]
+            if len(matching_results) > 1:
+                raise ValueError("Session-run reconciliation returned duplicate target results.")
+            if matching_results:
+                session_run = matching_results[0]
+                reconciled = True
+            else:
+                session_run = self.session_runs.get_run(target_run_id)
+                if session_run.get("phase") != "retry_requested":
+                    raise ValueError("Session-run reconciliation returned no result for the requested run.")
+                reconciled = False
         except (OSError, ValueError) as error:
             safe_error = session_ensure_error_message(error)
             details = {"session_run_id": run_id, **{key: value for key, value in target.items() if value}}
@@ -131,8 +143,20 @@ class LegacyLiveAgentSessionRunMutationService:
                 details=details,
             )
             raise LegacySessionRunMutationError(safe_error, details=details) from error
-        session_run = results[-1] if results else scheduled_run
-        reconciled = bool(results)
+        except Exception as error:
+            details = {
+                "session_run_id": run_id,
+                "failure_phase": "retry_now",
+                "exception_type": type(error).__name__,
+            }
+            self._record(
+                "retry_now",
+                status="failed",
+                target_id=run_id,
+                error="Unexpected session-run retry failure.",
+                details=details,
+            )
+            raise
         self._record(
             "retry_now",
             status=_retry_operation_status(session_run, reconciled=reconciled),
@@ -168,6 +192,26 @@ class LegacyLiveAgentSessionRunMutationService:
                 details=details,
             )
             raise LegacySessionRunMutationError(safe_error, details=details) from error
+        except Exception as error:
+            failed_run = self.session_runs.fail_run(
+                session_run["run_id"],
+                "Unexpected session-run ensure failure.",
+            )
+            details = {
+                "session_run_id": str(failed_run.get("run_id") or ""),
+                "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
+                "group_id": clean_lobby_text(payload.get("group_id"), limit=128),
+                "failure_phase": "ensure",
+                "exception_type": type(error).__name__,
+            }
+            self._record(
+                "ensure",
+                status="failed",
+                target_id=details["meeting_id"],
+                error="Unexpected session-run ensure failure.",
+                details=details,
+            )
+            raise
         finished_run = self.session_runs.finish_run(session_run["run_id"], session=session)
         response = dict(session)
         response["session_run"] = finished_run

@@ -159,6 +159,31 @@ class LegacyLiveAgentSessionRunMutationServiceTests(unittest.TestCase):
         self.assertEqual(result["session_run"]["phase"], "retry_requested")
         self.assertEqual(self.operations[-1]["details"]["reconciled"], False)
 
+    def test_retry_now_does_not_use_an_unrelated_last_result(self) -> None:
+        run = self._run()
+        unrelated = {**self._run(meeting_id="room-b", group_id="group-b"), "status": "ready"}
+        self.service.actions = LegacySessionRunActions(
+            **{**self.actions.__dict__, "reconcile": lambda **_kwargs: [unrelated]}
+        )
+
+        result = self.service.retry_now({"run_id": run["run_id"]})
+
+        self.assertEqual(result["status"], "scheduled")
+        self.assertEqual(result["session_run"]["run_id"], run["run_id"])
+        self.assertEqual(result["session_run"]["phase"], "retry_requested")
+
+    def test_retry_now_rejects_duplicate_target_results(self) -> None:
+        run = self._run()
+        duplicate = {**run, "status": "ready"}
+        self.service.actions = LegacySessionRunActions(
+            **{**self.actions.__dict__, "reconcile": lambda **_kwargs: [duplicate, duplicate]}
+        )
+
+        with self.assertRaises(LegacySessionRunMutationError):
+            self.service.retry_now({"run_id": run["run_id"]})
+
+        self.assertEqual(self.operations[-1]["status"], "failed")
+
     def test_retry_now_failure_is_typed_and_audited(self) -> None:
         with self.assertRaises(LegacySessionRunMutationError) as raised:
             self.service.retry_now({"meeting_id": "room-a", "group_id": "missing"})
@@ -228,6 +253,21 @@ class LegacyLiveAgentSessionRunMutationServiceTests(unittest.TestCase):
         failed = self.runs.list_runs(limit=1)[0]
         self.assertEqual(failed["status"], "failed")
         self.assertEqual(self.operations[-1]["status"], "failed")
+
+    def test_unexpected_ensure_failure_closes_durable_run_and_is_not_hidden_as_bad_request(self) -> None:
+        self.service.actions = LegacySessionRunActions(
+            should_reconcile=self.actions.should_reconcile,
+            reconcile=self.actions.reconcile,
+            assert_launch_approved=self.actions.assert_launch_approved,
+            ensure=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("programmer failure")),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "programmer failure"):
+            self.service.ensure({"meeting_id": "room-a", "group_id": "group-a"})
+
+        durable = self.runs.list_runs(limit=1)[0]
+        self.assertEqual(durable["status"], "failed")
+        self.assertEqual(self.operations[-1]["details"]["exception_type"], "RuntimeError")
 
     def test_ensure_provider_failure_fails_existing_durable_run(self) -> None:
         calls: list[str] = []
