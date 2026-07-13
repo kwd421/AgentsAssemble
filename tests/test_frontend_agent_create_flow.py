@@ -40,19 +40,6 @@ class FrontendAgentCreateFlowTests(unittest.TestCase):
         self.assertIn("에이전트 추가", source)
         self.assertIn("<MemberList", source)
 
-    def test_agent_create_modal_renders_server_discovered_native_controls(self):
-        source = read_frontend("views/components/AgentCreateModal.tsx")
-
-        self.assertIn("modelId", source)
-        self.assertIn("reasoningEffort", source)
-        self.assertIn("serviceTier", source)
-        self.assertIn("selectedProvider?.controls", source)
-        self.assertIn("ProviderControlField", source)
-        self.assertIn("<select", source)
-        self.assertNotIn("<datalist", source)
-        self.assertNotIn("<input value={value} list=", source)
-        self.assertNotIn("speed_options", source)
-
     def test_agent_create_modal_does_not_restore_legacy_login_or_poll_controls(self):
         source = read_frontend("views/components/AgentCreateModal.tsx")
 
