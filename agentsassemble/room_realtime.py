@@ -27,7 +27,11 @@ from agentsassemble.provider_capabilities import (
     ProviderCatalogSelectionError,
     ValidatedProviderSelection,
 )
-from agentsassemble.provider_runtime_contracts import SUPPORTED_DECLINE_REASONS
+from agentsassemble.provider_runtime_contracts import (
+    AdapterContractError,
+    ProviderRuntimeHealth,
+    SUPPORTED_DECLINE_REASONS,
+)
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.room_invite import revoke_room_access, revoke_sessions_for_participant
 from agentsassemble.room_commands import (
@@ -194,46 +198,74 @@ class RoomRealtimeController:
                 with self._lock:
                     self._providers_by_room.setdefault(room_id, {})[agent_id] = spec
 
-    def register_provider(self, room_id: str, spec: NativeCliProviderSpec) -> dict[str, object]:
+    def create_provider_session(self, room_id: str, spec: NativeCliProviderSpec) -> dict[str, object]:
         clean_room_id = clean_lobby_text(room_id, limit=128)
         if not clean_room_id:
             raise ValueError("room_id is required.")
         validate_native_cli_provider_spec(spec)
         self.ensure_room(clean_room_id)
         with self._lock:
-            previous_session = self.store.session(clean_room_id, spec.agent_id)
-            previous_participant = self.store.participant(clean_room_id, spec.agent_id)
-            requested_profile_key = spec.runtime_profile_key()
-            if (
-                previous_session.get("runtime_status") in {"starting", "idle", "busy", "paused", "recovering"}
-                and previous_session.get("runtime_profile_key") != requested_profile_key
+            if self.store.session(clean_room_id, spec.agent_id) or self.store.participant(
+                clean_room_id, spec.agent_id
             ):
                 raise RoomCommandRejected(
-                    "This Agent Session is running with a different runtime profile; stop it before changing settings.",
-                    code="runtime_profile_conflict",
+                    "An Agent Session with this identity already exists; re-add or configure the existing session instead.",
+                    code="session_exists",
                 )
             providers = self._providers_by_room.setdefault(clean_room_id, {})
             providers[clean_lobby_text(spec.agent_id, limit=128)] = spec
             self._ensure_provider_session(clean_room_id, spec)
-            if previous_participant.get("status") == "kicked":
-                self.store.update_participant_fields(clean_room_id, spec.agent_id, status="detached")
             current = self.store.session(clean_room_id, spec.agent_id)
-            if not previous_session or previous_participant.get("status") == "kicked":
-                self.store.append_event(
-                    clean_room_id,
-                    "participant_joined",
-                    participant_id=spec.agent_id,
-                    session_id=spec.agent_id,
-                )
-                self.store.append_event(
-                    clean_room_id,
-                    "agent_session_created",
-                    participant_id=spec.agent_id,
-                    session_id=spec.agent_id,
-                    provider_kind=spec.normalized_provider_kind(),
-                )
+            self.store.append_event(
+                clean_room_id,
+                "agent_session_created",
+                participant_id=spec.agent_id,
+                session_id=spec.agent_id,
+                provider_kind=spec.normalized_provider_kind(),
+            )
             self._publish_session_state(clean_room_id, current)
         return self._public_session(current)
+
+    def configure_stopped_provider_profile(
+        self,
+        room_id: str,
+        spec: NativeCliProviderSpec,
+    ) -> dict[str, object]:
+        clean_room_id = clean_lobby_text(room_id, limit=128)
+        if not clean_room_id:
+            raise ValueError("room_id is required.")
+        validate_native_cli_provider_spec(spec)
+        with self._lock:
+            current = self.store.session(clean_room_id, spec.agent_id)
+            participant = self.store.participant(clean_room_id, spec.agent_id)
+            if not current or not participant:
+                raise RoomCommandRejected(
+                    f"Agent session {spec.agent_id} was not found.",
+                    code="not_found",
+                )
+            if (
+                current.get("enabled")
+                or current.get("runtime_status") in {"starting", "idle", "busy", "paused", "recovering", "stopping"}
+                or current.get("active_turn_id")
+                or current.get("bridge_handle_id")
+                or self.broker.has_bridge(clean_room_id, spec.agent_id)
+            ):
+                raise RoomCommandRejected(
+                    "Stop this Agent Session before changing its runtime settings.",
+                    code="runtime_profile_conflict",
+                )
+            self._providers_by_room.setdefault(clean_room_id, {})[spec.agent_id] = spec
+            self._ensure_provider_session(clean_room_id, spec)
+            updated = self.store.session(clean_room_id, spec.agent_id)
+            self.store.append_event(
+                clean_room_id,
+                "agent_session_profile_updated",
+                participant_id=spec.agent_id,
+                session_id=spec.agent_id,
+                runtime_profile_key=spec.runtime_profile_key(),
+            )
+            self._publish_session_state(clean_room_id, updated)
+        return self._public_session(updated)
 
     def _reconcile_startup_sessions(self) -> None:
         active_states = {"starting", "idle", "busy", "paused", "recovering", "stopping"}
@@ -345,7 +377,7 @@ class RoomRealtimeController:
                 "owner_id": clean_lobby_text(identity.get("owner_id"), limit=128),
                 "provider_kind": provider_kind,
                 "connection_kind": "native_cli_bridge",
-                "status": "joined",
+                "status": "detached",
             },
         )
         self.store.upsert_session(
@@ -378,12 +410,6 @@ class RoomRealtimeController:
                 "transport": "websocket",
                 "is_one_shot": False,
             },
-        )
-        self.store.append_event(
-            room_id,
-            "participant_joined",
-            participant_id=participant_id,
-            session_id=participant_id,
         )
         self.store.append_event(
             room_id,
@@ -998,12 +1024,7 @@ class RoomRealtimeController:
             raise RoomCommandRejected(str(error), code="unsupported_provider") from error
         except ValueError as error:
             raise RoomCommandRejected(str(error), code="invalid_runtime_profile") from error
-        if self.store.session(room_id, spec.agent_id) or self.store.participant(room_id, spec.agent_id):
-            raise RoomCommandRejected(
-                "An Agent Session with this identity already exists; re-add or configure the existing session instead.",
-                code="session_exists",
-            )
-        session = self.register_provider(room_id, spec)
+        session = self.create_provider_session(room_id, spec)
         result: dict[str, object] = {
             "status": "created",
             "agent_session": session,
@@ -1199,7 +1220,7 @@ class RoomRealtimeController:
             raise RoomCommandRejected(str(error), code=error.code) from error
         except (UnsupportedNativeCliProvider, ValueError) as error:
             raise RoomCommandRejected(str(error), code="invalid_runtime_profile") from error
-        session = self.register_provider(room_id, spec)
+        session = self.configure_stopped_provider_profile(room_id, spec)
         return {"status": "configured", "agent_session": session}
 
     def _resume_agent(
@@ -1505,6 +1526,12 @@ class RoomRealtimeController:
 
     def _bridge_ready(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         agent_id, session = self._bridge_session(identity, room_id, allow_unleased=True)
+        try:
+            health = ProviderRuntimeHealth.parse(payload)
+        except AdapterContractError as error:
+            raise RoomCommandRejected(str(error), code="adapter_health_invalid") from error
+        if not health.running:
+            raise RoomCommandRejected("A stopped provider cannot become ready.", code="adapter_health_invalid")
         connection_id = clean_lobby_text(identity.get("connection_id"), limit=128)
         channel = self.broker.channel(connection_id)
         if channel is None:
@@ -1521,11 +1548,10 @@ class RoomRealtimeController:
             runtime_status="idle",
             reported_provider_pid=_safe_int_or_none(payload.get("pid")),
             bridge_generation=generation,
-            pty=bool(payload.get("pty", True)),
-            transport=clean_lobby_text(payload.get("transport"), limit=64) or "pty",
+            pty=health.pty,
+            transport=health.transport,
             is_one_shot=bool(payload.get("is_one_shot", False)),
-            model=clean_lobby_text(payload.get("model"), limit=128) or session.get("model") or "",
-            started_at=clean_lobby_text(payload.get("started_at"), limit=128) or _now(),
+            started_at=health.started_at,
             last_error="",
             **_runtime_profile_fields(payload, include_model=False),
             **_runtime_diagnostic_fields(payload),
@@ -1540,11 +1566,21 @@ class RoomRealtimeController:
 
     def _bridge_health(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         _agent_id, session = self._bridge_session(identity, room_id)
+        try:
+            health = ProviderRuntimeHealth.parse(payload)
+        except AdapterContractError as error:
+            raise RoomCommandRejected(str(error), code="adapter_health_invalid") from error
         fields: dict[str, object] = {
             key: payload[key]
-            for key in ("running", "resolved_executable", "started_at", "last_error", "returncode")
+            for key in ("resolved_executable", "last_error", "returncode")
             if key in payload
         }
+        fields.update(
+            running=health.running,
+            pty=health.pty,
+            transport=health.transport,
+            started_at=health.started_at,
+        )
         if "pid" in payload:
             fields["reported_provider_pid"] = _safe_int_or_none(payload.get("pid"))
         fields.update(_runtime_diagnostic_fields(payload))

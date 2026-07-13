@@ -245,7 +245,14 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self._command(
             f"ready-{agent_id}-{self.ready_count}",
             "bridge.ready",
-            {"pid": 808, "pty": True, "transport": "pty", "is_one_shot": False},
+            {
+                "pid": 808,
+                "running": True,
+                "transport": "pty",
+                "provider_session_active": True,
+                "started_at": None,
+                "is_one_shot": False,
+            },
             identity,
         )
         return identity, channel
@@ -317,7 +324,18 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         identity = _bridge_identity("external")
         identity["provider_kind"] = "codex"
         channel = self.controller.connect(identity)
-        self._command("external-ready", "bridge.ready", {"pid": 1}, identity)
+        self._command(
+            "external-ready",
+            "bridge.ready",
+            {
+                "pid": 1,
+                "running": True,
+                "transport": "websocket",
+                "provider_session_active": True,
+                "started_at": None,
+            },
+            identity,
+        )
         stopped = self._command("external-stop", "agent.stop", {"agent_id": "external"})["result"]
         self.assertEqual(self.manager.stops, [])
         self.assertEqual(stopped["process"]["ownership"], "external")
@@ -329,7 +347,18 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         try:
             identity = _bridge_identity("malicious-external")
             channel = self.controller.connect(identity)
-            self._command("malicious-ready", "bridge.ready", {"pid": unrelated.pid}, identity)
+            self._command(
+                "malicious-ready",
+                "bridge.ready",
+                {
+                    "pid": unrelated.pid,
+                    "running": True,
+                    "transport": "websocket",
+                    "provider_session_active": True,
+                    "started_at": None,
+                },
+                identity,
+            )
             self._command("malicious-stop", "agent.stop", {"agent_id": "malicious-external"})
             self.assertIsNone(unrelated.poll())
             self._command("malicious-kick", "participant.kick", {"participant_id": "malicious-external"})
@@ -343,7 +372,18 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         first_identity, first_channel = self._connect_bridge()
         second_identity = _bridge_identity("codex")
         second_channel = self.controller.connect(second_identity)
-        self._command("ready-second", "bridge.ready", {"pid": 909}, second_identity)
+        self._command(
+            "ready-second",
+            "bridge.ready",
+            {
+                "pid": 909,
+                "running": True,
+                "transport": "websocket",
+                "provider_session_active": True,
+                "started_at": None,
+            },
+            second_identity,
+        )
         self.assertTrue(first_channel.closed)
         with self.assertRaises(RoomCommandRejected) as stale:
             self._command("stale-health", "bridge.health", {"running": True}, first_identity)
@@ -351,6 +391,36 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.controller.disconnect(first_channel)
         self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "idle")
         self.controller.disconnect(second_channel)
+
+    def test_bridge_ready_rejects_incomplete_health_without_joining_participant(self):
+        identity = _bridge_identity("invalid-health")
+        channel = self.controller.connect(identity)
+
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self._command(
+                "invalid-health-ready",
+                "bridge.ready",
+                {
+                    "running": True,
+                    "provider_session_active": True,
+                    "started_at": None,
+                },
+                identity,
+            )
+
+        self.assertEqual(rejected.exception.code, "adapter_health_invalid")
+        self.assertEqual(
+            RoomStore(self.root).participant("general", "invalid-health")["status"],
+            "detached",
+        )
+        self.assertFalse(
+            any(
+                event["type"] == "participant_joined"
+                and event.get("participant_id") == "invalid-health"
+                for event in RoomStore(self.root).read_events("general")
+            )
+        )
+        self.controller.disconnect(channel)
 
     def test_unknown_moderation_does_not_create_ghost_participant(self):
         for action in ("participant.kick", "participant.mute"):
@@ -385,7 +455,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(final["avatar_image_url"], "/api/room-media/avatar-luna")
 
     def test_continuous_room_mode_relays_one_speaker_at_a_time_and_stops_at_limit(self):
-        self.controller.register_provider("general", _spec("peer"))
+        self.controller.create_provider_session("general", _spec("peer"))
         codex_identity, codex_channel = self._connect_bridge("codex")
         peer_identity, peer_channel = self._connect_bridge("peer")
         update_room_settings(
@@ -413,11 +483,11 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual([event.get("participant_id") for event in finals[-3:]], ["operator-local", "codex", "peer"])
 
     def test_continuous_room_mode_skips_removed_and_stopped_speakers(self):
-        self.controller.register_provider("general", _spec("removed"))
-        self.controller.register_provider("general", _spec("stopped"))
-        self.controller.register_provider("general", _spec("disconnected"))
-        self.controller.register_provider("general", _spec("failed"))
-        self.controller.register_provider("general", _spec("active"))
+        self.controller.create_provider_session("general", _spec("removed"))
+        self.controller.create_provider_session("general", _spec("stopped"))
+        self.controller.create_provider_session("general", _spec("disconnected"))
+        self.controller.create_provider_session("general", _spec("failed"))
+        self.controller.create_provider_session("general", _spec("active"))
         self._command("kick-removed", "participant.kick", {"participant_id": "removed"})
         self._command("start-stopped", "agent.start", {"agent_id": "stopped"})
         self._command("stop-stopped", "agent.stop", {"agent_id": "stopped"})
@@ -497,7 +567,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
 
     def test_explicit_decline_finishes_without_message_or_continuous_relay(self):
-        self.controller.register_provider("general", _spec("peer"))
+        self.controller.create_provider_session("general", _spec("peer"))
         codex_identity, codex_channel = self._connect_bridge("codex")
         _peer_identity, peer_channel = self._connect_bridge("peer")
         update_room_settings(
@@ -858,7 +928,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse(RoomStore(self.root).session("general", "codex-codex-unknown"))
 
     def test_agent_create_never_upserts_an_existing_stopped_session(self):
-        self.controller.register_provider(
+        self.controller.create_provider_session(
             "general",
             _spec("existing"),
         )
@@ -990,6 +1060,15 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             },
         )["result"]["agent_session"]
         self.assertEqual(created["variant"], "high")
+        self.assertEqual(RoomStore(self.root).participant("general", "opencode-high")["status"], "detached")
+        RoomStore(self.root).update_session_fields(
+            "general",
+            "opencode-high",
+            turn_count=4,
+            last_seen_event_id="evt-existing-cursor",
+            last_seen_seq=17,
+        )
+        before_seq = max(event["seq"] for event in RoomStore(self.root).read_events("general"))
 
         configured = self._command(
             "req-configure-opencode-default",
@@ -1002,6 +1081,16 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )["result"]["agent_session"]
 
         self.assertEqual(configured["variant"], "")
+        self.assertEqual(configured["turn_count"], 4)
+        self.assertEqual(configured["last_seen_event_id"], "evt-existing-cursor")
+        self.assertEqual(configured["last_seen_seq"], 17)
+        new_event_types = {
+            event["type"]
+            for event in RoomStore(self.root).read_events("general", after_seq=before_seq)
+        }
+        self.assertIn("agent_session_profile_updated", new_event_types)
+        self.assertNotIn("agent_session_created", new_event_types)
+        self.assertNotIn("participant_joined", new_event_types)
 
     def test_stopped_agent_collects_backlog_but_never_auto_starts(self):
         self._command("req-message", "message.send", {"content": "@codex remember this"})
@@ -1052,8 +1141,8 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "busy")
 
     def test_server_assigned_group_turn_sees_all_public_messages_since_agent_last_turn(self):
-        self.controller.register_provider("general", _spec("antigravity", default_responder=False))
-        self.controller.register_provider("general", _spec("claude", default_responder=False))
+        self.controller.create_provider_session("general", _spec("antigravity", default_responder=False))
+        self.controller.create_provider_session("general", _spec("claude", default_responder=False))
         bridges = {}
         identities = {}
         for agent_id in ("codex", "antigravity", "claude"):
@@ -1132,7 +1221,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             "message.send",
             {"content": "새 참가자도 봐야 하는 최근 공개 대화", "target_agent_id": "codex"},
         )["result"]["event"]
-        self.controller.register_provider("general", _spec("late-agent", default_responder=False))
+        self.controller.create_provider_session("general", _spec("late-agent", default_responder=False))
         self._command("start-late-agent", "agent.start", {"agent_id": "late-agent"})
         _identity, channel = self._connect_bridge("late-agent")
         channel.drain()
@@ -1540,6 +1629,20 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(len(unmuted_session["pending_event_ids"]), 1)
 
     def test_kicking_agent_stops_it_and_requires_explicit_re_add(self):
+        definition = native_cli_provider_definition("codex")
+        self.assertIsNotNone(definition)
+        self.controller.configure_stopped_provider_profile(
+            "general",
+            definition.make_selected_spec(
+                agent_id="codex",
+                display_name="Codex",
+                cwd=self.root,
+                model="gpt-5.6-luna",
+                reasoning_effort="low",
+                service_tier="default",
+                permission_mode="meeting_read_only",
+            ),
+        )
         self._command("req-start-before-kick", "agent.start", {"agent_id": "codex"})
         kicked = self._command("req-kick-agent", "participant.kick", {"participant_id": "codex"})
 
@@ -1549,9 +1652,10 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             self._command("req-start-kicked", "agent.start", {"agent_id": "codex"})
         self.assertEqual(missing_error.exception.code, "not_found")
 
-        self.controller.register_provider("general", _spec())
+        readded = self._command("req-readd-kicked", "agent.readd", {"agent_id": "codex"})
         restarted = self._command("req-start-readded", "agent.start", {"agent_id": "codex"})
 
+        self.assertEqual(readded["result"]["status"], "readded")
         self.assertTrue(restarted["accepted"])
         self.assertEqual(RoomStore(self.root).participant("general", "codex")["status"], "detached")
 
@@ -1625,7 +1729,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             reasoning_effort="low",
             permission_mode="meeting_read_only",
         )
-        self.controller.register_provider("general", spec)
+        self.controller.create_provider_session("general", spec)
         store.update_session_fields(
             "general",
             spec.agent_id,
