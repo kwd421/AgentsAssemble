@@ -10,6 +10,21 @@ from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager, _B
 from agentsassemble.room_realtime import NativeCliProviderSpec
 
 
+def _spec(agent_id="codex", command=("codex",), **overrides):
+    values = {
+        "agent_id": agent_id,
+        "display_name": agent_id.title(),
+        "command": command,
+        "provider_kind": "codex_live_session",
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "low",
+        "service_tier": "default",
+        "permission_mode": "meeting_read_only",
+    }
+    values.update(overrides)
+    return NativeCliProviderSpec(**values)
+
+
 class FakeProcess:
     def __init__(self, pid=3210, stderr_bytes=b""):
         self.pid = pid
@@ -95,11 +110,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                 popen_factory=popen,
                 executable_resolver=lambda executable: f"/resolved/{executable}",
             )
-            spec = NativeCliProviderSpec(
-                agent_id="codex",
-                display_name="Codex",
-                command=("codex", "--sandbox", "read-only"),
-            )
+            spec = _spec(command=("codex", "--sandbox", "read-only"))
             launch = manager.start(
                 "general",
                 {"session_id": "codex"},
@@ -130,7 +141,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                 popen_factory=popen,
                 executable_resolver=lambda executable: None,
             )
-            spec = NativeCliProviderSpec(agent_id="missing", display_name="Missing", command=("missing",))
+            spec = _spec(agent_id="missing", command=("missing",))
 
             with self.assertRaises(FileNotFoundError):
                 manager.start(
@@ -151,16 +162,8 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                 popen_factory=popen,
                 executable_resolver=lambda executable: f"/resolved/{executable}",
             )
-            first = NativeCliProviderSpec(
-                agent_id="codex",
-                display_name="Codex",
-                command=("codex", "--model", "spark"),
-            )
-            changed = NativeCliProviderSpec(
-                agent_id="codex",
-                display_name="Codex",
-                command=("codex", "--model", "full"),
-            )
+            first = _spec(command=("codex", "--model", "spark"), model="spark")
+            changed = _spec(command=("codex", "--model", "full"), model="full")
             launch = manager.start(
                 "general",
                 {"session_id": "codex"},
@@ -204,6 +207,10 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                 display_name="Claude",
                 command=("claude", "--print"),
                 provider_kind="claude_code",
+                model="claude-sonnet-4-6",
+                reasoning_effort="low",
+                service_tier="default",
+                permission_mode="meeting_read_only",
             )
 
             with self.assertRaisesRegex(ValueError, "print mode is forbidden"):
@@ -227,7 +234,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                 popen_factory=popen,
                 executable_resolver=lambda executable: f"/resolved/{executable}",
             )
-            spec = NativeCliProviderSpec(agent_id="codex", display_name="Codex", command=("codex",))
+            spec = _spec()
             launch = manager.start(
                 "general",
                 {"session_id": "codex"},

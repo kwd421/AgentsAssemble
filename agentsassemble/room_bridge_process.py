@@ -15,6 +15,7 @@ from agentsassemble.native_cli_providers import NativeCliProviderSpec, validate_
 from agentsassemble.process_environment import sanitized_child_environment
 from agentsassemble.provider_secrets import PROVIDER_SECRETS
 from agentsassemble.opencode_runtime import OpenCodeServerProcess
+from agentsassemble.room_agent_bridge import CanonicalBridgeLaunchConfig
 
 
 BridgeExitListener = Callable[[str, str, int, str], None]
@@ -161,6 +162,7 @@ class NativeCliBridgeProcessManager:
             "provider_endpoint": provider_endpoint,
             "provider_server_pid": provider_server_pid,
         }
+        CanonicalBridgeLaunchConfig.parse_strict(config)
         config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         stdout_path.touch(exist_ok=True)
         stderr_path.touch(exist_ok=True)

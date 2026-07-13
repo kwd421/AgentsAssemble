@@ -3,7 +3,12 @@ import time
 import unittest
 
 from agentsassemble.grok_acp_runtime import GrokAcpRuntime
-from agentsassemble.room_agent_bridge import RoomAgentBridge, runtime_from_config
+from agentsassemble.room_agent_bridge import (
+    BridgeConfigError,
+    CanonicalBridgeLaunchConfig,
+    RoomAgentBridge,
+    runtime_from_config,
+)
 
 
 class FakeClient:
@@ -84,6 +89,42 @@ class DecliningRuntime(FakeRuntime):
         return {"outcome": "decline", "reason_code": "nothing_useful_to_add"}
 
 
+def _launch_config(**overrides):
+    values = {
+        "room_id": "general",
+        "participant_id": "codex",
+        "session_id": "codex",
+        "provider_kind": "codex_live_session",
+        "command": ["codex"],
+        "cwd": ".",
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "low",
+        "service_tier": "default",
+        "variant": "",
+        "permission_mode": "meeting_read_only",
+        "transport": "pty",
+        "quiet_seconds": 4.0,
+        "input_mode": "line",
+        "submit_newline": "\r",
+        "submit_delay_seconds": 0.1,
+        "terminal_rows": 40,
+        "terminal_columns": 120,
+        "startup_quiet_seconds": 1.0,
+        "startup_timeout_seconds": 20.0,
+        "startup_accept_contains": "",
+        "startup_accept_keys": "\r",
+        "startup_input": "",
+        "turn_timeout_seconds": 180.0,
+        "runtime_profile_key": "test-profile",
+        "runtime_state_dir": ".agentsassemble/test-provider-state",
+        "credential_stdin": False,
+        "provider_endpoint": "",
+        "provider_server_pid": None,
+    }
+    values.update(overrides)
+    return values
+
+
 def _wait_for(predicate, timeout=2.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -96,25 +137,28 @@ def _wait_for(predicate, timeout=2.0):
 class RoomAgentBridgeTests(unittest.TestCase):
     def test_grok_acp_config_selects_structured_runtime(self):
         runtime = runtime_from_config(
-            {
-                "participant_id": "grok",
-                "provider_kind": "grok_live_session",
-                "command": ["grok", "agent", "stdio"],
-                "cwd": ".",
-                "runtime_state_dir": ".agentsassemble/test-grok-acp",
-            }
+            _launch_config(
+                participant_id="grok",
+                session_id="grok",
+                provider_kind="grok_live_session",
+                command=["grok", "agent", "stdio"],
+                model="grok-4.5",
+                transport="acp_stdio",
+                runtime_state_dir=".agentsassemble/test-grok-acp",
+            )
         )
 
         self.assertIsInstance(runtime, GrokAcpRuntime)
 
     def test_pty_runtime_preserves_an_intentional_empty_cli_argument(self):
         runtime = runtime_from_config(
-            {
-                "participant_id": "claude",
-                "provider_kind": "claude_code",
-                "command": ["claude", "--tools", "", "--safe-mode"],
-                "cwd": ".",
-            }
+            _launch_config(
+                participant_id="claude",
+                session_id="claude",
+                provider_kind="claude_code",
+                command=["claude", "--tools", "", "--safe-mode"],
+                model="claude-sonnet-4-6",
+            )
         )
 
         self.assertEqual(runtime.command, ["claude", "--tools", "", "--safe-mode"])
@@ -122,13 +166,41 @@ class RoomAgentBridgeTests(unittest.TestCase):
     def test_real_grok_command_does_not_fall_back_to_pty(self):
         with self.assertRaisesRegex(ValueError, "PTY fallback is disabled"):
             runtime_from_config(
-                {
-                    "participant_id": "grok",
-                    "provider_kind": "grok_live_session",
-                    "command": ["grok", "--no-alt-screen"],
-                    "cwd": ".",
-                }
+                _launch_config(
+                    participant_id="grok",
+                    session_id="grok",
+                    provider_kind="grok_live_session",
+                    command=["grok", "--no-alt-screen"],
+                    model="grok-4.5",
+                    transport="acp_stdio",
+                )
             )
+
+    def test_canonical_bridge_config_rejects_missing_profile_and_transport(self):
+        for missing in ("model", "transport", "cwd", "turn_timeout_seconds"):
+            with self.subTest(missing=missing):
+                values = _launch_config()
+                values.pop(missing)
+                with self.assertRaises(BridgeConfigError) as raised:
+                    CanonicalBridgeLaunchConfig.parse_strict(values)
+                self.assertEqual(raised.exception.code, "bridge_config_invalid")
+
+    def test_canonical_bridge_config_preserves_empty_cli_arguments_and_profile_values(self):
+        parsed = CanonicalBridgeLaunchConfig.parse_strict(
+            _launch_config(
+                participant_id="claude",
+                session_id="claude",
+                provider_kind="claude_code",
+                command=["claude", "--tools", "", "--safe-mode"],
+                model="claude-sonnet-4-6",
+                reasoning_effort="",
+                service_tier="",
+            )
+        )
+
+        self.assertEqual(parsed.command[2], "")
+        self.assertEqual(parsed.reasoning_effort, "")
+        self.assertEqual(parsed.service_tier, "")
 
     def test_persistent_runtime_handles_multiple_turns_without_restart(self):
         client = FakeClient()
