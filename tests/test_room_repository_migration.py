@@ -15,7 +15,12 @@ from uuid import uuid4
 
 from agentsassemble.cli import build_parser, run_room_command
 from agentsassemble.room_attention import AttentionEvaluation
-from agentsassemble.room_repository_factory import DEFAULT_POSTGRES_DSN_ENV
+from agentsassemble.room_repository_factory import (
+    DEFAULT_POSTGRES_DSN_ENV,
+    RoomRepositorySettings,
+    RoomRepositoryUnavailable,
+    build_room_repository,
+)
 from agentsassemble.room_repository_migration import (
     RoomRepositoryTransferError,
     _TableSpec,
@@ -165,6 +170,7 @@ class PostgresRoomRepositoryMigrationTests(unittest.TestCase):
 
             self.assertEqual(report["status"], "applied")
             self.assertTrue(report["verified"])
+            self.assertTrue(report["target"]["authority_active"])
             self.assertEqual(report["source"]["checksum"], report["target"]["checksum"])
             self.assertEqual(
                 report["source"]["event_sequences"],
@@ -183,6 +189,12 @@ class PostgresRoomRepositoryMigrationTests(unittest.TestCase):
             self.assertEqual(repository.session("general", "agent-a")["model"], "test-model")
             self.assertTrue(repository.room_is_deleted("deleted-room"))
             self.assertEqual(len(repository.attention_jobs("general")), 1)
+            with psycopg.connect(test_dsn) as connection:
+                authority = connection.execute(
+                    "SELECT source_backend, source_checksum FROM room_repository_authority"
+                ).fetchone()
+            self.assertEqual(authority[0], "sqlite")
+            self.assertEqual(authority[1], report["source"]["checksum"])
 
     def test_apply_refuses_nonempty_target_instead_of_merging(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, self._postgres_schema(
@@ -225,6 +237,19 @@ class PostgresRoomRepositoryMigrationTests(unittest.TestCase):
                     Path(temp_dir),
                     postgres_dsn=test_dsn,
                     apply=True,
+                )
+
+    def test_schema_without_migration_authority_cannot_start_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, self._postgres_schema(
+            migrate=True
+        ) as test_dsn:
+            with self.assertRaisesRegex(RoomRepositoryUnavailable, "not activated"):
+                build_room_repository(
+                    Path(temp_dir),
+                    RoomRepositorySettings(
+                        backend="postgresql",
+                        postgres_dsn=test_dsn,
+                    ),
                 )
 
     @contextmanager

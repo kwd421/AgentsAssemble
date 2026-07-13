@@ -10,6 +10,10 @@ from typing import Any
 
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_store import RoomStore
+from agentsassemble.postgres_room_schema import (
+    PostgresRoomSchemaNotReady,
+    require_postgres_room_schema,
+)
 
 
 ROOM_REPOSITORY_BACKENDS = frozenset({"sqlite", "postgresql"})
@@ -84,7 +88,15 @@ def build_room_repository(
         )
 
     repository_type = _postgres_repository_type()
-    return repository_type(settings.postgres_dsn, output_root=Path(output_root))
+    try:
+        require_postgres_room_schema(settings.postgres_dsn)
+    except PostgresRoomSchemaNotReady as error:
+        raise RoomRepositoryUnavailable(str(error)) from error
+    return repository_type(
+        settings.postgres_dsn,
+        output_root=Path(output_root),
+        migrate=False,
+    )
 
 
 def _postgres_repository_type() -> Any:

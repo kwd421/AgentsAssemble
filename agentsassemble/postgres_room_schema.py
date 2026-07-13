@@ -3,8 +3,30 @@ from __future__ import annotations
 from pathlib import Path
 
 
+POSTGRES_ROOM_SCHEMA_REVISION = "0002_room_repository_authority"
+POSTGRES_ROOM_AUTHORITY_ID = "canonical-room-repository"
+POSTGRES_ROOM_REQUIRED_TABLES = (
+    "rooms",
+    "participants",
+    "agent_sessions",
+    "room_events",
+    "command_results",
+    "deleted_rooms",
+    "agent_attention_state",
+    "attention_jobs",
+    "attention_leases",
+    "scheduled_wakeups",
+    "conversation_obligations",
+    "room_repository_authority",
+)
+
+
 class PostgresRoomMigrationError(RuntimeError):
     """PostgreSQL room schema migration did not complete."""
+
+
+class PostgresRoomSchemaNotReady(RuntimeError):
+    """PostgreSQL exists but is not an activated canonical room authority."""
 
 
 def upgrade_postgres_room_schema(dsn: str) -> None:
@@ -43,6 +65,62 @@ def upgrade_postgres_room_schema(dsn: str) -> None:
         ) from None
     finally:
         engine.dispose()
+
+
+def require_postgres_room_schema(dsn: str) -> None:
+    """Fail unless the current schema and explicit authority marker are ready."""
+
+    clean_dsn = str(dsn or "").strip()
+    if not clean_dsn:
+        raise PostgresRoomSchemaNotReady("PostgreSQL room storage requires a database DSN.")
+    try:
+        import psycopg
+    except ModuleNotFoundError as error:
+        raise PostgresRoomSchemaNotReady(
+            "PostgreSQL room storage requires the optional 'postgres' dependencies."
+        ) from error
+
+    try:
+        with psycopg.connect(clean_dsn) as connection:
+            missing = [
+                table
+                for table in POSTGRES_ROOM_REQUIRED_TABLES
+                if connection.execute("SELECT to_regclass(%s)", (table,)).fetchone()[0] is None
+            ]
+            revision = ""
+            alembic_exists = connection.execute(
+                "SELECT to_regclass('alembic_version')"
+            ).fetchone()[0]
+            if alembic_exists is not None:
+                row = connection.execute(
+                    "SELECT version_num FROM alembic_version LIMIT 1"
+                ).fetchone()
+                revision = str((row or ("",))[0] or "")
+            authority_active = False
+            if "room_repository_authority" not in missing:
+                authority_active = connection.execute(
+                    "SELECT 1 FROM room_repository_authority WHERE authority_id = %s",
+                    (POSTGRES_ROOM_AUTHORITY_ID,),
+                ).fetchone() is not None
+    except PostgresRoomSchemaNotReady:
+        raise
+    except Exception as error:
+        sqlstate = str(getattr(error, "sqlstate", "") or "")
+        suffix = f" (SQLSTATE {sqlstate})" if sqlstate else ""
+        raise PostgresRoomSchemaNotReady(
+            f"PostgreSQL room schema check failed: {type(error).__name__}{suffix}."
+        ) from None
+
+    if missing or revision != POSTGRES_ROOM_SCHEMA_REVISION:
+        raise PostgresRoomSchemaNotReady(
+            "PostgreSQL room schema is not ready; run "
+            "'assemble room migrate-postgres --apply' before selecting this backend."
+        )
+    if not authority_active:
+        raise PostgresRoomSchemaNotReady(
+            "PostgreSQL room authority is not activated; run "
+            "'assemble room migrate-postgres --apply' before selecting this backend."
+        )
 
 
 def _sqlalchemy_psycopg_url(dsn: str) -> str:

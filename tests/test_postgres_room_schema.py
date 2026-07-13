@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from agentsassemble.postgres_room_schema import (
+    POSTGRES_ROOM_SCHEMA_REVISION,
     PostgresRoomMigrationError,
     _sqlalchemy_psycopg_url,
     upgrade_postgres_room_schema,
@@ -12,6 +13,9 @@ from agentsassemble.postgres_room_schema import (
 
 
 class PostgresRoomSchemaTests(unittest.TestCase):
+    def test_current_revision_requires_authority_activation(self) -> None:
+        self.assertEqual(POSTGRES_ROOM_SCHEMA_REVISION, "0002_room_repository_authority")
+
     def test_sqlalchemy_url_explicitly_selects_psycopg3(self) -> None:
         self.assertEqual(
             _sqlalchemy_psycopg_url("postgresql://user:secret@localhost/rooms"),

@@ -77,9 +77,13 @@ open a local SQLite database instead.
 PostgreSQL schema changes use the packaged Alembic lineage under
 `agentsassemble/migrations` and explicit SQL. Runtime repository queries use
 `psycopg3`, not an ORM. Revision `0001_room_repository` represents the same
-logical room/attention schema as SQLite schema version 3; the existing SQLite
-migrator remains responsible for upgrading pre-repository local files and old
-SQLite versions until a later revision requires a shared cross-backend change.
+logical room/attention schema as SQLite schema version 3. Revision
+`0002_room_repository_authority` adds the activation marker written only by a
+verified authority transfer. Runtime repository construction never runs
+Alembic and refuses PostgreSQL until both the head revision and that marker are
+present. The existing SQLite migrator remains responsible for upgrading
+pre-repository local files and old SQLite versions until a later revision
+requires a shared cross-backend change.
 
 `PostgresRoomRepository` now implements the same transaction, event replay,
 participant/session lifecycle, command dedupe, media metadata, and durable
@@ -99,6 +103,7 @@ dry run, and requires `--apply` to create the PostgreSQL schema and copy rows.
 Apply mode holds the SQLite write lock, refuses a non-empty or partial target,
 copies every canonical and attention table in one PostgreSQL transaction, and
 compares normalized table checksums plus per-room event sequence summaries
-before commit. It never deletes or edits the SQLite source. GUI backend
-selection remains disabled until startup configuration is wired; the default
-continues to be SQLite.
+before commit. The same transaction writes the PostgreSQL authority activation
+marker only after those checks pass. It never deletes or edits the SQLite
+source. GUI backend selection remains disabled until startup configuration is
+wired; the default continues to be SQLite.

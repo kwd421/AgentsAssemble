@@ -163,7 +163,7 @@ class PostgresRoomRepository:
         dsn: str,
         *,
         output_root: Path | None = None,
-        migrate: bool = True,
+        migrate: bool = False,
     ) -> None:
         clean_dsn = str(dsn or "").strip()
         if not clean_dsn:

@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -22,7 +23,10 @@ if _PSYCOPG_AVAILABLE:
     from psycopg import sql
 
     from agentsassemble.postgres_room_repository import PostgresRoomRepository
-    from agentsassemble.postgres_room_schema import upgrade_postgres_room_schema
+    from agentsassemble.postgres_room_schema import (
+        POSTGRES_ROOM_AUTHORITY_ID,
+        upgrade_postgres_room_schema,
+    )
 
 
 @unittest.skipUnless(
@@ -39,6 +43,13 @@ class PostgresRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.
             )
         cls.test_dsn = _dsn_with_search_path(_POSTGRES_DSN, cls.schema_name)
         upgrade_postgres_room_schema(cls.test_dsn)
+        with psycopg.connect(cls.test_dsn) as connection:
+            connection.execute(
+                """INSERT INTO room_repository_authority(
+                       authority_id, activated_at, source_backend, source_checksum
+                   ) VALUES(%s, NOW(), %s, %s)""",
+                (POSTGRES_ROOM_AUTHORITY_ID, "test", "test-checksum"),
+            )
         cls._temporary_directory = tempfile.TemporaryDirectory()
 
     @classmethod
@@ -66,6 +77,14 @@ class PostgresRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.
     def test_repository_representation_does_not_disclose_dsn(self) -> None:
         self.assertEqual(repr(self.repository), "PostgresRoomRepository(configured=True)")
         self.assertNotIn(self.test_dsn, repr(self.repository))
+
+    def test_repository_constructor_does_not_migrate_by_default(self) -> None:
+        with patch(
+            "agentsassemble.postgres_room_repository.upgrade_postgres_room_schema"
+        ) as upgrade:
+            PostgresRoomRepository(self.test_dsn)
+
+        upgrade.assert_not_called()
 
     def test_factory_builds_postgres_without_opening_sqlite(self) -> None:
         output_root = Path(self._temporary_directory.name) / "factory"

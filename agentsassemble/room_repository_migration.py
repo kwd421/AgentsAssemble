@@ -9,13 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from agentsassemble.postgres_room_schema import (
+    POSTGRES_ROOM_AUTHORITY_ID,
+    POSTGRES_ROOM_SCHEMA_REVISION,
     PostgresRoomMigrationError,
     upgrade_postgres_room_schema,
 )
 from agentsassemble.room_database import ROOM_DATABASE_FILENAME, ROOM_SCHEMA_VERSION
-
-
-POSTGRES_ROOM_REVISION = "0001_room_repository"
 
 
 class RoomRepositoryTransferError(RuntimeError):
@@ -231,7 +230,11 @@ def migrate_sqlite_rooms_to_postgres(
         else:
             target = _empty_snapshot()
         target_empty = not any(target["row_counts"].values())
-        can_apply = schema["state"] in {"absent", "ready"} and target_empty
+        can_apply = (
+            schema["state"] in {"absent", "ready"}
+            and target_empty
+            and not schema["authority_active"]
+        )
 
         if not apply:
             return _migration_report(
@@ -247,6 +250,10 @@ def migrate_sqlite_rooms_to_postgres(
             raise RoomRepositoryTransferError(
                 "PostgreSQL room schema is partial or has an unexpected migration revision."
             )
+        if schema["authority_active"]:
+            raise RoomRepositoryTransferError(
+                "PostgreSQL room authority is already activated; migration will not overwrite it."
+            )
         if not target_empty:
             raise RoomRepositoryTransferError(
                 "PostgreSQL room repository is not empty; migration refuses to merge authorities."
@@ -259,6 +266,7 @@ def migrate_sqlite_rooms_to_postgres(
             clean_dsn,
             source,
         )
+        schema = {**schema, "authority_active": True}
         if source["checksum"] != target["checksum"]:
             raise RoomRepositoryTransferError(
                 "PostgreSQL room migration checksum mismatch; target transaction was rolled back."
@@ -313,11 +321,12 @@ def _read_sqlite_snapshot(connection: sqlite3.Connection) -> dict[str, object]:
 
 
 def _postgres_schema_state(psycopg: Any, dict_row: Any, dsn: str) -> dict[str, object]:
+    required_tables = tuple(spec.name for spec in _TABLES) + ("room_repository_authority",)
     with psycopg.connect(dsn, row_factory=dict_row) as connection:
         existing = {
-            spec.name
-            for spec in _TABLES
-            if connection.execute("SELECT to_regclass(%s) AS relation", (spec.name,)).fetchone()[
+            table
+            for table in required_tables
+            if connection.execute("SELECT to_regclass(%s) AS relation", (table,)).fetchone()[
                 "relation"
             ]
             is not None
@@ -331,16 +340,23 @@ def _postgres_schema_state(psycopg: Any, dict_row: Any, dsn: str) -> dict[str, o
                 "SELECT version_num FROM alembic_version LIMIT 1"
             ).fetchone()
             revision = str((revision_row or {}).get("version_num") or "")
+        authority_active = False
+        if "room_repository_authority" in existing:
+            authority_active = connection.execute(
+                "SELECT 1 AS active FROM room_repository_authority WHERE authority_id = %s",
+                (POSTGRES_ROOM_AUTHORITY_ID,),
+            ).fetchone() is not None
     if not existing and not revision:
         state = "absent"
-    elif len(existing) == len(_TABLES) and revision == POSTGRES_ROOM_REVISION:
+    elif len(existing) == len(required_tables) and revision == POSTGRES_ROOM_SCHEMA_REVISION:
         state = "ready"
     else:
         state = "partial"
     return {
         "state": state,
         "revision": revision,
-        "missing_tables": [spec.name for spec in _TABLES if spec.name not in existing],
+        "missing_tables": [table for table in required_tables if table not in existing],
+        "authority_active": authority_active,
     }
 
 
@@ -393,6 +409,17 @@ def _write_postgres_snapshot(
             raise RoomRepositoryTransferError(
                 "PostgreSQL room migration event sequence mismatch; target transaction was rolled back."
             )
+        connection.execute(
+            """INSERT INTO room_repository_authority(
+                   authority_id, activated_at, source_backend, source_checksum
+               ) VALUES(%s, %s, %s, %s)""",
+            (
+                POSTGRES_ROOM_AUTHORITY_ID,
+                datetime.now(UTC),
+                "sqlite",
+                source["checksum"],
+            ),
+        )
     return target
 
 
@@ -525,6 +552,7 @@ def _migration_report(
             "schema_state": schema["state"],
             "schema_revision": schema["revision"],
             "missing_tables": schema["missing_tables"],
+            "authority_active": schema["authority_active"],
         },
     }
 
