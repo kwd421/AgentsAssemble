@@ -48,6 +48,7 @@ describe("AgentCreateModal", () => {
       />
     );
 
+    await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
     const model = screen.getByRole("combobox", { name: "모델" });
     expect(model.tagName).toBe("SELECT");
     expect(screen.getByRole("option", { name: "Luna · gpt-5.6-luna" })).toBeTruthy();
@@ -108,6 +109,7 @@ describe("AgentCreateModal", () => {
       />
     );
 
+    await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "기존 세션" }), "codex-existing");
     await userEvent.click(screen.getByRole("button", { name: "추가하고 시작" }));
 
@@ -128,6 +130,7 @@ describe("AgentCreateModal", () => {
       />
     );
 
+    await userEvent.click(screen.getByRole("listitem", { name: "Claude Code" }));
     const model = screen.getByRole("combobox", { name: "모델" });
     expect(screen.getByRole("option", { name: "Claude Sonnet 4.6 · claude-sonnet-4-6" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "Sonnet (latest alias) · sonnet" })).toBeTruthy();
@@ -226,6 +229,7 @@ describe("AgentCreateModal", () => {
       />
     );
 
+    await userEvent.click(screen.getByRole("listitem", { name: "Claude Code" }));
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "claude-sonnet-4-6");
     const refreshed = claudeProvider();
     refreshed.controls[0].options = refreshed.controls[0].options.filter(
@@ -247,7 +251,7 @@ describe("AgentCreateModal", () => {
     expect(screen.getByRole("button", { name: "추가하고 시작" }).hasAttribute("disabled")).toBe(true);
   });
 
-  it("does not silently choose the first option when a catalog default is invalid", () => {
+  it("does not silently choose the first option when a catalog default is invalid", async () => {
     render(
       <AgentCreateModal
         open
@@ -273,6 +277,7 @@ describe("AgentCreateModal", () => {
       />
     );
 
+    await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
     expect((screen.getByRole("combobox", { name: "모델" }) as HTMLSelectElement).value).toBe("");
     expect(screen.getByRole("button", { name: "추가하고 시작" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByText("모델의 유효한 기본값이 없어 직접 선택해야 합니다.")).toBeTruthy();
@@ -291,6 +296,7 @@ describe("AgentCreateModal", () => {
       />
     );
 
+    await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "model-high");
 
     expect(screen.queryByRole("option", { name: "low" })).toBeNull();
@@ -312,6 +318,7 @@ describe("AgentCreateModal", () => {
       />
     );
 
+    await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
     const refreshed = codexProviderWithRelations();
     refreshed.controls[0].options[0].metadata = {
       reasoning_efforts: ["high"],
@@ -331,6 +338,26 @@ describe("AgentCreateModal", () => {
 
     expect((screen.getByRole("combobox", { name: "추론 강도" }) as HTMLSelectElement).value).toBe("");
     expect(screen.getByRole("button", { name: "추가하고 시작" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("requires an explicit provider selection when the modal opens", () => {
+    render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-explicit"
+        providers={[codexProvider(), claudeProvider()]}
+        onClose={() => undefined}
+        onCreate={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("사용할 provider를 선택하세요.")).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "모델" })).toBeNull();
+    expect(screen.getByRole("listitem", { name: "Codex" }).getAttribute("data-active")).toBe("false");
+    expect(screen.getByRole("listitem", { name: "Claude Code" }).getAttribute("data-active")).toBe("false");
+    expect(screen.getByRole("button", { name: "추가" }).hasAttribute("disabled")).toBe(true);
   });
 });
 

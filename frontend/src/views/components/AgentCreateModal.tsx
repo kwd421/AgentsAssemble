@@ -36,12 +36,12 @@ export default function AgentCreateModal({
   onCreate,
   onCreated,
 }: AgentCreateModalProps) {
-  const [providerId, setProviderId] = useState("codex");
+  const [providerId, setProviderId] = useState("");
   const [existingSessionId, setExistingSessionId] = useState("");
-  const [displayName, setDisplayName] = useState("Codex");
+  const [displayName, setDisplayName] = useState("");
   const [workspacePath, setWorkspacePath] = useState(".");
   const [settings, setSettings] = useState<Record<string, string>>({});
-  const [startNow, setStartNow] = useState(true);
+  const [startNow, setStartNow] = useState(false);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [deepSeekKey, setDeepSeekKey] = useState("");
@@ -68,6 +68,7 @@ export default function AgentCreateModal({
       );
   const canCreate = Boolean(
     meetingId &&
+      selectedProvider &&
       (existingSessionId || (catalogRevision && selectedProvider?.startable)) &&
       !invalidControl &&
       displayName.trim() &&
@@ -82,7 +83,7 @@ export default function AgentCreateModal({
     if (!providers.length) return;
     const current = providers.find((provider) => provider.id === providerId);
     if (!wasOpen.current) {
-      applyProvider(current || providers[0]);
+      if (current) applyProvider(current);
       setStatus("");
       wasOpen.current = true;
       return;
@@ -341,6 +342,9 @@ export default function AgentCreateModal({
         )}
         {selectedProviderMissing && (
           <p className="dc-agent-create-status">선택한 provider가 현재 catalog에 없습니다.</p>
+        )}
+        {!selectedProvider && !selectedProviderMissing && providers.length > 0 && (
+          <p className="dc-agent-create-status">사용할 provider를 선택하세요.</p>
         )}
         {!existingSessionId && invalidControl && (
           <p className="dc-agent-create-status">{invalidControl.label}의 유효한 기본값이 없어 직접 선택해야 합니다.</p>
