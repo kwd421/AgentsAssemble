@@ -80,3 +80,13 @@ PostgreSQL schema changes use the packaged Alembic lineage under
 logical room/attention schema as SQLite schema version 3; the existing SQLite
 migrator remains responsible for upgrading pre-repository local files and old
 SQLite versions until a later revision requires a shared cross-backend change.
+
+`PostgresRoomRepository` now implements the same transaction, event replay,
+participant/session lifecycle, command dedupe, media metadata, and durable
+attention contract as `RoomStore`. PostgreSQL-specific reads, mutations, and
+attention persistence are separate modules; the repository facade owns
+connections, transaction locks, listeners, and filesystem side effects. The
+adapter has real PostgreSQL contract coverage, but GUI backend selection remains
+disabled until every canonical GUI route receives the same injected repository.
+This prevents one server process from mixing PostgreSQL WebSocket state with a
+fresh SQLite HTTP state file.

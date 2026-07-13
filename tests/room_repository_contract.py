@@ -324,3 +324,120 @@ class RoomRepositoryContractMixin:
         self.repository.delete_room("general", reason="attention cascade")
 
         case.assertEqual(self.repository.attention_jobs("general"), [])
+
+    def test_participant_terminal_status_detaches_sessions_and_records_event(self) -> None:
+        self.repository.create_room("general")
+        self.repository.upsert_participant(
+            "general",
+            {
+                "participant_id": "agent-a",
+                "display_name": "Agent A",
+                "participant_type": "agent",
+            },
+        )
+        self.repository.upsert_session(
+            "general",
+            {
+                "session_id": "session-a",
+                "participant_id": "agent-a",
+                "status": "attached",
+                "runtime_status": "idle",
+            },
+        )
+
+        participant = self.repository.set_participant_status(
+            "general",
+            "agent-a",
+            "kicked",
+            reason="contract test",
+        )
+
+        case = self._test_case()
+        case.assertEqual(participant["status"], "kicked")
+        case.assertEqual(self.repository.session("general", "session-a")["status"], "detached")
+        case.assertEqual(self.repository.read_events("general")[-1]["type"], "participant_kicked")
+
+    def test_archived_room_is_hidden_from_default_directory(self) -> None:
+        self.repository.create_room("general", label="General")
+
+        room = self.repository.set_room_status("general", "archived")
+
+        case = self._test_case()
+        case.assertEqual(room["status"], "archived")
+        case.assertNotIn("general", [item["room_id"] for item in self.repository.list_rooms()])
+        case.assertIn(
+            "general",
+            [item["room_id"] for item in self.repository.list_rooms(include_archived=True)],
+        )
+        case.assertEqual(self.repository.read_events("general")[-1]["type"], "room_archived")
+
+    def test_event_queries_apply_visibility_type_actor_and_cursor_filters(self) -> None:
+        self.repository.create_room("general")
+        first = self.repository.append_event(
+            "general",
+            "message_final",
+            participant_id="agent-a",
+            participant_type="agent",
+            content="first",
+        )
+        hidden = self.repository.append_event(
+            "general",
+            "message_final",
+            participant_id="agent-a",
+            participant_type="agent",
+            content="hidden",
+            visibility="legacy_hidden",
+        )
+        last = self.repository.append_event(
+            "general",
+            "system",
+            participant_id="host-a",
+            participant_type="human",
+            content="last",
+        )
+
+        case = self._test_case()
+        case.assertEqual(self.repository.event_by_id("general", hidden["id"]), {})
+        case.assertEqual(
+            self.repository.event_by_id("general", hidden["id"], include_hidden=True)["id"],
+            hidden["id"],
+        )
+        case.assertEqual(
+            [event["id"] for event in self.repository.read_events("general", after=first["id"])],
+            [last["id"]],
+        )
+        case.assertEqual(
+            [
+                event["id"]
+                for event in self.repository.read_events(
+                    "general",
+                    include_hidden=True,
+                    event_types=("message_final",),
+                    exclude_actor_id="host-a",
+                )
+            ],
+            [first["id"], hidden["id"]],
+        )
+        case.assertEqual(self.repository.event_count("general"), 3)
+        case.assertEqual(self.repository.event_count("general", include_hidden=True), 4)
+        case.assertEqual(self.repository.event_sequence("general", last["id"]), last["seq"])
+        case.assertEqual(self.repository.oldest_event_sequence("general"), 1)
+
+    def test_media_event_keeps_internal_path_out_of_canonical_payload(self) -> None:
+        self.repository.create_room("general")
+
+        media = self.repository.attach_media(
+            "general",
+            filename="diagram.png",
+            content_type="image/png",
+            data=b"image-bytes",
+            supported=True,
+        )
+        event = self.repository.read_events("general")[-1]
+
+        case = self._test_case()
+        case.assertEqual(media["size"], len(b"image-bytes"))
+        case.assertTrue(str(media.get("path") or ""))
+        case.assertEqual(event["type"], "media_attached")
+        case.assertEqual(event["media"]["id"], media["id"])
+        case.assertNotIn("path", event["media"])

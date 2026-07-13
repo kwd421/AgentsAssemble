@@ -84,7 +84,7 @@ def build_room_repository(
         )
 
     repository_type = _postgres_repository_type()
-    return repository_type(settings.postgres_dsn)
+    return repository_type(settings.postgres_dsn, output_root=Path(output_root))
 
 
 def _postgres_repository_type() -> Any:

@@ -200,6 +200,27 @@ class RoomRepository(Protocol):
 
     def set_room_status(self, room_id: str, status: str) -> RoomRecord: ...
 
+    def attach_media(
+        self,
+        room_id: str,
+        *,
+        filename: str,
+        content_type: str,
+        size: int = 0,
+        supported: bool,
+        data: bytes = b"",
+    ) -> dict[str, object]: ...
+
+    def export_participant(
+        self,
+        room_id: str,
+        participant_id: str,
+        *,
+        reason: str = "",
+    ) -> dict[str, object]: ...
+
+    def room_payload(self, room_id: str) -> dict[str, object]: ...
+
     def attention_state(self, room_id: str, participant_id: str) -> AgentAttentionState: ...
 
     def attention_jobs(
