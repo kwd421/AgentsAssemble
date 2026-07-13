@@ -130,9 +130,7 @@ for line in sys.stdin:
     if text == "empty-turn":
         send({"jsonrpc": "2.0", "id": request_id, "result": {"stopReason": "end_turn"}})
         continue
-    if text.startswith("The previous turn ended without a room-visible message"):
-        response = "recovered answer"
-    elif text == "recall-after-restart":
+    if text == "recall-after-restart":
         remembered = str((provider_sessions.get(session_id) or {}).get("last_text") or "")
         response = f"recalled {remembered}"
     elif text == "permission":

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TextIO
 
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.provider_runtime_contracts import AdapterContractError
 from agentsassemble.process_environment import sanitized_provider_environment
 
 
@@ -79,7 +80,6 @@ class GrokAcpRuntime:
         self._turn_notification_drop_start = 0
         self._permission_request_count = 0
         self._permission_denied_count = 0
-        self._empty_turn_recovery_count = 0
         self._stderr_byte_count = 0
         self._stderr_line_count = 0
         self._stderr_warning_count = 0
@@ -237,7 +237,6 @@ class GrokAcpRuntime:
         deadline = time.monotonic() + max(0.1, float(timeout_seconds))
         content_parts: list[str] = []
         response: dict[str, object] | None = None
-        empty_turn_recovered = False
         try:
             while time.monotonic() < deadline:
                 self._consume_notifications(
@@ -275,31 +274,10 @@ class GrokAcpRuntime:
                     self._model = model
                 content = "".join(content_parts).strip()
                 if not content:
-                    if empty_turn_recovered:
-                        raise RuntimeError("Grok ACP completed twice without a room-visible assistant message.")
-                    with self._lock:
-                        self._pending.pop(request_id, None)
-                        self._empty_turn_recovery_count += 1
-                    request_id, response_queue = self._begin_request(
-                        "session/prompt",
-                        {
-                            "sessionId": session_id,
-                            "prompt": [
-                                {
-                                    "type": "text",
-                                    "text": (
-                                        "The previous turn ended without a room-visible message. "
-                                        "Answer that room turn directly now using plain text only. "
-                                        "Do not invoke a tool merely to produce the reply."
-                                    ),
-                                }
-                            ],
-                        },
+                    raise AdapterContractError(
+                        "Grok ACP completed without a room-visible assistant message.",
+                        code="empty_provider_final",
                     )
-                    with self._lock:
-                        self._active_request = (request_id, response_queue)
-                    empty_turn_recovered = True
-                    continue
                 return {
                     "outcome": "message",
                     "actor_id": self.agent_id,
@@ -387,7 +365,6 @@ class GrokAcpRuntime:
                 "notification_drop_count": self._notification_drop_count,
                 "permission_request_count": self._permission_request_count,
                 "permission_denied_count": self._permission_denied_count,
-                "empty_turn_recovery_count": self._empty_turn_recovery_count,
                 "stderr_drained": True,
                 "stderr_byte_count": self._stderr_byte_count,
                 "stderr_line_count": self._stderr_line_count,

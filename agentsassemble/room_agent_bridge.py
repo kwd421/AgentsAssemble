@@ -336,7 +336,6 @@ class RoomAgentBridge:
             "yolo_mode": details.get("yolo_mode"),
             "permission_request_count": int(details.get("permission_request_count") or 0),
             "permission_denied_count": int(details.get("permission_denied_count") or 0),
-            "empty_turn_recovery_count": int(details.get("empty_turn_recovery_count") or 0),
             "notification_drop_count": int(details.get("notification_drop_count") or 0),
             "message_source": str(details.get("message_source") or ""),
             "message_source_strict": bool(details.get("message_source_strict", False)),

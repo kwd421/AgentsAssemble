@@ -4,6 +4,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agentsassemble.grok_acp_runtime import GrokAcpRuntime
 
@@ -95,18 +96,20 @@ class GrokAcpRuntimeTests(unittest.TestCase):
             finally:
                 runtime.stop()
 
-    def test_empty_completed_turn_gets_one_structured_recovery_prompt(self):
+    def test_empty_completed_turn_fails_without_a_second_provider_prompt(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = self.make_runtime(Path(temp_dir))
             try:
-                runtime.send("empty-turn")
-                output = runtime.read_output(timeout_seconds=5)
-                health = runtime.health()
+                with patch.object(runtime, "_begin_request", wraps=runtime._begin_request) as begin_request:
+                    runtime.send("empty-turn")
+                    with self.assertRaisesRegex(RuntimeError, "without a room-visible assistant message") as raised:
+                        runtime.read_output(timeout_seconds=5)
             finally:
                 runtime.stop()
 
-        self.assertEqual(output["content"], "recovered answer")
-        self.assertEqual(health["empty_turn_recovery_count"], 1)
+        prompt_calls = [call for call in begin_request.call_args_list if call.args[0] == "session/prompt"]
+        self.assertEqual(len(prompt_calls), 1)
+        self.assertEqual(getattr(raised.exception, "code", ""), "empty_provider_final")
 
     def test_provider_quota_error_is_classified_from_drained_stderr(self):
         with tempfile.TemporaryDirectory() as temp_dir:

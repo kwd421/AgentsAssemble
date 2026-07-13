@@ -2502,7 +2502,6 @@ def _runtime_diagnostic_fields(diagnostics: object) -> dict[str, object]:
         "yolo_mode": values.get("yolo_mode") if isinstance(values.get("yolo_mode"), bool) else None,
         "permission_request_count": int(values.get("permission_request_count") or 0),
         "permission_denied_count": int(values.get("permission_denied_count") or 0),
-        "empty_turn_recovery_count": int(values.get("empty_turn_recovery_count") or 0),
         "notification_drop_count": int(values.get("notification_drop_count") or 0),
         "message_source": clean_lobby_text(values.get("message_source"), limit=128),
         "message_source_strict": bool(values.get("message_source_strict", False)),
