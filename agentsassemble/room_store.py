@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from collections.abc import Callable, Iterable, Iterator
@@ -18,6 +19,7 @@ from agentsassemble.room_database import (
     migration_report,
     open_room_database,
 )
+from agentsassemble.room_repository import RoomTransaction
 
 ROOM_STATUSES = {"active", "closed", "archived"}
 PARTICIPANT_STATUSES = {"joined", "left", "kicked", "exported", "detached"}
@@ -28,12 +30,85 @@ _STORE_REGISTRY_LOCK = threading.RLock()
 _STORE_LOCKS: dict[str, threading.RLock] = {}
 _EVENT_LISTENERS: dict[str, list[Callable[[dict[str, object]], None]]] = {}
 _INITIALIZED_DATABASES: dict[str, tuple[tuple[int, int], dict[str, object]]] = {}
+_LOGGER = logging.getLogger(__name__)
 
 
 def _store_lock(output_root: Path) -> threading.RLock:
     key = str(output_root.expanduser().resolve())
     with _STORE_REGISTRY_LOCK:
         return _STORE_LOCKS.setdefault(key, threading.RLock())
+
+
+class _SQLiteRoomTransaction:
+    def __init__(
+        self,
+        store: RoomStore,
+        connection: sqlite3.Connection,
+        room_id: str,
+        pending_events: list[dict[str, object]],
+    ) -> None:
+        self._store = store
+        self._connection = connection
+        self._room_id = room_id
+        self._pending_events = pending_events
+
+    @property
+    def room_id(self) -> str:
+        return self._room_id
+
+    def create_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
+        return self._store._create_room(self._connection, self._room_id, label=label, status=status)
+
+    def upsert_participant(
+        self,
+        participant: dict[str, object],
+    ) -> tuple[dict[str, object], bool]:
+        return self._store._upsert_participant(self._connection, self._room_id, participant)
+
+    def update_participant_fields(self, participant_id: str, **updates: object) -> dict[str, object]:
+        return self._store._update_participant_fields(
+            self._connection,
+            self._room_id,
+            participant_id,
+            **updates,
+        )
+
+    def upsert_session(self, session: dict[str, object]) -> tuple[dict[str, object], bool]:
+        return self._store._upsert_session(self._connection, self._room_id, session)
+
+    def update_session_fields(self, session_id: str, **updates: object) -> dict[str, object]:
+        return self._store._update_session_fields(
+            self._connection,
+            self._room_id,
+            session_id,
+            **updates,
+        )
+
+    def append_event(self, event_type: str, **payload: object) -> dict[str, object]:
+        event = self._store._append_event(self._connection, self._room_id, event_type, **payload)
+        self._pending_events.append(event)
+        return event
+
+    def record_command_result(
+        self,
+        request_id: str,
+        result: dict[str, object],
+        *,
+        principal_id: str = "",
+        action: str = "",
+        payload_hash: str = "",
+        max_entries: int = 500,
+    ) -> dict[str, object]:
+        return self._store._record_command_result(
+            self._connection,
+            self._room_id,
+            request_id,
+            result,
+            principal_id=principal_id,
+            action=action,
+            payload_hash=payload_hash,
+            max_entries=max_entries,
+        )
 
 
 class RoomStore:
@@ -58,44 +133,26 @@ class RoomStore:
 
     def create_room(self, room_id: str, *, label: str = "", status: str = "active") -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
-        clean_status = _room_status(status)
-        now = _now()
-        with self._lock, self._write_transaction() as connection:
-            deleted = connection.execute(
-                "SELECT deleted_at FROM deleted_rooms WHERE room_id = ?", (clean_room_id,)
-            ).fetchone()
-            if deleted is not None:
-                raise ValueError(f"Room {clean_room_id} was deleted and cannot be recreated implicitly.")
-            row = connection.execute("SELECT data_json FROM rooms WHERE room_id = ?", (clean_room_id,)).fetchone()
-            existing = _row_payload(row)
-            room = {
-                "room_id": clean_room_id,
-                "label": clean_lobby_text(label, limit=128) or str(existing.get("label") or ""),
-                "status": clean_status if existing.get("status") not in {"closed", "archived"} else existing["status"],
-                "created_at": str(existing.get("created_at") or now),
-                "updated_at": now,
-            }
-            connection.execute(
-                """INSERT INTO rooms(room_id, label, status, archived, updated_at, data_json)
-                   VALUES(?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(room_id) DO UPDATE SET
-                       label = excluded.label,
-                       status = excluded.status,
-                       archived = excluded.archived,
-                       updated_at = excluded.updated_at,
-                       data_json = excluded.data_json""",
-                (
-                    clean_room_id,
-                    str(room["label"]),
-                    str(room["status"]),
-                    1 if room["status"] == "archived" else 0,
-                    now,
-                    _json_dumps(room),
-                ),
-            )
-        if not existing:
-            self.append_event(clean_room_id, "room_created", label=room["label"])
-            return room
+        with self.transaction(clean_room_id) as transaction:
+            room, created = transaction.create_room(label=label, status=status)
+            if created:
+                transaction.append_event("room_created", label=room["label"])
+        return room
+
+    @contextmanager
+    def transaction(self, room_id: str) -> Iterator[RoomTransaction]:
+        clean_room_id = _clean_room_id(room_id)
+        pending_events: list[dict[str, object]] = []
+        with self._lock, self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            transaction = _SQLiteRoomTransaction(self, connection, clean_room_id, pending_events)
+            try:
+                yield transaction
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+        self._publish_events(clean_room_id, pending_events)
 
     def room_is_deleted(self, room_id: str) -> bool:
         clean_room_id = _clean_room_id(room_id)
@@ -173,34 +230,8 @@ class RoomStore:
 
     def upsert_participant(self, room_id: str, participant: dict[str, object]) -> tuple[dict[str, object], bool]:
         clean_room_id = _clean_room_id(room_id)
-        clean_participant_id = _clean_participant_id(participant.get("participant_id") or participant.get("agent_id"))
-        if not clean_participant_id:
-            raise ValueError("participant_id is required.")
-        incoming = dict(participant)
-        incoming["room_id"] = clean_room_id
-        incoming["participant_id"] = clean_participant_id
-        incoming["status"] = _participant_status(incoming.get("status") or "joined")
-        incoming["display_name"] = clean_lobby_text(incoming.get("display_name"), limit=64) or clean_participant_id
-        now = _now()
-        with self._lock, self._write_transaction() as connection:
-            row = connection.execute(
-                "SELECT data_json FROM participants WHERE room_id = ? AND participant_id = ?",
-                (clean_room_id, clean_participant_id),
-            ).fetchone()
-            existing = _row_payload(row)
-            created = not bool(existing)
-            if existing:
-                updated = {
-                    **existing,
-                    **{key: value for key, value in incoming.items() if value not in ("", None, [], {})},
-                    "updated_at": now,
-                }
-            else:
-                incoming.setdefault("created_at", now)
-                incoming["updated_at"] = now
-                updated = incoming
-            self._write_participant(connection, updated)
-        return updated, created
+        with self.transaction(clean_room_id) as transaction:
+            return transaction.upsert_participant(participant)
 
     def set_participant_status(
         self,
@@ -252,67 +283,18 @@ class RoomStore:
 
     def upsert_session(self, room_id: str, session: dict[str, object]) -> tuple[dict[str, object], bool]:
         clean_room_id = _clean_room_id(room_id)
-        clean_session_id = _clean_session_id(session.get("session_id"))
-        if not clean_session_id:
-            raise ValueError("session_id is required.")
-        incoming = dict(session)
-        incoming["room_id"] = clean_room_id
-        incoming["session_id"] = clean_session_id
-        incoming["status"] = _session_status(incoming.get("status") or "attached")
-        now = _now()
-        with self._lock, self._write_transaction() as connection:
-            row = connection.execute(
-                "SELECT data_json FROM agent_sessions WHERE room_id = ? AND session_id = ?",
-                (clean_room_id, clean_session_id),
-            ).fetchone()
-            existing = _row_payload(row)
-            created = not bool(existing)
-            if existing:
-                updated = {
-                    **existing,
-                    **{key: value for key, value in incoming.items() if value not in ("", None, [], {})},
-                    "updated_at": now,
-                }
-            else:
-                incoming.setdefault("created_at", now)
-                incoming["updated_at"] = now
-                updated = incoming
-            self._write_session(connection, updated)
-        return updated, created
+        with self.transaction(clean_room_id) as transaction:
+            return transaction.upsert_session(session)
 
     def update_session_fields(self, room_id: str, session_id: str, **updates: object) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
-        clean_session_id = _clean_session_id(session_id)
-        with self._lock, self._write_transaction() as connection:
-            row = connection.execute(
-                "SELECT data_json FROM agent_sessions WHERE room_id = ? AND session_id = ?",
-                (clean_room_id, clean_session_id),
-            ).fetchone()
-            session = _row_payload(row)
-            if not session:
-                raise ValueError(f"Session {clean_session_id} was not found.")
-            updated = {**session, **updates, "updated_at": _now()}
-            if "status" in updates:
-                updated["status"] = _session_status(updates.get("status"))
-            self._write_session(connection, updated)
-        return updated
+        with self.transaction(clean_room_id) as transaction:
+            return transaction.update_session_fields(session_id, **updates)
 
     def update_participant_fields(self, room_id: str, participant_id: str, **updates: object) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
-        clean_participant_id = _clean_participant_id(participant_id)
-        with self._lock, self._write_transaction() as connection:
-            row = connection.execute(
-                "SELECT data_json FROM participants WHERE room_id = ? AND participant_id = ?",
-                (clean_room_id, clean_participant_id),
-            ).fetchone()
-            participant = _row_payload(row)
-            if not participant:
-                raise ValueError(f"Participant {clean_participant_id} was not found.")
-            updated = {**participant, **updates, "updated_at": _now()}
-            if "status" in updates:
-                updated["status"] = _participant_status(updates.get("status"))
-            self._write_participant(connection, updated)
-        return updated
+        with self.transaction(clean_room_id) as transaction:
+            return transaction.update_participant_fields(participant_id, **updates)
 
     def command_record(self, room_id: str, principal_id: str, request_id: str) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
@@ -349,41 +331,15 @@ class RoomStore:
         max_entries: int = 500,
     ) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
-        clean_request_id = clean_lobby_text(request_id, limit=128)
-        clean_principal_id = clean_lobby_text(principal_id, limit=256)
-        if not clean_request_id:
-            raise ValueError("request_id is required.")
-        with self._lock, self._write_transaction() as connection:
-            row = connection.execute(
-                """SELECT result_json FROM command_results
-                   WHERE room_id = ? AND principal_id = ? AND request_id = ?""",
-                (clean_room_id, clean_principal_id, clean_request_id),
-            ).fetchone()
-            if row is not None:
-                return _row_payload(row, column="result_json")
-            connection.execute(
-                """INSERT INTO command_results(
-                       room_id, principal_id, request_id, action, payload_hash, created_at, result_json
-                   ) VALUES(?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    clean_room_id,
-                    clean_principal_id,
-                    clean_request_id,
-                    clean_lobby_text(action, limit=64),
-                    clean_lobby_text(payload_hash, limit=128),
-                    _now(),
-                    _json_dumps(result),
-                ),
+        with self.transaction(clean_room_id) as transaction:
+            return transaction.record_command_result(
+                request_id,
+                result,
+                principal_id=principal_id,
+                action=action,
+                payload_hash=payload_hash,
+                max_entries=max_entries,
             )
-            keep = max(1, int(max_entries or 500))
-            connection.execute(
-                """DELETE FROM command_results WHERE rowid IN (
-                       SELECT rowid FROM command_results WHERE room_id = ?
-                       ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET ?
-                   )""",
-                (clean_room_id, keep),
-            )
-        return dict(result)
 
     def detach_participant_sessions(self, room_id: str, participant_id: str) -> list[dict[str, object]]:
         clean_room_id = _clean_room_id(room_id)
@@ -403,78 +359,8 @@ class RoomStore:
 
     def append_event(self, room_id: str, event_type: str, **payload: object) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
-        clean_event_type = _clean_event_type(event_type)
-        listener_key = self._listener_key(clean_room_id)
-        with self._lock, self._write_transaction() as connection:
-            sequence = int(
-                connection.execute(
-                    "SELECT COALESCE(MAX(seq), 0) + 1 FROM room_events WHERE room_id = ?",
-                    (clean_room_id,),
-                ).fetchone()[0]
-            )
-            clean_payload = {
-                key: value
-                for key, value in payload.items()
-                if key not in {"v", "id", "seq", "room_id", "type", "created_at", "actor", "visibility"}
-                and value not in (None, "", [], {})
-            }
-            participant_id = clean_lobby_text(
-                payload.get("participant_id") or payload.get("actor_id"),
-                limit=128,
-            )
-            participant_type = clean_lobby_text(
-                payload.get("participant_type") or payload.get("actor_type"),
-                limit=32,
-            )
-            if participant_type == "user":
-                participant_type = "human"
-            if participant_id and not participant_type:
-                participant_type = "agent" if payload.get("participant_id") else "human"
-            visibility = clean_lobby_text(payload.get("visibility"), limit=32)
-            if visibility not in {VISIBLE, LEGACY_HIDDEN}:
-                visibility = VISIBLE
-            event: dict[str, object] = {
-                "v": 1,
-                "id": uuid4().hex[:12],
-                "seq": sequence,
-                "created_at": _now(),
-                "room_id": clean_room_id,
-                "type": clean_event_type,
-                "actor": {
-                    "participant_id": participant_id,
-                    "participant_type": participant_type,
-                },
-                **clean_payload,
-            }
-            if visibility == VISIBLE:
-                event = _strip_private_event_fields(event)
-            if visibility != VISIBLE:
-                event["visibility"] = visibility
-            connection.execute(
-                """INSERT INTO room_events(
-                       room_id, seq, event_id, event_type, actor_id, turn_id,
-                       created_at, visibility, payload_json
-                   ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    clean_room_id,
-                    sequence,
-                    str(event["id"]),
-                    clean_event_type,
-                    participant_id,
-                    str(event.get("turn_id") or ""),
-                    str(event["created_at"]),
-                    visibility,
-                    _json_dumps(event),
-                ),
-            )
-            with _STORE_REGISTRY_LOCK:
-                listeners = list(_EVENT_LISTENERS.get(listener_key, []))
-        for listener in listeners:
-            try:
-                listener(dict(event))
-            except Exception:
-                continue
-        return event
+        with self.transaction(clean_room_id) as transaction:
+            return transaction.append_event(event_type, **payload)
 
     def read_events(
         self,
@@ -740,6 +626,293 @@ class RoomStore:
             "sessions": self.sessions(clean_room_id),
             "events": self.read_events(clean_room_id),
         }
+
+    def _create_room(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        *,
+        label: str,
+        status: str,
+    ) -> tuple[dict[str, object], bool]:
+        clean_status = _room_status(status)
+        deleted = connection.execute(
+            "SELECT deleted_at FROM deleted_rooms WHERE room_id = ?",
+            (room_id,),
+        ).fetchone()
+        if deleted is not None:
+            raise ValueError(f"Room {room_id} was deleted and cannot be recreated implicitly.")
+        row = connection.execute("SELECT data_json FROM rooms WHERE room_id = ?", (room_id,)).fetchone()
+        existing = _row_payload(row)
+        now = _now()
+        room = {
+            "room_id": room_id,
+            "label": clean_lobby_text(label, limit=128) or str(existing.get("label") or ""),
+            "status": clean_status if existing.get("status") not in {"closed", "archived"} else existing["status"],
+            "created_at": str(existing.get("created_at") or now),
+            "updated_at": now,
+        }
+        connection.execute(
+            """INSERT INTO rooms(room_id, label, status, archived, updated_at, data_json)
+               VALUES(?, ?, ?, ?, ?, ?)
+               ON CONFLICT(room_id) DO UPDATE SET
+                   label = excluded.label,
+                   status = excluded.status,
+                   archived = excluded.archived,
+                   updated_at = excluded.updated_at,
+                   data_json = excluded.data_json""",
+            (
+                room_id,
+                str(room["label"]),
+                str(room["status"]),
+                1 if room["status"] == "archived" else 0,
+                now,
+                _json_dumps(room),
+            ),
+        )
+        return room, not bool(existing)
+
+    def _upsert_participant(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        participant: dict[str, object],
+    ) -> tuple[dict[str, object], bool]:
+        participant_id = _clean_participant_id(
+            participant.get("participant_id") or participant.get("agent_id")
+        )
+        if not participant_id:
+            raise ValueError("participant_id is required.")
+        incoming = dict(participant)
+        incoming["room_id"] = room_id
+        incoming["participant_id"] = participant_id
+        incoming["status"] = _participant_status(incoming.get("status") or "joined")
+        incoming["display_name"] = clean_lobby_text(incoming.get("display_name"), limit=64) or participant_id
+        row = connection.execute(
+            "SELECT data_json FROM participants WHERE room_id = ? AND participant_id = ?",
+            (room_id, participant_id),
+        ).fetchone()
+        existing = _row_payload(row)
+        now = _now()
+        if existing:
+            updated = {
+                **existing,
+                **{key: value for key, value in incoming.items() if value not in ("", None, [], {})},
+                "updated_at": now,
+            }
+        else:
+            incoming.setdefault("created_at", now)
+            incoming["updated_at"] = now
+            updated = incoming
+        self._write_participant(connection, updated)
+        return updated, not bool(existing)
+
+    def _update_participant_fields(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        participant_id: str,
+        **updates: object,
+    ) -> dict[str, object]:
+        clean_participant_id = _clean_participant_id(participant_id)
+        row = connection.execute(
+            "SELECT data_json FROM participants WHERE room_id = ? AND participant_id = ?",
+            (room_id, clean_participant_id),
+        ).fetchone()
+        participant = _row_payload(row)
+        if not participant:
+            raise ValueError(f"Participant {clean_participant_id} was not found.")
+        updated = {**participant, **updates, "updated_at": _now()}
+        if "status" in updates:
+            updated["status"] = _participant_status(updates.get("status"))
+        self._write_participant(connection, updated)
+        return updated
+
+    def _upsert_session(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        session: dict[str, object],
+    ) -> tuple[dict[str, object], bool]:
+        session_id = _clean_session_id(session.get("session_id"))
+        if not session_id:
+            raise ValueError("session_id is required.")
+        incoming = dict(session)
+        incoming["room_id"] = room_id
+        incoming["session_id"] = session_id
+        incoming["status"] = _session_status(incoming.get("status") or "attached")
+        row = connection.execute(
+            "SELECT data_json FROM agent_sessions WHERE room_id = ? AND session_id = ?",
+            (room_id, session_id),
+        ).fetchone()
+        existing = _row_payload(row)
+        now = _now()
+        if existing:
+            updated = {
+                **existing,
+                **{key: value for key, value in incoming.items() if value not in ("", None, [], {})},
+                "updated_at": now,
+            }
+        else:
+            incoming.setdefault("created_at", now)
+            incoming["updated_at"] = now
+            updated = incoming
+        self._write_session(connection, updated)
+        return updated, not bool(existing)
+
+    def _update_session_fields(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        session_id: str,
+        **updates: object,
+    ) -> dict[str, object]:
+        clean_session_id = _clean_session_id(session_id)
+        row = connection.execute(
+            "SELECT data_json FROM agent_sessions WHERE room_id = ? AND session_id = ?",
+            (room_id, clean_session_id),
+        ).fetchone()
+        session = _row_payload(row)
+        if not session:
+            raise ValueError(f"Session {clean_session_id} was not found.")
+        updated = {**session, **updates, "updated_at": _now()}
+        if "status" in updates:
+            updated["status"] = _session_status(updates.get("status"))
+        self._write_session(connection, updated)
+        return updated
+
+    def _record_command_result(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        request_id: str,
+        result: dict[str, object],
+        *,
+        principal_id: str,
+        action: str,
+        payload_hash: str,
+        max_entries: int,
+    ) -> dict[str, object]:
+        clean_request_id = clean_lobby_text(request_id, limit=128)
+        clean_principal_id = clean_lobby_text(principal_id, limit=256)
+        if not clean_request_id:
+            raise ValueError("request_id is required.")
+        row = connection.execute(
+            """SELECT result_json FROM command_results
+               WHERE room_id = ? AND principal_id = ? AND request_id = ?""",
+            (room_id, clean_principal_id, clean_request_id),
+        ).fetchone()
+        if row is not None:
+            return _row_payload(row, column="result_json")
+        connection.execute(
+            """INSERT INTO command_results(
+                   room_id, principal_id, request_id, action, payload_hash, created_at, result_json
+               ) VALUES(?, ?, ?, ?, ?, ?, ?)""",
+            (
+                room_id,
+                clean_principal_id,
+                clean_request_id,
+                clean_lobby_text(action, limit=64),
+                clean_lobby_text(payload_hash, limit=128),
+                _now(),
+                _json_dumps(result),
+            ),
+        )
+        keep = max(1, int(max_entries or 500))
+        connection.execute(
+            """DELETE FROM command_results WHERE rowid IN (
+                   SELECT rowid FROM command_results WHERE room_id = ?
+                   ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET ?
+               )""",
+            (room_id, keep),
+        )
+        return dict(result)
+
+    def _append_event(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        event_type: str,
+        **payload: object,
+    ) -> dict[str, object]:
+        clean_event_type = _clean_event_type(event_type)
+        sequence = int(
+            connection.execute(
+                "SELECT COALESCE(MAX(seq), 0) + 1 FROM room_events WHERE room_id = ?",
+                (room_id,),
+            ).fetchone()[0]
+        )
+        clean_payload = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"v", "id", "seq", "room_id", "type", "created_at", "actor", "visibility"}
+            and value not in (None, "", [], {})
+        }
+        participant_id = clean_lobby_text(
+            payload.get("participant_id") or payload.get("actor_id"),
+            limit=128,
+        )
+        participant_type = clean_lobby_text(
+            payload.get("participant_type") or payload.get("actor_type"),
+            limit=32,
+        )
+        if participant_type == "user":
+            participant_type = "human"
+        if participant_id and not participant_type:
+            participant_type = "agent" if payload.get("participant_id") else "human"
+        visibility = clean_lobby_text(payload.get("visibility"), limit=32)
+        if visibility not in {VISIBLE, LEGACY_HIDDEN}:
+            visibility = VISIBLE
+        event: dict[str, object] = {
+            "v": 1,
+            "id": uuid4().hex[:12],
+            "seq": sequence,
+            "created_at": _now(),
+            "room_id": room_id,
+            "type": clean_event_type,
+            "actor": {
+                "participant_id": participant_id,
+                "participant_type": participant_type,
+            },
+            **clean_payload,
+        }
+        if visibility == VISIBLE:
+            event = _strip_private_event_fields(event)
+        if visibility != VISIBLE:
+            event["visibility"] = visibility
+        connection.execute(
+            """INSERT INTO room_events(
+                   room_id, seq, event_id, event_type, actor_id, turn_id,
+                   created_at, visibility, payload_json
+               ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                room_id,
+                sequence,
+                str(event["id"]),
+                clean_event_type,
+                participant_id,
+                str(event.get("turn_id") or ""),
+                str(event["created_at"]),
+                visibility,
+                _json_dumps(event),
+            ),
+        )
+        return event
+
+    def _publish_events(self, room_id: str, events: list[dict[str, object]]) -> None:
+        if not events:
+            return
+        with _STORE_REGISTRY_LOCK:
+            listeners = list(_EVENT_LISTENERS.get(self._listener_key(room_id), []))
+        for event in events:
+            for listener in listeners:
+                try:
+                    listener(dict(event))
+                except Exception:
+                    _LOGGER.exception(
+                        "Room event listener failed after commit",
+                        extra={"room_id": room_id, "event_id": str(event.get("id") or "")},
+                    )
 
     def _write_participant(self, connection: sqlite3.Connection, participant: dict[str, object]) -> None:
         connection.execute(

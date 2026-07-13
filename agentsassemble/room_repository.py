@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable, ContextManager, Iterable
-from typing import Protocol, runtime_checkable
+from collections.abc import Callable, Iterable
+from typing import ContextManager, Protocol, runtime_checkable
 
 
 RoomRecord = dict[str, object]
@@ -17,6 +17,8 @@ class RoomTransaction(Protocol):
 
     @property
     def room_id(self) -> str: ...
+
+    def create_room(self, *, label: str = "", status: str = "active") -> tuple[RoomRecord, bool]: ...
 
     def upsert_participant(
         self,
@@ -65,6 +67,10 @@ class RoomRepository(Protocol):
     """
 
     def transaction(self, room_id: str) -> ContextManager[RoomTransaction]: ...
+
+    def create_room(self, room_id: str, *, label: str = "", status: str = "active") -> RoomRecord: ...
+
+    def delete_room(self, room_id: str, *, reason: str = "") -> bool: ...
 
     def room(self, room_id: str) -> RoomRecord: ...
 
