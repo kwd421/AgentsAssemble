@@ -73,3 +73,10 @@ variable (default `AGENTSASSEMBLE_ROOM_DATABASE_URL`); the DSN value is excluded
 from public diagnostics and object representations. Selecting PostgreSQL without
 that value or without the optional driver is a startup error, never a request to
 open a local SQLite database instead.
+
+PostgreSQL schema changes use the packaged Alembic lineage under
+`agentsassemble/migrations` and explicit SQL. Runtime repository queries use
+`psycopg3`, not an ORM. Revision `0001_room_repository` represents the same
+logical room/attention schema as SQLite schema version 3; the existing SQLite
+migrator remains responsible for upgrading pre-repository local files and old
+SQLite versions until a later revision requires a shared cross-backend change.
