@@ -67,7 +67,13 @@ from agentsassemble.cli_parser_common import (
 from agentsassemble.cli_legacy_live_agent_sessions import (
     LegacySessionCliRuntime,
     SESSION_BOUND_PROBE_HTTP_WINDOWS,
+    format_session_start,
     run_legacy_session_command,
+    session_command_exit_code,
+    session_request_timeout,
+    session_start_payload,
+    validate_session_auto_restart_args,
+    wait_for_session_after_control,
 )
 from agentsassemble.cli_legacy_live_agent_processes import (
     LegacyProcessCliRuntime,
@@ -605,6 +611,18 @@ def _diagnostic_cli_runtime() -> DiagnosticCliRuntime:
     )
 
 
+def _legacy_session_cli_runtime() -> LegacySessionCliRuntime:
+    return LegacySessionCliRuntime(
+        request_json=lambda *call_args, **call_kwargs: _request_json(*call_args, **call_kwargs),
+        server_url=_server_url,
+        operation_http_timeout=_operation_http_timeout,
+        monotonic=lambda: time.monotonic(),
+        sleep=lambda seconds: time.sleep(seconds),
+        is_wait_timeout=_is_live_agent_wait_timeout,
+        session_ensure_action=session_ensure_action,
+    )
+
+
 def _is_live_agent_wait_timeout(error: BaseException) -> bool:
     if isinstance(error, TimeoutError):
         return True
@@ -710,15 +728,7 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
     try:
         session_result = run_legacy_session_command(
             args,
-            runtime=LegacySessionCliRuntime(
-                request_json=lambda *call_args, **call_kwargs: _request_json(*call_args, **call_kwargs),
-                server_url=_server_url,
-                operation_http_timeout=_operation_http_timeout,
-                monotonic=lambda: time.monotonic(),
-                sleep=lambda seconds: time.sleep(seconds),
-                is_wait_timeout=_is_live_agent_wait_timeout,
-                session_ensure_action=session_ensure_action,
-            ),
+            runtime=_legacy_session_cli_runtime(),
         )
         if session_result is not None:
             return session_result
@@ -2224,7 +2234,7 @@ def _run_live_agent_discover(args: argparse.Namespace) -> int:
 
 
 def _run_live_agent_auto_join(args: argparse.Namespace) -> int:
-    _validate_session_auto_restart_args(args)
+    validate_session_auto_restart_args(args)
     output_path, report = _write_live_agent_discovery_outputs(args, session_bundle=True)
     discovery_payload = {"output": str(output_path or ""), **report}
     if report.get("status") != "ok":
@@ -2268,8 +2278,8 @@ def _run_live_agent_auto_join(args: argparse.Namespace) -> int:
     if args.as_json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        print(f"Auto-joined via {action}: {_format_live_agent_session_start(response)}")
-    return _session_command_exit_code(response)
+        print(f"Auto-joined via {action}: {format_session_start(response)}")
+    return session_command_exit_code(response)
 
 
 def _live_agent_discovery_requires_approval(report: dict[str, object]) -> bool:
@@ -2306,11 +2316,12 @@ def _live_agent_discovery_approval_commands(report: dict[str, object]) -> list[s
 
 
 def _ensure_live_agent_session_run(args: argparse.Namespace) -> tuple[str, dict[str, object]]:
-    payload = _session_start_payload(args)
-    timeout_seconds = _session_remaining_rounds_request(
+    runtime = _legacy_session_cli_runtime()
+    payload = session_start_payload(args)
+    timeout_seconds = session_request_timeout(
         args,
         payload,
-        connect_timeout_seconds=float(args.connect_timeout),
+        runtime=runtime,
     )
     response = _request_json(
         _server_url(str(args.server), "/api/live-agent-session-runs/ensure"),
@@ -2320,7 +2331,7 @@ def _ensure_live_agent_session_run(args: argparse.Namespace) -> tuple[str, dict[
     )
     action = str(response.get("action") or "ensure")
     if action != "none":
-        response = _wait_for_live_agent_session_ready_after_control(args, response)
+        response = wait_for_session_after_control(args, response, runtime=runtime)
     return action, response
 
 

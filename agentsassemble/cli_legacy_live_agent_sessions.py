@@ -56,6 +56,40 @@ def run_legacy_session_command(
     return handlers[command](args, runtime)
 
 
+def validate_session_auto_restart_args(args: argparse.Namespace) -> None:
+    _validate_auto_restart(args)
+
+
+def session_start_payload(args: argparse.Namespace) -> dict[str, object]:
+    return _start_payload(args)
+
+
+def session_request_timeout(
+    args: argparse.Namespace,
+    payload: dict[str, object],
+    *,
+    runtime: LegacySessionCliRuntime,
+) -> float:
+    return _remaining_rounds_request(args, payload, runtime, float(args.connect_timeout))
+
+
+def wait_for_session_after_control(
+    args: argparse.Namespace,
+    response: dict[str, object],
+    *,
+    runtime: LegacySessionCliRuntime,
+) -> dict[str, object]:
+    return _wait_after_control(args, response, runtime)
+
+
+def session_command_exit_code(response: dict[str, object]) -> int:
+    return _exit_code(response)
+
+
+def format_session_start(response: dict[str, object]) -> str:
+    return _format_start(response)
+
+
 def _start(args: argparse.Namespace, runtime: LegacySessionCliRuntime) -> int:
     _validate_auto_restart(args)
     payload = _start_payload(args)
