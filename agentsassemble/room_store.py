@@ -19,7 +19,14 @@ from agentsassemble.room_database import (
     migration_report,
     open_room_database,
 )
+from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
 from agentsassemble.room_repository import RoomTransaction
+from agentsassemble.sqlite_attention_repository import (
+    read_attention_jobs,
+    read_attention_state,
+    record_attention_evaluation,
+    write_attention_state,
+)
 
 ROOM_STATUSES = {"active", "closed", "archived"}
 PARTICIPANT_STATUSES = {"joined", "left", "kicked", "exported", "detached"}
@@ -110,6 +117,41 @@ class _SQLiteRoomTransaction:
             max_entries=max_entries,
         )
 
+    def advance_attention_state(
+        self,
+        participant_id: str,
+        *,
+        observed_seq: int | None = None,
+        attention_evaluated_seq: int | None = None,
+        provider_sync_seq: int | None = None,
+        spoke_seq: int | None = None,
+    ) -> AgentAttentionState:
+        clean_participant_id = _clean_participant_id(participant_id)
+        current = read_attention_state(self._connection, self._room_id, clean_participant_id)
+        updated = current.advance(
+            observed_seq=observed_seq,
+            attention_evaluated_seq=attention_evaluated_seq,
+            provider_sync_seq=provider_sync_seq,
+            spoke_seq=spoke_seq,
+        )
+        return write_attention_state(self._connection, updated)
+
+    def record_attention_evaluation(
+        self,
+        evaluation: AttentionEvaluation,
+        *,
+        mode: str,
+        status: str,
+    ) -> dict[str, object]:
+        if evaluation.room_id != self._room_id:
+            raise ValueError("Attention evaluation room does not match transaction room.")
+        return record_attention_evaluation(
+            self._connection,
+            evaluation,
+            mode=mode,
+            status=status,
+        )
+
 
 class RoomStore:
     """SQLite source of truth for room, participant, session, and event state."""
@@ -160,6 +202,32 @@ class RoomStore:
             return connection.execute(
                 "SELECT 1 FROM deleted_rooms WHERE room_id = ?", (clean_room_id,)
             ).fetchone() is not None
+
+    def attention_state(self, room_id: str, participant_id: str) -> AgentAttentionState:
+        clean_room_id = _clean_room_id(room_id)
+        clean_participant_id = _clean_participant_id(participant_id)
+        with self._connection() as connection:
+            return read_attention_state(connection, clean_room_id, clean_participant_id)
+
+    def attention_jobs(
+        self,
+        room_id: str,
+        *,
+        mode: str = "",
+        status: str = "",
+        after_seq: int = 0,
+        limit: int = 200,
+    ) -> list[dict[str, object]]:
+        clean_room_id = _clean_room_id(room_id)
+        with self._connection() as connection:
+            return read_attention_jobs(
+                connection,
+                clean_room_id,
+                mode=mode,
+                status=status,
+                after_seq=after_seq,
+                limit=limit,
+            )
 
     def delete_room(self, room_id: str, *, reason: str = "") -> bool:
         """Delete canonical room state and retain a tombstone against stale clients."""

@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import ContextManager, Protocol, runtime_checkable
 
+from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
+
 
 RoomRecord = dict[str, object]
 ParticipantRecord = dict[str, object]
@@ -54,6 +56,24 @@ class RoomTransaction(Protocol):
         payload_hash: str = "",
         max_entries: int = 500,
     ) -> CommandRecord: ...
+
+    def advance_attention_state(
+        self,
+        participant_id: str,
+        *,
+        observed_seq: int | None = None,
+        attention_evaluated_seq: int | None = None,
+        provider_sync_seq: int | None = None,
+        spoke_seq: int | None = None,
+    ) -> AgentAttentionState: ...
+
+    def record_attention_evaluation(
+        self,
+        evaluation: AttentionEvaluation,
+        *,
+        mode: str,
+        status: str,
+    ) -> dict[str, object]: ...
 
 
 @runtime_checkable
@@ -179,3 +199,15 @@ class RoomRepository(Protocol):
     def add_event_listener(self, room_id: str, listener: EventListener) -> Callable[[], None]: ...
 
     def set_room_status(self, room_id: str, status: str) -> RoomRecord: ...
+
+    def attention_state(self, room_id: str, participant_id: str) -> AgentAttentionState: ...
+
+    def attention_jobs(
+        self,
+        room_id: str,
+        *,
+        mode: str = "",
+        status: str = "",
+        after_seq: int = 0,
+        limit: int = 200,
+    ) -> list[dict[str, object]]: ...

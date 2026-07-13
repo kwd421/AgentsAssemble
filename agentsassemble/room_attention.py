@@ -17,6 +17,11 @@ ATTENTION_JOB_STATUSES = frozenset({"pending", "leased", "completed", "cancelled
 ATTENTION_LEASE_STATUSES = frozenset({"active", "released", "expired", "cancelled"})
 WAKEUP_STATUSES = frozenset({"scheduled", "claimed", "completed", "cancelled"})
 OBLIGATION_STATUSES = frozenset({"open", "satisfied", "expired", "cancelled"})
+ATTENTION_MODES = frozenset({"shadow", "active"})
+
+
+class AttentionEvaluationConflict(ValueError):
+    """A source sequence was evaluated again with different canonical input."""
 
 
 @dataclass(frozen=True)
@@ -29,6 +34,26 @@ class AgentAttentionState:
     last_attention_evaluated_seq: int = 0
     last_provider_sync_seq: int = 0
     last_spoke_seq: int = 0
+
+    def __post_init__(self) -> None:
+        room_id = clean_lobby_text(self.room_id, limit=128)
+        participant_id = clean_lobby_text(self.participant_id, limit=128)
+        if not room_id:
+            raise ValueError("room_id is required.")
+        if not participant_id:
+            raise ValueError("participant_id is required.")
+        object.__setattr__(self, "room_id", room_id)
+        object.__setattr__(self, "participant_id", participant_id)
+        for field_name in (
+            "last_observed_seq",
+            "last_attention_evaluated_seq",
+            "last_provider_sync_seq",
+            "last_spoke_seq",
+        ):
+            value = int(getattr(self, field_name))
+            if value < 0:
+                raise ValueError(f"{field_name} cannot be negative.")
+            object.__setattr__(self, field_name, value)
 
     def advance(
         self,
@@ -78,20 +103,28 @@ class AttentionEvaluation:
     def __post_init__(self) -> None:
         if self.outcome not in ATTENTION_OUTCOMES:
             raise ValueError(f"Unsupported attention outcome: {self.outcome}")
-        if self.source_seq <= 0:
+        source_seq = int(self.source_seq)
+        if source_seq <= 0:
             raise ValueError("source_seq must be positive.")
-        if not clean_lobby_text(self.room_id, limit=128):
+        room_id = clean_lobby_text(self.room_id, limit=128)
+        if not room_id:
             raise ValueError("room_id is required.")
-        if not clean_lobby_text(self.source_event_id, limit=128):
+        source_event_id = clean_lobby_text(self.source_event_id, limit=128)
+        if not source_event_id:
             raise ValueError("source_event_id is required.")
         selected = clean_lobby_text(self.selected_participant_id, limit=128)
-        eligible = tuple(
+        eligible = tuple(dict.fromkeys(
             participant_id
             for participant_id in (
                 clean_lobby_text(value, limit=128) for value in self.eligible_participant_ids
             )
             if participant_id
-        )
+        ))
+        reasons = tuple(dict.fromkeys(
+            reason
+            for reason in (clean_lobby_text(value, limit=64) for value in self.reasons)
+            if reason
+        ))
         if self.outcome == "selected" and not selected:
             raise ValueError("selected outcome requires selected_participant_id.")
         if self.outcome != "selected" and selected:
@@ -100,6 +133,14 @@ class AttentionEvaluation:
             raise ValueError("eligible outcome requires at least one eligible participant.")
         if self.outcome == "silent" and eligible:
             raise ValueError("silent outcome cannot include eligible participants.")
+        if selected and eligible and selected not in eligible:
+            raise ValueError("selected participant must be included in eligible participants.")
+        object.__setattr__(self, "room_id", room_id)
+        object.__setattr__(self, "source_event_id", source_event_id)
+        object.__setattr__(self, "source_seq", source_seq)
+        object.__setattr__(self, "selected_participant_id", selected)
+        object.__setattr__(self, "eligible_participant_ids", eligible)
+        object.__setattr__(self, "reasons", reasons)
 
 
 def _monotonic_cursor(name: str, current: int, incoming: int | None) -> int:

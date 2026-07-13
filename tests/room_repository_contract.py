@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import cast
 from unittest import TestCase
 
+from agentsassemble.room_attention import AttentionEvaluation, AttentionEvaluationConflict
 from agentsassemble.room_repository import RoomRepository
 
 
@@ -215,3 +216,111 @@ class RoomRepositoryContractMixin:
         case.assertTrue(self.repository.room_is_deleted("general"))
         with case.assertRaisesRegex(ValueError, "cannot be recreated"):
             self.repository.create_room("general")
+
+    def test_attention_state_and_shadow_job_are_durable_and_idempotent(self) -> None:
+        self.repository.create_room("general")
+        with self.repository.transaction("general") as transaction:
+            transaction.upsert_participant(
+                {
+                    "participant_id": "agent-a",
+                    "display_name": "Agent A",
+                    "participant_type": "agent",
+                }
+            )
+            state = transaction.advance_attention_state(
+                "agent-a",
+                observed_seq=8,
+                attention_evaluated_seq=7,
+            )
+            evaluation = AttentionEvaluation(
+                room_id="general",
+                source_event_id="event-7",
+                source_seq=7,
+                outcome="selected",
+                selected_participant_id="agent-a",
+                eligible_participant_ids=("agent-a",),
+                reasons=("direct_mention",),
+            )
+            first_job = transaction.record_attention_evaluation(
+                evaluation,
+                mode="shadow",
+                status="completed",
+            )
+        with self.repository.transaction("general") as transaction:
+            duplicate_job = transaction.record_attention_evaluation(
+                evaluation,
+                mode="shadow",
+                status="completed",
+            )
+
+        jobs = self.repository.attention_jobs("general", mode="shadow")
+        case = self._test_case()
+        case.assertEqual(state.last_observed_seq, 8)
+        case.assertEqual(self.repository.attention_state("general", "agent-a"), state)
+        case.assertEqual(duplicate_job["job_id"], first_job["job_id"])
+        case.assertEqual([job["job_id"] for job in jobs], [first_job["job_id"]])
+
+        conflicting = AttentionEvaluation(
+            room_id="general",
+            source_event_id="event-7",
+            source_seq=7,
+            outcome="silent",
+            reasons=("cooldown",),
+        )
+        with case.assertRaisesRegex(AttentionEvaluationConflict, "attention_evaluation_conflict"):
+            with self.repository.transaction("general") as transaction:
+                transaction.record_attention_evaluation(
+                    conflicting,
+                    mode="shadow",
+                    status="completed",
+                )
+
+    def test_attention_writes_roll_back_and_room_delete_cascades(self) -> None:
+        self.repository.create_room("general")
+        with self.repository.transaction("general") as transaction:
+            transaction.upsert_participant(
+                {
+                    "participant_id": "agent-a",
+                    "display_name": "Agent A",
+                    "participant_type": "agent",
+                }
+            )
+        evaluation = AttentionEvaluation(
+            room_id="general",
+            source_event_id="event-4",
+            source_seq=4,
+            outcome="silent",
+            reasons=("no_attention_signal",),
+        )
+        with self._test_case().assertRaisesRegex(RuntimeError, "rollback attention"):
+            with self.repository.transaction("general") as transaction:
+                transaction.advance_attention_state(
+                    "agent-a",
+                    observed_seq=4,
+                    attention_evaluated_seq=4,
+                )
+                transaction.record_attention_evaluation(
+                    evaluation,
+                    mode="shadow",
+                    status="completed",
+                )
+                raise RuntimeError("rollback attention")
+
+        case = self._test_case()
+        case.assertEqual(self.repository.attention_state("general", "agent-a").last_observed_seq, 0)
+        case.assertEqual(self.repository.attention_jobs("general"), [])
+
+        with self.repository.transaction("general") as transaction:
+            transaction.advance_attention_state(
+                "agent-a",
+                observed_seq=4,
+                attention_evaluated_seq=4,
+            )
+            transaction.record_attention_evaluation(
+                evaluation,
+                mode="shadow",
+                status="completed",
+            )
+        self.repository.delete_room("general", reason="attention cascade")
+
+        case.assertEqual(self.repository.attention_jobs("general"), [])
