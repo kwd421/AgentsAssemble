@@ -121,6 +121,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | --- | --- |
 | Room persistence and sequence | `room_store.py`, `room_database.py`, `room_types.py` |
 | Room storage authority and transaction contract | `room_repository.py`, `docs/product/ROOM_REPOSITORY.md` |
+| Autonomous participation and durable attention | `room_attention.py`, `docs/product/ATTENTION_MODEL.md` |
 | WebSocket commands and ACL | `room_commands.py`, `ws_room_session.py`, `room_realtime.py` |
 | Routing and provider context | `room_routing.py`, `room_context.py`, `room_turn_context.py` |
 | Fanout and bridge delivery | `room_event_broker.py`, `room_agent_bridge.py` |
