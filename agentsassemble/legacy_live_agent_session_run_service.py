@@ -83,6 +83,68 @@ class LegacyLiveAgentSessionRunMutationService:
         )
         return {"status": response_status, "session_run": session_run}
 
+    def retry_now(
+        self,
+        payload: dict[str, object],
+        *,
+        path_run_id: str = "",
+        default_server: str = "",
+    ) -> dict[str, object]:
+        run_id = clean_lobby_text(path_run_id or payload.get("run_id"), limit=128)
+        target = _target_details(payload)
+        try:
+            current_run = self.session_runs.get_run(run_id) if run_id else self._latest_for_target(target)
+            run_id = str(current_run.get("run_id") or run_id)
+            if not self.actions.should_reconcile(current_run, target_run_id=run_id):
+                self._record(
+                    "retry_now",
+                    status="success",
+                    target_id=run_id,
+                    summary="skipped durable live-agent session-run retry because it is already ready",
+                    details={
+                        **_run_details(current_run),
+                        "reconciled": False,
+                        "result_count": 0,
+                        "skipped_reason": "already_ready",
+                    },
+                )
+                return {"status": "skipped", "session_run": current_run, "results": []}
+            scheduled_run = self.session_runs.retry_run_now(run_id)
+            results = self.actions.reconcile(
+                default_server=default_server,
+                target_run_id=str(scheduled_run.get("run_id") or run_id),
+                approve_real_providers=_payload_bool(payload.get("approve_real_providers")),
+            )
+        except (OSError, ValueError) as error:
+            safe_error = session_ensure_error_message(error)
+            details = {"session_run_id": run_id, **{key: value for key, value in target.items() if value}}
+            self._record(
+                "retry_now",
+                status="failed",
+                target_id=run_id or target["meeting_id"],
+                error=safe_error,
+                details=details,
+            )
+            raise LegacySessionRunMutationError(safe_error, details=details) from error
+        session_run = results[-1] if results else scheduled_run
+        reconciled = bool(results)
+        self._record(
+            "retry_now",
+            status=_retry_operation_status(session_run, reconciled=reconciled),
+            target_id=str(session_run.get("run_id") or run_id),
+            summary="scheduled immediate durable live-agent session-run retry",
+            details={
+                **_run_details(session_run),
+                "reconciled": reconciled,
+                "result_count": len(results),
+            },
+        )
+        return {
+            "status": "reconciled" if reconciled else "scheduled",
+            "session_run": session_run,
+            "results": results,
+        }
+
     def _latest_for_target(self, target: dict[str, str]) -> dict[str, object]:
         if not target["meeting_id"] or not target["group_id"]:
             raise ValueError("Missing session run id")
@@ -100,3 +162,30 @@ def _target_details(payload: dict[str, object]) -> dict[str, str]:
         "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
         "group_id": clean_lobby_text(payload.get("group_id"), limit=128),
     }
+
+
+def _run_details(session_run: dict[str, object]) -> dict[str, object]:
+    return {
+        "session_run_id": str(session_run.get("run_id") or ""),
+        "meeting_id": str(session_run.get("meeting_id") or ""),
+        "group_id": str(session_run.get("group_id") or ""),
+        "run_status": str(session_run.get("status") or ""),
+        "phase": str(session_run.get("phase") or ""),
+    }
+
+
+def _retry_operation_status(session_run: dict[str, object], *, reconciled: bool) -> str:
+    if not reconciled:
+        return "success"
+    status = str(session_run.get("status") or "unknown").strip() or "unknown"
+    if status in {"failed", "stopped"}:
+        return "failed"
+    return "success" if status == "ready" else "degraded"
+
+
+def _payload_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False

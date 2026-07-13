@@ -96,6 +96,76 @@ class LegacyLiveAgentSessionRunMutationServiceTests(unittest.TestCase):
         self.assertEqual(self.operations, [])
         self.assertEqual(self.action_calls, [])
 
+    def test_retry_now_skips_ready_target_without_mutation(self) -> None:
+        run = self._run()
+        ready = self.runs.finish_run(
+            str(run["run_id"]),
+            session={"status": "ready", "meeting_id": "room-a", "group_id": "group-a", "action": "none"},
+        )
+        self.actions = LegacySessionRunActions(
+            **{**self.actions.__dict__, "should_reconcile": lambda *_args, **_kwargs: False}
+        )
+        self.service.actions = self.actions
+
+        result = self.service.retry_now({"run_id": run["run_id"]})
+
+        self.assertEqual(result, {"status": "skipped", "session_run": ready, "results": []})
+        self.assertEqual(self.operations[-1]["details"]["skipped_reason"], "already_ready")
+        self.assertEqual(self.runs.get_run(str(run["run_id"]))["phase"], "none")
+
+    def test_retry_now_reconciles_path_target_and_forwards_request_only_approval(self) -> None:
+        selected = self._run()
+        other = self._run(meeting_id="room-b", group_id="group-b")
+        selected = self.runs.finish_run(
+            str(selected["run_id"]),
+            session={"status": "degraded", "meeting_id": "room-a", "group_id": "group-a", "action": "recover"},
+        )
+        seen: dict[str, object] = {}
+        reconciled = {**selected, "status": "ready", "phase": "recover"}
+
+        def reconcile(**kwargs):
+            seen.update(kwargs)
+            return [reconciled]
+
+        self.service.actions = LegacySessionRunActions(
+            **{**self.actions.__dict__, "reconcile": reconcile}
+        )
+        result = self.service.retry_now(
+            {
+                "run_id": other["run_id"],
+                "meeting_id": "room-b",
+                "group_id": "group-b",
+                "approve_real_providers": True,
+            },
+            path_run_id=str(selected["run_id"]),
+            default_server="http://room.local",
+        )
+
+        self.assertEqual(result["status"], "reconciled")
+        self.assertEqual(result["session_run"], reconciled)
+        self.assertEqual(seen["target_run_id"], selected["run_id"])
+        self.assertEqual(seen["default_server"], "http://room.local")
+        self.assertIs(seen["approve_real_providers"], True)
+        self.assertEqual(self.operations[-1]["status"], "success")
+        self.assertNotIn("approve_real_providers", self.runs.get_run(str(selected["run_id"]))["request"])
+
+    def test_retry_now_without_reconcile_result_reports_scheduled(self) -> None:
+        run = self._run()
+
+        result = self.service.retry_now({"run_id": run["run_id"]})
+
+        self.assertEqual(result["status"], "scheduled")
+        self.assertEqual(result["results"], [])
+        self.assertEqual(result["session_run"]["phase"], "retry_requested")
+        self.assertEqual(self.operations[-1]["details"]["reconciled"], False)
+
+    def test_retry_now_failure_is_typed_and_audited(self) -> None:
+        with self.assertRaises(LegacySessionRunMutationError) as raised:
+            self.service.retry_now({"meeting_id": "room-a", "group_id": "missing"})
+
+        self.assertIn("No matching", str(raised.exception))
+        self.assertEqual(self.operations[-1]["status"], "failed")
+
 
 if __name__ == "__main__":
     unittest.main()

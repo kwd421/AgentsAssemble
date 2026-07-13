@@ -7787,14 +7787,34 @@ def _make_handler(
                 session_runs=live_agent_session_run_controller,
                 actions=legacy_session_run_actions_override
                 or LegacySessionRunActions(
-                    should_reconcile=lambda *args, **kwargs: _session_run_monitor_should_reconcile(
-                        *args, **kwargs
+                    should_reconcile=lambda run, *, target_run_id: _session_run_monitor_should_reconcile(
+                        output_root,
+                        live_agent_process_supervisor,
+                        run,
+                        target_run_id=target_run_id,
                     ),
-                    reconcile=lambda *args, **kwargs: _reconcile_live_agent_session_runs(*args, **kwargs),
-                    assert_launch_approved=lambda *args, **kwargs: _assert_session_run_launch_approved(
-                        *args, **kwargs
+                    reconcile=lambda *, default_server, target_run_id, approve_real_providers: (
+                        _reconcile_live_agent_session_runs(
+                            output_root,
+                            live_agent_process_supervisor,
+                            live_agent_session_run_controller,
+                            default_server=default_server,
+                            summary="retried durable live-agent session run immediately",
+                            target_run_id=target_run_id,
+                            request_overrides={"approve_real_providers": approve_real_providers},
+                        )
                     ),
-                    ensure=lambda *args, **kwargs: live_agent_session_ensure_payload(*args, **kwargs),
+                    assert_launch_approved=lambda payload, *, default_server: _assert_session_run_launch_approved(
+                        live_agent_process_supervisor,
+                        payload,
+                        default_server,
+                    ),
+                    ensure=lambda payload, *, default_server: live_agent_session_ensure_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        payload,
+                        default_server=default_server,
+                    ),
                 ),
                 record_operation=record_live_agent_operation,
             ),
