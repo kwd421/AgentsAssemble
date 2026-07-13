@@ -27,6 +27,21 @@ def register_legacy_session_run_basic_routes(router: Router, *, deps: LegacySess
         except LegacySessionRunMutationError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error), details=error.details)
 
+    def retry_now(ctx: RequestContext, path_run_id: str = "") -> None:
+        payload = deps.read_operation_payload(ctx, "session_run.retry_now", path_run_id)
+        if payload is None:
+            return
+        try:
+            ctx.send_json(
+                deps.service.retry_now(
+                    payload,
+                    path_run_id=path_run_id,
+                    default_server=ctx.handler._request_server_url(),
+                )
+            )
+        except LegacySessionRunMutationError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error), details=error.details)
+
     @router.post("/api/live-agent-session-runs/pause")
     def pause_legacy(ctx: RequestContext) -> None:
         execute(ctx, "pause")
@@ -50,3 +65,11 @@ def register_legacy_session_run_basic_routes(router: Router, *, deps: LegacySess
     @router.post_dynamic("/api/live-agent-session-runs/{run_id}/stop")
     def stop(ctx: RequestContext, params: dict[str, str]) -> None:
         execute(ctx, "stop", params["run_id"])
+
+    @router.post("/api/live-agent-session-runs/retry-now")
+    def retry_now_legacy(ctx: RequestContext) -> None:
+        retry_now(ctx)
+
+    @router.post_dynamic("/api/live-agent-session-runs/{run_id}/retry-now")
+    def retry_now_by_id(ctx: RequestContext, params: dict[str, str]) -> None:
+        retry_now(ctx, params["run_id"])

@@ -170,9 +170,6 @@ def _parse_gui_routes(path: Path) -> set[Route]:
             routes.add(Route("/api/meetings/{meeting_id}/review-checkpoints", current_method, "prefix"))
         for action in _helper_actions(stripped, "_live_agent_process_action_path"):
             routes.add(Route(f"/api/live-agent-processes/{{group_id}}/{action}", current_method, "prefix"))
-        for action in _helper_actions(stripped, "_live_agent_session_run_action_path"):
-            routes.add(Route(f"/api/live-agent-session-runs/{{run_id}}/{action}", current_method, "prefix"))
-
     return routes
 
 

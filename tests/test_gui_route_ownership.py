@@ -11,7 +11,6 @@ GUI_SOURCE = REPOSITORY_ROOT / "agentsassemble" / "gui.py"
 GUI_ROUTE_MODULES = tuple(sorted((REPOSITORY_ROOT / "agentsassemble").glob("gui*_http.py")))
 DYNAMIC_ROUTE_HELPERS = {
     "_live_agent_process_action_path": ("POST", "/api/live-agent-processes/{group_id}/{action}"),
-    "_live_agent_session_run_action_path": ("POST", "/api/live-agent-session-runs/{run_id}/{action}"),
 }
 EXPECTED_LEGACY_DYNAMIC_ROUTES = {
     ("POST", "/api/live-agent-processes/{group_id}/stop"),
