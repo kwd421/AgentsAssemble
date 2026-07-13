@@ -49,6 +49,11 @@ from agentsassemble.room_commands import (
     parse_room_command,
 )
 from agentsassemble.room_event_broker import ROOM_EVENT_STREAM, RoomEventBroker, RoomSocketChannel
+from agentsassemble.room_floor_policy import (
+    AgentFloorEligibility,
+    continuous_floor_targets,
+    evaluate_agent_floor_eligibility,
+)
 from agentsassemble.room_members import is_room_member_muted, remove_room_member, set_room_member_muted
 from agentsassemble.room_projection import (
     PUBLIC_ACTIVITY_LABELS as _PUBLIC_ACTIVITY_LABELS,
@@ -115,12 +120,6 @@ class _PendingEventPartition:
     deferred: list[str]
     already_synced: list[str]
     invalid: list[str]
-
-
-@dataclass(frozen=True)
-class AgentFloorEligibility:
-    eligible: bool
-    reason_code: str
 
 
 class RoomCommandRejected(ValueError):
@@ -2340,26 +2339,18 @@ class RoomRealtimeController:
             relay_agent_messages=continuous,
         )
         targets = decision.targets
-        content = clean_lobby_text(event.get("content"), limit=12000).casefold()
-        explicitly_routed = "@all" in content or any(f"@{agent_id.casefold()}" in content for agent_id in providers)
-        if continuous and not explicitly_routed and targets:
-            targets = tuple(
-                agent_id
-                for agent_id in targets
-                if self.agent_floor_eligibility(room_id, agent_id).eligible
+        if continuous:
+            targets = continuous_floor_targets(
+                provider_ids=providers,
+                actor_id=decision.actor_id,
+                routed_targets=targets,
+                eligible_agent_ids=(
+                    agent_id
+                    for agent_id in providers
+                    if self.agent_floor_eligibility(room_id, agent_id).eligible
+                ),
+                content=clean_lobby_text(event.get("content"), limit=12000),
             )
-        if continuous and not explicitly_routed and targets:
-            ordered = sorted(providers)
-            if decision.actor_id in ordered:
-                start = (ordered.index(decision.actor_id) + 1) % len(ordered)
-                candidates = [ordered[(start + offset) % len(ordered)] for offset in range(len(ordered))]
-            else:
-                candidates = ordered
-            eligible_candidates = [candidate for candidate in candidates if candidate in targets]
-            if not eligible_candidates:
-                raise RuntimeError("continuous_floor_invariant_violation")
-            next_agent = eligible_candidates[0]
-            targets = (next_agent,)
         for agent_id in targets:
             participant = self.store.participant(room_id, agent_id)
             if participant.get("status") == "kicked" or participant.get("muted"):
@@ -2374,21 +2365,12 @@ class RoomRealtimeController:
     def agent_floor_eligibility(self, room_id: str, agent_id: str) -> AgentFloorEligibility:
         participant = self.store.participant(room_id, agent_id)
         session = self.store.session(room_id, agent_id)
-        if not participant or participant.get("status") != "joined":
-            return AgentFloorEligibility(False, "participant_not_joined")
-        if participant.get("muted") or is_room_member_muted(self.output_root, room_id, agent_id):
-            return AgentFloorEligibility(False, "participant_muted")
-        if not session:
-            return AgentFloorEligibility(False, "session_missing")
-        if session.get("status") != "attached":
-            return AgentFloorEligibility(False, "session_not_attached")
-        if not session.get("enabled"):
-            return AgentFloorEligibility(False, "session_disabled")
-        if session.get("runtime_status") != "idle":
-            return AgentFloorEligibility(False, f"runtime_{session.get('runtime_status') or 'unknown'}")
-        if not self.broker.has_bridge(room_id, agent_id):
-            return AgentFloorEligibility(False, "bridge_disconnected")
-        return AgentFloorEligibility(True, "eligible")
+        return evaluate_agent_floor_eligibility(
+            participant,
+            session,
+            member_muted=is_room_member_muted(self.output_root, room_id, agent_id),
+            bridge_connected=self.broker.has_bridge(room_id, agent_id),
+        )
 
     def _queue_event(
         self,
