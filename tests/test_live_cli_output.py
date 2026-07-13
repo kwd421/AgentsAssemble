@@ -54,6 +54,14 @@ class LiveCliOutputExtractionTests(unittest.TestCase):
         self.assertNotIn("shortcuts", message)
         self.assertNotIn("I need to", message)
 
+    def test_workspace_trust_prompt_variants_are_terminal_chrome(self):
+        for prompt in (
+            "Do you trust the contents of this project?",
+            "Do you trust the contents of this directory?",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertEqual(filter_live_cli_terminal_text(prompt), "")
+
 
 if __name__ == "__main__":
     unittest.main()

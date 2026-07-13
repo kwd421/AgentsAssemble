@@ -26,7 +26,7 @@ _CHROME_WORDS = (
     "esc to interrupt",
     ".shortcuts",
     "shortcuts",
-    "Do you trust the contents of this project?",
+    "Do you trust",
 )
 _REASONING_FRAGMENTS = (
     "I need to",

@@ -129,6 +129,38 @@ class LiveCliRuntimeTests(unittest.TestCase):
         self.assertNotIn("startup banner", output["content"])
 
     @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_live_cli_runtime_accepts_current_workspace_trust_prompt(self):
+        script = "\n".join(
+            [
+                "import sys",
+                "print('Do you trust the contents of this directory?', flush=True)",
+                "answer = sys.stdin.readline().strip()",
+                "print('ready prompt', flush=True)",
+                "for line in sys.stdin:",
+                "    text = line.strip()",
+                "    if text:",
+                "        print('reply: ' + text, flush=True)",
+            ]
+        )
+        runtime = LiveCliRuntime(
+            "alpha",
+            [sys.executable, "-u", "-c", script],
+            idle_quiet_seconds=0.05,
+            startup_quiet_seconds=0.05,
+            startup_timeout_seconds=1.0,
+            startup_accept_contains="Do you trust",
+            startup_accept_keys="\r",
+        )
+        try:
+            runtime.send("first")
+            output = runtime.read_output(timeout_seconds=2)
+        finally:
+            runtime.stop()
+
+        self.assertIn("reply: first", output["content"])
+        self.assertNotIn("Do you trust", output["content"])
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
     def test_strict_message_completion_drains_large_residual_tui_output_before_next_turn(self):
         class EarlyStrictMessageSource:
             strict = True
