@@ -75,6 +75,22 @@ class RoomTransaction(Protocol):
         status: str,
     ) -> dict[str, object]: ...
 
+    def claim_attention_job(
+        self,
+        job_id: str,
+        *,
+        participant_id: str,
+        owner_id: str,
+        lease_seconds: float,
+    ) -> dict[str, object]: ...
+
+    def resolve_attention_lease(
+        self,
+        lease_id: str,
+        *,
+        status: str,
+    ) -> dict[str, object]: ...
+
 
 @runtime_checkable
 class RoomRepository(Protocol):
@@ -232,3 +248,5 @@ class RoomRepository(Protocol):
         after_seq: int = 0,
         limit: int = 200,
     ) -> list[dict[str, object]]: ...
+
+    def attention_lease(self, room_id: str, lease_id: str) -> dict[str, object]: ...

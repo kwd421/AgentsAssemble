@@ -13,9 +13,12 @@ from psycopg.rows import dict_row
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.postgres_attention_repository import (
+    claim_attention_job,
+    read_attention_lease,
     read_attention_jobs,
     read_attention_state,
     record_attention_evaluation,
+    resolve_attention_lease,
     write_attention_state,
 )
 from agentsassemble.postgres_room_schema import upgrade_postgres_room_schema
@@ -151,6 +154,31 @@ class _PostgresRoomTransaction:
             self._connection,
             evaluation,
             mode=mode,
+            status=status,
+        )
+
+    def claim_attention_job(
+        self,
+        job_id: str,
+        *,
+        participant_id: str,
+        owner_id: str,
+        lease_seconds: float,
+    ) -> dict[str, object]:
+        return claim_attention_job(
+            self._connection,
+            self._room_id,
+            job_id,
+            participant_id=participant_id,
+            owner_id=owner_id,
+            lease_seconds=lease_seconds,
+        )
+
+    def resolve_attention_lease(self, lease_id: str, *, status: str) -> dict[str, object]:
+        return resolve_attention_lease(
+            self._connection,
+            self._room_id,
+            lease_id,
             status=status,
         )
 
@@ -526,6 +554,12 @@ class PostgresRoomRepository:
                 after_seq=after_seq,
                 limit=limit,
             )
+
+    def attention_lease(self, room_id: str, lease_id: str) -> dict[str, object]:
+        clean_room = clean_room_id(room_id)
+        clean_lease = clean_lobby_text(lease_id, limit=128)
+        with self._connection() as connection:
+            return read_attention_lease(connection, clean_room, clean_lease)
 
     def room_payload(self, room_id: str) -> dict[str, object]:
         clean_id = clean_room_id(room_id)

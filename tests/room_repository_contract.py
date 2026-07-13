@@ -3,7 +3,11 @@ from __future__ import annotations
 from typing import cast
 from unittest import TestCase
 
-from agentsassemble.room_attention import AttentionEvaluation, AttentionEvaluationConflict
+from agentsassemble.room_attention import (
+    AttentionEvaluation,
+    AttentionEvaluationConflict,
+    AttentionLeaseConflict,
+)
 from agentsassemble.room_repository import RoomRepository
 
 
@@ -324,6 +328,75 @@ class RoomRepositoryContractMixin:
         self.repository.delete_room("general", reason="attention cascade")
 
         case.assertEqual(self.repository.attention_jobs("general"), [])
+
+    def test_selected_attention_job_has_one_durable_lease_lifecycle(self) -> None:
+        self.repository.create_room("general")
+        with self.repository.transaction("general") as transaction:
+            transaction.upsert_participant(
+                {
+                    "participant_id": "agent-a",
+                    "display_name": "Agent A",
+                    "participant_type": "agent",
+                }
+            )
+            job = transaction.record_attention_evaluation(
+                AttentionEvaluation(
+                    room_id="general",
+                    source_event_id="event-9",
+                    source_seq=9,
+                    outcome="selected",
+                    selected_participant_id="agent-a",
+                    eligible_participant_ids=("agent-a",),
+                    reasons=("direct_mention",),
+                ),
+                mode="active",
+                status="pending",
+            )
+            first = transaction.claim_attention_job(
+                job["job_id"],
+                participant_id="agent-a",
+                owner_id="worker-a",
+                lease_seconds=30,
+            )
+            duplicate = transaction.claim_attention_job(
+                job["job_id"],
+                participant_id="agent-a",
+                owner_id="worker-a",
+                lease_seconds=30,
+            )
+
+        case = self._test_case()
+        case.assertEqual(duplicate["lease_id"], first["lease_id"])
+        case.assertEqual(
+            self.repository.attention_jobs("general", mode="active")[0]["status"],
+            "leased",
+        )
+        with case.assertRaisesRegex(AttentionLeaseConflict, "already_leased"):
+            with self.repository.transaction("general") as transaction:
+                transaction.claim_attention_job(
+                    job["job_id"],
+                    participant_id="agent-a",
+                    owner_id="worker-b",
+                    lease_seconds=30,
+                )
+
+        with self.repository.transaction("general") as transaction:
+            released = transaction.resolve_attention_lease(first["lease_id"], status="released")
+            duplicate_release = transaction.resolve_attention_lease(
+                first["lease_id"],
+                status="released",
+            )
+
+        case.assertEqual(released["status"], "released")
+        case.assertEqual(duplicate_release["status"], "released")
+        case.assertEqual(
+            self.repository.attention_lease("general", first["lease_id"])["status"],
+            "released",
+        )
+        case.assertEqual(
+            self.repository.attention_jobs("general", mode="active")[0]["status"],
+            "completed",
+        )
 
     def test_participant_terminal_status_detaches_sessions_and_records_event(self) -> None:
         self.repository.create_room("general")

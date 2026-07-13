@@ -37,9 +37,12 @@ from agentsassemble.room_repository_records import (
     utc_now as _now,
 )
 from agentsassemble.sqlite_attention_repository import (
+    claim_attention_job,
     read_attention_jobs,
+    read_attention_lease,
     read_attention_state,
     record_attention_evaluation,
+    resolve_attention_lease,
     write_attention_state,
 )
 
@@ -162,6 +165,31 @@ class _SQLiteRoomTransaction:
             status=status,
         )
 
+    def claim_attention_job(
+        self,
+        job_id: str,
+        *,
+        participant_id: str,
+        owner_id: str,
+        lease_seconds: float,
+    ) -> dict[str, object]:
+        return claim_attention_job(
+            self._connection,
+            self._room_id,
+            job_id,
+            participant_id=participant_id,
+            owner_id=owner_id,
+            lease_seconds=lease_seconds,
+        )
+
+    def resolve_attention_lease(self, lease_id: str, *, status: str) -> dict[str, object]:
+        return resolve_attention_lease(
+            self._connection,
+            self._room_id,
+            lease_id,
+            status=status,
+        )
+
 
 class RoomStore:
     """SQLite source of truth for room, participant, session, and event state."""
@@ -238,6 +266,12 @@ class RoomStore:
                 after_seq=after_seq,
                 limit=limit,
             )
+
+    def attention_lease(self, room_id: str, lease_id: str) -> dict[str, object]:
+        clean_room_id = _clean_room_id(room_id)
+        clean_lease_id = clean_lobby_text(lease_id, limit=128)
+        with self._connection() as connection:
+            return read_attention_lease(connection, clean_room_id, clean_lease_id)
 
     def delete_room(self, room_id: str, *, reason: str = "") -> bool:
         """Delete canonical room state and retain a tombstone against stale clients."""

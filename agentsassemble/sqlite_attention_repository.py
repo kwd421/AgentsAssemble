@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from agentsassemble.meeting_events import clean_lobby_text
@@ -12,6 +12,7 @@ from agentsassemble.room_attention import (
     AgentAttentionState,
     AttentionEvaluation,
     AttentionEvaluationConflict,
+    AttentionLeaseConflict,
 )
 
 
@@ -169,6 +170,134 @@ def read_attention_jobs(
     return [attention_job_from_row(row) for row in rows]
 
 
+def claim_attention_job(
+    connection: sqlite3.Connection,
+    room_id: str,
+    job_id: str,
+    *,
+    participant_id: str,
+    owner_id: str,
+    lease_seconds: float,
+) -> dict[str, object]:
+    clean_job_id = clean_lobby_text(job_id, limit=128)
+    clean_participant_id = clean_lobby_text(participant_id, limit=128)
+    clean_owner_id = clean_lobby_text(owner_id, limit=128)
+    if not clean_job_id or not clean_participant_id or not clean_owner_id:
+        raise AttentionLeaseConflict("attention_lease_identity_required")
+    job_row = connection.execute(
+        "SELECT * FROM attention_jobs WHERE room_id = ? AND job_id = ?",
+        (room_id, clean_job_id),
+    ).fetchone()
+    if job_row is None:
+        raise AttentionLeaseConflict("attention_job_not_found")
+    job = attention_job_from_row(job_row)
+    if job["outcome"] != "selected" or job["selected_participant_id"] != clean_participant_id:
+        raise AttentionLeaseConflict("attention_job_participant_mismatch")
+
+    existing_row = connection.execute(
+        """SELECT * FROM attention_leases
+           WHERE room_id = ? AND job_id = ? AND status = 'active'""",
+        (room_id, clean_job_id),
+    ).fetchone()
+    if existing_row is not None:
+        existing = attention_lease_from_row(existing_row)
+        if (
+            existing["participant_id"] == clean_participant_id
+            and existing["owner_id"] == clean_owner_id
+        ):
+            return existing
+        raise AttentionLeaseConflict("attention_job_already_leased")
+    if job["status"] != "pending":
+        raise AttentionLeaseConflict(f"attention_job_not_pending:{job['status']}")
+
+    acquired = datetime.now(UTC)
+    expires = acquired + timedelta(seconds=max(1.0, float(lease_seconds)))
+    lease = {
+        "room_id": room_id,
+        "lease_id": f"lease-{uuid4().hex[:12]}",
+        "job_id": clean_job_id,
+        "participant_id": clean_participant_id,
+        "owner_id": clean_owner_id,
+        "status": "active",
+        "acquired_at": acquired.isoformat(),
+        "expires_at": expires.isoformat(),
+        "released_at": "",
+    }
+    connection.execute(
+        """INSERT INTO attention_leases(
+               room_id, lease_id, job_id, participant_id, owner_id, status,
+               acquired_at, expires_at, released_at
+           ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        tuple(lease[column] for column in (
+            "room_id",
+            "lease_id",
+            "job_id",
+            "participant_id",
+            "owner_id",
+            "status",
+            "acquired_at",
+            "expires_at",
+            "released_at",
+        )),
+    )
+    connection.execute(
+        "UPDATE attention_jobs SET status = 'leased', updated_at = ? WHERE room_id = ? AND job_id = ?",
+        (_now(), room_id, clean_job_id),
+    )
+    return lease
+
+
+def resolve_attention_lease(
+    connection: sqlite3.Connection,
+    room_id: str,
+    lease_id: str,
+    *,
+    status: str,
+) -> dict[str, object]:
+    clean_lease_id = clean_lobby_text(lease_id, limit=128)
+    clean_status = clean_lobby_text(status, limit=32)
+    if clean_status not in {"released", "expired", "cancelled"}:
+        raise AttentionLeaseConflict("attention_lease_terminal_status_required")
+    row = connection.execute(
+        "SELECT * FROM attention_leases WHERE room_id = ? AND lease_id = ?",
+        (room_id, clean_lease_id),
+    ).fetchone()
+    if row is None:
+        raise AttentionLeaseConflict("attention_lease_not_found")
+    lease = attention_lease_from_row(row)
+    if lease["status"] == clean_status:
+        return lease
+    if lease["status"] != "active":
+        raise AttentionLeaseConflict(f"attention_lease_not_active:{lease['status']}")
+    released_at = _now()
+    connection.execute(
+        """UPDATE attention_leases
+           SET status = ?, released_at = ?
+           WHERE room_id = ? AND lease_id = ?""",
+        (clean_status, released_at, room_id, clean_lease_id),
+    )
+    job_status = "completed" if clean_status == "released" else (
+        "pending" if clean_status == "expired" else "cancelled"
+    )
+    connection.execute(
+        "UPDATE attention_jobs SET status = ?, updated_at = ? WHERE room_id = ? AND job_id = ?",
+        (job_status, released_at, room_id, lease["job_id"]),
+    )
+    return {**lease, "status": clean_status, "released_at": released_at}
+
+
+def read_attention_lease(
+    connection: sqlite3.Connection,
+    room_id: str,
+    lease_id: str,
+) -> dict[str, object]:
+    row = connection.execute(
+        "SELECT * FROM attention_leases WHERE room_id = ? AND lease_id = ?",
+        (room_id, lease_id),
+    ).fetchone()
+    return attention_lease_from_row(row) if row is not None else {}
+
+
 def attention_job_from_row(row: sqlite3.Row) -> dict[str, object]:
     return {
         "room_id": str(row["room_id"]),
@@ -183,6 +312,20 @@ def attention_job_from_row(row: sqlite3.Row) -> dict[str, object]:
         "status": str(row["status"]),
         "created_at": str(row["created_at"]),
         "updated_at": str(row["updated_at"]),
+    }
+
+
+def attention_lease_from_row(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "room_id": str(row["room_id"]),
+        "lease_id": str(row["lease_id"]),
+        "job_id": str(row["job_id"]),
+        "participant_id": str(row["participant_id"]),
+        "owner_id": str(row["owner_id"] or ""),
+        "status": str(row["status"]),
+        "acquired_at": str(row["acquired_at"]),
+        "expires_at": str(row["expires_at"]),
+        "released_at": str(row["released_at"] or ""),
     }
 
 

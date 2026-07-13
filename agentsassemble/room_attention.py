@@ -24,6 +24,10 @@ class AttentionEvaluationConflict(ValueError):
     """A source sequence was evaluated again with different canonical input."""
 
 
+class AttentionLeaseConflict(ValueError):
+    """An attention job cannot be claimed or resolved in its current state."""
+
+
 @dataclass(frozen=True)
 class AgentAttentionState:
     """Independent durable cursors for observing, evaluating, syncing, and speaking."""
