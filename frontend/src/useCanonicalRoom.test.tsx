@@ -69,6 +69,56 @@ function snapshot(
 }
 
 describe("useCanonicalRoom", () => {
+  it("applies a pushed provider catalog revision to the active room", async () => {
+    let handlers: RoomSocketHandlers | undefined;
+    const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {
+      handlers = nextHandlers;
+      return {
+        close: vi.fn(),
+        ready: () => true,
+        command: vi.fn(),
+        say: vi.fn(),
+        historyBefore: vi.fn(),
+      } satisfies RoomSocketHandle;
+    });
+    const { result } = renderHook(() =>
+      useCanonicalRoom({
+        roomId: "general",
+        auth: { kind: "host", meetingId: "general" },
+        openSocket,
+      })
+    );
+    await waitFor(() => expect(openSocket).toHaveBeenCalledOnce());
+
+    act(() => handlers?.onRoomSnapshot?.(snapshot([])));
+    act(() =>
+      handlers?.onProviderCatalog?.({
+        status: "ready",
+        catalog_revision: "cat-live",
+        providers: [
+          {
+            id: "codex",
+            display_name: "Codex",
+            provider_kind: "codex_live_session",
+            runtime_kind: "live_cli",
+            connection_kind: "native_cli_bridge",
+            executable: "codex",
+            default_model: "gpt-live",
+            interactive: true,
+            startable: true,
+            available: true,
+            discovery_status: "ready",
+            catalog_source: "discovered",
+            controls: [],
+          },
+        ],
+      })
+    );
+
+    expect(result.current.providerCatalog.catalog_revision).toBe("cat-live");
+    expect(result.current.availableProviders[0].default_model).toBe("gpt-live");
+  });
+
   it("keeps current snapshot sessions instead of replaying stale historical state", async () => {
     let handlers: RoomSocketHandlers | undefined;
     const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {

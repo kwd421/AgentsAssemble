@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.room_event_broker import RoomSocketChannel
+from agentsassemble.room_event_broker import RoomEventBroker, RoomSocketChannel
 
 
 def _event_message(event_type: str, sequence: int) -> dict[str, object]:
@@ -24,6 +24,23 @@ class RoomSocketChannelBackpressureTests(unittest.TestCase):
         self.assertTrue(any(message["events"][0]["type"] == "message_final" for message in drained))
         self.assertEqual(channel.diagnostics()["dropped_delta_count"], 1)
         channel.close()
+
+    def test_provider_catalog_control_is_sent_only_to_browser_clients(self):
+        broker = RoomEventBroker()
+        browser = broker.connect({"meeting_id": "general", "client_type": "browser"})
+        bridge = broker.connect(
+            {"meeting_id": "general", "client_type": "agent_bridge", "agent_id": "codex"}
+        )
+
+        broker.broadcast_control(
+            "general",
+            {"op": "provider_catalog_updated", "catalog": {"catalog_revision": "cat-test"}},
+            client_type="browser",
+        )
+
+        self.assertEqual(browser.drain()[0]["op"], "provider_catalog_updated")
+        self.assertEqual(bridge.drain(), [])
+        broker.close()
 
     def test_full_essential_queue_emits_resync_marker_before_new_final(self):
         channel = RoomSocketChannel({"meeting_id": "general"}, max_messages=10)

@@ -39,6 +39,38 @@ afterEach(() => {
 });
 
 describe("canonical room socket client", () => {
+  it("pushes provider catalog revisions without reconnecting", async () => {
+    const sockets: FakeWebSocket[] = [];
+    const onProviderCatalog = vi.fn();
+    const handle = openRoomSocket(
+      { kind: "host", meetingId: "general" },
+      ["room_events"],
+      { onProviderCatalog },
+      {
+        getTicket: async () => "ticket-catalog",
+        createSocket: () => {
+          const socket = new FakeWebSocket();
+          sockets.push(socket);
+          return socket as unknown as WebSocket;
+        },
+      }
+    );
+    await flushPromises();
+    sockets[0].open();
+    sockets[0].receive({
+      op: "provider_catalog_updated",
+      catalog: { status: "ready", catalog_revision: "cat-live", providers: [] },
+    });
+
+    expect(onProviderCatalog).toHaveBeenCalledWith({
+      status: "ready",
+      catalog_revision: "cat-live",
+      providers: [],
+    });
+    expect(sockets).toHaveLength(1);
+    handle.close();
+  });
+
   it("correlates commands with ACKs and sends the canonical envelope", async () => {
     const sockets: FakeWebSocket[] = [];
     const handle = openRoomSocket(
