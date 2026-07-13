@@ -83,10 +83,17 @@
       "display_name": "Grok CLI",
       "command": [
         "grok",
+        "--model",
+        "grok-4.5",
+        "--reasoning-effort",
+        "low",
         "agent",
         "stdio"
       ],
       "cwd": ".",
+      "model": "grok-4.5",
+      "reasoning_effort": "low",
+      "permission_mode": "meeting_read_only",
       "submit_newline": "\r",
       "terminal_columns": 120,
       "terminal_rows": 40,
@@ -99,16 +106,24 @@
     {
       "id": "claude",
       "kind": "live_cli",
-      "display_name": "Claude Haiku",
+      "display_name": "Claude Sonnet 4.6",
       "command": [
         "claude",
         "--model",
-        "haiku",
+        "claude-sonnet-4-6",
+        "--effort",
+        "low",
+        "--permission-mode",
+        "plan",
         "--tools",
         "",
         "--safe-mode"
       ],
       "cwd": ".",
+      "model": "claude-sonnet-4-6",
+      "reasoning_effort": "low",
+      "service_tier": "default",
+      "permission_mode": "meeting_read_only",
       "input_mode": "bracketed_paste",
       "submit_newline": "\r",
       "submit_delay_seconds": 0.2,
@@ -119,7 +134,7 @@
       "startup_accept_contains": "Do you trust the contents of this project?",
       "startup_accept_keys": "\r",
       "quiet_seconds": 4,
-      "session_probe_prompt": "AGENTSASSEMBLE_SESSION_MARKER=claude-haiku-001 를 기억하고 claude-haiku-001 이라고만 답해.",
+      "session_probe_prompt": "AGENTSASSEMBLE_SESSION_MARKER=claude-sonnet-4-6-001 를 기억하고 claude-sonnet-4-6-001 이라고만 답해.",
       "memory_check_prompt": "아까 marker 값 뭐였지? marker 값만 답해."
     }
   ]

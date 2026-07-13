@@ -68,6 +68,10 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
                 "display_name": "Test Codex",
                 "command": ["fake-codex", "--model", "test-model"],
                 "cwd": ".",
+                "model": "test-model",
+                "reasoning_effort": "low",
+                "service_tier": "default",
+                "permission_mode": "meeting_read_only",
             },
             turn_timeout_seconds=7.0,
         )
@@ -81,13 +85,36 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         spec = native_cli_provider_spec_from_config(
             {
                 "id": "claude",
-                "command": ["claude", "--tools", "", "--safe-mode"],
+                "command": ["claude", "--model", "claude-sonnet-4-6", "--tools", "", "--safe-mode"],
                 "cwd": ".",
+                "model": "claude-sonnet-4-6",
+                "reasoning_effort": "low",
+                "service_tier": "default",
+                "permission_mode": "meeting_read_only",
             },
             turn_timeout_seconds=30.0,
         )
 
-        self.assertEqual(spec.command, ("claude", "--tools", "", "--safe-mode"))
+        self.assertEqual(
+            spec.command,
+            ("claude", "--model", "claude-sonnet-4-6", "--tools", "", "--safe-mode"),
+        )
+
+    def test_smoke_config_rejects_missing_or_mismatched_model_profiles(self):
+        common = {
+            "id": "grok",
+            "command": ["grok", "--model", "grok-4.5", "agent", "stdio"],
+            "cwd": ".",
+            "reasoning_effort": "low",
+            "permission_mode": "meeting_read_only",
+        }
+        with self.assertRaisesRegex(ValueError, "model is required"):
+            native_cli_provider_spec_from_config(common, turn_timeout_seconds=30.0)
+        with self.assertRaisesRegex(ValueError, "command model does not match"):
+            native_cli_provider_spec_from_config(
+                {**common, "model": "grok-4"},
+                turn_timeout_seconds=30.0,
+            )
 
     def test_real_grok_command_cannot_fall_back_to_pty(self):
         with self.assertRaisesRegex(ValueError, "PTY fallback is disabled"):

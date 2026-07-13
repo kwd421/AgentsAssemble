@@ -543,38 +543,49 @@ def native_cli_provider_spec_from_config(
     )
     command = tuple(str(part) for part in list(payload.get("command") or []))
     model = clean_lobby_text(payload.get("model"), limit=128)
-    if not model and "--model" in command:
-        index = command.index("--model")
-        model = command[index + 1] if index + 1 < len(command) else ""
-    if not command and definition is not None:
-        command = definition.command_builder(
-            model or definition.default_model,
-            clean_lobby_text(payload.get("reasoning_effort") or payload.get("effort"), limit=32)
-            or definition.default_reasoning_effort,
-            clean_lobby_text(payload.get("service_tier"), limit=32) or definition.default_service_tier,
-            clean_lobby_text(payload.get("variant"), limit=64) or definition.default_variant,
-            clean_lobby_text(payload.get("permission_mode"), limit=64)
-            or definition.default_permission_mode,
-        )
     if not command:
         raise ValueError(f"live CLI provider {agent_id} command is required")
+    if not model:
+        raise ValueError(f"live CLI provider {agent_id} model is required")
+    reasoning_effort = clean_lobby_text(payload.get("reasoning_effort") or payload.get("effort"), limit=32)
+    service_tier = clean_lobby_text(payload.get("service_tier"), limit=32)
+    variant = clean_lobby_text(payload.get("variant"), limit=64)
+    permission_mode = clean_lobby_text(payload.get("permission_mode"), limit=64)
+    if definition is not None and definition.default_reasoning_effort and not reasoning_effort:
+        raise ValueError(f"live CLI provider {agent_id} reasoning effort is required")
+    if definition is not None and definition.default_service_tier and not service_tier:
+        raise ValueError(f"live CLI provider {agent_id} service tier is required")
+    if definition is not None and definition.default_variant and not variant:
+        raise ValueError(f"live CLI provider {agent_id} variant is required")
+    if not permission_mode:
+        raise ValueError(f"live CLI provider {agent_id} permission mode is required")
+    cwd = clean_lobby_text(payload.get("cwd"), limit=500)
+    if not cwd:
+        raise ValueError(f"live CLI provider {agent_id} cwd is required")
+    model_selection_kind = clean_lobby_text(payload.get("model_selection_kind"), limit=16) or "exact"
+    if model_selection_kind not in {"exact", "alias"}:
+        raise ValueError(f"live CLI provider {agent_id} model selection kind is invalid")
+    if "--model" in command:
+        model_index = command.index("--model")
+        command_model = command[model_index + 1] if model_index + 1 < len(command) else ""
+        if command_model != model:
+            raise ValueError(f"live CLI provider {agent_id} command model does not match its profile")
     spec = NativeCliProviderSpec(
         agent_id=agent_id,
         display_name=clean_lobby_text(payload.get("display_name"), limit=128)
         or (definition.display_name if definition else agent_id),
         command=command,
-        cwd=str(Path(str(payload.get("cwd") or ".")).expanduser().resolve()),
+        cwd=str(Path(cwd).expanduser().resolve()),
         provider_kind=clean_lobby_text(payload.get("provider_kind"), limit=64)
         or (definition.provider_kind if definition else f"{agent_id}_live_session"),
-        model=model or (definition.default_model if definition else ""),
-        reasoning_effort=clean_lobby_text(payload.get("reasoning_effort") or payload.get("effort"), limit=32)
-        or (definition.default_reasoning_effort if definition else ""),
-        service_tier=clean_lobby_text(payload.get("service_tier"), limit=32)
-        or (definition.default_service_tier if definition else ""),
-        variant=clean_lobby_text(payload.get("variant"), limit=64)
-        or (definition.default_variant if definition else ""),
-        permission_mode=clean_lobby_text(payload.get("permission_mode"), limit=64)
-        or (definition.default_permission_mode if definition else "meeting_read_only"),
+        model=model,
+        requested_model_id=model,
+        model_selection_kind=model_selection_kind,
+        catalog_revision=clean_lobby_text(payload.get("catalog_revision"), limit=128),
+        reasoning_effort=reasoning_effort,
+        service_tier=service_tier,
+        variant=variant,
+        permission_mode=permission_mode,
         runtime_kind=clean_lobby_text(payload.get("runtime_kind"), limit=32)
         or (definition.runtime_kind if definition else "live_cli"),
         transport=clean_lobby_text(payload.get("transport"), limit=32)
