@@ -166,6 +166,89 @@ class LegacyLiveAgentSessionRunMutationServiceTests(unittest.TestCase):
         self.assertIn("No matching", str(raised.exception))
         self.assertEqual(self.operations[-1]["status"], "failed")
 
+    def test_ensure_approves_executes_finishes_and_preserves_reply_probe(self) -> None:
+        calls: list[str] = []
+        session = {
+            "status": "ready",
+            "meeting_id": "room-a",
+            "group_id": "group-a",
+            "action": "start",
+            "reply_probe": {"status": "ok", "probe_count": 1, "ok_count": 1},
+        }
+        self.service.actions = LegacySessionRunActions(
+            should_reconcile=self.actions.should_reconcile,
+            reconcile=self.actions.reconcile,
+            assert_launch_approved=lambda *_args, **_kwargs: calls.append("approve"),
+            ensure=lambda *_args, **_kwargs: calls.append("ensure") or dict(session),
+        )
+
+        result = self.service.ensure(
+            {
+                "meeting_id": "room-a",
+                "group_id": "group-a",
+                "approve_real_providers": True,
+                "live_agent_config_path": "/private/live-agents.json",
+            },
+            default_server="http://room.local",
+        )
+
+        self.assertEqual(calls, ["approve", "ensure"])
+        self.assertEqual(result["session_run"]["status"], "ready")
+        self.assertEqual(result["reply_probe"]["status"], "ok")
+        self.assertEqual(self.operations[-1]["details"]["reply_probe_status"], "ok")
+        durable = self.runs.get_run(str(result["session_run"]["run_id"]))
+        self.assertNotIn("approve_real_providers", durable["request"])
+        self.assertNotIn("/private/", str(durable))
+
+    def test_ensure_approval_failure_records_failed_run_without_provider_action(self) -> None:
+        calls: list[str] = []
+
+        def reject(*_args, **_kwargs):
+            calls.append("approve")
+            raise ValueError("approval denied for /private/live-agents.json")
+
+        self.service.actions = LegacySessionRunActions(
+            should_reconcile=self.actions.should_reconcile,
+            reconcile=self.actions.reconcile,
+            assert_launch_approved=reject,
+            ensure=lambda *_args, **_kwargs: calls.append("ensure") or {},
+        )
+
+        with self.assertRaises(LegacySessionRunMutationError) as raised:
+            self.service.ensure(
+                {
+                    "meeting_id": "room-a",
+                    "group_id": "group-a",
+                    "live_agent_config_path": "/private/live-agents.json",
+                }
+            )
+
+        self.assertEqual(calls, ["approve"])
+        self.assertNotIn("/private/", str(raised.exception))
+        failed = self.runs.list_runs(limit=1)[0]
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(self.operations[-1]["status"], "failed")
+
+    def test_ensure_provider_failure_fails_existing_durable_run(self) -> None:
+        calls: list[str] = []
+
+        def fail(*_args, **_kwargs):
+            calls.append("ensure")
+            raise OSError("provider failed")
+
+        self.service.actions = LegacySessionRunActions(
+            should_reconcile=self.actions.should_reconcile,
+            reconcile=self.actions.reconcile,
+            assert_launch_approved=lambda *_args, **_kwargs: calls.append("approve"),
+            ensure=fail,
+        )
+
+        with self.assertRaises(LegacySessionRunMutationError):
+            self.service.ensure({"meeting_id": "room-a", "group_id": "group-a"})
+
+        self.assertEqual(calls, ["approve", "ensure"])
+        self.assertEqual(self.runs.list_runs(limit=1)[0]["status"], "failed")
+
 
 if __name__ == "__main__":
     unittest.main()

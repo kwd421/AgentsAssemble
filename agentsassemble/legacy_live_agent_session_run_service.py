@@ -4,7 +4,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentsassemble.legacy_live_agent_session_control import session_ensure_error_message
+from agentsassemble.legacy_live_agent_session_control import (
+    session_ensure_error_message,
+    session_start_error_details,
+    session_start_operation_status,
+)
+from agentsassemble.legacy_live_agent_session_projection import session_start_operation_details
 from agentsassemble.meeting_events import clean_lobby_text
 
 
@@ -144,6 +149,39 @@ class LegacyLiveAgentSessionRunMutationService:
             "session_run": session_run,
             "results": results,
         }
+
+    def ensure(self, payload: dict[str, object], *, default_server: str = "") -> dict[str, object]:
+        session_run = self.session_runs.begin_run(action="ensure", payload=dict(payload))
+        try:
+            self.actions.assert_launch_approved(payload, default_server=default_server)
+            session = self.actions.ensure(payload, default_server=default_server)
+        except (OSError, ValueError) as error:
+            safe_error = session_ensure_error_message(error)
+            failed_run = self.session_runs.fail_run(session_run["run_id"], safe_error)
+            details = session_start_error_details(payload, error)
+            details["session_run_id"] = str(failed_run.get("run_id") or "")
+            self._record(
+                "ensure",
+                status="failed",
+                target_id=str(details.get("meeting_id") or details.get("requested_meeting_id") or ""),
+                error=safe_error,
+                details=details,
+            )
+            raise LegacySessionRunMutationError(safe_error, details=details) from error
+        finished_run = self.session_runs.finish_run(session_run["run_id"], session=session)
+        response = dict(session)
+        response["session_run"] = finished_run
+        self._record(
+            "ensure",
+            status=session_start_operation_status(session),
+            target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
+            summary="ensured durable live-agent session run",
+            details={
+                **session_start_operation_details(session),
+                "session_run_id": str(finished_run.get("run_id") or ""),
+            },
+        )
+        return response
 
     def _latest_for_target(self, target: dict[str, str]) -> dict[str, object]:
         if not target["meeting_id"] or not target["group_id"]:
