@@ -193,10 +193,9 @@ def native_cli_provider_spec_from_stored_session_strict(
                 f"Stored Agent Session is missing required {field}.",
                 code="profile_incomplete",
             )
-    if (
-        clean_lobby_text(session.get("runtime_kind"), limit=64) != definition.runtime_kind
-        or clean_lobby_text(session.get("transport"), limit=64) != definition.transport
-    ):
+    stored_runtime_kind = clean_lobby_text(session.get("runtime_kind"), limit=64)
+    stored_transport = clean_lobby_text(session.get("transport"), limit=64)
+    if stored_runtime_kind != definition.runtime_kind:
         raise StoredProviderProfileError(
             "Stored Agent Session provider definition changed.",
             code="provider_definition_changed",
@@ -217,12 +216,21 @@ def native_cli_provider_spec_from_stored_session_strict(
         variant=clean_lobby_text(session.get("variant"), limit=64),
         permission_mode=required["permission_mode"],
     )
-    profile_matches = spec.runtime_profile_key() == required["runtime_profile_key"]
+    profile_matches = (
+        stored_transport == definition.transport
+        and spec.runtime_profile_key() == required["runtime_profile_key"]
+    )
     legacy_grok_transport_profile = (
         definition.provider_id == "grok"
+        and stored_transport == "pty"
         and spec.command == stored_command
         and replace(spec, transport="pty").runtime_profile_key() == required["runtime_profile_key"]
     )
+    if stored_transport != definition.transport and not legacy_grok_transport_profile:
+        raise StoredProviderProfileError(
+            "Stored Agent Session provider definition changed.",
+            code="provider_definition_changed",
+        )
     if spec.command != stored_command or not (profile_matches or legacy_grok_transport_profile):
         raise StoredProviderProfileError(
             "Stored Agent Session profile must be migrated before it can be reused.",

@@ -980,6 +980,11 @@ class RoomRealtimeController:
             spec = native_cli_provider_spec_from_payload(payload)
         except UnsupportedNativeCliProvider as error:
             raise RoomCommandRejected(str(error), code="unsupported_provider") from error
+        if self.store.session(room_id, spec.agent_id) or self.store.participant(room_id, spec.agent_id):
+            raise RoomCommandRejected(
+                "An Agent Session with this identity already exists; re-add or configure the existing session instead.",
+                code="session_exists",
+            )
         session = self.register_provider(room_id, spec)
         result: dict[str, object] = {
             "status": "created",
@@ -1055,7 +1060,7 @@ class RoomRealtimeController:
             self._publish_session_state(room_id, session)
         result: dict[str, object] = {
             "status": "readded",
-            "agent_session": session,
+            "agent_session": self._public_session(session),
             "participant": self.store.participant(room_id, agent_id),
         }
         if bool(payload.get("start") or payload.get("start_now")):

@@ -71,7 +71,6 @@ export interface NativeCliProviderAvailability {
   interactive: true;
   startable: boolean;
   available: boolean;
-  resolved_executable?: string;
   discovery_status?: "loading" | "ready" | "failed";
   catalog_source?: "discovered" | "static_manifest" | "stale_cache";
   discovery_error?: string;

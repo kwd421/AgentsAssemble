@@ -854,6 +854,30 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(unknown.exception.code, "unsupported_model")
         self.assertFalse(RoomStore(self.root).session("general", "codex-codex-unknown"))
 
+    def test_agent_create_never_upserts_an_existing_stopped_session(self):
+        self.controller.register_provider(
+            "general",
+            _spec("existing"),
+        )
+        store = RoomStore(self.root)
+        before = store.session("general", "existing")
+
+        with self.assertRaises(RoomCommandRejected) as raised:
+            self._command(
+                "req-create-existing",
+                "agent.create",
+                {
+                    "provider_id": "codex",
+                    "agent_id": "existing",
+                    "display_name": "Existing",
+                    "workspace": str(self.root / "changed"),
+                    "model": "gpt-5.3-codex",
+                },
+            )
+
+        self.assertEqual(raised.exception.code, "session_exists")
+        self.assertEqual(store.session("general", "existing"), before)
+
     def test_restart_restores_dynamic_server_owned_provider_for_ui_resume(self):
         created = self._command(
             "req-create-opencode",
@@ -930,7 +954,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self._connect_bridge()
         before = RoomStore(self.root).session("general", "codex")
 
-        with self.assertRaisesRegex(RoomCommandRejected, "stop it before changing settings") as raised:
+        with self.assertRaisesRegex(RoomCommandRejected, "already exists") as raised:
             self._command(
                 "req-change-profile",
                 "agent.create",
@@ -945,7 +969,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             )
         after = RoomStore(self.root).session("general", "codex")
 
-        self.assertEqual(raised.exception.code, "runtime_profile_conflict")
+        self.assertEqual(raised.exception.code, "session_exists")
         self.assertEqual(after["runtime_profile_key"], before["runtime_profile_key"])
         self.assertEqual(after["command_configured"], before["command_configured"])
         self.assertEqual(after["runtime_status"], "idle")
@@ -1542,6 +1566,16 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "readded")
         self.assertEqual(result["agent_session"]["participant_id"], "codex")
+        for private_key in (
+            "workspace",
+            "command_configured",
+            "provider_session_id",
+            "bridge_handle_id",
+            "resolved_executable",
+            "stdout_path",
+            "stderr_path",
+        ):
+            self.assertNotIn(private_key, result["agent_session"])
         self.assertEqual(store.participant("general", "codex")["status"], "detached")
         self.assertEqual(restored["provider_session_id"], "provider-session-1")
         self.assertEqual(restored["turn_count"], 7)
@@ -1574,7 +1608,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             variant=spec.variant,
             permission_mode=spec.permission_mode,
             runtime_kind=spec.runtime_kind,
-            transport=spec.transport,
+            transport="pty",
             runtime_profile_key=replace(spec, transport="pty").runtime_profile_key(),
         )
         self._command("req-kick-grok-before-readd", "participant.kick", {"participant_id": spec.agent_id})
@@ -1584,6 +1618,17 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
         self.assertEqual(restored["transport"], "acp_stdio")
         self.assertEqual(restored["runtime_profile_key"], spec.runtime_profile_key())
+
+        self.controller.close()
+        self.controller = RoomRealtimeController(
+            self.root,
+            providers=[_spec()],
+            bridge_manager=self.manager,
+            recovery_scheduler=self.recovery_scheduler,
+        )
+        restored_again = store.session("general", spec.agent_id)
+        self.assertEqual(restored_again["transport"], "acp_stdio")
+        self.assertEqual(restored_again["runtime_profile_key"], spec.runtime_profile_key())
 
     def test_readd_rejects_recovery_states_and_incomplete_profiles(self):
         store = RoomStore(self.root)

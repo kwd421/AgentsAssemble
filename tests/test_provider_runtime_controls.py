@@ -121,6 +121,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(codex["catalog_source"], "discovered")
         self.assertEqual(codex["controls"][0]["default_value"], "gpt-5.6-luna")
         self.assertNotIn("command", codex)
+        self.assertNotIn("resolved_executable", codex)
 
     def test_cold_capability_catalog_is_loading_until_discovery_finishes(self):
         release = threading.Event()
@@ -142,6 +143,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(initial["catalog_revision"], "")
         self.assertTrue(all(not provider["startable"] for provider in initial["providers"] if provider["id"] != "deepseek"))
         self.assertTrue(all(not provider["controls"] for provider in initial["providers"] if provider["catalog_source"] == "discovered"))
+        self.assertTrue(all("resolved_executable" not in provider for provider in initial["providers"]))
 
         release.set()
         final = catalog.snapshot(refresh=True)

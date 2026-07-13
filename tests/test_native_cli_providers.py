@@ -8,6 +8,7 @@ from agentsassemble.native_cli_providers import (
     UnsupportedNativeCliProvider,
     default_native_cli_provider_specs,
     native_cli_provider_catalog_payload,
+    native_cli_provider_definition,
     native_cli_provider_spec_from_config,
     native_cli_provider_spec_from_payload,
     native_cli_provider_spec_from_stored_session_strict,
@@ -110,7 +111,7 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
                 "variant": spec.variant,
                 "permission_mode": spec.permission_mode,
                 "runtime_kind": spec.runtime_kind,
-                "transport": spec.transport,
+                "transport": "pty",
                 "runtime_profile_key": replace(spec, transport="pty").runtime_profile_key(),
                 "command_configured": list(spec.command),
             }
@@ -119,6 +120,39 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         self.assertEqual(restored.transport, "acp_stdio")
         self.assertEqual(restored.command, spec.command)
         self.assertEqual(restored.runtime_profile_key(), spec.runtime_profile_key())
+
+    def test_similar_grok_pty_profile_is_not_migrated(self):
+        definition = native_cli_provider_definition("grok")
+        self.assertIsNotNone(definition)
+        spec = definition.make_spec(
+            agent_id="grok-low",
+            display_name="Grok Low",
+            cwd="/tmp/workspace",
+            model="grok-4.5",
+            reasoning_effort="low",
+            permission_mode="meeting_read_only",
+        )
+
+        with self.assertRaises(StoredProviderProfileError) as raised:
+            native_cli_provider_spec_from_stored_session_strict(
+                {
+                    "participant_id": spec.agent_id,
+                    "display_name": spec.display_name,
+                    "provider_kind": spec.provider_kind,
+                    "workspace": spec.cwd,
+                    "model": spec.model,
+                    "reasoning_effort": spec.reasoning_effort,
+                    "service_tier": spec.service_tier,
+                    "variant": spec.variant,
+                    "permission_mode": spec.permission_mode,
+                    "runtime_kind": spec.runtime_kind,
+                    "transport": "pty",
+                    "command_configured": list(spec.command),
+                    "runtime_profile_key": "not-the-known-grok-profile",
+                }
+            )
+
+        self.assertEqual(raised.exception.code, "provider_definition_changed")
 
     def test_public_catalog_is_safe_and_unknown_provider_is_clear(self):
         payload = native_cli_provider_catalog_payload()
