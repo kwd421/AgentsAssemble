@@ -43,6 +43,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                             {
                                 "id": agent_id,
                                 "display_name": agent_id,
+                                "model": "fixture-group-model",
                                 "command": [os.sys.executable, "-u", str(GROUP_FIXTURE), agent_id],
                                 "cwd": str(root),
                                 "input_mode": "bracketed_paste",
@@ -117,6 +118,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                             {
                                 "id": "fake",
                                 "display_name": "Fake Interactive CLI",
+                                "model": "fixture-interactive-model",
                                 "command": [os.sys.executable, "-u", str(FIXTURE)],
                                 "cwd": str(root),
                                 "input_mode": "bracketed_paste",
@@ -183,6 +185,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                 command=(os.sys.executable, "-u", str(FIXTURE)),
                 cwd=str(workspace),
                 provider_kind="fake_live_session",
+                model="fixture-interactive-model",
                 default_responder=False,
                 quiet_seconds=0.05,
                 input_mode="bracketed_paste",
