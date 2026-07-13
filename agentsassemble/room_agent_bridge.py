@@ -359,6 +359,13 @@ class RoomAgentBridge:
                     },
                 },
             )
+        except (BridgeReportRejected, BridgeReportTimeout) as report_error:
+            print(
+                f"Agent Bridge terminal report failed: {report_error.code}",
+                file=sys.stderr,
+                flush=True,
+            )
+            self._stop.set()
         except Exception as error:
             if not self._stop.is_set():
                 try:

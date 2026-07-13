@@ -597,7 +597,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertEqual(failure["error_code"], "assignment_invalid")
         self.assertEqual(runtime.sent, [])
 
-    def test_terminal_report_nack_is_returned_to_the_turn_worker(self):
+    def test_terminal_report_nack_stops_without_a_duplicate_failure_report(self):
         client = FakeClient()
         client.command_responses["message.final"] = {
             "op": "nack",
@@ -617,13 +617,15 @@ class RoomAgentBridgeTests(unittest.TestCase):
         thread.start()
         _wait_for(lambda: runtime.start_count == 1)
         client.messages.append(_turn_assignment("turn-nack", "respond"))
-        _wait_for(lambda: any(action == "turn.failed" for action, _, _ in client.commands))
-        client.messages.append({"op": "agent.control", "action": "stop"})
+        _wait_for(lambda: bridge._stop.is_set())
         thread.join(timeout=2)
 
-        failure = next(payload for action, payload, _ in client.commands if action == "turn.failed")
-        self.assertEqual(failure["error_code"], "provider_model_mismatch")
-        self.assertIn("wrong model", failure["message"])
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(
+            [action for action, _, _ in client.commands if action == "message.final"],
+            ["message.final"],
+        )
+        self.assertFalse(any(action == "turn.failed" for action, _, _ in client.commands))
 
     def test_bridge_ready_requires_a_correlated_ack(self):
         client = FakeClient()
