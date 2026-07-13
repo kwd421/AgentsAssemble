@@ -86,7 +86,8 @@ export default function AgentSessionControls({
   const hasSessionSection = !entry.agentSession && Boolean(
     hasSessionLocation || hasResumeControl || hasStopControl || showIndividualControlReason
   );
-  const canonicalRoomAgent = agent.connection_kind === "native_cli_bridge";
+  const canonicalRoomAgent =
+    Boolean(entry.agentSession) || agent.connection_kind === "native_cli_bridge";
   const hasRoomAdminControl = Boolean(
     agent.agent_id && agent.meeting_id && (onParticipantKick || !canonicalRoomAgent)
   );

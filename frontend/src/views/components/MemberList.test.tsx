@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LiveAgent, RoomAgentSession } from "../../api";
 import MemberList from "./MemberList";
 
@@ -32,6 +32,7 @@ const SESSION: RoomAgentSession = {
   connection_kind: "agent_session",
 };
 
+afterEach(cleanup);
 
 describe("MemberList component wiring", () => {
   it("opens the extracted detail modal with Agent Session controls", () => {
@@ -51,5 +52,25 @@ describe("MemberList component wiring", () => {
     expect(within(dialog).getByRole("region", { name: "Agent One Agent Session" })).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "시작" })).toBeTruthy();
     expect(within(dialog).getByText("고급 진단")).toBeTruthy();
+  });
+
+  it("uses canonical room moderation for Agent Session members", () => {
+    render(
+      <MemberList
+        agents={[AGENT]}
+        agentSessions={[SESSION]}
+        roomId="room-1"
+        roomName="Room One"
+        onAgentControl={vi.fn()}
+        canModerate
+        onParticipantKick={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText("나's Agent One"));
+
+    const dialog = screen.getByRole("dialog", { name: "나's Agent One" });
+    expect(within(dialog).getByRole("button", { name: "추방" })).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "세션 삭제" })).toBeNull();
   });
 });
