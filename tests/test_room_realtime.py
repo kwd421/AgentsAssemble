@@ -821,6 +821,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(session["runtime_kind"], "live_cli")
         self.assertEqual(session["connection_kind"], "native_cli_bridge")
         self.assertEqual(session["model"], "haiku")
+        self.assertEqual(session["requested_model_id"], "haiku")
+        self.assertEqual(session["model_selection_kind"], "alias")
+        self.assertEqual(session["catalog_revision"], self.catalog_revision)
         self.assertTrue(session["runtime_profile_key"])
         self.assertNotIn("-p", session["command_configured"])
         self.assertNotIn("--print", session["command_configured"])
@@ -973,6 +976,32 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(after["runtime_profile_key"], before["runtime_profile_key"])
         self.assertEqual(after["command_configured"], before["command_configured"])
         self.assertEqual(after["runtime_status"], "idle")
+
+    def test_stopped_agent_can_explicitly_clear_optional_variant(self):
+        created = self._command(
+            "req-create-opencode-high",
+            "agent.create",
+            {
+                "provider_id": "opencode",
+                "agent_id": "opencode-high",
+                "display_name": "OpenCode High",
+                "workspace": str(self.root),
+                "variant": "high",
+            },
+        )["result"]["agent_session"]
+        self.assertEqual(created["variant"], "high")
+
+        configured = self._command(
+            "req-configure-opencode-default",
+            "agent.configure",
+            {
+                "agent_id": "opencode-high",
+                "catalog_revision": self.catalog_revision,
+                "variant": "",
+            },
+        )["result"]["agent_session"]
+
+        self.assertEqual(configured["variant"], "")
 
     def test_stopped_agent_collects_backlog_but_never_auto_starts(self):
         self._command("req-message", "message.send", {"content": "@codex remember this"})
@@ -1530,7 +1559,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         store = RoomStore(self.root)
         definition = native_cli_provider_definition("codex")
         self.assertIsNotNone(definition)
-        spec = definition.make_spec(
+        spec = definition.make_selected_spec(
             agent_id="codex",
             display_name="Codex",
             cwd=self.root,
@@ -1588,7 +1617,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         store = RoomStore(self.root)
         definition = native_cli_provider_definition("grok")
         self.assertIsNotNone(definition)
-        spec = definition.make_spec(
+        spec = definition.make_selected_spec(
             agent_id="grok-low",
             display_name="Grok Low",
             cwd=self.root,

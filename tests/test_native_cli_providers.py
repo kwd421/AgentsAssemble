@@ -35,10 +35,25 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
 
     def test_create_payload_aliases_use_the_same_catalog_definition(self):
         antigravity = native_cli_provider_spec_from_payload(
-            {"provider_id": "agy", "display_name": "Agy Friend", "workspace": "."}
+            {
+                "provider_id": "agy",
+                "display_name": "Agy Friend",
+                "workspace": ".",
+                "model": "Gemini 3.5 Flash (Medium)",
+                "permission_mode": "meeting_read_only",
+            }
         )
         claude = native_cli_provider_spec_from_payload(
-            {"provider_kind": "claude_code", "display_name": "Reviewer", "model": "haiku"}
+            {
+                "provider_kind": "claude_code",
+                "display_name": "Reviewer",
+                "workspace": ".",
+                "model": "haiku",
+                "reasoning_effort": "high",
+                "service_tier": "default",
+                "permission_mode": "meeting_read_only",
+                "model_selection_kind": "alias",
+            }
         )
 
         self.assertEqual(antigravity.provider_kind, "antigravity_live_session")
@@ -124,7 +139,7 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
     def test_similar_grok_pty_profile_is_not_migrated(self):
         definition = native_cli_provider_definition("grok")
         self.assertIsNotNone(definition)
-        spec = definition.make_spec(
+        spec = definition.make_selected_spec(
             agent_id="grok-low",
             display_name="Grok Low",
             cwd="/tmp/workspace",
@@ -165,6 +180,30 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         self.assertTrue(all("command" not in provider for provider in payload))
         with self.assertRaises(UnsupportedNativeCliProvider):
             native_cli_provider_spec_from_payload({"provider_id": "unknown"})
+
+    def test_selected_provider_spec_does_not_fill_missing_profile_values(self):
+        with self.assertRaisesRegex(ValueError, "model is required"):
+            native_cli_provider_spec_from_payload(
+                {
+                    "provider_id": "claude",
+                    "display_name": "Reviewer",
+                    "workspace": ".",
+                    "reasoning_effort": "low",
+                    "service_tier": "default",
+                    "permission_mode": "meeting_read_only",
+                }
+            )
+        with self.assertRaisesRegex(ValueError, "workspace is required"):
+            native_cli_provider_spec_from_payload(
+                {
+                    "provider_id": "codex",
+                    "display_name": "Codex",
+                    "model": "gpt-5.6-luna",
+                    "reasoning_effort": "low",
+                    "service_tier": "default",
+                    "permission_mode": "meeting_read_only",
+                }
+            )
 
     def test_stored_session_profile_is_not_filled_from_current_defaults(self):
         with self.assertRaises(StoredProviderProfileError) as incomplete:

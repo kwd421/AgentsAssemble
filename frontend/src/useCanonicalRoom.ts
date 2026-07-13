@@ -108,6 +108,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   );
   const [lastError, setLastError] = useState<Error | null>(null);
   const [membershipRevision, setMembershipRevision] = useState(0);
+  const activeCatalogRevision = providerCatalogByRoom[roomId]?.catalog_revision || "";
 
   const applyEvents = useCallback((
     targetRoomId: string,
@@ -317,10 +318,11 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
       await socket.command("agent.configure", {
         agent_id: session.participant_id,
+        catalog_revision: activeCatalogRevision,
         ...settings,
       });
     },
-    [socket]
+    [activeCatalogRevision, socket]
   );
 
   const sendParticipantKick = useCallback(

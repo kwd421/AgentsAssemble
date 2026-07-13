@@ -41,11 +41,11 @@ class AgentAttendee:
         self.definition = definition
         self.display_name = display_name or definition.display_name
         self._workspace_argument = workspace
-        self.model = model
-        self.reasoning_effort = reasoning_effort
-        self.service_tier = service_tier
-        self.variant = variant
-        self.permission_mode = permission_mode
+        self.model = model or definition.default_model
+        self.reasoning_effort = reasoning_effort or definition.default_reasoning_effort
+        self.service_tier = service_tier or definition.default_service_tier
+        self.variant = variant or definition.default_variant
+        self.permission_mode = permission_mode or definition.default_permission_mode
         self._stop = threading.Event()
         self._bridge: RoomAgentBridge | None = None
         self._runtime = None
@@ -115,7 +115,7 @@ class AgentAttendee:
             bridge.stop()
 
     def _build_runtime(self, participant_id: str, workspace: Path):
-        spec = self.definition.make_spec(
+        spec = self.definition.make_selected_spec(
             agent_id=participant_id,
             display_name=self.display_name,
             cwd=workspace,

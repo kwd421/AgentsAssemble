@@ -9,6 +9,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from agentsassemble.native_cli_providers import NATIVE_CLI_PROVIDER_CATALOG
@@ -23,6 +24,19 @@ class ProviderCatalogSelectionError(ValueError):
     def __init__(self, message: str, *, code: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+@dataclass(frozen=True)
+class ValidatedProviderSelection:
+    catalog_revision: str
+    provider_id: str
+    provider_kind: str
+    model: str
+    model_selection_kind: str
+    reasoning_effort: str
+    service_tier: str
+    variant: str
+    permission_mode: str
 
 
 class ProviderCapabilityCatalog:
@@ -85,7 +99,7 @@ class ProviderCapabilityCatalog:
         catalog_revision: str,
         provider_id: str,
         values: dict[str, str],
-    ) -> None:
+    ) -> ValidatedProviderSelection:
         with self._lock:
             if self._status != "ready" or not self._catalog_revision:
                 raise ProviderCatalogSelectionError(
@@ -107,6 +121,21 @@ class ProviderCapabilityCatalog:
                     code="unsupported_provider",
                 )
             controls = copy.deepcopy(list(provider.get("controls") or []))
+            fixed_values = {
+                str(key): str(value)
+                for key, value in dict(provider.get("fixed_values") or {}).items()
+            }
+        resolved_values = {
+            key: str(values.get(key) or fixed_values.get(key) or "")
+            for key in ("model", "reasoning_effort", "service_tier", "variant", "permission_mode")
+        }
+        for key, fixed_value in fixed_values.items():
+            requested = str(values.get(key) or "")
+            if requested and requested != fixed_value:
+                raise ProviderCatalogSelectionError(
+                    f"Unsupported fixed {key} value for provider {provider_id}.",
+                    code="unsupported_provider_option",
+                )
         for control in controls:
             if not isinstance(control, dict):
                 continue
@@ -118,7 +147,7 @@ class ProviderCapabilityCatalog:
                 for option in list(control.get("options") or [])
                 if isinstance(option, dict)
             }
-            value = str(values.get(key) or "")
+            value = resolved_values.get(key, "")
             if value not in allowed:
                 code = {
                     "model": "unsupported_model",
@@ -135,7 +164,7 @@ class ProviderCapabilityCatalog:
             (control for control in controls if isinstance(control, dict) and control.get("key") == "model"),
             None,
         )
-        selected_model = str(values.get("model") or "")
+        selected_model = resolved_values["model"]
         model_option = (
             next(
                 (
@@ -154,10 +183,10 @@ class ProviderCapabilityCatalog:
             provider_id=provider_id,
             metadata=metadata,
             metadata_key="reasoning_efforts",
-            selected_value=str(values.get("reasoning_effort") or ""),
+            selected_value=resolved_values["reasoning_effort"],
             error_code="unsupported_model_effort_combination",
         )
-        selected_tier = str(values.get("service_tier") or "")
+        selected_tier = resolved_values["service_tier"]
         if selected_tier != "default":
             self._validate_model_relation(
                 provider_id=provider_id,
@@ -166,6 +195,23 @@ class ProviderCapabilityCatalog:
                 selected_value=selected_tier,
                 error_code="unsupported_model_service_tier_combination",
             )
+        selection_kind = str(metadata.get("selection_kind") or "")
+        if selection_kind not in {"exact", "alias"}:
+            raise ProviderCatalogSelectionError(
+                f"Provider {provider_id} model catalog entry is missing its selection kind.",
+                code="catalog_invalid",
+            )
+        return ValidatedProviderSelection(
+            catalog_revision=catalog_revision,
+            provider_id=provider_id,
+            provider_kind=str(provider.get("provider_kind") or ""),
+            model=selected_model,
+            model_selection_kind=selection_kind,
+            reasoning_effort=resolved_values["reasoning_effort"],
+            service_tier=selected_tier,
+            variant=resolved_values["variant"],
+            permission_mode=resolved_values["permission_mode"],
+        )
 
     @staticmethod
     def _validate_model_relation(
@@ -399,6 +445,16 @@ def _option(value: str, label: str = "", **metadata: object) -> dict[str, object
     return payload
 
 
+def _model_option(
+    value: str,
+    label: str = "",
+    *,
+    selection_kind: str = "exact",
+    **metadata: object,
+) -> dict[str, object]:
+    return _option(value, label, selection_kind=selection_kind, **metadata)
+
+
 def _control(
     key: str,
     label: str,
@@ -450,7 +506,7 @@ def _codex_controls(output: str) -> list[dict[str, object]]:
         efforts.extend(model_efforts)
         service_tiers.extend(model_tiers)
         model_options.append(
-            _option(
+            _model_option(
                 str(model["slug"]),
                 str(model.get("display_name") or model["slug"]),
                 reasoning_efforts=model_efforts,
@@ -478,7 +534,7 @@ def _antigravity_controls(output: str) -> list[dict[str, object]]:
     if not models:
         return []
     default = "Gemini 3.5 Flash (Medium)" if "Gemini 3.5 Flash (Medium)" in models else models[0]
-    return [_control("model", "모델", [_option(value) for value in models], default), _permission_control()]
+    return [_control("model", "모델", [_model_option(value) for value in models], default), _permission_control()]
 
 
 def _grok_controls(output: str) -> list[dict[str, object]]:
@@ -488,7 +544,7 @@ def _grok_controls(output: str) -> list[dict[str, object]]:
     if not models:
         return []
     return [
-        _control("model", "모델", [_option(value) for value in models], default_match.group(1) if default_match else models[0]),
+        _control("model", "모델", [_model_option(value) for value in models], default_match.group(1) if default_match else models[0]),
         _control("reasoning_effort", "추론 강도", [_option(value) for value in ("low", "medium", "high")], "medium"),
         _permission_control(),
     ]
@@ -504,7 +560,7 @@ def _opencode_models(output: str) -> list[str]:
 def _opencode_controls(models: list[str]) -> list[dict[str, object]]:
     default = "opencode-go/glm-5.2" if "opencode-go/glm-5.2" in models else models[0]
     return [
-        _control("model", "모델", [_option(value) for value in models], default, kind="combobox"),
+        _control("model", "모델", [_model_option(value) for value in models], default, kind="combobox"),
         _control("variant", "모델 변형", [_option("", "기본"), _option("high"), _option("max")], ""),
         _permission_control(),
     ]
@@ -524,11 +580,15 @@ def _deepseek_payload() -> dict[str, object]:
         "startable": True,
         "discovery_status": "ready",
         "catalog_source": "static_manifest",
+        "fixed_values": {"permission_mode": "meeting_read_only"},
         "controls": [
             _control(
                 "model",
                 "모델",
-                [_option("deepseek-v4-flash", "DeepSeek V4 Flash"), _option("deepseek-v4-pro", "DeepSeek V4 Pro")],
+                [
+                    _model_option("deepseek-v4-flash", "DeepSeek V4 Flash"),
+                    _model_option("deepseek-v4-pro", "DeepSeek V4 Pro"),
+                ],
                 "deepseek-v4-flash",
             ),
             _control("reasoning_effort", "추론 강도", [_option("high"), _option("max")], "high"),
@@ -548,13 +608,13 @@ def _claude_manifest_controls() -> list[dict[str, object]]:
             "model",
             "모델",
             [
-                _option("claude-haiku-4-5", "Claude Haiku 4.5", **relation),
-                _option("claude-sonnet-4-6", "Claude Sonnet 4.6", **relation),
-                _option("claude-sonnet-5", "Claude Sonnet 5", **relation),
-                _option("claude-opus-4-6", "Claude Opus 4.6", **relation),
-                _option("haiku", "Haiku (latest alias)", **relation),
-                _option("sonnet", "Sonnet (latest alias)", **relation),
-                _option("opus", "Opus (latest alias)", **relation),
+                _model_option("claude-haiku-4-5", "Claude Haiku 4.5", **relation),
+                _model_option("claude-sonnet-4-6", "Claude Sonnet 4.6", **relation),
+                _model_option("claude-sonnet-5", "Claude Sonnet 5", **relation),
+                _model_option("claude-opus-4-6", "Claude Opus 4.6", **relation),
+                _model_option("haiku", "Haiku (latest alias)", selection_kind="alias", **relation),
+                _model_option("sonnet", "Sonnet (latest alias)", selection_kind="alias", **relation),
+                _model_option("opus", "Opus (latest alias)", selection_kind="alias", **relation),
             ],
             "claude-haiku-4-5",
             kind="combobox",
@@ -576,6 +636,7 @@ def _catalog_revision(providers: list[dict[str, object]]) -> str:
             "source": provider.get("catalog_source"),
             "status": provider.get("discovery_status"),
             "controls": provider.get("controls"),
+            "fixed_values": provider.get("fixed_values"),
         }
         for provider in providers
     ]

@@ -18,6 +18,9 @@ class NativeCliProviderSpec:
     cwd: str = "."
     provider_kind: str = ""
     model: str = ""
+    requested_model_id: str = ""
+    model_selection_kind: str = "exact"
+    catalog_revision: str = ""
     reasoning_effort: str = ""
     service_tier: str = ""
     variant: str = ""
@@ -92,26 +95,59 @@ class NativeCliProviderDefinition:
     input_mode: str = "line"
     startup_accept_contains: str = ""
 
-    def make_spec(
+    def make_default_spec(
         self,
         *,
         agent_id: str | None = None,
         display_name: str | None = None,
         cwd: str | Path = ".",
+        default_responder: bool = True,
+    ) -> NativeCliProviderSpec:
+        return self.make_selected_spec(
+            agent_id=agent_id,
+            display_name=display_name,
+            cwd=cwd,
+            model=self.default_model,
+            reasoning_effort=self.default_reasoning_effort,
+            service_tier=self.default_service_tier,
+            variant=self.default_variant,
+            permission_mode=self.default_permission_mode,
+            default_responder=default_responder,
+        )
+
+    def make_selected_spec(
+        self,
+        *,
+        agent_id: str | None,
+        display_name: str | None,
+        cwd: str | Path,
         model: str = "",
         reasoning_effort: str = "",
         service_tier: str = "",
         variant: str = "",
         permission_mode: str = "",
+        model_selection_kind: str = "exact",
+        catalog_revision: str = "",
         default_responder: bool = True,
     ) -> NativeCliProviderSpec:
-        selected_model = clean_lobby_text(model, limit=128) or self.default_model
-        selected_effort = clean_lobby_text(reasoning_effort, limit=32) or self.default_reasoning_effort
-        selected_service_tier = clean_lobby_text(service_tier, limit=32) or self.default_service_tier
-        selected_variant = clean_lobby_text(variant, limit=64) or self.default_variant
-        selected_permission = (
-            clean_lobby_text(permission_mode, limit=64) or self.default_permission_mode
-        )
+        selected_model = clean_lobby_text(model, limit=128)
+        selected_effort = clean_lobby_text(reasoning_effort, limit=32)
+        selected_service_tier = clean_lobby_text(service_tier, limit=32)
+        selected_variant = clean_lobby_text(variant, limit=64)
+        selected_permission = clean_lobby_text(permission_mode, limit=64)
+        selected_kind = clean_lobby_text(model_selection_kind, limit=16)
+        if not selected_model:
+            raise ValueError(f"Provider {self.provider_id} model is required.")
+        if self.default_reasoning_effort and not selected_effort:
+            raise ValueError(f"Provider {self.provider_id} reasoning effort is required.")
+        if self.default_service_tier and not selected_service_tier:
+            raise ValueError(f"Provider {self.provider_id} service tier is required.")
+        if self.default_variant and not selected_variant:
+            raise ValueError(f"Provider {self.provider_id} variant is required.")
+        if not selected_permission:
+            raise ValueError(f"Provider {self.provider_id} permission mode is required.")
+        if selected_kind not in {"exact", "alias"}:
+            raise ValueError(f"Provider {self.provider_id} model selection kind is invalid.")
         return NativeCliProviderSpec(
             agent_id=clean_lobby_text(agent_id, limit=128) or self.provider_id,
             display_name=clean_lobby_text(display_name, limit=128) or self.display_name,
@@ -125,6 +161,9 @@ class NativeCliProviderDefinition:
             cwd=str(Path(cwd).expanduser().resolve()),
             provider_kind=self.provider_kind,
             model=selected_model,
+            requested_model_id=selected_model,
+            model_selection_kind=selected_kind,
+            catalog_revision=clean_lobby_text(catalog_revision, limit=128),
             reasoning_effort=selected_effort,
             service_tier=selected_service_tier,
             variant=selected_variant,
@@ -206,7 +245,7 @@ def native_cli_provider_spec_from_stored_session_strict(
             "Stored Agent Session command profile is incomplete.",
             code="profile_incomplete",
         )
-    spec = definition.make_spec(
+    spec = definition.make_selected_spec(
         agent_id=agent_id,
         display_name=required["display_name"],
         cwd=required["workspace"],
@@ -215,6 +254,9 @@ def native_cli_provider_spec_from_stored_session_strict(
         service_tier=clean_lobby_text(session.get("service_tier"), limit=32),
         variant=clean_lobby_text(session.get("variant"), limit=64),
         permission_mode=required["permission_mode"],
+        model_selection_kind=clean_lobby_text(session.get("model_selection_kind"), limit=16)
+        or "exact",
+        catalog_revision=clean_lobby_text(session.get("catalog_revision"), limit=128),
     )
     profile_matches = (
         stored_transport == definition.transport
@@ -246,6 +288,8 @@ def _codex_command(
     _variant: str,
     permission_mode: str,
 ) -> tuple[str, ...]:
+    if not model:
+        raise ValueError("Codex model is required.")
     approval, sandbox = _codex_permissions(permission_mode)
     command = [
         "codex",
@@ -255,7 +299,7 @@ def _codex_command(
         "--sandbox",
         sandbox,
         "--model",
-        model or "gpt-5.6-luna",
+        model,
     ]
     if effort:
         command.extend(("-c", f'model_reasoning_effort="{effort}"'))
@@ -271,6 +315,8 @@ def _antigravity_command(
     _variant: str,
     permission_mode: str,
 ) -> tuple[str, ...]:
+    if not model:
+        raise ValueError("Antigravity model is required.")
     command = ["agy"]
     if model:
         command.extend(("--model", model))
@@ -304,10 +350,12 @@ def _claude_command(
     _variant: str,
     permission_mode: str,
 ) -> tuple[str, ...]:
+    if not model:
+        raise ValueError("Claude model is required.")
     command = [
         "claude",
         "--model",
-        model or "claude-haiku-4-5",
+        model,
     ]
     if effort:
         command.extend(("--effort", effort))
@@ -441,7 +489,7 @@ def native_cli_provider_catalog_payload() -> list[dict[str, object]]:
 
 
 def default_native_cli_provider_specs(*, workspace: str | Path = ".") -> list[NativeCliProviderSpec]:
-    return [definition.make_spec(cwd=workspace) for definition in NATIVE_CLI_PROVIDER_CATALOG]
+    return [definition.make_default_spec(cwd=workspace) for definition in NATIVE_CLI_PROVIDER_CATALOG]
 
 
 def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeCliProviderSpec:
@@ -455,11 +503,16 @@ def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeC
     display_name = clean_lobby_text(payload.get("display_name"), limit=64) or definition.display_name
     explicit_agent_id = clean_lobby_text(payload.get("agent_id") or payload.get("participant_id"), limit=128)
     agent_id = explicit_agent_id or _slug_agent_id(f"{definition.provider_id}-{display_name}")
-    workspace = clean_lobby_text(payload.get("workspace") or payload.get("workspace_path") or payload.get("cwd"), limit=500)
-    spec = definition.make_spec(
+    workspace = clean_lobby_text(
+        payload.get("workspace") or payload.get("workspace_path") or payload.get("cwd"),
+        limit=500,
+    )
+    if not workspace:
+        raise ValueError("Native CLI Agent Session workspace is required.")
+    spec = definition.make_selected_spec(
         agent_id=agent_id,
         display_name=display_name,
-        cwd=workspace or ".",
+        cwd=workspace,
         model=clean_lobby_text(payload.get("model") or payload.get("model_id"), limit=128),
         reasoning_effort=clean_lobby_text(
             payload.get("reasoning_effort") or payload.get("effort"), limit=32
@@ -469,6 +522,9 @@ def native_cli_provider_spec_from_payload(payload: dict[str, object]) -> NativeC
         permission_mode=clean_lobby_text(
             payload.get("permission_mode") or payload.get("permission_option"), limit=64
         ),
+        model_selection_kind=clean_lobby_text(payload.get("model_selection_kind"), limit=16)
+        or "exact",
+        catalog_revision=clean_lobby_text(payload.get("catalog_revision"), limit=128),
     )
     validate_native_cli_provider_spec(spec)
     return spec

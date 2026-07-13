@@ -25,6 +25,7 @@ from agentsassemble.native_cli_providers import (
 from agentsassemble.provider_capabilities import (
     PROVIDER_CAPABILITIES,
     ProviderCatalogSelectionError,
+    ValidatedProviderSelection,
 )
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.room_invite import revoke_room_access, revoke_sessions_for_participant
@@ -82,7 +83,7 @@ class ProviderCatalog(Protocol):
         catalog_revision: str,
         provider_id: str,
         values: dict[str, str],
-    ) -> None: ...
+    ) -> ValidatedProviderSelection: ...
 
 
 @dataclass(frozen=True)
@@ -959,7 +960,7 @@ class RoomRealtimeController:
         )
         catalog_revision = clean_lobby_text(payload.get("catalog_revision"), limit=128)
         try:
-            self.provider_catalog.validate_selection(
+            selection = self.provider_catalog.validate_selection(
                 catalog_revision=catalog_revision,
                 provider_id=provider_id,
                 values={
@@ -977,9 +978,25 @@ class RoomRealtimeController:
         except ProviderCatalogSelectionError as error:
             raise RoomCommandRejected(str(error), code=error.code) from error
         try:
-            spec = native_cli_provider_spec_from_payload(payload)
+            spec = native_cli_provider_spec_from_payload(
+                {
+                    "provider_id": selection.provider_id,
+                    "agent_id": payload.get("agent_id") or payload.get("participant_id"),
+                    "display_name": payload.get("display_name"),
+                    "workspace": payload.get("workspace") or payload.get("workspace_path") or payload.get("cwd"),
+                    "model": selection.model,
+                    "model_selection_kind": selection.model_selection_kind,
+                    "catalog_revision": selection.catalog_revision,
+                    "reasoning_effort": selection.reasoning_effort,
+                    "service_tier": selection.service_tier,
+                    "variant": selection.variant,
+                    "permission_mode": selection.permission_mode,
+                }
+            )
         except UnsupportedNativeCliProvider as error:
             raise RoomCommandRejected(str(error), code="unsupported_provider") from error
+        except ValueError as error:
+            raise RoomCommandRejected(str(error), code="invalid_runtime_profile") from error
         if self.store.session(room_id, spec.agent_id) or self.store.participant(room_id, spec.agent_id):
             raise RoomCommandRejected(
                 "An Agent Session with this identity already exists; re-add or configure the existing session instead.",
@@ -1147,10 +1164,38 @@ class RoomRealtimeController:
             "agent_id": agent_id,
             "provider_id": definition.provider_id,
             "display_name": payload.get("display_name") or current.get("display_name") or agent_id,
-            "workspace": payload.get("workspace") or current.get("workspace") or ".",
+            "workspace": payload["workspace"] if "workspace" in payload else current.get("workspace"),
+        }
+        selected_values = {
+            key: payload[key] if key in payload else current.get(key)
+            for key in ("model", "reasoning_effort", "service_tier", "variant", "permission_mode")
         }
         try:
-            spec = native_cli_provider_spec_from_payload(merged)
+            selection = self.provider_catalog.validate_selection(
+                catalog_revision=clean_lobby_text(payload.get("catalog_revision"), limit=128),
+                provider_id=definition.provider_id,
+                values={
+                    "model": clean_lobby_text(selected_values["model"], limit=128),
+                    "reasoning_effort": clean_lobby_text(selected_values["reasoning_effort"], limit=32),
+                    "service_tier": clean_lobby_text(selected_values["service_tier"], limit=32),
+                    "variant": clean_lobby_text(selected_values["variant"], limit=64),
+                    "permission_mode": clean_lobby_text(selected_values["permission_mode"], limit=64),
+                },
+            )
+            spec = native_cli_provider_spec_from_payload(
+                {
+                    **merged,
+                    "model": selection.model,
+                    "model_selection_kind": selection.model_selection_kind,
+                    "catalog_revision": selection.catalog_revision,
+                    "reasoning_effort": selection.reasoning_effort,
+                    "service_tier": selection.service_tier,
+                    "variant": selection.variant,
+                    "permission_mode": selection.permission_mode,
+                }
+            )
+        except ProviderCatalogSelectionError as error:
+            raise RoomCommandRejected(str(error), code=error.code) from error
         except (UnsupportedNativeCliProvider, ValueError) as error:
             raise RoomCommandRejected(str(error), code="invalid_runtime_profile") from error
         session = self.register_provider(room_id, spec)
@@ -2147,6 +2192,9 @@ class RoomRealtimeController:
                 command_configured=list(spec.command),
                 workspace=str(Path(spec.cwd).expanduser().resolve()),
                 model=spec.model,
+                requested_model_id=spec.requested_model_id or spec.model,
+                model_selection_kind=spec.model_selection_kind,
+                catalog_revision=spec.catalog_revision,
                 reasoning_effort=spec.reasoning_effort,
                 service_tier=spec.service_tier,
                 variant=spec.variant,
@@ -2180,6 +2228,9 @@ class RoomRealtimeController:
                 "command_configured": list(spec.command),
                 "workspace": str(Path(spec.cwd).expanduser().resolve()),
                 "model": spec.model,
+                "requested_model_id": spec.requested_model_id or spec.model,
+                "model_selection_kind": spec.model_selection_kind,
+                "catalog_revision": spec.catalog_revision,
                 "reasoning_effort": spec.reasoning_effort,
                 "service_tier": spec.service_tier,
                 "variant": spec.variant,

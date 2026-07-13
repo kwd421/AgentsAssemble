@@ -219,6 +219,7 @@ describe("useCanonicalRoom", () => {
     expect(command).toHaveBeenCalledWith("agent.stop", { agent_id: "codex" });
     expect(command).toHaveBeenCalledWith("agent.configure", {
       agent_id: "codex",
+      catalog_revision: "cat-test",
       display_name: "Luna",
     });
   });

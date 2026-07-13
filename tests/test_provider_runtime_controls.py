@@ -140,6 +140,27 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(options["claude-sonnet-4-6"], "Claude Sonnet 4.6")
         self.assertEqual(options["sonnet"], "Sonnet (latest alias)")
 
+        revision = str(catalog.snapshot()["catalog_revision"])
+        common = {
+            "reasoning_effort": "low",
+            "service_tier": "default",
+            "permission_mode": "meeting_read_only",
+        }
+        exact = catalog.validate_selection(
+            catalog_revision=revision,
+            provider_id="claude",
+            values={**common, "model": "claude-sonnet-4-6"},
+        )
+        alias = catalog.validate_selection(
+            catalog_revision=revision,
+            provider_id="claude",
+            values={**common, "model": "sonnet"},
+        )
+
+        self.assertEqual(exact.model_selection_kind, "exact")
+        self.assertEqual(alias.model_selection_kind, "alias")
+        self.assertEqual(exact.catalog_revision, revision)
+
     def test_catalog_rejects_model_effort_and_service_tier_mismatches(self):
         def runner(command: list[str], _timeout: float):
             if command[1:3] == ["debug", "models"]:
