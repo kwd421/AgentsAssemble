@@ -44,7 +44,7 @@ function snapshot(
   events: RoomEvent[],
   mode: RoomSocketSnapshot["snapshot_mode"] = "initial",
   currentSessions: RoomAgentSession[] = [session()]
-) {
+): RoomSocketSnapshot {
   return {
     op: "snapshot",
     stream: "room_events",
@@ -222,6 +222,71 @@ describe("useCanonicalRoom", () => {
       catalog_revision: "cat-test",
       display_name: "Luna",
     });
+  });
+
+  it("reprojects existing messages when the canonical participant profile changes", async () => {
+    let handlers: RoomSocketHandlers | undefined;
+    const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {
+      handlers = nextHandlers;
+      return {
+        close: vi.fn(),
+        ready: () => true,
+        command: vi.fn(),
+        say: vi.fn(),
+        historyBefore: vi.fn(),
+      } satisfies RoomSocketHandle;
+    });
+    const { result } = renderHook(() =>
+      useCanonicalRoom({
+        roomId: "general",
+        auth: { kind: "host", meetingId: "general" },
+        openSocket,
+      })
+    );
+    await waitFor(() => expect(openSocket).toHaveBeenCalledOnce());
+    const initial = snapshot([
+      event(1, "message_final", "hello"),
+    ]);
+    initial.participants = [
+      {
+        meeting_id: "general",
+        participant_id: "codex",
+        display_name: "Antigravity CLI",
+        avatar_image_url: "/api/attachments/old-avatar",
+        role: "agent",
+        participant_type: "local",
+        provider_kind: "antigravity_live_session",
+        connection_kind: "native_cli_bridge",
+        status: "joined",
+        source: "agent_session",
+        created_at: "",
+        updated_at: "",
+      },
+    ];
+
+    act(() => handlers?.onRoomSnapshot?.(initial));
+    expect(result.current.timelineEvents[0]).toMatchObject({
+      name: "Antigravity CLI",
+      avatar_image_url: "/api/attachments/old-avatar",
+    });
+
+    act(() =>
+      handlers?.onRoomEvents?.([
+        {
+          ...event(2, "participant_updated"),
+          turn_id: undefined,
+          participant_id: "codex",
+          display_name: "Makima",
+          avatar_image_url: "/api/attachments/makima-avatar",
+        },
+      ])
+    );
+
+    expect(result.current.timelineEvents[0]).toMatchObject({
+      name: "Makima",
+      avatar_image_url: "/api/attachments/makima-avatar",
+    });
+    expect(result.current.participants[0].display_name).toBe("Makima");
   });
 
   it("ignores late callbacks from the room socket it already replaced", async () => {

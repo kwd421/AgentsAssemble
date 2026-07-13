@@ -116,6 +116,34 @@ const HISTORY_TOP_THRESHOLD = 120;
 const HISTORY_PAGE_SIZE = 50;
 const INITIAL_HISTORY_MESSAGE_TARGET = 20;
 
+function MessageAvatar({
+  avatarImage,
+  show = true,
+  system = false,
+}: {
+  avatarImage?: string;
+  show?: boolean;
+  system?: boolean;
+}) {
+  return (
+    <span
+      className={show ? `dc-message-avatar mt-0.5 ${system ? "system" : "agent"}` : ""}
+      data-has-image={Boolean(show && avatarImage && !system)}
+      aria-hidden="true"
+    >
+      {show ? (
+        avatarImage && !system ? (
+          <img className="dc-message-avatar-image" src={avatarImage} alt="" />
+        ) : system ? (
+          <Zap size={16} />
+        ) : (
+          <Bot size={16} />
+        )
+      ) : null}
+    </span>
+  );
+}
+
 // Streamed reasoning/tool steps (kind="thinking"), grouped and collapsed by
 // default — like "what it's doing" you can expand. The final answer is a normal
 // message right after this block.
@@ -128,9 +156,7 @@ function ThinkingGroup({ events, showHeader }: { events: LobbyEvent[]; showHeade
       className="dc-thinking-group grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-0.5"
       data-room-event-id={header?.id}
     >
-      <span className={showHeader ? "dc-message-avatar mt-0.5 agent" : ""} aria-hidden="true">
-        {showHeader ? <Bot size={16} /> : null}
-      </span>
+      <MessageAvatar avatarImage={header?.avatar_image_url} show={showHeader} />
       <div className="min-w-0">
         {showHeader && (
           <p className="flex items-baseline gap-2">
@@ -206,9 +232,11 @@ function MessageRow({ event, onOpenSideThread, threadSummary, voteCard, showHead
       data-room-event-id={event.id}
       tabIndex={0}
     >
-      <span className={showHeader ? `dc-message-avatar mt-0.5 ${systemLike ? "system" : "agent"}` : ""} aria-hidden={!showHeader}>
-        {showHeader ? (systemLike ? <Zap size={16} /> : <Bot size={16} />) : null}
-      </span>
+      <MessageAvatar
+        avatarImage={event.avatar_image_url}
+        show={showHeader}
+        system={systemLike}
+      />
       <div className="dc-message-actions" aria-label="메시지 작업">
         {onOpenSideThread && (
           <button

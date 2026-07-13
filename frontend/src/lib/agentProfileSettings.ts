@@ -63,3 +63,16 @@ export function saveAgentProfileSettings(
   }
   return next;
 }
+
+export function removeAgentProfileSettings(agentId: string): Record<string, AgentProfileSettings> {
+  const cleanAgentId = cleanText(agentId, 128);
+  const next = loadAgentProfileSettings();
+  if (!cleanAgentId || !(cleanAgentId in next)) return next;
+  delete next[cleanAgentId];
+  try {
+    window.localStorage.setItem(AGENT_PROFILE_SETTINGS_KEY, JSON.stringify(next));
+  } catch {
+    // Canonical room state remains authoritative even if legacy local cleanup fails.
+  }
+  return next;
+}

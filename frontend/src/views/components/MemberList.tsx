@@ -141,7 +141,13 @@ export default function MemberList({
       const canViewQuotaForAgent = canViewAgentQuota(agent, quotaViewer);
       const ownedByViewer = canViewQuotaForAgent || String(agent.owner_id || "") === "operator-local" || (!agent.owner_id && canEditRoles);
       const ownerDisplayName = String(agent.owner_display_name || (ownedByViewer ? "나" : "다른 사람")).trim();
-      const agentDisplayName = String(profile.displayName || agent.display_name || agent.agent_id).trim();
+      const canonicalDisplayName =
+        member?.display_name || agentSession?.display_name || agent.display_name;
+      const agentDisplayName = String(
+        canonicalDisplayName || profile.displayName || agent.agent_id
+      ).trim();
+      const canonicalAvatarImage =
+        member?.avatar_image_url || agentSession?.avatar_image_url || agent.avatar_image_url;
       const agentPanelDisplayName = `${ownerDisplayName}'s ${agentDisplayName}`;
       const executionDetail = providerExecutionLabel(agent);
       const detail = [executionDetail, agentSession?.model].filter(Boolean).join(" · ");
@@ -169,7 +175,7 @@ export default function MemberList({
         ownerDisplayName,
         agentDisplayName,
         agentProfile: profile,
-        avatarImage: profile.avatarImage || agent.avatar_image_url,
+        avatarImage: canonicalAvatarImage || profile.avatarImage,
         icon: ROLE_OPTIONS.find((option) => option.id === role)?.icon || Bot,
       } satisfies MemberEntry;
     });

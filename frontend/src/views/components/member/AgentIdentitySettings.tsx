@@ -6,6 +6,7 @@ import {
   type RoomAgentSession,
 } from "../../../api";
 import {
+  removeAgentProfileSettings,
   saveAgentProfileSettings,
   type AgentProfileSettings,
 } from "../../../lib/agentProfileSettings";
@@ -50,8 +51,11 @@ export default function AgentIdentitySettings({
   useEffect(() => {
     setAgentNameDraft(entry.agentProfile?.displayName || entry.agentDisplayName || "");
     setAgentAvatarImage(entry.avatarImage || "");
+  }, [entry.agentDisplayName, entry.agentProfile?.displayName, entry.avatarImage]);
+
+  useEffect(() => {
     setAgentProfileStatus("");
-  }, [entry.agent?.agent_id, entry.agentDisplayName, entry.agentProfile?.displayName, entry.avatarImage]);
+  }, [entry.agent?.agent_id]);
 
   const DetailIcon = entry.icon;
   const canEditAgentProfile = entry.ownedByViewer;
@@ -81,16 +85,19 @@ export default function AgentIdentitySettings({
   async function handleSaveAgentProfile() {
     setAgentProfileStatus("에이전트 프로필 저장 중...");
     try {
+      let nextProfiles: Record<string, AgentProfileSettings>;
       if (entry.agentSession && onAgentConfigure) {
         await onAgentConfigure(entry.agentSession, {
           display_name: agentNameDraft,
           avatar_image_url: agentAvatarImage,
         });
+        nextProfiles = removeAgentProfileSettings(agent.agent_id);
+      } else {
+        nextProfiles = saveAgentProfileSettings(agent.agent_id, {
+          displayName: agentNameDraft,
+          avatarImage: agentAvatarImage,
+        });
       }
-      const nextProfiles = saveAgentProfileSettings(agent.agent_id, {
-        displayName: agentNameDraft,
-        avatarImage: agentAvatarImage,
-      });
       onAgentProfileSettingsChange?.(nextProfiles);
       onSessionActionComplete?.();
       setAgentProfileStatus("에이전트 프로필 저장됨");

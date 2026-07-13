@@ -70,6 +70,32 @@ function upsertAgentSessions(current: RoomAgentSession[], incoming: RoomAgentSes
   return [...byId.values()];
 }
 
+function applyParticipantProfileEvents(current: RoomMember[], incoming: RoomEvent[]) {
+  const updatesByParticipant = new Map<string, RoomEvent>();
+  incoming.forEach((event) => {
+    if (event.type === "participant_updated" && event.participant_id) {
+      updatesByParticipant.set(event.participant_id, event);
+    }
+  });
+  if (!updatesByParticipant.size) return current;
+  let changed = false;
+  const next = current.map((participant) => {
+    const update = updatesByParticipant.get(participant.participant_id);
+    if (!update) return participant;
+    changed = true;
+    return {
+      ...participant,
+      display_name: String(update.display_name || participant.display_name),
+      avatar_image_url:
+        "avatar_image_url" in update
+          ? String(update.avatar_image_url || "") || undefined
+          : participant.avatar_image_url,
+      updated_at: update.created_at || participant.updated_at,
+    };
+  });
+  return changed ? next : current;
+}
+
 type ApplyRoomEventsOptions = {
   replace?: boolean;
   projectProgress?: boolean;
@@ -137,6 +163,13 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       }));
     }
 
+    if (incoming.some((event) => event.type === "participant_updated")) {
+      setParticipantsByRoom((previous) => ({
+        ...previous,
+        [targetRoomId]: applyParticipantProfileEvents(previous[targetRoomId] || [], incoming),
+      }));
+    }
+
     if (projectProgress) {
       let progress: AgentSessionProgress | null | undefined;
       incoming.forEach((event) => {
@@ -150,7 +183,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
 
     if (
       incoming.some((event) =>
-        ["participant_joined", "participant_left", "participant_kicked"].includes(event.type)
+        ["participant_joined", "participant_updated", "participant_left", "participant_kicked"].includes(event.type)
       )
     ) {
       setMembershipRevision((previous) => previous + 1);
@@ -342,19 +375,27 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   );
 
   const events = eventsByRoom[roomId] || [];
-  const participantNames = useMemo(() => {
-    const names: Record<string, string> = {};
-    (participantsByRoom[roomId] || []).forEach((participant) => {
-      if (participant.participant_id) names[participant.participant_id] = participant.display_name;
-    });
+  const participantProfiles = useMemo(() => {
+    const profiles: Record<string, { displayName?: string; avatarImageUrl?: string }> = {};
     (sessionsByRoom[roomId] || []).forEach((session) => {
-      if (session.participant_id) names[session.participant_id] = session.display_name;
+      if (!session.participant_id) return;
+      profiles[session.participant_id] = {
+        displayName: session.display_name,
+        avatarImageUrl: session.avatar_image_url,
+      };
     });
-    return names;
+    (participantsByRoom[roomId] || []).forEach((participant) => {
+      if (!participant.participant_id) return;
+      profiles[participant.participant_id] = {
+        displayName: participant.display_name,
+        avatarImageUrl: participant.avatar_image_url,
+      };
+    });
+    return profiles;
   }, [participantsByRoom, roomId, sessionsByRoom]);
   const timelineEvents: LobbyEvent[] = useMemo(
-    () => projectRoomEventsToTimeline(events, { viewerParticipantId, participantNames }),
-    [events, participantNames, viewerParticipantId]
+    () => projectRoomEventsToTimeline(events, { viewerParticipantId, participantProfiles }),
+    [events, participantProfiles, viewerParticipantId]
   );
 
   return {

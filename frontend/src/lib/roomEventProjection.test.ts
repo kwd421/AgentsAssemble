@@ -70,7 +70,7 @@ describe("projectRoomEventsToTimeline", () => {
           content: "결론입니다.",
         }),
       ],
-      { participantNames: { codex: "루나" } }
+      { participantProfiles: { codex: { displayName: "루나" } } }
     );
 
     expect(timeline).toHaveLength(2);
@@ -84,6 +84,39 @@ describe("projectRoomEventsToTimeline", () => {
     expect(projectRoomEventProgress(event({ type: "thinking_delta", content: "검토 중" }))?.message).toBe(
       "검토 중"
     );
+  });
+
+  it("uses the current participant profile for historical messages", () => {
+    const timeline = projectRoomEventsToTimeline(
+      [
+        event({
+          display_name: "Antigravity CLI",
+          avatar_image_url: "/api/attachments/old-avatar",
+          content: "안녕하세요.",
+        }),
+      ],
+      {
+        participantProfiles: {
+          codex: {
+            displayName: "Makima",
+            avatarImageUrl: "/api/attachments/makima-avatar",
+          },
+        },
+      }
+    );
+
+    expect(timeline[0]).toMatchObject({
+      name: "Makima",
+      avatar_image_url: "/api/attachments/makima-avatar",
+    });
+  });
+
+  it("keeps the event author snapshot only when the participant is unavailable", () => {
+    const timeline = projectRoomEventsToTimeline([
+      event({ display_name: "Imported Agent", content: "legacy" }),
+    ]);
+
+    expect(timeline[0].name).toBe("Imported Agent");
   });
 
   it("renders sanitized tool activity in the same collapsible timeline", () => {

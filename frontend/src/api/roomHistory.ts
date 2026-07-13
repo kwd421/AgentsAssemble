@@ -31,6 +31,7 @@ export interface LobbyEvent {
   live_agent_endpoint?: boolean;
   actor_id?: string;
   actor_type?: string;
+  avatar_image_url?: string;
   flow_id?: string;
   flow_meeting_id?: string;
   flow_event_type?: string;
@@ -99,6 +100,7 @@ export interface RoomEvent {
   actor_id?: string;
   actor_type?: string;
   display_name?: string;
+  avatar_image_url?: string;
   content?: string;
   phase?: string;
   status?: string;

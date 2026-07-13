@@ -24,6 +24,7 @@ export interface RoomAgentSession {
   session_id: string;
   participant_id: string;
   display_name: string;
+  avatar_image_url?: string;
   status: string;
   runtime_status: string;
   enabled: boolean;

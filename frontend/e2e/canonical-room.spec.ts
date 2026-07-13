@@ -28,6 +28,17 @@ test("streams on desktop and controls the same canonical session on mobile", asy
   await expect(page.getByText("입력 중…", { exact: true })).toHaveCount(0);
   await expect(page.getByText("FAKE_CLI_READY", { exact: true })).toHaveCount(0);
 
+  await desktopMember.click();
+  const profileDialog = page.getByRole("dialog", { name: "나's Fake Interactive CLI" });
+  await profileDialog.getByRole("textbox", { name: "이름" }).fill("Makima");
+  await profileDialog.getByRole("button", { name: "저장", exact: true }).click();
+  const renamedProfileDialog = page.getByRole("dialog", { name: "나's Makima" });
+  await expect(renamedProfileDialog.getByText("에이전트 프로필 저장됨", { exact: true })).toBeVisible();
+  await renamedProfileDialog.getByRole("button", { name: "멤버 정보 닫기" }).click();
+  const renamedReply = page.locator(".dc-message").filter({ hasText: "fake reply 1; marker=ui-e2e-001" });
+  await expect(renamedReply.getByText("Makima", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button").filter({ hasText: "Makima" }).first()).toBeVisible();
+
   await composer.fill("| 에이전트 | 상태 |\n| --- | --- |\n| Fake CLI | 대기 |");
   await page.getByRole("button", { name: "채팅 메시지 보내기" }).click();
   const markdownTable = page.locator(".dc-message").filter({ hasText: "Fake CLI" }).last().locator("table");
@@ -45,10 +56,10 @@ test("streams on desktop and controls the same canonical session on mobile", asy
 
   async function openMobileSession() {
     await page.getByRole("button", { name: "general 채널 정보 열기" }).click();
-    const mobileMember = page.getByRole("button").filter({ hasText: "Fake Interactive CLI" }).first();
+    const mobileMember = page.getByRole("button").filter({ hasText: "Makima" }).first();
     await expect(mobileMember).toBeVisible();
     await mobileMember.click();
-    const mobileSession = page.getByRole("region", { name: "Fake Interactive CLI Agent Session" });
+    const mobileSession = page.getByRole("region", { name: "Makima Agent Session" });
     await expect(mobileSession).toBeVisible();
     return mobileSession;
   }

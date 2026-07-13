@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LiveAgent, RoomAgentSession } from "../../api";
 import MemberList from "./MemberList";
@@ -32,7 +32,10 @@ const SESSION: RoomAgentSession = {
   connection_kind: "agent_session",
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 describe("MemberList component wiring", () => {
   it("opens the extracted detail modal with Agent Session controls", () => {
@@ -72,5 +75,76 @@ describe("MemberList component wiring", () => {
     const dialog = screen.getByRole("dialog", { name: "나's Agent One" });
     expect(within(dialog).getByRole("button", { name: "추방" })).toBeTruthy();
     expect(within(dialog).queryByRole("button", { name: "세션 삭제" })).toBeNull();
+  });
+
+  it("does not let a legacy local profile override canonical room identity", () => {
+    localStorage.setItem(
+      "agentsassemble.agentProfiles.v1",
+      JSON.stringify({ "agent-1": { displayName: "Local Makima" } })
+    );
+
+    render(
+      <MemberList
+        agents={[AGENT]}
+        agentSessions={[SESSION]}
+        members={[
+          {
+            meeting_id: "room-1",
+            participant_id: "agent-1",
+            display_name: "Canonical Makima",
+            role: "agent",
+            participant_type: "local",
+            provider_kind: "codex",
+            connection_kind: "agent_session",
+            status: "joined",
+            source: "agent_session",
+            created_at: "",
+            updated_at: "",
+          },
+        ]}
+        roomId="room-1"
+        roomName="Room One"
+        onAgentControl={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("나's Canonical Makima")).toBeTruthy();
+    expect(screen.queryByText("나's Local Makima")).toBeNull();
+  });
+
+  it("moves a legacy local profile into canonical Agent Session state on save", async () => {
+    localStorage.setItem(
+      "agentsassemble.agentProfiles.v1",
+      JSON.stringify({ "agent-1": { displayName: "Makima" } })
+    );
+    const onAgentConfigure = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <MemberList
+        agents={[AGENT]}
+        agentSessions={[SESSION]}
+        roomId="room-1"
+        roomName="Room One"
+        onAgentControl={vi.fn()}
+        onAgentConfigure={onAgentConfigure}
+      />
+    );
+
+    fireEvent.click(screen.getByText("나's Agent One"));
+    const dialog = screen.getByRole("dialog", { name: "나's Agent One" });
+    expect((within(dialog).getByRole("textbox", { name: "이름" }) as HTMLInputElement).value)
+      .toBe("Makima");
+    fireEvent.click(within(dialog).getByRole("button", { name: "저장" }));
+
+    await waitFor(() =>
+      expect(onAgentConfigure).toHaveBeenCalledWith(SESSION, {
+        display_name: "Makima",
+        avatar_image_url: "",
+      })
+    );
+    const savedProfiles = JSON.parse(
+      localStorage.getItem("agentsassemble.agentProfiles.v1") || "{}"
+    );
+    expect(savedProfiles["agent-1"]).toBeUndefined();
   });
 });

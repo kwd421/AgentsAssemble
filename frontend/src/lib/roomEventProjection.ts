@@ -9,7 +9,13 @@ export type AgentSessionProgress = {
 
 type ProjectionOptions = {
   viewerParticipantId?: string;
-  participantNames?: Record<string, string>;
+  participantProfiles?: Record<
+    string,
+    {
+      displayName?: string;
+      avatarImageUrl?: string;
+    }
+  >;
 };
 
 function actor(event: RoomEvent) {
@@ -25,17 +31,19 @@ function timelineKey(event: RoomEvent, actorId: string) {
   return sourceEventId && actorId ? `source:${sourceEventId}:actor:${actorId}` : String(event.id);
 }
 
-function speakerName(
+function speakerIdentity(
   event: RoomEvent,
   actorId: string,
   viewerParticipantId: string,
-  participantNames: Record<string, string>
+  participantProfiles: NonNullable<ProjectionOptions["participantProfiles"]>
 ) {
   const mine = actorId === "operator-local" || Boolean(viewerParticipantId && actorId === viewerParticipantId);
+  const currentProfile = participantProfiles[actorId] || {};
   return {
     name: mine
       ? "나"
-      : String(event.display_name || participantNames[actorId] || actorId || "Agent Session"),
+      : String(currentProfile.displayName || event.display_name || actorId || "Agent Session"),
+    avatarImageUrl: String(currentProfile.avatarImageUrl || event.avatar_image_url || ""),
     side: mine ? "mine" : "other",
   };
 }
@@ -47,19 +55,20 @@ export function projectRoomEventsToTimeline(
   const timeline: LobbyEvent[] = [];
   const turnIndex = new Map<string, number>();
   const viewerParticipantId = String(options.viewerParticipantId || "");
-  const participantNames = options.participantNames || {};
+  const participantProfiles = options.participantProfiles || {};
 
   events.forEach((event) => {
     if (!event.id) return;
     const eventActor = actor(event);
     const key = timelineKey(event, eventActor.id);
-    const speaker = speakerName(event, eventActor.id, viewerParticipantId, participantNames);
+    const speaker = speakerIdentity(event, eventActor.id, viewerParticipantId, participantProfiles);
 
     if (["thinking_delta", "activity_delta"].includes(event.type) && String(event.content || "").trim()) {
       timeline.push({
         id: event.id,
         created_at: event.created_at,
         name: speaker.name,
+        avatar_image_url: speaker.avatarImageUrl || undefined,
         side: speaker.side,
         kind: "thinking",
         message: String(event.content || ""),
@@ -84,6 +93,7 @@ export function projectRoomEventsToTimeline(
         id: key,
         created_at: event.created_at,
         name: speaker.name,
+        avatar_image_url: speaker.avatarImageUrl || undefined,
         side: speaker.side,
         kind: "message",
         message,
@@ -114,6 +124,7 @@ export function projectRoomEventsToTimeline(
       id: errorKey,
       created_at: event.created_at,
       name: speaker.name,
+      avatar_image_url: speaker.avatarImageUrl || undefined,
       side: speaker.side,
       kind: "system",
       message: String(event.content || "Turn failed."),
