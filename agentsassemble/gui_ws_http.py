@@ -17,7 +17,40 @@ from agentsassemble.room_websocket import (
     is_websocket_upgrade,
 )
 from agentsassemble.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS
-from agentsassemble.ws_room_session import WS_SESSION_TOKEN_KEY, WsRoomSession
+from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.ws_room_session import (
+    WS_SESSION_TOKEN_KEY,
+    WS_TICKET_TTL_SECONDS,
+    WsRoomSession,
+    host_browser_ws_session,
+)
+
+
+def register_ws_ticket_route(
+    router: Router,
+    *,
+    ws_ticket_store: Any,
+    is_local_operator: Callable[[RequestContext], bool],
+) -> None:
+    @router.post("/api/ws-ticket")
+    def issue_ws_ticket(ctx: RequestContext) -> None:
+        body = ctx.read_json_body()
+        if body is None:
+            return
+        session = ctx.session()
+        session_token = ctx.bearer_token()
+        if session is None:
+            if not (ctx.is_host() or is_local_operator(ctx)):
+                ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+                return
+            try:
+                session = host_browser_ws_session(str(body.get("meeting_id") or ""))
+            except ValueError as error:
+                ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+                return
+            session_token = ""
+        ticket = ws_ticket_store.issue(session, session_token=session_token)
+        ctx.send_json({"ticket": ticket, "ttl_seconds": WS_TICKET_TTL_SECONDS})
 
 
 def handle_ws_upgrade(

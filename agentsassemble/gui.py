@@ -103,7 +103,7 @@ from agentsassemble.gui_request_security import (
     _split_authority_host_port,
 )
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
-from agentsassemble.gui_ws_http import handle_ws_upgrade
+from agentsassemble.gui_ws_http import handle_ws_upgrade, register_ws_ticket_route
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_realtime import (
     RoomCommandRejected,
@@ -279,29 +279,10 @@ from agentsassemble.room_speech import (
     governed_official_reply,
     governed_lobby_say,
 )
-from agentsassemble.room_websocket import (
-    CLOSE_NORMAL,
-    CLOSE_PROTOCOL_ERROR,
-    MessageAssembler,
-    OP_CLOSE,
-    OP_PING,
-    OP_PONG,
-    OP_TEXT,
-    WebSocketProtocolError,
-    compute_accept_key,
-    encode_close,
-    encode_pong,
-    encode_text,
-    is_websocket_upgrade,
-)
 from agentsassemble.ws_room_session import (
-    WS_SESSION_TOKEN_KEY,
-    WS_TICKET_TTL_SECONDS,
     WsRoomDeps,
     WsSayRejected,
-    WsRoomSession,
     WsTicketStore,
-    host_browser_ws_session,
 )
 from agentsassemble.room_users import (
     configure_room_users_store,
@@ -7407,6 +7388,11 @@ def _make_handler(
         history_page_limit=_history_page_limit,
     )
     route_table = Router()
+    register_ws_ticket_route(
+        route_table,
+        ws_ticket_store=ws_ticket_store,
+        is_local_operator=lambda ctx: ctx.handler._request_is_local_operator(),
+    )
     register_room_routes(route_table)
     register_room_settings_routes(route_table)
     register_side_chat_routes(route_table)
@@ -7825,32 +7811,6 @@ def _make_handler(
                 self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
                 return
             if route_table.dispatch("POST", RequestContext(self, route_deps, parsed, parse_qs(parsed.query))):
-                return
-            if parsed.path == "/api/ws-ticket":
-                ctx = RequestContext(self, route_deps, parsed, parse_qs(parsed.query))
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(body, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                session = ctx.session()
-                session_token = ctx.bearer_token()
-                if session is None:
-                    if not (ctx.is_host() or self._request_is_local_operator()):
-                        self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
-                        return
-                    try:
-                        session = host_browser_ws_session(str(body.get("meeting_id") or ""))
-                    except ValueError as error:
-                        self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                        return
-                    session_token = ""
-                ticket = ws_ticket_store.issue(session, session_token=session_token)
-                self._send_json({"ticket": ticket, "ttl_seconds": WS_TICKET_TTL_SECONDS})
                 return
             if parsed.path == "/api/demo":
                 result = run_demo_meeting(adapter_name="mock", output_root=output_root)
