@@ -325,6 +325,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
         thread.join(timeout=2)
 
         self.assertFalse(thread.is_alive())
+        self.assertTrue(bridge.remote_stop_requested)
         self.assertEqual(runtime.start_count, 1)
         self.assertEqual(runtime.sent, ["first prompt", "second prompt"])
         self.assertEqual(runtime.stop_count, 1)

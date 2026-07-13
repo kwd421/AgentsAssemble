@@ -118,6 +118,7 @@ class RoomAgentBridge:
         self._diagnostics_lock = threading.RLock()
         self._activity_invalid_count = 0
         self._run_thread: threading.Thread | None = None
+        self.remote_stop_requested = False
         self.last_cleanup_report = CleanupReport("room_agent_bridge")
 
     def run(self) -> int:
@@ -197,6 +198,7 @@ class RoomAgentBridge:
                 self._command("bridge.health", {**diagnostics, "last_error": str(error)})
             return
         if action == "stop":
+            self.remote_stop_requested = True
             self._stop.set()
 
     def _start_turn(self, assignment: dict[str, object]) -> None:

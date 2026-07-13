@@ -372,11 +372,39 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             },
             identity,
         )
-        stopped = self._command("external-stop", "agent.stop", {"agent_id": "external"})["result"]
+        with patch(
+            "agentsassemble.room_realtime.revoke_sessions_for_participant",
+            return_value=1,
+        ) as revoke_sessions:
+            stopped = self._command("external-stop", "agent.stop", {"agent_id": "external"})["result"]
         self.assertEqual(self.manager.stops, [])
         self.assertEqual(stopped["process"]["ownership"], "external")
+        self.assertEqual(stopped["revoked_sessions"], 1)
+        revoke_sessions.assert_called_once_with("general", "external")
         self.assertEqual(RoomStore(self.root).session("general", "external")["reported_provider_pid"], 1)
         self.controller.disconnect(channel)
+
+    def test_server_shutdown_does_not_revoke_external_bridge_access(self):
+        identity = _bridge_identity("external-shutdown")
+        identity["provider_kind"] = "codex"
+        self.controller.connect(identity)
+        self._command(
+            "external-shutdown-ready",
+            "bridge.ready",
+            {
+                "running": True,
+                "transport": "websocket",
+                "model": "gpt-5.6-luna",
+                "provider_session_active": True,
+                "started_at": None,
+            },
+            identity,
+        )
+
+        with patch("agentsassemble.room_realtime.revoke_sessions_for_participant") as revoke_sessions:
+            self.controller.close()
+
+        revoke_sessions.assert_not_called()
 
     def test_external_bridge_ready_requires_requested_model_for_known_provider(self):
         identity = _bridge_identity("external-no-model")

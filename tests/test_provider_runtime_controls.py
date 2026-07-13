@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+from urllib.error import HTTPError
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -22,7 +23,7 @@ from agentsassemble.provider_capabilities import (
 )
 from agentsassemble.provider_secrets import ProviderSecretStore
 from agentsassemble.provider_runtime_config import ProviderRuntimeConfig
-from agentsassemble.room_attendee import _orientation_text, parse_agent_invite_url
+from agentsassemble.room_attendee import _leave_room, _orientation_text, parse_agent_invite_url
 from agentsassemble.room_attendee import AgentAttendee
 from agentsassemble.windows_conpty import WindowsConPtyRuntime
 from agentsassemble.live_cli_transcripts import _antigravity_user_request
@@ -561,6 +562,44 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(report.attempted, 4)
         self.assertEqual(report.completed, 3)
         self.assertEqual(report.orphaned_handle_ids, ["provider-runtime"])
+
+    def test_attendee_exits_cleanly_after_remote_stop(self):
+        runtime = MagicMock()
+        bridge = MagicMock()
+        bridge.run.return_value = 0
+        bridge.remote_stop_requested = True
+        attendee = AgentAttendee(
+            invite_url="https://room.example/join?token=aai1.secret",
+            provider_id="claude",
+        )
+        attendee._build_runtime = MagicMock(return_value=runtime)
+
+        with (
+            patch(
+                "agentsassemble.room_attendee.join_room_session",
+                return_value={
+                    "session_token": "session-secret",
+                    "agent_id": "claude-guest",
+                    "meeting_id": "general",
+                    "provider_kind": "claude_code",
+                    "guide": {},
+                },
+            ),
+            patch("agentsassemble.room_attendee.connect_room_ws", return_value=object()) as connect,
+            patch("agentsassemble.room_attendee.RoomAgentBridge", return_value=bridge),
+            patch("agentsassemble.room_attendee._leave_room"),
+        ):
+            result = attendee.run()
+
+        self.assertEqual(result, 0)
+        self.assertEqual(connect.call_count, 1)
+        runtime.stop.assert_called_once_with(timeout_seconds=2.0)
+
+    def test_leave_treats_an_already_revoked_session_as_complete(self):
+        revoked = HTTPError("https://room.example/api/room-invite/leave", 401, "Unauthorized", {}, None)
+
+        with patch("agentsassemble.room_attendee.urlopen", side_effect=revoked):
+            _leave_room("https://room.example", "session-secret")
 
     def test_windows_runtime_keeps_one_process_and_stops_it(self):
         fake = FakeConPtyProcess()

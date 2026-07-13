@@ -451,7 +451,11 @@ class RoomRealtimeController:
         room_id = clean_lobby_text(identity.get("meeting_id"), limit=128)
         session_id = clean_lobby_text(identity.get("session_id") or identity.get("agent_id"), limit=128)
         session = self.store.session(room_id, session_id)
-        if not session or session.get("runtime_status") == "stopped":
+        if (
+            not session
+            or session.get("runtime_status") in {"stopping", "stopped"}
+            or not session.get("enabled")
+        ):
             return
         self.store.update_session_fields(
             room_id,
@@ -732,6 +736,8 @@ class RoomRealtimeController:
             for room_id, providers in list(self._providers_by_room.items()):
                 for agent_id in list(providers):
                     session = self.store.session(room_id, agent_id)
+                    if session and session.get("process_ownership") != "server":
+                        continue
                     if session and session.get("runtime_status") not in {"stopped", "available"}:
                         try:
                             self._stop_agent(room_id, agent_id)
@@ -1374,10 +1380,20 @@ class RoomRealtimeController:
             cancel()
         if disable:
             self._launch_contexts.pop(key, None)
-        self.store.update_session_fields(room_id, agent_id, runtime_status="stopping")
-        self.broker.direct_to_bridge(room_id, agent_id, {"op": "agent.control", "action": "stop"})
         ownership = clean_lobby_text(session.get("process_ownership"), limit=32) or (
             "external" if session.get("external_owned") else "server"
+        )
+        self.store.update_session_fields(
+            room_id,
+            agent_id,
+            runtime_status="stopping",
+            enabled=False if disable else bool(session.get("enabled")),
+        )
+        self.broker.direct_to_bridge(room_id, agent_id, {"op": "agent.control", "action": "stop"})
+        revoked_sessions = (
+            revoke_sessions_for_participant(room_id, agent_id)
+            if ownership == "external" and disable
+            else 0
         )
         stopped = {"stopped": ownership == "external", "alive": False, "ownership": ownership}
         if self.bridge_manager is not None and ownership == "server":
@@ -1417,7 +1433,11 @@ class RoomRealtimeController:
             reason="operator stop",
         )
         self._publish_session_state(room_id, updated)
-        return {"agent_session": self._public_session(updated), "process": stopped}
+        return {
+            "agent_session": self._public_session(updated),
+            "process": stopped,
+            "revoked_sessions": revoked_sessions,
+        }
 
     def _recover_bridge(self, room_id: str, session_id: str) -> None:
         key = (room_id, session_id)

@@ -172,6 +172,28 @@ describe("RoomConnectionPanel", () => {
     expect((getByTitle("세션 일시정지") as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("does not offer process resume after an external session is stopped", () => {
+    const stopped = {
+      ...agentSession("stopped"),
+      external_owned: true,
+      started_at: "2026-07-13T00:00:00Z",
+    };
+    render(
+      <RoomConnectionPanel
+        room={room}
+        agents={[agent("offline")]}
+        members={[member("detached")]}
+        agentSessions={[stopped]}
+        capabilities={agentControlCapability}
+        onAgentControl={vi.fn()}
+      />
+    );
+
+    openAgentDetails();
+
+    expect((screen.getByTitle("세션 재개") as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("shows bounded runtime diagnostics without provider ids or raw stderr", () => {
     const session = {
       ...agentSession("idle"),

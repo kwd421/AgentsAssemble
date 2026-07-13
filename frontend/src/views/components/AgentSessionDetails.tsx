@@ -105,7 +105,9 @@ export default function AgentSessionDetails({
   const canStop = agentSessionIsPresent(status) || status === "error";
   const canResume =
     status === "paused" ||
-    (hasRunBefore && ["stopped", "error", "disconnected", "available"].includes(status || ""));
+    (!session.external_owned &&
+      hasRunBefore &&
+      ["stopped", "error", "disconnected", "available"].includes(status || ""));
   const canInterrupt = status === "busy";
   const continuity = providerSessionContinuity(session);
   const canConfigure = ["", "available", "stopped", "error", "disconnected"].includes(status || "");

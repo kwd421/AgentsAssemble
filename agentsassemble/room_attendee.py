@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
@@ -94,6 +95,8 @@ class AgentAttendee:
                 self._bridge = bridge
                 if bridge.run() != 0:
                     raise RuntimeError("Agent Bridge cleanup failed.")
+                if bridge.remote_stop_requested:
+                    break
                 orientation = ""
                 self._bridge = None
                 if not self._stop.wait(1.0):
@@ -247,8 +250,14 @@ def _leave_room(server_url: str, session_token: str) -> None:
         headers={"Authorization": f"Bearer {session_token}", "Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(request, timeout=5.0):
-        return
+    try:
+        with urlopen(request, timeout=5.0):
+            return
+    except HTTPError as error:
+        if error.code in {401, 403}:
+            error.close()
+            return
+        raise
 
 
 def _runtime_still_running(runtime: object) -> bool:
