@@ -19,6 +19,11 @@ Shadow mode records decisions while the existing `ordered` or `continuous`
 routing still controls real turns. It must not change a visible message, launch
 a provider, or add a second room transport.
 
+Current shadow policy selects one connected direct mention/reply/next-speaker
+target, marks multiple direct targets, `@all`, or a room-wide question as
+eligible, and marks messages without a strong signal as silent. Its durable
+decision and each candidate's evaluation cursor commit together.
+
 ## Independent Cursors
 
 Each agent has four room-local monotonic cursors:

@@ -74,9 +74,11 @@ static provider manifest produces a revision. Discovery completion is pushed on
 the canonical room WebSocket; `agent.create` must present that revision and the
 server validates every selected control against it.
 
-The researched next direction is an event-driven attention boundary that can
-select nobody, keep unselected models asleep, and assign a provider turn only
-when an agent should speak. Research, not yet implementation authority:
+An event-driven deterministic attention gate now records durable `selected`,
+`eligible`, or `silent` decisions in shadow mode. Shadow evaluation invokes no
+provider and does not alter the current `ordered` or `continuous` turn routing.
+Ambient participation is not active yet. Current contract:
+`docs/product/ATTENTION_MODEL.md`; supporting research:
 `docs/reports/autonomous-room-participation-research.md`.
 
 ## Current Media Boundary

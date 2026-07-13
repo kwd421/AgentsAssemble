@@ -368,6 +368,49 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(messages[0]["actor"]["participant_id"], "operator-local")
         self.assertEqual(messages[0]["content"], "@codex hello")
 
+    def test_shadow_attention_records_silence_without_changing_ordered_routing(self):
+        result = self._command("shadow-ordinary", "message.send", {"content": "그냥 상황을 공유할게."})
+        event = result["result"]["event"]
+
+        jobs = self.controller.store.attention_jobs("general", mode="shadow")
+        session = self.controller.store.session("general", "codex")
+
+        self.assertEqual(jobs[-1]["source_event_id"], event["id"])
+        self.assertEqual(jobs[-1]["outcome"], "silent")
+        self.assertIn(event["id"], session["pending_event_ids"])
+        self.assertEqual(self.controller.attention_shadow_diagnostics()["error_count"], 0)
+
+    def test_shadow_attention_selects_connected_direct_mention(self):
+        self._command("shadow-start", "agent.start", {"agent_id": "codex"})
+        _identity, channel = self._connect_bridge("codex")
+        channel.drain()
+
+        result = self._command("shadow-mention", "message.send", {"content": "@codex 확인해줘"})
+        event = result["result"]["event"]
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+        job = self.controller.store.attention_jobs("general", mode="shadow")[-1]
+
+        self.assertEqual(job["source_event_id"], event["id"])
+        self.assertEqual(job["outcome"], "selected")
+        self.assertEqual(job["selected_participant_id"], "codex")
+        self.assertEqual(assignment["source_event_id"], event["id"])
+
+    def test_shadow_attention_failure_is_diagnostic_and_does_not_block_current_routing(self):
+        with patch.object(
+            self.controller._attention_coordinator,
+            "evaluate_shadow",
+            side_effect=RuntimeError("shadow storage unavailable"),
+        ), self.assertLogs("agentsassemble.room_realtime", level="ERROR"):
+            result = self._command("shadow-error", "message.send", {"content": "routing must continue"})
+
+        event = result["result"]["event"]
+        session = self.controller.store.session("general", "codex")
+        diagnostics = self.controller.attention_shadow_diagnostics()
+
+        self.assertIn(event["id"], session["pending_event_ids"])
+        self.assertEqual(diagnostics["error_count"], 1)
+        self.assertIn("shadow storage unavailable", diagnostics["last_error"])
+
     def test_startup_reconciliation_moves_inflight_work_back_to_pending(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

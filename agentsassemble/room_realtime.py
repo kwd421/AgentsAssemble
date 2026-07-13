@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import hashlib
 import json
+import logging
 import threading
 import shutil
 from pathlib import Path
@@ -47,6 +48,7 @@ from agentsassemble.room_agent_lifecycle import (
     RoomAgentLifecycle,
     schedule_daemon_timer,
 )
+from agentsassemble.room_attention_coordinator import RoomAttentionCoordinator
 from agentsassemble.room_errors import RoomCommandRejected
 from agentsassemble.room_event_broker import ROOM_EVENT_STREAM, RoomEventBroker, RoomSocketChannel
 from agentsassemble.room_floor_policy import (
@@ -75,6 +77,7 @@ from agentsassemble.voice_presence import leave_all_voice
 
 ROOM_SNAPSHOT_EVENT_LIMIT = 200
 ROOM_HISTORY_MAX_LIMIT = 200
+_LOGGER = logging.getLogger(__name__)
 
 
 class ProviderCatalog(Protocol):
@@ -129,6 +132,9 @@ class RoomRealtimeController:
         self._event_listener_removers: dict[str, Callable[[], None]] = {}
         self._provider_catalog_remove = self.provider_catalog.subscribe(self._on_provider_catalog_update)
         self._closed = False
+        self._attention_coordinator = RoomAttentionCoordinator(self.store)
+        self._attention_shadow_error_count = 0
+        self._attention_shadow_last_error = ""
         self._turn_coordinator = RoomTurnCoordinator(
             self.output_root,
             store=self.store,
@@ -1401,6 +1407,7 @@ class RoomRealtimeController:
     def _route_message_event(self, event: RoomEvent | dict[str, object]) -> None:
         room_id = clean_lobby_text(event.get("room_id"), limit=128)
         providers = self._room_providers(room_id)
+        self._record_shadow_attention(dict(event), providers)
         room_settings = room_settings_payload(self.output_root, room_id=room_id).get("settings")
         settings = room_settings if isinstance(room_settings, dict) else {}
         continuous = settings.get("conversation_mode") == "continuous"
@@ -1434,6 +1441,39 @@ class RoomRealtimeController:
                 event,
                 relay_depth=decision.relay_depth + (1 if continuous or decision.actor_type == "agent" else 0),
             )
+
+    def _record_shadow_attention(
+        self,
+        event: dict[str, object],
+        providers: dict[str, NativeCliProviderSpec],
+    ) -> None:
+        try:
+            self._attention_coordinator.evaluate_shadow(
+                event,
+                candidate_ids=providers,
+                eligible_ids=(
+                    agent_id
+                    for agent_id in providers
+                    if self.agent_floor_eligibility(str(event.get("room_id") or ""), agent_id).eligible
+                ),
+            )
+        except Exception as error:
+            self._attention_shadow_error_count += 1
+            self._attention_shadow_last_error = str(error)
+            _LOGGER.exception(
+                "Room attention shadow evaluation failed",
+                extra={
+                    "room_id": str(event.get("room_id") or ""),
+                    "event_id": str(event.get("id") or ""),
+                },
+            )
+
+    def attention_shadow_diagnostics(self) -> dict[str, object]:
+        return {
+            "mode": "shadow",
+            "error_count": self._attention_shadow_error_count,
+            "last_error": self._attention_shadow_last_error,
+        }
 
     def agent_floor_eligibility(self, room_id: str, agent_id: str) -> AgentFloorEligibility:
         participant = self.store.participant(room_id, agent_id)
