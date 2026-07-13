@@ -6,13 +6,20 @@ import signal
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
 from agentsassemble.grok_acp_runtime import GrokAcpRuntime
+from agentsassemble.bridge_protocol import (
+    BridgeProtocolError,
+    BridgeReportRejected,
+    BridgeReportResponse,
+    BridgeReportTimeout,
+    TurnAssignmentEnvelope,
+)
 from agentsassemble.deepseek_runtime import DeepSeekApiRuntime
 from agentsassemble.live_cli import LiveCliRuntime
 from agentsassemble.opencode_runtime import OpenCodeRuntime
@@ -61,6 +68,13 @@ class CanonicalBridgeLaunchConfig:
         )
 
 
+@dataclass
+class _PendingBridgeReport:
+    action: str
+    event: threading.Event = field(default_factory=threading.Event)
+    response: BridgeReportResponse | None = None
+
+
 class BridgeRuntime(Protocol):
     def start(self) -> dict[str, object]: ...
     def send(self, text: str) -> None: ...
@@ -84,6 +98,7 @@ class RoomAgentBridge:
         receive_sleep_seconds: float = 0.05,
         initial_orientation: str = "",
         stop_runtime_on_exit: bool = True,
+        report_timeout_seconds: float = 5.0,
     ) -> None:
         self.client = client
         self.runtime = runtime
@@ -96,8 +111,13 @@ class RoomAgentBridge:
         self._stop = threading.Event()
         self._worker_lock = threading.RLock()
         self._worker: threading.Thread | None = None
+        self._report_timeout_seconds = max(0.1, float(report_timeout_seconds))
+        self._report_lock = threading.RLock()
+        self._pending_reports: dict[str, _PendingBridgeReport] = {}
+        self._run_thread: threading.Thread | None = None
 
     def run(self) -> int:
+        self._run_thread = threading.current_thread()
         try:
             health = self.runtime.start()
             self._command("bridge.ready", self._health_payload(health))
@@ -123,11 +143,16 @@ class RoomAgentBridge:
             if worker is not None and worker is not threading.current_thread():
                 worker.join(timeout=2.0)
             self.client.close()
+            self._run_thread = None
 
     def stop(self) -> None:
         self._stop.set()
 
     def _handle_message(self, message: dict[str, object]) -> None:
+        report = BridgeReportResponse.parse(message)
+        if report is not None:
+            self._resolve_report(report)
+            return
         op = clean_lobby_text(message.get("op"), limit=64)
         if op == "turn.assign":
             self._start_turn(message)
@@ -150,33 +175,61 @@ class RoomAgentBridge:
             self._stop.set()
 
     def _start_turn(self, assignment: dict[str, object]) -> None:
-        turn_id = clean_lobby_text(assignment.get("turn_id"), limit=128)
-        provider_input = str(assignment.get("provider_input") or "")
-        if self._initial_orientation:
-            provider_input = f"{self._initial_orientation}\n\n{provider_input}".strip()
-            self._initial_orientation = ""
-        if not turn_id or not provider_input:
+        try:
+            envelope = TurnAssignmentEnvelope.parse_strict(
+                assignment,
+                room_id=self.room_id,
+                participant_id=self.participant_id,
+                session_id=self.session_id,
+            )
+        except BridgeProtocolError as error:
+            if error.fatal:
+                self._fail_protocol(error)
+                return
+            self._command(
+                "turn.failed",
+                {
+                    "turn_id": error.turn_id,
+                    "status": "error",
+                    "error_code": error.code,
+                    "message": str(error),
+                },
+            )
             return
+        if self._initial_orientation:
+            envelope = replace(
+                envelope,
+                provider_input=f"{self._initial_orientation}\n\n{envelope.provider_input}".strip(),
+            )
+            self._initial_orientation = ""
+        with self._worker_lock:
+            current_worker = self._worker
+        if current_worker is not None and current_worker.is_alive():
+            current_worker.join(timeout=0.25)
         with self._worker_lock:
             if self._worker is not None and self._worker.is_alive():
                 self._command(
                     "turn.failed",
-                    {"turn_id": turn_id, "status": "error", "message": "Agent Bridge received a turn while busy."},
+                    {
+                        "turn_id": envelope.turn_id,
+                        "status": "error",
+                        "error_code": "bridge_busy",
+                        "message": "Agent Bridge received a turn while busy.",
+                    },
                 )
                 return
-            turn_assignment = {**assignment, "provider_input": provider_input}
             self._worker = threading.Thread(
                 target=self._run_turn,
-                args=(turn_assignment,),
+                args=(envelope,),
                 name=f"AgentsAssembleBridgeTurn-{self.participant_id}",
                 daemon=True,
             )
             self._worker.start()
 
-    def _run_turn(self, assignment: dict[str, object]) -> None:
-        turn_id = clean_lobby_text(assignment.get("turn_id"), limit=128)
-        provider_input = str(assignment.get("provider_input") or "")
-        timeout_seconds = _positive_float(assignment.get("timeout_seconds"), 180.0)
+    def _run_turn(self, assignment: TurnAssignmentEnvelope) -> None:
+        turn_id = assignment.turn_id
+        provider_input = assignment.provider_input
+        timeout_seconds = assignment.timeout_seconds
         started = time.monotonic()
         input_started_at = _now()
         first_output_at = ""
@@ -198,6 +251,7 @@ class RoomAgentBridge:
                         "input_write_ms": round((input_completed - started) * 1000, 1),
                     },
                 },
+                wait_for_ack=False,
             )
 
             def on_delta(delta: str) -> None:
@@ -223,13 +277,14 @@ class RoomAgentBridge:
                             "ttfo_ms": round((first_output_elapsed - input_completed) * 1000, 1),
                         },
                     },
+                    wait_for_ack=False,
                 )
 
             def on_activity(activity: dict[str, object]) -> None:
                 safe = _safe_activity(activity)
                 if not safe:
                     return
-                self._command("activity.update", {"turn_id": turn_id, **safe})
+                self._command("activity.update", {"turn_id": turn_id, **safe}, wait_for_ack=False)
 
             raw_result = self.runtime.read_output(
                 timeout_seconds=timeout_seconds,
@@ -278,23 +333,89 @@ class RoomAgentBridge:
             )
         except Exception as error:
             if not self._stop.is_set():
-                self._command(
-                    "turn.failed",
-                    {
-                        "turn_id": turn_id,
-                        "status": "error",
-                        "error_code": getattr(error, "code", "provider_turn_failed"),
-                        "message": str(error),
-                        "diagnostics": self._failure_diagnostics(),
-                    },
-                )
+                try:
+                    self._command(
+                        "turn.failed",
+                        {
+                            "turn_id": turn_id,
+                            "status": "error",
+                            "error_code": getattr(error, "code", "provider_turn_failed"),
+                            "message": str(error),
+                            "diagnostics": self._failure_diagnostics(),
+                        },
+                    )
+                except (BridgeReportRejected, BridgeReportTimeout) as report_error:
+                    print(
+                        f"Agent Bridge terminal report failed: {report_error.code}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    self._stop.set()
         finally:
             with self._worker_lock:
                 if self._worker is threading.current_thread():
                     self._worker = None
 
-    def _command(self, action: str, payload: dict[str, object]) -> None:
-        self.client.command(action, payload, request_id=f"bridge-{uuid4().hex[:20]}")
+    def _command(
+        self,
+        action: str,
+        payload: dict[str, object],
+        *,
+        wait_for_ack: bool = True,
+    ) -> dict[str, object] | None:
+        request_id = f"bridge-{uuid4().hex[:20]}"
+        if not wait_for_ack:
+            self.client.command(action, payload, request_id=request_id)
+            return None
+        pending = _PendingBridgeReport(action=action)
+        with self._report_lock:
+            self._pending_reports[request_id] = pending
+        try:
+            self.client.command(action, payload, request_id=request_id)
+            response = self._wait_for_report(request_id, pending)
+        finally:
+            with self._report_lock:
+                self._pending_reports.pop(request_id, None)
+        if not response.accepted:
+            raise BridgeReportRejected(
+                response.message,
+                request_id=request_id,
+                action=action,
+                code=response.code,
+            )
+        return response.frame
+
+    def _wait_for_report(
+        self,
+        request_id: str,
+        pending: _PendingBridgeReport,
+    ) -> BridgeReportResponse:
+        deadline = time.monotonic() + self._report_timeout_seconds
+        while not pending.event.is_set() and time.monotonic() < deadline and not self.client.closed:
+            if threading.current_thread() is self._run_thread:
+                messages = self.client.receive()
+                for message in messages:
+                    self._handle_message(message)
+                if not messages:
+                    pending.event.wait(min(self.receive_sleep_seconds, max(0.0, deadline - time.monotonic())))
+            else:
+                pending.event.wait(max(0.0, deadline - time.monotonic()))
+        if not pending.event.is_set() or pending.response is None:
+            raise BridgeReportTimeout(request_id=request_id, action=pending.action)
+        return pending.response
+
+    def _resolve_report(self, response: BridgeReportResponse) -> None:
+        with self._report_lock:
+            pending = self._pending_reports.get(response.request_id)
+            if pending is None:
+                return
+            pending.response = response
+            pending.event.set()
+
+    def _fail_protocol(self, error: BridgeProtocolError) -> None:
+        print(f"Agent Bridge protocol error: {error.code}", file=sys.stderr, flush=True)
+        self._stop.set()
+        self.client.close()
 
     def _failure_diagnostics(self) -> dict[str, object]:
         try:
@@ -482,14 +603,6 @@ def main() -> int:
     return bridge.run()
 
 
-def _positive_float(value: object, default: float) -> float:
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return default
-    return parsed if parsed > 0 else default
-
-
 def _required_value(values: dict[str, object], key: str) -> object:
     if key not in values:
         raise BridgeConfigError(f"Agent Bridge config is missing {key}.")
@@ -509,21 +622,6 @@ def _required_text(
     return value
 
 
-def _required_raw_text(
-    values: dict[str, object],
-    key: str,
-    *,
-    limit: int,
-    allow_empty: bool = False,
-) -> str:
-    value = _required_value(values, key)
-    if not isinstance(value, str) or "\x00" in value or len(value) > limit:
-        raise BridgeConfigError(f"Agent Bridge config {key} must be valid text up to {limit} characters.")
-    if not value and not allow_empty:
-        raise BridgeConfigError(f"Agent Bridge config {key} is required.")
-    return value
-
-
 def _required_float(values: dict[str, object], key: str, *, minimum: float) -> float:
     value = _required_value(values, key)
     if isinstance(value, bool):
@@ -537,26 +635,10 @@ def _required_float(values: dict[str, object], key: str, *, minimum: float) -> f
     return parsed
 
 
-def _required_int(values: dict[str, object], key: str, *, minimum: int) -> int:
-    value = _required_value(values, key)
-    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-        raise BridgeConfigError(f"Agent Bridge config {key} must be an integer of at least {minimum}.")
-    return value
-
-
 def _required_bool(values: dict[str, object], key: str) -> bool:
     value = _required_value(values, key)
     if not isinstance(value, bool):
         raise BridgeConfigError(f"Agent Bridge config {key} must be a boolean.")
-    return value
-
-
-def _required_optional_int(values: dict[str, object], key: str) -> int | None:
-    value = _required_value(values, key)
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise BridgeConfigError(f"Agent Bridge config {key} must be a positive integer or null.")
     return value
 
 

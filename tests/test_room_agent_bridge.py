@@ -3,6 +3,7 @@ import time
 import unittest
 
 from agentsassemble.grok_acp_runtime import GrokAcpRuntime
+from agentsassemble.bridge_protocol import BridgeReportTimeout
 from agentsassemble.provider_runtime_contracts import AdapterContractError, ProviderTurnResult
 from agentsassemble.provider_runtime_config import ProviderRuntimeConfig
 from agentsassemble.room_agent_bridge import (
@@ -17,6 +18,7 @@ class FakeClient:
     def __init__(self):
         self.messages = []
         self.commands = []
+        self.command_responses = {}
         self.closed = False
         self._lock = threading.Lock()
 
@@ -29,6 +31,16 @@ class FakeClient:
     def command(self, action, payload=None, *, request_id=""):
         with self._lock:
             self.commands.append((action, dict(payload or {}), request_id))
+            configured = self.command_responses.get(action, ...)
+            if configured is None:
+                return request_id
+            response = dict(
+                configured
+                if configured is not ...
+                else {"op": "ack", "request_id": request_id, "accepted": True}
+            )
+            response["request_id"] = request_id
+            self.messages.append(response)
         return request_id
 
     def close(self):
@@ -155,6 +167,20 @@ def _runtime_config(**overrides):
     return ProviderRuntimeConfig.parse_strict(_launch_config(**overrides))
 
 
+def _turn_assignment(turn_id: str, provider_input: str, **overrides):
+    values = {
+        "op": "turn.assign",
+        "room_id": "general",
+        "participant_id": "codex",
+        "session_id": "codex",
+        "turn_id": turn_id,
+        "provider_input": provider_input,
+        "timeout_seconds": 2,
+    }
+    values.update(overrides)
+    return values
+
+
 def _wait_for(predicate, timeout=2.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -267,23 +293,9 @@ class RoomAgentBridgeTests(unittest.TestCase):
         thread.start()
         _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
 
-        client.messages.append(
-            {
-                "op": "turn.assign",
-                "turn_id": "turn-1",
-                "provider_input": "first prompt",
-                "timeout_seconds": 2,
-            }
-        )
+        client.messages.append(_turn_assignment("turn-1", "first prompt"))
         _wait_for(lambda: len([item for item in client.commands if item[0] == "message.final"]) == 1)
-        client.messages.append(
-            {
-                "op": "turn.assign",
-                "turn_id": "turn-2",
-                "provider_input": "second prompt",
-                "timeout_seconds": 2,
-            }
-        )
+        client.messages.append(_turn_assignment("turn-2", "second prompt"))
         _wait_for(lambda: len([item for item in client.commands if item[0] == "message.final"]) == 2)
         client.messages.append({"op": "agent.control", "action": "stop"})
         thread.join(timeout=2)
@@ -350,9 +362,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
         thread = threading.Thread(target=bridge.run, daemon=True)
         thread.start()
         _wait_for(lambda: runtime.start_count == 1)
-        client.messages.append(
-            {"op": "turn.assign", "turn_id": "turn-decline", "provider_input": "observe", "timeout_seconds": 2}
-        )
+        client.messages.append(_turn_assignment("turn-decline", "observe"))
         _wait_for(lambda: any(action == "turn.decline" for action, _, _ in client.commands))
         client.messages.append({"op": "agent.control", "action": "stop"})
         thread.join(timeout=2)
@@ -375,9 +385,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
         thread = threading.Thread(target=bridge.run, daemon=True)
         thread.start()
         _wait_for(lambda: runtime.start_count == 1)
-        client.messages.append(
-            {"op": "turn.assign", "turn_id": "turn-invalid-decline", "provider_input": "observe"}
-        )
+        client.messages.append(_turn_assignment("turn-invalid-decline", "observe"))
         _wait_for(lambda: any(action == "turn.failed" for action, _, _ in client.commands))
         client.messages.append({"op": "agent.control", "action": "stop"})
         thread.join(timeout=2)
@@ -412,9 +420,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
         thread = threading.Thread(target=bridge.run, daemon=True)
         thread.start()
         _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
-        client.messages.append(
-            {"op": "turn.assign", "turn_id": "turn-invalid-health", "provider_input": "respond"}
-        )
+        client.messages.append(_turn_assignment("turn-invalid-health", "respond"))
         _wait_for(lambda: any(action == "turn.failed" for action, _, _ in client.commands))
         client.messages.append({"op": "agent.control", "action": "stop"})
         thread.join(timeout=2)
@@ -424,6 +430,101 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertTrue(failure["diagnostics"]["adapter_health_invalid"])
         self.assertNotIn("started_at", failure["diagnostics"])
         self.assertFalse(any(action == "message.final" for action, _, _ in client.commands))
+
+    def test_assignment_without_turn_id_closes_the_bridge_as_a_protocol_error(self):
+        client = FakeClient()
+        runtime = FakeRuntime()
+        bridge = RoomAgentBridge(
+            client,
+            runtime,
+            room_id="general",
+            participant_id="codex",
+            session_id="codex",
+            receive_sleep_seconds=0.005,
+        )
+        thread = threading.Thread(target=bridge.run, daemon=True)
+        thread.start()
+        _wait_for(lambda: runtime.start_count == 1)
+        invalid = _turn_assignment("unused", "hello")
+        invalid.pop("turn_id")
+        client.messages.append(invalid)
+        _wait_for(lambda: client.closed)
+        thread.join(timeout=2)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(runtime.sent, [])
+        self.assertFalse(any(action == "turn.failed" for action, _, _ in client.commands))
+
+    def test_assignment_without_provider_input_reports_failure_instead_of_disappearing(self):
+        client = FakeClient()
+        runtime = FakeRuntime()
+        bridge = RoomAgentBridge(
+            client,
+            runtime,
+            room_id="general",
+            participant_id="codex",
+            session_id="codex",
+            receive_sleep_seconds=0.005,
+        )
+        thread = threading.Thread(target=bridge.run, daemon=True)
+        thread.start()
+        _wait_for(lambda: runtime.start_count == 1)
+        client.messages.append(_turn_assignment("turn-invalid", ""))
+        _wait_for(lambda: any(action == "turn.failed" for action, _, _ in client.commands))
+        client.messages.append({"op": "agent.control", "action": "stop"})
+        thread.join(timeout=2)
+
+        failure = next(payload for action, payload, _ in client.commands if action == "turn.failed")
+        self.assertEqual(failure["error_code"], "assignment_invalid")
+        self.assertEqual(runtime.sent, [])
+
+    def test_terminal_report_nack_is_returned_to_the_turn_worker(self):
+        client = FakeClient()
+        client.command_responses["message.final"] = {
+            "op": "nack",
+            "accepted": False,
+            "error": {"code": "provider_model_mismatch", "message": "wrong model"},
+        }
+        runtime = FakeRuntime()
+        bridge = RoomAgentBridge(
+            client,
+            runtime,
+            room_id="general",
+            participant_id="codex",
+            session_id="codex",
+            receive_sleep_seconds=0.005,
+        )
+        thread = threading.Thread(target=bridge.run, daemon=True)
+        thread.start()
+        _wait_for(lambda: runtime.start_count == 1)
+        client.messages.append(_turn_assignment("turn-nack", "respond"))
+        _wait_for(lambda: any(action == "turn.failed" for action, _, _ in client.commands))
+        client.messages.append({"op": "agent.control", "action": "stop"})
+        thread.join(timeout=2)
+
+        failure = next(payload for action, payload, _ in client.commands if action == "turn.failed")
+        self.assertEqual(failure["error_code"], "provider_model_mismatch")
+        self.assertIn("wrong model", failure["message"])
+
+    def test_bridge_ready_requires_a_correlated_ack(self):
+        client = FakeClient()
+        client.command_responses["bridge.ready"] = None
+        runtime = FakeRuntime()
+        bridge = RoomAgentBridge(
+            client,
+            runtime,
+            room_id="general",
+            participant_id="codex",
+            session_id="codex",
+            receive_sleep_seconds=0.005,
+            report_timeout_seconds=0.02,
+        )
+
+        with self.assertRaises(BridgeReportTimeout) as raised:
+            bridge.run()
+
+        self.assertEqual(raised.exception.code, "bridge_report_timeout")
+        self.assertEqual(runtime.stop_count, 1)
 
 
 if __name__ == "__main__":
