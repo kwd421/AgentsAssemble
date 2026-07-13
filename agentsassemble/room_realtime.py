@@ -20,7 +20,7 @@ from agentsassemble.native_cli_providers import (
     native_cli_provider_spec_from_payload,
     validate_native_cli_provider_spec,
 )
-from agentsassemble.provider_capabilities import provider_catalog_payload
+from agentsassemble.provider_capabilities import PROVIDER_CAPABILITIES, provider_catalog_snapshot
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.room_invite import revoke_room_access, revoke_sessions_for_participant
 from agentsassemble.room_commands import (
@@ -118,6 +118,7 @@ class RoomRealtimeController:
             tuple[str, Callable[[dict[str, object]], str] | None],
         ] = {}
         self._recovery_handles: dict[tuple[str, str], object] = {}
+        self._provider_catalog_remove = PROVIDER_CAPABILITIES.subscribe(self._on_provider_catalog_update)
         self._closed = False
         self.ensure_room(self.default_room_id)
         for spec in default_providers.values():
@@ -432,6 +433,9 @@ class RoomRealtimeController:
             for session in sessions
             if session.get("active_turn_id")
         ]
+        provider_catalog = {"status": "ready", "catalog_revision": "", "providers": []}
+        if not bridge:
+            provider_catalog = provider_catalog_snapshot()
         return {
             "op": "snapshot",
             "stream": ROOM_EVENT_STREAM,
@@ -453,7 +457,8 @@ class RoomRealtimeController:
             "has_more_before": has_more_before,
             "resume_gap": resume_gap,
             "snapshot_mode": snapshot_mode,
-            "available_providers": [] if bridge else provider_catalog_payload(),
+            "provider_catalog": provider_catalog,
+            "available_providers": list(provider_catalog.get("providers") or []),
             "capabilities": self.capabilities(identity),
         }
 
@@ -615,12 +620,15 @@ class RoomRealtimeController:
             recovery_handles = list(self._recovery_handles.values())
             self._recovery_handles.clear()
             self._launch_contexts.clear()
+            remove_provider_catalog_listener = self._provider_catalog_remove
+            self._provider_catalog_remove = lambda: None
         for handle in recovery_handles:
             cancel = getattr(handle, "cancel", None)
             if callable(cancel):
                 cancel()
         for remove in removers:
             remove()
+        remove_provider_catalog_listener()
         if self.bridge_manager is not None:
             for room_id, providers in list(self._providers_by_room.items()):
                 for agent_id in list(providers):
@@ -632,6 +640,15 @@ class RoomRealtimeController:
                             continue
             self.bridge_manager.close()
         self.broker.close()
+
+    def _on_provider_catalog_update(self, catalog: dict[str, object]) -> None:
+        if self._closed:
+            return
+        message = {"op": "provider_catalog_updated", "catalog": dict(catalog)}
+        for room in self.store.list_rooms(include_archived=True):
+            room_id = clean_lobby_text(room.get("room_id"), limit=128)
+            if room_id:
+                self.broker.broadcast_control(room_id, message, client_type="browser")
 
     def bridge_process_exited(
         self,

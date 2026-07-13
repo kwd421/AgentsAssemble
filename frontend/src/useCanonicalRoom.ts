@@ -3,6 +3,7 @@ import type { LobbyEvent, RoomAgentSession, RoomEvent, RoomMember, SideChatEvent
 import {
   openRoomSocket,
   type NativeCliProviderAvailability,
+  type ProviderCatalogSnapshot,
   type RoomSocketAuth,
   type RoomSocketHandle,
   type RoomSocketHandlers,
@@ -47,6 +48,12 @@ const EMPTY_HISTORY: CanonicalRoomHistoryState = {
   resumeGap: false,
 };
 
+const EMPTY_PROVIDER_CATALOG: ProviderCatalogSnapshot = {
+  status: "loading",
+  catalog_revision: "",
+  providers: [],
+};
+
 function mergeRoomEvents(current: RoomEvent[], incoming: RoomEvent[], replace: boolean) {
   const byId = new Map((replace ? [] : current).map((event) => [event.id, event]));
   incoming.forEach((event) => {
@@ -88,6 +95,9 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   const [capabilitiesByRoom, setCapabilitiesByRoom] = useState<Record<string, Record<string, boolean>>>({});
   const [providersByRoom, setProvidersByRoom] = useState<
     Record<string, NativeCliProviderAvailability[]>
+  >({});
+  const [providerCatalogByRoom, setProviderCatalogByRoom] = useState<
+    Record<string, ProviderCatalogSnapshot>
   >({});
   const [progressByRoom, setProgressByRoom] = useState<
     Record<string, AgentSessionProgress | null>
@@ -192,6 +202,10 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
           ...previous,
           [roomId]: snapshot.available_providers || [],
         }));
+        setProviderCatalogByRoom((previous) => ({
+          ...previous,
+          [roomId]: snapshot.provider_catalog || EMPTY_PROVIDER_CATALOG,
+        }));
         setHistoryByRoom((previous) => {
           const current = previous[roomId];
           const resumed = snapshot.snapshot_mode === "resume" && current;
@@ -213,6 +227,11 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
       },
       onRoomEvents: (events) => {
         if (connectionIsCurrent()) applyEvents(roomId, events);
+      },
+      onProviderCatalog: (catalog) => {
+        if (!connectionIsCurrent()) return;
+        setProviderCatalogByRoom((previous) => ({ ...previous, [roomId]: catalog }));
+        setProvidersByRoom((previous) => ({ ...previous, [roomId]: catalog.providers || [] }));
       },
       onSideChat: (events) => {
         if (connectionIsCurrent()) callbacksRef.current.onSideChat?.(events);
@@ -347,6 +366,7 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
     agentSessions: sessionsByRoom[roomId] || [],
     capabilities: capabilitiesByRoom[roomId] || {},
     availableProviders: providersByRoom[roomId] || [],
+    providerCatalog: providerCatalogByRoom[roomId] || EMPTY_PROVIDER_CATALOG,
     agentSessionProgress: progressByRoom[roomId] || null,
     history: historyByRoom[roomId] || EMPTY_HISTORY,
     loadHistory,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -116,9 +117,61 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         payload = catalog.payload(refresh=True)
         codex = next(item for item in payload if item["id"] == "codex")
 
-        self.assertEqual(codex["discovery_status"], "ok")
+        self.assertEqual(codex["discovery_status"], "ready")
+        self.assertEqual(codex["catalog_source"], "discovered")
         self.assertEqual(codex["controls"][0]["default_value"], "gpt-5.6-luna")
         self.assertNotIn("command", codex)
+
+    def test_cold_capability_catalog_is_loading_until_discovery_finishes(self):
+        release = threading.Event()
+
+        def runner(command: list[str], _timeout: float):
+            release.wait(1)
+            if command[1:3] == ["debug", "models"]:
+                return 0, json.dumps({"models": [{"slug": "gpt-live"}]}), ""
+            if command[1:] == ["models", "--verbose"]:
+                return 0, "opencode/provider-live\n", ""
+            if command[0].endswith("claude"):
+                return 0, "Claude help", ""
+            return 1, "", "unsupported"
+
+        catalog = ProviderCapabilityCatalog(runner=runner, resolver=lambda executable: f"/bin/{executable}")
+        initial = catalog.snapshot()
+
+        self.assertEqual(initial["status"], "loading")
+        self.assertEqual(initial["catalog_revision"], "")
+        self.assertTrue(all(not provider["startable"] for provider in initial["providers"] if provider["id"] != "deepseek"))
+        self.assertTrue(all(not provider["controls"] for provider in initial["providers"] if provider["catalog_source"] == "discovered"))
+
+        release.set()
+        final = catalog.snapshot(refresh=True)
+        self.assertEqual(final["status"], "ready")
+        self.assertTrue(str(final["catalog_revision"]).startswith("cat-"))
+        codex = next(provider for provider in final["providers"] if provider["id"] == "codex")
+        self.assertEqual(codex["controls"][0]["options"][0]["value"], "gpt-live")
+
+    def test_capability_catalog_notifies_after_background_refresh(self):
+        notified = threading.Event()
+        snapshots: list[dict[str, object]] = []
+
+        def runner(command: list[str], _timeout: float):
+            if command[1:3] == ["debug", "models"]:
+                return 0, json.dumps({"models": [{"slug": "gpt-live"}]}), ""
+            if command[1:] == ["models", "--verbose"]:
+                return 0, "opencode/provider-live\n", ""
+            if command[0].endswith("claude"):
+                return 0, "Claude help", ""
+            return 1, "", "unsupported"
+
+        catalog = ProviderCapabilityCatalog(runner=runner, resolver=lambda executable: f"/bin/{executable}")
+        remove = catalog.subscribe(lambda snapshot: (snapshots.append(snapshot), notified.set()))
+        try:
+            self.assertEqual(catalog.snapshot()["status"], "loading")
+            self.assertTrue(notified.wait(2))
+        finally:
+            remove()
+
+        self.assertEqual(snapshots[-1]["status"], "ready")
 
     def test_deepseek_stream_emits_content_but_not_reasoning_or_key(self):
         captured = {}

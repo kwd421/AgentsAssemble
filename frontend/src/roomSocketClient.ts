@@ -18,6 +18,7 @@ export interface RoomSocketHandlers {
   onRoster?: (members: RoomMember[]) => void;
   onSideChat?: (events: SideChatEvent[]) => void;
   onRoomSnapshot?: (snapshot: RoomSocketSnapshot) => void;
+  onProviderCatalog?: (catalog: ProviderCatalogSnapshot) => void;
   onRoomEvents?: (events: RoomEvent[]) => void;
   onOpen?: () => void;
   onClose?: () => void;
@@ -71,9 +72,17 @@ export interface NativeCliProviderAvailability {
   startable: boolean;
   available: boolean;
   resolved_executable?: string;
-  discovery_status?: "ok" | "fallback" | "static" | "unavailable";
+  discovery_status?: "loading" | "ready" | "failed";
+  catalog_source?: "discovered" | "static_manifest" | "stale_cache";
   discovery_error?: string;
   controls: ProviderControl[];
+}
+
+export interface ProviderCatalogSnapshot {
+  status: "loading" | "ready" | "failed";
+  catalog_revision: string;
+  discovered_at?: string;
+  providers: NativeCliProviderAvailability[];
 }
 
 export interface ProviderControlOption {
@@ -103,6 +112,7 @@ export interface RoomSocketSnapshot {
   has_more_before: boolean;
   resume_gap: boolean;
   snapshot_mode: "initial" | "resume" | "gap" | "bridge";
+  provider_catalog: ProviderCatalogSnapshot;
   available_providers: NativeCliProviderAvailability[];
   capabilities: Record<string, boolean>;
 }
@@ -201,6 +211,7 @@ export function openRoomSocket(
       category?: string;
       message?: string;
       reason?: string;
+      catalog?: ProviderCatalogSnapshot;
     };
     if ((msg.op === "ack" || msg.op === "nack") && msg.request_id) {
       const command = pending.get(msg.request_id);
@@ -242,6 +253,10 @@ export function openRoomSocket(
       const snapshot = msg as unknown as RoomSocketSnapshot;
       lastSeq = Math.max(lastSeq, Number(snapshot.last_seq || 0));
       handlers.onRoomSnapshot?.(snapshot);
+      return;
+    }
+    if (msg.op === "provider_catalog_updated" && msg.catalog) {
+      handlers.onProviderCatalog?.(msg.catalog);
       return;
     }
     if (msg.op === "event" && msg.stream === "room_events" && Array.isArray(msg.events)) {

@@ -197,10 +197,24 @@ class RoomEventBroker:
         with self._lock:
             return [channel.diagnostics() for channel in self._channels.values()]
 
-    def broadcast_control(self, room_id: str, message: dict[str, object]) -> None:
+    def broadcast_control(
+        self,
+        room_id: str,
+        message: dict[str, object],
+        *,
+        client_type: str = "",
+    ) -> None:
         clean_room_id = clean_lobby_text(room_id, limit=128)
         with self._lock:
-            channels = [channel for channel in self._channels.values() if channel.room_id == clean_room_id]
+            channels = [
+                channel
+                for channel in self._channels.values()
+                if channel.room_id == clean_room_id
+                and (
+                    not client_type
+                    or clean_lobby_text(channel.identity.get("client_type"), limit=64) == client_type
+                )
+            ]
         for channel in channels:
             channel.send(message)
 

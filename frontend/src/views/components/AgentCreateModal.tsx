@@ -285,6 +285,17 @@ export default function AgentCreateModal({
         {selectedProvider && !selectedProvider.available && (
           <p className="dc-agent-create-status">{selectedProvider.discovery_error || "CLI를 찾지 못했습니다"}</p>
         )}
+        {selectedProvider?.discovery_status === "loading" && (
+          <p className="dc-agent-create-status">모델 목록을 불러오는 중입니다</p>
+        )}
+        {selectedProvider?.discovery_status === "failed" && selectedProvider.available && (
+          <p className="dc-agent-create-status">
+            {selectedProvider.discovery_error || "모델 목록을 불러오지 못했습니다"}
+          </p>
+        )}
+        {selectedProvider?.catalog_source === "static_manifest" && (
+          <p className="dc-agent-create-note">이 provider가 공식적으로 지원하는 고정 별칭 목록입니다.</p>
+        )}
         {status && <p className="dc-agent-create-status preserve-words">{status}</p>}
 
         <footer className="dc-agent-create-footer">
