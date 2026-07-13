@@ -252,6 +252,24 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.controller.close()
         self.temp.cleanup()
 
+    def test_controller_accepts_one_repository_instance_as_room_authority(self):
+        injected_root = self.root / "injected"
+        repository = RoomStore(injected_root)
+        with patch(
+            "agentsassemble.room_realtime.RoomStore",
+            side_effect=AssertionError("unexpected SQLite repository construction"),
+        ):
+            controller = RoomRealtimeController(
+                injected_root,
+                repository=repository,
+                provider_catalog=self.provider_catalog,
+            )
+        try:
+            self.assertIs(controller.store, repository)
+            self.assertEqual(repository.room("general")["room_id"], "general")
+        finally:
+            controller.close()
+
     def _command(self, request_id, action, payload=None, identity=None):
         command_payload = dict(payload or {})
         if action == "agent.create":

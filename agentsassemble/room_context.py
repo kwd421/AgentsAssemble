@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.room_store import RoomStore
+from agentsassemble.room_repository import RoomRepository
 
 DEFAULT_ROOM_CONTEXT_MESSAGES = 12
 DEFAULT_ROOM_CONTEXT_CHARS = 4000
@@ -23,7 +23,7 @@ class RoomContextWindow:
 
 
 def project_room_context(
-    store: RoomStore,
+    store: RoomRepository,
     *,
     room_id: str,
     participant_id: str,

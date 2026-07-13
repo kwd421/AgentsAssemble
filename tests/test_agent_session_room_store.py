@@ -4,6 +4,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agentsassemble.agent_sessions import (
     AgyAgentSessionAdapter,
@@ -270,6 +271,43 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertNotIn(str(Path.cwd()), str(packet))
         self.assertIn("Do not inspect or edit the project", packet["provider_input"])
         self.assertIn("never invoke a tool merely to produce", packet["provider_input"])
+
+    def test_turn_packet_uses_injected_repository_without_opening_sqlite_again(self):
+        store = RoomStore(self.output_root)
+        store.create_room("room-a")
+        store.upsert_participant(
+            "room-a",
+            {
+                "participant_id": "agent-1",
+                "display_name": "Agent One",
+                "participant_type": "agent",
+            },
+        )
+        store.upsert_session(
+            "room-a",
+            {
+                "session_id": "session-1",
+                "participant_id": "agent-1",
+                "status": "attached",
+            },
+        )
+        store.append_event("room-a", "message_final", actor_id="human-1", content="hello")
+
+        with patch(
+            "agentsassemble.room_turn_context.RoomStore",
+            side_effect=AssertionError("unexpected SQLite repository construction"),
+        ):
+            packet = build_room_turn_packet(
+                self.output_root,
+                room_id="room-a",
+                participant_id="agent-1",
+                session_id="session-1",
+                instruction="Reply once.",
+                repository=store,
+            )
+
+        self.assertEqual(packet["provider_visible_event_count"], 1)
+        self.assertIn("hello", packet["provider_input"])
 
     def test_sse_replays_missed_events_and_emits_heartbeat_when_idle(self):
         store = RoomStore(self.output_root)

@@ -13,7 +13,7 @@ from agentsassemble.native_cli_providers import NativeCliProviderSpec
 from agentsassemble.room_errors import RoomCommandRejected
 from agentsassemble.room_event_broker import RoomEventBroker
 from agentsassemble.room_projection import public_session
-from agentsassemble.room_store import RoomStore
+from agentsassemble.room_repository import RoomRepository
 
 
 class AgentBridgeManager(Protocol):
@@ -55,7 +55,7 @@ class RoomAgentLifecycle:
     def __init__(
         self,
         *,
-        store: RoomStore,
+        store: RoomRepository,
         broker: RoomEventBroker,
         bridge_manager: AgentBridgeManager | None,
         lock: threading.RLock,

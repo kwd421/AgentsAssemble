@@ -82,9 +82,50 @@ class RoomRepository(Protocol):
 
     def participant(self, room_id: str, participant_id: str) -> ParticipantRecord: ...
 
+    def active_participants(self, room_id: str) -> list[ParticipantRecord]: ...
+
+    def upsert_participant(
+        self,
+        room_id: str,
+        participant: ParticipantRecord,
+    ) -> tuple[ParticipantRecord, bool]: ...
+
+    def set_participant_status(
+        self,
+        room_id: str,
+        participant_id: str,
+        status: str,
+        *,
+        reason: str = "",
+    ) -> ParticipantRecord: ...
+
+    def update_participant_fields(
+        self,
+        room_id: str,
+        participant_id: str,
+        **updates: object,
+    ) -> ParticipantRecord: ...
+
     def sessions(self, room_id: str) -> list[SessionRecord]: ...
 
     def session(self, room_id: str, session_id: str) -> SessionRecord: ...
+
+    def upsert_session(
+        self,
+        room_id: str,
+        session: SessionRecord,
+    ) -> tuple[SessionRecord, bool]: ...
+
+    def update_session_fields(
+        self,
+        room_id: str,
+        session_id: str,
+        **updates: object,
+    ) -> SessionRecord: ...
+
+    def detach_participant_sessions(self, room_id: str, participant_id: str) -> list[SessionRecord]: ...
+
+    def append_event(self, room_id: str, event_type: str, **payload: object) -> EventRecord: ...
 
     def read_events(
         self,
@@ -100,8 +141,41 @@ class RoomRepository(Protocol):
         exclude_actor_id: str = "",
     ) -> list[EventRecord]: ...
 
+    def event_count(
+        self,
+        room_id: str,
+        *,
+        include_hidden: bool = False,
+        after_seq: int = 0,
+        before_seq: int = 0,
+        event_types: Iterable[str] | None = None,
+        exclude_actor_id: str = "",
+    ) -> int: ...
+
+    def event_by_id(self, room_id: str, event_id: str, *, include_hidden: bool = False) -> EventRecord: ...
+
+    def event_sequence(self, room_id: str, event_id: str) -> int: ...
+
     def latest_event_sequence(self, room_id: str) -> int: ...
+
+    def oldest_event_sequence(self, room_id: str, *, include_hidden: bool = False) -> int: ...
 
     def command_record(self, room_id: str, principal_id: str, request_id: str) -> CommandRecord: ...
 
+    def command_result(self, room_id: str, request_id: str, *, principal_id: str = "") -> CommandRecord: ...
+
+    def record_command_result(
+        self,
+        room_id: str,
+        request_id: str,
+        result: CommandRecord,
+        *,
+        principal_id: str = "",
+        action: str = "",
+        payload_hash: str = "",
+        max_entries: int = 500,
+    ) -> CommandRecord: ...
+
     def add_event_listener(self, room_id: str, listener: EventListener) -> Callable[[], None]: ...
+
+    def set_room_status(self, room_id: str, status: str) -> RoomRecord: ...

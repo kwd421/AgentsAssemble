@@ -11,6 +11,7 @@ from agentsassemble.room_context import (
     DEFAULT_ROOM_CONTEXT_MESSAGES,
     project_room_context,
 )
+from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_store import RoomStore
 
 DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS = DEFAULT_ROOM_CONTEXT_MESSAGES
@@ -51,11 +52,12 @@ def build_room_turn_packet(
     media_ids: object = None,
     max_recent_events: object = None,
     max_prompt_chars: object = None,
+    repository: RoomRepository | None = None,
 ) -> dict[str, object]:
     clean_instruction = clean_lobby_text(instruction, limit=2000)
     if not clean_instruction:
         raise ValueError("Agent Session turn instruction is required")
-    store = RoomStore(output_root)
+    store = repository or RoomStore(output_root)
     session = store.session(room_id, session_id)
     participant = store.participant(room_id, participant_id)
     room = store.room(room_id)

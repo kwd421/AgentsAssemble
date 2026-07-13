@@ -61,6 +61,7 @@ from agentsassemble.room_projection import (
     runtime_diagnostic_fields as _runtime_diagnostic_fields,
 )
 from agentsassemble.room_routing import route_message_targets
+from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_settings import room_settings_payload
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room_turn_coordinator import (
@@ -106,9 +107,10 @@ class RoomRealtimeController:
         external_stop_timeout_seconds: float = 2.0,
         recovery_scheduler: RecoveryScheduler | None = None,
         provider_catalog: ProviderCatalog | None = None,
+        repository: RoomRepository | None = None,
     ) -> None:
         self.output_root = Path(output_root)
-        self.store = RoomStore(self.output_root)
+        self.store = repository or RoomStore(self.output_root)
         self.broker = broker or RoomEventBroker()
         self.default_room_id = clean_lobby_text(default_room_id, limit=128) or "general"
         self.max_agent_relay_depth = max(0, int(max_agent_relay_depth))
@@ -138,7 +140,11 @@ class RoomRealtimeController:
             is_closed=lambda: self._closed,
             recovery_delay_seconds=self.recovery_delay_seconds,
             recovery_scheduler=recovery_scheduler_impl,
-            packet_builder=lambda *args, **kwargs: build_room_turn_packet(*args, **kwargs),
+            packet_builder=lambda *args, **kwargs: build_room_turn_packet(
+                *args,
+                repository=self.store,
+                **kwargs,
+            ),
         )
         self._agent_lifecycle = RoomAgentLifecycle(
             store=self.store,

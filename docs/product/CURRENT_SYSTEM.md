@@ -35,13 +35,15 @@ shared-room behavior to it unless the user explicitly requests legacy work.
 Browser or Agent Bridge
         <-> ticket-authenticated /ws?ticket=...
 RoomRealtimeController
-        <-> RoomStore / rooms.sqlite3
+        <-> RoomRepository
+                <-> RoomStore / rooms.sqlite3 (current local default)
         <-> persistent provider adapter
 ```
 
 There is one authority for each concern:
 
-- room, participant, Agent Session, event, and command state: `RoomStore`;
+- room, participant, Agent Session, event, and command state:
+  controller-injected `RoomRepository` (`RoomStore` is the current SQLite implementation);
 - live transport: canonical ticket-authenticated WebSocket;
 - browser state: canonical snapshot plus sequenced events;
 - provider process: one Agent Bridge and one persistent provider adapter;

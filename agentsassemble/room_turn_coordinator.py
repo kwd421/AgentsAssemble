@@ -21,7 +21,7 @@ from agentsassemble.room_projection import (
     public_session,
     runtime_diagnostic_fields,
 )
-from agentsassemble.room_store import RoomStore
+from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_types import RoomEvent, TurnAssignment
 
 
@@ -47,7 +47,7 @@ class RoomTurnCoordinator:
         self,
         output_root: str | Path,
         *,
-        store: RoomStore,
+        store: RoomRepository,
         broker: RoomEventBroker,
         lock: threading.RLock,
         provider_lookup: ProviderLookup,

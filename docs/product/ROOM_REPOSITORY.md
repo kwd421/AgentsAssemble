@@ -48,6 +48,10 @@ WebSocket serialization, media bytes, or identity authentication. Those layers
 may coordinate a repository transaction but must not receive a raw database
 connection.
 
+The canonical controller, lifecycle service, turn coordinator, and provider
+context projector use one injected repository instance. A provider turn must
+not construct a second SQLite store behind that boundary.
+
 ## Migration Order
 
 1. Put current SQLite behavior behind this contract and run the backend-neutral
