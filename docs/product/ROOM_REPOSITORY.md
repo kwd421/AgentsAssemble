@@ -66,3 +66,10 @@ not construct a second SQLite store behind that boundary.
 No compatibility fallback may silently switch databases. Backend selection,
 migration failure, and unavailable PostgreSQL must be explicit operator-visible
 errors.
+
+Repository configuration lives in `room_repository_factory.py`. PostgreSQL is
+an optional installation extra and reads its DSN from the configured environment
+variable (default `AGENTSASSEMBLE_ROOM_DATABASE_URL`); the DSN value is excluded
+from public diagnostics and object representations. Selecting PostgreSQL without
+that value or without the optional driver is a startup error, never a request to
+open a local SQLite database instead.

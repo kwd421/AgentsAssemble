@@ -9,6 +9,12 @@ dependencies = [
     "pywinpty>=3,<4; platform_system == 'Windows'",
 ]
 
+[project.optional-dependencies]
+postgres = [
+    "alembic>=1.14,<2",
+    "psycopg[binary]>=3.2,<4",
+]
+
 [project.scripts]
 assemble = "agentsassemble.cli:main"
 
