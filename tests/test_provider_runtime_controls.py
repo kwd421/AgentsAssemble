@@ -387,7 +387,8 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             remove_successful()
 
         self.assertEqual(successful_calls, ["ready"])
-        diagnostics = snapshot["diagnostics"]
+        self.assertNotIn("diagnostics", snapshot)
+        diagnostics = catalog.diagnostics()
         self.assertEqual(diagnostics["catalog_listener_error_count"], 1)
         self.assertIn("failing_listener", diagnostics["listener_type"])
         self.assertEqual(diagnostics["exception_type"], "RuntimeError")

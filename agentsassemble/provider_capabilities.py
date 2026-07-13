@@ -86,6 +86,16 @@ class ProviderCapabilityCatalog:
     def payload(self, *, refresh: bool = False) -> list[dict[str, object]]:
         return list(self.snapshot(refresh=refresh).get("providers") or [])
 
+    def diagnostics(self) -> dict[str, object]:
+        with self._lock:
+            return {
+                "catalog_listener_error_count": self._listener_error_count,
+                "listener_type": self._listener_last_type,
+                "exception_type": self._listener_last_exception_type,
+                "last_failure_at": self._listener_last_error_at,
+                "category": self._listener_last_category,
+            }
+
     def subscribe(self, listener: CatalogListener) -> Callable[[], None]:
         with self._lock:
             listener_id = self._next_listener_id
@@ -407,13 +417,6 @@ class ProviderCapabilityCatalog:
             "catalog_revision": self._catalog_revision,
             "discovered_at": self._discovered_at,
             "providers": providers,
-            "diagnostics": {
-                "catalog_listener_error_count": self._listener_error_count,
-                "listener_type": self._listener_last_type,
-                "exception_type": self._listener_last_exception_type,
-                "last_failure_at": self._listener_last_error_at,
-                "category": self._listener_last_category,
-            },
         }
 
     def _loading_payload(self) -> list[dict[str, object]]:
