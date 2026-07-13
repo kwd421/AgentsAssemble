@@ -580,8 +580,7 @@ class LiveCliRuntime:
                 if (
                     not startup_accepted
                     and self.startup_accept_contains
-                    and self.startup_accept_contains.casefold()
-                    in _clean_terminal_text(bytes(startup_output)).casefold()
+                    and _terminal_contains(bytes(startup_output), self.startup_accept_contains)
                 ):
                     os.write(fd, self.startup_accept_keys.encode("utf-8"))
                     startup_accepted = True
@@ -764,6 +763,18 @@ def _terminal_input_chunks(text: str, *, input_mode: str, submit_newline: str) -
 def _clean_terminal_text(response: bytes) -> str:
     text = strip_terminal_ansi(response)
     return text.strip()
+
+
+def _terminal_contains(response: bytes, expected: str) -> bool:
+    rendered = _clean_terminal_text(response).casefold()
+    needle = str(expected or "").casefold()
+    if not needle:
+        return False
+    if needle in rendered:
+        return True
+    # Full-screen TUIs position each word independently, so removing ANSI
+    # cursor controls can also remove the visual whitespace between words.
+    return "".join(needle.split()) in "".join(rendered.split())
 
 
 def _terminal_fatal_error(response: bytes) -> str:

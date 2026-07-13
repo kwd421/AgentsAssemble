@@ -133,7 +133,8 @@ class LiveCliRuntimeTests(unittest.TestCase):
         script = "\n".join(
             [
                 "import sys",
-                "print('Do you trust the contents of this directory?', flush=True)",
+                "print('\\x1b[3;3HDo\\x1b[3;6Hyou\\x1b[3;10Htrust\\x1b[3;16Hthe '",
+                "      'contents of this directory?', flush=True)",
                 "answer = sys.stdin.readline().strip()",
                 "print('ready prompt', flush=True)",
                 "for line in sys.stdin:",
