@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
+from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
 from agentsassemble.native_cli_providers import native_cli_provider_definition
 from agentsassemble.codex_app_server_live_runtime import CodexAppServerLiveRuntime
 from agentsassemble.opencode_runtime import OpenCodeServerProcess
@@ -51,6 +52,7 @@ class AgentAttendee:
         self._bridge: RoomAgentBridge | None = None
         self._runtime = None
         self._opencode_server: OpenCodeServerProcess | None = None
+        self.last_cleanup_report = CleanupReport("agent_attendee")
 
     def run(self) -> int:
         temporary = tempfile.TemporaryDirectory(prefix="agentsassemble-attendee-") if not self._workspace_argument else None
@@ -90,30 +92,61 @@ class AgentAttendee:
                     stop_runtime_on_exit=False,
                 )
                 self._bridge = bridge
-                bridge.run()
+                if bridge.run() != 0:
+                    raise RuntimeError("Agent Bridge cleanup failed.")
                 orientation = ""
                 self._bridge = None
                 if not self._stop.wait(1.0):
                     continue
-            return 0
         finally:
-            if self._runtime is not None:
-                try:
-                    self._runtime.stop(timeout_seconds=2.0)
-                except Exception:
-                    pass
-            if self._opencode_server is not None:
-                self._opencode_server.stop()
-            if session_token:
-                _leave_room(self.server_url, session_token)
-            if temporary is not None:
-                temporary.cleanup()
+            self.last_cleanup_report = self._cleanup(session_token=session_token, temporary=temporary)
+            emit_cleanup_failure(self.last_cleanup_report)
+        return 0 if self.last_cleanup_report.ok else 1
 
     def stop(self) -> None:
         self._stop.set()
         bridge = self._bridge
         if bridge is not None:
             bridge.stop()
+
+    def _cleanup(self, *, session_token: str, temporary: object | None) -> CleanupReport:
+        cleanup = CleanupReport("agent_attendee")
+        if self._runtime is not None:
+            try:
+                self._runtime.stop(timeout_seconds=2.0)
+                cleanup.record_success()
+            except Exception as error:
+                cleanup.record_failure(
+                    "runtime.stop",
+                    error,
+                    handle_id="provider-runtime",
+                    orphaned=_runtime_still_running(self._runtime),
+                )
+        if self._opencode_server is not None:
+            try:
+                self._opencode_server.stop()
+                cleanup.record_success()
+            except Exception as error:
+                process = self._opencode_server.process
+                cleanup.record_failure(
+                    "opencode_server.stop",
+                    error,
+                    handle_id="opencode-server",
+                    orphaned=process is not None and process.poll() is None,
+                )
+        if session_token:
+            try:
+                _leave_room(self.server_url, session_token)
+                cleanup.record_success()
+            except Exception as error:
+                cleanup.record_failure("room.leave", error, handle_id="room-session")
+        if temporary is not None:
+            try:
+                temporary.cleanup()
+                cleanup.record_success()
+            except Exception as error:
+                cleanup.record_failure("workspace.cleanup", error, handle_id="temporary-workspace")
+        return cleanup
 
     def _build_runtime(self, participant_id: str, workspace: Path):
         spec = self.definition.make_selected_spec(
@@ -208,17 +241,24 @@ def _orientation_text(value: object) -> str:
 
 
 def _leave_room(server_url: str, session_token: str) -> None:
-    try:
-        request = Request(
-            f"{server_url.rstrip('/')}/api/room-invite/leave",
-            data=b"{}",
-            headers={"Authorization": f"Bearer {session_token}", "Content-Type": "application/json"},
-            method="POST",
-        )
-        with urlopen(request, timeout=5.0):
-            return
-    except Exception:
+    request = Request(
+        f"{server_url.rstrip('/')}/api/room-invite/leave",
+        data=b"{}",
+        headers={"Authorization": f"Bearer {session_token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=5.0):
         return
+
+
+def _runtime_still_running(runtime: object) -> bool:
+    health = getattr(runtime, "health", None)
+    if not callable(health):
+        return True
+    try:
+        return bool(health().get("running", True))
+    except Exception:
+        return True
 
 
 def run_attendee_from_cli(**kwargs: object) -> int:

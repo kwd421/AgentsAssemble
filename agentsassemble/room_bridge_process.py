@@ -11,6 +11,7 @@ import threading
 from typing import Callable
 from uuid import uuid4
 
+from agentsassemble.cleanup_report import CleanupReport
 from agentsassemble.native_cli_providers import NativeCliProviderSpec, validate_native_cli_provider_spec
 from agentsassemble.process_environment import sanitized_child_environment
 from agentsassemble.provider_secrets import PROVIDER_SECRETS
@@ -63,6 +64,7 @@ class NativeCliBridgeProcessManager:
         self._lock = threading.RLock()
         self._handles: dict[tuple[str, str], _BridgeHandle] = {}
         self._opencode_server: OpenCodeServerProcess | None = None
+        self.last_cleanup_report = CleanupReport("native_cli_bridge_process_manager")
 
     def set_exit_listener(self, listener: BridgeExitListener | None) -> None:
         with self._lock:
@@ -270,18 +272,48 @@ class NativeCliBridgeProcessManager:
             "provider_process_shared": handle.provider_process_shared,
         }
 
-    def close(self) -> None:
+    def close(self) -> CleanupReport:
+        report = CleanupReport("native_cli_bridge_process_manager")
         with self._lock:
             keys = list(self._handles)
         for room_id, session_id in keys:
-            try:
-                with self._lock:
-                    handle = self._handles.get((room_id, session_id))
-                if handle is not None:
-                    self.stop(room_id, session_id, handle_id=handle.handle_id)
-            except Exception:
+            with self._lock:
+                handle = self._handles.get((room_id, session_id))
+            if handle is None:
+                report.record_success()
                 continue
-        self._stop_opencode_server()
+            try:
+                result = self.stop(room_id, session_id, handle_id=handle.handle_id)
+                if result.get("alive"):
+                    raise RuntimeError("Owned Agent Bridge remained alive after stop.")
+                report.record_success()
+            except Exception as error:
+                report.record_failure(
+                    "bridge.stop",
+                    error,
+                    handle_id=handle.handle_id,
+                    orphaned=handle.process.poll() is None,
+                )
+        with self._lock:
+            opencode = self._opencode_server
+            self._opencode_server = None
+        if opencode is not None:
+            try:
+                opencode.stop()
+                process = opencode.process
+                if process is not None and process.poll() is None:
+                    raise RuntimeError("Owned OpenCode server remained alive after stop.")
+                report.record_success()
+            except Exception as error:
+                process = opencode.process
+                report.record_failure(
+                    "opencode_server.stop",
+                    error,
+                    handle_id="shared-opencode-server",
+                    orphaned=process is not None and process.poll() is None,
+                )
+        self.last_cleanup_report = report
+        return report
 
     def health(self, room_id: str, session_id: str) -> dict[str, object]:
         with self._lock:
@@ -391,13 +423,6 @@ class NativeCliBridgeProcessManager:
             self._opencode_server = handle
         handle.start()
         return handle
-
-    def _stop_opencode_server(self) -> None:
-        with self._lock:
-            handle = self._opencode_server
-            self._opencode_server = None
-        if handle is not None:
-            handle.stop()
 
     @staticmethod
     def _launch_payload(

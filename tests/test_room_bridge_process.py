@@ -1,5 +1,6 @@
 import json
 import io
+import subprocess
 import tempfile
 import threading
 import time
@@ -61,6 +62,22 @@ class FakePopenFactory:
     def __call__(self, command, **kwargs):
         self.calls.append((list(command), kwargs))
         return self.process
+
+
+class RefusingProcess(FakeProcess):
+    def terminate(self):
+        self.terminated = True
+        raise RuntimeError("terminate refused")
+
+
+class TerminateIgnoringProcess(FakeProcess):
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        if self.returncode is None:
+            raise subprocess.TimeoutExpired(cmd="fake-provider", timeout=timeout)
+        return self.returncode
 
 
 class NativeCliBridgeProcessManagerTests(unittest.TestCase):
@@ -256,6 +273,68 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
         self.assertTrue(health["stderr_tail_truncated"])
         self.assertLessEqual(len(persisted), 16_000)
         self.assertIn(b"WARN bridge diagnostic 1199", persisted)
+
+    def test_close_continues_after_failure_and_reports_owned_orphan(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = NativeCliBridgeProcessManager(root)
+            refusing = RefusingProcess(pid=4101)
+            healthy = FakeProcess(pid=4102)
+
+            def handle(handle_id: str, session_id: str, process: FakeProcess) -> _BridgeHandle:
+                return _BridgeHandle(
+                    handle_id=handle_id,
+                    room_id="general",
+                    session_id=session_id,
+                    runtime_profile_key=f"profile-{session_id}",
+                    resolved_executable="/fake/provider",
+                    process=process,
+                    config_path=root / f"{session_id}-config.json",
+                    stdout_path=root / f"{session_id}-stdout.log",
+                    stderr_path=root / f"{session_id}-stderr.log",
+                )
+
+            manager._handles[("general", "refusing")] = handle(
+                "refusing-handle", "refusing", refusing
+            )
+            manager._handles[("general", "healthy")] = handle(
+                "healthy-handle", "healthy", healthy
+            )
+
+            report = manager.close()
+
+        self.assertFalse(report.ok)
+        self.assertEqual(report.attempted, 2)
+        self.assertEqual(report.completed, 1)
+        self.assertEqual(report.failures[0].stage, "bridge.stop")
+        self.assertEqual(report.orphaned_handle_ids, ["refusing-handle"])
+        self.assertTrue(refusing.terminated)
+        self.assertTrue(healthy.terminated)
+
+    def test_stop_kills_owned_bridge_that_ignores_terminate(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = NativeCliBridgeProcessManager(root)
+            process = TerminateIgnoringProcess(pid=4201)
+            handle = _BridgeHandle(
+                handle_id="stubborn-handle",
+                room_id="general",
+                session_id="stubborn",
+                runtime_profile_key="profile-stubborn",
+                resolved_executable="/fake/provider",
+                process=process,
+                config_path=root / "config.json",
+                stdout_path=root / "stdout.log",
+                stderr_path=root / "stderr.log",
+            )
+            manager._handles[("general", "stubborn")] = handle
+
+            result = manager.stop("general", "stubborn", handle_id="stubborn-handle")
+
+        self.assertTrue(process.terminated)
+        self.assertTrue(process.killed)
+        self.assertTrue(result["stopped"])
+        self.assertFalse(result["alive"])
 
 
 if __name__ == "__main__":

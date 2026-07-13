@@ -1,3 +1,4 @@
+import io
 import tempfile
 import subprocess
 import json
@@ -37,6 +38,8 @@ class FakeBridgeManager:
         self.starts: list[tuple[str, str]] = []
         self.stops: list[tuple[str, str]] = []
         self.start_errors = []
+        self.stop_errors = []
+        self.close_called = False
 
     def start(self, room_id, session, spec, *, server_url="", ticket_issuer=None):
         del server_url, ticket_issuer
@@ -52,9 +55,12 @@ class FakeBridgeManager:
     def stop(self, room_id, session_id, *, timeout_seconds=2.0, handle_id=""):
         del timeout_seconds
         self.stops.append((room_id, session_id))
+        if self.stop_errors:
+            raise self.stop_errors.pop(0)
         return {"stopped": bool(handle_id), "alive": False}
 
     def close(self):
+        self.close_called = True
         return None
 
 
@@ -312,6 +318,33 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
         self.assertEqual(send_error.exception.code, "permission_denied")
         self.assertEqual(control_error.exception.code, "permission_denied")
+
+    def test_close_continues_stopping_other_agents_after_one_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = FakeBridgeManager()
+            manager.stop_errors.append(RuntimeError("first stop failed"))
+            controller = RoomRealtimeController(
+                Path(temp_dir),
+                providers=[_spec("codex"), _spec("grok")],
+                bridge_manager=manager,
+            )
+            for agent_id in ("codex", "grok"):
+                controller.store.update_session_fields(
+                    "general",
+                    agent_id,
+                    runtime_status="idle",
+                    enabled=True,
+                    bridge_handle_id=f"handle-{agent_id}",
+                )
+            stderr = io.StringIO()
+            with patch("sys.stderr", stderr):
+                report = controller.close()
+
+        self.assertEqual(manager.stops, [("general", "codex"), ("general", "grok")])
+        self.assertTrue(manager.close_called)
+        self.assertFalse(report.ok)
+        self.assertTrue(any(failure.stage == "agent.stop" for failure in report.failures))
+        self.assertIn("agent.stop", stderr.getvalue())
 
     def test_request_id_is_scoped_to_principal_and_payload_changes_conflict(self):
         guest = {**HOST, "agent_id": "guest", "operator": False}

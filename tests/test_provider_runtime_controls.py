@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from agentsassemble.deepseek_runtime import DeepSeekApiRuntime
 from agentsassemble.codex_app_server_live_runtime import CodexAppServerLiveRuntime
+from agentsassemble.cleanup_report import CleanupReport
 from agentsassemble.process_environment import (
     environment_contains_secret_names,
     sanitized_provider_environment,
@@ -417,6 +418,19 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertNotIn("sk-private", json.dumps(runtime.health()))
         self.assertEqual(captured["body"]["reasoning_effort"], "high")
 
+    def test_cleanup_report_redacts_secret_like_error_values(self):
+        report = CleanupReport("test")
+        report.record_failure(
+            "runtime.stop",
+            RuntimeError("token=aai1.secret-value api_key=sk-secretvalue"),
+            handle_id="owned-handle",
+        )
+
+        payload = json.dumps(report.as_dict())
+        self.assertNotIn("secret-value", payload)
+        self.assertNotIn("sk-secretvalue", payload)
+        self.assertIn("[redacted]", payload)
+
     def test_agent_invite_parser_and_orientation_hide_backend_details(self):
         server, token = parse_agent_invite_url("https://room.example/join?token=aai1.secret")
         orientation = _orientation_text({"welcome": "Welcome", "how_to": ["Speak naturally"]})
@@ -505,6 +519,47 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(captured[3][0].provider_endpoint, "http://127.0.0.1:43210")
         self.assertEqual(captured[4][1], "deepseek-secret")
         self.assertNotIn("deepseek-secret", repr(captured[4][0]))
+
+    def test_attendee_cleanup_continues_after_runtime_stop_failure(self):
+        calls: list[str] = []
+
+        class Runtime:
+            def stop(self, *, timeout_seconds=2.0):
+                del timeout_seconds
+                calls.append("runtime")
+                raise RuntimeError("provider refused to stop")
+
+            def health(self):
+                return {"running": True}
+
+        class Process:
+            def poll(self):
+                return 0
+
+        class OpenCodeServer:
+            process = Process()
+
+            def stop(self):
+                calls.append("opencode")
+
+        class Temporary:
+            def cleanup(self):
+                calls.append("temporary")
+
+        attendee = AgentAttendee(
+            invite_url="https://room.example/join?token=aai1.secret",
+            provider_id="opencode",
+        )
+        attendee._runtime = Runtime()
+        attendee._opencode_server = OpenCodeServer()
+        with patch("agentsassemble.room_attendee._leave_room", side_effect=lambda *_: calls.append("leave")):
+            report = attendee._cleanup(session_token="session-secret", temporary=Temporary())
+
+        self.assertEqual(calls, ["runtime", "opencode", "leave", "temporary"])
+        self.assertFalse(report.ok)
+        self.assertEqual(report.attempted, 4)
+        self.assertEqual(report.completed, 3)
+        self.assertEqual(report.orphaned_handle_ids, ["provider-runtime"])
 
     def test_windows_runtime_keeps_one_process_and_stops_it(self):
         fake = FakeConPtyProcess()

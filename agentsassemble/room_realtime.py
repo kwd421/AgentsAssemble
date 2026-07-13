@@ -11,6 +11,7 @@ from typing import Callable, Protocol
 from uuid import uuid4
 
 from agentsassemble.agent_sessions import build_room_turn_packet
+from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
 from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
 from agentsassemble.native_cli_providers import (
     NativeCliProviderSpec,
@@ -71,7 +72,7 @@ class AgentBridgeManager(Protocol):
         handle_id: str = "",
     ) -> dict[str, object]: ...
 
-    def close(self) -> None: ...
+    def close(self) -> CleanupReport | None: ...
 
 
 RecoveryScheduler = Callable[[float, Callable[[], None]], object]
@@ -153,6 +154,7 @@ class RoomRealtimeController:
         self._recovery_handles: dict[tuple[str, str], object] = {}
         self._provider_catalog_remove = self.provider_catalog.subscribe(self._on_provider_catalog_update)
         self._closed = False
+        self.last_cleanup_report = CleanupReport("room_realtime_controller")
         self.ensure_room(self.default_room_id)
         for spec in default_providers.values():
             self._ensure_provider_session(self.default_room_id, spec)
@@ -694,10 +696,10 @@ class RoomRealtimeController:
                 payload_hash=payload_hash,
             )
 
-    def close(self) -> None:
+    def close(self) -> CleanupReport:
         with self._lock:
             if self._closed:
-                return
+                return self.last_cleanup_report
             self._closed = True
             removers = list(self._event_listener_removers.values())
             self._event_listener_removers.clear()
@@ -706,13 +708,26 @@ class RoomRealtimeController:
             self._launch_contexts.clear()
             remove_provider_catalog_listener = self._provider_catalog_remove
             self._provider_catalog_remove = lambda: None
+        cleanup = CleanupReport("room_realtime_controller")
         for handle in recovery_handles:
             cancel = getattr(handle, "cancel", None)
             if callable(cancel):
-                cancel()
+                try:
+                    cancel()
+                    cleanup.record_success()
+                except Exception as error:
+                    cleanup.record_failure("recovery.cancel", error)
         for remove in removers:
-            remove()
-        remove_provider_catalog_listener()
+            try:
+                remove()
+                cleanup.record_success()
+            except Exception as error:
+                cleanup.record_failure("event_listener.remove", error)
+        try:
+            remove_provider_catalog_listener()
+            cleanup.record_success()
+        except Exception as error:
+            cleanup.record_failure("provider_catalog_listener.remove", error)
         if self.bridge_manager is not None:
             for room_id, providers in list(self._providers_by_room.items()):
                 for agent_id in list(providers):
@@ -720,10 +735,34 @@ class RoomRealtimeController:
                     if session and session.get("runtime_status") not in {"stopped", "available"}:
                         try:
                             self._stop_agent(room_id, agent_id)
-                        except Exception:
-                            continue
-            self.bridge_manager.close()
-        self.broker.close()
+                            cleanup.record_success()
+                        except Exception as error:
+                            cleanup.record_failure(
+                                "agent.stop",
+                                error,
+                                handle_id=clean_lobby_text(session.get("bridge_handle_id"), limit=128),
+                                orphaned=_bridge_manager_session_running(
+                                    self.bridge_manager,
+                                    room_id,
+                                    agent_id,
+                                ),
+                            )
+            try:
+                manager_cleanup = self.bridge_manager.close()
+                if isinstance(manager_cleanup, CleanupReport):
+                    cleanup.merge(manager_cleanup)
+                else:
+                    cleanup.record_success()
+            except Exception as error:
+                cleanup.record_failure("bridge_manager.close", error)
+        try:
+            self.broker.close()
+            cleanup.record_success()
+        except Exception as error:
+            cleanup.record_failure("event_broker.close", error)
+        self.last_cleanup_report = cleanup
+        emit_cleanup_failure(cleanup)
+        return cleanup
 
     def _on_provider_catalog_update(self, catalog: dict[str, object]) -> None:
         if self._closed:
@@ -2514,6 +2553,20 @@ def _model_verification_status(
     if requested_model_id and observed_model_id == requested_model_id:
         return "verified"
     return "mismatch"
+
+
+def _bridge_manager_session_running(
+    manager: AgentBridgeManager,
+    room_id: str,
+    session_id: str,
+) -> bool:
+    health = getattr(manager, "health", None)
+    if not callable(health):
+        return True
+    try:
+        return bool(health(room_id, session_id).get("running", True))
+    except Exception:
+        return True
 
 
 _PUBLIC_ACTIVITY_LABELS = {

@@ -21,6 +21,7 @@ from agentsassemble.bridge_protocol import (
     TurnAssignmentEnvelope,
 )
 from agentsassemble.deepseek_runtime import DeepSeekApiRuntime
+from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
 from agentsassemble.live_cli import LiveCliRuntime
 from agentsassemble.opencode_runtime import OpenCodeRuntime
 from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
@@ -115,6 +116,7 @@ class RoomAgentBridge:
         self._report_lock = threading.RLock()
         self._pending_reports: dict[str, _PendingBridgeReport] = {}
         self._run_thread: threading.Thread | None = None
+        self.last_cleanup_report = CleanupReport("room_agent_bridge")
 
     def run(self) -> int:
         self._run_thread = threading.current_thread()
@@ -130,20 +132,41 @@ class RoomAgentBridge:
                     self._handle_message(message)
                     if self._stop.is_set():
                         break
-            return 0
         finally:
             self._stop.set()
+            cleanup = CleanupReport("room_agent_bridge")
             if self._stop_runtime_on_exit:
                 try:
                     self.runtime.stop(timeout_seconds=2.0)
-                except Exception:
-                    pass
+                    cleanup.record_success()
+                except Exception as error:
+                    cleanup.record_failure(
+                        "runtime.stop",
+                        error,
+                        handle_id=self.session_id,
+                        orphaned=_runtime_still_running(self.runtime),
+                    )
             with self._worker_lock:
                 worker = self._worker
             if worker is not None and worker is not threading.current_thread():
                 worker.join(timeout=2.0)
-            self.client.close()
+                if worker.is_alive():
+                    cleanup.record_failure(
+                        "turn_worker.join",
+                        RuntimeError("Turn worker did not stop before the cleanup deadline."),
+                        handle_id=self.session_id,
+                    )
+                else:
+                    cleanup.record_success()
+            try:
+                self.client.close()
+                cleanup.record_success()
+            except Exception as error:
+                cleanup.record_failure("websocket.close", error, handle_id=self.session_id)
+            self.last_cleanup_report = cleanup
+            emit_cleanup_failure(cleanup)
             self._run_thread = None
+        return 0 if self.last_cleanup_report.ok else 1
 
     def stop(self) -> None:
         self._stop.set()
@@ -561,6 +584,13 @@ def _safe_activity(activity: object) -> dict[str, str]:
         "status": status,
         "content": _ACTIVITY_LABELS[category][status],
     }
+
+
+def _runtime_still_running(runtime: BridgeRuntime) -> bool:
+    try:
+        return bool(runtime.health().get("running", True))
+    except Exception:
+        return True
 
 
 def _room_message_text(value: object, *, limit: int) -> str:

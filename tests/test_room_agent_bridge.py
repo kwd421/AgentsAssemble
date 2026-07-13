@@ -1,6 +1,8 @@
+import io
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from agentsassemble.grok_acp_runtime import GrokAcpRuntime
 from agentsassemble.bridge_protocol import BridgeReportTimeout
@@ -106,6 +108,13 @@ class DecliningRuntime(FakeRuntime):
     def read_output(self, *, timeout_seconds, on_delta=None, on_activity=None):
         del timeout_seconds, on_delta, on_activity
         return {"outcome": "decline", "reason_code": "nothing_useful_to_add"}
+
+
+class StopFailingRuntime(FakeRuntime):
+    def stop(self, *, timeout_seconds=2.0):
+        del timeout_seconds
+        self.stop_count += 1
+        raise RuntimeError("provider refused to stop")
 
 
 class InvalidDecliningRuntime(FakeRuntime):
@@ -332,6 +341,33 @@ class RoomAgentBridgeTests(unittest.TestCase):
         )
         self.assertNotIn("/private/project", str(activities))
         self.assertNotIn("TOKEN", str(activities))
+
+    def test_runtime_stop_failure_returns_nonzero_cleanup_report(self):
+        client = FakeClient()
+        runtime = StopFailingRuntime()
+        bridge = RoomAgentBridge(
+            client,
+            runtime,
+            room_id="general",
+            participant_id="codex",
+            session_id="codex",
+            receive_sleep_seconds=0.005,
+        )
+        exits: list[int] = []
+        stderr = io.StringIO()
+        with patch("sys.stderr", stderr):
+            thread = threading.Thread(target=lambda: exits.append(bridge.run()), daemon=True)
+            thread.start()
+            _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
+            client.messages.append({"op": "agent.control", "action": "stop"})
+            thread.join(timeout=2)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(exits, [1])
+        self.assertFalse(bridge.last_cleanup_report.ok)
+        self.assertEqual(bridge.last_cleanup_report.failures[0].stage, "runtime.stop")
+        self.assertEqual(bridge.last_cleanup_report.orphaned_handle_ids, ["codex"])
+        self.assertIn("runtime.stop", stderr.getvalue())
 
     def test_interrupt_is_forwarded_without_stopping_runtime(self):
         client = FakeClient()
