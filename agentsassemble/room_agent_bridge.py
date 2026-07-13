@@ -190,12 +190,26 @@ class RoomAgentBridge:
                 on_delta=on_delta,
                 on_activity=on_activity,
             )
+            metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+            outcome = clean_lobby_text(result.get("outcome") or metadata.get("outcome"), limit=32)
+            if outcome == "decline":
+                self._command(
+                    "turn.decline",
+                    {
+                        "turn_id": turn_id,
+                        "reason_code": clean_lobby_text(
+                            result.get("reason_code") or metadata.get("reason_code"), limit=64
+                        )
+                        or "nothing_useful_to_add",
+                        "diagnostics": self._health_payload(self.runtime.health()),
+                    },
+                )
+                return
             final_content = _room_message_text(result.get("content"), limit=12000)
             if not final_content:
                 raise RuntimeError("Provider CLI completed without a clean assistant message.")
             completed = time.monotonic()
             completed_at = _now()
-            metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
             self._command(
                 "message.final",
                 {

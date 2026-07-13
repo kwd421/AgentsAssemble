@@ -803,6 +803,8 @@ class RoomRealtimeController:
             return self._bridge_health(identity, room_id, payload)
         if action == "turn.state":
             return self._turn_state(identity, room_id, payload)
+        if action == "turn.decline":
+            return self._turn_decline(identity, room_id, payload)
         if action == "activity.update":
             return self._activity_update(identity, room_id, payload)
         if action == "message.delta":
@@ -1565,20 +1567,20 @@ class RoomRealtimeController:
         latency = _merged_latency(session.get("latency"), payload.get("latency"))
         diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
         if not has_room_visible_text(content):
-            finished, current = self._complete_active_turn(
+            self._turn_failed(
+                identity,
                 room_id,
-                session,
-                input_up_to_event_id=input_up_to_event_id,
-                input_up_to_seq=input_up_to_seq,
-                latency=latency,
-                diagnostics=diagnostics,
-                finish_status="silent",
+                {
+                    "turn_id": active_turn_id,
+                    "message": "Provider completed without a room-visible final message.",
+                    "error_code": "empty_provider_final",
+                    "diagnostics": diagnostics,
+                },
             )
-            return {
-                "silent": True,
-                "turn_finished": finished,
-                "agent_session": self._public_session(current),
-            }
+            raise RoomCommandRejected(
+                "Provider final message was empty.",
+                code="empty_provider_final",
+            )
         event = self.store.append_event(
             room_id,
             "message_final",
@@ -1606,6 +1608,34 @@ class RoomRealtimeController:
             last_spoke_event_id=event["id"],
         )
         return {"event": event, "turn_finished": finished, "agent_session": self._public_session(current)}
+
+    def _turn_decline(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        _agent_id, session = self._active_bridge_turn(identity, room_id, payload)
+        reason_code = clean_lobby_text(payload.get("reason_code"), limit=64)
+        if reason_code not in {"nothing_useful_to_add", "not_addressed", "duplicate"}:
+            raise RoomCommandRejected("A supported decline reason is required.", code="invalid_decline_reason")
+        latency = _merged_latency(session.get("latency"), payload.get("latency"))
+        diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
+        finished, current = self._complete_active_turn(
+            room_id,
+            session,
+            input_up_to_event_id=clean_lobby_text(session.get("input_up_to_event_id"), limit=128),
+            input_up_to_seq=_safe_bounded_int(session.get("input_up_to_seq"), default=0, minimum=0),
+            latency=latency,
+            diagnostics=diagnostics,
+            finish_status="declined",
+        )
+        return {
+            "declined": True,
+            "reason_code": reason_code,
+            "turn_finished": finished,
+            "agent_session": self._public_session(current),
+        }
 
     def _complete_active_turn(
         self,
@@ -1666,6 +1696,12 @@ class RoomRealtimeController:
     def _turn_failed(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         agent_id, session = self._active_bridge_turn(identity, room_id, payload)
         interrupted = clean_lobby_text(payload.get("status"), limit=32) == "interrupted"
+        requested_error_code = clean_lobby_text(payload.get("error_code"), limit=64)
+        error_code = (
+            requested_error_code
+            if requested_error_code in {"empty_provider_final"}
+            else ("interrupted" if interrupted else "provider_turn_failed")
+        )
         content = clean_lobby_text(payload.get("message") or payload.get("content"), limit=4000) or "Provider turn failed."
         diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
         error = self.store.append_event(
@@ -1675,7 +1711,7 @@ class RoomRealtimeController:
             session_id=session["session_id"],
             turn_id=session["active_turn_id"],
             content=content,
-            error_code="interrupted" if interrupted else "provider_turn_failed",
+            error_code=error_code,
             diagnostics=_public_runtime_diagnostics(diagnostics),
         )
         self.store.append_event(

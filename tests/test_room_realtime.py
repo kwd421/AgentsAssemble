@@ -495,7 +495,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             "bridge_disconnected",
         )
 
-    def test_zero_width_silence_finishes_without_message_or_continuous_relay(self):
+    def test_explicit_decline_finishes_without_message_or_continuous_relay(self):
         self.controller.register_provider("general", _spec("peer"))
         codex_identity, codex_channel = self._connect_bridge("codex")
         _peer_identity, peer_channel = self._connect_bridge("peer")
@@ -507,13 +507,13 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         assignment = next(message for message in codex_channel.drain() if message.get("op") == "turn.assign")
 
         result = self._command(
-            "silent-final",
-            "message.final",
-            {"turn_id": assignment["turn_id"], "content": "\u200b"},
+            "decline-turn",
+            "turn.decline",
+            {"turn_id": assignment["turn_id"], "reason_code": "nothing_useful_to_add"},
             codex_identity,
         )["result"]
 
-        self.assertTrue(result["silent"])
+        self.assertTrue(result["declined"])
         self.assertFalse(any(message.get("op") == "turn.assign" for message in peer_channel.drain()))
         events = RoomStore(self.root).read_events("general")
         self.assertEqual(
@@ -521,8 +521,27 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             ["operator-local"],
         )
         self.assertEqual(events[-2]["type"], "turn_finished")
-        self.assertEqual(events[-2]["status"], "silent")
+        self.assertEqual(events[-2]["status"], "declined")
         self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "idle")
+
+    def test_zero_width_final_is_an_error_not_silence(self):
+        identity, channel = self._connect_bridge("codex")
+        self._command("empty-final-topic", "message.send", {"content": "@codex answer"})
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self._command(
+                "empty-final",
+                "message.final",
+                {"turn_id": assignment["turn_id"], "content": "\u200b"},
+                identity,
+            )
+
+        self.assertEqual(rejected.exception.code, "empty_provider_final")
+        session = RoomStore(self.root).session("general", "codex")
+        self.assertEqual(session["runtime_status"], "error")
+        errors = [event for event in RoomStore(self.root).read_events("general") if event["type"] == "error"]
+        self.assertEqual(errors[-1]["error_code"], "empty_provider_final")
 
     def test_snapshot_and_visible_events_do_not_expose_process_or_path_fields(self):
         self.controller.store.update_session_fields(

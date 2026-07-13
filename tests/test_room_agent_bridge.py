@@ -59,7 +59,6 @@ class FakeRuntime:
             "content": "clean final",
             "metadata": {"message_source": "fake-transcript"},
         }
-
     def interrupt(self):
         self.interrupted = True
 
@@ -77,6 +76,12 @@ class FakeRuntime:
             "resolved_executable": "/fake/codex",
             "started_at": "2026-01-01T00:00:00+00:00",
         }
+
+
+class DecliningRuntime(FakeRuntime):
+    def read_output(self, *, timeout_seconds, on_delta=None, on_activity=None):
+        del timeout_seconds, on_delta, on_activity
+        return {"outcome": "decline", "reason_code": "nothing_useful_to_add"}
 
 
 def _wait_for(predicate, timeout=2.0):
@@ -207,6 +212,31 @@ class RoomAgentBridgeTests(unittest.TestCase):
 
         self.assertTrue(runtime.interrupted)
         self.assertEqual(runtime.start_count, 1)
+
+    def test_structured_decline_does_not_emit_blank_final(self):
+        client = FakeClient()
+        runtime = DecliningRuntime()
+        bridge = RoomAgentBridge(
+            client,
+            runtime,
+            room_id="general",
+            participant_id="codex",
+            session_id="codex",
+            receive_sleep_seconds=0.005,
+        )
+        thread = threading.Thread(target=bridge.run, daemon=True)
+        thread.start()
+        _wait_for(lambda: runtime.start_count == 1)
+        client.messages.append(
+            {"op": "turn.assign", "turn_id": "turn-decline", "provider_input": "observe", "timeout_seconds": 2}
+        )
+        _wait_for(lambda: any(action == "turn.decline" for action, _, _ in client.commands))
+        client.messages.append({"op": "agent.control", "action": "stop"})
+        thread.join(timeout=2)
+
+        declines = [payload for action, payload, _ in client.commands if action == "turn.decline"]
+        self.assertEqual(declines[0]["reason_code"], "nothing_useful_to_add")
+        self.assertFalse(any(action == "message.final" for action, _, _ in client.commands))
 
 
 if __name__ == "__main__":
