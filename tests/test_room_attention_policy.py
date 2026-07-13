@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.room_attention_coordinator import RoomAttentionCoordinator
-from agentsassemble.room_attention_policy import evaluate_attention
+from agentsassemble.room_attention_policy import evaluate_ambient_attention, evaluate_attention
 from agentsassemble.room_store import RoomStore
 
 
@@ -20,6 +20,59 @@ def _event(content, *, actor_id="human", actor_type="human", **fields):
 
 
 class RoomAttentionPolicyTests(unittest.TestCase):
+    def test_ambient_selects_one_fair_speaker_for_plain_human_message(self):
+        decision = evaluate_ambient_attention(
+            _event("이 주제로 자유롭게 이야기해봐"),
+            candidate_ids=("codex", "grok"),
+            eligible_ids=("codex", "grok"),
+            last_spoke_sequences={"codex": 8, "grok": 2},
+            max_agent_relay_depth=2,
+        )
+
+        self.assertEqual(decision.outcome, "selected")
+        self.assertEqual(decision.selected_participant_id, "grok")
+        self.assertIn("ambient_human_message", decision.reasons)
+
+    def test_ambient_agent_handoff_stops_at_chain_budget(self):
+        first = evaluate_ambient_attention(
+            _event("내 의견은 이래.", actor_id="codex", actor_type="agent", relay_depth=1),
+            candidate_ids=("codex", "grok"),
+            eligible_ids=("codex", "grok"),
+            last_spoke_sequences={"codex": 0, "grok": 1},
+            max_agent_relay_depth=2,
+        )
+        exhausted = evaluate_ambient_attention(
+            _event(
+                "이제 네 생각은?",
+                actor_id="codex",
+                actor_type="agent",
+                id="event-2",
+                seq=2,
+                relay_depth=2,
+            ),
+            candidate_ids=("codex", "grok"),
+            eligible_ids=("grok",),
+            last_spoke_sequences={"grok": 0},
+            max_agent_relay_depth=2,
+        )
+
+        self.assertEqual(first.selected_participant_id, "grok")
+        self.assertIn("ambient_agent_handoff", first.reasons)
+        self.assertEqual(exhausted.outcome, "silent")
+        self.assertEqual(exhausted.reasons, ("agent_chain_budget_exhausted",))
+
+    def test_ambient_does_not_replace_unavailable_explicit_target(self):
+        decision = evaluate_ambient_attention(
+            _event("@codex 답해줘"),
+            candidate_ids=("codex", "grok"),
+            eligible_ids=("grok",),
+            last_spoke_sequences={"grok": 0},
+            max_agent_relay_depth=2,
+        )
+
+        self.assertEqual(decision.outcome, "silent")
+        self.assertIn("explicit_target_unavailable", decision.reasons)
+
     def test_direct_mention_selects_one_available_agent(self):
         decision = evaluate_attention(
             _event("@codex 이건 어떻게 봐?"),
@@ -94,6 +147,46 @@ class RoomAttentionPolicyTests(unittest.TestCase):
 
             self.assertEqual(job["outcome"], "selected")
             self.assertEqual(repository.attention_state("general", "codex").last_attention_evaluated_seq, event["seq"])
+            self.assertEqual(repository.session("general", "codex"), {})
+
+    def test_active_coordinator_claims_selected_job_without_provider_work(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repository = RoomStore(Path(temp_dir))
+            repository.create_room("general")
+            repository.upsert_participant(
+                "general",
+                {
+                    "participant_id": "codex",
+                    "display_name": "Codex",
+                    "participant_type": "agent",
+                },
+            )
+            coordinator = RoomAttentionCoordinator(repository)
+            event = repository.append_event(
+                "general",
+                "message_final",
+                actor_id="human",
+                actor_type="human",
+                content="이어서 이야기해줘",
+            )
+
+            result = coordinator.evaluate_active(
+                event,
+                candidate_ids=("codex",),
+                eligible_ids=("codex",),
+                last_spoke_sequences={"codex": 0},
+                max_agent_relay_depth=2,
+                owner_id="controller-a",
+                lease_seconds=30,
+            )
+
+            self.assertEqual(result["job"]["outcome"], "selected")
+            self.assertEqual(result["job"]["status"], "pending")
+            self.assertEqual(result["lease"]["status"], "active")
+            self.assertEqual(
+                repository.attention_jobs("general", mode="active")[0]["status"],
+                "leased",
+            )
             self.assertEqual(repository.session("general", "codex"), {})
 
 

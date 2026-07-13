@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from typing import Mapping
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_attention import AttentionEvaluation
@@ -100,6 +101,76 @@ def evaluate_attention(
         source_seq=source_seq,
         outcome="silent",
         reasons=(reason,),
+    )
+
+
+def evaluate_ambient_attention(
+    event: dict[str, object],
+    *,
+    candidate_ids: Iterable[str],
+    eligible_ids: Iterable[str],
+    last_spoke_sequences: Mapping[str, int],
+    max_agent_relay_depth: int,
+) -> AttentionEvaluation:
+    """Select at most one provider for an opt-in ambient room event."""
+
+    actor = event.get("actor") if isinstance(event.get("actor"), dict) else {}
+    actor_id = clean_lobby_text(
+        actor.get("participant_id") or event.get("participant_id"),
+        limit=128,
+    )
+    actor_type = clean_lobby_text(
+        actor.get("participant_type") or event.get("participant_type"),
+        limit=32,
+    )
+    candidates = _clean_ids(candidate_ids, exclude=actor_id)
+    eligible = _clean_ids(eligible_ids, exclude=actor_id)
+    base = evaluate_attention(
+        event,
+        candidate_ids=candidates,
+        eligible_ids=eligible,
+    )
+    relay_depth = max(0, int(event.get("relay_depth") or 0))
+    if actor_type == "agent" and relay_depth >= max(0, int(max_agent_relay_depth)):
+        return AttentionEvaluation(
+            room_id=base.room_id,
+            source_event_id=base.source_event_id,
+            source_seq=base.source_seq,
+            outcome="silent",
+            reasons=("agent_chain_budget_exhausted",),
+        )
+    if base.outcome == "selected":
+        return base
+    if "explicit_target_unavailable" in base.reasons:
+        return base
+
+    selectable = base.eligible_participant_ids
+    reasons = base.reasons
+    eligible_set = set(eligible)
+    if not selectable and actor_type != "agent" and "no_attention_signal" in base.reasons:
+        selectable = tuple(candidate for candidate in candidates if candidate in eligible_set)
+        reasons = ("ambient_human_message",)
+    elif not selectable and actor_type == "agent" and "agent_message_no_direct_signal" in base.reasons:
+        selectable = tuple(candidate for candidate in candidates if candidate in eligible_set)
+        reasons = ("ambient_agent_handoff",)
+    if not selectable:
+        return base
+
+    selected = min(
+        selectable,
+        key=lambda participant_id: (
+            max(0, int(last_spoke_sequences.get(participant_id, 0))),
+            participant_id,
+        ),
+    )
+    return AttentionEvaluation(
+        room_id=base.room_id,
+        source_event_id=base.source_event_id,
+        source_seq=base.source_seq,
+        outcome="selected",
+        selected_participant_id=selected,
+        eligible_participant_ids=tuple(selectable),
+        reasons=(*reasons, "ambient_fair_selection"),
     )
 
 
