@@ -61,6 +61,11 @@ class ProviderCapabilityCatalog:
         self._refreshing = False
         self._listeners: dict[int, CatalogListener] = {}
         self._next_listener_id = 1
+        self._listener_error_count = 0
+        self._listener_last_type = ""
+        self._listener_last_exception_type = ""
+        self._listener_last_error_at = ""
+        self._listener_last_category = ""
 
     def snapshot(self, *, refresh: bool = False) -> dict[str, object]:
         now = time.monotonic()
@@ -222,8 +227,16 @@ class ProviderCapabilityCatalog:
         selected_value: str,
         error_code: str,
     ) -> None:
-        if not selected_value or metadata_key not in metadata:
+        if not selected_value:
             return
+        relation_scope = str(metadata.get("relation_scope") or "")
+        if relation_scope == "global":
+            return
+        if relation_scope != "per_model" or metadata_key not in metadata:
+            raise ProviderCatalogSelectionError(
+                f"Provider {provider_id} model relation metadata is incomplete.",
+                code="catalog_invalid",
+            )
         allowed = {
             str(value)
             for value in list(metadata.get(metadata_key) or [])
@@ -250,12 +263,9 @@ class ProviderCapabilityCatalog:
             self._refreshing = False
             snapshot = self._snapshot_locked()
             listeners = list(self._listeners.values())
-        for listener in listeners:
-            try:
-                listener(snapshot)
-            except Exception:
-                continue
-        return snapshot
+        self._notify_listeners(snapshot, listeners, category="refresh_ready")
+        with self._lock:
+            return self._snapshot_locked()
 
     def _start_background_refresh_locked(self) -> None:
         if self._refreshing:
@@ -272,11 +282,7 @@ class ProviderCapabilityCatalog:
                     self._refreshing = False
                     snapshot = self._snapshot_locked()
                     listeners = list(self._listeners.values())
-                for listener in listeners:
-                    try:
-                        listener(snapshot)
-                    except Exception:
-                        continue
+                self._notify_listeners(snapshot, listeners, category="refresh_failed")
 
         threading.Thread(target=refresh_catalog, name="provider-capability-refresh", daemon=True).start()
 
@@ -284,6 +290,25 @@ class ProviderCapabilityCatalog:
         with self._lock:
             self._status = "failed"
             self._refreshing = False
+
+    def _notify_listeners(
+        self,
+        snapshot: dict[str, object],
+        listeners: list[CatalogListener],
+        *,
+        category: str,
+    ) -> None:
+        for listener in listeners:
+            try:
+                listener(snapshot)
+            except Exception as error:
+                listener_type = getattr(listener, "__qualname__", type(listener).__qualname__)
+                with self._lock:
+                    self._listener_error_count += 1
+                    self._listener_last_type = str(listener_type)
+                    self._listener_last_exception_type = type(error).__name__
+                    self._listener_last_error_at = datetime.now(UTC).isoformat()
+                    self._listener_last_category = category
 
     def _native_payload(self, definition) -> dict[str, object]:
         resolved = self._resolver(definition.executable)
@@ -382,6 +407,13 @@ class ProviderCapabilityCatalog:
             "catalog_revision": self._catalog_revision,
             "discovered_at": self._discovered_at,
             "providers": providers,
+            "diagnostics": {
+                "catalog_listener_error_count": self._listener_error_count,
+                "listener_type": self._listener_last_type,
+                "exception_type": self._listener_last_exception_type,
+                "last_failure_at": self._listener_last_error_at,
+                "category": self._listener_last_category,
+            },
         }
 
     def _loading_payload(self) -> list[dict[str, object]]:
@@ -509,6 +541,7 @@ def _codex_controls(output: str) -> list[dict[str, object]]:
             _model_option(
                 str(model["slug"]),
                 str(model.get("display_name") or model["slug"]),
+                relation_scope="per_model",
                 reasoning_efforts=model_efforts,
                 service_tiers=model_tiers,
             )
@@ -544,7 +577,12 @@ def _grok_controls(output: str) -> list[dict[str, object]]:
     if not models:
         return []
     return [
-        _control("model", "모델", [_model_option(value) for value in models], default_match.group(1) if default_match else models[0]),
+        _control(
+            "model",
+            "모델",
+            [_model_option(value, relation_scope="global") for value in models],
+            default_match.group(1) if default_match else models[0],
+        ),
         _control("reasoning_effort", "추론 강도", [_option(value) for value in ("low", "medium", "high")], "medium"),
         _permission_control(),
     ]
@@ -586,8 +624,8 @@ def _deepseek_payload() -> dict[str, object]:
                 "model",
                 "모델",
                 [
-                    _model_option("deepseek-v4-flash", "DeepSeek V4 Flash"),
-                    _model_option("deepseek-v4-pro", "DeepSeek V4 Pro"),
+                    _model_option("deepseek-v4-flash", "DeepSeek V4 Flash", relation_scope="global"),
+                    _model_option("deepseek-v4-pro", "DeepSeek V4 Pro", relation_scope="global"),
                 ],
                 "deepseek-v4-flash",
             ),
@@ -600,6 +638,7 @@ def _deepseek_payload() -> dict[str, object]:
 def _claude_manifest_controls() -> list[dict[str, object]]:
     efforts = ("low", "medium", "high", "xhigh", "max")
     relation = {
+        "relation_scope": "per_model",
         "reasoning_efforts": list(efforts),
         "service_tiers": ["fast"],
     }

@@ -218,6 +218,49 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             )
         self.assertEqual(tier.exception.code, "unsupported_model_service_tier_combination")
 
+    def test_catalog_rejects_missing_model_relation_scope(self):
+        def runner(command: list[str], _timeout: float):
+            if command[1:3] == ["debug", "models"]:
+                return 0, json.dumps(
+                    {
+                        "models": [
+                            {
+                                "slug": "model-low",
+                                "supported_reasoning_levels": [{"effort": "low"}],
+                            }
+                        ]
+                    }
+                ), ""
+            if command[1:] == ["models", "--verbose"]:
+                return 0, "opencode/provider-live\n", ""
+            if command[0].endswith("claude"):
+                return 0, "Claude help", ""
+            return 1, "", "unsupported"
+
+        catalog = ProviderCapabilityCatalog(
+            runner=runner,
+            resolver=lambda executable: f"/bin/{executable}",
+        )
+        revision = str(catalog.snapshot(refresh=True)["catalog_revision"])
+        with catalog._lock:
+            codex = next(provider for provider in catalog._cached if provider["id"] == "codex")
+            model_control = next(control for control in codex["controls"] if control["key"] == "model")
+            model_control["options"][0]["metadata"].pop("relation_scope")
+
+        with self.assertRaises(ProviderCatalogSelectionError) as rejected:
+            catalog.validate_selection(
+                catalog_revision=revision,
+                provider_id="codex",
+                values={
+                    "model": "model-low",
+                    "reasoning_effort": "low",
+                    "service_tier": "default",
+                    "permission_mode": "meeting_read_only",
+                },
+            )
+
+        self.assertEqual(rejected.exception.code, "catalog_invalid")
+
     def test_expired_catalog_is_visible_but_not_startable_during_refresh(self):
         block_refresh = [False]
         refresh_started = threading.Event()
@@ -315,6 +358,38 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             remove()
 
         self.assertEqual(snapshots[-1]["status"], "ready")
+
+    def test_catalog_listener_failure_is_isolated_and_recorded(self):
+        successful_calls: list[str] = []
+
+        def runner(command: list[str], _timeout: float):
+            if command[1:3] == ["debug", "models"]:
+                return 0, json.dumps({"models": [{"slug": "gpt-live"}]}), ""
+            if command[1:] == ["models", "--verbose"]:
+                return 0, "opencode/provider-live\n", ""
+            if command[0].endswith("claude"):
+                return 0, "Claude help", ""
+            return 1, "", "unsupported"
+
+        def failing_listener(_snapshot):
+            raise RuntimeError("listener failed")
+
+        catalog = ProviderCapabilityCatalog(runner=runner, resolver=lambda executable: f"/bin/{executable}")
+        remove_failing = catalog.subscribe(failing_listener)
+        remove_successful = catalog.subscribe(lambda snapshot: successful_calls.append(str(snapshot["status"])))
+        try:
+            snapshot = catalog.snapshot(refresh=True)
+        finally:
+            remove_failing()
+            remove_successful()
+
+        self.assertEqual(successful_calls, ["ready"])
+        diagnostics = snapshot["diagnostics"]
+        self.assertEqual(diagnostics["catalog_listener_error_count"], 1)
+        self.assertIn("failing_listener", diagnostics["listener_type"])
+        self.assertEqual(diagnostics["exception_type"], "RuntimeError")
+        self.assertEqual(diagnostics["category"], "refresh_ready")
+        self.assertTrue(diagnostics["last_failure_at"])
 
     def test_deepseek_stream_emits_content_but_not_reasoning_or_key(self):
         captured = {}
