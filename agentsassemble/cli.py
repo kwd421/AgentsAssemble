@@ -158,6 +158,7 @@ from agentsassemble.live_session_transport import JsonlLiveSession, TerminalLive
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.memory_capsules import memory_capsule_gate_report
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
+from agentsassemble.cli_http_errors import CliHttpError
 from agentsassemble.multi_host_invites import (
     create_lan_invite_packet,
     resolve_lan_invite_secret_ref,
@@ -5311,7 +5312,7 @@ def _request_json(
             message = _http_error_message(error)
         finally:
             error.close()
-        raise ValueError(message) from error
+        raise CliHttpError(message, status_code=int(error.code or 0)) from error
     return loaded if isinstance(loaded, dict) else {}
 
 

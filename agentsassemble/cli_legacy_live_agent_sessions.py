@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from agentsassemble.cli_parser_common import MAX_LIVE_AGENT_ROUND_BATCH
+from agentsassemble.cli_http_errors import CliHttpError
 
 
 SESSION_BOUND_PROBE_HTTP_WINDOWS = 25
@@ -336,7 +337,7 @@ def _wait_after_control(
     meeting_id = str(response.get("meeting_id") or getattr(args, "meeting_id", "") or "").strip()
     group_id = str(response.get("group_id") or getattr(args, "group_id", "") or "").strip()
     if not meeting_id or not group_id:
-        return response
+        raise ValueError("Session readiness wait requires meeting_id and group_id in the control response.")
     initial = {**response, "status": "starting"} if response.get("status") == "ready" else response
     waited = _wait_ready(
         runtime,
@@ -367,7 +368,7 @@ def _wait_ready(
     while True:
         now = runtime.monotonic()
         if attempts > 0 and now >= deadline:
-            return last_response
+            return {**last_response, "wait_status": "timeout"}
         attempts += 1
         try:
             response = runtime.request_json(
@@ -377,10 +378,10 @@ def _wait_ready(
         except (TimeoutError, urllib.error.URLError) as error:
             if not runtime.is_wait_timeout(error):
                 raise
-            return last_response
+            return {**last_response, "wait_status": "timeout"}
         last_response = response
         if response.get("status") == "ready":
-            return response
+            return {**response, "wait_status": "ready"}
         remaining = max(0.0, deadline - runtime.monotonic())
         if remaining > 0:
             runtime.sleep(min(poll_interval, remaining))
@@ -399,8 +400,8 @@ def _initial_readiness(
             _readiness_url(runtime, str(args.server), meeting_id, group_id),
             timeout_seconds=10.0,
         )
-    except ValueError as error:
-        if "was not found" in str(error):
+    except CliHttpError as error:
+        if error.code == "not_found":
             return None
         raise
 

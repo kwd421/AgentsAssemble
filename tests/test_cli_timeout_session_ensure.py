@@ -1,12 +1,45 @@
 import unittest
 from agentsassemble import cli as cli_module
 from io import StringIO
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from agentsassemble.cli import build_parser, main
+from agentsassemble.cli_http_errors import CliHttpError
+from agentsassemble.cli_legacy_live_agent_sessions import (
+    LegacySessionCliRuntime,
+    wait_for_session_after_control,
+)
 
 
 class CliTimeoutSessionEnsureTests(unittest.TestCase):
+
+    def test_control_wait_requires_identity_and_marks_timeout(self):
+        args = SimpleNamespace(
+            meeting_id="",
+            group_id="",
+            server="http://room.local",
+            wait_timeout=1.0,
+            wait_poll_interval=0.1,
+        )
+        runtime = LegacySessionCliRuntime(
+            request_json=lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError()),
+            server_url=lambda server, path: f"{server}{path}",
+            operation_http_timeout=lambda *_args, **_kwargs: 1.0,
+            monotonic=lambda: 0.0,
+            sleep=lambda _seconds: None,
+            is_wait_timeout=lambda error: isinstance(error, TimeoutError),
+            session_ensure_action=lambda _payload: "none",
+        )
+        with self.assertRaisesRegex(ValueError, "requires meeting_id and group_id"):
+            wait_for_session_after_control(args, {"status": "starting"}, runtime=runtime)
+
+        response = wait_for_session_after_control(
+            args,
+            {"status": "starting", "meeting_id": "room-a", "group_id": "group-a"},
+            runtime=runtime,
+        )
+        self.assertEqual(response["wait_status"], "timeout")
 
     def test_live_agent_ensure_session_parser_accepts_session_configs_and_wait_options(self):
         args = build_parser().parse_args(
@@ -277,7 +310,11 @@ class CliTimeoutSessionEnsureTests(unittest.TestCase):
         stdout = StringIO()
         with patch(
             "agentsassemble.cli._request_json",
-            side_effect=[ValueError("Meeting resident-m1 was not found."), start_response, ready_snapshot],
+            side_effect=[
+                CliHttpError("Meeting resident-m1 was not found.", status_code=404),
+                start_response,
+                ready_snapshot,
+            ],
         ) as request_json:
             with patch("sys.stdout", stdout):
                 exit_code = main(
@@ -326,6 +363,33 @@ class CliTimeoutSessionEnsureTests(unittest.TestCase):
             timeout_seconds=9.0,
         )
         self.assertIn("Ensured via start", stdout.getvalue())
+
+    def test_live_agent_ensure_session_does_not_parse_error_text_as_not_found(self):
+        stderr = StringIO()
+        with patch(
+            "agentsassemble.cli._request_json",
+            side_effect=CliHttpError("storage failure: meeting was not found", status_code=500),
+        ) as request_json:
+            with patch("sys.stderr", stderr):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "--legacy-internal",
+                        "ensure-session",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                        "--live-agent-config",
+                        "configs/live-agents.example.json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(request_json.call_count, 1)
+        self.assertIn("storage failure", stderr.getvalue())
 
     def test_live_agent_ensure_session_resumes_when_group_is_missing_for_existing_meeting(self):
         degraded_snapshot = {
