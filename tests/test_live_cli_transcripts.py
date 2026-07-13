@@ -192,6 +192,57 @@ class TranscriptMessageSourceTests(unittest.TestCase):
         self.assertTrue(snapshot.complete)
         self.assertEqual(snapshot.content, "clean codex answer")
 
+    def test_codex_source_preserves_observed_model_seen_before_turn_input(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            session_dir = root / ".codex" / "sessions" / "2026" / "07" / "13"
+            session_dir.mkdir(parents=True)
+            session = session_dir / "rollout-model.jsonl"
+            source = CodexSessionMessageSource(home=root, cwd=workspace)
+            source.prepare_start()
+            delivered = "answer this room turn"
+            source.begin_turn(delivered)
+            session.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "session_meta", "payload": {"cwd": str(workspace)}}),
+                        json.dumps(
+                            {
+                                "type": "turn_context",
+                                "payload": {"model": "gpt-5.6-luna", "cwd": str(workspace)},
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            self.assertFalse(source.poll(b"", quiet=False).complete)
+            with session.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {"type": "event_msg", "payload": {"type": "user_message", "message": delivered}}
+                    )
+                    + "\n"
+                )
+                handle.write(
+                    json.dumps(
+                        {
+                            "type": "event_msg",
+                            "payload": {"type": "agent_message", "message": "model observed"},
+                        }
+                    )
+                    + "\n"
+                )
+            snapshot = source.poll(b"", quiet=True)
+
+        self.assertTrue(snapshot.complete)
+        self.assertEqual(snapshot.content, "model observed")
+        self.assertEqual(snapshot.observed_model_id, "gpt-5.6-luna")
+
     def test_codex_source_reports_task_complete_without_assistant_message(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

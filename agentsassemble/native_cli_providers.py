@@ -20,6 +20,7 @@ class NativeCliProviderSpec:
     model: str = ""
     requested_model_id: str = ""
     model_selection_kind: str = "exact"
+    model_observation_policy: str = "unavailable"
     catalog_revision: str = ""
     reasoning_effort: str = ""
     service_tier: str = ""
@@ -92,6 +93,7 @@ class NativeCliProviderDefinition:
     default_service_tier: str = ""
     default_variant: str = ""
     default_permission_mode: str = "meeting_read_only"
+    model_observation_policy: str = "required"
     runtime_kind: str = "live_cli"
     transport: str = "pty"
     input_mode: str = "line"
@@ -166,6 +168,7 @@ class NativeCliProviderDefinition:
             model=selected_model,
             requested_model_id=selected_model,
             model_selection_kind=selected_kind,
+            model_observation_policy=self.model_observation_policy,
             catalog_revision=clean_lobby_text(catalog_revision, limit=128),
             reasoning_effort=selected_effort,
             service_tier=selected_service_tier,
@@ -409,6 +412,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         default_model="gpt-5.6-luna",
         default_reasoning_effort="low",
         default_service_tier="default",
+        model_observation_policy="required",
         input_mode="bracketed_paste",
         startup_accept_contains="Do you trust",
     ),
@@ -420,6 +424,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         command_builder=_antigravity_command,
         aliases=("agy", "antigravity_live_session"),
         default_model="Gemini 3.5 Flash (Medium)",
+        model_observation_policy="required",
         input_mode="bracketed_paste",
         startup_accept_contains="Do you trust",
     ),
@@ -431,6 +436,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         command_builder=_grok_command,
         aliases=("grok_live_session",),
         default_model="grok-4.5",
+        model_observation_policy="required",
         transport="acp_stdio",
     ),
     NativeCliProviderDefinition(
@@ -443,6 +449,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         default_model="claude-haiku-4-5",
         default_reasoning_effort="high",
         default_service_tier="default",
+        model_observation_policy="required",
         input_mode="bracketed_paste",
         startup_accept_contains="Quick safety check",
         startup_ready_contains="plan mode on",
@@ -458,6 +465,7 @@ STRUCTURED_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         command_builder=_opencode_command,
         aliases=("opencode_server",),
         default_model="opencode-go/glm-5.2",
+        model_observation_policy="required",
         runtime_kind="opencode",
         transport="http",
     ),
@@ -471,6 +479,7 @@ STRUCTURED_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         default_model="deepseek-v4-flash",
         default_reasoning_effort="high",
         default_variant="thinking",
+        model_observation_policy="required",
         runtime_kind="api",
         transport="https",
     ),
@@ -586,6 +595,9 @@ def native_cli_provider_spec_from_config(
         model=model,
         requested_model_id=model,
         model_selection_kind=model_selection_kind,
+        model_observation_policy=(
+            definition.model_observation_policy if definition else "unavailable"
+        ),
         catalog_revision=clean_lobby_text(payload.get("catalog_revision"), limit=128),
         reasoning_effort=reasoning_effort,
         service_tier=service_tier,
@@ -630,6 +642,10 @@ def validate_native_cli_provider_spec(spec: NativeCliProviderSpec) -> None:
             raise ValueError("Grok Agent Sessions require grok agent stdio; PTY fallback is disabled.")
     if spec.permission_mode not in {"meeting_read_only", "workspace_write"}:
         raise ValueError(f"Unsupported native CLI permission mode: {spec.permission_mode}")
+    if spec.model_observation_policy not in {"required", "unavailable"}:
+        raise ValueError(
+            f"Unsupported model observation policy: {spec.model_observation_policy}"
+        )
     is_claude = executable == "claude" or spec.normalized_provider_kind() == "claude_code"
     if is_claude:
         forbidden = [part for part in spec.command[1:] if part in {"-p", "--print"} or part.startswith("--print=")]

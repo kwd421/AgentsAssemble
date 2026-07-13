@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from agentsassemble.deepseek_runtime import DeepSeekApiRuntime
+from agentsassemble.codex_app_server_live_runtime import CodexAppServerLiveRuntime
 from agentsassemble.process_environment import (
     environment_contains_secret_names,
     sanitized_provider_environment,
@@ -444,6 +445,30 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             explicit_runtime = explicit._build_runtime("codex-guest", Path(temp_dir))
         self.assertIn("app-server", explicit_runtime.runtime.command)
+
+    def test_codex_app_server_live_runtime_reports_provider_observed_model(self):
+        class FakeAppServer:
+            def send_turn(self, handle, packet):
+                del handle, packet
+                return iter([{"type": "message_final", "content": "hello"}])
+
+            def diagnose(self, handle):
+                del handle
+                return {"observed_model_id": "gpt-5.6-luna"}
+
+        runtime = CodexAppServerLiveRuntime(
+            "codex-guest",
+            workspace="/tmp/room",
+            model="gpt-5.6-luna",
+            reasoning_effort="low",
+            permission_mode="meeting_read_only",
+        )
+        runtime.runtime = FakeAppServer()
+        runtime.pending = "hello"
+
+        result = runtime.read_output(timeout_seconds=2)
+
+        self.assertEqual(result["metadata"]["observed_model_id"], "gpt-5.6-luna")
 
     def test_non_codex_attendees_build_complete_provider_runtime_configs(self):
         captured: list[tuple[ProviderRuntimeConfig, str]] = []

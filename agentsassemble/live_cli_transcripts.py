@@ -110,6 +110,7 @@ class _JsonlOffsetMessageSource:
             self._offsets[path_key] = next_offset
             if not text:
                 continue
+            self._observe_text(text, source=path_key)
             exact_input = self._contains_turn_input(text, expected_input=self._expected_turn_input)
             bound_session_input = bool(
                 self._bound_path == path_key and self._contains_any_turn_input(text)
@@ -154,6 +155,9 @@ class _JsonlOffsetMessageSource:
     def _extract_from_text(self, text: str, *, source: str) -> LiveCliMessageSnapshot:
         raise NotImplementedError
 
+    def _observe_text(self, text: str, *, source: str) -> None:
+        del text, source
+
     def _turn_input_texts(self, text: str) -> list[str]:
         raise NotImplementedError
 
@@ -169,6 +173,18 @@ class _JsonlOffsetMessageSource:
 
 class CodexSessionMessageSource(_JsonlOffsetMessageSource):
     source_kind = "codex_session_jsonl"
+
+    def __init__(self, *, home: Path | None = None, cwd: str | Path | None = None) -> None:
+        super().__init__(home=home, cwd=cwd)
+        self._observed_models: dict[str, str] = {}
+
+    def prepare_start(self) -> None:
+        super().prepare_start()
+        self._observed_models = {}
+
+    def begin_turn(self, expected_input: str = "") -> None:
+        super().begin_turn(expected_input)
+        self._observed_models = {}
 
     def _candidate_paths(self) -> list[Path]:
         root = self.home / ".codex" / "sessions"
@@ -196,6 +212,7 @@ class CodexSessionMessageSource(_JsonlOffsetMessageSource):
 
     def _extract_from_text(self, text: str, *, source: str) -> LiveCliMessageSnapshot:
         latest = ""
+        observed_model_id = self._observed_models.get(source, "")
         turn_completed_without_message = False
         for entry in _jsonl_objects(text):
             payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
@@ -219,8 +236,29 @@ class CodexSessionMessageSource(_JsonlOffsetMessageSource):
             complete=bool(latest),
             source=source if latest or error else "",
             source_kind=self.source_kind,
+            observed_model_id=observed_model_id,
             error=error,
         )
+
+    def _observe_text(self, text: str, *, source: str) -> None:
+        observed_model_id = self._observed_models.get(source, "")
+        for entry in _jsonl_objects(text):
+            entry_type = str(entry.get("type") or "")
+            payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+            candidate = ""
+            if entry_type == "turn_context":
+                candidate = clean_lobby_text(payload.get("model"), limit=128)
+            elif entry_type == "event_msg" and str(payload.get("type") or "") == "thread_settings_applied":
+                settings = (
+                    payload.get("thread_settings")
+                    if isinstance(payload.get("thread_settings"), dict)
+                    else {}
+                )
+                candidate = clean_lobby_text(settings.get("model"), limit=128)
+            if candidate:
+                observed_model_id = candidate
+        if observed_model_id:
+            self._observed_models[source] = observed_model_id
 
     def _turn_input_texts(self, text: str) -> list[str]:
         inputs: list[str] = []

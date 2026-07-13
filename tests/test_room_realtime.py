@@ -333,6 +333,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 "pid": 1,
                 "running": True,
                 "transport": "websocket",
+                "model": "gpt-5.6-luna",
                 "provider_session_active": True,
                 "started_at": None,
             },
@@ -343,6 +344,27 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(stopped["process"]["ownership"], "external")
         self.assertEqual(RoomStore(self.root).session("general", "external")["reported_provider_pid"], 1)
         self.controller.disconnect(channel)
+
+    def test_external_bridge_ready_requires_requested_model_for_known_provider(self):
+        identity = _bridge_identity("external-no-model")
+        identity["provider_kind"] = "codex"
+        self.controller.connect(identity)
+
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self._command(
+                "external-ready-no-model",
+                "bridge.ready",
+                {
+                    "running": True,
+                    "transport": "websocket",
+                    "provider_session_active": True,
+                    "started_at": None,
+                },
+                identity,
+            )
+
+        self.assertEqual(rejected.exception.code, "provider_profile_invalid")
+        self.assertFalse(self.controller.broker.has_bridge("general", "external-no-model"))
 
     def test_external_bridge_cannot_kill_an_unrelated_real_process(self):
         unrelated = subprocess.Popen(["sleep", "30"], start_new_session=True)
@@ -624,6 +646,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             requested_model_id="gpt-exact-requested",
             observed_model_id="",
             model_selection_kind="exact",
+            model_observation_policy="required",
         )
         identity, channel = self._connect_bridge("codex")
         self._command("model-mismatch-topic", "message.send", {"content": "@codex answer"})
@@ -652,6 +675,37 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
         self.assertEqual(RoomStore(self.root).session("general", "codex")["observed_model_id"], "")
 
+    def test_required_model_observation_missing_fails_before_publishing_message(self):
+        RoomStore(self.root).update_session_fields(
+            "general",
+            "codex",
+            model="gpt-exact-requested",
+            requested_model_id="gpt-exact-requested",
+            observed_model_id="",
+            model_selection_kind="exact",
+            model_observation_policy="required",
+        )
+        identity, channel = self._connect_bridge("codex")
+        self._command("model-unobserved-topic", "message.send", {"content": "@codex answer"})
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self._command(
+                "model-unobserved-final",
+                "message.final",
+                {
+                    "turn_id": assignment["turn_id"],
+                    "content": "must not be published",
+                },
+                identity,
+            )
+
+        self.assertEqual(rejected.exception.code, "provider_model_unobserved")
+        events = RoomStore(self.root).read_events("general")
+        self.assertFalse(
+            any(event["type"] == "message_final" and event.get("content") == "must not be published" for event in events)
+        )
+
     def test_alias_model_records_provider_observed_exact_model(self):
         RoomStore(self.root).update_session_fields(
             "general",
@@ -660,6 +714,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             requested_model_id="sonnet",
             observed_model_id="",
             model_selection_kind="alias",
+            model_observation_policy="required",
         )
         identity, channel = self._connect_bridge("codex")
         self._command("alias-model-topic", "message.send", {"content": "@codex answer"})
@@ -681,6 +736,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(session["requested_model_id"], "sonnet")
         self.assertEqual(session["observed_model_id"], "claude-sonnet-4-6")
         self.assertEqual(session["model_selection_kind"], "alias")
+        self.assertEqual(session["model_verification_status"], "resolved_alias")
 
     def test_snapshot_and_visible_events_do_not_expose_process_or_path_fields(self):
         self.controller.store.update_session_fields(
@@ -961,6 +1017,8 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(session["model"], "haiku")
         self.assertEqual(session["requested_model_id"], "haiku")
         self.assertEqual(session["model_selection_kind"], "alias")
+        self.assertEqual(session["model_observation_policy"], "required")
+        self.assertEqual(session["model_verification_status"], "pending")
         self.assertEqual(session["catalog_revision"], self.catalog_revision)
         self.assertTrue(session["runtime_profile_key"])
         self.assertNotIn("-p", session["command_configured"])

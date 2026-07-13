@@ -780,9 +780,10 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
                 self.stdout = Pipe(
                     [
                         '{"jsonrpc":"2.0","id":1,"result":{}}\n',
-                        '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"}}}\n',
+                        '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"},"model":"gpt-5.6-luna"}}\n',
                         '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
                         '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","method":"model/rerouted","params":{"threadId":"thread-1","turnId":"turn-a","fromModel":"gpt-5.6-luna","toModel":"gpt-5.6-luna-safe","reason":"highRiskCyberActivity"}}\n',
                         '{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-a","itemId":"item-a","delta":"hello"}}\n',
                         '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-1","turnId":"turn-a","completedAtMs":1,"item":{"id":"item-a","type":"agentMessage","text":"hello"}}}\n',
                         '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
@@ -796,6 +797,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertEqual(chunks[0]["provider_thread_id"], "thread-1")
         self.assertIn("message_delta", [chunk["type"] for chunk in chunks])
         self.assertIn("message_final", [chunk["type"] for chunk in chunks])
+        self.assertEqual(runtime.diagnose({})["observed_model_id"], "gpt-5.6-luna-safe")
         process = runtime.process
         self.assertIsNotNone(process)
         writes = "".join(process.stdin.writes)

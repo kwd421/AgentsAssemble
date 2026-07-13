@@ -256,7 +256,17 @@ class RoomRealtimeController:
                 )
             self._providers_by_room.setdefault(clean_room_id, {})[spec.agent_id] = spec
             self._ensure_provider_session(clean_room_id, spec)
-            self.store.update_session_fields(clean_room_id, spec.agent_id, observed_model_id="")
+            self.store.update_session_fields(
+                clean_room_id,
+                spec.agent_id,
+                observed_model_id="",
+                model_verification_status=_model_verification_status(
+                    requested_model_id=spec.requested_model_id or spec.model,
+                    observed_model_id="",
+                    selection_kind=spec.model_selection_kind,
+                    observation_policy=spec.model_observation_policy,
+                ),
+            )
             updated = self.store.session(clean_room_id, spec.agent_id)
             self.store.append_event(
                 clean_room_id,
@@ -354,12 +364,16 @@ class RoomRealtimeController:
             return
         display_name = clean_lobby_text(identity.get("display_name"), limit=64) or participant_id
         provider_kind = clean_lobby_text(identity.get("provider_kind"), limit=64) or "external_agent"
+        definition = native_cli_provider_definition(provider_kind)
         spec = NativeCliProviderSpec(
             agent_id=participant_id,
             display_name=display_name,
             command=("external-attendee",),
             cwd=".",
             provider_kind=provider_kind,
+            model_observation_policy=(
+                definition.model_observation_policy if definition is not None else "unavailable"
+            ),
             runtime_kind="external_bridge",
             transport="websocket",
             default_responder=True,
@@ -392,6 +406,10 @@ class RoomRealtimeController:
                 "runtime_kind": "external_bridge",
                 "connection_kind": "native_cli_bridge",
                 "runtime_profile_key": spec.runtime_profile_key(),
+                "model_observation_policy": spec.model_observation_policy,
+                "model_verification_status": (
+                    "pending" if spec.model_observation_policy == "required" else "unavailable"
+                ),
                 "enabled": True,
                 "runtime_status": "starting",
                 "pending_event_ids": [],
@@ -1537,6 +1555,31 @@ class RoomRealtimeController:
         channel = self.broker.channel(connection_id)
         if channel is None:
             raise RoomCommandRejected("Agent bridge connection is no longer active.", code="bridge_disconnected")
+        external_profile: dict[str, object] = {}
+        if session.get("process_ownership") == "external":
+            requested_model_id = clean_lobby_text(payload.get("model"), limit=128)
+            definition = native_cli_provider_definition(session.get("provider_kind"))
+            observation_policy = (
+                definition.model_observation_policy if definition is not None else "unavailable"
+            )
+            if observation_policy == "required" and not requested_model_id:
+                raise RoomCommandRejected(
+                    "The external provider did not report its requested model.",
+                    code="provider_profile_invalid",
+                )
+            external_profile = {
+                "model": requested_model_id,
+                "requested_model_id": requested_model_id,
+                "observed_model_id": "",
+                "model_selection_kind": "exact",
+                "model_observation_policy": observation_policy,
+                "model_verification_status": _model_verification_status(
+                    requested_model_id=requested_model_id,
+                    observed_model_id="",
+                    selection_kind="exact",
+                    observation_policy=observation_policy,
+                ),
+            }
         generation = self.broker.activate_bridge(channel)
         identity["bridge_generation"] = generation
         previous_participant = self.store.participant(room_id, agent_id)
@@ -1554,6 +1597,7 @@ class RoomRealtimeController:
             is_one_shot=bool(payload.get("is_one_shot", False)),
             started_at=health.started_at,
             last_error="",
+            **external_profile,
             **_runtime_diagnostic_fields(payload),
         )
         if previous_participant.get("status") != "joined":
@@ -1678,6 +1722,24 @@ class RoomRealtimeController:
             limit=128,
         )
         selection_kind = clean_lobby_text(session.get("model_selection_kind"), limit=16) or "exact"
+        observation_policy = (
+            clean_lobby_text(session.get("model_observation_policy"), limit=32) or "unavailable"
+        )
+        if observation_policy == "required" and not observed_model_id:
+            self._turn_failed(
+                identity,
+                room_id,
+                {
+                    "turn_id": active_turn_id,
+                    "message": "Provider did not report the model used for this turn.",
+                    "error_code": "provider_model_unobserved",
+                    "diagnostics": diagnostics,
+                },
+            )
+            raise RoomCommandRejected(
+                "Provider did not report the model used for this turn.",
+                code="provider_model_unobserved",
+            )
         if (
             observed_model_id
             and requested_model_id
@@ -1720,6 +1782,12 @@ class RoomRealtimeController:
                 room_id,
                 str(session["session_id"]),
                 observed_model_id=observed_model_id,
+                model_verification_status=_model_verification_status(
+                    requested_model_id=requested_model_id,
+                    observed_model_id=observed_model_id,
+                    selection_kind=selection_kind,
+                    observation_policy=observation_policy,
+                ),
             )
         event = self.store.append_event(
             room_id,
@@ -2265,6 +2333,13 @@ class RoomRealtimeController:
                 model=spec.model,
                 requested_model_id=spec.requested_model_id or spec.model,
                 model_selection_kind=spec.model_selection_kind,
+                model_observation_policy=spec.model_observation_policy,
+                model_verification_status=_model_verification_status(
+                    requested_model_id=spec.requested_model_id or spec.model,
+                    observed_model_id=clean_lobby_text(session.get("observed_model_id"), limit=128),
+                    selection_kind=spec.model_selection_kind,
+                    observation_policy=spec.model_observation_policy,
+                ),
                 catalog_revision=spec.catalog_revision,
                 reasoning_effort=spec.reasoning_effort,
                 service_tier=spec.service_tier,
@@ -2302,6 +2377,13 @@ class RoomRealtimeController:
                 "requested_model_id": spec.requested_model_id or spec.model,
                 "observed_model_id": "",
                 "model_selection_kind": spec.model_selection_kind,
+                "model_observation_policy": spec.model_observation_policy,
+                "model_verification_status": _model_verification_status(
+                    requested_model_id=spec.requested_model_id or spec.model,
+                    observed_model_id="",
+                    selection_kind=spec.model_selection_kind,
+                    observation_policy=spec.model_observation_policy,
+                ),
                 "catalog_revision": spec.catalog_revision,
                 "reasoning_effort": spec.reasoning_effort,
                 "service_tier": spec.service_tier,
@@ -2416,6 +2498,22 @@ def _dedupe_text_list(values: list[object]) -> list[str]:
         if text and text not in result:
             result.append(text)
     return result
+
+
+def _model_verification_status(
+    *,
+    requested_model_id: str,
+    observed_model_id: str,
+    selection_kind: str,
+    observation_policy: str,
+) -> str:
+    if not observed_model_id:
+        return "pending" if observation_policy == "required" else "unavailable"
+    if selection_kind == "alias":
+        return "resolved_alias"
+    if requested_model_id and observed_model_id == requested_model_id:
+        return "verified"
+    return "mismatch"
 
 
 _PUBLIC_ACTIVITY_LABELS = {

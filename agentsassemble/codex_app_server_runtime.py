@@ -117,6 +117,9 @@ class CodexAppServerRuntime:
                 or _nested_get(response, "params.thread.id")
             )
             self._update_diagnostics({"thread_reused": False, "thread_resume_skipped": False})
+        observed_model_id = _codex_app_server_observed_model(response)
+        if observed_model_id:
+            self._update_diagnostics({"observed_model_id": observed_model_id})
         handle = {
             "runtime_mode": "app_server",
             "transport": "stdio_jsonl",
@@ -658,6 +661,9 @@ class CodexAppServerRuntime:
             updates["app_server_last_thread_status"] = thread_status
         if turn_status:
             updates["app_server_last_turn_status"] = turn_status
+        observed_model_id = _codex_app_server_observed_model(message)
+        if observed_model_id:
+            updates["observed_model_id"] = observed_model_id
         self._update_diagnostics(updates)
 
     def _read_json_line(self, *, timeout_deadline: float | None = None) -> dict[str, object]:
@@ -1015,3 +1021,22 @@ def _nested_get(value: object, path: str) -> object:
             return ""
         current = current.get(part)
     return current
+
+
+def _codex_app_server_observed_model(message: dict[str, object]) -> str:
+    method = clean_lobby_text(message.get("method"), limit=128)
+    paths = (
+        ("params.toModel",) if method == "model/rerouted" else ()
+    ) + (
+        "result.model",
+        "result.thread.model",
+        "result.turn.model",
+        "params.model",
+        "params.thread.model",
+        "params.turn.model",
+    )
+    for path in paths:
+        model = clean_lobby_text(_nested_get(message, path), limit=128)
+        if model:
+            return model
+    return ""

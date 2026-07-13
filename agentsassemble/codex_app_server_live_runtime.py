@@ -76,13 +76,20 @@ class CodexAppServerLiveRuntime:
                 errors.append(str(chunk.get("diagnostics") or "Codex app-server turn failed."))
         if not final.strip():
             raise RuntimeError(errors[-1] if errors else "Codex completed without a final message.")
+        diagnostics = self.runtime.diagnose(self.handle)
         return {
             "outcome": "message",
             "actor_id": self.agent_id,
             "actor_type": "agent",
             "kind": "agent_message",
             "content": final.strip(),
-            "metadata": {"message_source": "codex_app_server"},
+            "metadata": {
+                "message_source": "codex_app_server",
+                "observed_model_id": clean_lobby_text(
+                    diagnostics.get("observed_model_id"),
+                    limit=128,
+                ),
+            },
         }
 
     def interrupt(self) -> None:
