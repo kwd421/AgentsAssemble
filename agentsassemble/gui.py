@@ -174,7 +174,10 @@ from agentsassemble.legacy_live_agent_session_service import (
     LegacyLiveAgentSessionMutationService,
     LegacySessionMutationActions,
 )
-from agentsassemble.legacy_live_agent_session_run_service import LegacyLiveAgentSessionRunMutationService
+from agentsassemble.legacy_live_agent_session_run_service import (
+    LegacyLiveAgentSessionRunMutationService,
+    LegacySessionRunActions,
+)
 from agentsassemble.live_agent_settings import (
     update_live_agent_config_options,
     update_live_agent_config_poll_interval,
@@ -7532,6 +7535,7 @@ def _make_handler(
     live_agent_login_launcher: object | None = None,
     live_agent_login_command_resolver: object | None = None,
     room_realtime_controller_override: RoomRealtimeController | None = None,
+    legacy_session_run_actions_override: LegacySessionRunActions | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     configure_room_invite_store(default_room_invite_store_path(output_root))
     # Identity (users/credentials/memberships) lives in one SQLite file; a
@@ -7781,6 +7785,17 @@ def _make_handler(
             service=LegacyLiveAgentSessionRunMutationService(
                 output_root,
                 session_runs=live_agent_session_run_controller,
+                actions=legacy_session_run_actions_override
+                or LegacySessionRunActions(
+                    should_reconcile=lambda *args, **kwargs: _session_run_monitor_should_reconcile(
+                        *args, **kwargs
+                    ),
+                    reconcile=lambda *args, **kwargs: _reconcile_live_agent_session_runs(*args, **kwargs),
+                    assert_launch_approved=lambda *args, **kwargs: _assert_session_run_launch_approved(
+                        *args, **kwargs
+                    ),
+                    ensure=lambda *args, **kwargs: live_agent_session_ensure_payload(*args, **kwargs),
+                ),
                 record_operation=record_live_agent_operation,
             ),
             read_operation_payload=_late_operation_json_payload,

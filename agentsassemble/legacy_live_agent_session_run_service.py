@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from agentsassemble.legacy_live_agent_session_control import session_ensure_error_message
@@ -13,10 +14,26 @@ class LegacySessionRunMutationError(ValueError):
         self.details = details
 
 
+@dataclass(frozen=True)
+class LegacySessionRunActions:
+    should_reconcile: Callable[..., bool]
+    reconcile: Callable[..., list[dict[str, object]]]
+    assert_launch_approved: Callable[..., None]
+    ensure: Callable[..., dict[str, object]]
+
+
 class LegacyLiveAgentSessionRunMutationService:
-    def __init__(self, output_root: Path, *, session_runs: object, record_operation: Callable[..., object]) -> None:
+    def __init__(
+        self,
+        output_root: Path,
+        *,
+        session_runs: object,
+        actions: LegacySessionRunActions,
+        record_operation: Callable[..., object],
+    ) -> None:
         self.output_root = output_root
         self.session_runs = session_runs
+        self.actions = actions
         self.record_operation = record_operation
 
     def mutate(self, action: str, payload: dict[str, object], *, path_run_id: str = "") -> dict[str, object]:
