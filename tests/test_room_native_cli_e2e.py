@@ -76,6 +76,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
         conversation = result["conversation"]
         cycle_count = conversation["speaker_cycles_completed"]
         self.assertEqual(result["status"], "ok", json.dumps(result, ensure_ascii=False, indent=2))
+        self.assertIs(result["provider_workspace_isolated"], True)
         self.assertRegex(result["observer_url"], r"^http://127\.0\.0\.1:\d+/$")
         self.assertEqual(conversation["topology"], "server_assigned_shared_room")
         self.assertGreaterEqual(cycle_count, 2)
@@ -145,6 +146,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
             provider = result["providers"][0]
 
         self.assertEqual(result["status"], "ok")
+        self.assertIs(result["provider_workspace_isolated"], True)
         self.assertEqual(provider["status"], "ok")
         self.assertEqual(provider["transport"], "pty+websocket")
         self.assertTrue(provider["same_pid_over_turns"])

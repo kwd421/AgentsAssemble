@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 from contextlib import ExitStack
+from dataclasses import replace
 from datetime import UTC, datetime
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -83,6 +84,7 @@ def run_room_native_cli_smoke(
         "verify_controls": bool(verify_controls),
         "observe_gui_port": max(0, int(observe_gui_port)),
         "observer_url": "",
+        "provider_workspace_isolated": True,
         "latency_method": {
             "provider_direct": "same turn: provider runtime send started to first clean structured/transcript delta",
             "room_observed": "same turn: browser WebSocket message command sent to first room delta received",
@@ -98,6 +100,10 @@ def run_room_native_cli_smoke(
 
     specs = _load_specs(Path(config_path), selected, timeout_seconds=max(1.0, float(timeout_seconds)))
     with ExitStack() as stack:
+        provider_workspace = Path(
+            stack.enter_context(tempfile.TemporaryDirectory(prefix="agentsassemble-provider-workspace-"))
+        )
+        specs = [replace(spec, cwd=str(provider_workspace)) for spec in specs]
         if observe_gui_port > 0:
             server_root = Path(output_root).expanduser().resolve()
             server_root.mkdir(parents=True, exist_ok=True)
