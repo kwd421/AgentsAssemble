@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+from collections.abc import Callable, ContextManager, Iterable
+from typing import Protocol, runtime_checkable
+
+
+RoomRecord = dict[str, object]
+ParticipantRecord = dict[str, object]
+SessionRecord = dict[str, object]
+EventRecord = dict[str, object]
+CommandRecord = dict[str, object]
+EventListener = Callable[[EventRecord], None]
+
+
+class RoomTransaction(Protocol):
+    """Room-local writes that either commit together or leave no visible state."""
+
+    @property
+    def room_id(self) -> str: ...
+
+    def upsert_participant(
+        self,
+        participant: ParticipantRecord,
+    ) -> tuple[ParticipantRecord, bool]: ...
+
+    def update_participant_fields(
+        self,
+        participant_id: str,
+        **updates: object,
+    ) -> ParticipantRecord: ...
+
+    def upsert_session(
+        self,
+        session: SessionRecord,
+    ) -> tuple[SessionRecord, bool]: ...
+
+    def update_session_fields(
+        self,
+        session_id: str,
+        **updates: object,
+    ) -> SessionRecord: ...
+
+    def append_event(self, event_type: str, **payload: object) -> EventRecord: ...
+
+    def record_command_result(
+        self,
+        request_id: str,
+        result: CommandRecord,
+        *,
+        principal_id: str = "",
+        action: str = "",
+        payload_hash: str = "",
+        max_entries: int = 500,
+    ) -> CommandRecord: ...
+
+
+@runtime_checkable
+class RoomRepository(Protocol):
+    """Persistence boundary shared by local SQLite and hosted PostgreSQL.
+
+    A transaction is scoped to one room. Event sequence allocation, participant
+    and session mutations, and command-result writes performed through it must
+    commit atomically. Event listeners are notified only after that commit. A
+    rollback must not publish an event or consume a room sequence number.
+    """
+
+    def transaction(self, room_id: str) -> ContextManager[RoomTransaction]: ...
+
+    def room(self, room_id: str) -> RoomRecord: ...
+
+    def list_rooms(self, *, include_archived: bool = False) -> list[RoomRecord]: ...
+
+    def room_is_deleted(self, room_id: str) -> bool: ...
+
+    def participants(self, room_id: str) -> list[ParticipantRecord]: ...
+
+    def participant(self, room_id: str, participant_id: str) -> ParticipantRecord: ...
+
+    def sessions(self, room_id: str) -> list[SessionRecord]: ...
+
+    def session(self, room_id: str, session_id: str) -> SessionRecord: ...
+
+    def read_events(
+        self,
+        room_id: str,
+        *,
+        after: str = "",
+        after_seq: int = 0,
+        before_seq: int = 0,
+        limit: int | None = None,
+        newest: bool = False,
+        include_hidden: bool = False,
+        event_types: Iterable[str] | None = None,
+        exclude_actor_id: str = "",
+    ) -> list[EventRecord]: ...
+
+    def latest_event_sequence(self, room_id: str) -> int: ...
+
+    def command_record(self, room_id: str, principal_id: str, request_id: str) -> CommandRecord: ...
+
+    def add_event_listener(self, room_id: str, listener: EventListener) -> Callable[[], None]: ...

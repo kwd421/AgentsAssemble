@@ -2,7 +2,7 @@
 
 Status: current starting point
 
-Updated: 2026-07-12
+Updated: 2026-07-14
 
 Read this file before changing rooms, Agent Sessions, providers, invites,
 moderation, media, or the React room UI. It is intentionally short. Follow its
@@ -118,6 +118,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Change | Start here |
 | --- | --- |
 | Room persistence and sequence | `room_store.py`, `room_database.py`, `room_types.py` |
+| Room storage authority and transaction contract | `room_repository.py`, `docs/product/ROOM_REPOSITORY.md` |
 | WebSocket commands and ACL | `room_commands.py`, `ws_room_session.py`, `room_realtime.py` |
 | Routing and provider context | `room_routing.py`, `room_context.py`, `room_turn_context.py` |
 | Fanout and bridge delivery | `room_event_broker.py`, `room_agent_bridge.py` |

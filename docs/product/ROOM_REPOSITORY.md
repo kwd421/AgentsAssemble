@@ -1,0 +1,64 @@
+# Room Repository Boundary
+
+Status: current storage authority and migration contract
+
+Updated: 2026-07-14
+
+Read this document when changing canonical room persistence, transactions,
+attention state, or the SQLite/PostgreSQL boundary. It records ownership, not a
+promise to migrate every legacy file into the canonical repository.
+
+## Authority Inventory
+
+| State | Current authority | Target | Decision |
+| --- | --- | --- | --- |
+| Rooms, participants, Agent Sessions, events, command dedupe | `RoomStore` in `rooms/rooms.sqlite3` | `RoomRepository` | Canonical; SQLite and PostgreSQL must share one contract. |
+| Deleted-room tombstones | `RoomStore.deleted_rooms` | `RoomRepository` | Canonical; must prevent stale clients from recreating deleted rooms. |
+| Human identity, credentials, room membership compatibility, usage | `identity_store.py` SQLite | Separate identity repository | Keep the security boundary separate initially; migrate deliberately after room parity. |
+| Browser and Agent Bridge invite claims | `room_invite.py` plus `room-invite-state.json` | Invite repository | Compatibility state; replace with durable single-use claims, not room events. |
+| Room-member moderation compatibility | `room_members.py` and identity DB | Canonical participant/membership commands | Reconcile with canonical participants; do not create a third roster. Ephemeral typing/thinking stays out of durable room state. |
+| Side chat | `side_chat.py` JSONL | Legacy or a future explicit channel model | Do not migrate into `RoomRepository` merely because the file exists. |
+| Media metadata | Safe IDs in canonical room events | `RoomRepository` | Canonical metadata only; no local path in a public event. |
+| Media bytes | Per-room filesystem directories | Media object adapter | Keep outside the room database transaction; PostgreSQL stores references, not bytes. |
+| Legacy meeting artifacts | `meetings/<id>/...` files | Legacy path | Do not migrate into the new room repository unless legacy removal is separately approved. |
+| Provider-private session memory and credentials | Provider runtime / OS secret store | Provider-owned | Never copy into room events or the room repository. |
+| Server-owned process handles and live sockets | In-process runtime managers | Runtime-owned | Ephemeral; durable session rows store recovery state, never reusable OS handles. |
+| Legacy session-run monitor records | `live-agent-runs/session-runs.json` | Legacy compatibility | Keep outside the canonical room migration until that product path is removed or redesigned. |
+
+## Transaction Contract
+
+`RoomRepository.transaction(room_id)` is the write boundary. A transaction is
+room-local and must provide these guarantees on every backend:
+
+1. Event `seq` is strictly increasing within a room and allocated inside the
+   committing transaction.
+2. Participant, Agent Session, event, and command-result changes made by one
+   command either all commit or all roll back.
+3. A rollback publishes no event and leaves no consumed sequence gap caused by
+   that failed transaction.
+4. Event listeners and WebSocket fanout run only after the database commit.
+5. Command idempotency is scoped by `(room_id, principal_id, request_id)` and a
+   conflicting action or canonical payload hash is rejected by command policy.
+6. Cursor replay uses durable room sequence, never process-local counters.
+7. Room deletion removes canonical room state atomically and retains its
+   tombstone in the same commit.
+
+The repository does not own routing, attention policy, provider execution,
+WebSocket serialization, media bytes, or identity authentication. Those layers
+may coordinate a repository transaction but must not receive a raw database
+connection.
+
+## Migration Order
+
+1. Put current SQLite behavior behind this contract and run the backend-neutral
+   contract suite against it.
+2. Add durable attention records without enabling autonomous replies.
+3. Run attention decisions in SQLite shadow mode.
+4. Implement the same repository and attention contracts in PostgreSQL.
+5. Prove backend parity and provide an explicit SQLite-to-PostgreSQL migration.
+6. Enable ambient participation only after shadow evaluation; PostgreSQL is not
+   required for a local preview, but is required before hosted multi-worker use.
+
+No compatibility fallback may silently switch databases. Backend selection,
+migration failure, and unavailable PostgreSQL must be explicit operator-visible
+errors.
