@@ -2,6 +2,7 @@ import tempfile
 import subprocess
 import json
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1548,6 +1549,41 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         event_types = [event["type"] for event in store.read_events("general")]
         self.assertEqual(event_types.count("agent_session_reactivated"), 1)
         self.assertEqual(event_types.count("agent_session_created"), 0)
+
+    def test_readd_migrates_the_known_grok_acp_transport_profile_key(self):
+        store = RoomStore(self.root)
+        definition = native_cli_provider_definition("grok")
+        self.assertIsNotNone(definition)
+        spec = definition.make_spec(
+            agent_id="grok-low",
+            display_name="Grok Low",
+            cwd=self.root,
+            model="grok-4.5",
+            reasoning_effort="low",
+            permission_mode="meeting_read_only",
+        )
+        self.controller.register_provider("general", spec)
+        store.update_session_fields(
+            "general",
+            spec.agent_id,
+            command_configured=list(spec.command),
+            workspace=spec.cwd,
+            model=spec.model,
+            reasoning_effort=spec.reasoning_effort,
+            service_tier=spec.service_tier,
+            variant=spec.variant,
+            permission_mode=spec.permission_mode,
+            runtime_kind=spec.runtime_kind,
+            transport=spec.transport,
+            runtime_profile_key=replace(spec, transport="pty").runtime_profile_key(),
+        )
+        self._command("req-kick-grok-before-readd", "participant.kick", {"participant_id": spec.agent_id})
+
+        self._command("req-readd-grok", "agent.readd", {"agent_id": spec.agent_id})
+        restored = store.session("general", spec.agent_id)
+
+        self.assertEqual(restored["transport"], "acp_stdio")
+        self.assertEqual(restored["runtime_profile_key"], spec.runtime_profile_key())
 
     def test_readd_rejects_recovery_states_and_incomplete_profiles(self):
         store = RoomStore(self.root)

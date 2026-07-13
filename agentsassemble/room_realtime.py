@@ -179,6 +179,16 @@ class RoomRealtimeController:
                         last_error=str(error),
                     )
                     continue
+                if (
+                    session.get("runtime_profile_key") != spec.runtime_profile_key()
+                    or session.get("transport") != spec.transport
+                ):
+                    self.store.update_session_fields(
+                        room_id,
+                        agent_id,
+                        runtime_profile_key=spec.runtime_profile_key(),
+                        transport=spec.transport,
+                    )
                 with self._lock:
                     self._providers_by_room.setdefault(room_id, {})[agent_id] = spec
 
@@ -1021,6 +1031,16 @@ class RoomRealtimeController:
                 str(error),
                 code=error.code,
             ) from error
+        if (
+            current.get("runtime_profile_key") != spec.runtime_profile_key()
+            or current.get("transport") != spec.transport
+        ):
+            self.store.update_session_fields(
+                room_id,
+                agent_id,
+                runtime_profile_key=spec.runtime_profile_key(),
+                transport=spec.transport,
+            )
         with self._lock:
             self._providers_by_room.setdefault(room_id, {})[agent_id] = spec
             self._ensure_provider_session(room_id, spec)

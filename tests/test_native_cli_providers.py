@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from dataclasses import replace
 
 from agentsassemble.native_cli_providers import (
     NativeCliProviderSpec,
@@ -24,6 +25,7 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         self.assertEqual(specs["codex"].reasoning_effort, "low")
         self.assertEqual(specs["claude"].model, "haiku")
         self.assertEqual(specs["grok"].command, ("grok", "--model", "grok-4.5", "agent", "stdio"))
+        self.assertEqual(specs["grok"].transport, "acp_stdio")
         self.assertNotIn("-p", specs["claude"].command)
         self.assertNotIn("--print", specs["claude"].command)
         tools_index = specs["claude"].command.index("--tools")
@@ -81,6 +83,42 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
                     command=("grok", "--no-alt-screen"),
                 )
             )
+
+    def test_stored_grok_acp_profile_can_be_restored_after_server_restart(self):
+        spec = native_cli_provider_spec_from_payload(
+            {
+                "provider_id": "grok",
+                "agent_id": "grok-low",
+                "display_name": "Grok Low",
+                "workspace": ".",
+                "model": "grok-4.5",
+                "reasoning_effort": "low",
+                "permission_mode": "meeting_read_only",
+            }
+        )
+
+        restored = native_cli_provider_spec_from_stored_session_strict(
+            {
+                "session_id": spec.agent_id,
+                "participant_id": spec.agent_id,
+                "display_name": spec.display_name,
+                "provider_kind": spec.provider_kind,
+                "workspace": spec.cwd,
+                "model": spec.model,
+                "reasoning_effort": spec.reasoning_effort,
+                "service_tier": spec.service_tier,
+                "variant": spec.variant,
+                "permission_mode": spec.permission_mode,
+                "runtime_kind": spec.runtime_kind,
+                "transport": spec.transport,
+                "runtime_profile_key": replace(spec, transport="pty").runtime_profile_key(),
+                "command_configured": list(spec.command),
+            }
+        )
+
+        self.assertEqual(restored.transport, "acp_stdio")
+        self.assertEqual(restored.command, spec.command)
+        self.assertEqual(restored.runtime_profile_key(), spec.runtime_profile_key())
 
     def test_public_catalog_is_safe_and_unknown_provider_is_clear(self):
         payload = native_cli_provider_catalog_payload()

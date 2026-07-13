@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
@@ -217,7 +217,13 @@ def native_cli_provider_spec_from_stored_session_strict(
         variant=clean_lobby_text(session.get("variant"), limit=64),
         permission_mode=required["permission_mode"],
     )
-    if spec.command != stored_command or spec.runtime_profile_key() != required["runtime_profile_key"]:
+    profile_matches = spec.runtime_profile_key() == required["runtime_profile_key"]
+    legacy_grok_transport_profile = (
+        definition.provider_id == "grok"
+        and spec.command == stored_command
+        and replace(spec, transport="pty").runtime_profile_key() == required["runtime_profile_key"]
+    )
+    if spec.command != stored_command or not (profile_matches or legacy_grok_transport_profile):
         raise StoredProviderProfileError(
             "Stored Agent Session profile must be migrated before it can be reused.",
             code="profile_migration_required",
@@ -365,6 +371,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         command_builder=_grok_command,
         aliases=("grok_live_session",),
         default_model="grok-4.5",
+        transport="acp_stdio",
     ),
     NativeCliProviderDefinition(
         provider_id="claude",
