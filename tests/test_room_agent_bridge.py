@@ -4,6 +4,7 @@ import unittest
 
 from agentsassemble.grok_acp_runtime import GrokAcpRuntime
 from agentsassemble.provider_runtime_contracts import AdapterContractError, ProviderTurnResult
+from agentsassemble.provider_runtime_config import ProviderRuntimeConfig
 from agentsassemble.room_agent_bridge import (
     BridgeConfigError,
     CanonicalBridgeLaunchConfig,
@@ -150,6 +151,10 @@ def _launch_config(**overrides):
     return values
 
 
+def _runtime_config(**overrides):
+    return ProviderRuntimeConfig.parse_strict(_launch_config(**overrides))
+
+
 def _wait_for(predicate, timeout=2.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -162,7 +167,7 @@ def _wait_for(predicate, timeout=2.0):
 class RoomAgentBridgeTests(unittest.TestCase):
     def test_grok_acp_config_selects_structured_runtime(self):
         runtime = runtime_from_config(
-            _launch_config(
+            _runtime_config(
                 participant_id="grok",
                 session_id="grok",
                 provider_kind="grok_live_session",
@@ -177,7 +182,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
 
     def test_pty_runtime_preserves_an_intentional_empty_cli_argument(self):
         runtime = runtime_from_config(
-            _launch_config(
+            _runtime_config(
                 participant_id="claude",
                 session_id="claude",
                 provider_kind="claude_code",
@@ -191,7 +196,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
     def test_real_grok_command_does_not_fall_back_to_pty(self):
         with self.assertRaisesRegex(ValueError, "PTY fallback is disabled"):
             runtime_from_config(
-                _launch_config(
+                _runtime_config(
                     participant_id="grok",
                     session_id="grok",
                     provider_kind="grok_live_session",
@@ -229,13 +234,13 @@ class RoomAgentBridgeTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(parsed.command[2], "")
-        self.assertEqual(parsed.reasoning_effort, "")
-        self.assertEqual(parsed.service_tier, "")
+        self.assertEqual(parsed.runtime.command[2], "")
+        self.assertEqual(parsed.runtime.reasoning_effort, "")
+        self.assertEqual(parsed.runtime.service_tier, "")
 
     def test_pty_runtime_preserves_startup_readiness_marker(self):
         runtime = runtime_from_config(
-            _launch_config(
+            _runtime_config(
                 participant_id="claude",
                 session_id="claude",
                 provider_kind="claude_code",

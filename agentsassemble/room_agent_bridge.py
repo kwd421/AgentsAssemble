@@ -22,6 +22,10 @@ from agentsassemble.provider_runtime_contracts import (
     ProviderRuntimeHealth,
     ProviderTurnResult,
 )
+from agentsassemble.provider_runtime_config import (
+    ProviderRuntimeConfig,
+    ProviderRuntimeConfigError,
+)
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
 from agentsassemble.windows_conpty import WindowsConPtyRuntime
 
@@ -35,83 +39,25 @@ class BridgeConfigError(ValueError):
 @dataclass(frozen=True)
 class CanonicalBridgeLaunchConfig:
     room_id: str
-    participant_id: str
     session_id: str
-    provider_kind: str
-    command: tuple[str, ...]
-    cwd: str
-    model: str
-    reasoning_effort: str
-    service_tier: str
-    variant: str
-    permission_mode: str
-    transport: str
-    quiet_seconds: float
-    input_mode: str
-    submit_newline: str
-    submit_delay_seconds: float
-    terminal_rows: int
-    terminal_columns: int
-    startup_quiet_seconds: float
-    startup_timeout_seconds: float
-    startup_accept_contains: str
-    startup_accept_keys: str
-    startup_ready_contains: str
-    startup_input: str
     turn_timeout_seconds: float
     runtime_profile_key: str
-    runtime_state_dir: str
     credential_stdin: bool
-    provider_endpoint: str
-    provider_server_pid: int | None
+    runtime: ProviderRuntimeConfig
 
     @classmethod
     def parse_strict(cls, values: dict[str, object]) -> CanonicalBridgeLaunchConfig:
-        command_value = _required_value(values, "command")
-        if not isinstance(command_value, list) or not command_value:
-            raise BridgeConfigError("Agent Bridge command must be a non-empty list.")
-        command = tuple(str(part) for part in command_value)
-        if not command[0].strip():
-            raise BridgeConfigError("Agent Bridge executable is required.")
-        provider_kind = _required_text(values, "provider_kind", limit=64)
-        provider_endpoint = _required_text(values, "provider_endpoint", limit=1000, allow_empty=True)
-        if provider_kind == "opencode_server" and not provider_endpoint:
-            raise BridgeConfigError("OpenCode Agent Bridge provider endpoint is required.")
+        try:
+            runtime = ProviderRuntimeConfig.parse_strict(values)
+        except ProviderRuntimeConfigError as error:
+            raise BridgeConfigError(str(error)) from error
         return cls(
             room_id=_required_text(values, "room_id", limit=128),
-            participant_id=_required_text(values, "participant_id", limit=128),
             session_id=_required_text(values, "session_id", limit=128),
-            provider_kind=provider_kind,
-            command=command,
-            cwd=_required_text(values, "cwd", limit=500),
-            model=_required_text(values, "model", limit=256),
-            reasoning_effort=_required_text(values, "reasoning_effort", limit=32, allow_empty=True),
-            service_tier=_required_text(values, "service_tier", limit=32, allow_empty=True),
-            variant=_required_text(values, "variant", limit=64, allow_empty=True),
-            permission_mode=_required_text(values, "permission_mode", limit=64),
-            transport=_required_text(values, "transport", limit=64),
-            quiet_seconds=_required_float(values, "quiet_seconds", minimum=0.001),
-            input_mode=_required_text(values, "input_mode", limit=64),
-            submit_newline=_required_raw_text(values, "submit_newline", limit=16),
-            submit_delay_seconds=_required_float(values, "submit_delay_seconds", minimum=0.0),
-            terminal_rows=_required_int(values, "terminal_rows", minimum=1),
-            terminal_columns=_required_int(values, "terminal_columns", minimum=1),
-            startup_quiet_seconds=_required_float(values, "startup_quiet_seconds", minimum=0.0),
-            startup_timeout_seconds=_required_float(values, "startup_timeout_seconds", minimum=0.001),
-            startup_accept_contains=_required_raw_text(
-                values, "startup_accept_contains", limit=1000, allow_empty=True
-            ),
-            startup_accept_keys=_required_raw_text(values, "startup_accept_keys", limit=1000, allow_empty=True),
-            startup_ready_contains=_required_raw_text(
-                values, "startup_ready_contains", limit=1000, allow_empty=True
-            ),
-            startup_input=_required_raw_text(values, "startup_input", limit=4000, allow_empty=True),
             turn_timeout_seconds=_required_float(values, "turn_timeout_seconds", minimum=0.001),
             runtime_profile_key=_required_text(values, "runtime_profile_key", limit=256),
-            runtime_state_dir=_required_text(values, "runtime_state_dir", limit=1000),
             credential_stdin=_required_bool(values, "credential_stdin"),
-            provider_endpoint=provider_endpoint,
-            provider_server_pid=_required_optional_int(values, "provider_server_pid"),
+            runtime=runtime,
         )
 
 
@@ -403,65 +349,64 @@ class RoomAgentBridge:
 
 
 def runtime_from_config(
-    config: dict[str, object] | CanonicalBridgeLaunchConfig,
+    config: ProviderRuntimeConfig,
     *,
     credential: str = "",
 ) -> BridgeRuntime:
-    launch = config if isinstance(config, CanonicalBridgeLaunchConfig) else CanonicalBridgeLaunchConfig.parse_strict(config)
-    command = list(launch.command)
-    provider_kind = launch.provider_kind
+    command = list(config.command)
+    provider_kind = config.provider_kind
     if provider_kind == "deepseek_api":
         return DeepSeekApiRuntime(
-            launch.participant_id,
+            config.participant_id,
             api_key=credential,
-            model=launch.model,
-            reasoning_effort=launch.reasoning_effort,
-            thinking=launch.variant != "non_thinking",
+            model=config.model,
+            reasoning_effort=config.reasoning_effort,
+            thinking=config.variant != "non_thinking",
         )
     if provider_kind == "opencode_server":
         return OpenCodeRuntime(
-            launch.participant_id,
-            endpoint=launch.provider_endpoint,
-            workspace=launch.cwd,
-            state_dir=launch.runtime_state_dir,
-            model=launch.model,
-            variant=launch.variant,
-            permission_mode=launch.permission_mode,
-            server_pid=launch.provider_server_pid,
+            config.participant_id,
+            endpoint=config.provider_endpoint,
+            workspace=config.cwd,
+            state_dir=config.runtime_state_dir,
+            model=config.model,
+            variant=config.variant,
+            permission_mode=config.permission_mode,
+            server_pid=config.provider_server_pid,
         )
     if provider_kind == "grok_live_session" and _is_grok_acp_command(command):
         return GrokAcpRuntime(
-            launch.participant_id,
+            config.participant_id,
             command,
-            cwd=launch.cwd,
-            state_dir=launch.runtime_state_dir,
-            startup_timeout_seconds=launch.startup_timeout_seconds,
+            cwd=config.cwd,
+            state_dir=config.runtime_state_dir,
+            startup_timeout_seconds=config.startup_timeout_seconds,
         )
     if provider_kind == "grok_live_session" and Path(command[0]).name.casefold() == "grok":
         raise ValueError("Grok Agent Sessions require grok agent stdio; PTY fallback is disabled.")
     runtime_class = WindowsConPtyRuntime if os.name == "nt" else LiveCliRuntime
     return runtime_class(
-        launch.participant_id,
+        config.participant_id,
         command,
-        cwd=launch.cwd,
-        idle_quiet_seconds=launch.quiet_seconds,
-        input_mode=launch.input_mode,
-        submit_newline=launch.submit_newline,
-        submit_delay_seconds=launch.submit_delay_seconds,
-        terminal_rows=launch.terminal_rows,
-        terminal_columns=launch.terminal_columns,
-        startup_quiet_seconds=launch.startup_quiet_seconds,
-        startup_timeout_seconds=launch.startup_timeout_seconds,
-        startup_accept_contains=launch.startup_accept_contains,
-        startup_accept_keys=launch.startup_accept_keys,
-        startup_ready_contains=launch.startup_ready_contains,
-        startup_input=launch.startup_input,
+        cwd=config.cwd,
+        idle_quiet_seconds=config.quiet_seconds,
+        input_mode=config.input_mode,
+        submit_newline=config.submit_newline,
+        submit_delay_seconds=config.submit_delay_seconds,
+        terminal_rows=config.terminal_rows,
+        terminal_columns=config.terminal_columns,
+        startup_quiet_seconds=config.startup_quiet_seconds,
+        startup_timeout_seconds=config.startup_timeout_seconds,
+        startup_accept_contains=config.startup_accept_contains,
+        startup_accept_keys=config.startup_accept_keys,
+        startup_ready_contains=config.startup_ready_contains,
+        startup_input=config.startup_input,
         profile_settings={
-            "model": launch.model,
-            "reasoning_effort": launch.reasoning_effort,
-            "service_tier": launch.service_tier,
-            "variant": launch.variant,
-            "permission_mode": launch.permission_mode,
+            "model": config.model,
+            "reasoning_effort": config.reasoning_effort,
+            "service_tier": config.service_tier,
+            "variant": config.variant,
+            "permission_mode": config.permission_mode,
         },
     )
 
@@ -524,9 +469,9 @@ def main() -> int:
         pass
     bridge = RoomAgentBridge(
         client,
-        runtime_from_config(config, credential=credential),
+        runtime_from_config(config.runtime, credential=credential),
         room_id=config.room_id,
-        participant_id=config.participant_id,
+        participant_id=config.runtime.participant_id,
         session_id=config.session_id,
     )
 

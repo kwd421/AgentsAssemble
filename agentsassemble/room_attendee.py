@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 from agentsassemble.native_cli_providers import native_cli_provider_definition
 from agentsassemble.codex_app_server_live_runtime import CodexAppServerLiveRuntime
 from agentsassemble.opencode_runtime import OpenCodeServerProcess
+from agentsassemble.provider_runtime_config import ProviderRuntimeConfig
 from agentsassemble.provider_secrets import PROVIDER_SECRETS
 from agentsassemble.room_agent_bridge import RoomAgentBridge, runtime_from_config
 from agentsassemble.ws_room_client import connect_room_ws, join_room_session
@@ -145,6 +146,7 @@ class AgentAttendee:
             "service_tier": spec.service_tier,
             "variant": spec.variant,
             "permission_mode": spec.permission_mode,
+            "transport": spec.transport,
             "runtime_state_dir": str(state_dir),
             "quiet_seconds": spec.quiet_seconds,
             "input_mode": spec.input_mode,
@@ -158,6 +160,8 @@ class AgentAttendee:
             "startup_accept_keys": spec.startup_accept_keys,
             "startup_ready_contains": spec.startup_ready_contains,
             "startup_input": spec.startup_input,
+            "provider_endpoint": "",
+            "provider_server_pid": None,
         }
         credential = ""
         if spec.normalized_provider_kind() == "opencode_server":
@@ -169,7 +173,7 @@ class AgentAttendee:
             credential = PROVIDER_SECRETS.get("deepseek")
             if not credential:
                 raise RuntimeError("credential_missing")
-        return runtime_from_config(config, credential=credential)
+        return runtime_from_config(ProviderRuntimeConfig.parse_strict(config), credential=credential)
 
 
 def read_hidden_invite_url() -> str:

@@ -7,7 +7,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from agentsassemble.deepseek_runtime import DeepSeekApiRuntime
 from agentsassemble.process_environment import (
@@ -19,6 +19,7 @@ from agentsassemble.provider_capabilities import (
     ProviderCatalogSelectionError,
 )
 from agentsassemble.provider_secrets import ProviderSecretStore
+from agentsassemble.provider_runtime_config import ProviderRuntimeConfig
 from agentsassemble.room_attendee import _orientation_text, parse_agent_invite_url
 from agentsassemble.room_attendee import AgentAttendee
 from agentsassemble.windows_conpty import WindowsConPtyRuntime
@@ -443,6 +444,42 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             explicit_runtime = explicit._build_runtime("codex-guest", Path(temp_dir))
         self.assertIn("app-server", explicit_runtime.runtime.command)
+
+    def test_non_codex_attendees_build_complete_provider_runtime_configs(self):
+        captured: list[tuple[ProviderRuntimeConfig, str]] = []
+        opencode_server = MagicMock()
+        opencode_server.start.return_value = {"endpoint": "http://127.0.0.1:43210", "pid": 43210}
+
+        def capture(config: ProviderRuntimeConfig, *, credential: str = ""):
+            captured.append((config, credential))
+            return config
+
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch("agentsassemble.room_attendee.runtime_from_config", side_effect=capture),
+            patch("agentsassemble.room_attendee.OpenCodeServerProcess", return_value=opencode_server),
+            patch("agentsassemble.room_attendee.PROVIDER_SECRETS.get", return_value="deepseek-secret"),
+        ):
+            workspace = Path(temp_dir)
+            for provider_id in ("claude", "grok", "antigravity", "opencode", "deepseek"):
+                attendee = AgentAttendee(
+                    invite_url="https://room.example/join?token=aai1.secret",
+                    provider_id=provider_id,
+                )
+                runtime = attendee._build_runtime(f"{provider_id}-guest", workspace)
+                self.assertIsInstance(runtime, ProviderRuntimeConfig)
+
+        self.assertEqual([config.participant_id for config, _ in captured], [
+            "claude-guest",
+            "grok-guest",
+            "antigravity-guest",
+            "opencode-guest",
+            "deepseek-guest",
+        ])
+        self.assertEqual(captured[1][0].transport, "acp_stdio")
+        self.assertEqual(captured[3][0].provider_endpoint, "http://127.0.0.1:43210")
+        self.assertEqual(captured[4][1], "deepseek-secret")
+        self.assertNotIn("deepseek-secret", repr(captured[4][0]))
 
     def test_windows_runtime_keeps_one_process_and_stops_it(self):
         fake = FakeConPtyProcess()
