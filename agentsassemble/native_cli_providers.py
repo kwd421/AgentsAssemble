@@ -155,6 +155,76 @@ class UnsupportedNativeCliProvider(ValueError):
     pass
 
 
+class StoredProviderProfileError(ValueError):
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def native_cli_provider_spec_from_stored_session_strict(
+    session: dict[str, object],
+) -> NativeCliProviderSpec:
+    agent_id = clean_lobby_text(session.get("participant_id") or session.get("session_id"), limit=128)
+    definition = native_cli_provider_definition(session.get("provider_kind"))
+    if not agent_id or definition is None:
+        raise StoredProviderProfileError(
+            "Stored Agent Session provider profile is incomplete.",
+            code="profile_incomplete",
+        )
+    required = {
+        "display_name": clean_lobby_text(session.get("display_name"), limit=128),
+        "workspace": clean_lobby_text(session.get("workspace"), limit=500),
+        "model": clean_lobby_text(session.get("model"), limit=128),
+        "permission_mode": clean_lobby_text(session.get("permission_mode"), limit=64),
+        "runtime_profile_key": clean_lobby_text(session.get("runtime_profile_key"), limit=128),
+    }
+    if any(not value for value in required.values()):
+        raise StoredProviderProfileError(
+            "Stored Agent Session provider profile is incomplete.",
+            code="profile_incomplete",
+        )
+    for field, default in (
+        ("reasoning_effort", definition.default_reasoning_effort),
+        ("service_tier", definition.default_service_tier),
+        ("variant", definition.default_variant),
+    ):
+        if default and not clean_lobby_text(session.get(field), limit=64):
+            raise StoredProviderProfileError(
+                f"Stored Agent Session is missing required {field}.",
+                code="profile_incomplete",
+            )
+    if (
+        clean_lobby_text(session.get("runtime_kind"), limit=64) != definition.runtime_kind
+        or clean_lobby_text(session.get("transport"), limit=64) != definition.transport
+    ):
+        raise StoredProviderProfileError(
+            "Stored Agent Session provider definition changed.",
+            code="provider_definition_changed",
+        )
+    stored_command = tuple(str(part) for part in list(session.get("command_configured") or []))
+    if not stored_command:
+        raise StoredProviderProfileError(
+            "Stored Agent Session command profile is incomplete.",
+            code="profile_incomplete",
+        )
+    spec = definition.make_spec(
+        agent_id=agent_id,
+        display_name=required["display_name"],
+        cwd=required["workspace"],
+        model=required["model"],
+        reasoning_effort=clean_lobby_text(session.get("reasoning_effort"), limit=32),
+        service_tier=clean_lobby_text(session.get("service_tier"), limit=32),
+        variant=clean_lobby_text(session.get("variant"), limit=64),
+        permission_mode=required["permission_mode"],
+    )
+    if spec.command != stored_command or spec.runtime_profile_key() != required["runtime_profile_key"]:
+        raise StoredProviderProfileError(
+            "Stored Agent Session profile must be migrated before it can be reused.",
+            code="profile_migration_required",
+        )
+    return spec
+
+
 def _codex_command(
     model: str,
     effort: str,

@@ -53,9 +53,10 @@ export default function AgentCreateModal({
     (session) =>
       !session.external_owned &&
       session.provider_kind === selectedProvider?.provider_kind &&
-      !["starting", "idle", "busy", "paused", "recovering", "stopping"].includes(
-        session.runtime_status
-      )
+      ["stopped", "available"].includes(session.runtime_status) &&
+      session.enabled === false &&
+      !session.active_turn_id &&
+      Boolean(session.runtime_profile_key && session.model && session.permission_mode)
   );
   const canCreate = Boolean(
     meetingId &&
@@ -100,11 +101,11 @@ export default function AgentCreateModal({
     setDisplayName(session.display_name);
     setSettings((previous) => ({
       ...previous,
-      model: session.model || previous.model || "",
-      reasoning_effort: session.reasoning_effort || previous.reasoning_effort || "",
-      service_tier: session.service_tier || previous.service_tier || "",
-      variant: session.variant || previous.variant || "",
-      permission_mode: session.permission_mode || previous.permission_mode || "meeting_read_only",
+      model: session.model || "",
+      reasoning_effort: session.reasoning_effort || "",
+      service_tier: session.service_tier || "",
+      variant: session.variant || "",
+      permission_mode: session.permission_mode || "",
     }));
   }
 

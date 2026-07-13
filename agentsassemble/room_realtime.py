@@ -14,9 +14,11 @@ from agentsassemble.agent_sessions import build_room_turn_packet
 from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
 from agentsassemble.native_cli_providers import (
     NativeCliProviderSpec,
+    StoredProviderProfileError,
     UnsupportedNativeCliProvider,
     default_native_cli_provider_specs,
     native_cli_provider_definition,
+    native_cli_provider_spec_from_stored_session_strict,
     native_cli_provider_spec_from_payload,
     validate_native_cli_provider_spec,
 )
@@ -164,19 +166,19 @@ class RoomRealtimeController:
                     continue
                 if session.get("process_ownership") != "server":
                     continue
-                definition = native_cli_provider_definition(session.get("provider_kind"))
-                if definition is None:
+                try:
+                    spec = native_cli_provider_spec_from_stored_session_strict(session)
+                except StoredProviderProfileError as error:
+                    self.store.update_session_fields(
+                        room_id,
+                        agent_id,
+                        status="error",
+                        runtime_status="error",
+                        enabled=False,
+                        recovery_required=True,
+                        last_error=str(error),
+                    )
                     continue
-                spec = definition.make_spec(
-                    agent_id=agent_id,
-                    display_name=clean_lobby_text(session.get("display_name"), limit=128) or agent_id,
-                    cwd=clean_lobby_text(session.get("workspace"), limit=500) or ".",
-                    model=clean_lobby_text(session.get("model"), limit=128),
-                    reasoning_effort=clean_lobby_text(session.get("reasoning_effort"), limit=32),
-                    service_tier=clean_lobby_text(session.get("service_tier"), limit=32),
-                    variant=clean_lobby_text(session.get("variant"), limit=64),
-                    permission_mode=clean_lobby_text(session.get("permission_mode"), limit=64),
-                )
                 with self._lock:
                     self._providers_by_room.setdefault(room_id, {})[agent_id] = spec
 
@@ -998,23 +1000,37 @@ class RoomRealtimeController:
                 "External Agent Sessions must reconnect with their original invite.",
                 code="runtime_unavailable",
             )
-        definition = native_cli_provider_definition(current.get("provider_kind"))
-        if definition is None:
+        participant = self.store.participant(room_id, agent_id)
+        if current.get("runtime_status") not in {"stopped", "available"}:
             raise RoomCommandRejected(
-                "This Agent Session provider is no longer available.",
-                code="unsupported_provider",
+                "Only stopped Agent Sessions can be added back to the room.",
+                code="readd_invalid_state",
             )
-        spec = definition.make_spec(
-            agent_id=agent_id,
-            display_name=clean_lobby_text(current.get("display_name"), limit=128) or agent_id,
-            cwd=clean_lobby_text(current.get("workspace"), limit=500) or ".",
-            model=clean_lobby_text(current.get("model"), limit=128),
-            reasoning_effort=clean_lobby_text(current.get("reasoning_effort"), limit=32),
-            service_tier=clean_lobby_text(current.get("service_tier"), limit=32),
-            variant=clean_lobby_text(current.get("variant"), limit=64),
-            permission_mode=clean_lobby_text(current.get("permission_mode"), limit=64),
-        )
-        session = self.register_provider(room_id, spec)
+        if current.get("enabled"):
+            raise RoomCommandRejected("The Agent Session is still enabled.", code="readd_invalid_state")
+        if participant.get("status") not in {"detached", "kicked"}:
+            raise RoomCommandRejected("The Agent Session participant is still active.", code="readd_invalid_state")
+        if current.get("active_turn_id") or current.get("bridge_handle_id") or self.broker.has_bridge(room_id, agent_id):
+            raise RoomCommandRejected("The Agent Session still owns an active runtime.", code="readd_invalid_state")
+        try:
+            spec = native_cli_provider_spec_from_stored_session_strict(current)
+        except StoredProviderProfileError as error:
+            raise RoomCommandRejected(
+                str(error),
+                code=error.code,
+            ) from error
+        with self._lock:
+            self._providers_by_room.setdefault(room_id, {})[agent_id] = spec
+            self._ensure_provider_session(room_id, spec)
+            self.store.update_participant_fields(room_id, agent_id, status="detached")
+            session = self.store.session(room_id, agent_id)
+            self.store.append_event(
+                room_id,
+                "agent_session_reactivated",
+                participant_id=agent_id,
+                session_id=agent_id,
+            )
+            self._publish_session_state(room_id, session)
         result: dict[str, object] = {
             "status": "readded",
             "agent_session": session,
@@ -1302,7 +1318,9 @@ class RoomRealtimeController:
         if not participant:
             raise RoomCommandRejected(f"Participant {participant_id} was not found.", code="not_found")
         if participant.get("role") == "agent":
-            self._stop_agent(room_id, participant_id)
+            session = self.store.session(room_id, participant_id)
+            if session and session.get("runtime_status") not in {"stopped", "available"}:
+                self._stop_agent(room_id, participant_id)
             self._providers_by_room.get(room_id, {}).pop(participant_id, None)
         revoked_sessions = revoke_sessions_for_participant(room_id, participant_id)
         removed_member = remove_room_member(self.output_root, room_id, participant_id)

@@ -17,6 +17,7 @@ from agentsassemble.room_store import RoomStore
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.room_settings import update_room_settings
 from agentsassemble.provider_capabilities import ProviderCapabilityCatalog
+from agentsassemble.native_cli_providers import native_cli_provider_definition
 
 
 HOST = {
@@ -1483,9 +1484,30 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
     def test_readd_reuses_stored_server_owned_session_profile(self):
         store = RoomStore(self.root)
+        definition = native_cli_provider_definition("codex")
+        self.assertIsNotNone(definition)
+        spec = definition.make_spec(
+            agent_id="codex",
+            display_name="Codex",
+            cwd=self.root,
+            model="gpt-5.6-luna",
+            reasoning_effort="low",
+            service_tier="default",
+            permission_mode="meeting_read_only",
+        )
         store.update_session_fields(
             "general",
             "codex",
+            command_configured=list(spec.command),
+            workspace=spec.cwd,
+            model=spec.model,
+            reasoning_effort=spec.reasoning_effort,
+            service_tier=spec.service_tier,
+            variant=spec.variant,
+            permission_mode=spec.permission_mode,
+            runtime_kind=spec.runtime_kind,
+            transport=spec.transport,
+            runtime_profile_key=spec.runtime_profile_key(),
             provider_session_id="provider-session-1",
             turn_count=7,
         )
@@ -1504,6 +1526,36 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(restored["provider_session_id"], "provider-session-1")
         self.assertEqual(restored["turn_count"], 7)
         self.assertEqual(restored["runtime_status"], "starting")
+        event_types = [event["type"] for event in store.read_events("general")]
+        self.assertEqual(event_types.count("agent_session_reactivated"), 1)
+        self.assertEqual(event_types.count("agent_session_created"), 0)
+
+    def test_readd_rejects_recovery_states_and_incomplete_profiles(self):
+        store = RoomStore(self.root)
+        store.update_session_fields(
+            "general",
+            "codex",
+            status="error",
+            runtime_status="error",
+            enabled=False,
+        )
+        store.update_participant_fields("general", "codex", status="detached")
+
+        with self.assertRaises(RoomCommandRejected) as recovery:
+            self._command("req-readd-error", "agent.readd", {"agent_id": "codex"})
+        self.assertEqual(recovery.exception.code, "readd_invalid_state")
+
+        store.update_session_fields(
+            "general",
+            "codex",
+            status="detached",
+            runtime_status="stopped",
+            enabled=False,
+            model="",
+        )
+        with self.assertRaises(RoomCommandRejected) as incomplete:
+            self._command("req-readd-incomplete", "agent.readd", {"agent_id": "codex"})
+        self.assertEqual(incomplete.exception.code, "profile_incomplete")
 
     def test_room_host_cannot_be_kicked(self):
         with self.assertRaises(RoomCommandRejected) as error:

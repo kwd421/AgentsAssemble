@@ -98,6 +98,8 @@ describe("AgentCreateModal", () => {
             runtime_kind: "live_cli",
             connection_kind: "native_cli_bridge",
             model: "gpt-5.6-luna",
+            permission_mode: "meeting_read_only",
+            runtime_profile_key: "profile-test",
           },
         ]}
         onClose={() => undefined}

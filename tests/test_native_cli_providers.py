@@ -3,11 +3,13 @@ import unittest
 
 from agentsassemble.native_cli_providers import (
     NativeCliProviderSpec,
+    StoredProviderProfileError,
     UnsupportedNativeCliProvider,
     default_native_cli_provider_specs,
     native_cli_provider_catalog_payload,
     native_cli_provider_spec_from_config,
     native_cli_provider_spec_from_payload,
+    native_cli_provider_spec_from_stored_session_strict,
     validate_native_cli_provider_spec,
 )
 
@@ -91,6 +93,25 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         self.assertTrue(all("command" not in provider for provider in payload))
         with self.assertRaises(UnsupportedNativeCliProvider):
             native_cli_provider_spec_from_payload({"provider_id": "unknown"})
+
+    def test_stored_session_profile_is_not_filled_from_current_defaults(self):
+        with self.assertRaises(StoredProviderProfileError) as incomplete:
+            native_cli_provider_spec_from_stored_session_strict(
+                {
+                    "session_id": "codex",
+                    "participant_id": "codex",
+                    "display_name": "Codex",
+                    "provider_kind": "codex_live_session",
+                    "workspace": ".",
+                    "model": "",
+                    "permission_mode": "meeting_read_only",
+                    "runtime_kind": "live_cli",
+                    "transport": "pty",
+                    "runtime_profile_key": "profile",
+                    "command_configured": ["codex"],
+                }
+            )
+        self.assertEqual(incomplete.exception.code, "profile_incomplete")
 
 
 if __name__ == "__main__":
