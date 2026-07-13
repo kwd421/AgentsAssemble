@@ -3,11 +3,108 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.room_database import RoomDatabaseMigrationError
+from agentsassemble.room_database import (
+    ATTENTION_SCHEMA_STATEMENTS,
+    ROOM_SCHEMA_VERSION,
+    RoomDatabaseMigrationError,
+    initialize_room_database,
+    open_room_database,
+)
 from agentsassemble.room_store import RoomStore
 
 
 class CanonicalRoomEventStoreTests(unittest.TestCase):
+    def test_version_one_database_migrates_command_scope_and_attention_schema(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = RoomStore(root)
+            store.create_room("general")
+            with open_room_database(store.database_path) as connection:
+                for table in (
+                    "conversation_obligations",
+                    "scheduled_wakeups",
+                    "attention_leases",
+                    "attention_jobs",
+                    "agent_attention_state",
+                ):
+                    connection.execute(f"DROP TABLE {table}")
+                connection.execute("ALTER TABLE command_results RENAME TO command_results_v2")
+                connection.execute(
+                    """CREATE TABLE command_results (
+                           room_id TEXT NOT NULL,
+                           request_id TEXT NOT NULL,
+                           created_at TEXT NOT NULL,
+                           result_json TEXT NOT NULL,
+                           PRIMARY KEY (room_id, request_id)
+                       )"""
+                )
+                connection.execute(
+                    """INSERT INTO command_results(room_id, request_id, created_at, result_json)
+                       VALUES('general', 'legacy-request', '2026-01-01T00:00:00+00:00', '{"accepted":true}')"""
+                )
+                connection.execute("DROP TABLE command_results_v2")
+                connection.execute(
+                    "UPDATE schema_meta SET value = '1' WHERE key = 'schema_version'"
+                )
+
+            initialize_room_database(store.rooms_root, store.database_path)
+
+            with open_room_database(store.database_path) as connection:
+                version = int(
+                    connection.execute(
+                        "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+                    ).fetchone()["value"]
+                )
+                attention_jobs_exists = connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'attention_jobs'"
+                ).fetchone() is not None
+            command = store.command_record("general", "", "legacy-request")
+
+        self.assertEqual(version, ROOM_SCHEMA_VERSION)
+        self.assertTrue(attention_jobs_exists)
+        self.assertTrue(command["result"]["accepted"])
+
+    def test_version_two_database_migrates_attention_schema_without_losing_room_data(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = RoomStore(root)
+            store.create_room("general", label="General")
+            original = store.append_event("general", "message_final", content="preserve me")
+            attention_tables = (
+                "conversation_obligations",
+                "scheduled_wakeups",
+                "attention_leases",
+                "attention_jobs",
+                "agent_attention_state",
+            )
+            with open_room_database(store.database_path) as connection:
+                for table in attention_tables:
+                    connection.execute(f"DROP TABLE {table}")
+                connection.execute(
+                    "UPDATE schema_meta SET value = '2' WHERE key = 'schema_version'"
+                )
+
+            initialize_room_database(store.rooms_root, store.database_path)
+
+            with open_room_database(store.database_path) as connection:
+                version = int(
+                    connection.execute(
+                        "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+                    ).fetchone()["value"]
+                )
+                tables = {
+                    row["name"]
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    ).fetchall()
+                }
+            preserved = store.read_events("general")
+
+        self.assertEqual(version, ROOM_SCHEMA_VERSION)
+        self.assertTrue(set(attention_tables).issubset(tables))
+        self.assertEqual(preserved[-1]["id"], original["id"])
+        self.assertTrue(ATTENTION_SCHEMA_STATEMENTS)
+
     def test_session_fields_can_be_explicitly_cleared_and_command_results_are_deduplicated(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover - AgentsAssemble's supported hosts are U
 
 
 ROOM_DATABASE_FILENAME = "rooms.sqlite3"
-ROOM_SCHEMA_VERSION = 2
+ROOM_SCHEMA_VERSION = 3
 LEGACY_AUTHORITY_FILES = (
     "room.json",
     "participants.json",
@@ -31,6 +31,86 @@ LEGACY_AUTHORITY_FILES = (
 LEGACY_AUDIT_FILES = (*LEGACY_AUTHORITY_FILES, "events.pre-unification.jsonl")
 VISIBLE = "visible"
 LEGACY_HIDDEN = "legacy_hidden"
+
+ATTENTION_SCHEMA_STATEMENTS = (
+    """CREATE TABLE IF NOT EXISTS agent_attention_state (
+           room_id TEXT NOT NULL,
+           participant_id TEXT NOT NULL,
+           last_observed_seq INTEGER NOT NULL DEFAULT 0,
+           last_attention_evaluated_seq INTEGER NOT NULL DEFAULT 0,
+           last_provider_sync_seq INTEGER NOT NULL DEFAULT 0,
+           last_spoke_seq INTEGER NOT NULL DEFAULT 0,
+           updated_at TEXT NOT NULL,
+           PRIMARY KEY (room_id, participant_id),
+           FOREIGN KEY (room_id, participant_id)
+               REFERENCES participants(room_id, participant_id) ON DELETE CASCADE
+       )""",
+    """CREATE TABLE IF NOT EXISTS attention_jobs (
+           room_id TEXT NOT NULL,
+           job_id TEXT NOT NULL,
+           source_seq INTEGER NOT NULL,
+           source_event_id TEXT NOT NULL,
+           mode TEXT NOT NULL,
+           outcome TEXT NOT NULL,
+           selected_participant_id TEXT NOT NULL DEFAULT '',
+           eligible_participant_ids_json TEXT NOT NULL DEFAULT '[]',
+           reasons_json TEXT NOT NULL DEFAULT '[]',
+           status TEXT NOT NULL,
+           created_at TEXT NOT NULL,
+           updated_at TEXT NOT NULL,
+           PRIMARY KEY (room_id, job_id),
+           UNIQUE (room_id, source_seq, mode),
+           FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE
+       )""",
+    """CREATE TABLE IF NOT EXISTS attention_leases (
+           room_id TEXT NOT NULL,
+           lease_id TEXT NOT NULL,
+           job_id TEXT NOT NULL,
+           participant_id TEXT NOT NULL,
+           owner_id TEXT NOT NULL DEFAULT '',
+           status TEXT NOT NULL,
+           acquired_at TEXT NOT NULL,
+           expires_at TEXT NOT NULL,
+           released_at TEXT NOT NULL DEFAULT '',
+           PRIMARY KEY (room_id, lease_id),
+           FOREIGN KEY (room_id, job_id)
+               REFERENCES attention_jobs(room_id, job_id) ON DELETE CASCADE
+       )""",
+    """CREATE TABLE IF NOT EXISTS scheduled_wakeups (
+           room_id TEXT NOT NULL,
+           wakeup_id TEXT NOT NULL,
+           participant_id TEXT NOT NULL,
+           reason TEXT NOT NULL,
+           wake_at TEXT NOT NULL,
+           status TEXT NOT NULL,
+           payload_json TEXT NOT NULL DEFAULT '{}',
+           created_at TEXT NOT NULL,
+           updated_at TEXT NOT NULL,
+           PRIMARY KEY (room_id, wakeup_id),
+           FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE
+       )""",
+    """CREATE TABLE IF NOT EXISTS conversation_obligations (
+           room_id TEXT NOT NULL,
+           obligation_id TEXT NOT NULL,
+           participant_id TEXT NOT NULL,
+           source_event_id TEXT NOT NULL DEFAULT '',
+           kind TEXT NOT NULL,
+           status TEXT NOT NULL,
+           due_at TEXT NOT NULL DEFAULT '',
+           payload_json TEXT NOT NULL DEFAULT '{}',
+           created_at TEXT NOT NULL,
+           updated_at TEXT NOT NULL,
+           PRIMARY KEY (room_id, obligation_id),
+           FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE
+       )""",
+    "CREATE INDEX IF NOT EXISTS idx_attention_jobs_status ON attention_jobs(room_id, status, source_seq)",
+    "CREATE INDEX IF NOT EXISTS idx_attention_leases_expiry ON attention_leases(status, expires_at)",
+    """CREATE UNIQUE INDEX IF NOT EXISTS idx_attention_active_lease
+       ON attention_leases(room_id, job_id) WHERE status = 'active'""",
+    "CREATE INDEX IF NOT EXISTS idx_scheduled_wakeups_due ON scheduled_wakeups(status, wake_at)",
+    """CREATE INDEX IF NOT EXISTS idx_conversation_obligations_open
+       ON conversation_obligations(room_id, participant_id, status)""",
+)
 
 
 class RoomDatabaseMigrationError(RuntimeError):
@@ -58,8 +138,9 @@ def initialize_room_database(rooms_root: Path, database_path: Path) -> dict[str,
         if database_path.exists():
             connection = open_room_database(database_path)
             try:
+                if _schema_version(connection) is not None:
+                    _migrate_schema(connection)
                 _create_schema(connection)
-                _migrate_schema(connection)
                 _scrub_legacy_source_paths(connection)
                 _validate_schema_version(connection)
                 connection.execute("PRAGMA journal_mode = WAL")
@@ -287,6 +368,7 @@ def _create_schema(connection: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_commands_created ON command_results(room_id, created_at DESC);
         """
     )
+    _create_attention_schema(connection)
 
 
 def _validate_schema_version(connection: sqlite3.Connection) -> None:
@@ -302,41 +384,65 @@ def _validate_schema_version(connection: sqlite3.Connection) -> None:
 
 
 def _migrate_schema(connection: sqlite3.Connection) -> None:
-    row = connection.execute("SELECT value FROM schema_meta WHERE key = 'schema_version'").fetchone()
-    if row is None or _safe_int(row["value"]) >= ROOM_SCHEMA_VERSION:
+    version = _schema_version(connection)
+    if version is None or version == ROOM_SCHEMA_VERSION:
         return
-    if _safe_int(row["value"]) != 1:
-        raise RoomDatabaseMigrationError(f"Unsupported room database schema version {row['value']}.")
+    if version > ROOM_SCHEMA_VERSION:
+        raise RoomDatabaseMigrationError(
+            f"Unsupported room database schema version {version}; expected {ROOM_SCHEMA_VERSION}."
+        )
+    if version not in {1, 2}:
+        raise RoomDatabaseMigrationError(f"Unsupported room database schema version {version}.")
     connection.execute("BEGIN IMMEDIATE")
     try:
-        connection.execute("ALTER TABLE command_results RENAME TO command_results_v1")
-        connection.execute(
-            """CREATE TABLE command_results (
-                   room_id TEXT NOT NULL,
-                   principal_id TEXT NOT NULL DEFAULT '',
-                   request_id TEXT NOT NULL,
-                   action TEXT NOT NULL DEFAULT '',
-                   payload_hash TEXT NOT NULL DEFAULT '',
-                   created_at TEXT NOT NULL,
-                   result_json TEXT NOT NULL,
-                   PRIMARY KEY (room_id, principal_id, request_id)
-               )"""
-        )
-        connection.execute(
-            """INSERT INTO command_results(
-                   room_id, principal_id, request_id, action, payload_hash, created_at, result_json
-               ) SELECT room_id, '', request_id, '', '', created_at, result_json FROM command_results_v1"""
-        )
-        connection.execute("DROP TABLE command_results_v1")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_commands_created ON command_results(room_id, created_at DESC)")
+        if version == 1:
+            connection.execute("ALTER TABLE command_results RENAME TO command_results_v1")
+            connection.execute(
+                """CREATE TABLE command_results (
+                       room_id TEXT NOT NULL,
+                       principal_id TEXT NOT NULL DEFAULT '',
+                       request_id TEXT NOT NULL,
+                       action TEXT NOT NULL DEFAULT '',
+                       payload_hash TEXT NOT NULL DEFAULT '',
+                       created_at TEXT NOT NULL,
+                       result_json TEXT NOT NULL,
+                       PRIMARY KEY (room_id, principal_id, request_id)
+                   )"""
+            )
+            connection.execute(
+                """INSERT INTO command_results(
+                       room_id, principal_id, request_id, action, payload_hash, created_at, result_json
+                   ) SELECT room_id, '', request_id, '', '', created_at, result_json FROM command_results_v1"""
+            )
+            connection.execute("DROP TABLE command_results_v1")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_commands_created ON command_results(room_id, created_at DESC)"
+            )
+            version = 2
+        if version == 2:
+            _create_attention_schema(connection)
+            version = 3
         connection.execute(
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', ?)",
-            (str(ROOM_SCHEMA_VERSION),),
+            (str(version),),
         )
         connection.commit()
     except Exception:
         connection.rollback()
         raise
+
+
+def _create_attention_schema(connection: sqlite3.Connection) -> None:
+    for statement in ATTENTION_SCHEMA_STATEMENTS:
+        connection.execute(statement)
+
+
+def _schema_version(connection: sqlite3.Connection) -> int | None:
+    try:
+        row = connection.execute("SELECT value FROM schema_meta WHERE key = 'schema_version'").fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return _safe_int(row["value"]) if row is not None else None
 
 
 def _scrub_legacy_source_paths(connection: sqlite3.Connection) -> None:
