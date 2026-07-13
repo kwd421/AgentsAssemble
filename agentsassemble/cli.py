@@ -5433,6 +5433,47 @@ def run_room_command(args: argparse.Namespace) -> int:
             if result.get("backup_dir"):
                 print(f"backup: {result['backup_dir']}")
         return 0
+    if args.room_command == "migrate-postgres":
+        from agentsassemble.room_repository_factory import (
+            RoomRepositoryConfigurationError,
+            RoomRepositorySettings,
+        )
+        from agentsassemble.room_repository_migration import (
+            RoomRepositoryTransferError,
+            migrate_sqlite_rooms_to_postgres,
+        )
+
+        try:
+            settings = RoomRepositorySettings.from_environment(
+                backend="postgresql",
+                postgres_dsn_env=str(args.postgres_dsn_env),
+            )
+            if not settings.postgres_dsn:
+                raise RoomRepositoryConfigurationError(
+                    f"PostgreSQL room migration requires {settings.postgres_dsn_env} to be set."
+                )
+            result = migrate_sqlite_rooms_to_postgres(
+                Path(args.output_root),
+                postgres_dsn=settings.postgres_dsn,
+                apply=bool(args.apply),
+            )
+        except (RoomRepositoryConfigurationError, RoomRepositoryTransferError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        if args.as_json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            source_counts = result["source"]["row_counts"]
+            print(
+                f"PostgreSQL room migration {result['mode']}: {result['status']} · "
+                f"rooms={source_counts['rooms']} · events={source_counts['room_events']}"
+            )
+            print(f"source checksum: {result['source']['checksum']}")
+            if result.get("verified"):
+                print("target checksum verified")
+            elif not result.get("can_apply"):
+                print("target is not safe to apply")
+        return 0 if result.get("status") in {"ready", "applied"} else 1
     if args.room_command == "list":
         query = urllib.parse.urlencode({"include_archived": "true"} if args.include_archived else {})
         path = "/api/rooms" + (f"?{query}" if query else "")

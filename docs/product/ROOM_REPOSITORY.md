@@ -91,5 +91,14 @@ The GUI handler, canonical WebSocket controller, Agent Session HTTP actions,
 room lifecycle, roster projection, invite admission, attachment metadata, and
 canonical SSE replay now receive one server-scoped repository instance. Handler
 construction rejects a controller and route repository that are not the same
-object. Backend selection remains disabled until the explicit migration command
-and startup configuration are available; the default continues to be SQLite.
+object.
+
+`assemble room migrate-postgres` is the explicit authority transfer tool. It
+reads the DSN only from the named environment variable, defaults to a no-write
+dry run, and requires `--apply` to create the PostgreSQL schema and copy rows.
+Apply mode holds the SQLite write lock, refuses a non-empty or partial target,
+copies every canonical and attention table in one PostgreSQL transaction, and
+compares normalized table checksums plus per-room event sequence summaries
+before commit. It never deletes or edits the SQLite source. GUI backend
+selection remains disabled until startup configuration is wired; the default
+continues to be SQLite.

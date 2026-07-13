@@ -9,6 +9,7 @@ from agentsassemble.cli_parser_common import (
     parse_positive_int,
 )
 from agentsassemble.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG
+from agentsassemble.room_repository_factory import DEFAULT_POSTGRES_DSN_ENV
 
 
 def register_room_parsers(subparsers: argparse._SubParsersAction) -> None:
@@ -34,6 +35,22 @@ def register_room_parsers(subparsers: argparse._SubParsersAction) -> None:
     migrate_legacy_mode.add_argument("--dry-run", action="store_true")
     migrate_legacy_mode.add_argument("--apply", action="store_true")
     room_migrate_legacy.add_argument("--json", action="store_true", dest="as_json")
+
+    room_migrate_postgres = room_subparsers.add_parser(
+        "migrate-postgres",
+        help="Inspect or copy canonical SQLite room state into an empty PostgreSQL repository.",
+    )
+    room_migrate_postgres.add_argument("--output-root", default=".agentsassemble")
+    room_migrate_postgres.add_argument(
+        "--postgres-dsn-env",
+        default=DEFAULT_POSTGRES_DSN_ENV,
+        help="Environment variable containing the PostgreSQL DSN; the DSN is never accepted on argv.",
+    )
+    migrate_postgres_mode = room_migrate_postgres.add_mutually_exclusive_group()
+    migrate_postgres_mode.add_argument("--dry-run", action="store_false", dest="apply")
+    migrate_postgres_mode.add_argument("--apply", action="store_true")
+    room_migrate_postgres.set_defaults(apply=False)
+    room_migrate_postgres.add_argument("--json", action="store_true", dest="as_json")
 
     room_attend = room_subparsers.add_parser(
         "attend",
