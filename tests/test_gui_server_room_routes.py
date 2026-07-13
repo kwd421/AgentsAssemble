@@ -68,6 +68,28 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             self.assertFalse(room["archived"])
             self.assertNotIn("owner_id", room)
 
+    def test_room_ensure_route_materializes_server_room_for_local_operator(self):
+        reset_room_users_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            configure_room_users_store(root / "identity.db")
+
+            response = _dispatch_room_route(
+                root,
+                path="/api/room/ensure",
+                method="POST",
+                payload={"meeting_id": "new-room", "label": "New Room"},
+            ).sent_json
+
+            from agentsassemble.room_users import list_rooms, operator_user_id
+
+            room = next(item for item in list_rooms() if item["room_id"] == "new-room")
+            state = json.loads((root / "meetings" / "new-room" / "live_state.json").read_text(encoding="utf-8"))
+            self.assertEqual(response, {"status": "ready", "meeting_id": "new-room"})
+            self.assertEqual(room["owner_id"], operator_user_id())
+            self.assertEqual(room["label"], "New Room")
+            self.assertEqual(state["origin"], "frontend_room")
+
 
     def test_room_session_resume_endpoint_feeds_room_members_from_canonical_state(self):
         reset_room_invite_state()

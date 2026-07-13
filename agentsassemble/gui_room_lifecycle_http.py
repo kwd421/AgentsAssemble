@@ -11,6 +11,7 @@ from agentsassemble.agent_sessions import (
     room_status_payload,
 )
 from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.live_agent_frontend_create import ensure_frontend_meeting
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room_speech import (
@@ -246,10 +247,37 @@ def register_room_history_routes(
 def register_room_lifecycle_routes(router: Router) -> None:
     """Register participant leave/kick/export and room close/archive routes."""
 
+    def _room_owner_id(ctx: RequestContext) -> str:
+        session = ctx.session()
+        if session is not None:
+            participant_id = str(session.get("agent_id") or "")
+            user = user_for_participant(participant_id)
+            return str((user or {}).get("user_id") or participant_id)
+        if ctx.handler._request_uses_loopback_host() or ctx.is_host():
+            return operator_user_id()
+        return ""
+
     def _loopback_or_moderator(ctx: RequestContext) -> bool:
         if ctx.handler._request_uses_loopback_host():
             return True
         return ctx.require_moderator()
+
+    @router.post("/api/room/ensure")
+    def room_ensure(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        try:
+            meeting_dir = ensure_frontend_meeting(
+                ctx.deps.output_root,
+                clean_lobby_text(payload.get("meeting_id"), limit=128),
+                label=clean_lobby_text(payload.get("label"), limit=128),
+                owner_id=_room_owner_id(ctx),
+            )
+        except (OSError, ValueError) as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+        ctx.send_json({"status": "ready", "meeting_id": meeting_dir.name})
 
     def _leave_allowed(ctx: RequestContext, payload: dict[str, object]) -> bool:
         if ctx.handler._request_uses_loopback_host() or ctx.is_host() or ctx.is_operator_session():

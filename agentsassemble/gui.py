@@ -42,7 +42,6 @@ from agentsassemble.live_agent_discovery import (
 from agentsassemble.live_agent_context import live_agent_context_contract, live_agent_context_contract_with_join_semantics
 from agentsassemble.live_agent_flow import FLOW_SPEAKING_ACTIONS, FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
 from agentsassemble.live_agent_frontend_create import (
-    ensure_frontend_meeting,
     frontend_live_agent_check_payload,
     frontend_live_agent_create_payload,
     frontend_live_agent_login_payload,
@@ -287,7 +286,6 @@ from agentsassemble.room_users import (
     operator_user_id,
     touch_room,
     upsert_room,
-    user_for_participant,
 )
 from agentsassemble.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
 from agentsassemble.room_invite import (
@@ -7919,24 +7917,6 @@ def _make_handler(
                 )
                 self._send_json(login)
                 return
-            if parsed.path == "/api/room/ensure":
-                # Promote a localStorage room to a server-backed meeting on demand
-                # (rooms-as-server-objects). Idempotent; safe to call on room open.
-                payload = self._operation_json_payload(operation="room.ensure")
-                if payload is None:
-                    return
-                try:
-                    meeting_dir = ensure_frontend_meeting(
-                        output_root,
-                        clean_lobby_text(payload.get("meeting_id"), limit=128),
-                        label=clean_lobby_text(payload.get("label"), limit=128),
-                        owner_id=self._room_owner_id_for_request(),
-                    )
-                except (OSError, ValueError) as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                self._send_json({"status": "ready", "meeting_id": meeting_dir.name})
-                return
             if parsed.path == "/api/live-agent-create":
                 payload = self._operation_json_payload(operation="frontend_agent.create")
                 if payload is None:
@@ -9243,23 +9223,6 @@ def _make_handler(
                 self._send_error(HTTPStatus.FORBIDDEN, "HTTPS is required for remote credential management")
                 return False
             return True
-
-        def _room_owner_id_for_request(self) -> str:
-            session = RequestContext(self, route_deps, urlparse(self.path), parse_qs(urlparse(self.path).query)).session()
-            if session is not None:
-                participant_id = str(session.get("agent_id") or "")
-                user = user_for_participant(participant_id)
-                return str((user or {}).get("user_id") or participant_id)
-            if self._request_is_local_operator():
-                return operator_user_id()
-            token = (self.headers.get("X-Host-Token") or "").strip()
-            if not token:
-                auth = self.headers.get("Authorization") or ""
-                if auth.startswith("Bearer "):
-                    token = auth.removeprefix("Bearer ").strip()
-            if verify_host_token(token):
-                return operator_user_id()
-            return ""
 
         def _local_server_url(self) -> str:
             return _local_server_url(self.server.server_address)
