@@ -115,6 +115,8 @@ class RoomAgentBridge:
         self._report_timeout_seconds = max(0.1, float(report_timeout_seconds))
         self._report_lock = threading.RLock()
         self._pending_reports: dict[str, _PendingBridgeReport] = {}
+        self._diagnostics_lock = threading.RLock()
+        self._activity_invalid_count = 0
         self._run_thread: threading.Thread | None = None
         self.last_cleanup_report = CleanupReport("room_agent_bridge")
 
@@ -306,6 +308,8 @@ class RoomAgentBridge:
             def on_activity(activity: dict[str, object]) -> None:
                 safe = _safe_activity(activity)
                 if not safe:
+                    with self._diagnostics_lock:
+                        self._activity_invalid_count += 1
                     return
                 self._command("activity.update", {"turn_id": turn_id, **safe}, wait_for_ack=False)
 
@@ -449,6 +453,8 @@ class RoomAgentBridge:
     def _health_payload(self, health: dict[str, object]) -> dict[str, object]:
         parsed = ProviderRuntimeHealth.parse(health)
         details = parsed.details
+        with self._diagnostics_lock:
+            activity_invalid_count = self._activity_invalid_count
         return {
             "room_id": self.room_id,
             "participant_id": self.participant_id,
@@ -481,6 +487,7 @@ class RoomAgentBridge:
             "permission_request_count": int(details.get("permission_request_count") or 0),
             "permission_denied_count": int(details.get("permission_denied_count") or 0),
             "notification_drop_count": int(details.get("notification_drop_count") or 0),
+            "adapter_activity_invalid_count": activity_invalid_count,
             "message_source": str(details.get("message_source") or ""),
             "message_source_strict": bool(details.get("message_source_strict", False)),
             "model": str(details.get("model") or ""),
@@ -574,10 +581,8 @@ def _safe_activity(activity: object) -> dict[str, str]:
     values = activity if isinstance(activity, dict) else {}
     category = clean_lobby_text(values.get("category"), limit=32)
     status = clean_lobby_text(values.get("status"), limit=32)
-    if category not in _ACTIVITY_LABELS:
-        category = "tool"
-    if status not in {"started", "running", "completed"}:
-        status = "running"
+    if category not in _ACTIVITY_LABELS or status not in {"started", "running", "completed"}:
+        return {}
     return {
         "activity_kind": "reasoning" if category == "reasoning" else "tool",
         "category": category,

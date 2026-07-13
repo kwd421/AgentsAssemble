@@ -289,6 +289,11 @@ export default function AgentSessionDetails({
         {Boolean(session.notification_drop_count) && (
           <p className="dc-room-play-error">protocol drops {session.notification_drop_count}</p>
         )}
+        {Boolean(session.adapter_activity_invalid_count) && (
+          <p className="dc-room-play-error">
+            invalid activity reports {session.adapter_activity_invalid_count}
+          </p>
+        )}
         {continuity && <p>{continuity}</p>}
         {typeof session.yolo_mode === "boolean" && (
           <p>approval {session.yolo_mode ? "unsafe always-approve" : session.approval_policy || "restricted"}</p>

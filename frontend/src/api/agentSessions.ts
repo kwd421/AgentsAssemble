@@ -71,6 +71,7 @@ export interface RoomAgentSession {
   permission_denied_count?: number;
   empty_turn_recovery_count?: number;
   notification_drop_count?: number;
+  adapter_activity_invalid_count?: number;
   provider_session_active?: boolean;
   provider_session_load_supported?: boolean;
   provider_session_reused?: boolean;

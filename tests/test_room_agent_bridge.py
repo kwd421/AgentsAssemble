@@ -135,6 +135,21 @@ class InvalidHealthAfterStartRuntime(FakeRuntime):
         return {"running": True, "provider_session_active": True}
 
 
+class InvalidActivityRuntime(FakeRuntime):
+    def read_output(self, *, timeout_seconds, on_delta=None, on_activity=None):
+        del timeout_seconds, on_delta
+        if on_activity:
+            on_activity({"category": "mystery", "status": "waiting"})
+        return {
+            "outcome": "message",
+            "content": "clean final",
+            "metadata": {
+                "message_source": "fake-transcript",
+                "observed_model_id": "gpt-test-observed",
+            },
+        }
+
+
 def _launch_config(**overrides):
     values = {
         "room_id": "general",
@@ -368,6 +383,29 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertEqual(bridge.last_cleanup_report.failures[0].stage, "runtime.stop")
         self.assertEqual(bridge.last_cleanup_report.orphaned_handle_ids, ["codex"])
         self.assertIn("runtime.stop", stderr.getvalue())
+
+    def test_invalid_adapter_activity_is_dropped_and_counted(self):
+        client = FakeClient()
+        bridge = RoomAgentBridge(
+            client,
+            InvalidActivityRuntime(),
+            room_id="general",
+            participant_id="codex",
+            session_id="codex",
+            receive_sleep_seconds=0.005,
+        )
+        thread = threading.Thread(target=bridge.run, daemon=True)
+        thread.start()
+        _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
+        client.messages.append(_turn_assignment("turn-invalid-activity", "hello"))
+        _wait_for(lambda: any(action == "message.final" for action, _, _ in client.commands))
+        client.messages.append({"op": "agent.control", "action": "stop"})
+        thread.join(timeout=2)
+
+        self.assertFalse(thread.is_alive())
+        self.assertFalse(any(action == "activity.update" for action, _, _ in client.commands))
+        final = next(payload for action, payload, _ in client.commands if action == "message.final")
+        self.assertEqual(final["diagnostics"]["adapter_activity_invalid_count"], 1)
 
     def test_interrupt_is_forwarded_without_stopping_runtime(self):
         client = FakeClient()

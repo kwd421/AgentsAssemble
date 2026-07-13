@@ -1647,6 +1647,34 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse((self.root / "rooms" / "general" / "live_cli_events.jsonl").exists())
         self.assertEqual(RoomStore(self.root).session("general", "codex")["runtime_status"], "idle")
 
+    def test_invalid_bridge_activity_is_rejected_without_an_event(self):
+        self._command("req-start-invalid-activity", "agent.start", {"agent_id": "codex"})
+        identity, channel = self._connect_bridge()
+        self._command("req-prompt-invalid-activity", "message.send", {"content": "@codex hello"})
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+        before = len(RoomStore(self.root).read_events("general"))
+
+        for request_id, category, status in (
+            ("req-invalid-category", "mystery", "running"),
+            ("req-invalid-status", "command", "waiting"),
+        ):
+            with self.subTest(category=category, status=status), self.assertRaises(RoomCommandRejected) as error:
+                self._command(
+                    request_id,
+                    "activity.update",
+                    {
+                        "turn_id": assignment["turn_id"],
+                        "category": category,
+                        "status": status,
+                    },
+                    identity,
+                )
+            self.assertEqual(error.exception.code, "adapter_activity_invalid")
+
+        events = RoomStore(self.root).read_events("general")
+        self.assertEqual(len(events), before)
+        self.assertFalse(any(event["type"] == "activity_delta" for event in events))
+
     def test_canonical_room_messages_preserve_markdown_newlines(self):
         markdown = "| 이름 | 상태 |\n| --- | --- |\n| Codex | 대기 |"
 
@@ -1681,6 +1709,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                     "provider_session_reused": True,
                     "message_source": "grok_acp",
                     "message_source_strict": True,
+                    "adapter_activity_invalid_count": 2,
                 },
             },
             identity,
@@ -1694,6 +1723,8 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(stored["stderr_byte_count"], 70001)
         self.assertTrue(stored["provider_session_reused"])
         self.assertEqual(stored["message_source"], "grok_acp")
+        self.assertEqual(stored["adapter_activity_invalid_count"], 2)
+        self.assertEqual(public_session["adapter_activity_invalid_count"], 2)
         self.assertNotIn("stderr_tail", error_event["diagnostics"])
         self.assertNotIn("terminal_tail", error_event["diagnostics"])
         self.assertNotIn("stderr_tail", public_session)

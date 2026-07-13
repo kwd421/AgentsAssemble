@@ -1728,6 +1728,11 @@ class RoomRealtimeController:
         agent_id, session = self._active_bridge_turn(identity, room_id, payload)
         category = clean_lobby_text(payload.get("category"), limit=32)
         status = clean_lobby_text(payload.get("status"), limit=32)
+        if category not in _PUBLIC_ACTIVITY_LABELS or status not in {"started", "running", "completed"}:
+            raise RoomCommandRejected(
+                "Agent activity category or status is invalid.",
+                code="adapter_activity_invalid",
+            )
         content, activity_kind = _public_activity(category, status)
         event = self.store.append_event(
             room_id,
@@ -1740,8 +1745,8 @@ class RoomRealtimeController:
             session_id=session["session_id"],
             turn_id=session["active_turn_id"],
             activity_kind=activity_kind,
-            category=category if category in _PUBLIC_ACTIVITY_LABELS else "tool",
-            status=status if status in {"started", "running", "completed"} else "running",
+            category=category,
+            status=status,
             content=content,
         )
         return {"event": event, "event_seq": event["seq"]}
@@ -2570,21 +2575,19 @@ def _bridge_manager_session_running(
 
 
 _PUBLIC_ACTIVITY_LABELS = {
-    "reasoning": {"running": "생각 정리 중", "completed": "생각 정리 완료"},
-    "file_read": {"running": "파일 읽는 중", "completed": "파일 확인 완료"},
-    "search": {"running": "정보 검색 중", "completed": "정보 검색 완료"},
-    "command": {"running": "명령 실행 중", "completed": "명령 실행 완료"},
-    "web": {"running": "웹 확인 중", "completed": "웹 확인 완료"},
-    "tool": {"running": "도구 사용 중", "completed": "도구 사용 완료"},
+    "reasoning": {"started": "생각 정리 중", "running": "생각 정리 중", "completed": "생각 정리 완료"},
+    "file_read": {"started": "파일 읽는 중", "running": "파일 읽는 중", "completed": "파일 확인 완료"},
+    "search": {"started": "정보 검색 중", "running": "정보 검색 중", "completed": "정보 검색 완료"},
+    "command": {"started": "명령 실행 중", "running": "명령 실행 중", "completed": "명령 실행 완료"},
+    "web": {"started": "웹 확인 중", "running": "웹 확인 중", "completed": "웹 확인 완료"},
+    "tool": {"started": "도구 사용 중", "running": "도구 사용 중", "completed": "도구 사용 완료"},
 }
 
 
 def _public_activity(category: str, status: str) -> tuple[str, str]:
-    safe_category = category if category in _PUBLIC_ACTIVITY_LABELS else "tool"
-    safe_status = "completed" if status == "completed" else "running"
     return (
-        _PUBLIC_ACTIVITY_LABELS[safe_category][safe_status],
-        "reasoning" if safe_category == "reasoning" else "tool",
+        _PUBLIC_ACTIVITY_LABELS[category][status],
+        "reasoning" if category == "reasoning" else "tool",
     )
 
 
@@ -2654,6 +2657,7 @@ def _runtime_diagnostic_fields(diagnostics: object) -> dict[str, object]:
         "permission_request_count": int(values.get("permission_request_count") or 0),
         "permission_denied_count": int(values.get("permission_denied_count") or 0),
         "notification_drop_count": int(values.get("notification_drop_count") or 0),
+        "adapter_activity_invalid_count": int(values.get("adapter_activity_invalid_count") or 0),
         "message_source": clean_lobby_text(values.get("message_source"), limit=128),
         "message_source_strict": bool(values.get("message_source_strict", False)),
     }

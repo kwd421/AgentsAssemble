@@ -184,6 +184,7 @@ describe("RoomConnectionPanel", () => {
       stderr_byte_count: 65540,
       stderr_warning_count: 17,
       notification_drop_count: 2,
+      adapter_activity_invalid_count: 3,
       provider_session_active: true,
       provider_session_reused: true,
       provider_session_id: "must-not-render",
@@ -207,6 +208,7 @@ describe("RoomConnectionPanel", () => {
     expect(screen.getByText("input 418 chars · 3 events")).toBeTruthy();
     expect(screen.getByText("stderr 65540 bytes · warnings 17")).toBeTruthy();
     expect(screen.getByText("protocol drops 2")).toBeTruthy();
+    expect(screen.getByText("invalid activity reports 3")).toBeTruthy();
     expect(screen.getByText("provider session 이어짐")).toBeTruthy();
     expect(screen.queryByText("must-not-render")).toBeNull();
     expect(screen.queryByText("secret terminal warning")).toBeNull();
