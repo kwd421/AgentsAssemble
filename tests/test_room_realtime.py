@@ -154,11 +154,11 @@ class RoomEventBrokerTests(unittest.TestCase):
 
 
 class NativeCliProviderSpecTests(unittest.TestCase):
-    def test_default_specs_include_interactive_claude_haiku_without_print_mode(self):
+    def test_default_specs_include_exact_interactive_claude_without_print_mode(self):
         specs = {spec.agent_id: spec for spec in default_native_cli_provider_specs()}
 
         self.assertIn("claude", specs)
-        self.assertEqual(specs["claude"].model, "haiku")
+        self.assertEqual(specs["claude"].model, "claude-haiku-4-5")
         self.assertEqual(specs["claude"].provider_kind, "claude_code")
         self.assertIn("--model", specs["claude"].command)
         self.assertEqual(specs["claude"].permission_mode, "meeting_read_only")

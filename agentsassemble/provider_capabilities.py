@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import json
+import copy
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -55,7 +56,13 @@ class ProviderCapabilityCatalog:
             if not refresh:
                 self._start_background_refresh_locked()
                 return self._snapshot_locked()
-        return self._refresh_snapshot()
+            self._status = "loading"
+            self._refreshing = True
+        try:
+            return self._refresh_snapshot()
+        except Exception:
+            self._mark_refresh_failed()
+            raise
 
     def payload(self, *, refresh: bool = False) -> list[dict[str, object]]:
         return list(self.snapshot(refresh=refresh).get("providers") or [])
@@ -99,7 +106,7 @@ class ProviderCapabilityCatalog:
                     f"Provider {provider_id or 'unknown'} is not available in the current catalog.",
                     code="unsupported_provider",
                 )
-            controls = list(provider.get("controls") or [])
+            controls = copy.deepcopy(list(provider.get("controls") or []))
         for control in controls:
             if not isinstance(control, dict):
                 continue
@@ -124,6 +131,63 @@ class ProviderCapabilityCatalog:
                     f"Unsupported {key} value for provider {provider_id}.",
                     code=code,
                 )
+        model_control = next(
+            (control for control in controls if isinstance(control, dict) and control.get("key") == "model"),
+            None,
+        )
+        selected_model = str(values.get("model") or "")
+        model_option = (
+            next(
+                (
+                    option
+                    for option in list(model_control.get("options") or [])
+                    if isinstance(option, dict)
+                    and str(option.get("value") or "") == selected_model
+                ),
+                None,
+            )
+            if isinstance(model_control, dict)
+            else None
+        )
+        metadata = dict(model_option.get("metadata") or {}) if isinstance(model_option, dict) else {}
+        self._validate_model_relation(
+            provider_id=provider_id,
+            metadata=metadata,
+            metadata_key="reasoning_efforts",
+            selected_value=str(values.get("reasoning_effort") or ""),
+            error_code="unsupported_model_effort_combination",
+        )
+        selected_tier = str(values.get("service_tier") or "")
+        if selected_tier != "default":
+            self._validate_model_relation(
+                provider_id=provider_id,
+                metadata=metadata,
+                metadata_key="service_tiers",
+                selected_value=selected_tier,
+                error_code="unsupported_model_service_tier_combination",
+            )
+
+    @staticmethod
+    def _validate_model_relation(
+        *,
+        provider_id: str,
+        metadata: dict[str, object],
+        metadata_key: str,
+        selected_value: str,
+        error_code: str,
+    ) -> None:
+        if not selected_value or metadata_key not in metadata:
+            return
+        allowed = {
+            str(value)
+            for value in list(metadata.get(metadata_key) or [])
+            if str(value)
+        }
+        if selected_value not in allowed:
+            raise ProviderCatalogSelectionError(
+                f"The selected model and {metadata_key} value are not a supported combination for {provider_id}.",
+                code=error_code,
+            )
 
     def _refresh_snapshot(self) -> dict[str, object]:
         payload = [self._native_payload(definition) for definition in NATIVE_CLI_PROVIDER_CATALOG]
@@ -150,6 +214,7 @@ class ProviderCapabilityCatalog:
     def _start_background_refresh_locked(self) -> None:
         if self._refreshing:
             return
+        self._status = "loading"
         self._refreshing = True
 
         def refresh_catalog() -> None:
@@ -168,6 +233,11 @@ class ProviderCapabilityCatalog:
                         continue
 
         threading.Thread(target=refresh_catalog, name="provider-capability-refresh", daemon=True).start()
+
+    def _mark_refresh_failed(self) -> None:
+        with self._lock:
+            self._status = "failed"
+            self._refreshing = False
 
     def _native_payload(self, definition) -> dict[str, object]:
         resolved = self._resolver(definition.executable)
@@ -247,7 +317,18 @@ class ProviderCapabilityCatalog:
         }
 
     def _snapshot_locked(self) -> dict[str, object]:
-        providers = [dict(item) for item in self._cached]
+        providers = copy.deepcopy(self._cached)
+        if providers and self._status != "ready":
+            for provider in providers:
+                provider["startable"] = False
+                provider["catalog_source"] = "stale_cache"
+                if provider.get("discovery_status") == "ready":
+                    provider["discovery_status"] = self._status
+                    provider["discovery_error"] = (
+                        "provider catalog refresh in progress"
+                        if self._status == "loading"
+                        else "provider catalog refresh failed"
+                    )
         if not providers and self._status == "loading":
             providers = self._loading_payload()
         return {
@@ -457,9 +538,28 @@ def _deepseek_payload() -> dict[str, object]:
 
 
 def _claude_manifest_controls() -> list[dict[str, object]]:
+    efforts = ("low", "medium", "high", "xhigh", "max")
+    relation = {
+        "reasoning_efforts": list(efforts),
+        "service_tiers": ["fast"],
+    }
     return [
-        _control("model", "모델", [_option("haiku"), _option("sonnet"), _option("opus")], "haiku", kind="combobox"),
-        _control("reasoning_effort", "추론 강도", [_option(value) for value in ("low", "medium", "high", "xhigh", "max")], "high"),
+        _control(
+            "model",
+            "모델",
+            [
+                _option("claude-haiku-4-5", "Claude Haiku 4.5", **relation),
+                _option("claude-sonnet-4-6", "Claude Sonnet 4.6", **relation),
+                _option("claude-sonnet-5", "Claude Sonnet 5", **relation),
+                _option("claude-opus-4-6", "Claude Opus 4.6", **relation),
+                _option("haiku", "Haiku (latest alias)", **relation),
+                _option("sonnet", "Sonnet (latest alias)", **relation),
+                _option("opus", "Opus (latest alias)", **relation),
+            ],
+            "claude-haiku-4-5",
+            kind="combobox",
+        ),
+        _control("reasoning_effort", "추론 강도", [_option(value) for value in efforts], "high"),
         _control("service_tier", "응답 속도", [_option("default", "기본"), _option("fast", "Fast")], "default"),
         _permission_control(),
     ]

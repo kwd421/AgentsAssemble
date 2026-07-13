@@ -307,7 +307,7 @@ def _claude_command(
     command = [
         "claude",
         "--model",
-        model or "haiku",
+        model or "claude-haiku-4-5",
     ]
     if effort:
         command.extend(("--effort", effort))
@@ -383,12 +383,12 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
     ),
     NativeCliProviderDefinition(
         provider_id="claude",
-        display_name="Claude Haiku",
+        display_name="Claude Code",
         provider_kind="claude_code",
         executable="claude",
         command_builder=_claude_command,
         aliases=("claude_code",),
-        default_model="haiku",
+        default_model="claude-haiku-4-5",
         default_reasoning_effort="high",
         default_service_tier="default",
         input_mode="bracketed_paste",

@@ -14,7 +14,10 @@ from agentsassemble.process_environment import (
     environment_contains_secret_names,
     sanitized_provider_environment,
 )
-from agentsassemble.provider_capabilities import ProviderCapabilityCatalog
+from agentsassemble.provider_capabilities import (
+    ProviderCapabilityCatalog,
+    ProviderCatalogSelectionError,
+)
 from agentsassemble.provider_secrets import ProviderSecretStore
 from agentsassemble.room_attendee import _orientation_text, parse_agent_invite_url
 from agentsassemble.room_attendee import AgentAttendee
@@ -122,6 +125,123 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(codex["controls"][0]["default_value"], "gpt-5.6-luna")
         self.assertNotIn("command", codex)
         self.assertNotIn("resolved_executable", codex)
+
+    def test_claude_catalog_distinguishes_exact_models_from_latest_aliases(self):
+        catalog = ProviderCapabilityCatalog(
+            runner=lambda _command, _timeout: (0, "Claude help", ""),
+            resolver=lambda executable: f"/bin/{executable}",
+        )
+
+        claude = next(item for item in catalog.payload(refresh=True) if item["id"] == "claude")
+        model = next(control for control in claude["controls"] if control["key"] == "model")
+        options = {option["value"]: option["label"] for option in model["options"]}
+
+        self.assertEqual(model["default_value"], "claude-haiku-4-5")
+        self.assertEqual(options["claude-sonnet-4-6"], "Claude Sonnet 4.6")
+        self.assertEqual(options["sonnet"], "Sonnet (latest alias)")
+
+    def test_catalog_rejects_model_effort_and_service_tier_mismatches(self):
+        def runner(command: list[str], _timeout: float):
+            if command[1:3] == ["debug", "models"]:
+                return 0, json.dumps(
+                    {
+                        "models": [
+                            {
+                                "slug": "model-low",
+                                "supported_reasoning_levels": [{"effort": "low"}],
+                                "service_tiers": [{"id": "priority"}],
+                            },
+                            {
+                                "slug": "model-high",
+                                "supported_reasoning_levels": [{"effort": "high"}],
+                                "service_tiers": [],
+                            },
+                        ]
+                    }
+                ), ""
+            if command[1:] == ["models", "--verbose"]:
+                return 0, "opencode/provider-live\n", ""
+            if command[0].endswith("claude"):
+                return 0, "Claude help", ""
+            return 1, "", "unsupported"
+
+        catalog = ProviderCapabilityCatalog(
+            runner=runner,
+            resolver=lambda executable: f"/bin/{executable}",
+        )
+        revision = str(catalog.snapshot(refresh=True)["catalog_revision"])
+        common = {
+            "model": "model-high",
+            "reasoning_effort": "high",
+            "service_tier": "default",
+            "permission_mode": "meeting_read_only",
+        }
+
+        catalog.validate_selection(
+            catalog_revision=revision,
+            provider_id="codex",
+            values=common,
+        )
+        with self.assertRaises(ProviderCatalogSelectionError) as effort:
+            catalog.validate_selection(
+                catalog_revision=revision,
+                provider_id="codex",
+                values={**common, "reasoning_effort": "low"},
+            )
+        self.assertEqual(effort.exception.code, "unsupported_model_effort_combination")
+        with self.assertRaises(ProviderCatalogSelectionError) as tier:
+            catalog.validate_selection(
+                catalog_revision=revision,
+                provider_id="codex",
+                values={**common, "service_tier": "priority"},
+            )
+        self.assertEqual(tier.exception.code, "unsupported_model_service_tier_combination")
+
+    def test_expired_catalog_is_visible_but_not_startable_during_refresh(self):
+        block_refresh = [False]
+        refresh_started = threading.Event()
+        release = threading.Event()
+
+        def runner(command: list[str], _timeout: float):
+            if block_refresh[0]:
+                refresh_started.set()
+                release.wait(2)
+            if command[1:3] == ["debug", "models"]:
+                return 0, json.dumps({"models": [{"slug": "gpt-live"}]}), ""
+            if command[1:] == ["models", "--verbose"]:
+                return 0, "opencode/provider-live\n", ""
+            if command[0].endswith("claude"):
+                return 0, "Claude help", ""
+            return 1, "", "unsupported"
+
+        catalog = ProviderCapabilityCatalog(
+            runner=runner,
+            resolver=lambda executable: f"/bin/{executable}",
+        )
+        ready = catalog.snapshot(refresh=True)
+        revision = str(ready["catalog_revision"])
+        block_refresh[0] = True
+        catalog._cached_at = 0.0
+        stale = catalog.snapshot()
+        try:
+            self.assertTrue(refresh_started.wait(1))
+            self.assertEqual(stale["status"], "loading")
+            self.assertTrue(all(not provider["startable"] for provider in stale["providers"]))
+            self.assertTrue(all(provider["catalog_source"] == "stale_cache" for provider in stale["providers"]))
+            with self.assertRaises(ProviderCatalogSelectionError) as rejected:
+                catalog.validate_selection(
+                    catalog_revision=revision,
+                    provider_id="codex",
+                    values={
+                        "model": "gpt-live",
+                        "reasoning_effort": "",
+                        "service_tier": "default",
+                        "permission_mode": "meeting_read_only",
+                    },
+                )
+            self.assertEqual(rejected.exception.code, "catalog_not_ready")
+        finally:
+            release.set()
 
     def test_cold_capability_catalog_is_loading_until_discovery_finishes(self):
         release = threading.Event()

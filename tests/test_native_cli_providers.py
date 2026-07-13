@@ -24,7 +24,7 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         self.assertEqual(list(specs), ["codex", "antigravity", "grok", "claude"])
         self.assertEqual(specs["codex"].model, "gpt-5.6-luna")
         self.assertEqual(specs["codex"].reasoning_effort, "low")
-        self.assertEqual(specs["claude"].model, "haiku")
+        self.assertEqual(specs["claude"].model, "claude-haiku-4-5")
         self.assertEqual(specs["grok"].command, ("grok", "--model", "grok-4.5", "agent", "stdio"))
         self.assertEqual(specs["grok"].transport, "acp_stdio")
         self.assertNotIn("-p", specs["claude"].command)
