@@ -48,8 +48,8 @@ export default function AgentCreateModal({
   const [credentialStatus, setCredentialStatus] = useState<ProviderCredentialStatus | null>(null);
   const [credentialBusy, setCredentialBusy] = useState(false);
   const wasOpen = useRef(false);
-  const selectedProvider =
-    providers.find((provider) => provider.id === providerId) || providers[0];
+  const selectedProvider = providers.find((provider) => provider.id === providerId);
+  const selectedProviderMissing = Boolean(providerId && providers.length && !selectedProvider);
   const reusableSessions = existingSessions.filter(
     (session) =>
       !session.external_owned &&
@@ -81,14 +81,14 @@ export default function AgentCreateModal({
     }
     if (!providers.length) return;
     const current = providers.find((provider) => provider.id === providerId);
-    if (!wasOpen.current || !current) {
+    if (!wasOpen.current) {
       applyProvider(current || providers[0]);
       setStatus("");
       wasOpen.current = true;
       return;
     }
-    if (!existingSessionId) {
-      setSettings((previous) => normalizeProviderSettings(current, previous));
+    if (current && !existingSessionId) {
+      setSettings((previous) => reconcileProviderSettings(current, previous));
     }
     wasOpen.current = true;
   }, [open, providers]);
@@ -104,7 +104,7 @@ export default function AgentCreateModal({
     setProviderId(provider.id);
     setExistingSessionId("");
     setDisplayName(provider.display_name);
-    setSettings(normalizeProviderSettings(provider, {}));
+    setSettings(initializeProviderSettings(provider));
     setStartNow(provider.startable);
   }
 
@@ -114,7 +114,7 @@ export default function AgentCreateModal({
     if (!session) {
       if (selectedProvider) {
         setDisplayName(selectedProvider.display_name);
-        setSettings(normalizeProviderSettings(selectedProvider, {}));
+        setSettings(initializeProviderSettings(selectedProvider));
       }
       return;
     }
@@ -268,7 +268,7 @@ export default function AgentCreateModal({
                 disabled={Boolean(existingSessionId)}
                 onChange={(value) =>
                   setSettings((previous) =>
-                    normalizeProviderSettings(selectedProvider, {
+                    reconcileProviderSettings(selectedProvider, {
                       ...previous,
                       [control.key]: value,
                     })
@@ -339,6 +339,9 @@ export default function AgentCreateModal({
         {selectedProvider?.catalog_source === "static_manifest" && (
           <p className="dc-agent-create-note">전체 모델 ID와 최신 모델 별칭을 구분해 표시합니다.</p>
         )}
+        {selectedProviderMissing && (
+          <p className="dc-agent-create-status">선택한 provider가 현재 catalog에 없습니다.</p>
+        )}
         {!existingSessionId && invalidControl && (
           <p className="dc-agent-create-status">{invalidControl.label}의 유효한 기본값이 없어 직접 선택해야 합니다.</p>
         )}
@@ -402,19 +405,33 @@ function ProviderControlField({
   );
 }
 
-function normalizeProviderSettings(
+function initializeProviderSettings(
+  provider: NativeCliProviderAvailability
+): Record<string, string> {
+  return normalizeProviderSettings(provider, {}, true);
+}
+
+function reconcileProviderSettings(
   provider: NativeCliProviderAvailability,
   candidate: Record<string, string>
+): Record<string, string> {
+  return normalizeProviderSettings(provider, candidate, false);
+}
+
+function normalizeProviderSettings(
+  provider: NativeCliProviderAvailability,
+  candidate: Record<string, string>,
+  useDefaults: boolean
 ): Record<string, string> {
   const next: Record<string, string> = {};
   const modelControl = provider.controls.find((control) => control.key === "model");
   if (modelControl) {
-    next.model = validControlValue(modelControl, modelControl.options, candidate.model);
+    next.model = validControlValue(modelControl, modelControl.options, candidate.model, useDefaults);
   }
   for (const control of provider.controls) {
     if (control.key === "model") continue;
     const options = effectiveControlOptions(provider, control, { ...candidate, ...next });
-    next[control.key] = validControlValue(control, options, candidate[control.key]);
+    next[control.key] = validControlValue(control, options, candidate[control.key], useDefaults);
   }
   return next;
 }
@@ -422,12 +439,13 @@ function normalizeProviderSettings(
 function validControlValue(
   control: ProviderControl,
   options: ProviderControl["options"],
-  candidate?: string
+  candidate: string | undefined,
+  useDefault: boolean
 ): string {
   if (candidate !== undefined && options.some((option) => option.value === candidate)) {
     return candidate;
   }
-  return options.some((option) => option.value === control.default_value)
+  return useDefault && options.some((option) => option.value === control.default_value)
     ? control.default_value
     : "";
 }

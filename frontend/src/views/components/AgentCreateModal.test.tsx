@@ -177,6 +177,75 @@ describe("AgentCreateModal", () => {
     expect(screen.getByRole("listitem", { name: "Claude Code" }).getAttribute("data-active")).toBe("true");
   });
 
+  it("does not switch providers when the selected provider disappears during refresh", async () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-one"
+        providers={[codexProvider(), claudeProvider()]}
+        onClose={() => undefined}
+        onCreate={onCreate}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("listitem", { name: "Claude Code" }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "claude-sonnet-4-6");
+
+    rerender(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-two"
+        providers={[codexProvider()]}
+        onClose={() => undefined}
+        onCreate={onCreate}
+      />
+    );
+
+    expect(screen.getByText("선택한 provider가 현재 catalog에 없습니다.")).toBeTruthy();
+    expect(screen.getByRole("listitem", { name: "Codex" }).getAttribute("data-active")).toBe("false");
+    expect(screen.getByRole("button", { name: "추가하고 시작" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("invalidates a selected model removed by a catalog refresh", async () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-one"
+        providers={[claudeProvider()]}
+        onClose={() => undefined}
+        onCreate={onCreate}
+      />
+    );
+
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "claude-sonnet-4-6");
+    const refreshed = claudeProvider();
+    refreshed.controls[0].options = refreshed.controls[0].options.filter(
+      (option) => option.value !== "claude-sonnet-4-6"
+    );
+    rerender(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-two"
+        providers={[refreshed]}
+        onClose={() => undefined}
+        onCreate={onCreate}
+      />
+    );
+
+    expect((screen.getByRole("combobox", { name: "모델" }) as HTMLSelectElement).value).toBe("");
+    expect(screen.getByRole("button", { name: "추가하고 시작" }).hasAttribute("disabled")).toBe(true);
+  });
+
   it("does not silently choose the first option when a catalog default is invalid", () => {
     render(
       <AgentCreateModal
@@ -227,6 +296,40 @@ describe("AgentCreateModal", () => {
     expect(screen.getByRole("option", { name: "high" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Fast" })).toBeNull();
     expect(screen.getByRole("option", { name: "기본" })).toBeTruthy();
+  });
+
+  it("invalidates an effort removed by a model relation change", async () => {
+    const { rerender } = render(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-one"
+        providers={[codexProviderWithRelations()]}
+        onClose={() => undefined}
+        onCreate={vi.fn()}
+      />
+    );
+
+    const refreshed = codexProviderWithRelations();
+    refreshed.controls[0].options[0].metadata = {
+      reasoning_efforts: ["high"],
+      service_tiers: ["priority"],
+    };
+    rerender(
+      <AgentCreateModal
+        open
+        meetingId="room-a"
+        roomLabel="Room A"
+        catalogRevision="cat-two"
+        providers={[refreshed]}
+        onClose={() => undefined}
+        onCreate={vi.fn()}
+      />
+    );
+
+    expect((screen.getByRole("combobox", { name: "추론 강도" }) as HTMLSelectElement).value).toBe("");
+    expect(screen.getByRole("button", { name: "추가하고 시작" }).hasAttribute("disabled")).toBe(true);
   });
 });
 
