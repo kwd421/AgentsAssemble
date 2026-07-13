@@ -138,6 +138,7 @@ class NativeCliBridgeProcessManager:
             "participant_id": spec.agent_id,
             "session_id": session_id,
             "provider_kind": spec.normalized_provider_kind(),
+            "runtime_kind": spec.runtime_kind,
             "command": list(spec.command),
             "cwd": spec.cwd,
             "model": spec.model,

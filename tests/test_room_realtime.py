@@ -114,6 +114,27 @@ def _bridge_identity(agent_id="codex"):
     }
 
 
+def _external_ready_payload(provider_kind="codex_live_session", **overrides):
+    definition = native_cli_provider_definition(provider_kind)
+    assert definition is not None
+    values = {
+        "pid": 808,
+        "running": True,
+        "transport": definition.reported_transports[0],
+        "provider_session_active": True,
+        "started_at": None,
+        "provider_kind": definition.provider_kind,
+        "runtime_kind": definition.runtime_kind,
+        "model": definition.default_model,
+        "reasoning_effort": definition.default_reasoning_effort,
+        "service_tier": definition.default_service_tier,
+        "variant": definition.default_variant,
+        "permission_mode": definition.default_permission_mode,
+    }
+    values.update(overrides)
+    return values
+
+
 def _test_provider_catalog() -> ProviderCapabilityCatalog:
     def runner(command, _timeout):
         if command[1:3] == ["debug", "models"]:
@@ -362,16 +383,17 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self._command(
             "external-ready",
             "bridge.ready",
-            {
-                "pid": 1,
-                "running": True,
-                "transport": "websocket",
-                "model": "gpt-5.6-luna",
-                "provider_session_active": True,
-                "started_at": None,
-            },
+            _external_ready_payload(pid=1),
             identity,
         )
+        attached = RoomStore(self.root).session("general", "external")
+        self.assertEqual(attached["provider_kind"], "codex_live_session")
+        self.assertEqual(attached["runtime_kind"], "live_cli")
+        self.assertEqual(attached["model"], "gpt-5.6-luna")
+        self.assertEqual(attached["reasoning_effort"], "low")
+        self.assertEqual(attached["service_tier"], "default")
+        self.assertEqual(attached["permission_mode"], "meeting_read_only")
+        self.assertTrue(attached["runtime_profile_key"])
         with patch(
             "agentsassemble.room_realtime.revoke_sessions_for_participant",
             return_value=1,
@@ -391,13 +413,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self._command(
             "external-shutdown-ready",
             "bridge.ready",
-            {
-                "running": True,
-                "transport": "websocket",
-                "model": "gpt-5.6-luna",
-                "provider_session_active": True,
-                "started_at": None,
-            },
+            _external_ready_payload(),
             identity,
         )
 
@@ -412,36 +428,44 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.controller.connect(identity)
 
         with self.assertRaises(RoomCommandRejected) as rejected:
+            payload = _external_ready_payload()
+            payload.pop("model")
             self._command(
                 "external-ready-no-model",
                 "bridge.ready",
-                {
-                    "running": True,
-                    "transport": "websocket",
-                    "provider_session_active": True,
-                    "started_at": None,
-                },
+                payload,
                 identity,
             )
 
         self.assertEqual(rejected.exception.code, "provider_profile_invalid")
         self.assertFalse(self.controller.broker.has_bridge("general", "external-no-model"))
 
+    def test_external_bridge_ready_rejects_provider_transport_mismatch(self):
+        identity = _bridge_identity("external-wrong-transport")
+        identity["provider_kind"] = "codex"
+        self.controller.connect(identity)
+
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self._command(
+                "external-ready-wrong-transport",
+                "bridge.ready",
+                _external_ready_payload(transport="pty"),
+                identity,
+            )
+
+        self.assertEqual(rejected.exception.code, "provider_profile_invalid")
+        self.assertFalse(self.controller.broker.has_bridge("general", "external-wrong-transport"))
+
     def test_external_bridge_cannot_kill_an_unrelated_real_process(self):
         unrelated = subprocess.Popen(["sleep", "30"], start_new_session=True)
         try:
             identity = _bridge_identity("malicious-external")
+            identity["provider_kind"] = "codex"
             channel = self.controller.connect(identity)
             self._command(
                 "malicious-ready",
                 "bridge.ready",
-                {
-                    "pid": unrelated.pid,
-                    "running": True,
-                    "transport": "websocket",
-                    "provider_session_active": True,
-                    "started_at": None,
-                },
+                _external_ready_payload(pid=unrelated.pid),
                 identity,
             )
             self._command("malicious-stop", "agent.stop", {"agent_id": "malicious-external"})

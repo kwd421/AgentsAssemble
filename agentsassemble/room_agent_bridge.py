@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
-from agentsassemble.grok_acp_runtime import GrokAcpRuntime
 from agentsassemble.bridge_protocol import (
     BridgeProtocolError,
     BridgeReportRejected,
@@ -20,10 +19,7 @@ from agentsassemble.bridge_protocol import (
     BridgeReportTimeout,
     TurnAssignmentEnvelope,
 )
-from agentsassemble.deepseek_runtime import DeepSeekApiRuntime
 from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
-from agentsassemble.live_cli import LiveCliRuntime
-from agentsassemble.opencode_runtime import OpenCodeRuntime
 from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
 from agentsassemble.provider_runtime_contracts import (
     AdapterContractError,
@@ -33,9 +29,10 @@ from agentsassemble.provider_runtime_contracts import (
 from agentsassemble.provider_runtime_config import (
     ProviderRuntimeConfig,
     ProviderRuntimeConfigError,
+    ProviderRuntimeProfile,
 )
+from agentsassemble.provider_runtime_factory import runtime_from_config
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
-from agentsassemble.windows_conpty import WindowsConPtyRuntime
 
 
 class BridgeConfigError(ValueError):
@@ -100,6 +97,7 @@ class RoomAgentBridge:
         initial_orientation: str = "",
         stop_runtime_on_exit: bool = True,
         report_timeout_seconds: float = 5.0,
+        runtime_profile: ProviderRuntimeProfile | None = None,
     ) -> None:
         self.client = client
         self.runtime = runtime
@@ -113,6 +111,7 @@ class RoomAgentBridge:
         self._worker_lock = threading.RLock()
         self._worker: threading.Thread | None = None
         self._report_timeout_seconds = max(0.1, float(report_timeout_seconds))
+        self._runtime_profile = runtime_profile
         self._report_lock = threading.RLock()
         self._pending_reports: dict[str, _PendingBridgeReport] = {}
         self._diagnostics_lock = threading.RLock()
@@ -455,9 +454,16 @@ class RoomAgentBridge:
     def _health_payload(self, health: dict[str, object]) -> dict[str, object]:
         parsed = ProviderRuntimeHealth.parse(health)
         details = parsed.details
+        runtime_kind = clean_lobby_text(details.get("runtime_kind"), limit=64)
+        if self._runtime_profile is not None:
+            if runtime_kind and runtime_kind != self._runtime_profile.runtime_kind:
+                raise AdapterContractError(
+                    "Provider runtime health reported a different runtime kind than its launch profile."
+                )
+            runtime_kind = self._runtime_profile.runtime_kind
         with self._diagnostics_lock:
             activity_invalid_count = self._activity_invalid_count
-        return {
+        payload = {
             "room_id": self.room_id,
             "participant_id": self.participant_id,
             "session_id": self.session_id,
@@ -497,76 +503,11 @@ class RoomAgentBridge:
             "service_tier": str(details.get("service_tier") or ""),
             "variant": str(details.get("variant") or ""),
             "permission_mode": str(details.get("permission_mode") or ""),
+            "runtime_kind": runtime_kind,
         }
-
-
-def runtime_from_config(
-    config: ProviderRuntimeConfig,
-    *,
-    credential: str = "",
-) -> BridgeRuntime:
-    command = list(config.command)
-    provider_kind = config.provider_kind
-    if provider_kind == "deepseek_api":
-        return DeepSeekApiRuntime(
-            config.participant_id,
-            api_key=credential,
-            model=config.model,
-            reasoning_effort=config.reasoning_effort,
-            thinking=config.variant != "non_thinking",
-        )
-    if provider_kind == "opencode_server":
-        return OpenCodeRuntime(
-            config.participant_id,
-            endpoint=config.provider_endpoint,
-            workspace=config.cwd,
-            state_dir=config.runtime_state_dir,
-            model=config.model,
-            variant=config.variant,
-            permission_mode=config.permission_mode,
-            server_pid=config.provider_server_pid,
-        )
-    if provider_kind == "grok_live_session" and _is_grok_acp_command(command):
-        return GrokAcpRuntime(
-            config.participant_id,
-            command,
-            cwd=config.cwd,
-            state_dir=config.runtime_state_dir,
-            startup_timeout_seconds=config.startup_timeout_seconds,
-        )
-    if provider_kind == "grok_live_session" and Path(command[0]).name.casefold() == "grok":
-        raise ValueError("Grok Agent Sessions require grok agent stdio; PTY fallback is disabled.")
-    runtime_class = WindowsConPtyRuntime if os.name == "nt" else LiveCliRuntime
-    return runtime_class(
-        config.participant_id,
-        command,
-        cwd=config.cwd,
-        idle_quiet_seconds=config.quiet_seconds,
-        input_mode=config.input_mode,
-        submit_newline=config.submit_newline,
-        submit_delay_seconds=config.submit_delay_seconds,
-        terminal_rows=config.terminal_rows,
-        terminal_columns=config.terminal_columns,
-        startup_quiet_seconds=config.startup_quiet_seconds,
-        startup_timeout_seconds=config.startup_timeout_seconds,
-        startup_accept_contains=config.startup_accept_contains,
-        startup_accept_keys=config.startup_accept_keys,
-        startup_ready_contains=config.startup_ready_contains,
-        startup_input=config.startup_input,
-        profile_settings={
-            "model": config.model,
-            "reasoning_effort": config.reasoning_effort,
-            "service_tier": config.service_tier,
-            "variant": config.variant,
-            "permission_mode": config.permission_mode,
-        },
-    )
-
-
-def _is_grok_acp_command(command: list[str]) -> bool:
-    executable = Path(command[0]).name.casefold() if command else ""
-    parts = [str(part).casefold() for part in command[1:]]
-    return executable == "grok" and "agent" in parts and "stdio" in parts
+        if self._runtime_profile is not None:
+            payload.update(self._runtime_profile.report_fields())
+        return payload
 
 
 _ACTIVITY_LABELS = {
@@ -630,6 +571,7 @@ def main() -> int:
         room_id=config.room_id,
         participant_id=config.runtime.participant_id,
         session_id=config.session_id,
+        runtime_profile=config.runtime.profile,
     )
 
     def stop_bridge(_signum, _frame) -> None:

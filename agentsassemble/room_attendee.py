@@ -15,9 +15,10 @@ from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
 from agentsassemble.native_cli_providers import native_cli_provider_definition
 from agentsassemble.codex_app_server_live_runtime import CodexAppServerLiveRuntime
 from agentsassemble.opencode_runtime import OpenCodeServerProcess
-from agentsassemble.provider_runtime_config import ProviderRuntimeConfig
+from agentsassemble.provider_runtime_config import ProviderRuntimeConfig, ProviderRuntimeProfile
+from agentsassemble.provider_runtime_factory import runtime_from_config
 from agentsassemble.provider_secrets import PROVIDER_SECRETS
-from agentsassemble.room_agent_bridge import RoomAgentBridge, runtime_from_config
+from agentsassemble.room_agent_bridge import RoomAgentBridge
 from agentsassemble.ws_room_client import connect_room_ws, join_room_session
 
 
@@ -52,6 +53,7 @@ class AgentAttendee:
         self._stop = threading.Event()
         self._bridge: RoomAgentBridge | None = None
         self._runtime = None
+        self._runtime_profile: ProviderRuntimeProfile | None = None
         self._opencode_server: OpenCodeServerProcess | None = None
         self.last_cleanup_report = CleanupReport("agent_attendee")
 
@@ -70,7 +72,11 @@ class AgentAttendee:
                 timeout=10.0,
             )
             expected_kind = str(joined.get("provider_kind") or "manual")
-            if expected_kind not in {"manual", self.definition.provider_kind}:
+            if expected_kind == "manual":
+                raise ValueError(
+                    "Agent Session invites must name the provider that is allowed to connect."
+                )
+            if expected_kind != self.definition.provider_kind:
                 raise ValueError("The invite is assigned to a different provider kind.")
             session_token = str(joined["session_token"])
             participant_id = str(joined.get("agent_id") or "")
@@ -91,6 +97,7 @@ class AgentAttendee:
                     session_id=participant_id,
                     initial_orientation=orientation,
                     stop_runtime_on_exit=False,
+                    runtime_profile=self._runtime_profile,
                 )
                 self._bridge = bridge
                 if bridge.run() != 0:
@@ -162,6 +169,16 @@ class AgentAttendee:
             variant=self.variant,
             permission_mode=self.permission_mode,
         )
+        self._runtime_profile = ProviderRuntimeProfile(
+            provider_kind=spec.normalized_provider_kind(),
+            runtime_kind=spec.runtime_kind,
+            model=spec.model,
+            reasoning_effort=spec.reasoning_effort,
+            service_tier=spec.service_tier,
+            variant=spec.variant,
+            permission_mode=spec.permission_mode,
+            transport=spec.transport,
+        )
         if self.definition.provider_id == "codex":
             return CodexAppServerLiveRuntime(
                 participant_id,
@@ -175,6 +192,7 @@ class AgentAttendee:
         config: dict[str, object] = {
             "participant_id": participant_id,
             "provider_kind": spec.normalized_provider_kind(),
+            "runtime_kind": spec.runtime_kind,
             "command": command,
             "cwd": str(workspace),
             "model": spec.model,

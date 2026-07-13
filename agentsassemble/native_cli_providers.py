@@ -96,6 +96,7 @@ class NativeCliProviderDefinition:
     model_observation_policy: str = "required"
     runtime_kind: str = "live_cli"
     transport: str = "pty"
+    reported_transports: tuple[str, ...] = ("pty", "conpty")
     input_mode: str = "line"
     startup_accept_contains: str = ""
     startup_ready_contains: str = ""
@@ -413,6 +414,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         default_reasoning_effort="low",
         default_service_tier="default",
         model_observation_policy="required",
+        reported_transports=("stdio_jsonl",),
         input_mode="bracketed_paste",
         startup_accept_contains="Do you trust",
     ),
@@ -438,6 +440,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         default_model="grok-4.5",
         model_observation_policy="required",
         transport="acp_stdio",
+        reported_transports=("acp_stdio",),
     ),
     NativeCliProviderDefinition(
         provider_id="claude",
@@ -468,6 +471,7 @@ STRUCTURED_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         model_observation_policy="required",
         runtime_kind="opencode",
         transport="http",
+        reported_transports=("http_sse",),
     ),
     NativeCliProviderDefinition(
         provider_id="deepseek",
@@ -482,6 +486,7 @@ STRUCTURED_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         model_observation_policy="required",
         runtime_kind="api",
         transport="https",
+        reported_transports=("https_sse",),
     ),
 )
 

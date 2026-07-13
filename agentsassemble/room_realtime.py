@@ -33,6 +33,10 @@ from agentsassemble.provider_runtime_contracts import (
     ProviderRuntimeHealth,
     SUPPORTED_DECLINE_REASONS,
 )
+from agentsassemble.provider_runtime_config import (
+    ProviderRuntimeConfigError,
+    ProviderRuntimeProfile,
+)
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.room_invite import revoke_room_access, revoke_sessions_for_participant
 from agentsassemble.room_commands import (
@@ -367,6 +371,8 @@ class RoomRealtimeController:
         display_name = clean_lobby_text(identity.get("display_name"), limit=64) or participant_id
         provider_kind = clean_lobby_text(identity.get("provider_kind"), limit=64) or "external_agent"
         definition = native_cli_provider_definition(provider_kind)
+        if definition is not None:
+            provider_kind = definition.provider_kind
         spec = NativeCliProviderSpec(
             agent_id=participant_id,
             display_name=display_name,
@@ -407,7 +413,7 @@ class RoomRealtimeController:
                 "provider_kind": provider_kind,
                 "runtime_kind": "external_bridge",
                 "connection_kind": "native_cli_bridge",
-                "runtime_profile_key": spec.runtime_profile_key(),
+                "runtime_profile_key": "",
                 "model_observation_policy": spec.model_observation_policy,
                 "model_verification_status": (
                     "pending" if spec.model_observation_policy == "required" else "unavailable"
@@ -1616,28 +1622,60 @@ class RoomRealtimeController:
             raise RoomCommandRejected("Agent bridge connection is no longer active.", code="bridge_disconnected")
         external_profile: dict[str, object] = {}
         if session.get("process_ownership") == "external":
-            requested_model_id = clean_lobby_text(payload.get("model"), limit=128)
             definition = native_cli_provider_definition(session.get("provider_kind"))
-            observation_policy = (
-                definition.model_observation_policy if definition is not None else "unavailable"
-            )
-            if observation_policy == "required" and not requested_model_id:
+            if definition is None:
                 raise RoomCommandRejected(
-                    "The external provider did not report its requested model.",
+                    "The external provider kind is not supported.",
                     code="provider_profile_invalid",
                 )
+            try:
+                profile = ProviderRuntimeProfile.parse_strict(payload)
+            except ProviderRuntimeConfigError as error:
+                raise RoomCommandRejected(str(error), code="provider_profile_invalid") from error
+            if profile.provider_kind != clean_lobby_text(session.get("provider_kind"), limit=64):
+                raise RoomCommandRejected(
+                    "The external provider profile does not match its invite.",
+                    code="provider_profile_invalid",
+                )
+            if profile.runtime_kind != definition.runtime_kind:
+                raise RoomCommandRejected(
+                    "The external provider runtime kind is not supported for this provider.",
+                    code="provider_profile_invalid",
+                )
+            if profile.transport not in definition.reported_transports:
+                raise RoomCommandRejected(
+                    "The external provider transport is not supported for this provider.",
+                    code="provider_profile_invalid",
+                )
+            for field, required_default in (
+                ("reasoning_effort", definition.default_reasoning_effort),
+                ("service_tier", definition.default_service_tier),
+                ("variant", definition.default_variant),
+            ):
+                if required_default and not getattr(profile, field):
+                    raise RoomCommandRejected(
+                        f"The external provider profile is missing required {field}.",
+                        code="provider_profile_invalid",
+                    )
+            observation_policy = definition.model_observation_policy
             external_profile = {
-                "model": requested_model_id,
-                "requested_model_id": requested_model_id,
+                "model": profile.model,
+                "requested_model_id": profile.model,
                 "observed_model_id": "",
                 "model_selection_kind": "exact",
                 "model_observation_policy": observation_policy,
                 "model_verification_status": _model_verification_status(
-                    requested_model_id=requested_model_id,
+                    requested_model_id=profile.model,
                     observed_model_id="",
                     selection_kind="exact",
                     observation_policy=observation_policy,
                 ),
+                "reasoning_effort": profile.reasoning_effort,
+                "service_tier": profile.service_tier,
+                "variant": profile.variant,
+                "permission_mode": profile.permission_mode,
+                "runtime_kind": profile.runtime_kind,
+                "runtime_profile_key": _external_runtime_profile_key(profile),
             }
         generation = self.broker.activate_bridge(channel)
         identity["bridge_generation"] = generation
@@ -2578,6 +2616,19 @@ def _model_verification_status(
     if requested_model_id and observed_model_id == requested_model_id:
         return "verified"
     return "mismatch"
+
+
+def _external_runtime_profile_key(profile: ProviderRuntimeProfile) -> str:
+    serialized = json.dumps(
+        {
+            **profile.report_fields(),
+            "transport": profile.transport,
+        },
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:20]
 
 
 def _bridge_manager_session_running(

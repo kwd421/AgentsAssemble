@@ -8,11 +8,11 @@ from agentsassemble.grok_acp_runtime import GrokAcpRuntime
 from agentsassemble.bridge_protocol import BridgeReportTimeout
 from agentsassemble.provider_runtime_contracts import AdapterContractError, ProviderTurnResult
 from agentsassemble.provider_runtime_config import ProviderRuntimeConfig
+from agentsassemble.provider_runtime_factory import ProviderRuntimeFactoryError, runtime_from_config
 from agentsassemble.room_agent_bridge import (
     BridgeConfigError,
     CanonicalBridgeLaunchConfig,
     RoomAgentBridge,
-    runtime_from_config,
 )
 
 
@@ -156,6 +156,7 @@ def _launch_config(**overrides):
         "participant_id": "codex",
         "session_id": "codex",
         "provider_kind": "codex_live_session",
+        "runtime_kind": "live_cli",
         "command": ["codex"],
         "cwd": ".",
         "model": "gpt-5.6-luna",
@@ -244,7 +245,7 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertEqual(runtime.command, ["claude", "--tools", "", "--safe-mode"])
 
     def test_real_grok_command_does_not_fall_back_to_pty(self):
-        with self.assertRaisesRegex(ValueError, "PTY fallback is disabled"):
+        with self.assertRaisesRegex(ValueError, "exact grok agent stdio"):
             runtime_from_config(
                 _runtime_config(
                     participant_id="grok",
@@ -256,9 +257,27 @@ class RoomAgentBridgeTests(unittest.TestCase):
                 )
             )
 
+    def test_runtime_factory_rejects_unknown_provider_transport_pair(self):
+        with self.assertRaises(ProviderRuntimeFactoryError) as rejected:
+            runtime_from_config(
+                _runtime_config(
+                    provider_kind="mystery_provider",
+                    model="mystery-model",
+                )
+            )
+
+        self.assertEqual(rejected.exception.code, "unsupported_provider_transport")
+
+    def test_runtime_factory_rejects_runtime_kind_mismatch(self):
+        with self.assertRaises(ProviderRuntimeFactoryError) as rejected:
+            runtime_from_config(_runtime_config(runtime_kind="api"))
+
+        self.assertEqual(rejected.exception.code, "provider_runtime_kind_mismatch")
+
     def test_canonical_bridge_config_rejects_missing_profile_and_transport(self):
         for missing in (
             "model",
+            "runtime_kind",
             "transport",
             "cwd",
             "startup_ready_contains",
@@ -357,6 +376,31 @@ class RoomAgentBridgeTests(unittest.TestCase):
         )
         self.assertNotIn("/private/project", str(activities))
         self.assertNotIn("TOKEN", str(activities))
+
+    def test_bridge_ready_reports_the_explicit_launch_profile(self):
+        client = FakeClient()
+        bridge = RoomAgentBridge(
+            client,
+            FakeRuntime(),
+            room_id="general",
+            participant_id="codex",
+            session_id="codex",
+            receive_sleep_seconds=0.005,
+            runtime_profile=_runtime_config().profile,
+        )
+        thread = threading.Thread(target=bridge.run, daemon=True)
+        thread.start()
+        _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
+        client.messages.append({"op": "agent.control", "action": "stop"})
+        thread.join(timeout=2)
+
+        ready = next(payload for action, payload, _ in client.commands if action == "bridge.ready")
+        self.assertEqual(ready["provider_kind"], "codex_live_session")
+        self.assertEqual(ready["runtime_kind"], "live_cli")
+        self.assertEqual(ready["model"], "gpt-5.6-luna")
+        self.assertEqual(ready["reasoning_effort"], "low")
+        self.assertEqual(ready["service_tier"], "default")
+        self.assertEqual(ready["permission_mode"], "meeting_read_only")
 
     def test_runtime_stop_failure_returns_nonzero_cleanup_report(self):
         client = FakeClient()

@@ -144,6 +144,7 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
             self.assertEqual(config["command"], ["codex", "--sandbox", "read-only"])
             self.assertEqual(config["runtime_profile_key"], spec.runtime_profile_key())
             self.assertEqual(config["runtime_state_dir"], str(Path(launch["config_path"]).parent / "provider-state"))
+            self.assertEqual(config["runtime_kind"], spec.runtime_kind)
             self.assertEqual(Path(launch["config_path"]).parent.name, spec.runtime_profile_key())
             stopped = manager.stop("general", "codex", handle_id=launch["bridge_handle_id"])
 

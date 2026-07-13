@@ -12,9 +12,51 @@ class ProviderRuntimeConfigError(ValueError):
 
 
 @dataclass(frozen=True)
+class ProviderRuntimeProfile:
+    provider_kind: str
+    runtime_kind: str
+    model: str
+    reasoning_effort: str
+    service_tier: str
+    variant: str
+    permission_mode: str
+    transport: str
+
+    @classmethod
+    def parse_strict(cls, values: dict[str, object]) -> ProviderRuntimeProfile:
+        return cls(
+            provider_kind=_required_text(values, "provider_kind", limit=64),
+            runtime_kind=_required_text(values, "runtime_kind", limit=64),
+            model=_required_text(values, "model", limit=256),
+            reasoning_effort=_required_text(
+                values,
+                "reasoning_effort",
+                limit=32,
+                allow_empty=True,
+            ),
+            service_tier=_required_text(values, "service_tier", limit=32, allow_empty=True),
+            variant=_required_text(values, "variant", limit=64, allow_empty=True),
+            permission_mode=_required_text(values, "permission_mode", limit=64),
+            transport=_required_text(values, "transport", limit=64),
+        )
+
+    def report_fields(self) -> dict[str, str]:
+        return {
+            "provider_kind": self.provider_kind,
+            "runtime_kind": self.runtime_kind,
+            "model": self.model,
+            "reasoning_effort": self.reasoning_effort,
+            "service_tier": self.service_tier,
+            "variant": self.variant,
+            "permission_mode": self.permission_mode,
+        }
+
+
+@dataclass(frozen=True)
 class ProviderRuntimeConfig:
     participant_id: str
     provider_kind: str
+    runtime_kind: str
     command: tuple[str, ...]
     cwd: str
     model: str
@@ -39,29 +81,43 @@ class ProviderRuntimeConfig:
     provider_endpoint: str
     provider_server_pid: int | None
 
+    @property
+    def profile(self) -> ProviderRuntimeProfile:
+        return ProviderRuntimeProfile(
+            provider_kind=self.provider_kind,
+            runtime_kind=self.runtime_kind,
+            model=self.model,
+            reasoning_effort=self.reasoning_effort,
+            service_tier=self.service_tier,
+            variant=self.variant,
+            permission_mode=self.permission_mode,
+            transport=self.transport,
+        )
+
     @classmethod
     def parse_strict(cls, values: dict[str, object]) -> ProviderRuntimeConfig:
+        profile = ProviderRuntimeProfile.parse_strict(values)
         command_value = _required_value(values, "command")
         if not isinstance(command_value, list) or not command_value:
             raise ProviderRuntimeConfigError("Provider runtime command must be a non-empty list.")
         command = tuple(str(part) for part in command_value)
         if not command[0].strip():
             raise ProviderRuntimeConfigError("Provider runtime executable is required.")
-        provider_kind = _required_text(values, "provider_kind", limit=64)
         provider_endpoint = _required_text(values, "provider_endpoint", limit=1000, allow_empty=True)
-        if provider_kind == "opencode_server" and not provider_endpoint:
+        if profile.provider_kind == "opencode_server" and not provider_endpoint:
             raise ProviderRuntimeConfigError("OpenCode provider endpoint is required.")
         return cls(
             participant_id=_required_text(values, "participant_id", limit=128),
-            provider_kind=provider_kind,
+            provider_kind=profile.provider_kind,
+            runtime_kind=profile.runtime_kind,
             command=command,
             cwd=_required_text(values, "cwd", limit=500),
-            model=_required_text(values, "model", limit=256),
-            reasoning_effort=_required_text(values, "reasoning_effort", limit=32, allow_empty=True),
-            service_tier=_required_text(values, "service_tier", limit=32, allow_empty=True),
-            variant=_required_text(values, "variant", limit=64, allow_empty=True),
-            permission_mode=_required_text(values, "permission_mode", limit=64),
-            transport=_required_text(values, "transport", limit=64),
+            model=profile.model,
+            reasoning_effort=profile.reasoning_effort,
+            service_tier=profile.service_tier,
+            variant=profile.variant,
+            permission_mode=profile.permission_mode,
+            transport=profile.transport,
             quiet_seconds=_required_float(values, "quiet_seconds", minimum=0.001),
             input_mode=_required_text(values, "input_mode", limit=64),
             submit_newline=_required_raw_text(values, "submit_newline", limit=16),

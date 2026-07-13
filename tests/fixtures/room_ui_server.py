@@ -29,7 +29,7 @@ def main() -> int:
             display_name="Fake Interactive CLI",
             command=(sys.executable, "-u", str(fixture)),
             cwd=str(ROOT),
-            provider_kind="fake_live_session",
+            provider_kind="local_cli",
             model="fake-e2e-model",
             reasoning_effort="low",
             permission_mode="meeting_read_only",

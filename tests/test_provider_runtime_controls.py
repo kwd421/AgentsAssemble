@@ -595,6 +595,33 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(connect.call_count, 1)
         runtime.stop.assert_called_once_with(timeout_seconds=2.0)
 
+    def test_attendee_rejects_an_agent_invite_without_an_explicit_provider(self):
+        attendee = AgentAttendee(
+            invite_url="https://room.example/join?token=aai1.secret",
+            provider_id="claude",
+        )
+        attendee._build_runtime = MagicMock()
+
+        with (
+            patch(
+                "agentsassemble.room_attendee.join_room_session",
+                return_value={
+                    "session_token": "session-secret",
+                    "agent_id": "claude-guest",
+                    "meeting_id": "general",
+                    "provider_kind": "manual",
+                    "guide": {},
+                },
+            ),
+            patch("agentsassemble.room_attendee.connect_room_ws") as connect,
+            patch("agentsassemble.room_attendee._leave_room"),
+        ):
+            with self.assertRaisesRegex(ValueError, "must name the provider"):
+                attendee.run()
+
+        attendee._build_runtime.assert_not_called()
+        connect.assert_not_called()
+
     def test_leave_treats_an_already_revoked_session_as_complete(self):
         revoked = HTTPError("https://room.example/api/room-invite/leave", 401, "Unauthorized", {}, None)
 

@@ -43,6 +43,9 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                             {
                                 "id": agent_id,
                                 "display_name": agent_id,
+                                "provider_kind": "local_cli",
+                                "runtime_kind": "live_cli",
+                                "transport": "pty",
                                 "model": "fixture-group-model",
                                 "permission_mode": "meeting_read_only",
                                 "command": [os.sys.executable, "-u", str(GROUP_FIXTURE), agent_id],
@@ -120,6 +123,9 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                             {
                                 "id": "fake",
                                 "display_name": "Fake Interactive CLI",
+                                "provider_kind": "local_cli",
+                                "runtime_kind": "live_cli",
+                                "transport": "pty",
                                 "model": "fixture-interactive-model",
                                 "permission_mode": "meeting_read_only",
                                 "command": [os.sys.executable, "-u", str(FIXTURE)],
@@ -188,7 +194,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                 display_name="Fake Interactive CLI",
                 command=(os.sys.executable, "-u", str(FIXTURE)),
                 cwd=str(workspace),
-                provider_kind="fake_live_session",
+                provider_kind="local_cli",
                 model="fixture-interactive-model",
                 default_responder=False,
                 quiet_seconds=0.05,
