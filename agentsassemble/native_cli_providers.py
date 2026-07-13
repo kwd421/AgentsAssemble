@@ -38,6 +38,7 @@ class NativeCliProviderSpec:
     startup_timeout_seconds: float = 20.0
     startup_accept_contains: str = ""
     startup_accept_keys: str = "\r"
+    startup_ready_contains: str = ""
     startup_input: str = ""
     turn_timeout_seconds: float = 180.0
 
@@ -67,6 +68,7 @@ class NativeCliProviderSpec:
                 "startup_timeout_seconds": self.startup_timeout_seconds,
                 "startup_accept_contains": self.startup_accept_contains,
                 "startup_accept_keys": self.startup_accept_keys,
+                "startup_ready_contains": self.startup_ready_contains,
                 "startup_input": self.startup_input,
                 "turn_timeout_seconds": self.turn_timeout_seconds,
             },
@@ -94,6 +96,7 @@ class NativeCliProviderDefinition:
     transport: str = "pty"
     input_mode: str = "line"
     startup_accept_contains: str = ""
+    startup_ready_contains: str = ""
 
     def make_default_spec(
         self,
@@ -173,6 +176,7 @@ class NativeCliProviderDefinition:
             default_responder=default_responder,
             input_mode=self.input_mode,
             startup_accept_contains=self.startup_accept_contains,
+            startup_ready_contains=self.startup_ready_contains,
             startup_input="/fast\r" if self.provider_id == "claude" and selected_service_tier == "fast" else "",
         )
 
@@ -440,7 +444,8 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         default_reasoning_effort="high",
         default_service_tier="default",
         input_mode="bracketed_paste",
-        startup_accept_contains="Do you trust",
+        startup_accept_contains="Quick safety check",
+        startup_ready_contains="plan mode on",
     ),
 )
 
@@ -605,6 +610,10 @@ def native_cli_provider_spec_from_config(
             or (definition.startup_accept_contains if definition else "")
         ),
         startup_accept_keys=str(payload.get("startup_accept_keys") or "\r"),
+        startup_ready_contains=str(
+            payload.get("startup_ready_contains")
+            or (definition.startup_ready_contains if definition else "")
+        ),
         turn_timeout_seconds=max(0.1, float(turn_timeout_seconds)),
     )
     validate_native_cli_provider_spec(spec)

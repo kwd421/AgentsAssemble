@@ -27,6 +27,9 @@ _CHROME_WORDS = (
     ".shortcuts",
     "shortcuts",
     "Do you trust",
+    "Quick safety check",
+    "Yes, I trust this folder",
+    "Enter to confirm",
 )
 _REASONING_FRAGMENTS = (
     "I need to",
@@ -38,6 +41,18 @@ _REASONING_FRAGMENTS = (
 def strip_terminal_ansi(raw: bytes) -> str:
     text = raw.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
     return _ANSI_RE.sub("", text).replace("\x07", "")
+
+
+def terminal_text_contains(raw: bytes, expected: str) -> bool:
+    rendered = strip_terminal_ansi(raw).strip().casefold()
+    needle = str(expected or "").casefold()
+    if not needle:
+        return False
+    if needle in rendered:
+        return True
+    # Full-screen TUIs position each word independently, so removing ANSI
+    # cursor controls can also remove the visual whitespace between words.
+    return "".join(needle.split()) in "".join(rendered.split())
 
 
 def extract_live_cli_terminal_message(raw: bytes) -> str:

@@ -162,6 +162,8 @@ class NativeCliProviderSpecTests(unittest.TestCase):
         self.assertEqual(specs["claude"].provider_kind, "claude_code")
         self.assertIn("--model", specs["claude"].command)
         self.assertEqual(specs["claude"].permission_mode, "meeting_read_only")
+        self.assertEqual(specs["claude"].startup_accept_contains, "Quick safety check")
+        self.assertEqual(specs["claude"].startup_ready_contains, "plan mode on")
         self.assertIn("plan", specs["claude"].command)
         self.assertNotIn("-p", specs["claude"].command)
         self.assertNotIn("--print", specs["claude"].command)

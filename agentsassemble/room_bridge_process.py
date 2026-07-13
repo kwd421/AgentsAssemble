@@ -154,6 +154,7 @@ class NativeCliBridgeProcessManager:
             "startup_timeout_seconds": spec.startup_timeout_seconds,
             "startup_accept_contains": spec.startup_accept_contains,
             "startup_accept_keys": spec.startup_accept_keys,
+            "startup_ready_contains": spec.startup_ready_contains,
             "startup_input": spec.startup_input,
             "turn_timeout_seconds": spec.turn_timeout_seconds,
             "runtime_profile_key": runtime_profile_key,

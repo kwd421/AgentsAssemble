@@ -17,7 +17,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from agentsassemble.live_cli_output import extract_live_cli_terminal_message, strip_terminal_ansi
+from agentsassemble.live_cli_output import (
+    extract_live_cli_terminal_message,
+    strip_terminal_ansi,
+    terminal_text_contains,
+)
 from agentsassemble.live_cli_transcripts import (
     LiveCliMessageExtractionError,
     LiveCliMessageSource,
@@ -105,6 +109,7 @@ class LiveCliRuntime:
         startup_timeout_seconds: float = 0.0,
         startup_accept_contains: str = "",
         startup_accept_keys: str = "\r",
+        startup_ready_contains: str = "",
         startup_input: str = "",
         max_output_bytes: int = 256_000,
         message_source: LiveCliMessageSource | None = None,
@@ -131,6 +136,7 @@ class LiveCliRuntime:
         self.startup_timeout_seconds = max(0.0, float(startup_timeout_seconds or 0.0))
         self.startup_accept_contains = str(startup_accept_contains or "")
         self.startup_accept_keys = str(startup_accept_keys or "\r")
+        self.startup_ready_contains = str(startup_ready_contains or "")
         self.startup_input = str(startup_input or "")
         self.max_output_bytes = max(1, int(max_output_bytes))
         self.profile_settings = {
@@ -405,6 +411,7 @@ class LiveCliRuntime:
             "startup_quiet_seconds": self.startup_quiet_seconds,
             "startup_timeout_seconds": self.startup_timeout_seconds,
             "startup_accept_configured": bool(self.startup_accept_contains),
+            "startup_ready_configured": bool(self.startup_ready_contains),
             "parent_agent_session_env_removed": sorted(PARENT_AGENT_SESSION_ENV_KEYS),
             "terminal_byte_count": terminal_byte_count,
             "terminal_tail": terminal_tail,
@@ -560,6 +567,7 @@ class LiveCliRuntime:
         last_read_at: float | None = None
         startup_output = bytearray()
         startup_accepted = False
+        startup_ready = not bool(self.startup_ready_contains)
         terminal_queries_answered: set[str] = set()
         while self.startup_timeout_seconds > 0 and time.monotonic() < deadline:
             if process.poll() is not None:
@@ -580,15 +588,26 @@ class LiveCliRuntime:
                 if (
                     not startup_accepted
                     and self.startup_accept_contains
-                    and _terminal_contains(bytes(startup_output), self.startup_accept_contains)
+                    and terminal_text_contains(bytes(startup_output), self.startup_accept_contains)
                 ):
                     os.write(fd, self.startup_accept_keys.encode("utf-8"))
                     startup_accepted = True
+                if not startup_ready and terminal_text_contains(
+                    bytes(startup_output), self.startup_ready_contains
+                ):
+                    startup_ready = True
                 continue
             if last_read_at is None:
                 continue
-            if self.startup_quiet_seconds <= 0 or now - last_read_at >= self.startup_quiet_seconds:
+            if startup_ready and (
+                self.startup_quiet_seconds <= 0
+                or now - last_read_at >= self.startup_quiet_seconds
+            ):
                 break
+        if not startup_ready:
+            raise TimeoutError(
+                f"{self.agent_id} did not expose its configured startup readiness marker."
+            )
         if self.startup_input and not self._startup_input_sent:
             os.write(fd, self.startup_input.encode("utf-8"))
             self._startup_input_sent = True
@@ -763,18 +782,6 @@ def _terminal_input_chunks(text: str, *, input_mode: str, submit_newline: str) -
 def _clean_terminal_text(response: bytes) -> str:
     text = strip_terminal_ansi(response)
     return text.strip()
-
-
-def _terminal_contains(response: bytes, expected: str) -> bool:
-    rendered = _clean_terminal_text(response).casefold()
-    needle = str(expected or "").casefold()
-    if not needle:
-        return False
-    if needle in rendered:
-        return True
-    # Full-screen TUIs position each word independently, so removing ANSI
-    # cursor controls can also remove the visual whitespace between words.
-    return "".join(needle.split()) in "".join(rendered.split())
 
 
 def _terminal_fatal_error(response: bytes) -> str:

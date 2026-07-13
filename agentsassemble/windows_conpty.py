@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agentsassemble.live_cli_output import extract_live_cli_terminal_message
+from agentsassemble.live_cli_output import extract_live_cli_terminal_message, terminal_text_contains
 from agentsassemble.live_cli_transcripts import LiveCliMessageSource, make_live_cli_message_source
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.process_environment import sanitized_provider_environment
@@ -37,6 +37,7 @@ class WindowsConPtyRuntime:
         startup_timeout_seconds: float = 0.0,
         startup_accept_contains: str = "",
         startup_accept_keys: str = "\r",
+        startup_ready_contains: str = "",
         startup_input: str = "",
     ) -> None:
         if not command:
@@ -52,6 +53,7 @@ class WindowsConPtyRuntime:
         self.startup_timeout_seconds = max(0.0, float(startup_timeout_seconds))
         self.startup_accept_contains = str(startup_accept_contains or "")
         self.startup_accept_keys = str(startup_accept_keys or "\r")
+        self.startup_ready_contains = str(startup_ready_contains or "")
         self.startup_input = str(startup_input or "")
         self.input_mode = clean_lobby_text(input_mode, limit=64) or "line"
         self.terminal_rows = max(10, int(terminal_rows))
@@ -75,6 +77,7 @@ class WindowsConPtyRuntime:
         self._stop = threading.Event()
         self._started_at = ""
         self._last_error = ""
+        self._startup_drained = False
         self._startup_input_sent = False
 
     def start(self) -> dict[str, object]:
@@ -97,6 +100,7 @@ class WindowsConPtyRuntime:
             self._output = bytearray()
             self._started_at = _now()
             self._last_error = ""
+            self._startup_drained = False
             self._startup_input_sent = False
             self._reader = threading.Thread(target=self._read_loop, daemon=True)
             self._reader.start()
@@ -104,6 +108,7 @@ class WindowsConPtyRuntime:
 
     def send(self, text: str) -> None:
         self.start()
+        self._drain_startup_output()
         if self.startup_input and not self._startup_input_sent:
             self.process.write(self.startup_input)
             self._startup_input_sent = True
@@ -213,11 +218,54 @@ class WindowsConPtyRuntime:
                 "pid": getattr(process, "pid", None),
                 "started_at": self._started_at,
                 "last_error": self._last_error,
+                "startup_accept_configured": bool(self.startup_accept_contains),
+                "startup_ready_configured": bool(self.startup_ready_contains),
                 "terminal_byte_count": len(self._output),
                 "terminal_tail": bytes(self._output[-16_000:]).decode("utf-8", errors="replace"),
                 **self.profile_settings,
                 **self._message_source.describe(),
             }
+
+    def _drain_startup_output(self) -> None:
+        if self._startup_drained:
+            return
+        if self.startup_timeout_seconds <= 0:
+            if self.startup_ready_contains:
+                raise TimeoutError(
+                    f"{self.agent_id} did not expose its configured startup readiness marker."
+                )
+            self._startup_drained = True
+            return
+        deadline = time.monotonic() + self.startup_timeout_seconds
+        accepted = False
+        ready = not bool(self.startup_ready_contains)
+        while time.monotonic() < deadline:
+            with self._lock:
+                process = self.process
+                output = bytes(self._output)
+                last_read_at = self._last_read_at
+            if process is None or not self._alive():
+                raise RuntimeError("ConPTY provider process exited during startup.")
+            if (
+                not accepted
+                and self.startup_accept_contains
+                and terminal_text_contains(output, self.startup_accept_contains)
+            ):
+                process.write(self.startup_accept_keys)
+                accepted = True
+            if not ready and terminal_text_contains(output, self.startup_ready_contains):
+                ready = True
+            if ready and last_read_at and (
+                self.startup_quiet_seconds <= 0
+                or time.monotonic() - last_read_at >= self.startup_quiet_seconds
+            ):
+                break
+            time.sleep(0.02)
+        if not ready:
+            raise TimeoutError(
+                f"{self.agent_id} did not expose its configured startup readiness marker."
+            )
+        self._startup_drained = True
 
     def _read_loop(self) -> None:
         while not self._stop.is_set():

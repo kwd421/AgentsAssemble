@@ -58,6 +58,9 @@ class LiveCliOutputExtractionTests(unittest.TestCase):
         for prompt in (
             "Do you trust the contents of this project?",
             "Do you trust the contents of this directory?",
+            "Quick safety check: Is this a project you created or one you trust?",
+            "Yes, I trust this folder",
+            "Enter to confirm",
         ):
             with self.subTest(prompt=prompt):
                 self.assertEqual(filter_live_cli_terminal_text(prompt), "")

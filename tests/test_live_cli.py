@@ -151,6 +151,7 @@ class LiveCliRuntimeTests(unittest.TestCase):
             startup_timeout_seconds=1.0,
             startup_accept_contains="Do you trust",
             startup_accept_keys="\r",
+            startup_ready_contains="ready prompt",
         )
         try:
             runtime.send("first")
@@ -160,6 +161,54 @@ class LiveCliRuntimeTests(unittest.TestCase):
 
         self.assertIn("reply: first", output["content"])
         self.assertNotIn("Do you trust", output["content"])
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_live_cli_runtime_waits_for_startup_readiness_after_an_early_quiet_period(self):
+        script = "\n".join(
+            [
+                "import sys, time",
+                "print('loading', flush=True)",
+                "time.sleep(0.2)",
+                "print('\\x1b[3;3Hplan\\x1b[3;8Hmode\\x1b[3;13Hon', flush=True)",
+                "for line in sys.stdin:",
+                "    text = line.strip()",
+                "    if text:",
+                "        print('reply: ' + text, flush=True)",
+            ]
+        )
+        runtime = LiveCliRuntime(
+            "alpha",
+            [sys.executable, "-u", "-c", script],
+            idle_quiet_seconds=0.05,
+            startup_quiet_seconds=0.05,
+            startup_timeout_seconds=1.0,
+            startup_ready_contains="plan mode on",
+        )
+        started = time.monotonic()
+        try:
+            runtime.send("first")
+            output = runtime.read_output(timeout_seconds=2)
+        finally:
+            runtime.stop()
+
+        self.assertGreaterEqual(time.monotonic() - started, 0.2)
+        self.assertIn("reply: first", output["content"])
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_live_cli_runtime_fails_closed_when_startup_readiness_never_arrives(self):
+        script = "import time; print('loading', flush=True); time.sleep(2)"
+        runtime = LiveCliRuntime(
+            "alpha",
+            [sys.executable, "-u", "-c", script],
+            startup_quiet_seconds=0.01,
+            startup_timeout_seconds=0.15,
+            startup_ready_contains="ready prompt",
+        )
+        try:
+            with self.assertRaisesRegex(TimeoutError, "startup readiness marker"):
+                runtime.send("must not be delivered")
+        finally:
+            runtime.stop()
 
     @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
     def test_strict_message_completion_drains_large_residual_tui_output_before_next_turn(self):

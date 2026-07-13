@@ -43,10 +43,10 @@ class FakeKeyring:
 class FakeConPtyProcess:
     pid = 8123
 
-    def __init__(self) -> None:
+    def __init__(self, *, initial_output: list[str] | None = None) -> None:
         self.closed = False
         self.writes: list[str] = []
-        self.output: list[str] = []
+        self.output: list[str] = list(initial_output or [])
 
     def isalive(self) -> bool:
         return not self.closed
@@ -463,6 +463,23 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(fake.writes, ["first\r", "second\r"])
         self.assertTrue(fake.closed)
         self.assertFalse(runtime.health()["running"])
+
+    def test_windows_runtime_waits_for_configured_startup_readiness(self):
+        fake = FakeConPtyProcess(initial_output=["\x1b[3;3Hplan\x1b[3;8Hmode\x1b[3;13Hon"])
+        with tempfile.TemporaryDirectory() as temp_dir, patch("shutil.which", return_value="C:/bin/fake.exe"):
+            runtime = WindowsConPtyRuntime(
+                "fake",
+                ["fake"],
+                cwd=Path(temp_dir),
+                startup_quiet_seconds=0.01,
+                startup_timeout_seconds=1.0,
+                startup_ready_contains="plan mode on",
+                process_factory=lambda *args, **kwargs: fake,
+            )
+            runtime.send("first")
+            runtime.stop()
+
+        self.assertEqual(fake.writes, ["first\r"])
 
 
 if __name__ == "__main__":

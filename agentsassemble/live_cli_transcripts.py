@@ -363,7 +363,7 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
         if not root.exists():
             return []
         if self.cwd is not None:
-            project = root / re.sub(r"[/.]", "-", str(self.cwd))
+            project = root / _claude_project_directory_name(self.cwd)
             if project.exists():
                 return _recent_paths(project.glob("*.jsonl"))
             return []
@@ -424,6 +424,10 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
                     if isinstance(block, dict) and str(block.get("type") or "") in {"text", "input_text"}
                 )
         return inputs
+
+
+def _claude_project_directory_name(cwd: Path) -> str:
+    return re.sub(r"[^A-Za-z0-9-]", "-", str(cwd))
 
 
 def _claude_message_text(message: dict[str, object]) -> str:

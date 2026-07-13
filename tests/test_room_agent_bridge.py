@@ -137,6 +137,7 @@ def _launch_config(**overrides):
         "startup_timeout_seconds": 20.0,
         "startup_accept_contains": "",
         "startup_accept_keys": "\r",
+        "startup_ready_contains": "",
         "startup_input": "",
         "turn_timeout_seconds": 180.0,
         "runtime_profile_key": "test-profile",
@@ -201,7 +202,13 @@ class RoomAgentBridgeTests(unittest.TestCase):
             )
 
     def test_canonical_bridge_config_rejects_missing_profile_and_transport(self):
-        for missing in ("model", "transport", "cwd", "turn_timeout_seconds"):
+        for missing in (
+            "model",
+            "transport",
+            "cwd",
+            "startup_ready_contains",
+            "turn_timeout_seconds",
+        ):
             with self.subTest(missing=missing):
                 values = _launch_config()
                 values.pop(missing)
@@ -225,6 +232,20 @@ class RoomAgentBridgeTests(unittest.TestCase):
         self.assertEqual(parsed.command[2], "")
         self.assertEqual(parsed.reasoning_effort, "")
         self.assertEqual(parsed.service_tier, "")
+
+    def test_pty_runtime_preserves_startup_readiness_marker(self):
+        runtime = runtime_from_config(
+            _launch_config(
+                participant_id="claude",
+                session_id="claude",
+                provider_kind="claude_code",
+                command=["claude", "--safe-mode"],
+                model="claude-sonnet-4-6",
+                startup_ready_contains="plan mode on",
+            )
+        )
+
+        self.assertEqual(runtime.startup_ready_contains, "plan mode on")
 
     def test_persistent_runtime_handles_multiple_turns_without_restart(self):
         client = FakeClient()

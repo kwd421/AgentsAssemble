@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -65,9 +66,10 @@ class TranscriptMessageSourceTests(unittest.TestCase):
     def test_claude_source_reads_only_assistant_text_from_current_workspace_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            workspace = root / "workspace"
+            workspace = root / "workspace_with_underscore"
             workspace.mkdir()
-            project = root / ".claude" / "projects" / str(workspace).replace("/", "-")
+            encoded_workspace = re.sub(r"[^A-Za-z0-9-]", "-", str(workspace))
+            project = root / ".claude" / "projects" / encoded_workspace
             project.mkdir(parents=True)
             existing = project / "existing.jsonl"
             existing.write_text(
@@ -120,7 +122,8 @@ class TranscriptMessageSourceTests(unittest.TestCase):
             root = Path(temp_dir)
             workspace = root / "workspace"
             workspace.mkdir()
-            project = root / ".claude" / "projects" / str(workspace).replace("/", "-")
+            encoded_workspace = re.sub(r"[^A-Za-z0-9-]", "-", str(workspace))
+            project = root / ".claude" / "projects" / encoded_workspace
             project.mkdir(parents=True)
             source = ClaudeSessionMessageSource(home=root, cwd=workspace)
             source.prepare_start()

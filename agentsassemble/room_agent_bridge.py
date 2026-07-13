@@ -56,6 +56,7 @@ class CanonicalBridgeLaunchConfig:
     startup_timeout_seconds: float
     startup_accept_contains: str
     startup_accept_keys: str
+    startup_ready_contains: str
     startup_input: str
     turn_timeout_seconds: float
     runtime_profile_key: str
@@ -101,6 +102,9 @@ class CanonicalBridgeLaunchConfig:
                 values, "startup_accept_contains", limit=1000, allow_empty=True
             ),
             startup_accept_keys=_required_raw_text(values, "startup_accept_keys", limit=1000, allow_empty=True),
+            startup_ready_contains=_required_raw_text(
+                values, "startup_ready_contains", limit=1000, allow_empty=True
+            ),
             startup_input=_required_raw_text(values, "startup_input", limit=4000, allow_empty=True),
             turn_timeout_seconds=_required_float(values, "turn_timeout_seconds", minimum=0.001),
             runtime_profile_key=_required_text(values, "runtime_profile_key", limit=256),
@@ -450,6 +454,7 @@ def runtime_from_config(
         startup_timeout_seconds=launch.startup_timeout_seconds,
         startup_accept_contains=launch.startup_accept_contains,
         startup_accept_keys=launch.startup_accept_keys,
+        startup_ready_contains=launch.startup_ready_contains,
         startup_input=launch.startup_input,
         profile_settings={
             "model": launch.model,

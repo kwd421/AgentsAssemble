@@ -131,8 +131,9 @@
       "terminal_rows": 40,
       "startup_quiet_seconds": 1,
       "startup_timeout_seconds": 20,
-      "startup_accept_contains": "Do you trust",
+      "startup_accept_contains": "Quick safety check",
       "startup_accept_keys": "\r",
+      "startup_ready_contains": "plan mode on",
       "quiet_seconds": 4,
       "session_probe_prompt": "AGENTSASSEMBLE_SESSION_MARKER=claude-sonnet-4-6-001 를 기억하고 claude-sonnet-4-6-001 이라고만 답해.",
       "memory_check_prompt": "아까 marker 값 뭐였지? marker 값만 답해."
