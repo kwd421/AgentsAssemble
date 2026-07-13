@@ -102,6 +102,7 @@ export interface AgentSessionActionResponse {
 export interface FrontendLiveAgentCreateRequest {
   meetingId: string;
   providerId: string;
+  catalogRevision?: string;
   displayName: string;
   workspacePath: string;
   engagementMode?: string;

@@ -18,6 +18,12 @@ ProbeRunner = Callable[[list[str], float], tuple[int, str, str]]
 CatalogListener = Callable[[dict[str, object]], None]
 
 
+class ProviderCatalogSelectionError(ValueError):
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class ProviderCapabilityCatalog:
     """Fail-closed native option discovery with a bounded refresh cache."""
 
@@ -65,6 +71,59 @@ class ProviderCapabilityCatalog:
                 self._listeners.pop(listener_id, None)
 
         return remove
+
+    def validate_selection(
+        self,
+        *,
+        catalog_revision: str,
+        provider_id: str,
+        values: dict[str, str],
+    ) -> None:
+        with self._lock:
+            if self._status != "ready" or not self._catalog_revision:
+                raise ProviderCatalogSelectionError(
+                    "Provider catalog is not ready.",
+                    code="catalog_not_ready",
+                )
+            if catalog_revision != self._catalog_revision:
+                raise ProviderCatalogSelectionError(
+                    "Provider catalog changed; refresh the selection before creating the session.",
+                    code="catalog_changed",
+                )
+            provider = next(
+                (item for item in self._cached if str(item.get("id") or "") == provider_id),
+                None,
+            )
+            if provider is None or provider.get("discovery_status") != "ready":
+                raise ProviderCatalogSelectionError(
+                    f"Provider {provider_id or 'unknown'} is not available in the current catalog.",
+                    code="unsupported_provider",
+                )
+            controls = list(provider.get("controls") or [])
+        for control in controls:
+            if not isinstance(control, dict):
+                continue
+            key = str(control.get("key") or "")
+            if not key:
+                continue
+            allowed = {
+                str(option.get("value") or "")
+                for option in list(control.get("options") or [])
+                if isinstance(option, dict)
+            }
+            value = str(values.get(key) or "")
+            if value not in allowed:
+                code = {
+                    "model": "unsupported_model",
+                    "reasoning_effort": "unsupported_reasoning_effort",
+                    "service_tier": "unsupported_service_tier",
+                    "variant": "unsupported_variant",
+                    "permission_mode": "unsupported_permission_mode",
+                }.get(key, "unsupported_provider_option")
+                raise ProviderCatalogSelectionError(
+                    f"Unsupported {key} value for provider {provider_id}.",
+                    code=code,
+                )
 
     def _refresh_snapshot(self) -> dict[str, object]:
         payload = [self._native_payload(definition) for definition in NATIVE_CLI_PROVIDER_CATALOG]

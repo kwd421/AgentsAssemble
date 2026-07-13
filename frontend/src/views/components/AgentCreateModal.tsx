@@ -18,6 +18,7 @@ type AgentCreateModalProps = {
   meetingId: string;
   roomLabel: string;
   providers: NativeCliProviderAvailability[];
+  catalogRevision?: string;
   existingSessions?: RoomAgentSession[];
   onClose: () => void;
   onCreate: (request: FrontendLiveAgentCreateRequest) => Promise<void>;
@@ -29,6 +30,7 @@ export default function AgentCreateModal({
   meetingId,
   roomLabel,
   providers,
+  catalogRevision = "",
   existingSessions = [],
   onClose,
   onCreate,
@@ -56,7 +58,10 @@ export default function AgentCreateModal({
       )
   );
   const canCreate = Boolean(
-    meetingId && selectedProvider?.startable && displayName.trim() && workspacePath.trim()
+    meetingId &&
+      (existingSessionId || (catalogRevision && selectedProvider?.startable)) &&
+      displayName.trim() &&
+      workspacePath.trim()
   );
 
   useEffect(() => {
@@ -114,6 +119,7 @@ export default function AgentCreateModal({
       await onCreate({
         meetingId,
         providerId: selectedProvider.id,
+        catalogRevision,
         sessionId: existingSessionId || undefined,
         displayName,
         workspacePath,

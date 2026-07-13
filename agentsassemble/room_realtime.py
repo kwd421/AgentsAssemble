@@ -20,7 +20,10 @@ from agentsassemble.native_cli_providers import (
     native_cli_provider_spec_from_payload,
     validate_native_cli_provider_spec,
 )
-from agentsassemble.provider_capabilities import PROVIDER_CAPABILITIES, provider_catalog_snapshot
+from agentsassemble.provider_capabilities import (
+    PROVIDER_CAPABILITIES,
+    ProviderCatalogSelectionError,
+)
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.room_invite import revoke_room_access, revoke_sessions_for_participant
 from agentsassemble.room_commands import (
@@ -66,6 +69,20 @@ class AgentBridgeManager(Protocol):
 RecoveryScheduler = Callable[[float, Callable[[], None]], object]
 
 
+class ProviderCatalog(Protocol):
+    def snapshot(self, *, refresh: bool = False) -> dict[str, object]: ...
+
+    def subscribe(self, listener: Callable[[dict[str, object]], None]) -> Callable[[], None]: ...
+
+    def validate_selection(
+        self,
+        *,
+        catalog_revision: str,
+        provider_id: str,
+        values: dict[str, str],
+    ) -> None: ...
+
+
 @dataclass(frozen=True)
 class _PendingEventPartition:
     inflight: list[str]
@@ -94,6 +111,7 @@ class RoomRealtimeController:
         max_agent_relay_depth: int = 2,
         recovery_delay_seconds: float = 1.0,
         recovery_scheduler: RecoveryScheduler | None = None,
+        provider_catalog: ProviderCatalog | None = None,
     ) -> None:
         self.output_root = Path(output_root)
         self.store = RoomStore(self.output_root)
@@ -103,6 +121,7 @@ class RoomRealtimeController:
         self.max_agent_relay_depth = max(0, int(max_agent_relay_depth))
         self.recovery_delay_seconds = max(0.0, float(recovery_delay_seconds))
         self._recovery_scheduler = recovery_scheduler or _schedule_daemon_timer
+        self.provider_catalog = provider_catalog or PROVIDER_CAPABILITIES
         default_providers = {
             clean_lobby_text(spec.agent_id, limit=128): spec
             for spec in list(providers or [])
@@ -118,7 +137,7 @@ class RoomRealtimeController:
             tuple[str, Callable[[dict[str, object]], str] | None],
         ] = {}
         self._recovery_handles: dict[tuple[str, str], object] = {}
-        self._provider_catalog_remove = PROVIDER_CAPABILITIES.subscribe(self._on_provider_catalog_update)
+        self._provider_catalog_remove = self.provider_catalog.subscribe(self._on_provider_catalog_update)
         self._closed = False
         self.ensure_room(self.default_room_id)
         for spec in default_providers.values():
@@ -435,7 +454,7 @@ class RoomRealtimeController:
         ]
         provider_catalog = {"status": "ready", "catalog_revision": "", "providers": []}
         if not bridge:
-            provider_catalog = provider_catalog_snapshot()
+            provider_catalog = self.provider_catalog.snapshot()
         return {
             "op": "snapshot",
             "stream": ROOM_EVENT_STREAM,
@@ -914,6 +933,29 @@ class RoomRealtimeController:
         server_url: str,
         ticket_issuer: Callable[[dict[str, object]], str] | None,
     ) -> dict[str, object]:
+        provider_id = clean_lobby_text(
+            payload.get("provider_id") or payload.get("provider_kind") or payload.get("provider"),
+            limit=64,
+        )
+        catalog_revision = clean_lobby_text(payload.get("catalog_revision"), limit=128)
+        try:
+            self.provider_catalog.validate_selection(
+                catalog_revision=catalog_revision,
+                provider_id=provider_id,
+                values={
+                    "model": clean_lobby_text(payload.get("model") or payload.get("model_id"), limit=128),
+                    "reasoning_effort": clean_lobby_text(
+                        payload.get("reasoning_effort") or payload.get("effort"), limit=32
+                    ),
+                    "service_tier": clean_lobby_text(payload.get("service_tier"), limit=32),
+                    "variant": clean_lobby_text(payload.get("variant"), limit=64),
+                    "permission_mode": clean_lobby_text(
+                        payload.get("permission_mode") or payload.get("permission_option"), limit=64
+                    ),
+                },
+            )
+        except ProviderCatalogSelectionError as error:
+            raise RoomCommandRejected(str(error), code=error.code) from error
         try:
             spec = native_cli_provider_spec_from_payload(payload)
         except UnsupportedNativeCliProvider as error:

@@ -1,5 +1,6 @@
 import tempfile
 import subprocess
+import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -15,6 +16,7 @@ from agentsassemble.room_realtime import (
 from agentsassemble.room_store import RoomStore
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.room_settings import update_room_settings
+from agentsassemble.provider_capabilities import ProviderCapabilityCatalog
 
 
 HOST = {
@@ -104,6 +106,33 @@ def _bridge_identity(agent_id="codex"):
     }
 
 
+def _test_provider_catalog() -> ProviderCapabilityCatalog:
+    def runner(command, _timeout):
+        if command[1:3] == ["debug", "models"]:
+            return 0, json.dumps(
+                {
+                    "models": [
+                        {"slug": "gpt-5.6-luna", "supported_reasoning_levels": [{"effort": "low"}]},
+                        {"slug": "gpt-5.3-codex-spark", "supported_reasoning_levels": [{"effort": "low"}]},
+                        {"slug": "gpt-5.3-codex", "supported_reasoning_levels": [{"effort": "low"}]},
+                    ]
+                }
+            ), ""
+        if command[0].endswith("agy"):
+            return 0, "Gemini 3.5 Flash (Medium)\n", ""
+        if command[0].endswith("grok"):
+            return 0, "Default model: grok-4.5\n- grok-4.5\n", ""
+        if command[0].endswith("claude"):
+            return 0, "Claude help", ""
+        if command[1:] == ["models", "--verbose"]:
+            return 0, "opencode-go/glm-5.2\n", ""
+        return 1, "", "unsupported"
+
+    catalog = ProviderCapabilityCatalog(runner=runner, resolver=lambda executable: f"/bin/{executable}")
+    catalog.snapshot(refresh=True)
+    return catalog
+
+
 class RoomEventBrokerTests(unittest.TestCase):
     def test_subscribed_connections_receive_same_canonical_event_without_polling(self):
         broker = RoomEventBroker()
@@ -175,11 +204,14 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.manager = FakeBridgeManager()
         self.recovery_scheduler = ControlledRecoveryScheduler()
         self.ready_count = 0
+        self.provider_catalog = _test_provider_catalog()
+        self.catalog_revision = str(self.provider_catalog.snapshot()["catalog_revision"])
         self.controller = RoomRealtimeController(
             self.root,
             providers=[_spec()],
             bridge_manager=self.manager,
             recovery_scheduler=self.recovery_scheduler,
+            provider_catalog=self.provider_catalog,
         )
 
     def tearDown(self):
@@ -187,9 +219,20 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.temp.cleanup()
 
     def _command(self, request_id, action, payload=None, identity=None):
+        command_payload = dict(payload or {})
+        if action == "agent.create":
+            command_payload.setdefault("catalog_revision", self.catalog_revision)
+            provider_id = str(command_payload.get("provider_id") or "")
+            provider = next(
+                item
+                for item in self.provider_catalog.snapshot()["providers"]
+                if item["id"] == provider_id
+            )
+            for control in provider["controls"]:
+                command_payload.setdefault(control["key"], control["default_value"])
         return self.controller.handle_command(
             identity or HOST,
-            {"op": "command", "request_id": request_id, "action": action, "payload": payload or {}},
+            {"op": "command", "request_id": request_id, "action": action, "payload": command_payload},
         )
 
     def _connect_bridge(self, agent_id="codex"):
@@ -696,6 +739,35 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertTrue(session["runtime_profile_key"])
         self.assertNotIn("-p", session["command_configured"])
         self.assertNotIn("--print", session["command_configured"])
+
+    def test_agent_create_rejects_stale_catalog_and_unknown_model(self):
+        with self.assertRaises(RoomCommandRejected) as stale:
+            self._command(
+                "req-create-stale-catalog",
+                "agent.create",
+                {
+                    "provider_id": "codex",
+                    "catalog_revision": "cat-stale",
+                    "display_name": "Codex Stale",
+                    "workspace": str(self.root),
+                    "model": "gpt-5.6-luna",
+                },
+            )
+        self.assertEqual(stale.exception.code, "catalog_changed")
+
+        with self.assertRaises(RoomCommandRejected) as unknown:
+            self._command(
+                "req-create-unknown-model",
+                "agent.create",
+                {
+                    "provider_id": "codex",
+                    "display_name": "Codex Unknown",
+                    "workspace": str(self.root),
+                    "model": "not-a-real-model",
+                },
+            )
+        self.assertEqual(unknown.exception.code, "unsupported_model")
+        self.assertFalse(RoomStore(self.root).session("general", "codex-codex-unknown"))
 
     def test_restart_restores_dynamic_server_owned_provider_for_ui_resume(self):
         created = self._command(

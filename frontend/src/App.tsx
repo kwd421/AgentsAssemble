@@ -1427,6 +1427,7 @@ export default function App() {
         meetingId={activeRoom.meetingId}
         roomLabel={activeRoom.label}
         providers={canonicalRoom.availableProviders}
+        catalogRevision={canonicalRoom.providerCatalog.catalog_revision}
         existingSessions={canonicalRoom.agentSessions}
         onClose={() => setAgentCreateOpen(false)}
         onCreate={async (request) => {
@@ -1441,6 +1442,7 @@ export default function App() {
           } else {
             await roomSocket.command("agent.create", {
               provider_id: request.providerId,
+              catalog_revision: request.catalogRevision || "",
               display_name: request.displayName,
               workspace: request.workspacePath,
               model: request.modelId || "",

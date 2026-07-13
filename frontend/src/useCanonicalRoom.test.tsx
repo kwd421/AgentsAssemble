@@ -58,6 +58,11 @@ function snapshot(
     has_more_before: true,
     resume_gap: false,
     snapshot_mode: mode,
+    provider_catalog: {
+      status: "ready",
+      catalog_revision: "cat-test",
+      providers: [],
+    },
     available_providers: [],
     capabilities: { "message.send": true, "agent.control": true },
   } satisfies RoomSocketSnapshot;

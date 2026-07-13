@@ -15,6 +15,7 @@ describe("AgentCreateModal", () => {
         open
         meetingId="room-a"
         roomLabel="Room A"
+        catalogRevision="cat-test"
         providers={[
           {
             id: "codex",
@@ -54,7 +55,10 @@ describe("AgentCreateModal", () => {
     await userEvent.click(screen.getByRole("button", { name: "추가하고 시작" }));
 
     expect(onCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ modelId: "gpt-5.3-codex-spark" })
+      expect.objectContaining({
+        catalogRevision: "cat-test",
+        modelId: "gpt-5.3-codex-spark",
+      })
     );
   });
 
@@ -65,6 +69,7 @@ describe("AgentCreateModal", () => {
         open
         meetingId="room-a"
         roomLabel="Room A"
+        catalogRevision="cat-test"
         providers={[
           {
             id: "codex",
