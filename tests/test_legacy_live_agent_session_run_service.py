@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agentsassemble.legacy_live_agent_session_run_service import (
     LegacyLiveAgentSessionRunMutationService,
@@ -288,6 +289,16 @@ class LegacyLiveAgentSessionRunMutationServiceTests(unittest.TestCase):
 
         self.assertEqual(calls, ["approve", "ensure"])
         self.assertEqual(self.runs.list_runs(limit=1)[0]["status"], "failed")
+
+    def test_finish_failure_closes_the_durable_run_and_records_failed_audit(self) -> None:
+        with patch.object(self.runs, "finish_run", side_effect=OSError("finish storage failed")):
+            with self.assertRaises(LegacySessionRunMutationError):
+                self.service.ensure({"meeting_id": "room-a", "group_id": "group-a"})
+
+        durable = self.runs.list_runs(limit=1)[0]
+        self.assertEqual(durable["status"], "failed")
+        self.assertEqual(self.operations[-1]["status"], "failed")
+        self.assertEqual(self.operations[-1]["operation"], "session_run.ensure")
 
 
 if __name__ == "__main__":

@@ -5309,14 +5309,18 @@ def _request_json(
             loaded = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
         try:
-            message = _http_error_message(error)
+            message, code = _http_error_details(error)
         finally:
             error.close()
-        raise CliHttpError(message, status_code=int(error.code or 0)) from error
+        raise CliHttpError(
+            message,
+            status_code=int(error.code or 0),
+            code=code,
+        ) from error
     return loaded if isinstance(loaded, dict) else {}
 
 
-def _http_error_message(error: urllib.error.HTTPError) -> str:
+def _http_error_details(error: urllib.error.HTTPError) -> tuple[str, str]:
     body = error.read().decode("utf-8", errors="replace")
     if body:
         try:
@@ -5324,9 +5328,9 @@ def _http_error_message(error: urllib.error.HTTPError) -> str:
         except json.JSONDecodeError:
             payload = {}
         if isinstance(payload, dict) and payload.get("error"):
-            return str(payload["error"])
-        return body.strip()
-    return str(error)
+            return str(payload["error"]), str(payload.get("code") or "")
+        return body.strip(), ""
+    return str(error), ""
 
 
 def run_sessions_command(args: argparse.Namespace) -> int:

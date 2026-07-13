@@ -79,8 +79,12 @@ class RequestContext:
         status: HTTPStatus,
         message: str,
         *,
+        code: str = "",
         details: dict[str, object] | None = None,
     ) -> None:
+        if code:
+            self.handler._send_error(status, message, code=code, details=details)
+            return
         if details is None:
             self.handler._send_error(status, message)
             return

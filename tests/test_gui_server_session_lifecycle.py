@@ -28,9 +28,31 @@ from tests.gui_server_test_support import (
     urlopen,
     write_live_state,
 )
+from agentsassemble.cli import _request_json
+from agentsassemble.cli_http_errors import CliHttpError
 
 
 class GuiServerSessionLifecycleTests(unittest.TestCase):
+
+    def test_missing_readiness_route_preserves_not_found_code_through_cli_http(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with self.assertRaises(CliHttpError) as raised:
+                    _request_json(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/readiness"
+                        "?meeting_id=missing-room&group_id=crew"
+                    )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        self.assertEqual(raised.exception.status_code, 404)
+        self.assertEqual(raised.exception.code, "not_found")
 
     def test_live_agent_meeting_start_creates_visible_bound_meeting_and_round_control(self):
         with tempfile.TemporaryDirectory() as temp_dir:

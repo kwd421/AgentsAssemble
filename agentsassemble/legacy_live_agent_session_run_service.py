@@ -179,6 +179,20 @@ class LegacyLiveAgentSessionRunMutationService:
         try:
             self.actions.assert_launch_approved(payload, default_server=default_server)
             session = self.actions.ensure(payload, default_server=default_server)
+            finished_run = self.session_runs.finish_run(session_run["run_id"], session=session)
+            response = dict(session)
+            response["session_run"] = finished_run
+            self._record(
+                "ensure",
+                status=session_start_operation_status(session),
+                target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
+                summary="ensured durable live-agent session run",
+                details={
+                    **session_start_operation_details(session),
+                    "session_run_id": str(finished_run.get("run_id") or ""),
+                },
+            )
+            return response
         except (OSError, ValueError) as error:
             safe_error = session_ensure_error_message(error)
             failed_run = self.session_runs.fail_run(session_run["run_id"], safe_error)
@@ -212,20 +226,6 @@ class LegacyLiveAgentSessionRunMutationService:
                 details=details,
             )
             raise
-        finished_run = self.session_runs.finish_run(session_run["run_id"], session=session)
-        response = dict(session)
-        response["session_run"] = finished_run
-        self._record(
-            "ensure",
-            status=session_start_operation_status(session),
-            target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
-            summary="ensured durable live-agent session run",
-            details={
-                **session_start_operation_details(session),
-                "session_run_id": str(finished_run.get("run_id") or ""),
-            },
-        )
-        return response
 
     def _latest_for_target(self, target: dict[str, str]) -> dict[str, object]:
         if not target["meeting_id"] or not target["group_id"]:

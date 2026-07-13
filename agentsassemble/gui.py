@@ -9698,9 +9698,12 @@ def _make_handler(
             status: HTTPStatus,
             message: str,
             *,
+            code: str = "",
             details: dict[str, object] | None = None,
         ) -> None:
             payload: dict[str, object] = {"error": message}
+            if code:
+                payload["code"] = code
             if details:
                 payload["details"] = details
                 meeting_id = details.get("meeting_id")

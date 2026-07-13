@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 
 from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.live_agent_sessions import LiveAgentSessionNotFoundError
 
 
 PayloadBuilder = Callable[..., dict[str, object]]
@@ -67,10 +68,25 @@ def register_legacy_live_agent_read_routes(
                     group_id=group_id,
                 )
             )
-        except (OSError, ValueError) as error:
+        except LiveAgentSessionNotFoundError as error:
+            ctx.send_error(
+                HTTPStatus.NOT_FOUND,
+                deps.readiness_error_message(error),
+                code="not_found",
+                details={"requested_meeting_id": meeting_id, "group_id": group_id},
+            )
+        except ValueError as error:
             ctx.send_error(
                 HTTPStatus.BAD_REQUEST,
                 deps.readiness_error_message(error),
+                code="invalid_request",
+                details={"requested_meeting_id": meeting_id, "group_id": group_id},
+            )
+        except OSError as error:
+            ctx.send_error(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                deps.readiness_error_message(error),
+                code="storage_error",
                 details={"requested_meeting_id": meeting_id, "group_id": group_id},
             )
 

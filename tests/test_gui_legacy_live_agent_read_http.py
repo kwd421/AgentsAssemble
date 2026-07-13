@@ -8,6 +8,7 @@ from agentsassemble.gui_legacy_live_agent_read_http import (
     register_legacy_live_agent_read_routes,
 )
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.live_agent_sessions import LiveAgentSessionNotFoundError
 
 
 class FakeHandler:
@@ -15,13 +16,20 @@ class FakeHandler:
         self.headers: dict[str, str] = {}
         self.rfile = io.BytesIO()
         self.sent_json: dict[str, object] | None = None
-        self.sent_error: tuple[object, str, dict[str, object] | None] | None = None
+        self.sent_error: tuple[object, str, str, dict[str, object] | None] | None = None
 
     def _send_json(self, payload: dict[str, object]) -> None:
         self.sent_json = payload
 
-    def _send_error(self, status: object, message: str, *, details: dict[str, object] | None = None) -> None:
-        self.sent_error = (status, message, details)
+    def _send_error(
+        self,
+        status: object,
+        message: str,
+        *,
+        code: str = "",
+        details: dict[str, object] | None = None,
+    ) -> None:
+        self.sent_error = (status, message, code, details)
 
 
 def _unused_payload(*args: object, **kwargs: object) -> dict[str, object]:
@@ -128,7 +136,33 @@ class LegacyLiveAgentReadRoutesTests(unittest.TestCase):
             (
                 400,
                 "safe: safe readiness error",
+                "invalid_request",
                 {"requested_meeting_id": "room-a", "group_id": "crew"},
+            ),
+        )
+
+    def test_missing_readiness_target_is_not_found_with_a_machine_code(self) -> None:
+        def readiness_payload(*args: object, **kwargs: object) -> dict[str, object]:
+            raise LiveAgentSessionNotFoundError("Meeting room-missing was not found.")
+
+        router = Router()
+        register_legacy_live_agent_read_routes(
+            router,
+            deps=_deps(readiness_payload=readiness_payload),
+        )
+
+        handler = _dispatch(
+            router,
+            "/api/live-agent-sessions/readiness?meeting_id=room-missing&group_id=crew",
+        )
+
+        self.assertEqual(
+            handler.sent_error,
+            (
+                404,
+                "Meeting room-missing was not found.",
+                "not_found",
+                {"requested_meeting_id": "room-missing", "group_id": "crew"},
             ),
         )
 

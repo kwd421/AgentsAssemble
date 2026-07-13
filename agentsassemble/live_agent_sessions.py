@@ -91,6 +91,10 @@ class LiveAgentSessionRecoverError(ValueError):
         self.meeting_id = meeting_id
 
 
+class LiveAgentSessionNotFoundError(ValueError):
+    """The requested retained legacy meeting does not exist."""
+
+
 def start_live_agent_session(
     output_root: Path,
     process_supervisor: object,
@@ -1082,20 +1086,20 @@ def _existing_meeting_dir(output_root: Path, meeting_id: str) -> Path:
     try:
         meeting_dir.relative_to(meetings_root)
     except ValueError as error:
-        raise ValueError(f"Meeting {meeting_id} was not found.") from error
+        raise LiveAgentSessionNotFoundError(f"Meeting {meeting_id} was not found.") from error
     if not meeting_dir.exists() or not meeting_dir.is_dir():
-        raise ValueError(f"Meeting {meeting_id} was not found.")
+        raise LiveAgentSessionNotFoundError(f"Meeting {meeting_id} was not found.")
     if not (meeting_dir / "live_state.json").exists() and not (meeting_dir / "meeting.json").exists():
-        raise ValueError(f"Meeting {meeting_id} was not found.")
+        raise LiveAgentSessionNotFoundError(f"Meeting {meeting_id} was not found.")
     return meeting_dir
 
 
 def _clean_existing_meeting_id(meeting_id: str) -> str:
     clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
     if not clean_meeting_id or clean_meeting_id in {".", ".."}:
-        raise ValueError(f"Meeting {clean_meeting_id or '(blank)'} was not found.")
+        raise LiveAgentSessionNotFoundError(f"Meeting {clean_meeting_id or '(blank)'} was not found.")
     if "/" in clean_meeting_id or "\\" in clean_meeting_id or Path(clean_meeting_id).name != clean_meeting_id:
-        raise ValueError(f"Meeting {clean_meeting_id} was not found.")
+        raise LiveAgentSessionNotFoundError(f"Meeting {clean_meeting_id} was not found.")
     return clean_meeting_id
 
 
@@ -1106,7 +1110,7 @@ def _read_existing_meeting(meeting_dir: Path) -> dict[str, object]:
         data = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(data, dict):
             return data
-    raise ValueError(f"Meeting {meeting_dir.name} was not found.")
+    raise LiveAgentSessionNotFoundError(f"Meeting {meeting_dir.name} was not found.")
 
 
 def _merge_resident_character_mode_snapshot(output_root: Path, meeting_id: str, resident_configs: list[object]) -> None:
