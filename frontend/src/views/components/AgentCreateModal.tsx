@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bot, Folder, Play, Plus, X } from "lucide-react";
 import {
   deleteDeepSeekCredential,
@@ -47,6 +47,7 @@ export default function AgentCreateModal({
   const [deepSeekKey, setDeepSeekKey] = useState("");
   const [credentialStatus, setCredentialStatus] = useState<ProviderCredentialStatus | null>(null);
   const [credentialBusy, setCredentialBusy] = useState(false);
+  const wasOpen = useRef(false);
   const selectedProvider =
     providers.find((provider) => provider.id === providerId) || providers[0];
   const reusableSessions = existingSessions.filter(
@@ -58,18 +59,38 @@ export default function AgentCreateModal({
       !session.active_turn_id &&
       Boolean(session.runtime_profile_key && session.model && session.permission_mode)
   );
+  const invalidControl = existingSessionId
+    ? undefined
+    : (selectedProvider?.controls || []).find((control) =>
+        !effectiveControlOptions(selectedProvider, control, settings).some(
+          (option) => option.value === (settings[control.key] ?? "")
+        )
+      );
   const canCreate = Boolean(
     meetingId &&
       (existingSessionId || (catalogRevision && selectedProvider?.startable)) &&
+      !invalidControl &&
       displayName.trim() &&
       workspacePath.trim()
   );
 
   useEffect(() => {
-    if (!open || !providers.length) return;
-    const current = providers.find((provider) => provider.id === providerId) || providers[0];
-    applyProvider(current);
-    setStatus("");
+    if (!open) {
+      wasOpen.current = false;
+      return;
+    }
+    if (!providers.length) return;
+    const current = providers.find((provider) => provider.id === providerId);
+    if (!wasOpen.current || !current) {
+      applyProvider(current || providers[0]);
+      setStatus("");
+      wasOpen.current = true;
+      return;
+    }
+    if (!existingSessionId) {
+      setSettings((previous) => normalizeProviderSettings(current, previous));
+    }
+    wasOpen.current = true;
   }, [open, providers]);
 
   useEffect(() => {
@@ -83,21 +104,20 @@ export default function AgentCreateModal({
     setProviderId(provider.id);
     setExistingSessionId("");
     setDisplayName(provider.display_name);
-    setSettings(
-      Object.fromEntries(
-        (provider.controls || []).map((control) => [
-          control.key,
-          control.default_value || control.options?.[0]?.value || "",
-        ])
-      )
-    );
+    setSettings(normalizeProviderSettings(provider, {}));
     setStartNow(provider.startable);
   }
 
   function applyExistingSession(sessionId: string) {
     setExistingSessionId(sessionId);
     const session = existingSessions.find((item) => item.session_id === sessionId);
-    if (!session) return;
+    if (!session) {
+      if (selectedProvider) {
+        setDisplayName(selectedProvider.display_name);
+        setSettings(normalizeProviderSettings(selectedProvider, {}));
+      }
+      return;
+    }
     setDisplayName(session.display_name);
     setSettings((previous) => ({
       ...previous,
@@ -111,7 +131,11 @@ export default function AgentCreateModal({
 
   async function handleCreate() {
     if (!canCreate || !selectedProvider) {
-      setStatus(selectedProvider?.discovery_error || "실행 가능한 provider와 폴더를 확인하세요");
+      setStatus(
+        invalidControl
+          ? `${invalidControl.label} 선택값을 확인하세요`
+          : selectedProvider?.discovery_error || "실행 가능한 provider와 폴더를 확인하세요"
+      );
       return;
     }
     setBusy(true);
@@ -181,6 +205,7 @@ export default function AgentCreateModal({
               key={provider.id}
               type="button"
               role="listitem"
+              aria-label={provider.display_name}
               data-active={provider.id === selectedProvider?.id}
               disabled={!provider.available}
               onClick={() => {
@@ -232,15 +257,26 @@ export default function AgentCreateModal({
               />
             </div>
           </label>
-          {(selectedProvider?.controls || []).map((control) => (
-            <ProviderControlField
-              key={`${selectedProvider.id}:${control.key}`}
-              control={control}
-              value={settings[control.key] || ""}
-              disabled={Boolean(existingSessionId)}
-              onChange={(value) => setSettings((previous) => ({ ...previous, [control.key]: value }))}
-            />
-          ))}
+          {(selectedProvider?.controls || []).map((control) => {
+            const options = effectiveControlOptions(selectedProvider, control, settings);
+            return (
+              <ProviderControlField
+                key={`${selectedProvider.id}:${control.key}`}
+                control={control}
+                options={options}
+                value={settings[control.key] ?? ""}
+                disabled={Boolean(existingSessionId)}
+                onChange={(value) =>
+                  setSettings((previous) =>
+                    normalizeProviderSettings(selectedProvider, {
+                      ...previous,
+                      [control.key]: value,
+                    })
+                  )
+                }
+              />
+            );
+          })}
           {selectedProvider?.id === "deepseek" && (
             <div className="dc-provider-secret-field">
               <label>
@@ -301,7 +337,10 @@ export default function AgentCreateModal({
           </p>
         )}
         {selectedProvider?.catalog_source === "static_manifest" && (
-          <p className="dc-agent-create-note">이 provider가 공식적으로 지원하는 고정 별칭 목록입니다.</p>
+          <p className="dc-agent-create-note">전체 모델 ID와 최신 모델 별칭을 구분해 표시합니다.</p>
+        )}
+        {!existingSessionId && invalidControl && (
+          <p className="dc-agent-create-status">{invalidControl.label}의 유효한 기본값이 없어 직접 선택해야 합니다.</p>
         )}
         {status && <p className="dc-agent-create-status preserve-words">{status}</p>}
 
@@ -326,11 +365,13 @@ export default function AgentCreateModal({
 
 function ProviderControlField({
   control,
+  options,
   value,
   onChange,
   disabled = false,
 }: {
   control: ProviderControl;
+  options: ProviderControl["options"];
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
@@ -344,7 +385,12 @@ function ProviderControlField({
         disabled={disabled}
         onChange={(event) => onChange(event.currentTarget.value)}
       >
-        {(control.options || []).map((option) => (
+        {!options.some((option) => option.value === value) && (
+          <option value="" disabled>
+            선택 필요
+          </option>
+        )}
+        {options.map((option) => (
           <option key={`${control.key}:${option.value || "default"}`} value={option.value}>
             {control.key === "model" && option.label !== option.value
               ? `${option.label} · ${option.value}`
@@ -353,5 +399,56 @@ function ProviderControlField({
         ))}
       </select>
     </label>
+  );
+}
+
+function normalizeProviderSettings(
+  provider: NativeCliProviderAvailability,
+  candidate: Record<string, string>
+): Record<string, string> {
+  const next: Record<string, string> = {};
+  const modelControl = provider.controls.find((control) => control.key === "model");
+  if (modelControl) {
+    next.model = validControlValue(modelControl, modelControl.options, candidate.model);
+  }
+  for (const control of provider.controls) {
+    if (control.key === "model") continue;
+    const options = effectiveControlOptions(provider, control, { ...candidate, ...next });
+    next[control.key] = validControlValue(control, options, candidate[control.key]);
+  }
+  return next;
+}
+
+function validControlValue(
+  control: ProviderControl,
+  options: ProviderControl["options"],
+  candidate?: string
+): string {
+  if (candidate !== undefined && options.some((option) => option.value === candidate)) {
+    return candidate;
+  }
+  return options.some((option) => option.value === control.default_value)
+    ? control.default_value
+    : "";
+}
+
+function effectiveControlOptions(
+  provider: NativeCliProviderAvailability,
+  control: ProviderControl,
+  settings: Record<string, string>
+): ProviderControl["options"] {
+  if (!["reasoning_effort", "service_tier"].includes(control.key)) {
+    return control.options;
+  }
+  const modelControl = provider.controls.find((item) => item.key === "model");
+  const model = modelControl?.options.find((option) => option.value === settings.model);
+  const metadataKey = control.key === "reasoning_effort" ? "reasoning_efforts" : "service_tiers";
+  const relation = model?.metadata?.[metadataKey];
+  if (!Array.isArray(relation)) return control.options;
+  const allowed = new Set(relation.map(String));
+  return control.options.filter(
+    (option) =>
+      allowed.has(option.value) ||
+      (control.key === "service_tier" && option.value === "default")
   );
 }
