@@ -11,7 +11,6 @@ from agentsassemble.attachments import (
 )
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.room_store import RoomStore
 
 
 def register_attachment_routes(router: Router) -> None:
@@ -46,7 +45,7 @@ def register_attachment_routes(router: Router) -> None:
                     ctx.deps.output_root,
                     str(attachment.get("id") or ""),
                 )
-                response["room_media"] = RoomStore(ctx.deps.output_root).attach_media(
+                response["room_media"] = ctx.deps.rooms.attach_media(
                     room_id,
                     filename=str(attachment.get("filename") or ""),
                     content_type=str(attachment.get("content_type") or ""),

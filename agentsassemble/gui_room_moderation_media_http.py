@@ -72,6 +72,7 @@ def register_moderation_media_routes(
             read_live_agents(ctx.deps.output_root),
             meeting_id=meeting_id,
             sessions=active_sessions_summary(),
+            repository=ctx.deps.rooms,
         )
 
     @router.get("/api/events/roster")
@@ -363,6 +364,7 @@ def register_moderation_media_routes(
                 ctx.deps.output_root,
                 event,
                 turn_adapter=agent_turn_adapter,
+                repository=ctx.deps.rooms,
             )
         ctx.send_json({"event": event, "channel_id": channel_id})
 

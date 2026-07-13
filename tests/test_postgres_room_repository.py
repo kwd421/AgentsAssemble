@@ -77,6 +77,22 @@ class PostgresRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.
         self.assertIsInstance(repository, PostgresRoomRepository)
         self.assertFalse((output_root / "rooms" / "rooms.sqlite3").exists())
 
+    def test_gui_handler_uses_postgres_for_controller_and_routes_without_sqlite(self) -> None:
+        from agentsassemble.gui import _make_handler
+
+        output_root = Path(self._temporary_directory.name) / f"gui-{uuid4().hex[:8]}"
+        handler = _make_handler(
+            output_root,
+            room_repository_override=self.repository,
+        )
+        try:
+            self.assertIs(handler.room_repository, self.repository)
+            self.assertIs(handler.gui_deps.rooms, self.repository)
+            self.assertIs(handler.room_realtime_controller.store, self.repository)
+            self.assertFalse((output_root / "rooms" / "rooms.sqlite3").exists())
+        finally:
+            handler.room_realtime_controller.close()
+
     def test_concurrent_event_writers_allocate_contiguous_room_sequence(self) -> None:
         self.repository.create_room("general")
 

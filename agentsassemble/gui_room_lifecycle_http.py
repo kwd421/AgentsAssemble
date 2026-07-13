@@ -13,7 +13,6 @@ from agentsassemble.agent_sessions import (
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.live_agent_frontend_create import ensure_frontend_meeting
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.room_store import RoomStore
 from agentsassemble.room_speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
@@ -104,7 +103,13 @@ def register_room_history_routes(
                 cursor=ctx.query_value("cursor") or ctx.handler._last_event_id(ctx.query),
             )
             return
-        ctx.send_json(room_status_payload(ctx.deps.output_root, room_id))
+        ctx.send_json(
+            room_status_payload(
+                ctx.deps.output_root,
+                room_id,
+                repository=ctx.deps.rooms,
+            )
+        )
 
     @router.get("/api/room/lobby")
     def room_lobby(ctx: RequestContext) -> None:
@@ -174,6 +179,7 @@ def register_room_history_routes(
                 ctx.deps.output_root,
                 event,
                 turn_adapter=agent_turn_adapter,
+                repository=ctx.deps.rooms,
             )
         ctx.send_json({"event": event})
 
@@ -214,7 +220,7 @@ def register_room_history_routes(
             str(room.get("room_id") or ""): _room_payload(room)
             for room in list_rooms(owner_id=owner_id, include_archived=include_archived)
         }
-        for room in RoomStore(ctx.deps.output_root).list_rooms(include_archived=include_archived):
+        for room in ctx.deps.rooms.list_rooms(include_archived=include_archived):
             room_id = str(room.get("room_id") or "")
             if not room_id:
                 continue
@@ -239,7 +245,13 @@ def register_room_history_routes(
             ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
             return
         try:
-            ctx.send_json(room_status_payload(ctx.deps.output_root, room_id))
+            ctx.send_json(
+                room_status_payload(
+                    ctx.deps.output_root,
+                    room_id,
+                    repository=ctx.deps.rooms,
+                )
+            )
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
 
@@ -298,7 +310,14 @@ def register_room_lifecycle_routes(router: Router) -> None:
             ctx.send_error(HTTPStatus.FORBIDDEN, "participant session token required")
             return
         try:
-            ctx.send_json(room_action_payload(ctx.deps.output_root, payload, action))
+            ctx.send_json(
+                room_action_payload(
+                    ctx.deps.output_root,
+                    payload,
+                    action,
+                    repository=ctx.deps.rooms,
+                )
+            )
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
 
@@ -321,7 +340,14 @@ def register_room_lifecycle_routes(router: Router) -> None:
         if payload is None:
             return
         try:
-            ctx.send_json(room_lifecycle_payload(ctx.deps.output_root, payload, action))
+            ctx.send_json(
+                room_lifecycle_payload(
+                    ctx.deps.output_root,
+                    payload,
+                    action,
+                    repository=ctx.deps.rooms,
+                )
+            )
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
 
@@ -344,8 +370,8 @@ def register_room_lifecycle_routes(router: Router) -> None:
         updated = set_room_archived(room_id, archived)
         store_updated = False
         try:
-            if RoomStore(ctx.deps.output_root).room(room_id):
-                RoomStore(ctx.deps.output_root).set_room_status(room_id, "archived" if archived else "active")
+            if ctx.deps.rooms.room(room_id):
+                ctx.deps.rooms.set_room_status(room_id, "archived" if archived else "active")
                 store_updated = True
         except ValueError:
             store_updated = False

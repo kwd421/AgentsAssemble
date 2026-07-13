@@ -50,6 +50,7 @@ def register_agent_session_routes(
                     ctx.deps.output_root,
                     payload,
                     process_service=_agent_session_process_service(ctx, payload),
+                    repository=ctx.deps.rooms,
                 )
             )
         except ValueError as error:
@@ -73,6 +74,7 @@ def register_agent_session_routes(
                         "created_by": payload.get("created_by") or operator_user_id(),
                     },
                     process_service=_agent_session_process_service(ctx, payload),
+                    repository=ctx.deps.rooms,
                 )
             )
         except ValueError as error:
@@ -100,6 +102,7 @@ def register_agent_session_routes(
                     turn_command_streamer=None
                     if bool(payload.get("dry_run")) or payload.get("runtime_mode") not in {"exec_jsonl_fallback"}
                     else turn_command_streamer,
+                    repository=ctx.deps.rooms,
                 )
             )
         except ValueError as error:
@@ -127,6 +130,7 @@ def register_agent_session_routes(
                     turn_command_streamer=None
                     if bool(payload.get("dry_run")) or payload.get("runtime_mode") not in {"exec_jsonl_fallback"}
                     else turn_command_streamer,
+                    repository=ctx.deps.rooms,
                 )
             )
         except ValueError as error:

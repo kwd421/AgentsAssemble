@@ -12,6 +12,7 @@ from agentsassemble.agent_sessions import merge_room_store_members
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_friends import room_friend_type_for_agent
+from agentsassemble.room_repository import RoomRepository
 
 ROOM_MEMBERS_FILE = "room_members.json"  # legacy JSON store; imported into identity.db once
 ROOM_MEMBER_ROLES = ("human", "director", "implementer", "reviewer", "agent")
@@ -130,6 +131,7 @@ def room_members_payload(
     *,
     meeting_id: str = "",
     sessions: list[dict[str, object]] | None = None,
+    repository: RoomRepository | None = None,
 ) -> dict[str, object]:
     room_id = clean_lobby_text(meeting_id, limit=128)
     saved_members = read_room_members(output_root, meeting_id=room_id)
@@ -191,7 +193,12 @@ def room_members_payload(
     roster = _collapse_stale_invite_duplicates(
         list(by_key.values()), live_keys=live_session_keys | live_agent_keys
     )
-    roster = merge_room_store_members(output_root, room_id, roster)
+    roster = merge_room_store_members(
+        output_root,
+        room_id,
+        roster,
+        repository=repository,
+    )
     for member in roster:
         key = _member_key(member)
         if key in muted_by_key:

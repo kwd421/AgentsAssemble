@@ -85,8 +85,11 @@ SQLite versions until a later revision requires a shared cross-backend change.
 participant/session lifecycle, command dedupe, media metadata, and durable
 attention contract as `RoomStore`. PostgreSQL-specific reads, mutations, and
 attention persistence are separate modules; the repository facade owns
-connections, transaction locks, listeners, and filesystem side effects. The
-adapter has real PostgreSQL contract coverage, but GUI backend selection remains
-disabled until every canonical GUI route receives the same injected repository.
-This prevents one server process from mixing PostgreSQL WebSocket state with a
-fresh SQLite HTTP state file.
+connections, transaction locks, listeners, and filesystem side effects.
+
+The GUI handler, canonical WebSocket controller, Agent Session HTTP actions,
+room lifecycle, roster projection, invite admission, attachment metadata, and
+canonical SSE replay now receive one server-scoped repository instance. Handler
+construction rejects a controller and route repository that are not the same
+object. Backend selection remains disabled until the explicit migration command
+and startup configuration are available; the default continues to be SQLite.

@@ -268,6 +268,8 @@ from agentsassemble.room_friend_dms import (
 )
 from agentsassemble.identity_store import default_identity_db_path
 from agentsassemble.room_members import is_room_member_muted, mark_thinking, room_members_payload
+from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room_store import RoomStore
 from agentsassemble.room_speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
@@ -1726,6 +1728,8 @@ def _stream_snapshot_payload(
     stream: str,
     meeting_id: str | None = None,
     last_event_id: str | None = None,
+    *,
+    repository: RoomRepository | None = None,
 ) -> dict[str, object]:
     if stream == "lobby":
         events = read_lobby_events_after(output_root / "lobby.jsonl", last_event_id)
@@ -1743,6 +1747,7 @@ def _stream_snapshot_payload(
             read_live_agents(output_root),
             meeting_id=meeting_id or "",
             sessions=active_sessions_summary(),
+            repository=repository,
         )
         members = members_payload.get("members") or []
         return {
@@ -7260,6 +7265,7 @@ def _make_handler(
     live_agent_login_launcher: object | None = None,
     live_agent_login_command_resolver: object | None = None,
     room_realtime_controller_override: RoomRealtimeController | None = None,
+    room_repository_override: RoomRepository | None = None,
     legacy_session_run_actions_override: LegacySessionRunActions | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     configure_room_invite_store(default_room_invite_store_path(output_root))
@@ -7279,12 +7285,19 @@ def _make_handler(
     ws_ticket_store = WsTicketStore()
     if room_realtime_controller_override is not None:
         room_realtime_controller = room_realtime_controller_override
+        room_repository = room_repository_override or room_realtime_controller.store
+        if room_repository is not room_realtime_controller.store:
+            raise ValueError(
+                "Room realtime controller and GUI routes must share one room repository instance."
+            )
     else:
+        room_repository = room_repository_override or RoomStore(output_root)
         native_cli_bridge_manager = NativeCliBridgeProcessManager(output_root)
         room_realtime_controller = RoomRealtimeController(
             output_root,
             providers=default_native_cli_provider_specs(workspace=Path.cwd()),
             bridge_manager=native_cli_bridge_manager,
+            repository=room_repository,
         )
         native_cli_bridge_manager.set_exit_listener(room_realtime_controller.bridge_process_exited)
 
@@ -7293,18 +7306,32 @@ def _make_handler(
         # so the WS transport behaves exactly like the HTTP/SSE one (no pub/sub yet).
         def read_lobby_after(meeting_id: str, after_id: str) -> tuple[list, str]:
             payload = _stream_snapshot_payload(
-                output_root, "lobby", meeting_id=meeting_id, last_event_id=after_id or None
+                output_root,
+                "lobby",
+                meeting_id=meeting_id,
+                last_event_id=after_id or None,
+                repository=room_repository,
             )
             events = list(payload.get("events", []))
             return events, (_last_payload_event_id(payload) or after_id)
 
         def read_roster(meeting_id: str) -> tuple[list, str]:
-            payload = _stream_snapshot_payload(output_root, "roster", meeting_id=meeting_id, last_event_id=None)
+            payload = _stream_snapshot_payload(
+                output_root,
+                "roster",
+                meeting_id=meeting_id,
+                last_event_id=None,
+                repository=room_repository,
+            )
             return list(payload.get("members", [])), str(_payload_signature(payload) or "")
 
         def read_side_chat_after(meeting_id: str, after_id: str) -> tuple[list, str]:
             payload = _stream_snapshot_payload(
-                output_root, "side_chat", meeting_id=meeting_id, last_event_id=after_id or None
+                output_root,
+                "side_chat",
+                meeting_id=meeting_id,
+                last_event_id=after_id or None,
+                repository=room_repository,
             )
             events = list(payload.get("events", []))
             return events, (_last_payload_event_id(payload) or after_id)
@@ -7327,6 +7354,7 @@ def _make_handler(
                     output_root,
                     event,
                     turn_adapter=_local_agent_session_turn_adapter,
+                    repository=room_repository,
                 )
                 return event
             except GovernedLobbySayRejected as rejected:
@@ -7373,6 +7401,7 @@ def _make_handler(
     # try the table first and fall back to the legacy if-chains below.
     route_deps = GuiDeps(
         output_root=output_root,
+        room_repository=room_repository,
         process_supervisor=live_agent_process_supervisor,
         read_lobby=read_lobby,
         read_lobby_before=read_lobby_before,
@@ -7397,6 +7426,7 @@ def _make_handler(
             output_root,
             event,
             turn_adapter=_local_agent_session_turn_adapter,
+            repository=room_repository,
         )
 
     register_legacy_lobby_routes(
@@ -9261,6 +9291,7 @@ def _make_handler(
                         stream,
                         meeting_id=meeting_id,
                         last_event_id=current_last_event_id,
+                        repository=room_repository,
                     )
                     latest_event_id = _last_payload_event_id(payload)
                     wrote_frame = False
@@ -9303,7 +9334,12 @@ def _make_handler(
             last_write_at = 0.0
             while True:
                 try:
-                    frames = room_sse_frames_after_cursor(output_root, room_id, cursor=current_cursor)
+                    frames = room_sse_frames_after_cursor(
+                        output_root,
+                        room_id,
+                        cursor=current_cursor,
+                        repository=room_repository,
+                    )
                     for frame in frames:
                         self.wfile.write(frame.encode("utf-8"))
                         event_id = _sse_frame_id(frame)
@@ -9407,6 +9443,8 @@ def _make_handler(
                 return default
 
     AgentsAssembleHandler.room_realtime_controller = room_realtime_controller
+    AgentsAssembleHandler.room_repository = room_repository
+    AgentsAssembleHandler.gui_deps = route_deps
     return AgentsAssembleHandler
 
 

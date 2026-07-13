@@ -25,6 +25,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from agentsassemble.room_invite import verify_host_token, verify_session_token
+from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_users import participant_is_operator
 
 
@@ -38,6 +39,7 @@ class GuiDeps:
     """
 
     output_root: Path
+    room_repository: RoomRepository | None = None
     process_supervisor: Any = None
     read_lobby: Callable[..., list[dict[str, object]]] | None = None
     read_lobby_before: Callable[..., dict[str, object]] | None = None
@@ -45,6 +47,13 @@ class GuiDeps:
     lobby_payload_with_attachments: Callable[..., dict[str, object]] | None = None
     public_lobby_allows_room_scope: Callable[[dict[str, object]], bool] | None = None
     history_page_limit: Callable[[dict[str, list[str]]], int] | None = None
+
+    @property
+    def rooms(self) -> RoomRepository:
+        repository = self.room_repository
+        if repository is None:
+            raise RuntimeError("GUI room repository is not configured.")
+        return repository
 
 
 class RequestContext:

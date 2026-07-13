@@ -17,7 +17,6 @@ from agentsassemble.room_invite import (
 )
 from agentsassemble.room_members import upsert_room_member
 from agentsassemble.room_settings import room_settings_payload
-from agentsassemble.room_store import RoomStore
 from agentsassemble.room_users import (
     grant_operator_to_device,
     operator_user_id,
@@ -127,7 +126,7 @@ def register_invite_admission_routes(router: Router) -> None:
             ctx.send_error(HTTPStatus.FORBIDDEN, str(result.get("reason", "rejected")))
             return
         room_id = str(result.get("meeting_id") or "")
-        room = RoomStore(ctx.deps.output_root).room(room_id)
+        room = ctx.deps.rooms.room(room_id)
         settings_payload = room_settings_payload(ctx.deps.output_root, room_id=room_id)
         settings = settings_payload.get("settings") if isinstance(settings_payload.get("settings"), dict) else {}
         result["room_label"] = str(settings.get("label") or room.get("label") or room_id)
@@ -135,7 +134,7 @@ def register_invite_admission_routes(router: Router) -> None:
         result["room_created_at"] = str(room.get("created_at") or "")
         participant_type = str(result.get("participant_type") or "human")
         if participant_type == "human":
-            RoomStore(ctx.deps.output_root).upsert_participant(
+            ctx.deps.rooms.upsert_participant(
                 str(result["meeting_id"]),
                 {
                     "participant_id": result["agent_id"],

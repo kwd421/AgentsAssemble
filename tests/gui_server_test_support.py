@@ -152,7 +152,15 @@ def _dispatch_room_route(
     )
     router = Router()
     register_room_routes(router)
-    ctx = RequestContext(handler, GuiDeps(output_root=output_root), parsed, parse_qs(parsed.query))
+    ctx = RequestContext(
+        handler,
+        GuiDeps(
+            output_root=output_root,
+            room_repository=RoomStore(output_root),
+        ),
+        parsed,
+        parse_qs(parsed.query),
+    )
     self_handled = router.dispatch(method, ctx)
     if not self_handled:
         raise AssertionError(f"route not handled: {method} {path}")
