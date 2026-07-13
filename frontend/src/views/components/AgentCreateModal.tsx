@@ -263,27 +263,19 @@ function ProviderControlField({
   value: string;
   onChange: (value: string) => void;
 }) {
-  if (control.kind === "combobox") {
-    const listId = `provider-control-${control.key}`;
-    return (
-      <label>
-        <span>{control.label}</span>
-        <input value={value} list={listId} onChange={(event) => onChange(event.currentTarget.value)} />
-        <datalist id={listId}>
-          {(control.options || []).map((option) => (
-            <option key={`${control.key}:${option.value}`} value={option.value}>{option.label}</option>
-          ))}
-        </datalist>
-      </label>
-    );
-  }
   return (
     <label>
       <span>{control.label}</span>
-      <select value={value} onChange={(event) => onChange(event.currentTarget.value)}>
+      <select
+        aria-label={control.label}
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+      >
         {(control.options || []).map((option) => (
           <option key={`${control.key}:${option.value || "default"}`} value={option.value}>
-            {option.label}
+            {control.key === "model" && option.label !== option.value
+              ? `${option.label} · ${option.value}`
+              : option.label}
           </option>
         ))}
       </select>

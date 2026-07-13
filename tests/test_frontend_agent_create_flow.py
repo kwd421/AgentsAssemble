@@ -49,6 +49,8 @@ class FrontendAgentCreateFlowTests(unittest.TestCase):
         self.assertIn("selectedProvider?.controls", source)
         self.assertIn("ProviderControlField", source)
         self.assertIn("<select", source)
+        self.assertNotIn("<datalist", source)
+        self.assertNotIn("<input value={value} list=", source)
         self.assertNotIn("speed_options", source)
 
     def test_agent_create_modal_does_not_restore_legacy_login_or_poll_controls(self):
