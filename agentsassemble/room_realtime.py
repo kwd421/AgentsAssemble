@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import threading
@@ -64,6 +64,14 @@ class AgentBridgeManager(Protocol):
 
 
 RecoveryScheduler = Callable[[float, Callable[[], None]], object]
+
+
+@dataclass(frozen=True)
+class _PendingEventPartition:
+    inflight: list[str]
+    deferred: list[str]
+    already_synced: list[str]
+    invalid: list[str]
 
 
 class RoomCommandRejected(ValueError):
@@ -1720,10 +1728,31 @@ class RoomRealtimeController:
             default=0,
             minimum=0,
         )
-        inflight, deferred = self._partition_pending_events(room_id, pending, input_up_to_seq=input_up_to_seq)
-        if not inflight:
+        partition = self._partition_pending_events(
+            room_id,
+            pending,
+            included_event_ids=set(provider_context_event_ids),
+            last_provider_sync_seq=(
+                _safe_bounded_int(
+                    packet.get("last_provider_sync_seq_before", session.get("last_provider_sync_seq")),
+                    default=0,
+                    minimum=0,
+                )
+                if session.get("bootstrap_done")
+                else 0
+            ),
+        )
+        if not partition.inflight:
+            cleaned_pending = partition.deferred
+            if cleaned_pending != pending:
+                self.store.update_session_fields(
+                    room_id,
+                    str(session["session_id"]),
+                    pending_event_ids=cleaned_pending,
+                    pending_relay_depth=int(session.get("pending_relay_depth") or 0) if cleaned_pending else 0,
+                )
             return False
-        active_source_event_id = inflight[-1]
+        active_source_event_id = partition.inflight[-1]
         source_event = self.store.event_by_id(room_id, active_source_event_id)
         input_up_to_event_id = input_up_to_event_id or active_source_event_id
         relay_depth = int(session.get("pending_relay_depth") or 0)
@@ -1738,9 +1767,9 @@ class RoomRealtimeController:
             active_relay_depth=relay_depth,
             input_up_to_event_id=input_up_to_event_id,
             input_up_to_seq=input_up_to_seq,
-            inflight_event_ids=inflight,
-            pending_event_ids=deferred,
-            pending_relay_depth=relay_depth if deferred else 0,
+            inflight_event_ids=partition.inflight,
+            pending_event_ids=partition.deferred,
+            pending_relay_depth=relay_depth if partition.deferred else 0,
             latency={
                 "queued_at": source_event.get("created_at") or dispatched_at,
                 "dispatch_started_at": dispatched_at,
@@ -1799,7 +1828,7 @@ class RoomRealtimeController:
             turn_phase="",
             input_up_to_seq=0,
             inflight_event_ids=[],
-            pending_event_ids=pending,
+            pending_event_ids=[*partition.inflight, *partition.deferred],
             last_error="Agent bridge disconnected before turn assignment.",
         )
         return False
@@ -1809,18 +1838,22 @@ class RoomRealtimeController:
         room_id: str,
         pending: list[str],
         *,
-        input_up_to_seq: int,
-    ) -> tuple[list[str], list[str]]:
-        inflight: list[str] = []
-        deferred: list[str] = []
+        included_event_ids: set[str],
+        last_provider_sync_seq: int,
+    ) -> _PendingEventPartition:
+        partition = _PendingEventPartition(inflight=[], deferred=[], already_synced=[], invalid=[])
         for event_id in pending:
             event = self.store.event_by_id(room_id, event_id)
             event_seq = _safe_bounded_int(event.get("seq"), default=0, minimum=0)
-            if event_seq and event_seq <= input_up_to_seq:
-                inflight.append(event_id)
+            if not event or not event_seq:
+                partition.invalid.append(event_id)
+            elif event_seq <= last_provider_sync_seq:
+                partition.already_synced.append(event_id)
+            elif event_id in included_event_ids:
+                partition.inflight.append(event_id)
             else:
-                deferred.append(event_id)
-        return inflight, deferred
+                partition.deferred.append(event_id)
+        return partition
 
     def _publish_session_state(self, room_id: str, session: dict[str, object]) -> dict[str, object]:
         if not session:

@@ -1028,6 +1028,93 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(failed["inflight_event_ids"], [])
         self.assertEqual(failed["pending_event_ids"], [first["id"], second["id"]])
 
+    def test_pending_partition_discards_missing_and_already_synced_events(self):
+        self._command("start-stale-pending", "agent.start", {"agent_id": "codex"})
+        _identity, channel = self._connect_bridge()
+        channel.drain()
+        store = RoomStore(self.root)
+        store.update_session_fields("general", "codex", runtime_status="busy", bootstrap_done=True)
+        synced = self._command(
+            "synced-pending",
+            "message.send",
+            {"content": "already delivered", "target_agent_id": "codex"},
+        )["result"]["event"]
+        store.update_session_fields(
+            "general",
+            "codex",
+            runtime_status="idle",
+            last_provider_sync_seq=synced["seq"],
+            pending_event_ids=["missing-event", synced["id"]],
+        )
+
+        with patch(
+            "agentsassemble.room_realtime.build_room_turn_packet",
+            return_value={
+                "provider_input": "",
+                "events": [],
+                "last_provider_sync_event_id_after": synced["id"],
+                "last_provider_sync_seq_after": synced["seq"],
+                "provider_visible_chars": 0,
+                "provider_visible_event_count": 0,
+                "input_mode": "delta",
+            },
+        ):
+            self.assertFalse(self.controller._assign_pending("general", "codex"))
+
+        cleaned = store.session("general", "codex")
+        self.assertEqual(cleaned["pending_event_ids"], [])
+        self.assertEqual(cleaned["pending_relay_depth"], 0)
+        self.assertFalse(any(message.get("op") == "turn.assign" for message in channel.drain()))
+
+    def test_pending_partition_keeps_only_valid_deferred_and_inflight_events(self):
+        self._command("start-mixed-pending", "agent.start", {"agent_id": "codex"})
+        _identity, channel = self._connect_bridge()
+        channel.drain()
+        store = RoomStore(self.root)
+        store.update_session_fields("general", "codex", runtime_status="busy", bootstrap_done=True)
+        synced = self._command(
+            "mixed-synced",
+            "message.send",
+            {"content": "old", "target_agent_id": "codex"},
+        )["result"]["event"]
+        included = self._command(
+            "mixed-included",
+            "message.send",
+            {"content": "included", "target_agent_id": "codex"},
+        )["result"]["event"]
+        deferred = self._command(
+            "mixed-deferred",
+            "message.send",
+            {"content": "deferred", "target_agent_id": "codex"},
+        )["result"]["event"]
+        store.update_session_fields(
+            "general",
+            "codex",
+            runtime_status="idle",
+            last_provider_sync_seq=synced["seq"],
+            pending_event_ids=["missing-event", synced["id"], included["id"], deferred["id"]],
+        )
+
+        with patch(
+            "agentsassemble.room_realtime.build_room_turn_packet",
+            return_value={
+                "provider_input": "included",
+                "events": [included],
+                "last_provider_sync_event_id_after": included["id"],
+                "last_provider_sync_seq_after": included["seq"],
+                "provider_visible_chars": len("included"),
+                "provider_visible_event_count": 1,
+                "input_mode": "delta",
+            },
+        ):
+            self.assertTrue(self.controller._assign_pending("general", "codex"))
+
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+        during_turn = store.session("general", "codex")
+        self.assertEqual(assignment["source_event_id"], included["id"])
+        self.assertEqual(during_turn["inflight_event_ids"], [included["id"]])
+        self.assertEqual(during_turn["pending_event_ids"], [deferred["id"]])
+
     def test_bridge_delta_and_final_create_only_canonical_turn_events(self):
         self._command("req-start", "agent.start", {"agent_id": "codex"})
         identity, channel = self._connect_bridge()
