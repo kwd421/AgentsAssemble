@@ -7,13 +7,13 @@ from unittest.mock import patch
 from agentsassemble.grok_acp_runtime import GrokAcpRuntime
 from agentsassemble.bridge_protocol import BridgeReportTimeout
 from agentsassemble.provider_runtime_contracts import AdapterContractError, ProviderTurnResult
-from agentsassemble.provider_runtime_config import ProviderRuntimeConfig
-from agentsassemble.provider_runtime_factory import ProviderRuntimeFactoryError, runtime_from_config
-from agentsassemble.room_agent_bridge import (
+from agentsassemble.provider_runtime_config import (
     BridgeConfigError,
     CanonicalBridgeLaunchConfig,
-    RoomAgentBridge,
+    ProviderRuntimeConfig,
 )
+from agentsassemble.provider_runtime_factory import ProviderRuntimeFactoryError, runtime_from_config
+from agentsassemble.room_agent_bridge import RoomAgentBridge
 
 
 class FakeClient:

@@ -11,6 +11,12 @@ class ProviderRuntimeConfigError(ValueError):
         self.code = code
 
 
+class BridgeConfigError(ValueError):
+    def __init__(self, message: str, *, code: str = "bridge_config_invalid") -> None:
+        super().__init__(message)
+        self.code = code
+
+
 @dataclass(frozen=True)
 class ProviderRuntimeProfile:
     provider_kind: str
@@ -142,6 +148,35 @@ class ProviderRuntimeConfig:
         )
 
 
+@dataclass(frozen=True)
+class CanonicalBridgeLaunchConfig:
+    room_id: str
+    session_id: str
+    turn_timeout_seconds: float
+    runtime_profile_key: str
+    credential_stdin: bool
+    runtime: ProviderRuntimeConfig
+
+    @classmethod
+    def parse_strict(cls, values: dict[str, object]) -> CanonicalBridgeLaunchConfig:
+        try:
+            runtime = ProviderRuntimeConfig.parse_strict(values)
+        except ProviderRuntimeConfigError as error:
+            raise BridgeConfigError(str(error)) from error
+        return cls(
+            room_id=_bridge_required_text(values, "room_id", limit=128),
+            session_id=_bridge_required_text(values, "session_id", limit=128),
+            turn_timeout_seconds=_bridge_required_float(
+                values,
+                "turn_timeout_seconds",
+                minimum=0.001,
+            ),
+            runtime_profile_key=_bridge_required_text(values, "runtime_profile_key", limit=256),
+            credential_stdin=_bridge_required_bool(values, "credential_stdin"),
+            runtime=runtime,
+        )
+
+
 def _required_value(values: dict[str, object], key: str) -> object:
     if key not in values:
         raise ProviderRuntimeConfigError(f"Provider runtime config is missing {key}.")
@@ -208,4 +243,37 @@ def _required_optional_int(values: dict[str, object], key: str) -> int | None:
         raise ProviderRuntimeConfigError(
             f"Provider runtime config {key} must be a positive integer or null."
         )
+    return value
+
+
+def _bridge_required_value(values: dict[str, object], key: str) -> object:
+    if key not in values:
+        raise BridgeConfigError(f"Agent Bridge config is missing {key}.")
+    return values[key]
+
+
+def _bridge_required_text(values: dict[str, object], key: str, *, limit: int) -> str:
+    value = clean_lobby_text(_bridge_required_value(values, key), limit=limit)
+    if not value:
+        raise BridgeConfigError(f"Agent Bridge config {key} is required.")
+    return value
+
+
+def _bridge_required_float(values: dict[str, object], key: str, *, minimum: float) -> float:
+    value = _bridge_required_value(values, key)
+    if isinstance(value, bool):
+        raise BridgeConfigError(f"Agent Bridge config {key} must be a number.")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as error:
+        raise BridgeConfigError(f"Agent Bridge config {key} must be a number.") from error
+    if parsed < minimum:
+        raise BridgeConfigError(f"Agent Bridge config {key} must be at least {minimum}.")
+    return parsed
+
+
+def _bridge_required_bool(values: dict[str, object], key: str) -> bool:
+    value = _bridge_required_value(values, key)
+    if not isinstance(value, bool):
+        raise BridgeConfigError(f"Agent Bridge config {key} must be a boolean.")
     return value

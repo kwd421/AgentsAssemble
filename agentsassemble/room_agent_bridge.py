@@ -27,43 +27,13 @@ from agentsassemble.provider_runtime_contracts import (
     ProviderTurnResult,
 )
 from agentsassemble.provider_runtime_config import (
+    BridgeConfigError,
+    CanonicalBridgeLaunchConfig,
     ProviderRuntimeConfig,
-    ProviderRuntimeConfigError,
     ProviderRuntimeProfile,
 )
 from agentsassemble.provider_runtime_factory import runtime_from_config
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
-
-
-class BridgeConfigError(ValueError):
-    def __init__(self, message: str, *, code: str = "bridge_config_invalid") -> None:
-        super().__init__(message)
-        self.code = code
-
-
-@dataclass(frozen=True)
-class CanonicalBridgeLaunchConfig:
-    room_id: str
-    session_id: str
-    turn_timeout_seconds: float
-    runtime_profile_key: str
-    credential_stdin: bool
-    runtime: ProviderRuntimeConfig
-
-    @classmethod
-    def parse_strict(cls, values: dict[str, object]) -> CanonicalBridgeLaunchConfig:
-        try:
-            runtime = ProviderRuntimeConfig.parse_strict(values)
-        except ProviderRuntimeConfigError as error:
-            raise BridgeConfigError(str(error)) from error
-        return cls(
-            room_id=_required_text(values, "room_id", limit=128),
-            session_id=_required_text(values, "session_id", limit=128),
-            turn_timeout_seconds=_required_float(values, "turn_timeout_seconds", minimum=0.001),
-            runtime_profile_key=_required_text(values, "runtime_profile_key", limit=256),
-            credential_stdin=_required_bool(values, "credential_stdin"),
-            runtime=runtime,
-        )
 
 
 @dataclass
@@ -621,45 +591,6 @@ def main() -> int:
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, stop_bridge)
     return bridge.run()
-
-
-def _required_value(values: dict[str, object], key: str) -> object:
-    if key not in values:
-        raise BridgeConfigError(f"Agent Bridge config is missing {key}.")
-    return values[key]
-
-
-def _required_text(
-    values: dict[str, object],
-    key: str,
-    *,
-    limit: int,
-    allow_empty: bool = False,
-) -> str:
-    value = clean_lobby_text(_required_value(values, key), limit=limit)
-    if not value and not allow_empty:
-        raise BridgeConfigError(f"Agent Bridge config {key} is required.")
-    return value
-
-
-def _required_float(values: dict[str, object], key: str, *, minimum: float) -> float:
-    value = _required_value(values, key)
-    if isinstance(value, bool):
-        raise BridgeConfigError(f"Agent Bridge config {key} must be a number.")
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError) as error:
-        raise BridgeConfigError(f"Agent Bridge config {key} must be a number.") from error
-    if parsed < minimum:
-        raise BridgeConfigError(f"Agent Bridge config {key} must be at least {minimum}.")
-    return parsed
-
-
-def _required_bool(values: dict[str, object], key: str) -> bool:
-    value = _required_value(values, key)
-    if not isinstance(value, bool):
-        raise BridgeConfigError(f"Agent Bridge config {key} must be a boolean.")
-    return value
 
 
 def _now() -> str:
