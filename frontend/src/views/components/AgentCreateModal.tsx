@@ -59,9 +59,9 @@ export default function AgentCreateModal({
       !session.active_turn_id &&
       Boolean(session.runtime_profile_key && session.model && session.permission_mode)
   );
-  const invalidControl = existingSessionId
+  const invalidControl = existingSessionId || !selectedProvider
     ? undefined
-    : (selectedProvider?.controls || []).find((control) =>
+    : selectedProvider.controls.find((control) =>
         !effectiveControlOptions(selectedProvider, control, settings).some(
           (option) => option.value === (settings[control.key] ?? "")
         )
@@ -257,7 +257,7 @@ export default function AgentCreateModal({
               />
             </div>
           </label>
-          {(selectedProvider?.controls || []).map((control) => {
+          {selectedProvider && selectedProvider.controls.map((control) => {
             const options = effectiveControlOptions(selectedProvider, control, settings);
             return (
               <ProviderControlField

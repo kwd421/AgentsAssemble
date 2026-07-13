@@ -2,6 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { NativeCliProviderAvailability } from "../../roomSocketClient";
 import AgentCreateModal from "./AgentCreateModal";
 
 afterEach(cleanup);
@@ -333,7 +334,7 @@ describe("AgentCreateModal", () => {
   });
 });
 
-function codexProvider() {
+function codexProvider(): NativeCliProviderAvailability {
   return {
     id: "codex",
     display_name: "Codex",
@@ -357,7 +358,7 @@ function codexProvider() {
   };
 }
 
-function claudeProvider() {
+function claudeProvider(): NativeCliProviderAvailability {
   return {
     id: "claude",
     display_name: "Claude Code",
@@ -386,7 +387,7 @@ function claudeProvider() {
   };
 }
 
-function codexProviderWithRelations() {
+function codexProviderWithRelations(): NativeCliProviderAvailability {
   return {
     ...codexProvider(),
     default_model: "model-low",
