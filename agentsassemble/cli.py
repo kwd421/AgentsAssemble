@@ -73,6 +73,12 @@ from agentsassemble.cli_legacy_live_agent_processes import (
     LegacyProcessCliRuntime,
     run_legacy_process_command,
 )
+from agentsassemble.cli_legacy_live_agent_smoke import LegacySmokeCliRuntime, run_legacy_smoke_command
+from agentsassemble.cli_diagnostics import (
+    DiagnosticCliRuntime,
+    run_diagnostic_command,
+    run_provider_health_command,
+)
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.live_agents import (
@@ -567,11 +573,25 @@ def _parse_persona_slot_values(values: list[str]) -> dict[str, str]:
 def run_providers_command(args: argparse.Namespace) -> int:
     try:
         if args.providers_command == "health":
-            return _run_provider_health(args)
+            return run_provider_health_command(args, runtime=_diagnostic_cli_runtime())
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return 1
+
+
+def _diagnostic_cli_runtime() -> DiagnosticCliRuntime:
+    return DiagnosticCliRuntime(
+        request_json=lambda *call_args, **call_kwargs: _request_json(*call_args, **call_kwargs),
+        server_url=_server_url,
+        operation_http_timeout=_operation_http_timeout,
+        session_smoke_http_timeout=_session_smoke_http_timeout,
+        probe_http_timeout=_probe_http_timeout,
+        provider_health_report=lambda *call_args, **call_kwargs: provider_health_report(*call_args, **call_kwargs),
+        format_provider_health=_format_provider_health,
+        format_readiness=_format_live_agent_readiness,
+        format_probe=_format_live_agent_probe,
+    )
 
 
 def run_api_call_command(args: argparse.Namespace) -> int:
@@ -699,6 +719,26 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
         )
         if process_result is not None:
             return process_result
+        smoke_result = run_legacy_smoke_command(
+            args,
+            runtime=LegacySmokeCliRuntime(
+                request_json=lambda *call_args, **call_kwargs: _request_json(*call_args, **call_kwargs),
+                server_url=_server_url,
+                operation_http_timeout=_operation_http_timeout,
+                session_smoke_http_timeout=_session_smoke_http_timeout,
+                real_session_smoke_http_timeout=_real_session_smoke_http_timeout,
+                format_session_smoke=_format_live_agent_session_smoke,
+                format_real_session_smoke=_format_live_agent_real_session_smoke,
+            ),
+        )
+        if smoke_result is not None:
+            return smoke_result
+        diagnostic_result = run_diagnostic_command(
+            args,
+            runtime=_diagnostic_cli_runtime(),
+        )
+        if diagnostic_result is not None:
+            return diagnostic_result
         if args.live_agent_command == "register":
             payload = {
                 "agent_id": args.agent_id,
@@ -821,24 +861,12 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_discover(args)
         if args.live_agent_command == "auto-join":
             return _run_live_agent_auto_join(args)
-        if args.live_agent_command == "smoke":
-            return _run_live_agent_smoke(args)
-        if args.live_agent_command == "session-smoke":
-            return _run_live_agent_session_smoke(args)
-        if args.live_agent_command == "real-session-smoke":
-            return _run_live_agent_real_session_smoke(args)
         if args.live_agent_command == "continuity-proof":
             return _run_live_agent_continuity_proof(args)
         if args.live_agent_command == "continuity-proof-group":
             return _run_live_agent_continuity_proof_group(args)
-        if args.live_agent_command == "official-round-smoke":
-            return _run_live_agent_official_round_smoke(args)
         if args.live_agent_command == "persona-smoke":
             return _run_live_agent_persona_smoke(args)
-        if args.live_agent_command == "doctor":
-            return _run_live_agent_doctor(args)
-        if args.live_agent_command == "probe":
-            return _run_live_agent_probe(args)
         if args.live_agent_command == "operations":
             return _run_live_agent_operations(args)
         if args.live_agent_command == "session-runs":
@@ -2331,95 +2359,6 @@ def _format_live_agent_discovery_entry(item: dict[str, object]) -> str:
     return "entry " + " ".join(clean) if clean else ""
 
 
-def _run_provider_health(args: argparse.Namespace) -> int:
-    report = provider_health_report(
-        Path(args.config),
-        probe_mode=args.probe_mode,
-        probe_timeout_seconds=args.probe_timeout,
-    )
-    if args.as_json:
-        print(json.dumps(report, ensure_ascii=False, indent=2))
-    else:
-        print(_format_provider_health(report))
-    return 0 if report.get("status") == "ok" else 1
-
-
-def _run_live_agent_smoke(args: argparse.Namespace) -> int:
-    try:
-        result = _request_json(
-            _server_url(args.server, "/api/live-agent-smoke"),
-            method="POST",
-            payload={"group_id": args.group_id, "timeout": float(args.timeout)},
-            timeout_seconds=_operation_http_timeout(float(args.timeout)),
-        )
-    except (LiveAgentSmokeFailed, ValueError) as error:
-        print(f"smoke failed: {error}", file=sys.stderr)
-        return 1
-    if args.as_json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    else:
-        print(f"live-agent smoke ok: {result['group_id']}")
-        for reply in result["replies"]:
-            print(f"- {reply['actor_id']}: {reply['message']}")
-    return 0
-
-
-def _run_live_agent_session_smoke(args: argparse.Namespace) -> int:
-    result = _request_json(
-        _server_url(args.server, "/api/live-agent-session-smoke"),
-        method="POST",
-        payload={
-            "group_id": str(args.group_id or ""),
-            "meeting_id": str(args.meeting_id or ""),
-            "timeout": float(args.timeout),
-            "lobby_probe_count": int(args.lobby_probe_count),
-            "soak_cycle_count": int(args.soak_cycle_count),
-            "soak_interval_seconds": float(args.soak_interval_seconds),
-        },
-        timeout_seconds=_session_smoke_http_timeout(
-            float(args.timeout),
-            lobby_probe_count=int(args.lobby_probe_count),
-            soak_cycle_count=int(args.soak_cycle_count),
-            soak_interval_seconds=float(args.soak_interval_seconds),
-        ),
-    )
-    if args.as_json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    else:
-        print(_format_live_agent_session_smoke(result))
-    return 0 if result.get("status") == "ok" else 1
-
-
-def _run_live_agent_real_session_smoke(args: argparse.Namespace) -> int:
-    if not bool(args.approve_real_providers):
-        result = _unapproved_real_session_smoke_result(args)
-    else:
-        payload = {
-            "group_id": str(args.group_id or ""),
-            "meeting_id": str(args.meeting_id or ""),
-            "timeout": float(args.timeout),
-            "live_agent_config_path": str(args.live_agent_config or ""),
-            "council_config_path": str(args.council_config or ""),
-            "agent_config_path": str(args.agent_config or ""),
-            "approve_real_providers": True,
-        }
-        if bool(args.official_round_smoke):
-            payload["official_round_smoke"] = True
-        if bool(args.restart_smoke):
-            payload["restart_smoke"] = True
-        result = _request_json(
-            _server_url(args.server, "/api/live-agent-real-session-smoke"),
-            method="POST",
-            payload=payload,
-            timeout_seconds=_real_session_smoke_http_timeout(float(args.timeout)),
-        )
-    if args.as_json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    else:
-        print(_format_live_agent_real_session_smoke(result))
-    return 0 if result.get("status") == "ok" else 1
-
-
 def _run_live_agent_continuity_proof(args: argparse.Namespace) -> int:
     config = ResidentAgentConfig(
         server="",
@@ -2445,10 +2384,7 @@ def _run_live_agent_continuity_proof(args: argparse.Namespace) -> int:
         approve_real_providers=bool(args.approve_real_providers),
         cwd=Path.cwd(),
     )
-    if args.as_json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    else:
-        print(_format_live_agent_continuity_proof(result))
+    print(json.dumps(result, ensure_ascii=False, indent=2) if args.as_json else _format_live_agent_continuity_proof(result))
     return 0 if result.get("status") == "ok" else 1
 
 
@@ -2461,28 +2397,12 @@ def _run_live_agent_continuity_proof_group(args: argparse.Namespace) -> int:
         setup_error_checker=_resident_config_setup_error,
         cwd=Path.cwd(),
     )
-    if args.as_json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    else:
-        print(_format_live_agent_continuity_proof_group(result))
+    print(
+        json.dumps(result, ensure_ascii=False, indent=2)
+        if args.as_json
+        else _format_live_agent_continuity_proof_group(result)
+    )
     return _live_agent_continuity_proof_group_exit_code(result)
-
-
-def _unapproved_real_session_smoke_result(args: argparse.Namespace) -> dict[str, object]:
-    return {
-        "status": "approval_required",
-        "meeting_id": _safe_cli_smoke_id(args.meeting_id),
-        "group_id": _safe_cli_smoke_id(args.group_id),
-        "approval_required": True,
-        "approved": False,
-        "diagnostic": True,
-        "reason": "current_operator_approval_required",
-    }
-
-
-def _safe_cli_smoke_id(value: object) -> str:
-    text = clean_lobby_text(value, limit=128)
-    return "".join(char if char.isalnum() or char in "_.-" else "-" for char in text).strip(".-")
 
 
 def _format_live_agent_continuity_proof(result: dict[str, object]) -> str:
@@ -2515,26 +2435,6 @@ def _format_live_agent_continuity_proof_group(result: dict[str, object]) -> str:
 
 def _live_agent_continuity_proof_group_exit_code(result: dict[str, object]) -> int:
     return 1 if result.get("status") in {"failed", "approval_required"} else 0
-
-
-def _run_live_agent_official_round_smoke(args: argparse.Namespace) -> int:
-    result = _request_json(
-        _server_url(args.server, "/api/live-agent-official-round-smoke"),
-        method="POST",
-        payload={"group_id": args.group_id, "timeout": float(args.timeout)},
-        timeout_seconds=_operation_http_timeout(float(args.timeout), windows=4),
-    )
-    if args.as_json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    else:
-        print(
-            f"official round smoke {result.get('status') or 'unknown'}: "
-            f"{result.get('group_id') or args.group_id or 'smoke'} "
-            f"({result.get('answered_count', 0)} answered, "
-            f"{result.get('timeout_count', 0)} timed out, "
-            f"{result.get('skipped_count', 0)} skipped)"
-        )
-    return 0 if result.get("status") == "ok" else 1
 
 
 def _run_live_agent_persona_smoke(args: argparse.Namespace) -> int:
@@ -2615,57 +2515,6 @@ def _format_live_agent_session_smoke(result: dict[str, object]) -> str:
         f"recover {result.get('recover_status') or 'unknown'}, "
         f"stop {result.get('stop_status') or 'unknown'}"
     )
-
-
-def _run_live_agent_doctor(args: argparse.Namespace) -> int:
-    payload = {"group_id": args.group_id, "timeout": float(args.timeout)}
-    if args.official_round_smoke:
-        payload["official_round_smoke"] = True
-    if args.session_smoke:
-        payload["session_smoke"] = True
-        if int(args.session_smoke_soak_cycles):
-            payload["session_smoke_soak_cycle_count"] = int(args.session_smoke_soak_cycles)
-        if float(args.session_smoke_soak_interval):
-            payload["session_smoke_soak_interval_seconds"] = float(args.session_smoke_soak_interval)
-    if args.probe_agent_ids:
-        payload["probe_agent_ids"] = list(args.probe_agent_ids)
-    if args.probe_group_ids:
-        payload["probe_group_ids"] = list(args.probe_group_ids)
-    probe_windows = MAX_READINESS_PROBE_AGENTS if args.probe_group_ids else min(len(args.probe_agent_ids), MAX_READINESS_PROBE_AGENTS)
-    official_round_windows = 4 if args.official_round_smoke else 0
-    timeout_seconds = _operation_http_timeout(float(args.timeout), windows=1 + official_round_windows + probe_windows)
-    if args.session_smoke:
-        timeout_seconds += _session_smoke_http_timeout(
-            float(args.timeout),
-            soak_cycle_count=int(args.session_smoke_soak_cycles),
-            soak_interval_seconds=float(args.session_smoke_soak_interval),
-        )
-    payload = _request_json(
-        _server_url(args.server, "/api/live-agent-readiness"),
-        method="POST",
-        payload=payload,
-        timeout_seconds=timeout_seconds,
-    )
-    if args.as_json:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-    else:
-        print(_format_live_agent_readiness(payload))
-    return 0 if payload.get("status") == "ready" else 1
-
-
-def _run_live_agent_probe(args: argparse.Namespace) -> int:
-    agent_id = urllib.parse.quote(args.agent_id, safe="")
-    payload = _request_json(
-        _server_url(args.server, f"/api/live-agents/{agent_id}/probe"),
-        method="POST",
-        payload={"timeout_seconds": float(args.timeout)},
-        timeout_seconds=_probe_http_timeout(float(args.timeout)),
-    )
-    if args.as_json:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-    else:
-        print(_format_live_agent_probe(payload))
-    return 0 if payload.get("status") == "ok" else 1
 
 
 def _format_live_agent_preflight(report: dict[str, object]) -> str:
