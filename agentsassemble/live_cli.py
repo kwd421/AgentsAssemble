@@ -396,6 +396,7 @@ class LiveCliRuntime:
             "session_dir": "",
             "pty": True,
             "transport": "pty",
+            "provider_session_active": running,
             "is_one_shot": False,
             "input_mode": self.input_mode,
             "submit_delay_seconds": self.submit_delay_seconds,
@@ -494,6 +495,7 @@ class LiveCliRuntime:
 
     def _output_message(self, response: bytes, *, message_only: bool = True) -> dict[str, object]:
         return {
+            "outcome": "message",
             "actor_id": self.agent_id,
             "actor_type": "agent",
             "kind": "agent_message",
@@ -531,6 +533,7 @@ class LiveCliRuntime:
 
     def _output_message_from_snapshot(self, snapshot: LiveCliMessageSnapshot) -> dict[str, object]:
         return {
+            "outcome": "message",
             "actor_id": self.agent_id,
             "actor_type": "agent",
             "kind": "agent_message",
@@ -667,6 +670,9 @@ class ApiRuntime:
         return {
             "agent_id": self.agent_id,
             "running": False,
+            "transport": "unsupported",
+            "provider_session_active": False,
+            "started_at": None,
             "stopped": True,
             "status": "unsupported",
             "last_seen_event_id": self.last_seen_event_id,

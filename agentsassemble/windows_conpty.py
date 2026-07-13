@@ -146,6 +146,7 @@ class WindowsConPtyRuntime:
                 previous = snapshot.content
             if snapshot.complete:
                 return {
+                    "outcome": "message",
                     "actor_id": self.agent_id,
                     "actor_type": "agent",
                     "kind": "agent_message",
@@ -160,6 +161,7 @@ class WindowsConPtyRuntime:
                         if remainder:
                             on_delta(remainder)
                     return {
+                        "outcome": "message",
                         "actor_id": self.agent_id,
                         "actor_type": "agent",
                         "kind": "agent_message",
@@ -205,6 +207,7 @@ class WindowsConPtyRuntime:
                 "runtime_kind": "live_cli",
                 "running": running,
                 "transport": "conpty",
+                "provider_session_active": running,
                 "pty": True,
                 "is_one_shot": False,
                 "pid": getattr(process, "pid", None),

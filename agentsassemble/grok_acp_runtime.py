@@ -301,6 +301,7 @@ class GrokAcpRuntime:
                     empty_turn_recovered = True
                     continue
                 return {
+                    "outcome": "message",
                     "actor_id": self.agent_id,
                     "actor_type": "agent",
                     "kind": "agent_message",

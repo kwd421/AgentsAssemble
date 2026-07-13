@@ -17,6 +17,11 @@ from agentsassemble.deepseek_runtime import DeepSeekApiRuntime
 from agentsassemble.live_cli import LiveCliRuntime
 from agentsassemble.opencode_runtime import OpenCodeRuntime
 from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
+from agentsassemble.provider_runtime_contracts import (
+    AdapterContractError,
+    ProviderRuntimeHealth,
+    ProviderTurnResult,
+)
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
 from agentsassemble.windows_conpty import WindowsConPtyRuntime
 
@@ -184,7 +189,12 @@ class RoomAgentBridge:
             try:
                 self.runtime.interrupt()
             except Exception as error:
-                self._command("bridge.health", {**self._health_payload(self.runtime.health()), "last_error": str(error)})
+                try:
+                    diagnostics = self._health_payload(self.runtime.health())
+                except AdapterContractError:
+                    self._stop.set()
+                    return
+                self._command("bridge.health", {**diagnostics, "last_error": str(error)})
             return
         if action == "stop":
             self._stop.set()
@@ -271,29 +281,23 @@ class RoomAgentBridge:
                     return
                 self._command("activity.update", {"turn_id": turn_id, **safe})
 
-            result = self.runtime.read_output(
+            raw_result = self.runtime.read_output(
                 timeout_seconds=timeout_seconds,
                 on_delta=on_delta,
                 on_activity=on_activity,
             )
-            metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
-            outcome = clean_lobby_text(result.get("outcome") or metadata.get("outcome"), limit=32)
-            if outcome == "decline":
+            result = ProviderTurnResult.parse(raw_result)
+            if result.outcome == "decline":
                 self._command(
                     "turn.decline",
                     {
                         "turn_id": turn_id,
-                        "reason_code": clean_lobby_text(
-                            result.get("reason_code") or metadata.get("reason_code"), limit=64
-                        )
-                        or "nothing_useful_to_add",
+                        "reason_code": result.decline_reason,
                         "diagnostics": self._health_payload(self.runtime.health()),
                     },
                 )
                 return
-            final_content = _room_message_text(result.get("content"), limit=12000)
-            if not final_content:
-                raise RuntimeError("Provider CLI completed without a clean assistant message.")
+            final_content = _room_message_text(result.content, limit=12000)
             completed = time.monotonic()
             completed_at = _now()
             self._command(
@@ -301,7 +305,9 @@ class RoomAgentBridge:
                 {
                     "turn_id": turn_id,
                     "content": final_content,
-                    "message_source": metadata.get("message_source") or metadata.get("source_kind") or "terminal",
+                    "message_source": result.metadata.get("message_source")
+                    or result.metadata.get("source_kind")
+                    or "terminal",
                     "diagnostics": self._health_payload(self.runtime.health()),
                     "latency": {
                         "first_output_at": first_output_at,
@@ -317,15 +323,15 @@ class RoomAgentBridge:
                 },
             )
         except Exception as error:
-            health = self.runtime.health()
             if not self._stop.is_set():
                 self._command(
                     "turn.failed",
                     {
                         "turn_id": turn_id,
                         "status": "error",
+                        "error_code": getattr(error, "code", "provider_turn_failed"),
                         "message": str(error),
-                        "diagnostics": self._health_payload(health),
+                        "diagnostics": self._failure_diagnostics(),
                     },
                 )
         finally:
@@ -336,47 +342,55 @@ class RoomAgentBridge:
     def _command(self, action: str, payload: dict[str, object]) -> None:
         self.client.command(action, payload, request_id=f"bridge-{uuid4().hex[:20]}")
 
+    def _failure_diagnostics(self) -> dict[str, object]:
+        try:
+            return self._health_payload(self.runtime.health())
+        except AdapterContractError as error:
+            return {"adapter_health_invalid": True, "adapter_contract_error": str(error)}
+
     def _health_payload(self, health: dict[str, object]) -> dict[str, object]:
+        parsed = ProviderRuntimeHealth.parse(health)
+        details = parsed.details
         return {
             "room_id": self.room_id,
             "participant_id": self.participant_id,
             "session_id": self.session_id,
-            "pid": health.get("pid"),
-            "running": bool(health.get("running", True)),
-            "pty": bool(health.get("pty", True)),
-            "transport": health.get("transport") or "pty",
-            "is_one_shot": bool(health.get("is_one_shot", False)),
-            "resolved_executable": health.get("resolved_executable") or "",
-            "started_at": health.get("started_at") or _now(),
-            "last_error": health.get("last_error") or "",
-            "returncode": health.get("returncode"),
-            "terminal_byte_count": int(health.get("terminal_byte_count") or 0),
-            "terminal_tail": str(health.get("terminal_tail") or "")[-16000:],
-            "stderr_drained": bool(health.get("stderr_drained", False)),
-            "stderr_byte_count": int(health.get("stderr_byte_count") or 0),
-            "stderr_line_count": int(health.get("stderr_line_count") or 0),
-            "stderr_warning_count": int(health.get("stderr_warning_count") or 0),
-            "stderr_tail": str(health.get("stderr_tail") or "")[-16000:],
-            "stderr_tail_truncated": bool(health.get("stderr_tail_truncated", False)),
-            "stderr_last_line_at": str(health.get("stderr_last_line_at") or ""),
-            "provider_session_active": bool(health.get("provider_session_active", False)),
-            "provider_session_load_supported": bool(health.get("provider_session_load_supported", False)),
-            "provider_session_reused": bool(health.get("provider_session_reused", False)),
-            "provider_session_resume_failed": bool(health.get("provider_session_resume_failed", False)),
-            "provider_session_resume_error": str(health.get("provider_session_resume_error") or "")[:1000],
-            "approval_policy": str(health.get("approval_policy") or ""),
-            "yolo_mode": health.get("yolo_mode"),
-            "permission_request_count": int(health.get("permission_request_count") or 0),
-            "permission_denied_count": int(health.get("permission_denied_count") or 0),
-            "empty_turn_recovery_count": int(health.get("empty_turn_recovery_count") or 0),
-            "notification_drop_count": int(health.get("notification_drop_count") or 0),
-            "message_source": str(health.get("message_source") or ""),
-            "message_source_strict": bool(health.get("message_source_strict", False)),
-            "model": str(health.get("model") or ""),
-            "reasoning_effort": str(health.get("reasoning_effort") or ""),
-            "service_tier": str(health.get("service_tier") or ""),
-            "variant": str(health.get("variant") or ""),
-            "permission_mode": str(health.get("permission_mode") or ""),
+            "pid": details.get("pid"),
+            "running": parsed.running,
+            "pty": parsed.pty,
+            "transport": parsed.transport,
+            "is_one_shot": bool(details.get("is_one_shot", False)),
+            "resolved_executable": details.get("resolved_executable") or "",
+            "started_at": parsed.started_at,
+            "last_error": details.get("last_error") or "",
+            "returncode": details.get("returncode"),
+            "terminal_byte_count": int(details.get("terminal_byte_count") or 0),
+            "terminal_tail": str(details.get("terminal_tail") or "")[-16000:],
+            "stderr_drained": bool(details.get("stderr_drained", False)),
+            "stderr_byte_count": int(details.get("stderr_byte_count") or 0),
+            "stderr_line_count": int(details.get("stderr_line_count") or 0),
+            "stderr_warning_count": int(details.get("stderr_warning_count") or 0),
+            "stderr_tail": str(details.get("stderr_tail") or "")[-16000:],
+            "stderr_tail_truncated": bool(details.get("stderr_tail_truncated", False)),
+            "stderr_last_line_at": str(details.get("stderr_last_line_at") or ""),
+            "provider_session_active": parsed.provider_session_active,
+            "provider_session_load_supported": bool(details.get("provider_session_load_supported", False)),
+            "provider_session_reused": bool(details.get("provider_session_reused", False)),
+            "provider_session_resume_failed": bool(details.get("provider_session_resume_failed", False)),
+            "provider_session_resume_error": str(details.get("provider_session_resume_error") or "")[:1000],
+            "approval_policy": str(details.get("approval_policy") or ""),
+            "yolo_mode": details.get("yolo_mode"),
+            "permission_request_count": int(details.get("permission_request_count") or 0),
+            "permission_denied_count": int(details.get("permission_denied_count") or 0),
+            "empty_turn_recovery_count": int(details.get("empty_turn_recovery_count") or 0),
+            "notification_drop_count": int(details.get("notification_drop_count") or 0),
+            "message_source": str(details.get("message_source") or ""),
+            "message_source_strict": bool(details.get("message_source_strict", False)),
+            "model": str(details.get("model") or ""),
+            "reasoning_effort": str(details.get("reasoning_effort") or ""),
+            "service_tier": str(details.get("service_tier") or ""),
+            "variant": str(details.get("variant") or ""),
+            "permission_mode": str(details.get("permission_mode") or ""),
         }
 
 

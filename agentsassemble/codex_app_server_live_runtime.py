@@ -77,6 +77,7 @@ class CodexAppServerLiveRuntime:
         if not final.strip():
             raise RuntimeError(errors[-1] if errors else "Codex completed without a final message.")
         return {
+            "outcome": "message",
             "actor_id": self.agent_id,
             "actor_type": "agent",
             "kind": "agent_message",

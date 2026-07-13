@@ -3,6 +3,7 @@ import time
 import unittest
 
 from agentsassemble.grok_acp_runtime import GrokAcpRuntime
+from agentsassemble.provider_runtime_contracts import AdapterContractError, ProviderTurnResult
 from agentsassemble.room_agent_bridge import (
     BridgeConfigError,
     CanonicalBridgeLaunchConfig,
@@ -61,6 +62,7 @@ class FakeRuntime:
             on_delta("clean ")
             on_delta("delta")
         return {
+            "outcome": "message",
             "content": "clean final",
             "metadata": {"message_source": "fake-transcript"},
         }
@@ -77,6 +79,7 @@ class FakeRuntime:
             "running": True,
             "pty": True,
             "transport": "pty",
+            "provider_session_active": True,
             "is_one_shot": False,
             "resolved_executable": "/fake/codex",
             "started_at": "2026-01-01T00:00:00+00:00",
@@ -87,6 +90,24 @@ class DecliningRuntime(FakeRuntime):
     def read_output(self, *, timeout_seconds, on_delta=None, on_activity=None):
         del timeout_seconds, on_delta, on_activity
         return {"outcome": "decline", "reason_code": "nothing_useful_to_add"}
+
+
+class InvalidDecliningRuntime(FakeRuntime):
+    def read_output(self, *, timeout_seconds, on_delta=None, on_activity=None):
+        del timeout_seconds, on_delta, on_activity
+        return {"outcome": "decline"}
+
+
+class InvalidHealthAfterStartRuntime(FakeRuntime):
+    def __init__(self):
+        super().__init__()
+        self.health_count = 0
+
+    def health(self):
+        self.health_count += 1
+        if self.health_count == 1:
+            return super().health()
+        return {"running": True, "provider_session_active": True}
 
 
 def _launch_config(**overrides):
@@ -308,6 +329,70 @@ class RoomAgentBridgeTests(unittest.TestCase):
 
         declines = [payload for action, payload, _ in client.commands if action == "turn.decline"]
         self.assertEqual(declines[0]["reason_code"], "nothing_useful_to_add")
+        self.assertFalse(any(action == "message.final" for action, _, _ in client.commands))
+
+    def test_decline_without_reason_is_an_adapter_contract_error(self):
+        client = FakeClient()
+        runtime = InvalidDecliningRuntime()
+        bridge = RoomAgentBridge(
+            client,
+            runtime,
+            room_id="general",
+            participant_id="codex",
+            session_id="codex",
+            receive_sleep_seconds=0.005,
+        )
+        thread = threading.Thread(target=bridge.run, daemon=True)
+        thread.start()
+        _wait_for(lambda: runtime.start_count == 1)
+        client.messages.append(
+            {"op": "turn.assign", "turn_id": "turn-invalid-decline", "provider_input": "observe"}
+        )
+        _wait_for(lambda: any(action == "turn.failed" for action, _, _ in client.commands))
+        client.messages.append({"op": "agent.control", "action": "stop"})
+        thread.join(timeout=2)
+
+        failure = next(payload for action, payload, _ in client.commands if action == "turn.failed")
+        self.assertEqual(failure["error_code"], "adapter_contract_error")
+        self.assertIn("reason_code", failure["message"])
+        self.assertFalse(any(action == "turn.decline" for action, _, _ in client.commands))
+
+    def test_result_outcome_is_required_at_the_top_level(self):
+        with self.assertRaises(AdapterContractError) as raised:
+            ProviderTurnResult.parse(
+                {
+                    "content": "looks valid",
+                    "metadata": {"outcome": "message"},
+                }
+            )
+
+        self.assertEqual(raised.exception.code, "adapter_contract_error")
+
+    def test_invalid_health_does_not_fabricate_final_diagnostics(self):
+        client = FakeClient()
+        runtime = InvalidHealthAfterStartRuntime()
+        bridge = RoomAgentBridge(
+            client,
+            runtime,
+            room_id="general",
+            participant_id="codex",
+            session_id="codex",
+            receive_sleep_seconds=0.005,
+        )
+        thread = threading.Thread(target=bridge.run, daemon=True)
+        thread.start()
+        _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
+        client.messages.append(
+            {"op": "turn.assign", "turn_id": "turn-invalid-health", "provider_input": "respond"}
+        )
+        _wait_for(lambda: any(action == "turn.failed" for action, _, _ in client.commands))
+        client.messages.append({"op": "agent.control", "action": "stop"})
+        thread.join(timeout=2)
+
+        failure = next(payload for action, payload, _ in client.commands if action == "turn.failed")
+        self.assertEqual(failure["error_code"], "adapter_contract_error")
+        self.assertTrue(failure["diagnostics"]["adapter_health_invalid"])
+        self.assertNotIn("started_at", failure["diagnostics"])
         self.assertFalse(any(action == "message.final" for action, _, _ in client.commands))
 
 

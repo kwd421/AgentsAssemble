@@ -27,6 +27,7 @@ from agentsassemble.provider_capabilities import (
     ProviderCatalogSelectionError,
     ValidatedProviderSelection,
 )
+from agentsassemble.provider_runtime_contracts import SUPPORTED_DECLINE_REASONS
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.room_invite import revoke_room_access, revoke_sessions_for_participant
 from agentsassemble.room_commands import (
@@ -1687,7 +1688,7 @@ class RoomRealtimeController:
     ) -> dict[str, object]:
         _agent_id, session = self._active_bridge_turn(identity, room_id, payload)
         reason_code = clean_lobby_text(payload.get("reason_code"), limit=64)
-        if reason_code not in {"nothing_useful_to_add", "not_addressed", "duplicate"}:
+        if reason_code not in SUPPORTED_DECLINE_REASONS:
             raise RoomCommandRejected("A supported decline reason is required.", code="invalid_decline_reason")
         latency = _merged_latency(session.get("latency"), payload.get("latency"))
         diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
@@ -1769,7 +1770,7 @@ class RoomRealtimeController:
         requested_error_code = clean_lobby_text(payload.get("error_code"), limit=64)
         error_code = (
             requested_error_code
-            if requested_error_code in {"empty_provider_final"}
+            if requested_error_code in {"adapter_contract_error", "empty_provider_final"}
             else ("interrupted" if interrupted else "provider_turn_failed")
         )
         content = clean_lobby_text(payload.get("message") or payload.get("content"), limit=4000) or "Provider turn failed."

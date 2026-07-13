@@ -124,6 +124,7 @@ class DeepSeekApiRuntime:
                 )
                 self._last_error = ""
             return {
+                "outcome": "message",
                 "actor_id": self.agent_id,
                 "actor_type": "agent",
                 "kind": "agent_message",
