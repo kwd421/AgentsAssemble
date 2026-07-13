@@ -1679,7 +1679,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         ]
 
         with patch("agentsassemble.room_realtime.build_room_turn_packet", side_effect=bounded_packets):
-            self.assertTrue(self.controller._assign_pending("general", "codex"))
+            self.assertTrue(self.controller._turn_coordinator.assign_pending("general", "codex"))
             first_assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
             during_first = store.session("general", "codex")
 
@@ -1730,7 +1730,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         }
 
         with patch("agentsassemble.room_realtime.build_room_turn_packet", return_value=bounded_packet):
-            self.assertTrue(self.controller._assign_pending("general", "codex"))
+            self.assertTrue(self.controller._turn_coordinator.assign_pending("general", "codex"))
             assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
 
         self._command(
@@ -1775,7 +1775,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 "input_mode": "delta",
             },
         ):
-            self.assertFalse(self.controller._assign_pending("general", "codex"))
+            self.assertFalse(self.controller._turn_coordinator.assign_pending("general", "codex"))
 
         cleaned = store.session("general", "codex")
         self.assertEqual(cleaned["pending_event_ids"], [])
@@ -1823,7 +1823,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 "input_mode": "delta",
             },
         ):
-            self.assertTrue(self.controller._assign_pending("general", "codex"))
+            self.assertTrue(self.controller._turn_coordinator.assign_pending("general", "codex"))
 
         assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
         during_turn = store.session("general", "codex")

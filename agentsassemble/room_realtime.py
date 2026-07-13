@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from dataclasses import dataclass, replace
+from dataclasses import replace
 import hashlib
 import json
 import threading
 import shutil
 from pathlib import Path
 from typing import Callable, Protocol
-from uuid import uuid4
 
 from agentsassemble.agent_sessions import build_room_turn_packet
 from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
-from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
+from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.native_cli_providers import (
     NativeCliProviderSpec,
     StoredProviderProfileError,
@@ -31,7 +29,6 @@ from agentsassemble.provider_capabilities import (
 from agentsassemble.provider_runtime_contracts import (
     AdapterContractError,
     ProviderRuntimeHealth,
-    SUPPORTED_DECLINE_REASONS,
 )
 from agentsassemble.provider_runtime_config import (
     ProviderRuntimeConfigError,
@@ -59,18 +56,20 @@ from agentsassemble.room_floor_policy import (
 )
 from agentsassemble.room_members import is_room_member_muted, remove_room_member, set_room_member_muted
 from agentsassemble.room_projection import (
-    PUBLIC_ACTIVITY_LABELS as _PUBLIC_ACTIVITY_LABELS,
-    merged_latency as _merged_latency,
-    public_activity as _public_activity,
     public_event as _public_event,
-    public_runtime_diagnostics as _public_runtime_diagnostics,
     public_session,
     runtime_diagnostic_fields as _runtime_diagnostic_fields,
 )
 from agentsassemble.room_routing import route_message_targets
 from agentsassemble.room_settings import room_settings_payload
 from agentsassemble.room_store import RoomStore
-from agentsassemble.room_types import RoomCommand, RoomEvent, TurnAssignment
+from agentsassemble.room_turn_coordinator import (
+    RoomTurnCoordinator,
+    dedupe_event_ids as _dedupe_text_list,
+    model_verification_status as _model_verification_status,
+    room_message_text as _room_message_text,
+)
+from agentsassemble.room_types import RoomCommand, RoomEvent
 from agentsassemble.voice_presence import leave_all_voice
 
 ROOM_SNAPSHOT_EVENT_LIMIT = 200
@@ -89,14 +88,6 @@ class ProviderCatalog(Protocol):
         provider_id: str,
         values: dict[str, str],
     ) -> ValidatedProviderSelection: ...
-
-
-@dataclass(frozen=True)
-class _PendingEventPartition:
-    inflight: list[str]
-    deferred: list[str]
-    already_synced: list[str]
-    invalid: list[str]
 
 
 class RoomRealtimeController:
@@ -122,7 +113,7 @@ class RoomRealtimeController:
         self.default_room_id = clean_lobby_text(default_room_id, limit=128) or "general"
         self.max_agent_relay_depth = max(0, int(max_agent_relay_depth))
         self.recovery_delay_seconds = max(0.0, float(recovery_delay_seconds))
-        self._recovery_scheduler = recovery_scheduler or schedule_daemon_timer
+        recovery_scheduler_impl = recovery_scheduler or schedule_daemon_timer
         self.provider_catalog = provider_catalog or PROVIDER_CAPABILITIES
         default_providers = {
             clean_lobby_text(spec.agent_id, limit=128): spec
@@ -134,9 +125,21 @@ class RoomRealtimeController:
         }
         self._lock = threading.RLock()
         self._event_listener_removers: dict[str, Callable[[], None]] = {}
-        self._turn_recovery_handles: dict[tuple[str, str], object] = {}
         self._provider_catalog_remove = self.provider_catalog.subscribe(self._on_provider_catalog_update)
         self._closed = False
+        self._turn_coordinator = RoomTurnCoordinator(
+            self.output_root,
+            store=self.store,
+            broker=self.broker,
+            lock=self._lock,
+            provider_lookup=self._provider,
+            ensure_room=self.ensure_room,
+            publish_session_state=self._publish_session_state,
+            is_closed=lambda: self._closed,
+            recovery_delay_seconds=self.recovery_delay_seconds,
+            recovery_scheduler=recovery_scheduler_impl,
+            packet_builder=lambda *args, **kwargs: build_room_turn_packet(*args, **kwargs),
+        )
         self._agent_lifecycle = RoomAgentLifecycle(
             store=self.store,
             broker=self.broker,
@@ -149,11 +152,11 @@ class RoomRealtimeController:
                 participant_id,
             ),
             publish_session_state=self._publish_session_state,
-            assign_pending=self._assign_pending,
+            assign_pending=self._turn_coordinator.assign_pending,
             is_closed=lambda: self._closed,
             recovery_delay_seconds=self.recovery_delay_seconds,
             external_stop_timeout_seconds=external_stop_timeout_seconds,
-            recovery_scheduler=self._recovery_scheduler,
+            recovery_scheduler=recovery_scheduler_impl,
         )
         self.last_cleanup_report = CleanupReport("room_realtime_controller")
         self.ensure_room(self.default_room_id)
@@ -587,43 +590,11 @@ class RoomRealtimeController:
         source_event_id: str = "",
     ) -> dict[str, object]:
         """Let a server-owned floor scheduler assign a turn without a visible mention."""
-
-        clean_room_id = clean_lobby_text(room_id, limit=128)
-        clean_agent_id = clean_lobby_text(agent_id, limit=128)
-        self.ensure_room(clean_room_id)
-        with self._lock:
-            self._provider(clean_room_id, clean_agent_id)
-            session = self.store.session(clean_room_id, clean_agent_id)
-            if not session:
-                raise RoomCommandRejected(f"Agent session {clean_agent_id} was not found.", code="not_found")
-            source = self.store.event_by_id(clean_room_id, source_event_id) if source_event_id else {}
-            if not source:
-                latest = self.store.read_events(
-                    clean_room_id,
-                    event_types=("message_final",),
-                    exclude_actor_id=clean_agent_id,
-                    limit=1,
-                    newest=True,
-                )
-                source = latest[-1] if latest else {}
-            if source.get("type") != "message_final":
-                raise RoomCommandRejected("A public room message is required to assign a turn.", code="no_room_message")
-            source_seq = int(source.get("seq") or 0)
-            last_sync_seq = int(session.get("last_provider_sync_seq") or 0)
-            if session.get("bootstrap_done") and source_seq <= last_sync_seq:
-                raise RoomCommandRejected(
-                    "The Agent Session has no unseen public room message to answer.",
-                    code="no_new_room_message",
-                )
-            self._queue_event(clean_room_id, clean_agent_id, source, relay_depth=0)
-            current = self.store.session(clean_room_id, clean_agent_id)
-            return {
-                "source_event_id": source.get("id"),
-                "source_event_seq": source_seq,
-                "queued": bool(source.get("id")),
-                "assigned": current.get("active_source_event_id") == source.get("id"),
-                "agent_session": public_session(current),
-            }
+        return self._turn_coordinator.request_turn(
+            room_id,
+            agent_id,
+            source_event_id=source_event_id,
+        )
 
     def handle_command(
         self,
@@ -726,8 +697,6 @@ class RoomRealtimeController:
             self._closed = True
             removers = list(self._event_listener_removers.values())
             self._event_listener_removers.clear()
-            recovery_handles = list(self._turn_recovery_handles.values())
-            self._turn_recovery_handles.clear()
             provider_agents = [
                 (room_id, agent_id)
                 for room_id, providers in self._providers_by_room.items()
@@ -736,14 +705,6 @@ class RoomRealtimeController:
             remove_provider_catalog_listener = self._provider_catalog_remove
             self._provider_catalog_remove = lambda: None
         cleanup = CleanupReport("room_realtime_controller")
-        for handle in recovery_handles:
-            cancel = getattr(handle, "cancel", None)
-            if callable(cancel):
-                try:
-                    cancel()
-                    cleanup.record_success()
-                except Exception as error:
-                    cleanup.record_failure("recovery.cancel", error)
         for remove in removers:
             try:
                 remove()
@@ -755,6 +716,7 @@ class RoomRealtimeController:
             cleanup.record_success()
         except Exception as error:
             cleanup.record_failure("provider_catalog_listener.remove", error)
+        cleanup.merge(self._turn_coordinator.close())
         cleanup.merge(self._agent_lifecycle.close(provider_agents))
         try:
             self.broker.close()
@@ -854,17 +816,17 @@ class RoomRealtimeController:
         if action == "bridge.health":
             return self._bridge_health(identity, room_id, payload)
         if action == "turn.state":
-            return self._turn_state(identity, room_id, payload)
+            return self._turn_coordinator.turn_state(identity, room_id, payload)
         if action == "turn.decline":
-            return self._turn_decline(identity, room_id, payload)
+            return self._turn_coordinator.turn_decline(identity, room_id, payload)
         if action == "activity.update":
-            return self._activity_update(identity, room_id, payload)
+            return self._turn_coordinator.activity_update(identity, room_id, payload)
         if action == "message.delta":
-            return self._message_delta(identity, room_id, payload)
+            return self._turn_coordinator.message_delta(identity, room_id, payload)
         if action == "message.final":
-            return self._message_final(identity, room_id, payload)
+            return self._turn_coordinator.message_final(identity, room_id, payload)
         if action == "turn.failed":
-            return self._turn_failed(identity, room_id, payload)
+            return self._turn_coordinator.turn_failed(identity, room_id, payload)
         raise RoomCommandRejected(f"Unsupported room command: {action}", code="unknown_action")
 
     def _send_message(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
@@ -1189,7 +1151,7 @@ class RoomRealtimeController:
             if muted and session.get("runtime_status") == "busy":
                 self.broker.direct_to_bridge(room_id, participant_id, {"op": "agent.control", "action": "interrupt"})
             elif not muted:
-                self._assign_pending(room_id, participant_id)
+                self._turn_coordinator.assign_pending(room_id, participant_id)
         self.store.append_event(
             room_id,
             "participant_muted",
@@ -1303,7 +1265,7 @@ class RoomRealtimeController:
         return bool(identity.get("operator"))
 
     def _bridge_ready(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
-        agent_id, session = self._bridge_session(identity, room_id, allow_unleased=True)
+        agent_id, session = self._turn_coordinator.bridge_session(identity, room_id, allow_unleased=True)
         try:
             health = ProviderRuntimeHealth.parse(payload)
         except AdapterContractError as error:
@@ -1394,13 +1356,13 @@ class RoomRealtimeController:
         if previous_participant.get("status") != "joined":
             self.store.append_event(room_id, "participant_joined", participant_id=agent_id, session_id=session["session_id"])
         self.store.append_event(room_id, "session_attached", participant_id=agent_id, session_id=session["session_id"])
-        self._assign_pending(room_id, agent_id)
+        self._turn_coordinator.assign_pending(room_id, agent_id)
         current = self.store.session(room_id, str(session["session_id"]))
         self._publish_session_state(room_id, current)
         return {"agent_session": public_session(current)}
 
     def _bridge_health(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
-        _agent_id, session = self._bridge_session(identity, room_id)
+        _agent_id, session = self._turn_coordinator.bridge_session(identity, room_id)
         try:
             health = ProviderRuntimeHealth.parse(payload)
         except AdapterContractError as error:
@@ -1422,392 +1384,6 @@ class RoomRealtimeController:
         updated = self.store.update_session_fields(room_id, str(session["session_id"]), **fields)
         self._publish_session_state(room_id, updated)
         return {"agent_session": public_session(updated)}
-
-    def _turn_state(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
-        agent_id, session = self._active_bridge_turn(identity, room_id, payload)
-        phase = clean_lobby_text(payload.get("phase"), limit=32)
-        _validate_turn_phase_transition(session, phase)
-        latency = _merged_latency(session.get("latency"), payload.get("latency"))
-        updated = self.store.update_session_fields(
-            room_id,
-            str(session["session_id"]),
-            turn_phase=phase,
-            latency=latency,
-        )
-        event = self.store.append_event(
-            room_id,
-            "turn_state",
-            participant_id=agent_id,
-            session_id=session["session_id"],
-            turn_id=session["active_turn_id"],
-            phase=phase,
-            latency=latency,
-        )
-        self._publish_session_state(room_id, updated)
-        return {"event": event, "agent_session": public_session(updated)}
-
-    def _message_delta(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
-        agent_id, session = self._active_bridge_turn(identity, room_id, payload)
-        current_phase = _require_active_turn_phase(session)
-        content = _message_delta_text(payload.get("content"), limit=12000)
-        if not has_room_visible_text(content):
-            raise RoomCommandRejected("Delta content is required.", code="empty")
-        if current_phase != "streaming":
-            self.store.update_session_fields(room_id, str(session["session_id"]), turn_phase="streaming")
-            self.store.append_event(
-                room_id,
-                "turn_state",
-                participant_id=agent_id,
-                session_id=session["session_id"],
-                turn_id=session["active_turn_id"],
-                phase="streaming",
-            )
-        event = self.store.append_event(
-            room_id,
-            "message_delta",
-            participant_id=agent_id,
-            participant_type="agent",
-            session_id=session["session_id"],
-            turn_id=session["active_turn_id"],
-            content=content,
-        )
-        return {"event": event, "event_seq": event["seq"]}
-
-    def _activity_update(
-        self,
-        identity: dict[str, object],
-        room_id: str,
-        payload: dict[str, object],
-    ) -> dict[str, object]:
-        agent_id, session = self._active_bridge_turn(identity, room_id, payload)
-        _require_active_turn_phase(session)
-        category = clean_lobby_text(payload.get("category"), limit=32)
-        status = clean_lobby_text(payload.get("status"), limit=32)
-        if category not in _PUBLIC_ACTIVITY_LABELS or status not in {"started", "running", "completed"}:
-            raise RoomCommandRejected(
-                "Agent activity category or status is invalid.",
-                code="adapter_activity_invalid",
-            )
-        content, activity_kind = _public_activity(category, status)
-        event = self.store.append_event(
-            room_id,
-            "activity_delta",
-            participant_id=agent_id,
-            participant_type="agent",
-            actor_id=agent_id,
-            actor_type="agent",
-            display_name=session.get("display_name") or agent_id,
-            session_id=session["session_id"],
-            turn_id=session["active_turn_id"],
-            activity_kind=activity_kind,
-            category=category,
-            status=status,
-            content=content,
-        )
-        return {"event": event, "event_seq": event["seq"]}
-
-    def _message_final(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
-        agent_id, session = self._active_bridge_turn(identity, room_id, payload)
-        _require_active_turn_phase(session)
-        content = _room_message_text(payload.get("content"), limit=12000)
-        active_turn_id = str(session["active_turn_id"])
-        input_up_to_event_id = clean_lobby_text(session.get("input_up_to_event_id"), limit=128)
-        input_up_to_seq = _safe_bounded_int(session.get("input_up_to_seq"), default=0, minimum=0)
-        relay_depth = int(session.get("active_relay_depth") or 0)
-        latency = _merged_latency(session.get("latency"), payload.get("latency"))
-        diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
-        observed_model_id = clean_lobby_text(payload.get("observed_model_id"), limit=128)
-        requested_model_id = clean_lobby_text(
-            session.get("requested_model_id") or session.get("model"),
-            limit=128,
-        )
-        selection_kind = clean_lobby_text(session.get("model_selection_kind"), limit=16) or "exact"
-        observation_policy = (
-            clean_lobby_text(session.get("model_observation_policy"), limit=32) or "unavailable"
-        )
-        if observation_policy == "required" and not observed_model_id:
-            self._turn_failed(
-                identity,
-                room_id,
-                {
-                    "turn_id": active_turn_id,
-                    "message": "Provider did not report the model used for this turn.",
-                    "error_code": "provider_model_unobserved",
-                    "diagnostics": diagnostics,
-                },
-            )
-            raise RoomCommandRejected(
-                "Provider did not report the model used for this turn.",
-                code="provider_model_unobserved",
-            )
-        if (
-            observed_model_id
-            and requested_model_id
-            and selection_kind == "exact"
-            and observed_model_id != requested_model_id
-        ):
-            self._turn_failed(
-                identity,
-                room_id,
-                {
-                    "turn_id": active_turn_id,
-                    "message": (
-                        f"Provider reported model {observed_model_id}, but the session requested {requested_model_id}."
-                    ),
-                    "error_code": "provider_model_mismatch",
-                    "diagnostics": diagnostics,
-                },
-            )
-            raise RoomCommandRejected(
-                "Provider used a different model than the exact session selection.",
-                code="provider_model_mismatch",
-            )
-        if not has_room_visible_text(content):
-            self._turn_failed(
-                identity,
-                room_id,
-                {
-                    "turn_id": active_turn_id,
-                    "message": "Provider completed without a room-visible final message.",
-                    "error_code": "empty_provider_final",
-                    "diagnostics": diagnostics,
-                },
-            )
-            raise RoomCommandRejected(
-                "Provider final message was empty.",
-                code="empty_provider_final",
-            )
-        if observed_model_id:
-            self.store.update_session_fields(
-                room_id,
-                str(session["session_id"]),
-                observed_model_id=observed_model_id,
-                model_verification_status=_model_verification_status(
-                    requested_model_id=requested_model_id,
-                    observed_model_id=observed_model_id,
-                    selection_kind=selection_kind,
-                    observation_policy=observation_policy,
-                ),
-            )
-        event = self.store.append_event(
-            room_id,
-            "message_final",
-            participant_id=agent_id,
-            participant_type="agent",
-            actor_id=agent_id,
-            actor_type="agent",
-            display_name=session.get("display_name") or agent_id,
-            avatar_image_url=session.get("avatar_image_url") or "",
-            session_id=session["session_id"],
-            turn_id=active_turn_id,
-            content=content,
-            source_event_id=session.get("active_source_event_id"),
-            relay_depth=relay_depth,
-            message_source=payload.get("message_source"),
-        )
-        finished, current = self._complete_active_turn(
-            room_id,
-            session,
-            input_up_to_event_id=input_up_to_event_id,
-            input_up_to_seq=input_up_to_seq,
-            latency=latency,
-            diagnostics=diagnostics,
-            finish_status="completed",
-            last_spoke_event_id=event["id"],
-        )
-        return {"event": event, "turn_finished": finished, "agent_session": public_session(current)}
-
-    def _turn_decline(
-        self,
-        identity: dict[str, object],
-        room_id: str,
-        payload: dict[str, object],
-    ) -> dict[str, object]:
-        _agent_id, session = self._active_bridge_turn(identity, room_id, payload)
-        _require_active_turn_phase(session)
-        reason_code = clean_lobby_text(payload.get("reason_code"), limit=64)
-        if reason_code not in SUPPORTED_DECLINE_REASONS:
-            raise RoomCommandRejected("A supported decline reason is required.", code="invalid_decline_reason")
-        latency = _merged_latency(session.get("latency"), payload.get("latency"))
-        diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
-        finished, current = self._complete_active_turn(
-            room_id,
-            session,
-            input_up_to_event_id=clean_lobby_text(session.get("input_up_to_event_id"), limit=128),
-            input_up_to_seq=_safe_bounded_int(session.get("input_up_to_seq"), default=0, minimum=0),
-            latency=latency,
-            diagnostics=diagnostics,
-            finish_status="declined",
-        )
-        return {
-            "declined": True,
-            "reason_code": reason_code,
-            "turn_finished": finished,
-            "agent_session": public_session(current),
-        }
-
-    def _complete_active_turn(
-        self,
-        room_id: str,
-        session: dict[str, object],
-        *,
-        input_up_to_event_id: str,
-        input_up_to_seq: int,
-        latency: dict[str, object],
-        diagnostics: dict[str, object],
-        finish_status: str,
-        last_spoke_event_id: str = "",
-    ) -> tuple[dict[str, object], dict[str, object]]:
-        active_turn_id = str(session["active_turn_id"])
-        finished = self.store.append_event(
-            room_id,
-            "turn_finished",
-            participant_id=session["participant_id"],
-            session_id=session["session_id"],
-            turn_id=active_turn_id,
-            status=finish_status,
-            latency=latency,
-        )
-        updates: dict[str, object] = {
-            "status": "attached",
-            "runtime_status": "idle",
-            "turn_phase": "",
-            "active_turn_id": "",
-            "active_source_event_id": "",
-            "active_relay_depth": 0,
-            "input_up_to_event_id": "",
-            "input_up_to_seq": 0,
-            "inflight_event_ids": [],
-            "last_provider_sync_event_id": input_up_to_event_id or session.get("last_provider_sync_event_id") or "",
-            "last_provider_sync_seq": input_up_to_seq or session.get("last_provider_sync_seq") or 0,
-            "last_seen_event_id": input_up_to_event_id or session.get("last_seen_event_id") or "",
-            "last_seen_seq": input_up_to_seq or session.get("last_seen_seq") or 0,
-            "bootstrap_done": True,
-            "recovery_required": False,
-            "recovery_attempt_count": 0,
-            "turn_count": int(session.get("turn_count") or 0) + 1,
-            "latency": latency,
-            "last_error": "",
-            **_runtime_diagnostic_fields(diagnostics),
-        }
-        if last_spoke_event_id:
-            updates["last_spoke_event_id"] = last_spoke_event_id
-        updated = self.store.update_session_fields(
-            room_id,
-            str(session["session_id"]),
-            **updates,
-        )
-        self._assign_pending(room_id, str(session["participant_id"]))
-        current = self.store.session(room_id, str(session["session_id"]))
-        self._publish_session_state(room_id, current)
-        return finished, current
-
-    def _turn_failed(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
-        agent_id, session = self._active_bridge_turn(identity, room_id, payload)
-        _require_active_turn_phase(session)
-        interrupted = clean_lobby_text(payload.get("status"), limit=32) == "interrupted"
-        requested_error_code = clean_lobby_text(payload.get("error_code"), limit=64)
-        error_code = (
-            requested_error_code
-            if requested_error_code
-            in {
-                "adapter_contract_error",
-                "empty_provider_final",
-                "provider_model_mismatch",
-                "provider_model_unobserved",
-            }
-            else ("interrupted" if interrupted else "provider_turn_failed")
-        )
-        content = clean_lobby_text(payload.get("message") or payload.get("content"), limit=4000) or "Provider turn failed."
-        diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
-        error = self.store.append_event(
-            room_id,
-            "error",
-            participant_id=agent_id,
-            session_id=session["session_id"],
-            turn_id=session["active_turn_id"],
-            content=content,
-            error_code=error_code,
-            diagnostics=_public_runtime_diagnostics(diagnostics),
-        )
-        self.store.append_event(
-            room_id,
-            "turn_finished",
-            participant_id=agent_id,
-            session_id=session["session_id"],
-            turn_id=session["active_turn_id"],
-            status="interrupted" if interrupted else "error",
-        )
-        pending = _dedupe_text_list([*list(session.get("inflight_event_ids") or []), *list(session.get("pending_event_ids") or [])])
-        recovery_attempt_count = int(session.get("recovery_attempt_count") or 0)
-        automatic_recovery = bool(
-            not interrupted
-            and recovery_attempt_count < 1
-            and session.get("enabled")
-            and self.broker.has_bridge(room_id, agent_id)
-            and _provider_process_exited(content, diagnostics)
-        )
-        updated = self.store.update_session_fields(
-            room_id,
-            str(session["session_id"]),
-            status="attached" if interrupted or automatic_recovery else "error",
-            runtime_status="idle" if interrupted else ("recovering" if automatic_recovery else "error"),
-            turn_phase="",
-            active_turn_id="",
-            active_source_event_id="",
-            active_relay_depth=0,
-            input_up_to_event_id="",
-            input_up_to_seq=0,
-            inflight_event_ids=[],
-            pending_event_ids=pending,
-            recovery_required=not interrupted,
-            recovery_attempt_count=recovery_attempt_count + (1 if automatic_recovery else 0),
-            last_error=content,
-            **_runtime_diagnostic_fields(diagnostics),
-        )
-        self._publish_session_state(room_id, updated)
-        if automatic_recovery:
-            key = (room_id, str(session["session_id"]))
-            handle = self._recovery_scheduler(
-                self.recovery_delay_seconds,
-                lambda: self._retry_pending_turn(room_id, str(session["session_id"])),
-            )
-            self._turn_recovery_handles[key] = handle
-        return {"event": error, "agent_session": public_session(updated)}
-
-    def _retry_pending_turn(self, room_id: str, session_id: str) -> None:
-        key = (room_id, session_id)
-        with self._lock:
-            self._turn_recovery_handles.pop(key, None)
-            session = self.store.session(room_id, session_id)
-            if (
-                self._closed
-                or not session
-                or not session.get("enabled")
-                or session.get("runtime_status") != "recovering"
-                or not self.broker.has_bridge(room_id, str(session.get("participant_id") or session_id))
-            ):
-                return
-            participant_id = str(session.get("participant_id") or session_id)
-            updated = self.store.update_session_fields(
-                room_id,
-                session_id,
-                status="attached",
-                runtime_status="idle",
-            )
-            self._publish_session_state(room_id, updated)
-            if not self._assign_pending(room_id, participant_id):
-                current = self.store.session(room_id, session_id)
-                if current and current.get("pending_event_ids"):
-                    failed = self.store.update_session_fields(
-                        room_id,
-                        session_id,
-                        status="error",
-                        runtime_status="error",
-                        recovery_required=True,
-                        last_error="Automatic provider recovery could not reassign the pending turn.",
-                    )
-                    self._publish_session_state(room_id, failed)
 
     def _on_event_appended(self, event: RoomEvent | dict[str, object]) -> None:
         self.broker.broadcast_event(_public_event(event))
@@ -1846,7 +1422,7 @@ class RoomRealtimeController:
             participant = self.store.participant(room_id, agent_id)
             if participant.get("status") == "kicked" or participant.get("muted"):
                 continue
-            self._queue_event(
+            self._turn_coordinator.queue_event(
                 room_id,
                 agent_id,
                 event,
@@ -1862,200 +1438,6 @@ class RoomRealtimeController:
             member_muted=is_room_member_muted(self.output_root, room_id, agent_id),
             bridge_connected=self.broker.has_bridge(room_id, agent_id),
         )
-
-    def _queue_event(
-        self,
-        room_id: str,
-        agent_id: str,
-        event: RoomEvent | dict[str, object],
-        *,
-        relay_depth: int,
-    ) -> None:
-        session = self.store.session(room_id, agent_id)
-        if not session:
-            return
-        event_id = clean_lobby_text(event.get("id"), limit=128)
-        pending = _dedupe_text_list([*list(session.get("pending_event_ids") or []), event_id])
-        session = self.store.update_session_fields(
-            room_id,
-            str(session["session_id"]),
-            pending_event_ids=pending,
-            pending_relay_depth=max(int(session.get("pending_relay_depth") or 0), relay_depth),
-        )
-        if (
-            session.get("enabled")
-            and session.get("runtime_status") == "idle"
-            and self.broker.has_bridge(room_id, agent_id)
-        ):
-            self._assign_pending(room_id, agent_id)
-
-    def _assign_pending(self, room_id: str, agent_id: str) -> bool:
-        session = self.store.session(room_id, agent_id)
-        participant = self.store.participant(room_id, agent_id)
-        pending = _dedupe_text_list(list(session.get("pending_event_ids") or [])) if session else []
-        if (
-            not session
-            or participant.get("status") == "kicked"
-            or bool(participant.get("muted"))
-            or not pending
-            or not session.get("enabled")
-            or session.get("runtime_status") != "idle"
-            or not self.broker.has_bridge(room_id, agent_id)
-        ):
-            return False
-        turn_id = f"turn-{uuid4().hex[:12]}"
-        packet = build_room_turn_packet(
-            self.output_root,
-            room_id=room_id,
-            participant_id=agent_id,
-            session_id=str(session["session_id"]),
-            instruction="Reply naturally to the new room messages. Return only the text that should appear in the room.",
-            max_recent_events=50 if session.get("external_owned") else None,
-            max_prompt_chars=64_000 if session.get("external_owned") else None,
-        )
-        provider_events = [event for event in list(packet.get("events") or []) if isinstance(event, dict)]
-        provider_context_event_ids = [
-            clean_lobby_text(event.get("id"), limit=128)
-            for event in provider_events
-            if clean_lobby_text(event.get("id"), limit=128)
-        ]
-        provider_context_actor_ids = [
-            clean_lobby_text(event.get("participant_id") or event.get("actor_id"), limit=128)
-            for event in provider_events
-            if clean_lobby_text(event.get("participant_id") or event.get("actor_id"), limit=128)
-        ]
-        input_up_to_event_id = clean_lobby_text(packet.get("last_provider_sync_event_id_after"), limit=128)
-        input_up_to_seq = _safe_bounded_int(
-            packet.get("last_provider_sync_seq_after"),
-            default=0,
-            minimum=0,
-        )
-        partition = self._partition_pending_events(
-            room_id,
-            pending,
-            included_event_ids=set(provider_context_event_ids),
-            last_provider_sync_seq=(
-                _safe_bounded_int(
-                    packet.get("last_provider_sync_seq_before", session.get("last_provider_sync_seq")),
-                    default=0,
-                    minimum=0,
-                )
-                if session.get("bootstrap_done")
-                else 0
-            ),
-        )
-        if not partition.inflight:
-            cleaned_pending = partition.deferred
-            if cleaned_pending != pending:
-                self.store.update_session_fields(
-                    room_id,
-                    str(session["session_id"]),
-                    pending_event_ids=cleaned_pending,
-                    pending_relay_depth=int(session.get("pending_relay_depth") or 0) if cleaned_pending else 0,
-                )
-            return False
-        active_source_event_id = partition.inflight[-1]
-        source_event = self.store.event_by_id(room_id, active_source_event_id)
-        input_up_to_event_id = input_up_to_event_id or active_source_event_id
-        relay_depth = int(session.get("pending_relay_depth") or 0)
-        dispatched_at = _now()
-        updated = self.store.update_session_fields(
-            room_id,
-            str(session["session_id"]),
-            runtime_status="busy",
-            turn_phase="thinking",
-            active_turn_id=turn_id,
-            active_source_event_id=active_source_event_id,
-            active_relay_depth=relay_depth,
-            input_up_to_event_id=input_up_to_event_id,
-            input_up_to_seq=input_up_to_seq,
-            inflight_event_ids=partition.inflight,
-            pending_event_ids=partition.deferred,
-            pending_relay_depth=relay_depth if partition.deferred else 0,
-            latency={
-                "queued_at": source_event.get("created_at") or dispatched_at,
-                "dispatch_started_at": dispatched_at,
-            },
-            provider_visible_chars=int(packet.get("provider_visible_chars") or 0),
-            provider_visible_event_count=int(packet.get("provider_visible_event_count") or 0),
-            provider_input_mode=clean_lobby_text(packet.get("input_mode"), limit=32),
-            context_error_detected=False,
-        )
-        self._publish_session_state(room_id, updated)
-        self.store.append_event(
-            room_id,
-            "turn_started",
-            participant_id=agent_id,
-            session_id=session["session_id"],
-            turn_id=turn_id,
-            source_event_id=active_source_event_id,
-            provider_visible_chars=packet.get("provider_visible_chars"),
-            provider_visible_event_count=packet.get("provider_visible_event_count"),
-            provider_context_event_ids=provider_context_event_ids,
-            provider_context_actor_ids=provider_context_actor_ids,
-            provider_context_after_seq=packet.get("provider_context_after_seq"),
-            provider_context_up_to_seq=packet.get("last_provider_sync_seq_after"),
-        )
-        self.store.append_event(
-            room_id,
-            "turn_state",
-            participant_id=agent_id,
-            session_id=session["session_id"],
-            turn_id=turn_id,
-            phase="thinking",
-        )
-        assignment: TurnAssignment = {
-            "op": "turn.assign",
-            "room_id": room_id,
-            "participant_id": agent_id,
-            "session_id": session["session_id"],
-            "turn_id": turn_id,
-            "source_event_id": active_source_event_id,
-            "input_up_to_event_id": input_up_to_event_id,
-            "input_up_to_seq": input_up_to_seq,
-            "provider_input": packet.get("provider_input") or "",
-            "provider_visible_chars": packet.get("provider_visible_chars") or 0,
-            "provider_context_event_ids": provider_context_event_ids,
-            "provider_context_actor_ids": provider_context_actor_ids,
-            "timeout_seconds": self._provider(room_id, agent_id).turn_timeout_seconds,
-        }
-        if self.broker.direct_to_bridge(room_id, agent_id, assignment):
-            return True
-        self.store.update_session_fields(
-            room_id,
-            str(session["session_id"]),
-            status="unavailable",
-            runtime_status="disconnected",
-            active_turn_id="",
-            turn_phase="",
-            input_up_to_seq=0,
-            inflight_event_ids=[],
-            pending_event_ids=[*partition.inflight, *partition.deferred],
-            last_error="Agent bridge disconnected before turn assignment.",
-        )
-        return False
-
-    def _partition_pending_events(
-        self,
-        room_id: str,
-        pending: list[str],
-        *,
-        included_event_ids: set[str],
-        last_provider_sync_seq: int,
-    ) -> _PendingEventPartition:
-        partition = _PendingEventPartition(inflight=[], deferred=[], already_synced=[], invalid=[])
-        for event_id in pending:
-            event = self.store.event_by_id(room_id, event_id)
-            event_seq = _safe_bounded_int(event.get("seq"), default=0, minimum=0)
-            if not event or not event_seq:
-                partition.invalid.append(event_id)
-            elif event_seq <= last_provider_sync_seq:
-                partition.already_synced.append(event_id)
-            elif event_id in included_event_ids:
-                partition.inflight.append(event_id)
-            else:
-                partition.deferred.append(event_id)
-        return partition
 
     def _publish_session_state(self, room_id: str, session: dict[str, object]) -> dict[str, object]:
         if not session:
@@ -2217,36 +1599,6 @@ class RoomRealtimeController:
             raise RoomCommandRejected("agent_id is required.", code="bad_request")
         return agent_id
 
-    def _bridge_session(
-        self,
-        identity: dict[str, object],
-        room_id: str,
-        *,
-        allow_unleased: bool = False,
-    ) -> tuple[str, dict[str, object]]:
-        agent_id = clean_lobby_text(identity.get("agent_id"), limit=128)
-        session_id = clean_lobby_text(identity.get("session_id") or agent_id, limit=128)
-        session = self.store.session(room_id, session_id)
-        if not session or session.get("participant_id") != agent_id:
-            raise RoomCommandRejected("Agent bridge session does not match its ticket identity.", code="permission_denied")
-        identity_generation = int(identity.get("bridge_generation") or 0)
-        session_generation = int(session.get("bridge_generation") or 0)
-        if not allow_unleased and session_generation and identity_generation != session_generation:
-            raise RoomCommandRejected("Agent bridge lease is stale.", code="stale_bridge_generation")
-        return agent_id, session
-
-    def _active_bridge_turn(
-        self,
-        identity: dict[str, object],
-        room_id: str,
-        payload: dict[str, object],
-    ) -> tuple[str, dict[str, object]]:
-        agent_id, session = self._bridge_session(identity, room_id)
-        turn_id = clean_lobby_text(payload.get("turn_id"), limit=128)
-        if not turn_id or turn_id != session.get("active_turn_id"):
-            raise RoomCommandRejected("Turn does not match the active assignment.", code="turn_conflict")
-        return agent_id, session
-
     def _require_capability(self, identity: dict[str, object], capability: str) -> None:
         if not self.capabilities(identity).get(capability):
             raise RoomCommandRejected(f"{capability} permission is required.", code="permission_denied")
@@ -2255,31 +1607,6 @@ class RoomRealtimeController:
     def _require_bridge(identity: dict[str, object]) -> None:
         if identity.get("client_type") != "agent_bridge":
             raise RoomCommandRejected("This command is reserved for an Agent Bridge.", code="permission_denied")
-
-def _dedupe_text_list(values: list[object]) -> list[str]:
-    result: list[str] = []
-    for value in values:
-        text = clean_lobby_text(value, limit=128)
-        if text and text not in result:
-            result.append(text)
-    return result
-
-
-def _model_verification_status(
-    *,
-    requested_model_id: str,
-    observed_model_id: str,
-    selection_kind: str,
-    observation_policy: str,
-) -> str:
-    if not observed_model_id:
-        return "pending" if observation_policy == "required" else "unavailable"
-    if selection_kind == "alias":
-        return "resolved_alias"
-    if requested_model_id and observed_model_id == requested_model_id:
-        return "verified"
-    return "mismatch"
-
 
 def _external_runtime_profile_key(profile: ProviderRuntimeProfile) -> str:
     serialized = json.dumps(
@@ -2329,36 +1656,6 @@ def _validate_turn_phase_transition(session: dict[str, object], phase: str) -> N
         )
 
 
-def _message_delta_text(value: object, *, limit: int) -> str:
-    return str(value or "").replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")[:limit]
-
-
-def _room_message_text(value: object, *, limit: int) -> str:
-    return _message_delta_text(value, limit=limit).strip()
-
-
-def _provider_process_exited(message: str, diagnostics: dict[str, object]) -> bool:
-    lower = str(message or "").casefold()
-    if any(
-        marker in lower
-        for marker in (
-            "401",
-            "unauthorized",
-            "authentication",
-            "authenticate",
-            "login required",
-            "configured command missing",
-            "permission denied",
-        )
-    ):
-        return False
-    running = diagnostics.get("running")
-    returncode = diagnostics.get("returncode")
-    if running is False and returncode not in (None, ""):
-        return True
-    return "runtime exited with return code" in lower or "runtime stopped while reading" in lower
-
-
 def _safe_int_or_none(value: object) -> int | None:
     try:
         return int(value) if value not in (None, "") else None
@@ -2381,7 +1678,3 @@ def _safe_bounded_int(
     if maximum is not None:
         parsed = min(int(maximum), parsed)
     return parsed
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat()

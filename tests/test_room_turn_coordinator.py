@@ -1,0 +1,186 @@
+import tempfile
+import threading
+import unittest
+from pathlib import Path
+
+from agentsassemble.native_cli_providers import NativeCliProviderSpec
+from agentsassemble.room_errors import RoomCommandRejected
+from agentsassemble.room_event_broker import RoomEventBroker
+from agentsassemble.room_store import RoomStore
+from agentsassemble.room_turn_coordinator import RoomTurnCoordinator
+
+
+class RoomTurnCoordinatorTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.store = RoomStore(self.root)
+        self.store.create_room("general", label="General")
+        self.store.upsert_participant(
+            "general",
+            {
+                "participant_id": "codex",
+                "display_name": "Codex",
+                "role": "agent",
+                "status": "joined",
+            },
+        )
+        self.store.upsert_session(
+            "general",
+            {
+                "session_id": "codex",
+                "participant_id": "codex",
+                "display_name": "Codex",
+                "status": "attached",
+                "runtime_status": "idle",
+                "enabled": True,
+                "model": "fixture-model",
+                "requested_model_id": "fixture-model",
+                "model_selection_kind": "exact",
+                "model_observation_policy": "unavailable",
+                "pending_event_ids": [],
+                "inflight_event_ids": [],
+                "last_provider_sync_seq": 0,
+                "turn_count": 0,
+            },
+        )
+        self.spec = NativeCliProviderSpec(
+            agent_id="codex",
+            display_name="Codex",
+            command=("codex",),
+            cwd=str(self.root),
+            turn_timeout_seconds=12.0,
+        )
+        self.broker = RoomEventBroker()
+        self.identity = {
+            "agent_id": "codex",
+            "session_id": "codex",
+            "client_type": "agent_bridge",
+            "meeting_id": "general",
+        }
+        self.channel = self.broker.connect(self.identity)
+        generation = self.broker.activate_bridge(self.channel)
+        self.identity["bridge_generation"] = generation
+        self.store.update_session_fields("general", "codex", bridge_generation=generation)
+        self.packet: dict[str, object] = {}
+        self.published: list[dict[str, object]] = []
+        self.coordinator = RoomTurnCoordinator(
+            self.root,
+            store=self.store,
+            broker=self.broker,
+            lock=threading.RLock(),
+            provider_lookup=lambda _room_id, _agent_id: self.spec,
+            ensure_room=lambda room_id: self.store.create_room(room_id),
+            publish_session_state=lambda _room_id, session: self.published.append(dict(session)),
+            is_closed=lambda: False,
+            recovery_delay_seconds=0.1,
+            recovery_scheduler=lambda _delay, _callback: None,
+            packet_builder=lambda *_args, **_kwargs: dict(self.packet),
+        )
+
+    def tearDown(self):
+        self.broker.close()
+        self.temp.cleanup()
+
+    def _message(self, content):
+        return self.store.append_event(
+            "general",
+            "message_final",
+            participant_id="operator-local",
+            actor_id="operator-local",
+            actor_type="human",
+            content=content,
+        )
+
+    def _set_packet(self, event):
+        self.packet = {
+            "events": [event],
+            "provider_input": f"Host: {event['content']}",
+            "provider_visible_chars": len(str(event["content"])),
+            "provider_visible_event_count": 1,
+            "input_mode": "incremental",
+            "last_provider_sync_event_id_after": event["id"],
+            "last_provider_sync_seq_before": 0,
+            "last_provider_sync_seq_after": event["seq"],
+            "provider_context_after_seq": 0,
+        }
+
+    def test_assignment_keeps_active_inflight_and_sync_boundaries_together(self):
+        included = self._message("included")
+        deferred = self._message("deferred")
+        self._set_packet(included)
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            pending_event_ids=[included["id"], deferred["id"]],
+            pending_relay_depth=1,
+        )
+
+        assigned = self.coordinator.assign_pending("general", "codex")
+
+        self.assertTrue(assigned)
+        session = self.store.session("general", "codex")
+        self.assertEqual(session["runtime_status"], "busy")
+        self.assertEqual(session["turn_phase"], "thinking")
+        self.assertTrue(session["active_turn_id"])
+        self.assertEqual(session["active_source_event_id"], included["id"])
+        self.assertEqual(session["inflight_event_ids"], [included["id"]])
+        self.assertEqual(session["pending_event_ids"], [deferred["id"]])
+        self.assertEqual(session["input_up_to_event_id"], included["id"])
+        self.assertEqual(session["input_up_to_seq"], included["seq"])
+        assignment = next(message for message in self.channel.drain() if message.get("op") == "turn.assign")
+        self.assertEqual(assignment["turn_id"], session["active_turn_id"])
+        self.assertEqual(assignment["provider_context_event_ids"], [included["id"]])
+
+    def test_final_message_advances_cursor_and_clears_active_turn_atomically(self):
+        source = self._message("source")
+        self._set_packet(source)
+        self.store.update_session_fields("general", "codex", pending_event_ids=[source["id"]])
+        self.assertTrue(self.coordinator.assign_pending("general", "codex"))
+        turn_id = str(self.store.session("general", "codex")["active_turn_id"])
+
+        result = self.coordinator.message_final(
+            self.identity,
+            "general",
+            {"turn_id": turn_id, "content": "final answer", "latency": {"ttfo_ms": 25}},
+        )
+
+        session = self.store.session("general", "codex")
+        self.assertEqual(result["event"]["content"], "final answer")
+        self.assertEqual(session["runtime_status"], "idle")
+        self.assertEqual(session["active_turn_id"], "")
+        self.assertEqual(session["turn_phase"], "")
+        self.assertEqual(session["inflight_event_ids"], [])
+        self.assertEqual(session["last_provider_sync_event_id"], source["id"])
+        self.assertEqual(session["last_provider_sync_seq"], source["seq"])
+        self.assertEqual(session["last_seen_seq"], source["seq"])
+        self.assertEqual(session["turn_count"], 1)
+
+    def test_stale_generation_and_invalid_phase_are_rejected_before_state_change(self):
+        source = self._message("source")
+        self._set_packet(source)
+        self.store.update_session_fields("general", "codex", pending_event_ids=[source["id"]])
+        self.assertTrue(self.coordinator.assign_pending("general", "codex"))
+        session = self.store.session("general", "codex")
+        stale_identity = {**self.identity, "bridge_generation": int(session["bridge_generation"]) + 1}
+
+        with self.assertRaises(RoomCommandRejected) as stale:
+            self.coordinator.turn_state(
+                stale_identity,
+                "general",
+                {"turn_id": session["active_turn_id"], "phase": "streaming"},
+            )
+        with self.assertRaises(RoomCommandRejected) as invalid:
+            self.coordinator.turn_state(
+                self.identity,
+                "general",
+                {"turn_id": session["active_turn_id"], "phase": "completed"},
+            )
+
+        self.assertEqual(stale.exception.code, "stale_bridge_generation")
+        self.assertEqual(invalid.exception.code, "turn_phase_invalid")
+        self.assertEqual(self.store.session("general", "codex")["turn_phase"], "thinking")
+
+
+if __name__ == "__main__":
+    unittest.main()
