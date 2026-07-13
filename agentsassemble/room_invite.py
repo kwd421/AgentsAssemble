@@ -26,6 +26,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.native_cli_providers import native_cli_provider_definition
 from agentsassemble.room_users import normalize_participant_type, resolve_device_user
 from agentsassemble.multi_host_invites import (
     NATIVE_REMOTE_ROOM_CLIENT_KIND,
@@ -236,6 +237,10 @@ def create_room_invite(
     clean_provider_kind = clean_lobby_text(provider_kind, limit=64) or "manual"
     if clean_client_type == "agent_bridge":
         clean_participant_type = "remote"
+        definition = native_cli_provider_definition(clean_provider_kind)
+        if definition is None:
+            raise ValueError("Agent Session invites require a supported provider.")
+        clean_provider_kind = definition.provider_kind
     # max_uses: 0 = unlimited (Discord-style open link, the default), 1 = single-use,
     # N > 1 = capped reuse. Reusable invites mint a unique participant id per join.
     clean_max_uses = max(0, int(max_uses)) if isinstance(max_uses, (int, float)) else 0

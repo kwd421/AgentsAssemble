@@ -43,6 +43,31 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
         self.assertEqual(invite["agent_id"], "guest-1")
         self.assertTrue(invite["invite_token"].startswith("aai1."))
 
+    def test_agent_bridge_invite_normalizes_provider_id_to_canonical_kind(self):
+        invite = create_room_invite(
+            room_url="http://192.168.1.10:8765",
+            meeting_id="test-meeting",
+            agent_id="claude-guest",
+            client_type="agent_bridge",
+            provider_kind="claude",
+            max_uses=1,
+        )
+        joined = join_room_with_invite(str(invite["invite_token"]))
+
+        self.assertEqual(invite["provider_kind"], "claude_code")
+        self.assertEqual(joined["provider_kind"], "claude_code")
+
+    def test_agent_bridge_invite_rejects_unknown_provider_before_issuing_token(self):
+        with self.assertRaisesRegex(ValueError, "supported provider"):
+            create_room_invite(
+                room_url="http://192.168.1.10:8765",
+                meeting_id="test-meeting",
+                agent_id="unknown-guest",
+                client_type="agent_bridge",
+                provider_kind="unknown-provider",
+                max_uses=1,
+            )
+
     def test_create_invite_returns_secure_join_url_when_public_url_configured(self):
         set_runtime_public_url("https://shared-room.example.com")
 

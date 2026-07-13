@@ -9,13 +9,23 @@ import time
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
+from agentsassemble.live_cli import LiveCliRuntime
+from agentsassemble.provider_runtime_config import ProviderRuntimeProfile
+from agentsassemble.room_attendee import AgentAttendee
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
+from agentsassemble.room_invite import reset_state, verify_session_token
 from agentsassemble.room_native_cli_smoke import NON_ROOM_REPLY, _latency_acceptance, run_room_native_cli_smoke
 from agentsassemble.room_realtime import NativeCliProviderSpec, RoomRealtimeController
-from agentsassemble.ws_room_client import connect_room_ws_with_ticket
+from agentsassemble.ws_room_client import (
+    connect_room_ws,
+    connect_room_ws_with_ticket,
+    join_room_session,
+)
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "fake_interactive_cli.py"
@@ -299,6 +309,159 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                 server.server_close()
                 server_thread.join(timeout=2.0)
 
+    def test_invited_external_attendee_kick_stops_cli_and_revokes_access(self):
+        self._inbox = []
+        reset_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "external-workspace"
+            workspace.mkdir()
+            controller = RoomRealtimeController(
+                root,
+                providers=[],
+                external_stop_timeout_seconds=2.0,
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, room_realtime_controller_override=controller),
+            )
+            server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+            server_thread.start()
+            host, port = server.server_address
+            base = f"http://{host}:{port}"
+            host_client = None
+            attendee = None
+            attendee_thread = None
+            runtime = LiveCliRuntime(
+                "external-haiku",
+                [os.sys.executable, "-u", str(FIXTURE)],
+                cwd=workspace,
+                input_mode="bracketed_paste",
+                idle_quiet_seconds=0.05,
+                startup_quiet_seconds=0.05,
+                startup_timeout_seconds=1.0,
+            )
+            joined: dict[str, object] = {}
+            connect_count = 0
+            try:
+                invite = self._post_json(
+                    f"{base}/api/room-invite/create",
+                    {
+                        "meeting_id": "general",
+                        "agent_id": "external-haiku",
+                        "display_name": "External Haiku",
+                        "client_type": "agent_bridge",
+                        "provider_kind": "claude",
+                        "local_dev_preview": True,
+                    },
+                )
+                invite_token = str(invite["invite_token"])
+                attendee = AgentAttendee(
+                    invite_url=f"{base}/join?token={invite_token}",
+                    provider_id="claude",
+                    display_name="External Haiku",
+                    workspace=str(workspace),
+                    model="claude-haiku-4-5",
+                    reasoning_effort="high",
+                    service_tier="default",
+                )
+
+                def build_runtime(_participant_id: str, _workspace: Path):
+                    attendee._runtime_profile = ProviderRuntimeProfile(
+                        provider_kind="claude_code",
+                        runtime_kind="live_cli",
+                        model="claude-haiku-4-5",
+                        reasoning_effort="high",
+                        service_tier="default",
+                        variant="",
+                        permission_mode="meeting_read_only",
+                        transport="pty",
+                    )
+                    return runtime
+
+                def capture_join(*args, **kwargs):
+                    result = join_room_session(*args, **kwargs)
+                    joined.update(result)
+                    return result
+
+                def capture_connect(*args, **kwargs):
+                    nonlocal connect_count
+                    connect_count += 1
+                    return connect_room_ws(*args, **kwargs)
+
+                attendee._build_runtime = build_runtime
+                with (
+                    patch("agentsassemble.room_attendee.join_room_session", side_effect=capture_join),
+                    patch("agentsassemble.room_attendee.connect_room_ws", side_effect=capture_connect),
+                ):
+                    exits: list[int] = []
+                    attendee_thread = threading.Thread(
+                        target=lambda: exits.append(attendee.run()),
+                        daemon=True,
+                    )
+                    attendee_thread.start()
+                    self._wait_for(
+                        lambda: controller.store.session("general", "external-haiku").get(
+                            "runtime_status"
+                        )
+                        == "idle"
+                    )
+                    provider_pid = int(runtime.health()["pid"])
+
+                    ticket = self._host_ticket(base)
+                    host_client = connect_room_ws_with_ticket(
+                        base,
+                        ticket,
+                        ["room_events"],
+                        timeout=3.0,
+                    )
+                    host_client.sock.settimeout(0.1)
+                    self._receive_until(host_client, lambda message: message.get("op") == "snapshot")
+                    kick_request = host_client.command(
+                        "participant.kick",
+                        {"participant_id": "external-haiku"},
+                        request_id="kick-external-haiku",
+                    )
+                    kick_ack = self._receive_until(
+                        host_client,
+                        lambda message: message.get("op") == "ack"
+                        and message.get("request_id") == kick_request,
+                    )
+                    attendee_thread.join(timeout=5.0)
+
+                self.assertFalse(attendee_thread.is_alive())
+                self.assertEqual(exits, [0])
+                self.assertEqual(connect_count, 1)
+                self.assertEqual(kick_ack["result"]["participant"]["status"], "kicked")
+                self.assertEqual(kick_ack["result"]["cleanup_warning"], "")
+                self.assertFalse(runtime.health()["running"])
+                self.assertFalse(self._pid_alive(provider_pid))
+                self.assertIsNone(verify_session_token(str(joined["session_token"])))
+                with self.assertRaises(HTTPError) as reused:
+                    join_room_session(
+                        base,
+                        invite_token,
+                        display_name="External Haiku",
+                        participant_type="agent",
+                        device_token="external-haiku-reuse",
+                        timeout=3.0,
+                    )
+                self.assertEqual(reused.exception.code, 403)
+                self.assertIn("token_already_used", reused.exception.read().decode("utf-8"))
+                reused.exception.close()
+            finally:
+                if host_client is not None:
+                    host_client.close()
+                if attendee is not None:
+                    attendee.stop()
+                if attendee_thread is not None:
+                    attendee_thread.join(timeout=2.0)
+                controller.close()
+                server.shutdown()
+                server.server_close()
+                server_thread.join(timeout=2.0)
+                reset_state()
+
     @staticmethod
     def _host_ticket(base: str) -> str:
         request = Request(
@@ -309,6 +472,17 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
         )
         with urlopen(request, timeout=3.0) as response:
             return str(json.loads(response.read().decode("utf-8"))["ticket"])
+
+    @staticmethod
+    def _post_json(url: str, payload: dict[str, object]) -> dict[str, object]:
+        request = Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=3.0) as response:
+            return dict(json.loads(response.read().decode("utf-8")))
 
     def _receive_room_event(self, client, predicate, *, timeout_seconds: float = 8.0):
         message = self._receive_until(
