@@ -48,6 +48,7 @@ from agentsassemble.room_commands import (
     capabilities_for_identity,
     parse_room_command,
 )
+from agentsassemble.room_errors import RoomCommandRejected
 from agentsassemble.room_event_broker import ROOM_EVENT_STREAM, RoomEventBroker, RoomSocketChannel
 from agentsassemble.room_floor_policy import (
     AgentFloorEligibility,
@@ -120,12 +121,6 @@ class _PendingEventPartition:
     deferred: list[str]
     already_synced: list[str]
     invalid: list[str]
-
-
-class RoomCommandRejected(ValueError):
-    def __init__(self, message: str, *, code: str = "rejected") -> None:
-        super().__init__(message)
-        self.code = code
 
 
 class RoomRealtimeController:
