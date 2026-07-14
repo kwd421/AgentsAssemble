@@ -1063,3 +1063,21 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   finalization, and preset policy. The seven deletion candidates remain
   untouched, and Agent Session history continues to resolve current profile
   name/avatar by stable `participant_id` rather than event-time display fields.
+- 2026-07-14: Official-turn request, call, and sequence are now one retained
+  service boundary. `LegacyOfficialTurnService` owns private request creation,
+  verified reply waits, ordered sequence validation, timeout/skip/cancel status,
+  and prompt-free success/failure audits. Its Router module owns the three
+  dynamic paths and preserved invalid-JSON/`400` behavior. The reentrant
+  per-meeting lock moved to `legacy_turn_scheduler.py` so request, round,
+  remaining-round, and Codex-join paths still share the same lock authority.
+  Existing module-level payload names remain import-compatible through
+  `gui.py`. Focused service/Router/ownership tests passed 17 tests; the real
+  official-turn server suite passed 21 tests; and review/finalization
+  integration passed 20 tests after the shared request move. These verify
+  private prompt exclusion, official reply provenance, timeout continuation,
+  stop-on-timeout skips, cancellation, target normalization, and operation
+  audit redaction. The next Phase 5.4 slice is round/rounds/preset as one
+  scheduling and progress policy, followed by a fresh inventory of the
+  generated handler. The seven deletion candidates remain untouched, and
+  Agent Session historical identity still resolves from current canonical
+  participant name/avatar by stable `participant_id`.

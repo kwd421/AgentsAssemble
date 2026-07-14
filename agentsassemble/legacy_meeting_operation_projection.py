@@ -110,6 +110,83 @@ def review_checkpoint_request_operation_details(
     }
 
 
+def official_turn_request_operation_details(
+    source: dict[str, object],
+    meeting_id: str,
+    *,
+    fallback_agent_id: str,
+    include_source_event: bool = False,
+) -> dict[str, object]:
+    details = {
+        "meeting_id": meeting_id,
+        "target_agent_id": str(source.get("target_agent_id") or fallback_agent_id),
+        "role_id": str(source.get("role_id") or ""),
+        "turn_id": str(source.get("turn_id") or ""),
+        "turn_index": _optional_int(source.get("turn_index")),
+    }
+    if include_source_event:
+        details["source_event_id"] = str(source.get("id") or "")
+    return details
+
+
+def official_turn_call_request_operation_details(
+    payload: dict[str, object],
+    meeting_id: str,
+    *,
+    fallback_agent_id: str,
+) -> dict[str, object]:
+    details = official_turn_request_operation_details(
+        payload,
+        meeting_id,
+        fallback_agent_id=fallback_agent_id,
+    )
+    details["timeout_seconds"] = _nonnegative_float(
+        payload.get("timeout_seconds", payload.get("timeout")),
+        30.0,
+    )
+    return details
+
+
+def official_turn_call_operation_details(
+    result: dict[str, object],
+    meeting_id: str,
+    *,
+    fallback_agent_id: str,
+) -> dict[str, object]:
+    request_event = result.get("request_event") if isinstance(result.get("request_event"), dict) else {}
+    reply_event = result.get("reply_event") if isinstance(result.get("reply_event"), dict) else {}
+    details = official_turn_request_operation_details(
+        request_event,
+        meeting_id,
+        fallback_agent_id=fallback_agent_id,
+        include_source_event=True,
+    )
+    details.update(
+        {
+            "reply_event_id": str(reply_event.get("id") or ""),
+            "timeout_seconds": _nonnegative_float(result.get("timeout_seconds"), 30.0),
+            "elapsed_seconds": _nonnegative_float(result.get("elapsed_seconds"), 0.0),
+        }
+    )
+    return details
+
+
+def official_turn_sequence_request_operation_details(
+    payload: dict[str, object],
+    meeting_id: str,
+) -> dict[str, object]:
+    turns = payload.get("turns")
+    return {
+        "meeting_id": meeting_id,
+        "turn_count": len(turns) if isinstance(turns, list) else 0,
+        "timeout_seconds": _nonnegative_float(
+            payload.get("timeout_seconds", payload.get("timeout")),
+            30.0,
+        ),
+        "stop_on_timeout": _payload_bool(payload.get("stop_on_timeout")),
+    }
+
+
 def _operation_result_status(value: object) -> str:
     return str(value or "unknown").strip() or "unknown"
 
@@ -140,6 +217,23 @@ def _nonnegative_float(value: object, default: float) -> float:
     if not math.isfinite(parsed):
         return default
     return max(0.0, parsed)
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _payload_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
 
 
 def _item_count(value: object) -> int:

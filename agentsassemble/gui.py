@@ -49,6 +49,7 @@ from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_rou
 from agentsassemble.gui_legacy_lobby_http import register_legacy_lobby_routes
 from agentsassemble.gui_legacy_meeting_http import register_legacy_meeting_routes
 from agentsassemble.gui_legacy_meeting_lifecycle_http import register_legacy_meeting_lifecycle_routes
+from agentsassemble.gui_legacy_official_turn_http import register_legacy_official_turn_routes
 from agentsassemble.gui_legacy_review_checkpoint_http import register_legacy_review_checkpoint_route
 from agentsassemble.gui_legacy_live_agent_read_http import (
     LegacyLiveAgentReadDeps,
@@ -244,7 +245,6 @@ from agentsassemble.live_agent_turns import (
     is_official_turn_reply_event,
     is_review_checkpoint_reply_event,
     official_turn_cancellation,
-    wait_for_official_turn_reply,
 )
 from agentsassemble.lobby_queries import (
     LOBBY_HISTORY_MAX_PAGE_LIMIT,
@@ -339,14 +339,18 @@ from agentsassemble.legacy_meeting_records import (
     read_meeting_record as _read_meeting_record,
     safe_meeting_dir as _safe_meeting_dir,
 )
+from agentsassemble.legacy_official_turns import (
+    MAX_LIVE_AGENT_SEQUENCE_TURNS,
+    LegacyOfficialTurnService,
+    live_agent_turn_call_payload,
+    live_agent_turn_request_payload,
+    live_agent_turn_sequence_payload,
+)
 from agentsassemble.legacy_review_checkpoint import (
     LegacyReviewCheckpointService,
     create_review_checkpoint as _create_review_checkpoint,
 )
-from agentsassemble.legacy_turn_results import (
-    turn_sequence_result as _live_agent_turn_sequence_result,
-    turn_sequence_status as _live_agent_turn_sequence_status,
-)
+from agentsassemble.legacy_turn_scheduler import meeting_turn_lock as _live_agent_round_scheduler_lock
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_report
 from agentsassemble.provider_login import ProviderLoginService
@@ -775,10 +779,7 @@ REAL_SESSION_SMOKE_REPLY_REDACTION = "[redacted real session smoke reply]"
 LIVE_AGENT_TURN_LOCK = threading.Lock()
 LIVE_AGENT_LOBBY_LOCK = threading.RLock()
 REAL_SESSION_SMOKE_REDACTED_SOURCE_EVENT_IDS: set[str] = set()
-MAX_LIVE_AGENT_SEQUENCE_TURNS = 12
 MAX_LIVE_AGENT_ROUND_BATCH = 8
-LIVE_AGENT_ROUND_SCHEDULER_LOCKS: dict[str, threading.RLock] = {}
-LIVE_AGENT_ROUND_SCHEDULER_LOCKS_LOCK = threading.Lock()
 SESSION_RUN_MONITOR_ERROR = "Live-agent session run monitor failed."
 SESSION_ENSURE_REASON_RESIDENT_SESSION_ID_DRIFT = "resident_session_id_drift"
 SESSION_ENSURE_REASON_STALE_LOBBY_OBSERVATION = "stale_lobby_observation"
@@ -788,15 +789,6 @@ SESSION_ENSURE_REASONS = {
     SESSION_ENSURE_REASON_STALE_LOBBY_OBSERVATION,
     SESSION_ENSURE_REASON_STALE_LIVE_OBSERVATION,
 }
-
-
-def _live_agent_round_scheduler_lock(meeting_id: str) -> threading.RLock:
-    with LIVE_AGENT_ROUND_SCHEDULER_LOCKS_LOCK:
-        lock = LIVE_AGENT_ROUND_SCHEDULER_LOCKS.get(meeting_id)
-        if lock is None:
-            lock = threading.RLock()
-            LIVE_AGENT_ROUND_SCHEDULER_LOCKS[meeting_id] = lock
-        return lock
 
 
 def _backfill_room_registry(output_root: Path) -> None:
@@ -2840,121 +2832,6 @@ def _existing_live_agent_lobby_reply(output_root: Path, *, actor_id: str, source
     return None
 
 
-def live_agent_turn_request_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
-    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
-    meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
-    if not clean_meeting_id or not meeting_dir.exists():
-        raise ValueError(f"Meeting {clean_meeting_id or '(blank)'} was not found.")
-    with _live_agent_round_scheduler_lock(clean_meeting_id):
-        agent_id = clean_lobby_text(payload.get("agent_id"), limit=64)
-        if not agent_id:
-            raise ValueError("Agent id is required.")
-        agent = _live_agent_for_id(output_root, agent_id)
-        agent_meeting_id = str(agent.get("meeting_id") or "").strip()
-        if agent_meeting_id != clean_meeting_id:
-            raise ValueError(f"Live agent {agent_id} is not attached to meeting {clean_meeting_id}.")
-        content = clean_lobby_text(payload.get("content") or payload.get("message"), limit=4000)
-        if not content:
-            raise ValueError("Official turn request content is required.")
-        role_id = clean_lobby_text(payload.get("role_id"), limit=128) or agent_id
-        display_name = clean_lobby_text(payload.get("display_name"), limit=64) or str(agent.get("display_name") or agent_id)
-        event_payload: dict[str, object] = {
-            "kind": "live_agent_turn_request",
-            "meeting_id": clean_meeting_id,
-            "actor_id": "moderator",
-            "target_agent_id": agent_id,
-            "role_id": role_id,
-            "display_name": display_name,
-            "audience": f"agent:{agent_id}",
-            "content": content,
-            "turn_id": clean_lobby_text(payload.get("turn_id"), limit=128),
-            "turn_index": _payload_optional_int(payload.get("turn_index")),
-            "engagement_mode": "moderator_called",
-        }
-        review_checkpoint_id = clean_lobby_text(payload.get("review_checkpoint_id") or payload.get("checkpoint_id"), limit=128)
-        if review_checkpoint_id:
-            event_payload.update(
-                {
-                    "review_checkpoint_id": review_checkpoint_id,
-                    "channel": "review",
-                    "official_record": False,
-                }
-            )
-        event = append_live_event(meeting_dir, event_payload)
-        return {"agent": agent, "event": event, "live_events": read_live_events(meeting_dir)}
-
-
-def live_agent_turn_call_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
-    turn_request = live_agent_turn_request_payload(output_root, meeting_id, payload)
-    request_event = turn_request.get("event") if isinstance(turn_request.get("event"), dict) else {}
-    agent = turn_request.get("agent") if isinstance(turn_request.get("agent"), dict) else {}
-    clean_meeting_id = clean_lobby_text(request_event.get("meeting_id") or meeting_id, limit=128)
-    meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
-    agent_id = clean_lobby_text(request_event.get("target_agent_id") or payload.get("agent_id"), limit=64)
-    source_event_id = clean_lobby_text(request_event.get("id"), limit=128)
-    if not agent_id or not source_event_id:
-        raise ValueError("Official turn request could not be created.")
-    wait_result = wait_for_official_turn_reply(
-        meeting_dir,
-        agent_id=agent_id,
-        source_event_id=source_event_id,
-        timeout_seconds=_payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0),
-    )
-    return {
-        "status": wait_result["status"],
-        "agent": agent,
-        "request_event": request_event,
-        "reply_event": wait_result["reply_event"],
-        "elapsed_seconds": wait_result["elapsed_seconds"],
-        "timeout_seconds": wait_result["timeout_seconds"],
-        "live_events": _live_events_visible_to_agent(read_live_events(meeting_dir), agent_id),
-    }
-
-
-def live_agent_turn_sequence_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
-    turns = _payload_turn_sequence(payload.get("turns"))
-    clean_meeting_id = _validate_live_agent_turn_sequence(output_root, meeting_id, turns)
-    timeout_seconds = _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0)
-    stop_on_timeout = _payload_bool(payload.get("stop_on_timeout"))
-    results = []
-    stopped = False
-    for index, turn in enumerate(turns):
-        turn_payload = dict(turn)
-        turn_payload.setdefault("timeout_seconds", timeout_seconds)
-        if turn_payload.get("turn_index") is None:
-            turn_payload["turn_index"] = index
-        result = live_agent_turn_call_payload(output_root, meeting_id, turn_payload)
-        sequence_result = _live_agent_turn_sequence_result(index, result)
-        results.append(sequence_result)
-        if sequence_result["status"] != "answered" and stop_on_timeout:
-            stopped = True
-            results.extend(_skipped_turn_sequence_results(turns[index + 1 :], start_index=index + 1))
-            break
-    answered_count = sum(1 for result in results if result["status"] == "answered")
-    timeout_count = sum(1 for result in results if result["status"] == "timeout")
-    skipped_count = sum(1 for result in results if result["status"] == "skipped")
-    cancelled_count = sum(1 for result in results if result["status"] == "cancelled")
-    return {
-        "status": _live_agent_turn_sequence_status(
-            answered_count,
-            timeout_count,
-            skipped_count,
-            cancelled_count,
-            turn_count=len(turns),
-        ),
-        "meeting_id": clean_meeting_id,
-        "turn_count": len(turns),
-        "answered_count": answered_count,
-        "timeout_count": timeout_count,
-        "skipped_count": skipped_count,
-        "cancelled_count": cancelled_count,
-        "stopped": stopped,
-        "stop_on_timeout": stop_on_timeout,
-        "timeout_seconds": timeout_seconds,
-        "results": results,
-    }
-
-
 def live_agent_review_checkpoint_payload(
     output_root: Path,
     process_supervisor: LiveAgentProcessSupervisor,
@@ -3812,18 +3689,6 @@ def _live_agent_action_path(path: str, action: str) -> str | None:
     return None
 
 
-def _meeting_live_agent_turn_request_path(path: str) -> str | None:
-    return _meeting_live_agent_turn_action_path(path, "request")
-
-
-def _meeting_live_agent_turn_call_path(path: str) -> str | None:
-    return _meeting_live_agent_turn_action_path(path, "call")
-
-
-def _meeting_live_agent_turn_sequence_path(path: str) -> str | None:
-    return _meeting_live_agent_turn_action_path(path, "sequence")
-
-
 def _meeting_live_agent_turn_rounds_path(path: str) -> str | None:
     return _meeting_live_agent_turn_action_path(path, "rounds")
 
@@ -3941,24 +3806,6 @@ def _payload_optional_int(value: object) -> int | None:
         return None
 
 
-def _payload_turn_sequence(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, list) or not value:
-        raise ValueError("Official turn sequence requires a non-empty turns list.")
-    if len(value) > MAX_LIVE_AGENT_SEQUENCE_TURNS:
-        raise ValueError(f"Official turn sequence supports at most {MAX_LIVE_AGENT_SEQUENCE_TURNS} turns.")
-    turns = []
-    for index, item in enumerate(value):
-        if not isinstance(item, dict):
-            raise ValueError(f"Official turn sequence item {index} must be an object.")
-        turns.append(dict(item))
-    return turns
-
-
-def _payload_turn_count(payload: dict[str, object]) -> int:
-    turns = payload.get("turns")
-    return len(turns) if isinstance(turns, list) else 0
-
-
 def _payload_role_ids(value: object) -> list[str]:
     if value is None:
         return []
@@ -3996,43 +3843,6 @@ def _safe_payload_strings(value: object, *, limit: int) -> list[str]:
         if text:
             strings.append(text)
     return strings
-
-
-def _validate_live_agent_turn_sequence(output_root: Path, meeting_id: str, turns: list[dict[str, object]]) -> str:
-    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
-    meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
-    if not clean_meeting_id or not meeting_dir.exists():
-        raise ValueError(f"Meeting {clean_meeting_id or '(blank)'} was not found.")
-    for index, turn in enumerate(turns):
-        agent_id = clean_lobby_text(turn.get("agent_id"), limit=64)
-        if not agent_id:
-            raise ValueError(f"Official turn sequence item {index} requires agent_id.")
-        agent = _live_agent_for_id(output_root, agent_id)
-        agent_meeting_id = str(agent.get("meeting_id") or "").strip()
-        if agent_meeting_id != clean_meeting_id:
-            raise ValueError(f"Live agent {agent_id} is not attached to meeting {clean_meeting_id}.")
-        content = clean_lobby_text(turn.get("content") or turn.get("message"), limit=4000)
-        if not content:
-            raise ValueError(f"Official turn sequence item {index} requires content.")
-    return clean_meeting_id
-
-
-def _skipped_turn_sequence_results(turns: list[dict[str, object]], *, start_index: int) -> list[dict[str, object]]:
-    skipped = []
-    for offset, turn in enumerate(turns):
-        skipped.append(
-            {
-                "index": start_index + offset,
-                "agent_id": clean_lobby_text(turn.get("agent_id"), limit=64),
-                "role_id": clean_lobby_text(turn.get("role_id"), limit=128),
-                "status": "skipped",
-                "request_event": None,
-                "reply_event": None,
-                "elapsed_seconds": 0.0,
-                "timeout_seconds": _payload_nonnegative_float(turn.get("timeout_seconds", turn.get("timeout")), 0.0),
-            }
-        )
-    return skipped
 
 
 def _turn_round_operation_details(round_result: dict[str, object], meeting_id: str) -> dict[str, object]:
@@ -4353,6 +4163,10 @@ def _make_handler(
             process_supervisor=live_agent_process_supervisor,
             turn_requester=live_agent_turn_request_payload,
         ),
+    )
+    register_legacy_official_turn_routes(
+        route_table,
+        service=LegacyOfficialTurnService(output_root),
     )
 
     def _enqueue_legacy_lobby_auto_turn(event: dict[str, object]) -> None:
@@ -5011,139 +4825,6 @@ def _make_handler(
                     details=_turn_preset_operation_details(preset_result, turn_preset_meeting_id),
                 )
                 self._send_json(preset_result)
-                return
-            turn_sequence_meeting_id = _meeting_live_agent_turn_sequence_path(parsed.path)
-            if turn_sequence_meeting_id is not None:
-                payload = self._operation_json_payload(operation="official_turn.sequence")
-                if payload is None:
-                    return
-                try:
-                    sequence = live_agent_turn_sequence_payload(output_root, turn_sequence_meeting_id, payload)
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="official_turn.sequence",
-                        status="failed",
-                        target_id=turn_sequence_meeting_id,
-                        error=str(error),
-                        details={
-                            "meeting_id": turn_sequence_meeting_id,
-                            "turn_count": _payload_turn_count(payload),
-                            "timeout_seconds": _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0),
-                            "stop_on_timeout": _payload_bool(payload.get("stop_on_timeout")),
-                        },
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="official_turn.sequence",
-                    status="success" if sequence.get("status") == "answered" else "degraded",
-                    target_id=turn_sequence_meeting_id,
-                    summary=(
-                        "completed live-agent official turn sequence"
-                        if sequence.get("status") == "answered"
-                        else "live-agent official turn sequence did not fully answer"
-                    ),
-                    details=_turn_sequence_operation_details(sequence, turn_sequence_meeting_id),
-                )
-                self._send_json(sequence)
-                return
-            turn_call_meeting_id = _meeting_live_agent_turn_call_path(parsed.path)
-            if turn_call_meeting_id is not None:
-                payload = self._operation_json_payload(operation="official_turn.call")
-                if payload is None:
-                    return
-                target_agent_id = str(payload.get("agent_id") or "").strip()
-                try:
-                    turn_call = live_agent_turn_call_payload(output_root, turn_call_meeting_id, payload)
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="official_turn.call",
-                        status="failed",
-                        target_id=target_agent_id,
-                        error=str(error),
-                        details={
-                            "meeting_id": turn_call_meeting_id,
-                            "target_agent_id": target_agent_id,
-                            "role_id": str(payload.get("role_id") or ""),
-                            "turn_id": str(payload.get("turn_id") or ""),
-                            "turn_index": _payload_optional_int(payload.get("turn_index")),
-                            "timeout_seconds": _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0),
-                        },
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                request_event = turn_call.get("request_event") if isinstance(turn_call.get("request_event"), dict) else {}
-                reply_event = turn_call.get("reply_event") if isinstance(turn_call.get("reply_event"), dict) else {}
-                result_status = str(turn_call.get("status") or "unknown")
-                record_live_agent_operation(
-                    output_root,
-                    operation="official_turn.call",
-                    status="success" if result_status == "answered" else "degraded",
-                    target_id=str(request_event.get("target_agent_id") or target_agent_id),
-                    summary=(
-                        "completed live-agent official turn"
-                        if result_status == "answered"
-                        else "timed out waiting for live-agent official turn"
-                    ),
-                    details={
-                        "meeting_id": turn_call_meeting_id,
-                        "target_agent_id": str(request_event.get("target_agent_id") or target_agent_id),
-                        "role_id": str(request_event.get("role_id") or ""),
-                        "turn_id": str(request_event.get("turn_id") or ""),
-                        "turn_index": _payload_optional_int(request_event.get("turn_index")),
-                        "source_event_id": str(request_event.get("id") or ""),
-                        "reply_event_id": str(reply_event.get("id") or ""),
-                        "timeout_seconds": _payload_nonnegative_float(turn_call.get("timeout_seconds"), 30.0),
-                        "elapsed_seconds": _payload_nonnegative_float(turn_call.get("elapsed_seconds"), 0.0),
-                    },
-                )
-                self._send_json(turn_call)
-                return
-            turn_request_meeting_id = _meeting_live_agent_turn_request_path(parsed.path)
-            if turn_request_meeting_id is not None:
-                payload = self._operation_json_payload(operation="official_turn.request")
-                if payload is None:
-                    return
-                target_agent_id = str(payload.get("agent_id") or "").strip()
-                try:
-                    turn_request = live_agent_turn_request_payload(output_root, turn_request_meeting_id, payload)
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="official_turn.request",
-                        status="failed",
-                        target_id=target_agent_id,
-                        error=str(error),
-                        details={
-                            "meeting_id": turn_request_meeting_id,
-                            "target_agent_id": target_agent_id,
-                            "role_id": str(payload.get("role_id") or ""),
-                            "turn_id": str(payload.get("turn_id") or ""),
-                            "turn_index": _payload_optional_int(payload.get("turn_index")),
-                        },
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                event = turn_request.get("event") if isinstance(turn_request.get("event"), dict) else {}
-                record_live_agent_operation(
-                    output_root,
-                    operation="official_turn.request",
-                    status="success",
-                    target_id=str(event.get("target_agent_id") or target_agent_id),
-                    summary="requested live-agent official turn",
-                    details={
-                        "meeting_id": turn_request_meeting_id,
-                        "target_agent_id": str(event.get("target_agent_id") or target_agent_id),
-                        "role_id": str(event.get("role_id") or ""),
-                        "turn_id": str(event.get("turn_id") or ""),
-                        "turn_index": _payload_optional_int(event.get("turn_index")),
-                        "source_event_id": str(event.get("id") or ""),
-                    },
-                )
-                self._send_json(turn_request)
                 return
             live_agent_engagement_id = _live_agent_action_path(parsed.path, "engagement")
             if live_agent_engagement_id is not None:
