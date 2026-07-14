@@ -81,6 +81,10 @@ class RoomTransaction(Protocol):
         status: str,
     ) -> dict[str, object]: ...
 
+    def attention_job(self, job_id: str) -> dict[str, object]: ...
+
+    def attention_lease(self, lease_id: str) -> dict[str, object]: ...
+
     def claim_attention_job(
         self,
         job_id: str,
@@ -96,6 +100,8 @@ class RoomTransaction(Protocol):
         *,
         status: str,
     ) -> dict[str, object]: ...
+
+    def cancel_attention_job(self, job_id: str) -> dict[str, object]: ...
 
 
 @runtime_checkable
@@ -270,6 +276,16 @@ class RoomRepository(Protocol):
         mode: str = "",
         status: str = "",
         after_seq: int = 0,
+        limit: int = 200,
+    ) -> list[dict[str, object]]: ...
+
+    def attention_job(self, room_id: str, job_id: str) -> dict[str, object]: ...
+
+    def attention_leases(
+        self,
+        room_id: str,
+        *,
+        status: str = "",
         limit: int = 200,
     ) -> list[dict[str, object]]: ...
 

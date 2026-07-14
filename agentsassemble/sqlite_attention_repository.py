@@ -8,6 +8,7 @@ from uuid import uuid4
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_attention import (
     ATTENTION_JOB_STATUSES,
+    ATTENTION_LEASE_STATUSES,
     ATTENTION_MODES,
     AgentAttentionState,
     AttentionEvaluation,
@@ -171,6 +172,43 @@ def read_attention_jobs(
     return [attention_job_from_row(row) for row in rows]
 
 
+def read_attention_job(
+    connection: sqlite3.Connection,
+    room_id: str,
+    job_id: str,
+) -> dict[str, object]:
+    row = connection.execute(
+        "SELECT * FROM attention_jobs WHERE room_id = ? AND job_id = ?",
+        (room_id, clean_lobby_text(job_id, limit=128)),
+    ).fetchone()
+    return attention_job_from_row(row) if row is not None else {}
+
+
+def read_attention_leases(
+    connection: sqlite3.Connection,
+    room_id: str,
+    *,
+    status: str = "",
+    limit: int = 200,
+) -> list[dict[str, object]]:
+    clauses = ["room_id = ?"]
+    parameters: list[object] = [room_id]
+    clean_status = clean_lobby_text(status, limit=32)
+    if clean_status:
+        if clean_status not in ATTENTION_LEASE_STATUSES:
+            raise ValueError(f"Unsupported attention lease status: {clean_status}")
+        clauses.append("status = ?")
+        parameters.append(clean_status)
+    parameters.append(min(1000, max(1, int(limit or 200))))
+    rows = connection.execute(
+        f"""SELECT * FROM attention_leases
+            WHERE {' AND '.join(clauses)}
+            ORDER BY acquired_at ASC LIMIT ?""",
+        tuple(parameters),
+    ).fetchall()
+    return [attention_lease_from_row(row) for row in rows]
+
+
 def claim_attention_job(
     connection: sqlite3.Connection,
     room_id: str,
@@ -301,6 +339,35 @@ def resolve_attention_lease(
         (job_status, released_at, room_id, lease["job_id"]),
     )
     return {**lease, "status": clean_status, "released_at": released_at}
+
+
+def cancel_attention_job(
+    connection: sqlite3.Connection,
+    room_id: str,
+    job_id: str,
+) -> dict[str, object]:
+    clean_job_id = clean_lobby_text(job_id, limit=128)
+    job = read_attention_job(connection, room_id, clean_job_id)
+    if not job:
+        raise AttentionLeaseConflict("attention_job_not_found")
+    if job["status"] == "cancelled":
+        return job
+    active = connection.execute(
+        """SELECT 1 FROM attention_leases
+           WHERE room_id = ? AND job_id = ? AND status = 'active'""",
+        (room_id, clean_job_id),
+    ).fetchone()
+    if active is not None:
+        raise AttentionLeaseConflict("attention_job_has_active_lease")
+    if job["status"] == "completed":
+        raise AttentionLeaseConflict("attention_job_already_completed")
+    updated_at = _now()
+    connection.execute(
+        """UPDATE attention_jobs SET status = 'cancelled', updated_at = ?
+           WHERE room_id = ? AND job_id = ?""",
+        (updated_at, room_id, clean_job_id),
+    )
+    return {**job, "status": "cancelled", "updated_at": updated_at}
 
 
 def read_attention_lease(

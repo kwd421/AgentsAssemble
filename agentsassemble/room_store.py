@@ -37,9 +37,12 @@ from agentsassemble.room_repository_records import (
     utc_now as _now,
 )
 from agentsassemble.sqlite_attention_repository import (
+    cancel_attention_job,
     claim_attention_job,
+    read_attention_job,
     read_attention_jobs,
     read_attention_lease,
+    read_attention_leases,
     read_attention_state,
     record_attention_evaluation,
     resolve_attention_lease,
@@ -179,6 +182,12 @@ class _SQLiteRoomTransaction:
             status=status,
         )
 
+    def attention_job(self, job_id: str) -> dict[str, object]:
+        return read_attention_job(self._connection, self._room_id, job_id)
+
+    def attention_lease(self, lease_id: str) -> dict[str, object]:
+        return read_attention_lease(self._connection, self._room_id, lease_id)
+
     def claim_attention_job(
         self,
         job_id: str,
@@ -203,6 +212,9 @@ class _SQLiteRoomTransaction:
             lease_id,
             status=status,
         )
+
+    def cancel_attention_job(self, job_id: str) -> dict[str, object]:
+        return cancel_attention_job(self._connection, self._room_id, job_id)
 
 
 class RoomStore:
@@ -302,6 +314,28 @@ class RoomStore:
                 mode=mode,
                 status=status,
                 after_seq=after_seq,
+                limit=limit,
+            )
+
+    def attention_job(self, room_id: str, job_id: str) -> dict[str, object]:
+        clean_room_id = _clean_room_id(room_id)
+        clean_job_id = clean_lobby_text(job_id, limit=128)
+        with self._connection() as connection:
+            return read_attention_job(connection, clean_room_id, clean_job_id)
+
+    def attention_leases(
+        self,
+        room_id: str,
+        *,
+        status: str = "",
+        limit: int = 200,
+    ) -> list[dict[str, object]]:
+        clean_room_id = _clean_room_id(room_id)
+        with self._connection() as connection:
+            return read_attention_leases(
+                connection,
+                clean_room_id,
+                status=status,
                 limit=limit,
             )
 

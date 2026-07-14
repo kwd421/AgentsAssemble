@@ -14,8 +14,11 @@ from psycopg.types.json import Jsonb
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.postgres_attention_repository import (
+    cancel_attention_job,
     claim_attention_job,
+    read_attention_job,
     read_attention_lease,
+    read_attention_leases,
     read_attention_jobs,
     read_attention_state,
     record_attention_evaluation,
@@ -172,6 +175,12 @@ class _PostgresRoomTransaction:
             status=status,
         )
 
+    def attention_job(self, job_id: str) -> dict[str, object]:
+        return read_attention_job(self._connection, self._room_id, job_id)
+
+    def attention_lease(self, lease_id: str) -> dict[str, object]:
+        return read_attention_lease(self._connection, self._room_id, lease_id)
+
     def claim_attention_job(
         self,
         job_id: str,
@@ -196,6 +205,9 @@ class _PostgresRoomTransaction:
             lease_id,
             status=status,
         )
+
+    def cancel_attention_job(self, job_id: str) -> dict[str, object]:
+        return cancel_attention_job(self._connection, self._room_id, job_id)
 
 
 class PostgresRoomRepository:
@@ -653,6 +665,28 @@ class PostgresRoomRepository:
                 mode=mode,
                 status=status,
                 after_seq=after_seq,
+                limit=limit,
+            )
+
+    def attention_job(self, room_id: str, job_id: str) -> dict[str, object]:
+        clean_room = clean_room_id(room_id)
+        clean_job = clean_lobby_text(job_id, limit=128)
+        with self._connection() as connection:
+            return read_attention_job(connection, clean_room, clean_job)
+
+    def attention_leases(
+        self,
+        room_id: str,
+        *,
+        status: str = "",
+        limit: int = 200,
+    ) -> list[dict[str, object]]:
+        clean_room = clean_room_id(room_id)
+        with self._connection() as connection:
+            return read_attention_leases(
+                connection,
+                clean_room,
+                status=status,
                 limit=limit,
             )
 

@@ -607,9 +607,18 @@ class RoomRepositoryContractMixin:
                 owner_id="worker-a",
                 lease_seconds=30,
             )
+            transaction_job = transaction.attention_job(job["job_id"])
+            transaction_lease = transaction.attention_lease(first["lease_id"])
 
         case = self._test_case()
         case.assertEqual(duplicate["lease_id"], first["lease_id"])
+        case.assertEqual(transaction_job["status"], "leased")
+        case.assertEqual(transaction_lease["lease_id"], first["lease_id"])
+        case.assertEqual(self.repository.attention_job("general", job["job_id"])["status"], "leased")
+        case.assertEqual(
+            [lease["lease_id"] for lease in self.repository.attention_leases("general", status="active")],
+            [first["lease_id"]],
+        )
         case.assertEqual(
             self.repository.attention_jobs("general", mode="active")[0]["status"],
             "leased",
@@ -639,6 +648,27 @@ class RoomRepositoryContractMixin:
         case.assertEqual(
             self.repository.attention_jobs("general", mode="active")[0]["status"],
             "completed",
+        )
+
+        with self.repository.transaction("general") as transaction:
+            pending_job = transaction.record_attention_evaluation(
+                AttentionEvaluation(
+                    room_id="general",
+                    source_event_id="event-cancel",
+                    source_seq=11,
+                    outcome="selected",
+                    selected_participant_id="agent-a",
+                    eligible_participant_ids=("agent-a",),
+                    reasons=("direct_mention",),
+                ),
+                mode="active",
+                status="pending",
+            )
+            cancelled_job = transaction.cancel_attention_job(pending_job["job_id"])
+        case.assertEqual(cancelled_job["status"], "cancelled")
+        case.assertEqual(
+            self.repository.attention_job("general", pending_job["job_id"])["status"],
+            "cancelled",
         )
 
     def test_expired_active_attention_lease_is_reclaimed_in_the_claim_transaction(self) -> None:

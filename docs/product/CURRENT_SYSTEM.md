@@ -139,6 +139,12 @@ Attention lease claim checks the persisted expiry. An elapsed active lease is
 expired and replaced in the same transaction; a rollback restores the prior
 lease, while an unexpired lease held by another worker remains exclusive.
 
+Server startup also runs bounded attention reconciliation. Missing or terminal
+job references are cleared, orphan jobs and leases are cancelled, elapsed
+leases become pending work, and removed participants cannot retain selected
+work. Repairs emit a durable audit event and appear in active-attention
+diagnostics; an unexpired lease from another generation is not stolen.
+
 ## Current Media Boundary
 
 The browser can upload and render room attachments. Media events and safe media

@@ -502,3 +502,12 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   injected rollback preserves the old lease and that a successful retry gives
   one new owner the lease; an unexpired different owner still conflicts. The
   next slice is Phase 2.3, bounded orphan-attention reconciliation.
+- 2026-07-14: `RoomAttentionReconciler` now performs bounded startup repair for
+  elapsed leases, active jobs without pending/active session references,
+  session references to missing or terminal jobs, and work selected for removed
+  participants. Every repaired room commits one `attention_reconciled` audit
+  event, and diagnostics expose counts plus truncation. The reconciler shares
+  backend-neutral job/lease query and cancellation operations; startup tests
+  prove the controller invokes it. Valid unexpired leases owned by another
+  generation remain exclusive. The next slice is Phase 2.4, durable monotonic
+  `room.observed` checkpoints.

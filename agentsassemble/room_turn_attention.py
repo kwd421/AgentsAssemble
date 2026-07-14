@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.native_cli_providers import NativeCliProviderSpec
-from agentsassemble.room_attention import AttentionLeaseConflict
+from agentsassemble.room_attention import AttentionLeaseConflict, attention_lease_is_expired
 from agentsassemble.room_repository import RoomRepository
 
 
@@ -199,7 +199,9 @@ class RoomTurnAttention:
         if not lease_id:
             return fields
         lease = self.repository.attention_lease(room_id, lease_id)
-        if lease.get("status") == "active":
+        if lease.get("status") == "active" and attention_lease_is_expired(
+            lease.get("expires_at")
+        ):
             with self.repository.transaction(room_id) as transaction:
                 transaction.resolve_attention_lease(lease_id, status="expired")
             fields["pending_attention_lease_id"] = ""
@@ -277,20 +279,8 @@ class RoomTurnAttention:
         session: dict[str, object],
     ) -> str:
         job_id = clean_lobby_text(session.get("pending_attention_job_id"), limit=128)
-        lease_id = clean_lobby_text(session.get("pending_attention_lease_id"), limit=128)
         if not job_id:
             raise AttentionLeaseConflict("attention_job_not_found")
-        if lease_id:
-            lease = self.repository.attention_lease(room_id, lease_id)
-            if (
-                lease.get("status") == "active"
-                and lease.get("job_id") == job_id
-                and lease.get("participant_id") == agent_id
-                and lease.get("owner_id") == self.owner_id
-            ):
-                return lease_id
-            if lease.get("status") == "active":
-                raise AttentionLeaseConflict("attention_job_already_leased")
         with self.repository.transaction(room_id) as transaction:
             lease = transaction.claim_attention_job(
                 job_id,

@@ -9,6 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
+from agentsassemble.room_attention import AttentionEvaluation
 from agentsassemble.room_realtime import (
     NativeCliProviderSpec,
     RoomCommandRejected,
@@ -279,6 +280,49 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             self.assertEqual(repository.room("general")["room_id"], "general")
         finally:
             controller.close()
+
+    def test_startup_reconciles_orphan_attention_and_exposes_audit_report(self):
+        profile_root = self.root / "attention-reconciliation"
+        store = RoomStore(profile_root)
+        store.create_room("general")
+        with store.transaction("general") as transaction:
+            transaction.upsert_participant(
+                {
+                    "participant_id": "orphan-agent",
+                    "display_name": "Orphan Agent",
+                    "participant_type": "agent",
+                }
+            )
+            job = transaction.record_attention_evaluation(
+                AttentionEvaluation(
+                    room_id="general",
+                    source_event_id="orphan-source",
+                    source_seq=7,
+                    outcome="selected",
+                    selected_participant_id="orphan-agent",
+                    eligible_participant_ids=("orphan-agent",),
+                    reasons=("ambient_human_message",),
+                ),
+                mode="active",
+                status="pending",
+            )
+
+        restarted = RoomRealtimeController(
+            profile_root,
+            providers=[],
+            bridge_manager=FakeBridgeManager(),
+            provider_catalog=self.provider_catalog,
+        )
+        try:
+            diagnostics = restarted.attention_active_diagnostics()["startup_reconciliation"]
+            self.assertGreaterEqual(diagnostics["repair_count"], 1)
+            self.assertFalse(diagnostics["truncated"])
+            self.assertEqual(
+                restarted.store.attention_job("general", job["job_id"])["status"],
+                "cancelled",
+            )
+        finally:
+            restarted.close()
 
     def test_restart_restores_durable_provider_profile_before_default_seed(self):
         profile_root = self.root / "durable-profile"

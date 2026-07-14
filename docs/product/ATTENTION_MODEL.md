@@ -111,6 +111,14 @@ after an assigned turn completes or declines.
    lease explicitly; blank visible messages are never control flow.
 7. Rollback publishes no attention event and advances no cursor.
 
+At startup, `RoomAttentionReconciler` inspects a bounded number of active jobs,
+leases, and session references per room. It expires elapsed leases, cancels
+jobs or leases with no pending/active session reference, clears session
+references to missing or terminal work, and cancels work selected for a removed
+participant. Repairs commit with one `attention_reconciled` audit event; the
+startup diagnostics report counts and whether any room exceeded the processing
+bound. An unexpired lease owned by another controller generation is preserved.
+
 SQLite and PostgreSQL implement the same attention transaction contract.
 PostgreSQL is explicitly configured rather than inferred, and hosted
 multi-worker operation still requires deployment-level lease and failover

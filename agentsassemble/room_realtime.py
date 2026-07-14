@@ -55,6 +55,7 @@ from agentsassemble.room_agent_lifecycle import (
     schedule_daemon_timer,
 )
 from agentsassemble.room_attention_coordinator import RoomAttentionCoordinator
+from agentsassemble.room_attention_reconciliation import RoomAttentionReconciler
 from agentsassemble.room_attention_policy import (
     normalize_shadow_attention_mode,
     should_record_shadow_attention,
@@ -215,6 +216,7 @@ class RoomRealtimeController:
             self._providers_by_room[self.default_room_id][agent_id] = spec
             self._ensure_provider_session(self.default_room_id, spec)
         self._reconcile_startup_sessions()
+        self._attention_reconciliation_report = RoomAttentionReconciler(self.store).reconcile()
 
     def _restore_server_owned_providers(self) -> None:
         """Rebuild startable provider specs from durable Agent Sessions."""
@@ -2117,6 +2119,7 @@ class RoomRealtimeController:
             "mode": "active",
             "error_count": self._attention_active_error_count,
             "last_error": self._attention_active_last_error,
+            "startup_reconciliation": self._attention_reconciliation_report.as_dict(),
         }
 
     def agent_floor_eligibility(self, room_id: str, agent_id: str) -> AgentFloorEligibility:
