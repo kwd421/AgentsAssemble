@@ -123,7 +123,7 @@ class RequestContext:
         length = int(self.headers.get("Content-Length", "0") or "0")
         try:
             payload = json.loads(self.handler.rfile.read(length).decode("utf-8")) if length else {}
-        except json.JSONDecodeError:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
             return None
         if not isinstance(payload, dict) and coerce_non_object:

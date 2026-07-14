@@ -980,3 +980,15 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   save through the running port-8765 production UI also changed every visible
   old `Makima` message to `Makima UI 확인` immediately and restored it to
   `Makima`. Phase 5.4 thin composition is again the next slice.
+- 2026-07-14: Phase 5.4 starts with the two retained legacy lobby commands.
+  `LegacyLobbyCommandService` now owns promotion payload policy, failed
+  promotion auditing, remote-bridge binding/provider resolution, server-side
+  speech identity, mute enforcement, and governed append behavior. The Router
+  owns `POST /api/lobby/promote` and `POST /api/lobby/remote`; `gui.py` keeps
+  only service construction and a late-bound compatibility wrapper so existing
+  requester patch points still work. The remote-bridge test now exercises the
+  actual HTTP route and verifies the server-authored participant identity and
+  returned lobby history. Promotion, remote policy, route ownership, and
+  parity checks pass. The seven deletion candidates remain untouched. The next
+  Phase 5.4 slice should move the current provider-login route separately from
+  legacy live-agent create/session mutations.

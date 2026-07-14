@@ -623,12 +623,32 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                 encoding="utf-8",
             )
             requester = FakeRequester()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
             previous_requester = gui.REMOTE_LOBBY_REQUESTER
             gui.REMOTE_LOBBY_REQUESTER = requester
             try:
-                event = send_lobby_message_to_remote_bridge(root, "친구야 준비됐어?", meeting_id="m1", speaker_name="나")
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/lobby/remote",
+                    data=json.dumps(
+                        {
+                            "message": "친구야 준비됐어?",
+                            "meeting_id": "m1",
+                            "speaker_name": "나",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    response_payload = json.loads(response.read().decode("utf-8"))
             finally:
                 gui.REMOTE_LOBBY_REQUESTER = previous_requester
+                server.shutdown()
+                server.server_close()
+
+            event = response_payload["event"]
 
             self.assertEqual(event["side"], "other-agent")
             self.assertEqual(event["name"], "공식이뭘알아")
@@ -637,6 +657,7 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
             self.assertEqual(event["kind"], "deploy")
             self.assertEqual(event["flow_meeting_id"], "m1")
             self.assertEqual(event["message"], "친구 Claude Code 준비됐습니다.")
+            self.assertEqual(response_payload["events"][0]["id"], event["id"])
             self.assertEqual(read_lobby(root)[0]["message"], "친구 Claude Code 준비됐습니다.")
             self.assertEqual(requester.calls[0]["headers"]["Authorization"], "Bearer bridge-token")
             self.assertEqual(requester.calls[0]["payload"]["step"], "lobby")

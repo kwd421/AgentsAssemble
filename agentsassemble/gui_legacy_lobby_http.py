@@ -10,12 +10,14 @@ from http import HTTPStatus
 
 from agentsassemble.attachments import AttachmentError
 from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.legacy_lobby_commands import LegacyLobbyCommandService
 from agentsassemble.meeting_events import clean_lobby_text
 
 
 def register_legacy_lobby_routes(
     router: Router,
     *,
+    commands: LegacyLobbyCommandService,
     enqueue_auto_turn: Callable[[dict[str, object]], None],
 ) -> None:
     """Register the compatibility lobby write and event-stream endpoints."""
@@ -60,3 +62,35 @@ def register_legacy_lobby_routes(
                 ),
             }
         )
+
+    @router.post("/api/lobby/promote")
+    def promote_lobby(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            commands.record_promotion_failure(
+                meeting_id="",
+                source_event_count=0,
+                error="Invalid JSON",
+            )
+            return
+        try:
+            result = commands.promote(payload)
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+        ctx.send_json(result)
+
+    @router.post("/api/lobby/remote")
+    def remote_lobby(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        try:
+            event = commands.send_remote(payload)
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+        read = ctx.deps.read_lobby
+        if not read:
+            raise RuntimeError("legacy lobby route dependencies are not configured")
+        ctx.send_json({"event": event, "events": read(ctx.deps.output_root)})
