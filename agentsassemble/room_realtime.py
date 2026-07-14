@@ -70,6 +70,7 @@ from agentsassemble.room_members import is_room_member_muted, remove_room_member
 from agentsassemble.provider_model_verification import model_verification_status as _model_verification_status
 from agentsassemble.room_projection import (
     public_event as _public_event,
+    public_participant,
     public_session,
     runtime_diagnostic_fields as _runtime_diagnostic_fields,
 )
@@ -225,6 +226,8 @@ class RoomRealtimeController:
             for session in self.store.sessions(room_id):
                 agent_id = clean_lobby_text(session.get("participant_id"), limit=128)
                 if not agent_id or agent_id in self._room_providers(room_id):
+                    continue
+                if self.store.participant(room_id, agent_id).get("status") == "kicked":
                     continue
                 process_ownership = _restorable_process_ownership(session)
                 if process_ownership != "server":
@@ -616,12 +619,15 @@ class RoomRealtimeController:
             "room": self.store.room(room_id),
             "participants": (
                 [
-                    participant
+                    public_participant(participant)
                     for participant in self.store.participants(room_id)
                     if participant.get("participant_id") == identity.get("agent_id")
                 ]
                 if bridge
-                else self.store.participants(room_id)
+                else [
+                    public_participant(participant)
+                    for participant in self.store.participants(room_id)
+                ]
             ),
             "agent_sessions": sessions,
             "active_turns": active_turns,
@@ -807,6 +813,51 @@ class RoomRealtimeController:
                     ),
                 )
                 self._schedule_participant_leave_cleanup(room_id, participant_id)
+                return ack
+        if action == "participant.kick":
+            self._require_capability(identity, "participant.kick")
+            with self._lock:
+                prior_ack = self._prior_command_ack(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                )
+                if prior_ack:
+                    return prior_ack
+                participant_id = self._payload_agent_id(payload)
+                operation_id = _external_effect_operation_id(
+                    room_id,
+                    _command_principal(identity),
+                    request_id,
+                    action,
+                )
+                participant = self._prepare_kick_intent(
+                    room_id,
+                    participant_id,
+                    operation_id=operation_id,
+                )
+                cleanup = self._apply_kick_effects(
+                    room_id,
+                    participant,
+                    operation_id=operation_id,
+                )
+                ack = self._execute_durable_command(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                    lambda unit: self._finalize_kick_durable(
+                        participant_id,
+                        operation_id=operation_id,
+                        cleanup=cleanup,
+                        unit=unit,
+                    ),
+                )
+                if participant.get("role") == "agent":
+                    self._providers_by_room.get(room_id, {}).pop(participant_id, None)
                 return ack
         if action == "message.final":
             self._require_bridge(identity)
@@ -1067,9 +1118,6 @@ class RoomRealtimeController:
                     operation_id=operation_id,
                 )
             return self._agent_lifecycle.interrupt(room_id, agent_id)
-        if action == "participant.kick":
-            self._require_capability(identity, "participant.kick")
-            return self._kick_participant(room_id, self._payload_agent_id(payload))
         self._require_bridge(identity)
         if action == "bridge.ready":
             return self._bridge_ready(identity, room_id, payload)
@@ -1392,34 +1440,113 @@ class RoomRealtimeController:
             )
         self._publish_session_state(room_id, self.store.session(room_id, agent_id))
 
-    def _kick_participant(self, room_id: str, participant_id: str) -> dict[str, object]:
+    def _prepare_kick_intent(
+        self,
+        room_id: str,
+        participant_id: str,
+        *,
+        operation_id: str,
+    ) -> dict[str, object]:
         if participant_id == "operator-local":
             raise RoomCommandRejected("The room host cannot be removed.", code="permission_denied")
         participant = self.store.participant(room_id, participant_id)
         if not participant:
             raise RoomCommandRejected(f"Participant {participant_id} was not found.", code="not_found")
+        if participant.get("status") == "kicked":
+            raise RoomCommandRejected("This participant was already removed.", code="already_kicked")
+        intent_action = clean_lobby_text(participant.get("moderation_intent_action"), limit=32)
+        intent_id = clean_lobby_text(participant.get("moderation_intent_id"), limit=128)
+        if intent_action:
+            if intent_action != "kick" or intent_id != operation_id:
+                raise RoomCommandRejected(
+                    "Another moderation operation is already in progress for this participant.",
+                    code="operation_in_progress",
+                )
+            return participant
+        return self.store.update_participant_fields(
+            room_id,
+            participant_id,
+            moderation_intent_action="kick",
+            moderation_intent_id=operation_id,
+            moderation_intent_status="prepared",
+            moderation_intent_cleanup_warning="",
+            moderation_intent_removed_member=False,
+            moderation_intent_revoked_sessions=0,
+        )
+
+    def _apply_kick_effects(
+        self,
+        room_id: str,
+        participant: dict[str, object],
+        *,
+        operation_id: str,
+    ) -> dict[str, object]:
+        participant_id = clean_lobby_text(participant.get("participant_id"), limit=128)
+        if clean_lobby_text(participant.get("moderation_intent_status"), limit=32) == "effect_applied":
+            return _kick_cleanup_from_participant(participant)
         stop_warning = ""
         if participant.get("role") == "agent":
             session = self.store.session(room_id, participant_id)
             if session and session.get("runtime_status") not in {"stopped", "available"}:
                 try:
-                    self._agent_lifecycle.stop(room_id, participant_id)
+                    self._agent_lifecycle.stop(
+                        room_id,
+                        participant_id,
+                        operation_id=f"{operation_id}:stop",
+                    )
                 except RoomCommandRejected as error:
                     # Moderation must still revoke room access even when an
                     # external process cannot prove its local cleanup.
                     stop_warning = f"{error.code}: {error}"
-            self._providers_by_room.get(room_id, {}).pop(participant_id, None)
         revoked_sessions = revoke_sessions_for_participant(room_id, participant_id)
         self.broker.disconnect_participant(room_id, participant_id)
         removed_member = remove_room_member(self.output_root, room_id, participant_id)
         leave_all_voice(room_id, participant_id)
-        updated = self.store.update_participant_fields(room_id, participant_id, status="kicked")
-        self.store.append_event(room_id, "participant_kicked", participant_id=participant_id)
+        updated = self.store.update_participant_fields(
+            room_id,
+            participant_id,
+            moderation_intent_status="effect_applied",
+            moderation_intent_cleanup_warning=stop_warning,
+            moderation_intent_removed_member=bool(removed_member),
+            moderation_intent_revoked_sessions=int(revoked_sessions),
+        )
+        return _kick_cleanup_from_participant(updated)
+
+    def _finalize_kick_durable(
+        self,
+        participant_id: str,
+        *,
+        operation_id: str,
+        cleanup: dict[str, object],
+        unit: RoomCommandUnitOfWork,
+    ) -> dict[str, object]:
+        participant = unit.participant(participant_id)
+        if not participant:
+            raise RoomCommandRejected(f"Participant {participant_id} was not found.", code="not_found")
+        if (
+            clean_lobby_text(participant.get("moderation_intent_action"), limit=32) != "kick"
+            or clean_lobby_text(participant.get("moderation_intent_id"), limit=128) != operation_id
+            or clean_lobby_text(participant.get("moderation_intent_status"), limit=32)
+            != "effect_applied"
+        ):
+            raise RoomCommandRejected(
+                "The participant kick cleanup has not completed.",
+                code="moderation_cleanup_incomplete",
+            )
+        updated = unit.update_participant_fields(
+            participant_id,
+            status="kicked",
+            moderation_intent_action="",
+            moderation_intent_id="",
+            moderation_intent_status="",
+            moderation_intent_cleanup_warning="",
+            moderation_intent_removed_member=False,
+            moderation_intent_revoked_sessions=0,
+        )
+        unit.append_event("participant_kicked", participant_id=participant_id)
         return {
-            "participant": updated,
-            "revoked_sessions": revoked_sessions,
-            "removed_member": bool(removed_member),
-            "cleanup_warning": stop_warning,
+            "participant": public_participant(updated),
+            **cleanup,
         }
 
     def _mute_participant_durable(
@@ -2096,6 +2223,17 @@ def _planned_muted_member(
         "created_at": "",
         "updated_at": "",
         "last_seen_at": "",
+    }
+
+
+def _kick_cleanup_from_participant(participant: dict[str, object]) -> dict[str, object]:
+    return {
+        "revoked_sessions": int(participant.get("moderation_intent_revoked_sessions") or 0),
+        "removed_member": bool(participant.get("moderation_intent_removed_member")),
+        "cleanup_warning": clean_lobby_text(
+            participant.get("moderation_intent_cleanup_warning"),
+            limit=1200,
+        ),
     }
 
 

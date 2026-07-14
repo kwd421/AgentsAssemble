@@ -55,9 +55,28 @@ _PRIVATE_EVENT_FIELDS = frozenset(
     }
 )
 
+_PRIVATE_PARTICIPANT_FIELDS = frozenset(
+    {
+        "moderation_intent_action",
+        "moderation_intent_id",
+        "moderation_intent_status",
+        "moderation_intent_cleanup_warning",
+        "moderation_intent_removed_member",
+        "moderation_intent_revoked_sessions",
+    }
+)
+
 
 def public_session(session: dict[str, object]) -> dict[str, object]:
     return {key: value for key, value in session.items() if key not in _PRIVATE_SESSION_FIELDS}
+
+
+def public_participant(participant: dict[str, object]) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in participant.items()
+        if key not in _PRIVATE_PARTICIPANT_FIELDS
+    }
 
 
 def public_event(event: RoomEvent | dict[str, object]) -> dict[str, object]:

@@ -2892,6 +2892,66 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertTrue(restarted["accepted"])
         self.assertEqual(RoomStore(self.root).participant("general", "codex")["status"], "detached")
 
+    def test_kick_retry_does_not_stop_agent_twice_after_ack_failure(self):
+        self._command("kick-retry-start", "agent.start", {"agent_id": "codex"})
+
+        with patch.object(
+            RoomCommandUnitOfWork,
+            "record_ack",
+            side_effect=RuntimeError("injected kick ack failure"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "injected kick ack failure"):
+                self._command(
+                    "kick-retry-request",
+                    "participant.kick",
+                    {"participant_id": "codex"},
+                )
+
+        prepared = self.controller.store.participant("general", "codex")
+        self.assertEqual(prepared["status"], "detached")
+        self.assertEqual(prepared["moderation_intent_status"], "effect_applied")
+        self.assertEqual(self.manager.stops, [("general", "codex")])
+        self.assertEqual(
+            [
+                event
+                for event in self.controller.store.read_events("general")
+                if event.get("type") == "participant_kicked"
+            ],
+            [],
+        )
+        public = next(
+            participant
+            for participant in self.controller.snapshot(HOST)["participants"]
+            if participant.get("participant_id") == "codex"
+        )
+        self.assertFalse(any(key.startswith("moderation_intent_") for key in public))
+
+        recovered = self._command(
+            "kick-retry-request",
+            "participant.kick",
+            {"participant_id": "codex"},
+        )
+        duplicate = self._command(
+            "kick-retry-request",
+            "participant.kick",
+            {"participant_id": "codex"},
+        )
+
+        self.assertTrue(recovered["accepted"])
+        self.assertTrue(duplicate["deduplicated"])
+        self.assertEqual(self.manager.stops, [("general", "codex")])
+        self.assertEqual(self.controller.store.participant("general", "codex")["status"], "kicked")
+        self.assertEqual(
+            len(
+                [
+                    event
+                    for event in self.controller.store.read_events("general")
+                    if event.get("type") == "participant_kicked"
+                ]
+            ),
+            1,
+        )
+
     def test_readd_reuses_stored_server_owned_session_profile(self):
         store = RoomStore(self.root)
         definition = native_cli_provider_definition("codex")

@@ -466,3 +466,13 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   process-started/handle-write-failed and process-stopped/final-write-failed
   windows. Lifecycle fields and owned handles are excluded from public session
   projection. The next slice is the participant-specific kick workflow.
+- 2026-07-14: `participant.kick` now uses a participant-scoped private intent.
+  Provider stop, credential revocation, socket disconnect, compatibility roster
+  cleanup, and voice cleanup complete before one command unit commits canonical
+  `kicked` state, one `participant_kicked` event, and its ACK. An ACK failure
+  leaves an explicit detached/effect-applied intermediate state; retry skips the
+  already-applied cleanup and cannot stop the provider twice. Agents with a
+  pending kick cannot be restarted, kicked agents are not restored into the
+  in-memory provider registry on controller startup, and moderation intent
+  fields are removed from browser and bridge participant snapshots. The next
+  slice is tombstone-scoped `room.delete` idempotency.

@@ -103,6 +103,13 @@ second process. External stop confirmation records the applied effect before
 releasing the waiting lifecycle command. Lifecycle intent IDs and owned handles
 remain server-private.
 
+`participant.kick` prepares a private participant-scoped moderation intent,
+then performs process/session/connection cleanup, and finally commits the
+canonical `kicked` state, one `participant_kicked` event, and the command ACK in
+one room transaction. If ACK persistence fails, retry observes the applied
+cleanup marker and does not stop the provider a second time. Moderation intent
+state is excluded from browser and Agent Bridge participant snapshots.
+
 An event-driven deterministic attention gate can record durable `selected`,
 `eligible`, or `silent` decisions. Shadow recording for existing `ordered` and
 `continuous` rooms is server-configured as `off | sample | full` and defaults to

@@ -4,6 +4,7 @@ from agentsassemble.room_projection import (
     merged_latency,
     public_activity,
     public_event,
+    public_participant,
     public_runtime_diagnostics,
     public_session,
     runtime_diagnostic_fields,
@@ -42,6 +43,28 @@ class RoomProjectionTests(unittest.TestCase):
             },
         )
         self.assertEqual(session["bridge_handle_id"], "private-handle")
+
+    def test_public_participant_removes_moderation_workflow_state(self):
+        participant = {
+            "participant_id": "agent-1",
+            "display_name": "Agent One",
+            "status": "joined",
+            "moderation_intent_action": "kick",
+            "moderation_intent_id": "private-operation",
+            "moderation_intent_status": "effect_applied",
+            "moderation_intent_cleanup_warning": "private cleanup detail",
+            "moderation_intent_removed_member": True,
+            "moderation_intent_revoked_sessions": 2,
+        }
+
+        self.assertEqual(
+            public_participant(participant),
+            {
+                "participant_id": "agent-1",
+                "display_name": "Agent One",
+                "status": "joined",
+            },
+        )
 
     def test_public_event_removes_private_fields_at_every_nested_level(self):
         event = {

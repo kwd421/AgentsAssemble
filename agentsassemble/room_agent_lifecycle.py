@@ -140,6 +140,11 @@ class RoomAgentLifecycle:
                 "This agent was removed from the room. Add it again before starting it.",
                 code="participant_kicked",
             )
+        if clean_lobby_text(participant.get("moderation_intent_action"), limit=32) == "kick":
+            raise RoomCommandRejected(
+                "This agent is being removed from the room.",
+                code="participant_kick_in_progress",
+            )
         if not session:
             self._ensure_provider_session(room_id, spec)
             session = self.store.session(room_id, agent_id)
