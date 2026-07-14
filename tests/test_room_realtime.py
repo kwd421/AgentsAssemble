@@ -917,6 +917,35 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(final["display_name"], "Luna")
         self.assertEqual(final["avatar_image_url"], "/api/room-media/avatar-luna")
 
+    def test_agent_profile_update_broadcast_preserves_explicit_avatar_clear(self):
+        self._command(
+            "profile-with-avatar",
+            "agent.configure",
+            {
+                "agent_id": "codex",
+                "display_name": "Luna",
+                "avatar_image_url": "/api/room-media/avatar-luna",
+            },
+        )
+        cleared = self._command(
+            "profile-clear-avatar",
+            "agent.configure",
+            {
+                "agent_id": "codex",
+                "display_name": "Luna",
+                "avatar_image_url": "",
+            },
+        )["result"]
+
+        self.assertEqual(cleared["participant"]["avatar_image_url"], "")
+        updates = [
+            event
+            for event in RoomStore(self.root).read_events("general")
+            if event["type"] == "participant_updated" and event.get("participant_id") == "codex"
+        ]
+        self.assertIn("avatar_image_url", updates[-1])
+        self.assertEqual(updates[-1]["avatar_image_url"], "")
+
     def test_continuous_room_mode_relays_one_speaker_at_a_time_and_stops_at_limit(self):
         self.controller.create_provider_session("general", _spec("peer"))
         codex_identity, codex_channel = self._connect_bridge("codex")

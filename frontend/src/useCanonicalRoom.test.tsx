@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { RoomAgentSession, RoomEvent } from "./api";
+import type { RoomAgentSession, RoomEvent, RoomMember } from "./api";
 import type {
   RoomCommandAck,
   RoomSocketHandle,
@@ -287,6 +287,116 @@ describe("useCanonicalRoom", () => {
       avatar_image_url: "/api/attachments/makima-avatar",
     });
     expect(result.current.participants[0].display_name).toBe("Makima");
+
+    act(() =>
+      handlers?.onRoomEvents?.([
+        {
+          ...event(3, "participant_updated"),
+          turn_id: undefined,
+          participant_id: "codex",
+          display_name: "Makima",
+          avatar_image_url: "",
+        },
+      ])
+    );
+
+    expect(result.current.timelineEvents[0].avatar_image_url).toBeUndefined();
+  });
+
+  it("applies the configure ACK to visible and later-loaded message history", async () => {
+    let handlers: RoomSocketHandlers | undefined;
+    const updatedParticipant: RoomMember = {
+      meeting_id: "general",
+      participant_id: "codex",
+      display_name: "Makima",
+      avatar_image_url: "/api/attachments/makima-avatar",
+      role: "agent",
+      participant_type: "local",
+      provider_kind: "antigravity_live_session",
+      connection_kind: "native_cli_bridge",
+      status: "joined",
+      source: "agent_session",
+      created_at: "",
+      updated_at: "2026-07-10T00:00:04Z",
+    };
+    const updatedSession = {
+      ...session(),
+      display_name: "Makima",
+      avatar_image_url: "/api/attachments/makima-avatar",
+    };
+    const command = vi.fn(async (action: string) => ({
+      op: "ack",
+      request_id: "req-profile",
+      accepted: true,
+      action,
+      result: {
+        status: "profile_updated",
+        participant: updatedParticipant,
+        agent_session: updatedSession,
+      },
+    }) satisfies RoomCommandAck);
+    const historyBefore = vi.fn().mockResolvedValue({
+      events: [{ ...event(1, "message_final", "older"), turn_id: "turn-older" }],
+      oldest_seq: 1,
+      last_seq: 1,
+      has_more_before: false,
+    });
+    const openSocket = vi.fn((_auth, _streams, nextHandlers: RoomSocketHandlers) => {
+      handlers = nextHandlers;
+      return {
+        close: vi.fn(),
+        ready: () => true,
+        command,
+        say: vi.fn(),
+        historyBefore,
+      } satisfies RoomSocketHandle;
+    });
+    const { result } = renderHook(() =>
+      useCanonicalRoom({
+        roomId: "general",
+        auth: { kind: "host", meetingId: "general" },
+        openSocket,
+      })
+    );
+    await waitFor(() => expect(openSocket).toHaveBeenCalledOnce());
+    const initial = snapshot([
+      { ...event(3, "message_final", "recent"), turn_id: "turn-recent" },
+    ]);
+    initial.participants = [
+      { ...updatedParticipant, display_name: "Antigravity CLI", avatar_image_url: "" },
+    ];
+
+    act(() => handlers?.onRoomSnapshot?.(initial));
+    expect(result.current.timelineEvents[0].name).toBe("Antigravity CLI");
+
+    await act(async () => {
+      await result.current.sendAgentConfigure(session(), {
+        display_name: "Makima",
+        avatar_image_url: "/api/attachments/makima-avatar",
+      });
+    });
+
+    expect(result.current.participants[0]).toMatchObject(updatedParticipant);
+    expect(result.current.agentSessions[0]).toMatchObject(updatedSession);
+    expect(result.current.timelineEvents[0]).toMatchObject({
+      name: "Makima",
+      avatar_image_url: "/api/attachments/makima-avatar",
+    });
+
+    await act(async () => {
+      await result.current.loadHistory(3);
+    });
+
+    expect(result.current.timelineEvents.map((item) => item.message)).toEqual(["older", "recent"]);
+    expect(result.current.timelineEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Makima",
+          avatar_image_url: "/api/attachments/makima-avatar",
+        }),
+      ])
+    );
+    expect(result.current.timelineEvents.every((item) => item.name === "Makima")).toBe(true);
   });
 
   it("ignores late callbacks from the room socket it already replaced", async () => {

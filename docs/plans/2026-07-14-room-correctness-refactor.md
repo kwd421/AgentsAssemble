@@ -407,3 +407,9 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
 
 - 2026-07-14: plan created from review of `cbdfca1a`; autonomous feature growth
   frozen; identity-history defect added as the first behavior fix.
+- 2026-07-14: identity repair implemented locally. `agent.configure` now applies
+  the canonical participant/session returned in its ACK immediately instead of
+  relying only on a later WebSocket broadcast. `participant_updated` preserves
+  an explicit empty avatar so another client can observe avatar removal. Hook,
+  projection, component, backend, build, and real frontend rename/reload checks
+  cover visible and later-loaded history. Commit and wider verification remain.

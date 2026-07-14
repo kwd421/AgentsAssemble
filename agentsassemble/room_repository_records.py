@@ -176,6 +176,8 @@ def build_room_event(
         if key not in {"v", "id", "seq", "room_id", "type", "created_at", "actor", "visibility"}
         and value not in (None, "", [], {})
     }
+    if clean_type == "participant_updated" and "avatar_image_url" in payload:
+        clean_payload["avatar_image_url"] = clean_lobby_text(payload.get("avatar_image_url"), limit=4096)
     participant_id = clean_lobby_text(payload.get("participant_id") or payload.get("actor_id"), limit=128)
     participant_type = clean_lobby_text(
         payload.get("participant_type") or payload.get("actor_type"),

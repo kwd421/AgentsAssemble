@@ -70,6 +70,36 @@ function upsertAgentSessions(current: RoomAgentSession[], incoming: RoomAgentSes
   return [...byId.values()];
 }
 
+function normalizeRoomParticipant(participant: RoomMember, roomId: string): RoomMember {
+  return {
+    ...participant,
+    meeting_id: participant.meeting_id || roomId,
+    provider_kind: participant.provider_kind || "",
+    connection_kind: participant.connection_kind || "",
+    source:
+      participant.source ||
+      (participant.role !== "human" ? "agent_session" : "room"),
+    created_at: participant.created_at || "",
+    updated_at: participant.updated_at || "",
+  };
+}
+
+function upsertRoomParticipants(
+  current: RoomMember[],
+  incoming: RoomMember[],
+  roomId: string
+) {
+  const byId = new Map(current.map((participant) => [participant.participant_id, participant]));
+  incoming.forEach((participant) => {
+    const existing = byId.get(participant.participant_id);
+    byId.set(
+      participant.participant_id,
+      normalizeRoomParticipant({ ...existing, ...participant }, roomId)
+    );
+  });
+  return [...byId.values()];
+}
+
 function applyParticipantProfileEvents(current: RoomMember[], incoming: RoomEvent[]) {
   const updatesByParticipant = new Map<string, RoomEvent>();
   incoming.forEach((event) => {
@@ -212,17 +242,9 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
         if (!connectionIsCurrent()) return;
         setParticipantsByRoom((previous) => ({
           ...previous,
-          [roomId]: (snapshot.participants || []).map((participant) => ({
-            ...participant,
-            meeting_id: participant.meeting_id || roomId,
-            provider_kind: participant.provider_kind || "",
-            connection_kind: participant.connection_kind || "",
-            source:
-              participant.source ||
-              (participant.role !== "human" ? "agent_session" : "room"),
-            created_at: participant.created_at || "",
-            updated_at: participant.updated_at || "",
-          })),
+          [roomId]: (snapshot.participants || []).map((participant) =>
+            normalizeRoomParticipant(participant, roomId)
+          ),
         }));
         setSessionsByRoom((previous) => ({
           ...previous,
@@ -349,13 +371,33 @@ export function useCanonicalRoom(options: UseCanonicalRoomOptions) {
   const sendAgentConfigure = useCallback(
     async (session: RoomAgentSession, settings: Record<string, string>) => {
       if (!socket) throw new Error("방 연결이 준비되지 않았습니다.");
-      await socket.command("agent.configure", {
+      const ack = await socket.command("agent.configure", {
         agent_id: session.participant_id,
         catalog_revision: activeCatalogRevision,
         ...settings,
       });
+      const result = ack.result || {};
+      const updatedParticipant = result.participant as RoomMember | undefined;
+      const updatedSession = result.agent_session as RoomAgentSession | undefined;
+      if (updatedParticipant?.participant_id) {
+        setParticipantsByRoom((previous) => ({
+          ...previous,
+          [roomId]: upsertRoomParticipants(
+            previous[roomId] || [],
+            [updatedParticipant],
+            roomId
+          ),
+        }));
+        setMembershipRevision((previous) => previous + 1);
+      }
+      if (updatedSession?.session_id) {
+        setSessionsByRoom((previous) => ({
+          ...previous,
+          [roomId]: upsertAgentSessions(previous[roomId] || [], [updatedSession]),
+        }));
+      }
     },
-    [activeCatalogRevision, socket]
+    [activeCatalogRevision, roomId, socket]
   );
 
   const sendParticipantKick = useCallback(

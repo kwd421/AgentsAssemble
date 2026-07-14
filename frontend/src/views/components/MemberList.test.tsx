@@ -115,7 +115,12 @@ describe("MemberList component wiring", () => {
   it("moves a legacy local profile into canonical Agent Session state on save", async () => {
     localStorage.setItem(
       "agentsassemble.agentProfiles.v1",
-      JSON.stringify({ "agent-1": { displayName: "Makima" } })
+      JSON.stringify({
+        "agent-1": {
+          displayName: "Makima",
+          avatarImage: "/api/attachments/makima-avatar?view=1",
+        },
+      })
     );
     const onAgentConfigure = vi.fn().mockResolvedValue(undefined);
 
@@ -139,7 +144,7 @@ describe("MemberList component wiring", () => {
     await waitFor(() =>
       expect(onAgentConfigure).toHaveBeenCalledWith(SESSION, {
         display_name: "Makima",
-        avatar_image_url: "",
+        avatar_image_url: "/api/attachments/makima-avatar?view=1",
       })
     );
     const savedProfiles = JSON.parse(
