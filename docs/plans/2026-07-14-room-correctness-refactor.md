@@ -423,3 +423,8 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   text and server-trusted trigger metadata. Votes, system/lifecycle kinds,
   empty text, and unsupported media-only events persist as silent decisions
   without waking a provider.
+- 2026-07-14: repository contract coverage now injects failures after domain
+  mutation, event append, session update, ACK construction, command-result
+  write, and immediately before commit. Every backend must roll each window
+  back without publishing an event or consuming a sequence, then accept one
+  duplicate-free retry.

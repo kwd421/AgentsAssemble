@@ -11,6 +11,11 @@ from agentsassemble.room_attention import (
 from agentsassemble.room_repository import RoomRepository
 
 
+def _raise_at(actual: str, expected: str) -> None:
+    if actual == expected:
+        raise RuntimeError(expected)
+
+
 class RoomRepositoryContractMixin:
     """Backend-neutral behavior required from every room repository."""
 
@@ -125,6 +130,107 @@ class RoomRepositoryContractMixin:
         case.assertEqual(self.repository.command_record("general", "host-a", "rolled-back-request"), {})
         case.assertEqual(received, [])
         case.assertEqual(event["seq"], baseline_sequence + 1)
+
+    def test_command_crash_windows_roll_back_and_retry_without_duplicates(self) -> None:
+        failure_points = (
+            "after_domain_mutation",
+            "after_event_append",
+            "after_session_update",
+            "after_ack_construction",
+            "after_command_result",
+            "before_commit",
+        )
+        case = self._test_case()
+
+        for index, failure_point in enumerate(failure_points, start=1):
+            with case.subTest(failure_point=failure_point):
+                room_id = f"command-crash-{index}"
+                request_id = f"request-{index}"
+                self.repository.create_room(room_id)
+                baseline_seq = self.repository.latest_event_sequence(room_id)
+                received: list[dict[str, object]] = []
+                remove_listener = self.repository.add_event_listener(room_id, received.append)
+                try:
+                    with case.assertRaisesRegex(RuntimeError, failure_point):
+                        self._run_command_transaction(
+                            room_id,
+                            request_id=request_id,
+                            failure_point=failure_point,
+                        )
+
+                    case.assertEqual(received, [])
+                    case.assertEqual(self.repository.participant(room_id, "agent-a"), {})
+                    case.assertEqual(self.repository.session(room_id, "session-a"), {})
+                    case.assertEqual(
+                        self.repository.command_record(room_id, "host-a", request_id),
+                        {},
+                    )
+                    case.assertEqual(self.repository.latest_event_sequence(room_id), baseline_seq)
+
+                    committed = self._run_command_transaction(room_id, request_id=request_id)
+                finally:
+                    remove_listener()
+
+                case.assertEqual([event["id"] for event in received], [committed["event"]["id"]])
+                case.assertEqual(
+                    self.repository.event_count(room_id, event_types=("message_final",)),
+                    1,
+                )
+                case.assertEqual(
+                    self.repository.command_record(room_id, "host-a", request_id)["result"],
+                    committed["ack"],
+                )
+
+    def _run_command_transaction(
+        self,
+        room_id: str,
+        *,
+        request_id: str,
+        failure_point: str = "",
+    ) -> dict[str, dict[str, object]]:
+        with self.repository.transaction(room_id) as transaction:
+            transaction.upsert_participant(
+                {
+                    "participant_id": "agent-a",
+                    "display_name": "Agent A",
+                    "participant_type": "agent",
+                    "status": "joined",
+                }
+            )
+            _raise_at(failure_point, "after_domain_mutation")
+            event = transaction.append_event(
+                "message_final",
+                participant_id="agent-a",
+                participant_type="agent",
+                content="atomic reply",
+            )
+            _raise_at(failure_point, "after_event_append")
+            transaction.upsert_session(
+                {
+                    "session_id": "session-a",
+                    "participant_id": "agent-a",
+                    "status": "attached",
+                    "runtime_status": "idle",
+                }
+            )
+            _raise_at(failure_point, "after_session_update")
+            ack = {
+                "op": "ack",
+                "request_id": request_id,
+                "accepted": True,
+                "result": {"event": event},
+            }
+            _raise_at(failure_point, "after_ack_construction")
+            transaction.record_command_result(
+                request_id,
+                ack,
+                principal_id="host-a",
+                action="message.send",
+                payload_hash="payload-hash",
+            )
+            _raise_at(failure_point, "after_command_result")
+            _raise_at(failure_point, "before_commit")
+        return {"event": event, "ack": ack}
 
     def test_identity_updates_do_not_rewrite_past_event_actor(self) -> None:
         self.repository.create_room("general")
