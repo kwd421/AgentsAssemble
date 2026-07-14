@@ -85,10 +85,6 @@ class AgentAttendee:
             orientation = _orientation_text(joined.get("guide"))
             while not self._stop.is_set():
                 client = connect_room_ws(self.server_url, session_token, ["room_events"], timeout=10.0)
-                try:
-                    client.sock.settimeout(0.25)
-                except (AttributeError, OSError):
-                    pass
                 bridge = RoomAgentBridge(
                     client,
                     self._runtime,

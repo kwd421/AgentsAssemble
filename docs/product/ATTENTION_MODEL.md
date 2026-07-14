@@ -96,6 +96,15 @@ to it with `room.observed`. This advances only `last_observed_seq`; it does not
 invoke the provider or spend provider tokens. Provider context advances only
 after an assigned turn completes or declines.
 
+The bridge coalesces observation progress for at most 20 events or one second,
+whichever comes first, and flushes pending progress before a graceful socket
+close. It advances its local reported cursor only after the correlated ACK. A
+greater sequence advances the durable checkpoint, while equal or lower retries
+are no-ops and a sequence ahead of the canonical room stream is rejected.
+These lightweight checkpoints bypass the general command-result table. The
+one-second WebSocket receive timeout services this local flush deadline; it
+does not issue a network poll or invoke a provider.
+
 ## State and Commit Rules
 
 1. Source room event commit happens first.

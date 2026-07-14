@@ -522,6 +522,30 @@ class RoomRepositoryContractMixin:
                     status="completed",
                 )
 
+    def test_observed_checkpoint_is_monotonic_and_preserves_other_cursors(self) -> None:
+        self.repository.create_room("general")
+        with self.repository.transaction("general") as transaction:
+            transaction.upsert_participant(
+                {
+                    "participant_id": "agent-a",
+                    "display_name": "Agent A",
+                    "participant_type": "agent",
+                }
+            )
+            transaction.advance_attention_state("agent-a", attention_evaluated_seq=7)
+            advanced = transaction.checkpoint_observed_seq("agent-a", 8)
+        with self.repository.transaction("general") as transaction:
+            equal = transaction.checkpoint_observed_seq("agent-a", 8)
+            stale = transaction.checkpoint_observed_seq("agent-a", 3)
+            latest = transaction.checkpoint_observed_seq("agent-a", 11)
+
+        case = self._test_case()
+        case.assertEqual(advanced.last_observed_seq, 8)
+        case.assertEqual(equal.last_observed_seq, 8)
+        case.assertEqual(stale.last_observed_seq, 8)
+        case.assertEqual(latest.last_observed_seq, 11)
+        case.assertEqual(latest.last_attention_evaluated_seq, 7)
+
     def test_attention_writes_roll_back_and_room_delete_cascades(self) -> None:
         self.repository.create_room("general")
         with self.repository.transaction("general") as transaction:

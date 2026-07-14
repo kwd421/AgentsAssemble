@@ -172,7 +172,7 @@ class RoomTurnCoordinator:
                 code="observed_seq_invalid",
             )
         with self.store.transaction(room_id) as transaction:
-            state = transaction.advance_attention_state(agent_id, observed_seq=through_seq)
+            state = transaction.checkpoint_observed_seq(agent_id, through_seq)
         return {"observed_through_seq": state.last_observed_seq}
 
     def queue_event(

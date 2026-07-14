@@ -73,6 +73,12 @@ class RoomTransaction(Protocol):
         spoke_seq: int | None = None,
     ) -> AgentAttentionState: ...
 
+    def checkpoint_observed_seq(
+        self,
+        participant_id: str,
+        observed_seq: int,
+    ) -> AgentAttentionState: ...
+
     def record_attention_evaluation(
         self,
         evaluation: AttentionEvaluation,

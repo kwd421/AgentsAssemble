@@ -38,6 +38,7 @@ from agentsassemble.room_repository_records import (
 )
 from agentsassemble.sqlite_attention_repository import (
     cancel_attention_job,
+    checkpoint_observed_seq,
     claim_attention_job,
     read_attention_job,
     read_attention_jobs,
@@ -165,6 +166,18 @@ class _SQLiteRoomTransaction:
             spoke_seq=spoke_seq,
         )
         return write_attention_state(self._connection, updated)
+
+    def checkpoint_observed_seq(
+        self,
+        participant_id: str,
+        observed_seq: int,
+    ) -> AgentAttentionState:
+        return checkpoint_observed_seq(
+            self._connection,
+            self._room_id,
+            _clean_participant_id(participant_id),
+            observed_seq,
+        )
 
     def record_attention_evaluation(
         self,

@@ -145,6 +145,14 @@ leases become pending work, and removed participants cannot retain selected
 work. Repairs emit a durable audit event and appear in active-attention
 diagnostics; an unexpired lease from another generation is not stolen.
 
+Agent Bridges report received room progress through coalesced `room.observed`
+checkpoints. The server keeps the greatest acknowledged sequence atomically;
+equal or stale retries do nothing, future sequences are rejected, and these
+high-frequency checkpoints do not fill the general command-result table. The
+bridge changes its local cursor only after ACK and flushes pending progress on
+graceful disconnect. Its one-second socket read timeout is a local deadline,
+not room polling and not a provider invocation.
+
 ## Current Media Boundary
 
 The browser can upload and render room attachments. Media events and safe media

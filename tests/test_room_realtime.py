@@ -639,6 +639,18 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             {"through_seq": event["seq"]},
             identity,
         )["result"]
+        equal = self._command(
+            "observed-equal",
+            "room.observed",
+            {"through_seq": event["seq"]},
+            identity,
+        )["result"]
+        stale = self._command(
+            "observed-stale",
+            "room.observed",
+            {"through_seq": max(1, int(event["seq"]) - 1)},
+            identity,
+        )["result"]
         with self.assertRaises(RoomCommandRejected) as rejected:
             self._command(
                 "observed-ahead",
@@ -648,9 +660,19 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             )
 
         self.assertEqual(result["observed_through_seq"], event["seq"])
+        self.assertEqual(equal["observed_through_seq"], event["seq"])
+        self.assertEqual(stale["observed_through_seq"], event["seq"])
         self.assertEqual(
             self.controller.store.attention_state("general", "codex").last_observed_seq,
             event["seq"],
+        )
+        self.assertEqual(
+            self.controller.store.command_record(
+                "general",
+                "agent_bridge:codex",
+                "observed-ack",
+            ),
+            {},
         )
         self.assertEqual(rejected.exception.code, "observed_seq_invalid")
 

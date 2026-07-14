@@ -727,6 +727,18 @@ class RoomRealtimeController:
                         tombstone=deleted,
                     )
         self.ensure_room(room_id)
+        if action == "room.observed":
+            self._require_bridge(identity)
+            with self._lock:
+                result = self._turn_coordinator.observe_room(identity, room_id, payload)
+            return {
+                "op": "ack",
+                "request_id": request_id,
+                "accepted": True,
+                "action": action,
+                "result": result,
+                "deduplicated": False,
+            }
         if action == "room.delete":
             with self._lock:
                 prior_ack = self._prior_command_ack(
@@ -1158,8 +1170,6 @@ class RoomRealtimeController:
             return self._bridge_ready(identity, room_id, payload)
         if action == "bridge.health":
             return self._bridge_health(identity, room_id, payload)
-        if action == "room.observed":
-            return self._turn_coordinator.observe_room(identity, room_id, payload)
         if action == "turn.state":
             return self._turn_coordinator.turn_state(identity, room_id, payload)
         if action == "turn.decline":

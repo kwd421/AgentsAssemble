@@ -71,6 +71,26 @@ def write_attention_state(
     return state
 
 
+def checkpoint_observed_seq(
+    connection: sqlite3.Connection,
+    room_id: str,
+    participant_id: str,
+    observed_seq: int,
+) -> AgentAttentionState:
+    """Advance the observed cursor without rejecting equal or stale retries.
+
+    The caller owns a SQLite ``BEGIN IMMEDIATE`` transaction, so the read and
+    conditional write are serialized with other room writers.
+    """
+    clean_participant_id = clean_lobby_text(participant_id, limit=128)
+    checkpoint = max(0, int(observed_seq))
+    current = read_attention_state(connection, room_id, clean_participant_id)
+    if checkpoint <= current.last_observed_seq:
+        return current
+    updated = current.advance(observed_seq=checkpoint)
+    return write_attention_state(connection, updated)
+
+
 def record_attention_evaluation(
     connection: sqlite3.Connection,
     evaluation: AttentionEvaluation,

@@ -130,6 +130,14 @@ class WsRoomClient:
         )
         return correlated_id
 
+    def set_receive_timeout(self, seconds: float) -> None:
+        """Bound a blocking receive so callers can service local deadlines.
+
+        This does not send a network request or poll the server; it only changes
+        how long the existing WebSocket read may block while no frame arrives.
+        """
+        self.sock.settimeout(max(0.05, float(seconds)))
+
     def _send(self, obj: dict) -> None:
         with self._send_lock:
             self.sock.sendall(encode_client_text(json.dumps(obj)))

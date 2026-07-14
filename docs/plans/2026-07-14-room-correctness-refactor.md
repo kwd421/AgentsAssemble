@@ -511,3 +511,12 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   prove the controller invokes it. Valid unexpired leases owned by another
   generation remain exclusive. The next slice is Phase 2.4, durable monotonic
   `room.observed` checkpoints.
+- 2026-07-14: `room.observed` now bypasses the general command-result table and
+  writes a backend-neutral monotonic checkpoint. SQLite serializes it in the
+  room write transaction; PostgreSQL uses an atomic `GREATEST` upsert. Equal or
+  lower reports are no-ops and future reports are rejected. Agent Bridges batch
+  up to 20 events or one second, wait for the correlated ACK before advancing
+  their local cursor, and force-flush before graceful disconnect. The former
+  0.25-second receive loop was removed; the one-second blocking socket timeout
+  only services the local flush deadline and sends no poll. The next slice is
+  Phase 2.5, provider-sync cursor authority and compatibility parity.

@@ -73,6 +73,45 @@ def write_attention_state(
     return state
 
 
+def checkpoint_observed_seq(
+    connection: Connection,
+    room_id: str,
+    participant_id: str,
+    observed_seq: int,
+) -> AgentAttentionState:
+    """Atomically keep the greatest acknowledged room sequence."""
+    clean_participant_id = clean_lobby_text(participant_id, limit=128)
+    checkpoint = max(0, int(observed_seq))
+    row = connection.execute(
+        """INSERT INTO agent_attention_state(
+               room_id, participant_id, last_observed_seq,
+               last_attention_evaluated_seq, last_provider_sync_seq,
+               last_spoke_seq, updated_at
+           ) VALUES(%s, %s, %s, 0, 0, 0, %s)
+           ON CONFLICT(room_id, participant_id) DO UPDATE SET
+               last_observed_seq = GREATEST(
+                   agent_attention_state.last_observed_seq,
+                   excluded.last_observed_seq
+               ),
+               updated_at = CASE
+                   WHEN agent_attention_state.last_observed_seq < excluded.last_observed_seq
+                   THEN excluded.updated_at
+                   ELSE agent_attention_state.updated_at
+               END
+           RETURNING last_observed_seq, last_attention_evaluated_seq,
+                     last_provider_sync_seq, last_spoke_seq""",
+        (room_id, clean_participant_id, checkpoint, utc_now()),
+    ).fetchone()
+    return AgentAttentionState(
+        room_id=room_id,
+        participant_id=clean_participant_id,
+        last_observed_seq=int(row["last_observed_seq"] or 0),
+        last_attention_evaluated_seq=int(row["last_attention_evaluated_seq"] or 0),
+        last_provider_sync_seq=int(row["last_provider_sync_seq"] or 0),
+        last_spoke_seq=int(row["last_spoke_seq"] or 0),
+    )
+
+
 def record_attention_evaluation(
     connection: Connection,
     evaluation: AttentionEvaluation,
