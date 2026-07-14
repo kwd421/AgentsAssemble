@@ -51,6 +51,9 @@ describe("RoomSettingsModal conversation mode", () => {
     await userEvent.click(screen.getByRole("radio", { name: /자유 토론/ }));
 
     expect(onConversationModeChange).toHaveBeenCalledWith("ambient");
+    expect(
+      screen.getByText(/사람처럼 방을 계속 지켜보는 기능이 아닙니다/)
+    ).toBeTruthy();
   });
 
   it("shows legacy continuous mode only for a room that already uses it", () => {

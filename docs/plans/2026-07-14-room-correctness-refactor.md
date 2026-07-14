@@ -412,4 +412,6 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   relying only on a later WebSocket broadcast. `participant_updated` preserves
   an explicit empty avatar so another client can observe avatar removal. Hook,
   projection, component, backend, build, and real frontend rename/reload checks
-  cover visible and later-loaded history. Commit and wider verification remain.
+  cover visible and later-loaded history. Committed as `336fb13`.
+- 2026-07-14: ambient discussion UI relabeled as experimental bounded server
+  relay, explicitly distinguishing it from human-like autonomous room watching.
