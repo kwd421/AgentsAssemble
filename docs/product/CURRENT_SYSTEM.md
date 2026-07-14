@@ -79,6 +79,14 @@ the visible `message_final`, its ACK, and the idempotency record. Repository
 listeners publish and route that event only after commit, so a failed command
 result write cannot leave a visible message or provider turn behind.
 
+Profile-only `agent.configure`, canonical participant mute, and the durable
+part of participant leave use the same command transaction boundary. Agent
+name/avatar changes update participant, Agent Session, `participant_updated`,
+and ACK together. Compatibility roster synchronization, voice cleanup, token
+revocation, and other process/network effects run only after commit; canonical
+participant mute state takes precedence over an older compatibility roster
+copy.
+
 An event-driven deterministic attention gate can record durable `selected`,
 `eligible`, or `silent` decisions. Shadow recording for existing `ordered` and
 `continuous` rooms is server-configured as `off | sample | full` and defaults to

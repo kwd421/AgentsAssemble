@@ -18,6 +18,7 @@ from agentsassemble.room_realtime import (
     validate_native_cli_provider_spec,
 )
 from agentsassemble.room_command_uow import RoomCommandUnitOfWork
+from agentsassemble.room_members import is_room_member_muted, set_room_member_muted
 from agentsassemble.room_store import RoomStore
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.room_settings import update_room_settings
@@ -999,6 +1000,42 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertIn("avatar_image_url", updates[-1])
         self.assertEqual(updates[-1]["avatar_image_url"], "")
 
+    def test_agent_profile_update_rolls_back_when_ack_recording_fails(self):
+        store = RoomStore(self.root)
+        before_participant = store.participant("general", "codex")
+        before_session = store.session("general", "codex")
+        payload = {
+            "agent_id": "codex",
+            "display_name": "Atomic Luna",
+            "avatar_image_url": "/api/room-media/atomic-luna",
+        }
+
+        with patch.object(RoomCommandUnitOfWork, "record_ack", side_effect=RuntimeError("injected")):
+            with self.assertRaisesRegex(RuntimeError, "injected"):
+                self._command("atomic-profile", "agent.configure", payload)
+
+        self.assertEqual(store.participant("general", "codex"), before_participant)
+        self.assertEqual(store.session("general", "codex"), before_session)
+        self.assertFalse(
+            any(
+                event.get("type") == "participant_updated"
+                and event.get("display_name") == "Atomic Luna"
+                for event in store.read_events("general")
+            )
+        )
+
+        saved = self._command("atomic-profile", "agent.configure", payload)
+        duplicate = self._command("atomic-profile", "agent.configure", payload)
+        self.assertEqual(saved["result"]["participant"]["display_name"], "Atomic Luna")
+        self.assertTrue(duplicate["deduplicated"])
+        updates = [
+            event
+            for event in store.read_events("general")
+            if event.get("type") == "participant_updated"
+            and event.get("display_name") == "Atomic Luna"
+        ]
+        self.assertEqual(len(updates), 1)
+
     def test_continuous_room_mode_relays_one_speaker_at_a_time_and_stops_at_limit(self):
         self.controller.create_provider_session("general", _spec("peer"))
         codex_identity, codex_channel = self._connect_bridge("codex")
@@ -1534,6 +1571,37 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse(artifact.exists())
         with self.assertRaises(ValueError):
             self.controller.ensure_room("general")
+
+    def test_member_leave_rolls_back_when_ack_recording_fails(self):
+        member = {**HOST, "agent_id": "atomic-member", "operator": False}
+        channel = self.controller.connect(member)
+        store = RoomStore(self.root)
+
+        with patch.object(RoomCommandUnitOfWork, "record_ack", side_effect=RuntimeError("injected")):
+            with self.assertRaisesRegex(RuntimeError, "injected"):
+                self._command("atomic-leave", "participant.leave", {}, member)
+
+        self.assertEqual(store.participant("general", "atomic-member")["status"], "joined")
+        self.assertFalse(
+            any(
+                event.get("type") == "participant_left"
+                and event.get("participant_id") == "atomic-member"
+                for event in store.read_events("general")
+            )
+        )
+
+        left = self._command("atomic-leave", "participant.leave", {}, member)
+        duplicate = self._command("atomic-leave", "participant.leave", {}, member)
+        self.assertEqual(left["result"]["participant"]["status"], "left")
+        self.assertTrue(duplicate["deduplicated"])
+        left_events = [
+            event
+            for event in store.read_events("general")
+            if event.get("type") == "participant_left"
+            and event.get("participant_id") == "atomic-member"
+        ]
+        self.assertEqual(len(left_events), 1)
+        self.controller.disconnect(channel)
 
     def test_room_delete_keeps_data_when_agent_cleanup_fails(self):
         identity_store = identity_store_for_output_root(self.root)
@@ -2621,6 +2689,97 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             self._command("req-muted-message", "message.send", {"content": "blocked"}, guest)
 
         self.assertEqual(muted_error.exception.code, "muted")
+        self.controller.disconnect(channel)
+
+    def test_participant_mute_rolls_back_when_ack_recording_fails(self):
+        store = RoomStore(self.root)
+        before = store.participant("general", "codex")
+
+        with patch.object(RoomCommandUnitOfWork, "record_ack", side_effect=RuntimeError("injected")):
+            with self.assertRaisesRegex(RuntimeError, "injected"):
+                self._command(
+                    "atomic-mute",
+                    "participant.mute",
+                    {"participant_id": "codex", "muted": True},
+                )
+
+        self.assertEqual(store.participant("general", "codex"), before)
+        self.assertFalse(is_room_member_muted(self.root, "general", "codex"))
+        self.assertFalse(
+            any(
+                event.get("type") == "participant_muted"
+                and event.get("participant_id") == "codex"
+                for event in store.read_events("general")
+            )
+        )
+
+        muted = self._command(
+            "atomic-mute",
+            "participant.mute",
+            {"participant_id": "codex", "muted": True},
+        )
+        duplicate = self._command(
+            "atomic-mute",
+            "participant.mute",
+            {"participant_id": "codex", "muted": True},
+        )
+        self.assertTrue(muted["result"]["participant"]["muted"])
+        self.assertTrue(duplicate["deduplicated"])
+        mute_events = [
+            event
+            for event in store.read_events("general")
+            if event.get("type") == "participant_muted"
+            and event.get("participant_id") == "codex"
+        ]
+        self.assertEqual(len(mute_events), 1)
+
+    def test_participant_mute_retry_repairs_failed_compatibility_sync(self):
+        payload = {"participant_id": "codex", "muted": True}
+        with patch(
+            "agentsassemble.room_realtime.set_room_member_muted",
+            side_effect=RuntimeError("identity store unavailable"),
+        ):
+            with self.assertRaises(RoomCommandRejected) as failed:
+                self._command("mute-sync-retry", "participant.mute", payload)
+
+        self.assertEqual(failed.exception.code, "compatibility_sync_failed")
+        self.assertTrue(RoomStore(self.root).participant("general", "codex")["muted"])
+        self.assertFalse(is_room_member_muted(self.root, "general", "codex"))
+
+        retried = self._command("mute-sync-retry", "participant.mute", payload)
+        self.assertTrue(retried["deduplicated"])
+        self.assertTrue(is_room_member_muted(self.root, "general", "codex"))
+        mute_events = [
+            event
+            for event in RoomStore(self.root).read_events("general")
+            if event.get("type") == "participant_muted"
+            and event.get("participant_id") == "codex"
+        ]
+        self.assertEqual(len(mute_events), 1)
+
+    def test_canonical_unmute_overrides_stale_compatibility_mute(self):
+        guest = {**HOST, "operator": False, "agent_id": "stale-mute-guest"}
+        channel = self.controller.connect(guest)
+        self._command(
+            "canonical-unmute",
+            "participant.mute",
+            {"participant_id": "stale-mute-guest", "muted": False},
+        )
+        set_room_member_muted(
+            self.root,
+            meeting_id="general",
+            participant_id="stale-mute-guest",
+            muted=True,
+        )
+
+        sent = self._command(
+            "canonical-unmute-message",
+            "message.send",
+            {"content": "canonical state wins"},
+            guest,
+        )
+
+        self.assertEqual(sent["result"]["event"]["content"], "canonical state wins")
         self.controller.disconnect(channel)
 
     def test_muted_agent_does_not_receive_new_turns_until_unmuted(self):

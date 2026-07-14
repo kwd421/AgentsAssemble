@@ -88,6 +88,19 @@ from agentsassemble.voice_presence import leave_all_voice
 ROOM_SNAPSHOT_EVENT_LIMIT = 200
 ROOM_HISTORY_MAX_LIMIT = 200
 AMBIENT_AGENT_RELAY_DEPTH = 2
+AGENT_RUNTIME_PROFILE_KEYS = frozenset(
+    {
+        "provider_id",
+        "provider_kind",
+        "workspace",
+        "model",
+        "reasoning_effort",
+        "service_tier",
+        "variant",
+        "permission_mode",
+        "transport",
+    }
+)
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -737,6 +750,64 @@ class RoomRealtimeController:
                         compatibility_muted=compatibility_muted,
                     ),
                 )
+        if action == "agent.configure" and not AGENT_RUNTIME_PROFILE_KEYS.intersection(payload):
+            self._require_capability(identity, "agent.control")
+            with self._lock:
+                ack = self._execute_durable_command(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                    lambda unit: self._configure_agent_profile(payload, unit=unit),
+                )
+                self._apply_agent_profile_after_commit(room_id, ack)
+                return ack
+        if action == "participant.mute":
+            self._require_capability(identity, "participant.mute")
+            with self._lock:
+                participant_id = self._payload_agent_id(payload)
+                muted = bool(payload.get("muted", True))
+                compatibility_member = _planned_muted_member(
+                    identity_store_for_output_root(self.output_root).get_membership(room_id, participant_id),
+                    room_id=room_id,
+                    participant_id=participant_id,
+                    muted=muted,
+                )
+                ack = self._execute_durable_command(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                    lambda unit: self._mute_participant_durable(
+                        participant_id,
+                        muted,
+                        compatibility_member,
+                        unit=unit,
+                    ),
+                )
+                self._apply_mute_after_commit(room_id, participant_id, muted)
+                return ack
+        if action == "participant.leave":
+            self._require_capability(identity, "participant.leave")
+            with self._lock:
+                participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
+                is_owner = self._is_room_owner(identity, room_id)
+                ack = self._execute_durable_command(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                    lambda unit: self._leave_participant_durable(
+                        participant_id,
+                        is_owner=is_owner,
+                        unit=unit,
+                    ),
+                )
+                self._schedule_participant_leave_cleanup(room_id, participant_id)
+                return ack
         with self._lock:
             principal_id = _command_principal(identity)
             payload_hash = command_payload_hash(payload)
@@ -876,9 +947,6 @@ class RoomRealtimeController:
         server_url: str,
         ticket_issuer: Callable[[dict[str, object]], str] | None,
     ) -> dict[str, object]:
-        if action == "participant.leave":
-            self._require_capability(identity, "participant.leave")
-            return self._leave_participant(identity, room_id)
         if action == "room.delete":
             self._require_capability(identity, "room.delete")
             return self._delete_room(identity, room_id, payload)
@@ -916,9 +984,6 @@ class RoomRealtimeController:
         if action == "participant.kick":
             self._require_capability(identity, "participant.kick")
             return self._kick_participant(room_id, self._payload_agent_id(payload))
-        if action == "participant.mute":
-            self._require_capability(identity, "participant.mute")
-            return self._mute_participant(room_id, self._payload_agent_id(payload), bool(payload.get("muted", True)))
         self._require_bridge(identity)
         if action == "bridge.ready":
             return self._bridge_ready(identity, room_id, payload)
@@ -956,7 +1021,8 @@ class RoomRealtimeController:
         participant = unit.participant(participant_id)
         if participant.get("status") in {"kicked", "left"}:
             raise RoomCommandRejected("This participant is no longer in the room.", code="session_revoked")
-        if participant.get("muted") or compatibility_muted:
+        canonical_muted = bool(participant.get("muted")) if "muted" in participant else compatibility_muted
+        if canonical_muted:
             raise RoomCommandRejected("You are muted by the room host.", code="muted")
         event = unit.append_event(
             "message_final",
@@ -1120,55 +1186,6 @@ class RoomRealtimeController:
         current = self.store.session(room_id, agent_id)
         if not current:
             raise RoomCommandRejected(f"Agent session {agent_id} was not found.", code="not_found")
-        runtime_keys = {
-            "provider_id",
-            "provider_kind",
-            "workspace",
-            "model",
-            "reasoning_effort",
-            "service_tier",
-            "variant",
-            "permission_mode",
-            "transport",
-        }
-        if not any(key in payload for key in runtime_keys):
-            display_name = clean_lobby_text(
-                payload.get("display_name") or current.get("display_name") or agent_id,
-                limit=80,
-            )
-            avatar_image_url = clean_lobby_text(payload.get("avatar_image_url"), limit=4096)
-            participant = self.store.participant(room_id, agent_id)
-            if not participant:
-                raise RoomCommandRejected(f"Participant {agent_id} was not found.", code="not_found")
-            updated_participant = self.store.update_participant_fields(
-                room_id,
-                agent_id,
-                display_name=display_name,
-                avatar_image_url=avatar_image_url,
-            )
-            updated_session = self.store.update_session_fields(
-                room_id,
-                agent_id,
-                display_name=display_name,
-                avatar_image_url=avatar_image_url,
-            )
-            with self._lock:
-                current_spec = self._providers_by_room.get(room_id, {}).get(agent_id)
-                if current_spec is not None:
-                    self._providers_by_room[room_id][agent_id] = replace(current_spec, display_name=display_name)
-            self.store.append_event(
-                room_id,
-                "participant_updated",
-                participant_id=agent_id,
-                display_name=display_name,
-                avatar_image_url=avatar_image_url,
-            )
-            self._publish_session_state(room_id, updated_session)
-            return {
-                "status": "profile_updated",
-                "agent_session": public_session(updated_session),
-                "participant": updated_participant,
-            }
         if current.get("runtime_status") in {"starting", "idle", "busy", "paused", "recovering", "stopping"}:
             raise RoomCommandRejected(
                 "Stop this Agent Session before changing its runtime settings.",
@@ -1227,6 +1244,70 @@ class RoomRealtimeController:
         session = self.configure_stopped_provider_profile(room_id, spec)
         return {"status": "configured", "agent_session": session}
 
+    def _configure_agent_profile(
+        self,
+        payload: dict[str, object],
+        *,
+        unit: RoomCommandUnitOfWork,
+    ) -> dict[str, object]:
+        agent_id = self._payload_agent_id(payload)
+        current = unit.session(agent_id)
+        if not current:
+            raise RoomCommandRejected(f"Agent session {agent_id} was not found.", code="not_found")
+        participant = unit.participant(agent_id)
+        if not participant:
+            raise RoomCommandRejected(f"Participant {agent_id} was not found.", code="not_found")
+        display_name = clean_lobby_text(
+            payload.get("display_name") or current.get("display_name") or agent_id,
+            limit=80,
+        )
+        avatar_image_url = clean_lobby_text(payload.get("avatar_image_url"), limit=4096)
+        updated_participant = unit.update_participant_fields(
+            agent_id,
+            display_name=display_name,
+            avatar_image_url=avatar_image_url,
+        )
+        updated_session = unit.update_session_fields(
+            agent_id,
+            display_name=display_name,
+            avatar_image_url=avatar_image_url,
+        )
+        unit.append_event(
+            "participant_updated",
+            participant_id=agent_id,
+            display_name=display_name,
+            avatar_image_url=avatar_image_url,
+        )
+        return {
+            "status": "profile_updated",
+            "agent_session": public_session(updated_session),
+            "participant": updated_participant,
+        }
+
+    def _apply_agent_profile_after_commit(
+        self,
+        room_id: str,
+        ack: dict[str, object],
+    ) -> None:
+        if ack.get("deduplicated"):
+            return
+        result = ack.get("result") if isinstance(ack.get("result"), dict) else {}
+        session = result.get("agent_session") if isinstance(result.get("agent_session"), dict) else {}
+        agent_id = clean_lobby_text(
+            session.get("session_id") or session.get("participant_id"),
+            limit=128,
+        )
+        display_name = clean_lobby_text(session.get("display_name"), limit=80)
+        if not agent_id:
+            return
+        current_spec = self._providers_by_room.get(room_id, {}).get(agent_id)
+        if current_spec is not None and display_name:
+            self._providers_by_room[room_id][agent_id] = replace(
+                current_spec,
+                display_name=display_name,
+            )
+        self._publish_session_state(room_id, self.store.session(room_id, agent_id))
+
     def _kick_participant(self, room_id: str, participant_id: str) -> dict[str, object]:
         if participant_id == "operator-local":
             raise RoomCommandRejected("The room host cannot be removed.", code="permission_denied")
@@ -1257,40 +1338,73 @@ class RoomRealtimeController:
             "cleanup_warning": stop_warning,
         }
 
-    def _mute_participant(self, room_id: str, participant_id: str, muted: bool) -> dict[str, object]:
-        participant = self.store.participant(room_id, participant_id)
+    def _mute_participant_durable(
+        self,
+        participant_id: str,
+        muted: bool,
+        compatibility_member: dict[str, object],
+        *,
+        unit: RoomCommandUnitOfWork,
+    ) -> dict[str, object]:
+        participant = unit.participant(participant_id)
         if not participant:
             raise RoomCommandRejected(f"Participant {participant_id} was not found.", code="not_found")
-        member = set_room_member_muted(self.output_root, meeting_id=room_id, participant_id=participant_id, muted=muted)
-        updated = self.store.update_participant_fields(room_id, participant_id, muted=muted)
+        updated = unit.update_participant_fields(participant_id, muted=muted)
+        unit.append_event(
+            "participant_muted",
+            participant_id=participant_id,
+            muted=muted,
+        )
+        return {"participant": updated, "member": compatibility_member}
+
+    def _apply_mute_after_commit(
+        self,
+        room_id: str,
+        participant_id: str,
+        muted: bool,
+    ) -> None:
+        try:
+            set_room_member_muted(
+                self.output_root,
+                meeting_id=room_id,
+                participant_id=participant_id,
+                muted=muted,
+            )
+        except Exception as error:
+            raise RoomCommandRejected(
+                "The room mute state was saved, but the compatibility roster did not synchronize; retry the command.",
+                code="compatibility_sync_failed",
+            ) from error
+        participant = self.store.participant(room_id, participant_id)
         session = self.store.session(room_id, participant_id)
         if participant.get("role") == "agent" and session:
             if muted and session.get("runtime_status") == "busy":
                 self.broker.direct_to_bridge(room_id, participant_id, {"op": "agent.control", "action": "interrupt"})
             elif not muted:
                 self._turn_coordinator.assign_pending(room_id, participant_id)
-        self.store.append_event(
-            room_id,
-            "participant_muted",
-            participant_id=participant_id,
-            muted=muted,
-        )
-        return {"participant": updated, "member": member}
 
-    def _leave_participant(self, identity: dict[str, object], room_id: str) -> dict[str, object]:
-        participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
-        participant = self.store.participant(room_id, participant_id)
+    def _leave_participant_durable(
+        self,
+        participant_id: str,
+        *,
+        is_owner: bool,
+        unit: RoomCommandUnitOfWork,
+    ) -> dict[str, object]:
+        participant = unit.participant(participant_id)
         if not participant:
             raise RoomCommandRejected("Participant was not found in this room.", code="not_found")
-        if self._is_room_owner(identity, room_id):
+        if is_owner:
             raise RoomCommandRejected(
                 "The room owner must transfer ownership or delete the server.",
                 code="owner_must_transfer_or_delete",
             )
-        updated = self.store.update_participant_fields(room_id, participant_id, status="left")
+        updated = unit.update_participant_fields(participant_id, status="left")
+        event = unit.append_event("participant_left", participant_id=participant_id)
+        return {"participant": updated, "event": event, "revocation_scheduled": True}
+
+    def _schedule_participant_leave_cleanup(self, room_id: str, participant_id: str) -> None:
         identity_store_for_output_root(self.output_root).remove_membership(room_id, participant_id)
         leave_all_voice(room_id, participant_id)
-        event = self.store.append_event(room_id, "participant_left", participant_id=participant_id)
         timer = threading.Timer(
             0.1,
             revoke_sessions_for_participant,
@@ -1298,7 +1412,6 @@ class RoomRealtimeController:
         )
         timer.daemon = True
         timer.start()
-        return {"participant": updated, "event": event, "revocation_scheduled": True}
 
     def _delete_room(
         self,
@@ -1679,10 +1792,15 @@ class RoomRealtimeController:
     def agent_floor_eligibility(self, room_id: str, agent_id: str) -> AgentFloorEligibility:
         participant = self.store.participant(room_id, agent_id)
         session = self.store.session(room_id, agent_id)
+        compatibility_muted = (
+            is_room_member_muted(self.output_root, room_id, agent_id)
+            if "muted" not in participant
+            else False
+        )
         return evaluate_agent_floor_eligibility(
             participant,
             session,
-            member_muted=is_room_member_muted(self.output_root, room_id, agent_id),
+            member_muted=compatibility_muted,
             bridge_connected=self.broker.has_bridge(room_id, agent_id),
         )
 
@@ -1868,6 +1986,33 @@ def _restorable_process_ownership(session: dict[str, object]) -> str:
         and session.get("command_configured")
     )
     return "server" if has_native_runtime_profile else ""
+
+
+def _planned_muted_member(
+    current: dict[str, object] | None,
+    *,
+    room_id: str,
+    participant_id: str,
+    muted: bool,
+) -> dict[str, object]:
+    if current:
+        return {**current, "muted": muted}
+    return {
+        "meeting_id": room_id,
+        "participant_id": participant_id,
+        "display_name": participant_id,
+        "role": "agent",
+        "participant_type": "unknown",
+        "provider_kind": "",
+        "connection_kind": "",
+        "status": "",
+        "muted": muted,
+        "is_host": False,
+        "source": "moderation",
+        "created_at": "",
+        "updated_at": "",
+        "last_seen_at": "",
+    }
 
 
 def _external_runtime_profile_key(profile: ProviderRuntimeProfile) -> str:

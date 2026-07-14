@@ -438,3 +438,12 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   together; listeners broadcast and route only after commit. Failure injection
   at ACK recording proves rollback leaves no message, pending provider input,
   command record, or duplicate on retry.
+- 2026-07-14: profile-only `agent.configure`, participant mute, and the durable
+  part of participant leave moved into `RoomCommandUnitOfWork`. Name/avatar
+  updates now commit participant, Agent Session, `participant_updated`, and ACK
+  atomically, while in-memory provider labels and session-state publication run
+  after commit. Mute compatibility-roster synchronization and leave token/voice
+  cleanup also run after commit. Failure-injection tests prove rollback and
+  exactly-once retry behavior; canonical mute state now overrides a stale
+  compatibility copy. The next implementation slice is Commit 1.5, provider
+  turn finalization in one transaction.
