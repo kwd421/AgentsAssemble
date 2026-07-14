@@ -618,3 +618,17 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   has no test DSN; Phase 4.3 will supply one through a CI service. The next
   slice is Phase 4.2, reusing a command unit's checked-out transaction
   connection for all reads in that unit.
+- 2026-07-14: Phase 4.2 binds a PostgreSQL transaction's checked-out connection
+  to its synchronous execution context. Repository-level reads reached from a
+  command helper now reuse that connection and transaction snapshot instead of
+  borrowing a nested pool connection; the binding is cleared before
+  post-commit publication. Nested repository write transactions fail before a
+  second checkout and direct callers must use the active `RoomTransaction`.
+  Optional-driver tests prove one checkout covers command lookup, a top-level
+  room read, and ACK storage, then prove the first read after commit borrows
+  normally. A real-DSN contract records `psycopg_pool.requests_num` and requires
+  an exact delta of one; it remains pending execution until Phase 4.3 provides
+  PostgreSQL in CI. Final verification passed all 3,235 Python tests with 39
+  environment-dependent skips, all 104 frontend tests, the production frontend
+  build, `compileall`, and `git diff --check`. The next slice is Phase 4.3,
+  making the real backend contracts mandatory in GitHub Actions.

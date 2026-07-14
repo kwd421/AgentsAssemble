@@ -5,12 +5,14 @@ import os
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import quote
 from uuid import uuid4
 
 from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room_command_uow import RoomCommandUnitOfWork
 from agentsassemble.room_repository_factory import RoomRepositorySettings, build_room_repository
 from tests.room_repository_contract import RoomRepositoryContractMixin
 
@@ -29,49 +31,65 @@ if _PSYCOPG_AVAILABLE:
     )
 
 
+class _FakeRepositoryConnection:
+    def __init__(self) -> None:
+        self.executed: list[tuple[object, object]] = []
+
+    def transaction(self):
+        return nullcontext()
+
+    def execute(self, statement: object, parameters: object = None):
+        self.executed.append((statement, parameters))
+        return self
+
+
+class _FakeRepositoryPool:
+    def __init__(self, kwargs: dict[str, object]) -> None:
+        self.kwargs = kwargs
+        self.closed = False
+        self.waited = False
+        self.borrow_count = 0
+        self.connection_value = _FakeRepositoryConnection()
+
+    def wait(self, timeout: float) -> None:
+        self.waited = timeout > 0
+
+    def connection(self, timeout: float):
+        self.borrow_count += 1
+        return nullcontext(self.connection_value)
+
+    def close(self, timeout: float) -> None:
+        self.closed = True
+
+    def get_stats(self) -> dict[str, object]:
+        return {"pool_size": 1, "conninfo": "secret-password"}
+
+
+def _fake_repository() -> tuple[object, _FakeRepositoryPool]:
+    pools: list[_FakeRepositoryPool] = []
+
+    def factory(**kwargs: object) -> _FakeRepositoryPool:
+        pool = _FakeRepositoryPool(dict(kwargs))
+        pools.append(pool)
+        return pool
+
+    repository = PostgresRoomRepository(
+        "postgresql://secret-user:secret-password@example.invalid/rooms",
+        pool_factory=factory,
+    )
+    return repository, pools[0]
+
+
 @unittest.skipUnless(_PSYCOPG_AVAILABLE, "the postgres extra is required")
 class PostgresRoomRepositoryPoolIntegrationTests(unittest.TestCase):
     def test_repository_borrows_from_one_pool_and_exposes_safe_diagnostics(self) -> None:
-        class FakePool:
-            def __init__(self, kwargs: dict[str, object]) -> None:
-                self.kwargs = kwargs
-                self.closed = False
-                self.waited = False
-                self.borrow_count = 0
-
-            def wait(self, timeout: float) -> None:
-                self.waited = timeout > 0
-
-            def connection(self, timeout: float):
-                from contextlib import nullcontext
-
-                self.borrow_count += 1
-                return nullcontext("connection")
-
-            def close(self, timeout: float) -> None:
-                self.closed = True
-
-            def get_stats(self) -> dict[str, object]:
-                return {"pool_size": 1, "conninfo": "secret-password"}
-
-        pools: list[FakePool] = []
-
-        def factory(**kwargs: object) -> FakePool:
-            pool = FakePool(dict(kwargs))
-            pools.append(pool)
-            return pool
-
-        repository = PostgresRoomRepository(
-            "postgresql://secret-user:secret-password@example.invalid/rooms",
-            pool_factory=factory,
-        )
+        repository, pool = _fake_repository()
         try:
             with repository._connection() as connection:
-                self.assertEqual(connection, "connection")
+                self.assertIs(connection, pool.connection_value)
 
-            self.assertEqual(len(pools), 1)
-            self.assertTrue(pools[0].waited)
-            self.assertEqual(pools[0].borrow_count, 1)
+            self.assertTrue(pool.waited)
+            self.assertEqual(pool.borrow_count, 1)
             diagnostics = repository.public_diagnostics()
             self.assertEqual(diagnostics["backend"], "postgresql")
             self.assertNotIn("secret-user", str(diagnostics))
@@ -79,7 +97,66 @@ class PostgresRoomRepositoryPoolIntegrationTests(unittest.TestCase):
         finally:
             repository.close()
 
-        self.assertTrue(pools[0].closed)
+        self.assertTrue(pool.closed)
+
+    def test_command_unit_reuses_transaction_connection_for_repository_reads(self) -> None:
+        repository, pool = _fake_repository()
+        connections: list[object] = []
+
+        def read_command(connection, *_args, **_kwargs):
+            connections.append(connection)
+            return {}
+
+        def read_room(connection, room_id):
+            connections.append(connection)
+            return {"room_id": room_id}
+
+        def record_command(connection, _room_id, _request_id, result, **_kwargs):
+            connections.append(connection)
+            return result
+
+        try:
+            with patch(
+                "agentsassemble.postgres_room_repository.read_command_record",
+                side_effect=read_command,
+            ), patch(
+                "agentsassemble.postgres_room_repository.read_room",
+                side_effect=read_room,
+            ), patch(
+                "agentsassemble.postgres_room_repository.persist_command_result",
+                side_effect=record_command,
+            ):
+                with RoomCommandUnitOfWork(
+                    repository,
+                    room_id="general",
+                    principal_id="host-a",
+                    request_id="request-a",
+                    action="message.send",
+                    payload={"content": "hello"},
+                ) as unit:
+                    self.assertEqual(repository.room("general"), {"room_id": "general"})
+                    unit.build_ack({"status": "sent"})
+                    unit.record_ack()
+
+                self.assertEqual(repository.room("general"), {"room_id": "general"})
+        finally:
+            repository.close()
+
+        self.assertEqual(pool.borrow_count, 2)
+        self.assertEqual(connections[:3], [pool.connection_value] * 3)
+        self.assertIs(connections[3], pool.connection_value)
+
+    def test_nested_transaction_is_rejected_before_second_pool_checkout(self) -> None:
+        repository, pool = _fake_repository()
+        try:
+            with repository.transaction("general"):
+                with self.assertRaisesRegex(RuntimeError, "Nested PostgreSQL room transactions"):
+                    with repository.transaction("general"):
+                        pass
+        finally:
+            repository.close()
+
+        self.assertEqual(pool.borrow_count, 1)
 
 
 @unittest.skipUnless(
@@ -183,6 +260,41 @@ class PostgresRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.
 
         self.assertEqual(sorted(sequences), list(range(2, 42)))
         self.assertEqual(self.repository.latest_event_sequence("general"), 41)
+
+    def test_command_unit_uses_one_real_pool_checkout_for_transaction_reads(self) -> None:
+        self.repository.create_room("command-connection")
+        before = int(
+            self.repository.public_diagnostics()["pool"]["stats"].get("requests_num", 0)
+        )
+
+        with RoomCommandUnitOfWork(
+            self.repository,
+            room_id="command-connection",
+            principal_id="host-a",
+            request_id="request-a",
+            action="agent.configure",
+            payload={"display_name": "Agent A"},
+        ) as unit:
+            participant, _created = unit.upsert_participant(
+                {
+                    "participant_id": "agent-a",
+                    "display_name": "Agent A",
+                    "participant_type": "agent",
+                    "status": "joined",
+                }
+            )
+            self.assertEqual(unit.participant("agent-a"), participant)
+            self.assertEqual(
+                self.repository.room("command-connection")["room_id"],
+                "command-connection",
+            )
+            unit.build_ack({"participant": participant})
+            unit.record_ack()
+
+        after = int(
+            self.repository.public_diagnostics()["pool"]["stats"].get("requests_num", 0)
+        )
+        self.assertEqual(after - before, 1)
 
 
 def _dsn_with_search_path(dsn: str, schema_name: str) -> str:

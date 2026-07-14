@@ -4,6 +4,7 @@ import logging
 import threading
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from uuid import uuid4
 
@@ -265,6 +266,10 @@ class PostgresRoomRepository:
         self.output_root = Path(output_root) if output_root is not None else None
         self._listener_lock = threading.RLock()
         self._listeners: dict[str, list[Callable[[dict[str, object]], None]]] = {}
+        self._active_transaction_connection: ContextVar[Connection | None] = ContextVar(
+            f"postgres_room_transaction_connection_{id(self)}",
+            default=None,
+        )
         if migrate:
             upgrade_postgres_room_schema(clean_dsn)
         self._pool = BoundedPostgresConnectionPool(
@@ -296,25 +301,33 @@ class PostgresRoomRepository:
 
     @contextmanager
     def transaction(self, room_id: str) -> Iterator[RoomTransaction]:
+        if self._active_transaction_connection.get() is not None:
+            raise RuntimeError(
+                "Nested PostgreSQL room transactions are not supported; use the active room transaction."
+            )
         clean_id = clean_room_id(room_id)
         pending_events: list[dict[str, object]] = []
         with self._connection() as connection:
-            with connection.transaction():
-                connection.execute(
-                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                    (clean_id,),
-                )
-                yield _PostgresRoomTransaction(connection, clean_id, pending_events)
+            token = self._active_transaction_connection.set(connection)
+            try:
+                with connection.transaction():
+                    connection.execute(
+                        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                        (clean_id,),
+                    )
+                    yield _PostgresRoomTransaction(connection, clean_id, pending_events)
+            finally:
+                self._active_transaction_connection.reset(token)
         self._publish_events(clean_id, pending_events)
 
     def room_is_deleted(self, room_id: str) -> bool:
         clean_id = clean_room_id(room_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return query_room_is_deleted(connection, clean_id)
 
     def deleted_room_record(self, room_id: str) -> dict[str, object]:
         clean_id = clean_room_id(room_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             row = connection.execute(
                 """SELECT room_id, deleted_at, reason, principal_id, request_id,
                           action, payload_hash, cleanup_status, room_name, result_json
@@ -423,12 +436,12 @@ class PostgresRoomRepository:
 
     def room(self, room_id: str) -> dict[str, object]:
         clean_id = clean_room_id(room_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_room(connection, clean_id)
 
     def room_settings(self, room_id: str) -> RoomGlobalSettingsRecord:
         clean_id = clean_room_id(room_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_room_settings(connection, clean_id)
 
     def update_room_settings(
@@ -441,23 +454,23 @@ class PostgresRoomRepository:
             return transaction.update_room_settings(updates)
 
     def list_rooms(self, *, include_archived: bool = False) -> list[dict[str, object]]:
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_rooms(connection, include_archived=include_archived)
 
     def participants(self, room_id: str) -> list[dict[str, object]]:
         clean_id = clean_room_id(room_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_participants(connection, clean_id)
 
     def participant(self, room_id: str, participant_id: str) -> dict[str, object]:
         clean_room = clean_room_id(room_id)
         clean_participant = clean_participant_id(participant_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_participant(connection, clean_room, clean_participant)
 
     def active_participants(self, room_id: str) -> list[dict[str, object]]:
         clean_id = clean_room_id(room_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_active_participants(connection, clean_id)
 
     def upsert_participant(
@@ -515,13 +528,13 @@ class PostgresRoomRepository:
 
     def sessions(self, room_id: str) -> list[dict[str, object]]:
         clean_id = clean_room_id(room_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_sessions(connection, clean_id)
 
     def session(self, room_id: str, session_id: str) -> dict[str, object]:
         clean_room = clean_room_id(room_id)
         clean_session = clean_session_id(session_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_session(connection, clean_room, clean_session)
 
     def upsert_session(
@@ -560,7 +573,7 @@ class PostgresRoomRepository:
         clean_request = clean_lobby_text(request_id, limit=128)
         if not clean_request:
             return {}
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_command_record(connection, clean_room, clean_principal, clean_request)
 
     def command_result(self, room_id: str, request_id: str, *, principal_id: str = "") -> dict[str, object]:
@@ -607,7 +620,7 @@ class PostgresRoomRepository:
         exclude_actor_id: str = "",
     ) -> list[dict[str, object]]:
         clean_id = clean_room_id(room_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return query_events(
                 connection,
                 clean_id,
@@ -632,7 +645,7 @@ class PostgresRoomRepository:
         exclude_actor_id: str = "",
     ) -> int:
         clean_id = clean_room_id(room_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return count_events(
                 connection,
                 clean_id,
@@ -648,7 +661,7 @@ class PostgresRoomRepository:
         clean_event = clean_lobby_text(event_id, limit=128)
         if not clean_event:
             return {}
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_event_by_id(
                 connection,
                 clean_room,
@@ -661,17 +674,17 @@ class PostgresRoomRepository:
         clean_event = clean_lobby_text(event_id, limit=128)
         if not clean_event:
             return 0
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_event_sequence(connection, clean_room, clean_event)
 
     def latest_event_sequence(self, room_id: str) -> int:
         clean_id = clean_room_id(room_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_latest_event_sequence(connection, clean_id)
 
     def oldest_event_sequence(self, room_id: str, *, include_hidden: bool = False) -> int:
         clean_id = clean_room_id(room_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_oldest_event_sequence(
                 connection,
                 clean_id,
@@ -712,7 +725,7 @@ class PostgresRoomRepository:
     def attention_state(self, room_id: str, participant_id: str) -> AgentAttentionState:
         clean_room = clean_room_id(room_id)
         clean_participant = clean_participant_id(participant_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_attention_state(connection, clean_room, clean_participant)
 
     def attention_jobs(
@@ -725,7 +738,7 @@ class PostgresRoomRepository:
         limit: int = 200,
     ) -> list[dict[str, object]]:
         clean_id = clean_room_id(room_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_attention_jobs(
                 connection,
                 clean_id,
@@ -738,7 +751,7 @@ class PostgresRoomRepository:
     def attention_job(self, room_id: str, job_id: str) -> dict[str, object]:
         clean_room = clean_room_id(room_id)
         clean_job = clean_lobby_text(job_id, limit=128)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_attention_job(connection, clean_room, clean_job)
 
     def attention_leases(
@@ -749,7 +762,7 @@ class PostgresRoomRepository:
         limit: int = 200,
     ) -> list[dict[str, object]]:
         clean_room = clean_room_id(room_id)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_attention_leases(
                 connection,
                 clean_room,
@@ -760,7 +773,7 @@ class PostgresRoomRepository:
     def attention_lease(self, room_id: str, lease_id: str) -> dict[str, object]:
         clean_room = clean_room_id(room_id)
         clean_lease = clean_lobby_text(lease_id, limit=128)
-        with self._connection() as connection:
+        with self._read_connection() as connection:
             return read_attention_lease(connection, clean_room, clean_lease)
 
     def room_payload(self, room_id: str) -> dict[str, object]:
@@ -863,6 +876,15 @@ class PostgresRoomRepository:
     @contextmanager
     def _connection(self) -> Iterator[Connection]:
         with self._pool.connection() as connection:
+            yield connection
+
+    @contextmanager
+    def _read_connection(self) -> Iterator[Connection]:
+        active = self._active_transaction_connection.get()
+        if active is not None:
+            yield active
+            return
+        with self._connection() as connection:
             yield connection
 
     def _require_output_root(self) -> Path:

@@ -147,6 +147,15 @@ database name, username, arbitrary driver values, or exception text. Pool
 startup, acquisition, and closed-state errors are explicit; none can trigger a
 SQLite fallback.
 
+While a PostgreSQL room transaction is active, the repository binds its checked
+out connection to that synchronous execution context. Transaction methods and
+any repository-level read reached by a command helper therefore observe the
+same snapshot and do not borrow another pool connection. The binding is cleared
+before post-commit listeners run. Starting a nested repository write
+transaction in the same context is an error; callers must use the active
+`RoomTransaction` instead. This prevents a command from deadlocking against its
+own bounded pool or reading state outside its atomic command snapshot.
+
 The GUI handler, canonical WebSocket controller, Agent Session HTTP actions,
 room lifecycle, roster projection, invite admission, attachment metadata, and
 canonical SSE replay now receive one server-scoped repository instance. Handler
