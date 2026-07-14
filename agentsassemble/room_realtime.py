@@ -50,6 +50,10 @@ from agentsassemble.room_agent_lifecycle import (
     schedule_daemon_timer,
 )
 from agentsassemble.room_attention_coordinator import RoomAttentionCoordinator
+from agentsassemble.room_attention_policy import (
+    normalize_shadow_attention_mode,
+    should_record_shadow_attention,
+)
 from agentsassemble.room_errors import RoomCommandRejected
 from agentsassemble.room_event_broker import ROOM_EVENT_STREAM, RoomEventBroker, RoomSocketChannel
 from agentsassemble.room_floor_policy import (
@@ -113,12 +117,14 @@ class RoomRealtimeController:
         recovery_scheduler: RecoveryScheduler | None = None,
         provider_catalog: ProviderCatalog | None = None,
         repository: RoomRepository | None = None,
+        attention_shadow_mode: str = "off",
     ) -> None:
         self.output_root = Path(output_root)
         self.store = repository or RoomStore(self.output_root)
         self.broker = broker or RoomEventBroker()
         self.default_room_id = clean_lobby_text(default_room_id, limit=128) or "general"
         self.max_agent_relay_depth = max(0, int(max_agent_relay_depth))
+        self.attention_shadow_mode = normalize_shadow_attention_mode(attention_shadow_mode)
         self.recovery_delay_seconds = max(0.0, float(recovery_delay_seconds))
         recovery_scheduler_impl = recovery_scheduler or schedule_daemon_timer
         self.provider_catalog = provider_catalog or PROVIDER_CAPABILITIES
@@ -138,6 +144,8 @@ class RoomRealtimeController:
         self._attention_owner_id = f"room-realtime-{uuid4().hex}"
         self._attention_shadow_error_count = 0
         self._attention_shadow_last_error = ""
+        self._attention_shadow_recorded_count = 0
+        self._attention_shadow_skipped_count = 0
         self._attention_active_error_count = 0
         self._attention_active_last_error = ""
         self._turn_coordinator = RoomTurnCoordinator(
@@ -1572,6 +1580,9 @@ class RoomRealtimeController:
         event: dict[str, object],
         providers: dict[str, NativeCliProviderSpec],
     ) -> None:
+        if not should_record_shadow_attention(event, self.attention_shadow_mode):
+            self._attention_shadow_skipped_count += 1
+            return
         try:
             self._attention_coordinator.evaluate_shadow(
                 event,
@@ -1582,6 +1593,7 @@ class RoomRealtimeController:
                     if self.agent_floor_eligibility(str(event.get("room_id") or ""), agent_id).eligible
                 ),
             )
+            self._attention_shadow_recorded_count += 1
         except Exception as error:
             self._attention_shadow_error_count += 1
             self._attention_shadow_last_error = str(error)
@@ -1595,7 +1607,9 @@ class RoomRealtimeController:
 
     def attention_shadow_diagnostics(self) -> dict[str, object]:
         return {
-            "mode": "shadow",
+            "mode": self.attention_shadow_mode,
+            "recorded_count": self._attention_shadow_recorded_count,
+            "skipped_count": self._attention_shadow_skipped_count,
             "error_count": self._attention_shadow_error_count,
             "last_error": self._attention_shadow_last_error,
         }

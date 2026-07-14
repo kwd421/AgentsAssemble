@@ -415,3 +415,7 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   cover visible and later-loaded history. Committed as `336fb13`.
 - 2026-07-14: ambient discussion UI relabeled as experimental bounded server
   relay, explicitly distinguishing it from human-like autonomous room watching.
+- 2026-07-14: shadow attention recording made an explicit server setting.
+  Ordinary operation defaults to `off`; deterministic `sample` records only
+  canonical source sequences divisible by 16, while `full` preserves the
+  previous diagnostic behavior. Ambient active routing remains independent.

@@ -3,7 +3,13 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.room_attention_coordinator import RoomAttentionCoordinator
-from agentsassemble.room_attention_policy import evaluate_ambient_attention, evaluate_attention
+from agentsassemble.room_attention_policy import (
+    SHADOW_ATTENTION_SAMPLE_MODULUS,
+    evaluate_ambient_attention,
+    evaluate_attention,
+    normalize_shadow_attention_mode,
+    should_record_shadow_attention,
+)
 from agentsassemble.room_store import RoomStore
 
 
@@ -20,6 +26,21 @@ def _event(content, *, actor_id="human", actor_type="human", **fields):
 
 
 class RoomAttentionPolicyTests(unittest.TestCase):
+    def test_shadow_attention_mode_defaults_off_and_rejects_unknown_values(self):
+        self.assertEqual(normalize_shadow_attention_mode(None), "off")
+        self.assertEqual(normalize_shadow_attention_mode("FULL"), "full")
+        with self.assertRaisesRegex(ValueError, "Unsupported attention shadow mode"):
+            normalize_shadow_attention_mode("sometimes")
+
+    def test_shadow_attention_sampling_uses_canonical_sequence_modulus(self):
+        sampled_seq = SHADOW_ATTENTION_SAMPLE_MODULUS * 3
+
+        self.assertFalse(should_record_shadow_attention({"seq": sampled_seq}, "off"))
+        self.assertTrue(should_record_shadow_attention({"seq": 1}, "full"))
+        self.assertTrue(should_record_shadow_attention({"seq": sampled_seq}, "sample"))
+        self.assertFalse(should_record_shadow_attention({"seq": sampled_seq - 1}, "sample"))
+        self.assertFalse(should_record_shadow_attention({"seq": 0}, "sample"))
+
     def test_ambient_selects_one_fair_speaker_for_plain_human_message(self):
         decision = evaluate_ambient_attention(
             _event("이 주제로 자유롭게 이야기해봐"),

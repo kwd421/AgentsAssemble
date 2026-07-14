@@ -517,6 +517,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(messages[0]["content"], "@codex hello")
 
     def test_shadow_attention_records_silence_without_changing_ordered_routing(self):
+        self.controller.attention_shadow_mode = "full"
         result = self._command("shadow-ordinary", "message.send", {"content": "그냥 상황을 공유할게."})
         event = result["result"]["event"]
 
@@ -529,6 +530,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.attention_shadow_diagnostics()["error_count"], 0)
 
     def test_shadow_attention_selects_connected_direct_mention(self):
+        self.controller.attention_shadow_mode = "full"
         self._command("shadow-start", "agent.start", {"agent_id": "codex"})
         _identity, channel = self._connect_bridge("codex")
         channel.drain()
@@ -573,6 +575,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(rejected.exception.code, "observed_seq_invalid")
 
     def test_shadow_attention_failure_is_diagnostic_and_does_not_block_current_routing(self):
+        self.controller.attention_shadow_mode = "full"
         with patch.object(
             self.controller._attention_coordinator,
             "evaluate_shadow",
@@ -587,6 +590,21 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertIn(event["id"], session["pending_event_ids"])
         self.assertEqual(diagnostics["error_count"], 1)
         self.assertIn("shadow storage unavailable", diagnostics["last_error"])
+
+    def test_shadow_attention_is_off_by_default_without_changing_ordered_routing(self):
+        with patch.object(self.controller._attention_coordinator, "evaluate_shadow") as evaluate_shadow:
+            result = self._command("shadow-off", "message.send", {"content": "기본 라우팅은 계속해."})
+
+        event = result["result"]["event"]
+        session = self.controller.store.session("general", "codex")
+        diagnostics = self.controller.attention_shadow_diagnostics()
+
+        evaluate_shadow.assert_not_called()
+        self.assertEqual(self.controller.store.attention_jobs("general", mode="shadow"), [])
+        self.assertIn(event["id"], session["pending_event_ids"])
+        self.assertEqual(diagnostics["mode"], "off")
+        self.assertEqual(diagnostics["recorded_count"], 0)
+        self.assertEqual(diagnostics["skipped_count"], 1)
 
     def test_startup_reconciliation_moves_inflight_work_back_to_pending(self):
         with tempfile.TemporaryDirectory() as temp_dir:

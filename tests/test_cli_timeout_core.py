@@ -234,6 +234,8 @@ class CliTimeoutCoreTests(unittest.TestCase):
                     "1.5",
                     "--live-agent-stale-restart-after-seconds",
                     "120",
+                    "--attention-shadow-mode",
+                    "sample",
                 ]
             )
 
@@ -250,6 +252,14 @@ class CliTimeoutCoreTests(unittest.TestCase):
         self.assertEqual(kwargs["live_agent_restart_backoff_seconds"], 1.5)
         self.assertEqual(kwargs["live_agent_stale_restart_after_seconds"], 120.0)
         self.assertEqual(kwargs["room_repository_backend"], "sqlite")
+        self.assertEqual(kwargs["attention_shadow_mode"], "sample")
+
+    def test_gui_defaults_shadow_attention_recording_off(self):
+        with patch("agentsassemble.cli.serve_gui") as serve_gui:
+            exit_code = main(["gui"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(serve_gui.call_args.kwargs["attention_shadow_mode"], "off")
 
     def test_gui_accepts_explicit_postgres_repository_environment(self):
         with patch("agentsassemble.cli.serve_gui") as serve_gui:

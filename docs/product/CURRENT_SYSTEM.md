@@ -74,11 +74,14 @@ static provider manifest produces a revision. Discovery completion is pushed on
 the canonical room WebSocket; `agent.create` must present that revision and the
 server validates every selected control against it.
 
-An event-driven deterministic attention gate records durable `selected`,
-`eligible`, or `silent` decisions. Existing `ordered` and `continuous` rooms use
-it in zero-token shadow mode. A room explicitly set to `ambient` uses one durable
-lease to wake one fair eligible speaker at a time, with an initial two-relay
-agent chain limit and no silent provider substitution. Current contract:
+An event-driven deterministic attention gate can record durable `selected`,
+`eligible`, or `silent` decisions. Shadow recording for existing `ordered` and
+`continuous` rooms is server-configured as `off | sample | full` and defaults to
+`off`; `sample` records only canonical source sequences divisible by 16. A room
+explicitly set to `ambient` uses active evaluation independently of that shadow
+setting and acquires one durable lease to wake one fair eligible speaker at a
+time, with an initial two-relay agent chain limit and no silent provider
+substitution. Current contract:
 `docs/product/ATTENTION_MODEL.md`; supporting research:
 `docs/reports/autonomous-room-participation-research.md`.
 

@@ -15,9 +15,13 @@ select one participant, mark several as merely eligible for later policy, or
 select nobody. Silence must cost zero remote-provider calls and zero provider
 tokens.
 
-`ordered` and legacy `continuous` rooms still use their existing routing while
-recording attention decisions in shadow mode. Shadow evaluation must not change
-a visible message, launch a provider, or add a second room transport.
+`ordered` and legacy `continuous` rooms still use their existing routing.
+Optional shadow recording is controlled by the server's
+`--attention-shadow-mode off|sample|full` setting and defaults to `off`.
+`sample` evaluates only committed source events whose canonical room sequence
+is divisible by 16; this rule is deterministic across restarts. Shadow
+evaluation must not change a visible message, launch a provider, or add a
+second room transport. With `off`, it creates no attention job or cursor write.
 
 An explicitly configured `ambient` room uses the same durable evaluation to
 select and lease at most one speaker for each committed message. A plain human
@@ -26,7 +30,8 @@ eligible agent. The initial agent-to-agent chain budget is two relays. A named
 target that is unavailable is reported as unavailable; another provider is not
 silently substituted.
 
-Current shadow policy selects one connected direct mention/reply/next-speaker
+When enabled, the current shadow policy selects one connected direct
+mention/reply/next-speaker
 target, marks multiple direct targets, `@all`, or a room-wide question as
 eligible, and marks messages without a strong signal as silent. Its durable
 decision and each candidate's evaluation cursor commit together.
@@ -105,6 +110,7 @@ verification.
 
 - Ambient selection is deterministic and event-driven; there is no periodic
   provider polling.
+- Ambient active evaluation does not depend on the shadow-recording setting.
 - Scheduled follow-ups and conversation obligations are durable schema concepts
   but are not active wake sources yet.
 - Pair cooldowns, per-room token budgets, and panel policies are not active.

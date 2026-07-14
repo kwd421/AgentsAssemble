@@ -247,6 +247,7 @@ def main(argv: list[str] | None = None) -> int:
                 output_root=Path(args.output_root),
                 room_repository_backend=args.room_repository_backend,
                 room_postgres_dsn_env=args.room_postgres_dsn_env,
+                attention_shadow_mode=args.attention_shadow_mode,
                 public_url=args.public_url,
                 host_token=args.host_token,
                 unsafe_expose_control_plane=args.unsafe_expose_control_plane,

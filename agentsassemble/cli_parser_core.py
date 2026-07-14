@@ -68,6 +68,12 @@ def register_core_parsers(subparsers: argparse._SubParsersAction) -> None:
         default=DEFAULT_POSTGRES_DSN_ENV,
         help="Environment variable containing the PostgreSQL DSN; the DSN is never accepted on argv.",
     )
+    gui.add_argument(
+        "--attention-shadow-mode",
+        choices=("off", "sample", "full"),
+        default="off",
+        help="Persist no, deterministic 1/16 sampled, or all non-ambient attention diagnostics.",
+    )
     gui.add_argument("--public-url", default="", help="Public HTTP(S) base URL used for external /join?token= invite links.")
     gui.add_argument("--host-token", default="", help="Runtime host token for public invite management endpoints.")
     gui.add_argument(

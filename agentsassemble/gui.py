@@ -1237,6 +1237,7 @@ def serve_gui(
     *,
     room_repository_backend: str = "sqlite",
     room_postgres_dsn_env: str = DEFAULT_POSTGRES_DSN_ENV,
+    attention_shadow_mode: str = "off",
     public_url: str = "",
     host_token: str = "",
     unsafe_expose_control_plane: bool = False,
@@ -1280,6 +1281,7 @@ def serve_gui(
         frontend_dist_root=frontend_dist_root,
         public_tunnel_manager=public_tunnel_manager,
         room_repository_override=room_repository,
+        attention_shadow_mode=attention_shadow_mode,
     )
     server = ThreadingHTTPServer((host, port), handler)
     if not _is_loopback_host(host):
@@ -7289,6 +7291,7 @@ def _make_handler(
     live_agent_login_command_resolver: object | None = None,
     room_realtime_controller_override: RoomRealtimeController | None = None,
     room_repository_override: RoomRepository | None = None,
+    attention_shadow_mode: str = "off",
     legacy_session_run_actions_override: LegacySessionRunActions | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     configure_room_invite_store(default_room_invite_store_path(output_root))
@@ -7321,6 +7324,7 @@ def _make_handler(
             providers=default_native_cli_provider_specs(workspace=Path.cwd()),
             bridge_manager=native_cli_bridge_manager,
             repository=room_repository,
+            attention_shadow_mode=attention_shadow_mode,
         )
         native_cli_bridge_manager.set_exit_listener(room_realtime_controller.bridge_process_exited)
 

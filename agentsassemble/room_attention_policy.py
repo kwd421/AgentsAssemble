@@ -8,6 +8,27 @@ from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_attention import AttentionEvaluation
 
 
+SHADOW_ATTENTION_MODES = frozenset({"off", "sample", "full"})
+SHADOW_ATTENTION_SAMPLE_MODULUS = 16
+
+
+def normalize_shadow_attention_mode(value: object) -> str:
+    mode = clean_lobby_text(value, limit=16).lower() or "off"
+    if mode not in SHADOW_ATTENTION_MODES:
+        raise ValueError(f"Unsupported attention shadow mode: {mode}")
+    return mode
+
+
+def should_record_shadow_attention(event: dict[str, object], mode: object) -> bool:
+    clean_mode = normalize_shadow_attention_mode(mode)
+    if clean_mode == "full":
+        return True
+    if clean_mode == "off":
+        return False
+    source_seq = max(0, int(event.get("seq") or 0))
+    return source_seq > 0 and source_seq % SHADOW_ATTENTION_SAMPLE_MODULUS == 0
+
+
 def evaluate_attention(
     event: dict[str, object],
     *,
