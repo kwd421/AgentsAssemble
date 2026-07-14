@@ -60,6 +60,7 @@ from agentsassemble.gui_attachment_http import register_attachment_routes
 from agentsassemble.gui_mafia_http import register_mafia_routes
 from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
 from agentsassemble.gui_legacy_lobby_http import register_legacy_lobby_routes
+from agentsassemble.gui_legacy_meeting_http import register_legacy_meeting_routes
 from agentsassemble.gui_legacy_live_agent_read_http import (
     LegacyLiveAgentReadDeps,
     register_legacy_live_agent_read_routes,
@@ -250,12 +251,23 @@ from agentsassemble.live_agent_turns import (
 from agentsassemble.live_meeting_memory import (
     build_live_meeting_memory,
     load_live_meeting_memory_context,
-    projected_live_meeting_memory_artifacts,
     write_live_meeting_memory_artifacts,
 )
-from agentsassemble.live_transcript import projected_live_transcript_text
+from agentsassemble.legacy_meeting_queries import (
+    LegacyMeetingQueryService,
+    build_meeting_payload,
+    build_meeting_stream_payload,
+    build_workroom_queue_payload,
+    list_meetings,
+    project_meeting_stream_events,
+)
+from agentsassemble.legacy_meeting_records import (
+    live_agent_admission_details as _live_agent_admission_details_from_meeting,
+    merge_live_progress_from_path as _merge_live_progress_from_path,
+    read_meeting_record as _read_meeting_record,
+    safe_meeting_dir as _safe_meeting_dir,
+)
 from agentsassemble.meeting import run_demo_meeting
-from agentsassemble.meeting_lifecycle import infer_live_status, project_meeting_lifecycle
 from agentsassemble.provider_health import provider_health_report
 from agentsassemble.public_tunnel import PublicTunnelManager
 from agentsassemble.frontend_runtime import (
@@ -332,8 +344,6 @@ from agentsassemble.side_chat import (
 from agentsassemble.models import ProviderConfig, Role
 from agentsassemble.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS, SSE_KEEPALIVE_INTERVAL_SECONDS
 
-TAB_LABELS = {"lobby": "로비", "live": "실황", "board": "작전판", "archive": "아카이브"}
-TABS = ["lobby", "live", "board", "archive"]
 LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT = PROBE_REPLY_EVENT_TAIL_LIMIT
 SSE_ERROR_MESSAGE_LIMIT = 500
 REMOTE_LOBBY_REQUESTER = None
@@ -747,490 +757,6 @@ def _backfill_room_registry(output_root: Path) -> None:
             )
     except Exception:
         return
-
-
-def list_meetings(output_root: Path, now: float | None = None) -> list[dict[str, object]]:
-    meetings_dir = output_root / "meetings"
-    if not meetings_dir.exists():
-        return []
-
-    meetings = []
-    for meeting_dir in meetings_dir.iterdir():
-        record_path = meeting_dir / "meeting.json"
-        live_path = meeting_dir / "live_state.json"
-        if not record_path.exists() and not live_path.exists():
-            continue
-        try:
-            meeting, source_path, has_final_record = _load_meeting_record(meeting_dir)
-        except json.JSONDecodeError:
-            continue
-        if _is_diagnostic_meeting_record(meeting):
-            continue
-        meeting = infer_live_status(
-            meeting,
-            meeting_dir,
-            has_final_record=has_final_record,
-            now=now,
-        )
-        stat = source_path.stat()
-        meetings.append(
-            {
-                "meeting_id": meeting.get("meeting_id", meeting_dir.name),
-                "topic": meeting.get("topic", ""),
-                "question": meeting.get("question", ""),
-                "created_at": meeting.get("audit_metadata", {}).get("created_at", ""),
-                "live_status": meeting.get("live_status", "complete" if record_path.exists() else "unknown"),
-                "path": str(meeting_dir),
-                "mtime": stat.st_mtime,
-            }
-        )
-    return sorted(meetings, key=lambda item: item["mtime"], reverse=True)
-
-
-def _is_diagnostic_meeting_record(meeting: dict[str, object]) -> bool:
-    return _payload_bool(meeting.get("diagnostic"))
-
-
-def build_meeting_payload(
-    meeting_dir: Path,
-    now: float | None = None,
-    *,
-    output_root: Path | None = None,
-) -> dict[str, object]:
-    meeting, _, has_final_record = _load_meeting_record(meeting_dir)
-    meeting = infer_live_status(
-        meeting,
-        meeting_dir,
-        has_final_record=has_final_record,
-        now=now,
-    )
-    lifecycle_live_agents = _lifecycle_live_agents_for_meeting(
-        output_root or _output_root_for_meeting_dir(meeting_dir),
-        meeting,
-    )
-    artifacts = {
-        name: _read_optional(meeting_dir / name)
-        for name in ("agenda.md", "transcript.md", "decision.md", "room-log.md", "meeting.json")
-    }
-    if not (meeting_dir / "transcript.md").exists() and not has_final_record:
-        artifacts["transcript.md"] = projected_live_transcript_text(meeting_dir, meeting=meeting)
-    artifacts.update(_shared_memory_artifacts(meeting_dir, meeting=meeting, has_final_record=has_final_record))
-    tasks = {
-        task_path.name: task_path.read_text(encoding="utf-8")
-        for task_path in sorted((meeting_dir / "tasks").glob("*.md"))
-    }
-    return_packets = {
-        packet_path.name: packet_path.read_text(encoding="utf-8")
-        for packet_path in sorted((meeting_dir / "return_packets").glob("*.md"))
-    }
-    review_checkpoints = {
-        checkpoint_path.name: checkpoint_path.read_text(encoding="utf-8")
-        for checkpoint_path in sorted((meeting_dir / "review_checkpoints").glob("*.*"))
-        if checkpoint_path.suffix in {".md", ".json"}
-    }
-    research = {}
-    research_json = {}
-    research_root = meeting_dir / "private_research"
-    if research_root.exists():
-        for research_path in sorted(research_root.glob("*/research.md")):
-            research[f"{research_path.parent.name}/research.md"] = research_path.read_text(encoding="utf-8")
-        for research_path in sorted(research_root.glob("*/research.json")):
-            try:
-                research_json[research_path.parent.name] = json.loads(research_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                research_json[research_path.parent.name] = {"error": "Research JSON could not be parsed."}
-    return {
-        "tabs": TABS,
-        "tab_labels": TAB_LABELS,
-        "meeting": meeting,
-        "lifecycle": project_meeting_lifecycle(meeting_dir, now=now, live_agents=lifecycle_live_agents),
-        "artifacts": artifacts,
-        "tasks": tasks,
-        "return_packets": return_packets,
-        "review_checkpoints": review_checkpoints,
-        "research": research,
-        "research_json": research_json,
-        "live_events": read_live_events(meeting_dir),
-    }
-
-
-WORKROOM_QUEUE_ARTIFACT_PATHS = (
-    "transcript.md",
-    "decision.md",
-    "shared_memory/rolling-summary.md",
-    "shared_memory/action-items.md",
-    "shared_memory/open-questions.md",
-)
-WORKROOM_QUEUE_SCOPE_OVERLAP_LIMIT = 5
-WORKROOM_QUEUE_SCOPE_SUMMARIES = {"scope_overlap_evidence", "no_obvious_overlaps"}
-WORKROOM_QUEUE_SCOPE_KINDS = {"file", "dir"}
-WORKROOM_QUEUE_SCOPE_UNSAFE_SEGMENT_MARKERS = (
-    "authorization",
-    "auth_ref",
-    "api-key",
-    "api_key",
-    "apikey",
-    "x-api-key",
-    "bearer",
-    "credential",
-    "password",
-    "secret",
-    "session",
-    "token",
-    "cookie",
-)
-
-SAFE_MEETING_STREAM_EVENT_STRING_FIELDS = (
-    "id",
-    "event_id",
-    "created_at",
-    "kind",
-    "meeting_id",
-    "channel",
-    "audience",
-    "actor_id",
-    "target_agent_id",
-    "source_event_id",
-    "role_id",
-    "display_name",
-    "artifact_kind",
-    "round",
-    "turn_id",
-    "engagement_mode",
-    "confidence",
-    "retry_status",
-)
-SAFE_MEETING_STREAM_TEXT_FIELDS = (
-    "content",
-    "message",
-    "summary",
-    "position",
-    "change_reason",
-    "remaining_resistance",
-)
-PRIVATE_MEETING_STREAM_CHANNELS = {"review"}
-PRIVATE_MEETING_STREAM_KINDS = {"live_agent_turn_request"}
-
-
-def build_workroom_queue_payload(
-    meeting_dir: Path,
-    now: float | None = None,
-    *,
-    output_root: Path | None = None,
-) -> dict[str, object]:
-    meeting, _, has_final_record = _load_meeting_record(meeting_dir)
-    meeting = infer_live_status(
-        meeting,
-        meeting_dir,
-        has_final_record=has_final_record,
-        now=now,
-    )
-    lifecycle_live_agents = _lifecycle_live_agents_for_meeting(
-        output_root or _output_root_for_meeting_dir(meeting_dir),
-        meeting,
-    )
-    return {
-        "meeting_id": clean_lobby_text(meeting.get("meeting_id") or meeting_dir.name, limit=128),
-        "lifecycle": project_meeting_lifecycle(
-            meeting_dir,
-            now=now,
-            live_agents=lifecycle_live_agents,
-        ),
-        "artifacts": {
-            path: {"available": _workroom_artifact_available(meeting_dir, path)}
-            for path in WORKROOM_QUEUE_ARTIFACT_PATHS
-        },
-        "return_packets": {
-            "count": _count_existing_files(meeting_dir / "return_packets", {".md"}),
-        },
-        "review_checkpoints": {
-            "count": _count_existing_stems(meeting_dir / "review_checkpoints", {".md", ".json"}),
-        },
-        "task_scope": _workroom_task_scope_payload(meeting_dir, meeting),
-    }
-
-
-def _workroom_artifact_available(meeting_dir: Path, artifact_path: str) -> bool:
-    path = meeting_dir / artifact_path
-    try:
-        return path.is_file() and path.stat().st_size > 0
-    except OSError:
-        return False
-
-
-def _count_existing_files(root: Path, suffixes: set[str]) -> int:
-    if not root.exists():
-        return 0
-    count = 0
-    for path in root.iterdir():
-        if path.is_file() and path.suffix in suffixes:
-            count += 1
-    return count
-
-
-def _count_existing_stems(root: Path, suffixes: set[str]) -> int:
-    if not root.exists():
-        return 0
-    stems = {
-        path.stem
-        for path in root.iterdir()
-        if path.is_file() and path.suffix in suffixes
-    }
-    return len(stems)
-
-
-def _workroom_task_scope_payload(meeting_dir: Path, meeting: dict[str, object]) -> dict[str, object]:
-    report = _read_workroom_task_scope_report(meeting_dir)
-    summary_source = report if report is not None else meeting.get("task_scope_report")
-    if not isinstance(summary_source, dict):
-        summary_source = {}
-    overlaps = _safe_workroom_task_scope_overlaps(
-        report.get("overlaps") if isinstance(report, dict) else []
-    )
-    overlap_count = max(
-        _safe_nonnegative_int(summary_source.get("overlap_count")),
-        len(overlaps),
-    )
-    return {
-        "available": bool(report or summary_source),
-        "summary": _safe_workroom_task_scope_summary(summary_source.get("summary")),
-        "overlap_count": overlap_count,
-        "candidate_count_total": _safe_nonnegative_int(summary_source.get("candidate_count_total")),
-        "overlaps": overlaps,
-        "overlaps_truncated": bool(
-            summary_source.get("overlaps_truncated")
-            or (report and len(report.get("overlaps") if isinstance(report.get("overlaps"), list) else []) > len(overlaps))
-        ),
-    }
-
-
-def _read_workroom_task_scope_report(meeting_dir: Path) -> dict[str, object] | None:
-    try:
-        payload = json.loads((meeting_dir / "task_scope_report.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict):
-        return None
-    return payload
-
-
-def _safe_workroom_task_scope_summary(value: object) -> str:
-    summary = str(value or "").strip()
-    return summary if summary in WORKROOM_QUEUE_SCOPE_SUMMARIES else "unknown"
-
-
-def _safe_workroom_task_scope_overlaps(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, list):
-        return []
-    overlaps: list[dict[str, object]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        kind = str(item.get("kind") or "").strip()
-        token = _safe_workroom_scope_token(item.get("token"))
-        if kind not in WORKROOM_QUEUE_SCOPE_KINDS or not token:
-            continue
-        overlaps.append(
-            {
-                "kind": kind,
-                "token": token,
-            }
-        )
-        if len(overlaps) >= WORKROOM_QUEUE_SCOPE_OVERLAP_LIMIT:
-            break
-    return overlaps
-
-
-def _safe_workroom_scope_token(value: object) -> str:
-    token = str(value or "").strip().strip("`'\"")
-    if not token or len(token) > 160:
-        return ""
-    if token.startswith(("/", "~")) or "://" in token or "\\" in token:
-        return ""
-    segments = [segment for segment in token.split("/") if segment]
-    if len(segments) < 2 or any(segment in {".", ".."} for segment in segments):
-        return ""
-    if any(_workroom_scope_segment_looks_sensitive(segment) for segment in segments):
-        return ""
-    first = segments[0].rstrip(".")
-    if "." in first or ":" in token:
-        return ""
-    if token.endswith("/"):
-        return token if all(re.fullmatch(r"[A-Za-z0-9._-]+", segment) for segment in segments) else ""
-    if not re.fullmatch(r"(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._-]+\.[A-Za-z0-9]{1,8}", token):
-        return ""
-    return token
-
-
-def _workroom_scope_segment_looks_sensitive(segment: str) -> bool:
-    lowered = segment.casefold()
-    if segment.startswith((".", "-")) or "=" in segment:
-        return True
-    return any(marker in lowered for marker in WORKROOM_QUEUE_SCOPE_UNSAFE_SEGMENT_MARKERS)
-
-
-def _safe_nonnegative_int(value: object) -> int:
-    try:
-        number = float(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0
-    if not math.isfinite(number):
-        return 0
-    try:
-        return max(0, int(number))
-    except (TypeError, ValueError, OverflowError):
-        return 0
-
-
-def project_meeting_stream_events(events: list[dict[str, object]]) -> list[dict[str, object]]:
-    projected: list[dict[str, object]] = []
-    for event in events:
-        safe_event = _project_meeting_stream_event(event)
-        if safe_event is not None:
-            projected.append(safe_event)
-    return projected
-
-
-def _project_meeting_stream_event(event: dict[str, object]) -> dict[str, object] | None:
-    kind = clean_lobby_text(event.get("kind"), limit=64)
-    channel = clean_lobby_text(event.get("channel"), limit=32)
-    audience = clean_lobby_text(event.get("audience"), limit=64)
-    if channel in PRIVATE_MEETING_STREAM_CHANNELS:
-        return None
-    if kind in PRIVATE_MEETING_STREAM_KINDS or audience.startswith("agent:"):
-        return None
-    safe: dict[str, object] = {}
-    for field in SAFE_MEETING_STREAM_EVENT_STRING_FIELDS:
-        value = clean_lobby_text(event.get(field), limit=256)
-        if value:
-            safe[field] = value
-    if isinstance(event.get("official_record"), bool):
-        safe["official_record"] = event["official_record"]
-    for field in ("turn_index", "retry_attempts"):
-        value = event.get(field)
-        if isinstance(value, int) and not isinstance(value, bool):
-            safe[field] = value
-    for field in ("artifact_path", "artifact_json_path"):
-        value = _safe_meeting_stream_relative_path(event.get(field))
-        if value:
-            safe[field] = value
-    for field in SAFE_MEETING_STREAM_TEXT_FIELDS:
-        value = clean_lobby_text(event.get(field), limit=2000)
-        if value:
-            safe[field] = value
-    return safe if safe.get("id") else None
-
-
-def _safe_meeting_stream_relative_path(value: object) -> str:
-    text = clean_lobby_text(value, limit=256)
-    if not text:
-        return ""
-    if text.startswith(("/", "\\", "~")) or "\\" in text or ":" in text:
-        return ""
-    parts = [part for part in text.split("/") if part]
-    if not parts or any(part in {".", ".."} for part in parts):
-        return ""
-    return "/".join(parts)
-
-
-def build_meeting_stream_payload(
-    meeting_dir: Path,
-    now: float | None = None,
-    *,
-    output_root: Path | None = None,
-) -> dict[str, object]:
-    meeting, _, has_final_record = _load_meeting_record(meeting_dir)
-    meeting = infer_live_status(
-        meeting,
-        meeting_dir,
-        has_final_record=has_final_record,
-        now=now,
-    )
-    meeting_id = clean_lobby_text(meeting.get("meeting_id") or meeting_dir.name, limit=128)
-    lifecycle_live_agents = _lifecycle_live_agents_for_meeting(
-        output_root or _output_root_for_meeting_dir(meeting_dir),
-        meeting,
-    )
-    return {
-        "meeting": {
-            "meeting_id": meeting_id,
-            "topic": clean_lobby_text(meeting.get("topic"), limit=ROOM_TOPIC_LIMIT),
-            "question": clean_lobby_text(meeting.get("question"), limit=ROOM_TOPIC_LIMIT),
-            "live_status": clean_lobby_text(meeting.get("live_status"), limit=64),
-        },
-        "lifecycle": project_meeting_lifecycle(
-            meeting_dir,
-            now=now,
-            live_agents=lifecycle_live_agents,
-        ),
-        "live_events": project_meeting_stream_events(read_live_events(meeting_dir)),
-    }
-
-
-def _output_root_for_meeting_dir(meeting_dir: Path) -> Path | None:
-    parent = meeting_dir.parent
-    if parent.name != "meetings":
-        return None
-    return parent.parent
-
-
-def _lifecycle_live_agents_for_meeting(
-    output_root: Path | None,
-    meeting: dict[str, object],
-) -> list[dict[str, object]]:
-    if output_root is None:
-        return []
-    meeting_id = clean_lobby_text(meeting.get("meeting_id"), limit=128)
-    agents = []
-    for agent in read_live_agents(output_root):
-        agent_id = clean_lobby_text(agent.get("agent_id"), limit=64)
-        agent_meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
-        if not meeting_id or agent_meeting_id != meeting_id:
-            continue
-        agents.append(
-            {
-                **agent,
-                **_live_agent_admission_details_from_meeting(meeting, agent, agent_id=agent_id),
-            }
-        )
-    return agents
-
-
-def _shared_memory_artifacts(
-    meeting_dir: Path,
-    *,
-    meeting: dict[str, object],
-    has_final_record: bool,
-) -> dict[str, str]:
-    shared_dir = meeting_dir / "shared_memory"
-    artifact_paths = {
-        "shared_memory/rolling-summary.md": shared_dir / "rolling-summary.md",
-        "shared_memory/open-questions.md": shared_dir / "open-questions.md",
-        "shared_memory/action-items.md": shared_dir / "action-items.md",
-        "shared_memory/index.json": shared_dir / "index.json",
-    }
-    existing = {
-        key: path.read_text(encoding="utf-8")
-        for key, path in artifact_paths.items()
-        if path.exists()
-    }
-    if existing or has_final_record:
-        return existing
-    return projected_live_meeting_memory_artifacts(meeting_dir, meeting=meeting)
-
-
-def _load_meeting_record(meeting_dir: Path) -> tuple[dict[str, object], Path, bool]:
-    meeting_path = meeting_dir / "meeting.json"
-    live_path = meeting_dir / "live_state.json"
-    if meeting_path.exists():
-        try:
-            meeting = json.loads(meeting_path.read_text(encoding="utf-8"))
-            meeting = _merge_live_progress_from_path(meeting, live_path)
-            return meeting, meeting_path, True
-        except json.JSONDecodeError:
-            if not live_path.exists():
-                raise
-    return json.loads(live_path.read_text(encoding="utf-8")), live_path, False
 
 
 def _build_gui_application_services(
@@ -1735,10 +1261,6 @@ class LiveAgentSessionRunMonitor(PeriodicSessionRunMonitor):
             error=SESSION_RUN_MONITOR_ERROR,
             details={"error_type": error_type},
         )
-
-
-def _read_optional(path: Path) -> str:
-    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 def read_lobby(output_root: Path, limit: int | None = 80, *, meeting_id: str = "") -> list[dict[str, object]]:
@@ -5664,69 +5186,11 @@ def _live_agent_roster_admission_details(output_root: Path, agent: dict[str, obj
     return _live_agent_admission_details_from_meeting(meeting, agent, agent_id=agent_id)
 
 
-def _live_agent_admission_details_from_meeting(
-    meeting: dict[str, object],
-    agent: dict[str, object],
-    *,
-    agent_id: str,
-) -> dict[str, object]:
-    binding = _meeting_binding_for_agent(meeting, agent_id)
-    if not binding:
-        return {"admission_status": "meeting_lobby_only", "host_approved_binding": False}
-
-    provider_id = clean_lobby_text(binding.get("provider_id"), limit=128)
-    providers = meeting.get("provider_configs") if isinstance(meeting.get("provider_configs"), dict) else {}
-    provider = providers.get(provider_id) if isinstance(providers.get(provider_id), dict) else {}
-    binding_provider_kind = clean_lobby_text(provider.get("kind"), limit=64)
-    registered_provider_kind = clean_lobby_text(agent.get("provider_kind"), limit=64)
-    conflicts: list[str] = []
-    if not provider:
-        conflicts.append("binding_provider_missing")
-    elif binding_provider_kind and registered_provider_kind and binding_provider_kind != registered_provider_kind:
-        conflicts.append("provider_kind_mismatch")
-
-    admission_status = "binding_conflict" if conflicts else "bound_to_meeting"
-    details: dict[str, object] = {
-        "admission_status": admission_status,
-        "host_approved_binding": admission_status == "bound_to_meeting",
-        "binding_role_id": clean_lobby_text(binding.get("role_id"), limit=128),
-        "binding_provider_id": provider_id,
-        "binding_provider_kind": binding_provider_kind,
-        "binding_permission_profile_id": clean_lobby_text(binding.get("permission_profile_id"), limit=128),
-        "binding_join_mode": clean_lobby_text(binding.get("join_mode"), limit=64),
-    }
-    if conflicts:
-        details["binding_conflicts"] = conflicts
-    return details
-
-
-def _meeting_binding_for_agent(meeting: dict[str, object], agent_id: str) -> dict[str, object]:
-    for binding in _as_dict_list(meeting.get("agent_bindings")):
-        if clean_lobby_text(binding.get("agent_id"), limit=64) == agent_id:
-            return binding
-    return {}
-
-
 def _live_agent_for_id(output_root: Path, agent_id: str) -> dict[str, object]:
     for agent in read_live_agents(output_root):
         if agent.get("agent_id") == agent_id:
             return agent
     raise ValueError(f"Live agent {agent_id} was not found.")
-
-
-def _safe_meeting_dir(output_root: Path, meeting_id: str) -> Path:
-    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
-    if not clean_meeting_id or clean_meeting_id in {".", ".."}:
-        raise ValueError(f"Meeting {clean_meeting_id or '(blank)'} was not found.")
-    if "/" in clean_meeting_id or "\\" in clean_meeting_id or Path(clean_meeting_id).name != clean_meeting_id:
-        raise ValueError(f"Meeting {clean_meeting_id} was not found.")
-    meetings_root = (output_root / "meetings").resolve()
-    meeting_dir = (meetings_root / clean_meeting_id).resolve()
-    try:
-        meeting_dir.relative_to(meetings_root)
-    except ValueError as error:
-        raise ValueError(f"Meeting {clean_meeting_id} was not found.") from error
-    return meeting_dir
 
 
 def _live_events_visible_to_agent(events: list[dict[str, object]], agent_id: str) -> list[dict[str, object]]:
@@ -6168,71 +5632,6 @@ def _resolve_lobby_meeting_dir(output_root: Path, meeting_id: str | None) -> Pat
     if not meetings:
         raise ValueError("No meeting is available for remote lobby chat.")
     return Path(str(meetings[0]["path"]))
-
-
-def _read_meeting_record(meeting_dir: Path) -> dict[str, object]:
-    meeting_path = meeting_dir / "meeting.json"
-    live_path = meeting_dir / "live_state.json"
-    if meeting_path.exists():
-        meeting = json.loads(meeting_path.read_text(encoding="utf-8"))
-        return _merge_live_progress_from_path(meeting, live_path)
-    if live_path.exists():
-        return json.loads(live_path.read_text(encoding="utf-8"))
-    else:
-        raise ValueError("Meeting record is missing.")
-
-
-def _merge_live_progress_from_path(meeting: dict[str, object], live_path: Path) -> dict[str, object]:
-    if not live_path.exists():
-        return meeting
-    try:
-        live_state = json.loads(live_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return meeting
-    if not isinstance(live_state, dict):
-        return meeting
-    return _merge_live_progress_into_meeting_record(meeting, live_state)
-
-
-def _merge_live_progress_into_meeting_record(
-    meeting: dict[str, object],
-    live_state: dict[str, object],
-) -> dict[str, object]:
-    merged = dict(meeting)
-    live_rounds = _as_dict_list(live_state.get("debate_rounds"))
-    if live_rounds:
-        merged["debate_rounds"] = _merge_debate_round_records(_as_dict_list(meeting.get("debate_rounds")), live_rounds)
-    return merged
-
-
-def _merge_debate_round_records(
-    base_rounds: list[dict[str, object]],
-    live_rounds: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    merged_rounds = [dict(item) for item in base_rounds]
-    indexes = {
-        round_id: index
-        for index, item in enumerate(merged_rounds)
-        if (round_id := clean_lobby_text(item.get("id") or item.get("round"), limit=128))
-    }
-    for live_item in live_rounds:
-        round_id = clean_lobby_text(live_item.get("id") or live_item.get("round"), limit=128)
-        if not round_id:
-            continue
-        if round_id in indexes:
-            index = indexes[round_id]
-            base_item = merged_rounds[index]
-            base_status = clean_lobby_text(base_item.get("status"), limit=32)
-            live_status = clean_lobby_text(live_item.get("status"), limit=32)
-            merged_item = dict(base_item)
-            merged_item.update(live_item)
-            if base_status == "answered" and live_status != "answered":
-                merged_item["status"] = "answered"
-            merged_rounds[index] = merged_item
-        else:
-            indexes[round_id] = len(merged_rounds)
-            merged_rounds.append(dict(live_item))
-    return merged_rounds
 
 
 def _select_remote_bridge_binding(
@@ -7595,6 +6994,10 @@ def _make_handler(
     register_room_routes(route_table)
     register_room_settings_routes(route_table)
     register_side_chat_routes(route_table)
+    register_legacy_meeting_routes(
+        route_table,
+        queries=LegacyMeetingQueryService(output_root),
+    )
 
     def _enqueue_legacy_lobby_auto_turn(event: dict[str, object]) -> None:
         enqueue_agent_session_auto_turn_for_lobby_event(
@@ -7855,9 +7258,6 @@ def _make_handler(
             if path.startswith("/static/"):
                 self._send_error(HTTPStatus.NOT_FOUND, "Legacy static assets are retired.")
                 return
-            if path == "/api/meetings":
-                self._send_json({"meetings": list_meetings(output_root)})
-                return
             if path == "/api/live-agent-create/options":
                 self._send_json(frontend_live_agent_options_payload(default_workspace=Path.cwd()))
                 return
@@ -7897,83 +7297,6 @@ def _make_handler(
                 return
             if path == "/api/codex-sessions":
                 self._send_json(codex_sessions_payload(limit=self._limit(query, default=20)))
-                return
-            if path == "/api/meetings/latest":
-                meetings = list_meetings(output_root)
-                if not meetings:
-                    self._send_json({"meeting": None})
-                    return
-                self._send_json(build_meeting_payload(Path(str(meetings[0]["path"])), output_root=output_root))
-                return
-            if path.startswith("/api/meetings/") and path.endswith("/lifecycle"):
-                meeting_id = unquote(path.removeprefix("/api/meetings/").removesuffix("/lifecycle").strip("/"))
-                try:
-                    meeting_dir = _safe_meeting_dir(output_root, meeting_id)
-                except ValueError as error:
-                    self._send_error(HTTPStatus.NOT_FOUND, str(error))
-                    return
-                if not meeting_dir.exists():
-                    self._send_error(HTTPStatus.NOT_FOUND, "Meeting not found")
-                    return
-                try:
-                    lifecycle_meeting = _read_meeting_record(meeting_dir)
-                except (OSError, json.JSONDecodeError):
-                    lifecycle_meeting = {"meeting_id": meeting_id}
-                self._send_json(
-                    {
-                        "meeting_id": meeting_id,
-                        "lifecycle": project_meeting_lifecycle(
-                            meeting_dir,
-                            now=time.time(),
-                            live_agents=_lifecycle_live_agents_for_meeting(
-                                output_root,
-                                lifecycle_meeting,
-                            ),
-                        ),
-                    }
-                )
-                return
-            if path.startswith("/api/meetings/") and path.endswith("/workroom-queue"):
-                meeting_id = unquote(path.removeprefix("/api/meetings/").removesuffix("/workroom-queue").strip("/"))
-                try:
-                    meeting_dir = _safe_meeting_dir(output_root, meeting_id)
-                except ValueError as error:
-                    self._send_error(HTTPStatus.NOT_FOUND, str(error))
-                    return
-                if not meeting_dir.exists():
-                    self._send_error(HTTPStatus.NOT_FOUND, "Meeting not found")
-                    return
-                self._send_json(
-                    build_workroom_queue_payload(
-                        meeting_dir,
-                        now=time.time(),
-                        output_root=output_root,
-                    )
-                )
-                return
-            meeting_events_id = self._meeting_events_id(path)
-            if meeting_events_id:
-                try:
-                    meeting_dir = _safe_meeting_dir(output_root, meeting_events_id)
-                except ValueError as error:
-                    self._send_error(HTTPStatus.NOT_FOUND, str(error))
-                    return
-                if not meeting_dir.exists():
-                    self._send_error(HTTPStatus.NOT_FOUND, "Meeting not found")
-                    return
-                self._send_sse_stream("meeting", "meeting", meeting_id=meeting_events_id, last_event_id=self._last_event_id(query))
-                return
-            if path.startswith("/api/meetings/"):
-                meeting_id = unquote(path.removeprefix("/api/meetings/"))
-                try:
-                    meeting_dir = _safe_meeting_dir(output_root, meeting_id)
-                except ValueError as error:
-                    self._send_error(HTTPStatus.NOT_FOUND, str(error))
-                    return
-                if not meeting_dir.exists():
-                    self._send_error(HTTPStatus.NOT_FOUND, "Meeting not found")
-                    return
-                self._send_json(build_meeting_payload(meeting_dir, output_root=output_root))
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")
 
@@ -9602,14 +8925,6 @@ def _make_handler(
             query_value = query.get("last_event_id", [None])[0]
             header_value = self.headers.get("Last-Event-ID")
             return _optional_str(header_value) or _optional_str(query_value)
-
-        def _meeting_events_id(self, path: str) -> str | None:
-            prefix = "/api/meetings/"
-            suffix = "/events"
-            if not path.startswith(prefix) or not path.endswith(suffix):
-                return None
-            meeting_id = path[len(prefix) : -len(suffix)]
-            return unquote(meeting_id) if meeting_id else None
 
         def _limit(self, query: dict[str, list[str]], default: int) -> int:
             try:

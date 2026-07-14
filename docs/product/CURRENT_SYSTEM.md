@@ -233,6 +233,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Durable legacy session-run monitor lifecycle | `session_run_monitor.py`; reconcile policy wiring in `gui.py` |
 | Canonical room HTTP routes | `gui_room_*_http.py`; coordinator in `gui_room_http.py` |
 | Legacy lobby POST/SSE compatibility | `gui_legacy_lobby_http.py`; do not attach new canonical behavior here |
+| Legacy meeting read/lifecycle/workroom/SSE compatibility | `gui_legacy_meeting_http.py`, query projection in `legacy_meeting_queries.py`, record semantics in `legacy_meeting_records.py` |
 | Legacy resident read-only HTTP projections | `gui_legacy_live_agent_read_http.py`; payload policy remains outside the registrar |
 | Room-global settings | `room_global_settings.py`, `room_settings_service.py`, repository methods; HTTP in `gui_room_settings_http.py` |
 | User-owned room notification/read preferences | validation in `room_user_preferences.py`; SQLite persistence in `identity_room_preferences.py`; composition in `room_settings_service.py` |

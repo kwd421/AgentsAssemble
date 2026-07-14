@@ -14,6 +14,10 @@ DYNAMIC_ROUTE_HELPERS = {
 }
 EXPECTED_DYNAMIC_ROUTES = {
     ("GET", "/api/attachments/{attachment_id}"),
+    ("GET", "/api/meetings/{meeting_id}"),
+    ("GET", "/api/meetings/{meeting_id}/events"),
+    ("GET", "/api/meetings/{meeting_id}/lifecycle"),
+    ("GET", "/api/meetings/{meeting_id}/workroom-queue"),
     ("POST", "/api/live-agent-processes/{group_id}/stop"),
     ("POST", "/api/live-agent-processes/{group_id}/restart"),
     ("POST", "/api/live-agent-processes/{group_id}/recover"),

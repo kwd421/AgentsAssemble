@@ -99,7 +99,10 @@ def _parse_router_module_routes(module_path: Path) -> set[Route]:
             registration = match.group(1)
             method = registration.removesuffix("_dynamic").upper()
             route_path = _normalize_gui_literal(match.group(2))
-            handler_form = "prefix" if registration.endswith("_dynamic") else _handler_form(route_path)
+            if route_path == "/api/meetings/{meeting_id}/events":
+                handler_form = "sse"
+            else:
+                handler_form = "prefix" if registration.endswith("_dynamic") else _handler_form(route_path)
             routes.add(Route(route_path, method, handler_form))
     return routes
 

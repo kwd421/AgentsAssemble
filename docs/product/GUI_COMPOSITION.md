@@ -154,6 +154,7 @@ These families already have a clear module owner and should not move back into
 | `gui_room_moderation_media_http.py` | Mixed current/optional/compatibility | Roster compatibility, moderation HTTP, custom channels, voice presence | `tests/test_gui_server_room_routes.py`, `tests/test_room_channels_http.py` |
 | `gui_room_agent_http.py` | Compatibility | Pre-canonical Agent Session HTTP create/resume/turn controls | `tests/test_agent_session_cli.py`, `tests/test_live_agent_session_agent_controls.py` |
 | `gui_legacy_lobby_http.py` | Compatibility | HTTP lobby write and lobby SSE used by the current React fallback/history path | `tests/test_gui_server_streams_http.py`, `tests/test_gui_server_lobby_social.py` |
+| `gui_legacy_meeting_http.py` | Compatibility | Legacy meeting list/detail, lifecycle, workroom queue, and meeting SSE transport | `tests/test_gui_server_meeting_payload.py`, `tests/test_gui_server_discovery_workroom.py`, `tests/test_gui_server_streams_http.py` |
 | `gui_side_chat_http.py` | Active optional | Separate side-chat history and SSE | `tests/test_frontend_side_chat_runtime.py` |
 | `gui_social_http.py` | Active optional | Local profile, friends, and friend DM | `tests/test_gui_server_social_http.py`, `tests/test_room_social_flows.py` |
 | `gui_mafia_http.py` | Active optional | Mafia game state and actions | `tests/test_gui_server_mafia_http.py`, `tests/test_mafia_game.py` |
@@ -176,7 +177,7 @@ families directly.
 | Family | Classification | Why it remains reachable | Next action |
 | --- | --- | --- | --- |
 | `/ws`, `/`, `/app/*`, `/join`, guarded React assets | Current core composition | Protocol upgrade and static delivery are transport concerns | Keep thin transport branches in the final handler |
-| `/api/meetings*`, meeting SSE, workroom, finalize, review, and official-turn routes | Compatibility | React archive/board reads and legacy CLI/meeting workflows still call them | Move read projections and diagnostics together; retain mutation behavior until a separate legacy decision |
+| `/api/meetings/{meeting_id}` finalize, review, and official-turn mutations | Compatibility | Legacy CLI and meeting workflows still call them | Retain mutation behavior until a separate legacy decision; read projections already belong to `gui_legacy_meeting_http.py` |
 | `/api/live-agents*` registration, room packet, heartbeat, lobby, DM reply, official turn, probe, leave, and engagement | Compatibility | CLI, MCP, resident runner, and smoke clients still call them | Move behind a typed legacy resident-agent service and Router registrations |
 | `/api/live-agent-*` discovery, preflight, health, smoke, readiness, create/login, room/session operations | Mixed current support and compatibility | Provider login is current; most process/session/smoke operations remain operator or CLI contracts | Split current provider-login support from legacy diagnostics; preserve exact ACK/error payloads |
 | `/api/codex-sessions/invite` and `/join` | Compatibility | CLI still calls the Codex meeting-session compatibility workflow | Move with legacy meeting/session service, never into the canonical provider adapter |
@@ -218,8 +219,12 @@ decision. Leaving them in the old chain makes their compatibility cost visible.
 
 ### Phase 5.3 - Retained read and diagnostic behavior
 
-1. Move meeting read/lifecycle/workroom/SSE projections behind a typed legacy
-   meeting query service.
+1. Completed: meeting read/lifecycle/workroom/SSE projections now live behind
+   `LegacyMeetingQueryService`. `legacy_meeting_records.py` owns path
+   validation, final/live record selection, progress merging, and legacy agent
+   admission projection; `gui_legacy_meeting_http.py` owns the six public GET
+   routes. `agentsassemble.gui` re-exports the historical query function names
+   for compatibility without owning their implementation.
 2. Move resident-agent read packets, health, discovery, preflight, smoke, and
    readiness behind typed compatibility services.
 3. Register their routes on `Router`; preserve methods, paths, authorization,
@@ -260,7 +265,11 @@ completion:
 ## Context Reset Brief
 
 After a context reset, read `CURRENT_SYSTEM.md`, the active room-correctness
-plan, and this file. Start at the first unfinished phase. Do not infer that a
-route is obsolete merely because it is not called by React; CLI, MCP, smoke,
-and legacy meeting clients are real compatibility consumers. Do not push unless
-the user explicitly asks.
+plan, and this file. Phase 5.3 step 1 is complete; start with the retained
+resident-agent read/diagnostic families in step 2. Do not move the seven
+deletion candidates while doing that work. Do not infer that a route is
+obsolete merely because it is not called by React; CLI, MCP, smoke, and legacy
+meeting clients are real compatibility consumers. The canonical identity
+invariant still requires an Agent Session name/avatar update to reproject old
+loaded messages, later history pages, typing state, roster, and new messages by
+`participant_id`. Do not push unless the user explicitly asks.

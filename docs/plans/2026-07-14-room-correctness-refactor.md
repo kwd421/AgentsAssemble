@@ -680,3 +680,19 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   reprojection remains keyed by canonical `participant_id` and is unchanged.
   Phase 5.3 is next: move only retained legacy read/diagnostic families whose
   responsibility and behavioral tests are already identified.
+- 2026-07-14: Phase 5.3 step 1 moves legacy meeting list/detail, lifecycle,
+  workroom queue, and meeting SSE reads out of the generated handler and onto
+  `Router`. `LegacyMeetingQueryService` owns the read-only use cases;
+  `legacy_meeting_queries.py` owns archive/workroom/SSE redaction projections;
+  `legacy_meeting_records.py` owns safe path resolution, final/live record
+  selection and merge semantics, and host-approved resident binding evidence.
+  The historical query names remain re-exported from `agentsassemble.gui`, so
+  compatibility imports and patch points keep working without duplicate
+  implementations. Meeting payload, lifecycle, workroom, stream, traversal,
+  route-ownership, and parity tests pass; the full GUI discovery also passes
+  all 470 tests in 228.982 seconds. The user-visible Agent Session
+  identity contract remains unchanged and covered: canonical name/avatar
+  changes reproject already loaded messages and later history by
+  `participant_id`. The next slice is Phase 5.3 step 2, classifying and moving
+  only the retained resident-agent read/diagnostic routes while leaving all
+  seven deletion candidates in the legacy handler chain.
