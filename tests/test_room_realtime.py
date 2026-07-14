@@ -676,6 +676,42 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
         self.assertEqual(rejected.exception.code, "observed_seq_invalid")
 
+    def test_bridge_observation_does_not_wait_for_the_lifecycle_lock(self):
+        identity, _channel = self._connect_bridge("codex")
+        event = self._command(
+            "observed-during-stop-source",
+            "message.send",
+            {"content": "종료 직전까지 받은 이벤트"},
+        )["result"]["event"]
+        outcomes: list[object] = []
+
+        def checkpoint() -> None:
+            try:
+                outcomes.append(
+                    self._command(
+                        "observed-during-stop",
+                        "room.observed",
+                        {"through_seq": event["seq"]},
+                        identity,
+                    )
+                )
+            except Exception as error:  # pragma: no cover - assertion reports the error
+                outcomes.append(error)
+
+        with self.controller._lock:
+            worker = threading.Thread(target=checkpoint)
+            worker.start()
+            worker.join(timeout=0.5)
+
+        worker.join(timeout=1.0)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(outcomes), 1)
+        self.assertIsInstance(outcomes[0], dict)
+        self.assertEqual(
+            outcomes[0]["result"]["observed_through_seq"],
+            event["seq"],
+        )
+
     def test_shadow_attention_failure_is_diagnostic_and_does_not_block_current_routing(self):
         self.controller.attention_shadow_mode = "full"
         with patch.object(
@@ -1233,6 +1269,10 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(current["active_turn_id"], "")
         self.assertEqual(current["inflight_event_ids"], [])
         self.assertEqual(current["last_provider_sync_seq"], source["seq"])
+        self.assertEqual(
+            store.attention_state("general", "codex").last_provider_sync_seq,
+            source["seq"],
+        )
         self.assertEqual(store.attention_lease("general", lease_id)["status"], "released")
         finals = [
             event
@@ -2543,13 +2583,18 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             "message.send",
             {"content": "already delivered", "target_agent_id": "codex"},
         )["result"]["event"]
-        store.update_session_fields(
-            "general",
-            "codex",
-            runtime_status="idle",
-            last_provider_sync_seq=synced["seq"],
-            pending_event_ids=["missing-event", synced["id"]],
-        )
+        with store.transaction("general") as transaction:
+            transaction.advance_attention_state(
+                "codex",
+                provider_sync_seq=int(synced["seq"]),
+            )
+            transaction.update_session_fields(
+                "codex",
+                runtime_status="idle",
+                last_provider_sync_event_id=synced["id"],
+                last_provider_sync_seq=synced["seq"],
+                pending_event_ids=["missing-event", synced["id"]],
+            )
 
         with patch(
             "agentsassemble.room_realtime.build_room_turn_packet",
@@ -2591,13 +2636,18 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             "message.send",
             {"content": "deferred", "target_agent_id": "codex"},
         )["result"]["event"]
-        store.update_session_fields(
-            "general",
-            "codex",
-            runtime_status="idle",
-            last_provider_sync_seq=synced["seq"],
-            pending_event_ids=["missing-event", synced["id"], included["id"], deferred["id"]],
-        )
+        with store.transaction("general") as transaction:
+            transaction.advance_attention_state(
+                "codex",
+                provider_sync_seq=int(synced["seq"]),
+            )
+            transaction.update_session_fields(
+                "codex",
+                runtime_status="idle",
+                last_provider_sync_event_id=synced["id"],
+                last_provider_sync_seq=synced["seq"],
+                pending_event_ids=["missing-event", synced["id"], included["id"], deferred["id"]],
+            )
 
         with patch(
             "agentsassemble.room_realtime.build_room_turn_packet",

@@ -12,6 +12,7 @@ from agentsassemble.room_context import (
     project_room_context,
 )
 from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room_provider_sync_cursor import canonical_provider_sync_seq
 from agentsassemble.room_store import RoomStore
 
 DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS = DEFAULT_ROOM_CONTEXT_MESSAGES
@@ -72,9 +73,11 @@ def build_room_turn_packet(
     last_seen_event_id = clean_lobby_text(session.get("last_seen_event_id"), limit=128)
     last_provider_sync_event_id = clean_lobby_text(session.get("last_provider_sync_event_id"), limit=128)
     last_seen_seq = _nonnegative_int(session.get("last_seen_seq")) or store.event_sequence(room_id, last_seen_event_id)
-    last_provider_sync_seq = _nonnegative_int(session.get("last_provider_sync_seq")) or store.event_sequence(
+    last_provider_sync_seq = canonical_provider_sync_seq(
+        store,
         room_id,
-        last_provider_sync_event_id,
+        participant_id,
+        session,
     )
     recent_limit = _positive_int(max_recent_events, DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS)
     prompt_limit = _positive_int(max_prompt_chars, DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS)

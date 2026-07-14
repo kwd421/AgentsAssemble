@@ -172,6 +172,13 @@ class _PostgresRoomTransaction:
             observed_seq,
         )
 
+    def attention_state(self, participant_id: str) -> AgentAttentionState:
+        return read_attention_state(
+            self._connection,
+            self._room_id,
+            clean_participant_id(participant_id),
+        )
+
     def record_attention_evaluation(
         self,
         evaluation: AttentionEvaluation,

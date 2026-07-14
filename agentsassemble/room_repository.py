@@ -79,6 +79,8 @@ class RoomTransaction(Protocol):
         observed_seq: int,
     ) -> AgentAttentionState: ...
 
+    def attention_state(self, participant_id: str) -> AgentAttentionState: ...
+
     def record_attention_evaluation(
         self,
         evaluation: AttentionEvaluation,

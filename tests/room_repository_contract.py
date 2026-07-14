@@ -479,6 +479,7 @@ class RoomRepositoryContractMixin:
                 observed_seq=8,
                 attention_evaluated_seq=7,
             )
+            state_in_transaction = transaction.attention_state("agent-a")
             evaluation = AttentionEvaluation(
                 room_id="general",
                 source_event_id="event-7",
@@ -503,6 +504,7 @@ class RoomRepositoryContractMixin:
         jobs = self.repository.attention_jobs("general", mode="shadow")
         case = self._test_case()
         case.assertEqual(state.last_observed_seq, 8)
+        case.assertEqual(state_in_transaction, state)
         case.assertEqual(self.repository.attention_state("general", "agent-a"), state)
         case.assertEqual(duplicate_job["job_id"], first_job["job_id"])
         case.assertEqual([job["job_id"] for job in jobs], [first_job["job_id"]])

@@ -58,6 +58,15 @@ Observing the room does not imply spending provider tokens. Evaluating attention
 does not imply provider context delivery. These cursors must never be collapsed
 back into one `last_seen` value.
 
+`agent_attention_state.last_provider_sync_seq` is the provider-sync authority.
+The Agent Session keeps `last_provider_sync_seq` and
+`last_provider_sync_event_id` only as compatibility fields for existing clients
+and diagnostics. Before a packet is built or assigned, the canonical sequence,
+the compatibility sequence, and the sequence addressed by the compatibility
+event ID must match. A mismatch fails closed with
+`provider_sync_cursor_mismatch`; code must not choose whichever copy is more
+convenient at read time.
+
 ## Durable Records
 
 `agent_attention_state`
@@ -103,7 +112,10 @@ greater sequence advances the durable checkpoint, while equal or lower retries
 are no-ops and a sequence ahead of the canonical room stream is rejected.
 These lightweight checkpoints bypass the general command-result table. The
 one-second WebSocket receive timeout services this local flush deadline; it
-does not issue a network poll or invoke a provider.
+does not issue a network poll or invoke a provider. The checkpoint command is
+repository-atomic and does not acquire the controller lifecycle lock or create
+a missing room; this allows a Bridge to flush before acknowledging a remote
+stop without deadlocking the stop command.
 
 ## State and Commit Rules
 
@@ -127,6 +139,13 @@ references to missing or terminal work, and cancels work selected for a removed
 participant. Repairs commit with one `attention_reconciled` audit event; the
 startup diagnostics report counts and whether any room exceeded the processing
 bound. An unexpired lease owned by another controller generation is preserved.
+
+Startup also runs `ProviderSyncCursorReconciler` before serving turns. Missing
+copies are restored from the other durable record. If two nonzero cursors
+diverged, the monotonic maximum is retained, the repair is audited, and the
+session is marked `recovery_required`. A cursor beyond the canonical room event
+stream is reported as a failure and remains unusable. Compatibility fields are
+not removed in the same migration that changes read authority.
 
 SQLite and PostgreSQL implement the same attention transaction contract.
 PostgreSQL is explicitly configured rather than inferred, and hosted

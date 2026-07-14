@@ -75,6 +75,11 @@ from agentsassemble.room_projection import (
     public_session,
     runtime_diagnostic_fields as _runtime_diagnostic_fields,
 )
+from agentsassemble.room_provider_sync_cursor import (
+    ProviderSyncCursorParityError,
+    ProviderSyncCursorReconciler,
+    assert_provider_sync_cursor_parity,
+)
 from agentsassemble.room_routing import route_message_targets
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_settings import room_settings_payload
@@ -216,6 +221,9 @@ class RoomRealtimeController:
             self._providers_by_room[self.default_room_id][agent_id] = spec
             self._ensure_provider_session(self.default_room_id, spec)
         self._reconcile_startup_sessions()
+        self._provider_sync_cursor_reconciliation_report = ProviderSyncCursorReconciler(
+            self.store
+        ).reconcile()
         self._attention_reconciliation_report = RoomAttentionReconciler(self.store).reconcile()
 
     def _restore_server_owned_providers(self) -> None:
@@ -486,49 +494,55 @@ class RoomRealtimeController:
                 "status": "detached",
             },
         )
-        self.store.upsert_session(
-            room_id,
-            {
-                "session_id": participant_id,
-                "participant_id": participant_id,
-                "display_name": display_name,
-                "status": "available",
-                "provider_kind": provider_kind,
-                "runtime_kind": "external_bridge",
-                "connection_kind": "native_cli_bridge",
-                "runtime_profile_key": "",
-                "model_observation_policy": spec.model_observation_policy,
-                "model_verification_status": (
-                    "pending" if spec.model_observation_policy == "required" else "unavailable"
-                ),
-                "enabled": True,
-                "runtime_status": "starting",
-                "pending_event_ids": [],
-                "inflight_event_ids": [],
-                "turn_count": 0,
-                "last_provider_sync_event_id": "",
-                "last_provider_sync_seq": 0,
-                "last_seen_event_id": "",
-                "last_seen_seq": 0,
-                "bootstrap_cutoff_seq": 0,
-                "external_owned": True,
-                "process_ownership": "external",
-                "reported_provider_pid": None,
-                "bridge_handle_id": "",
-                "bridge_generation": 0,
-                "pty": False,
-                "transport": "websocket",
-                "is_one_shot": False,
-            },
-        )
-        self.store.append_event(
-            room_id,
-            "agent_session_created",
-            participant_id=participant_id,
-            session_id=participant_id,
-            provider_kind=provider_kind,
-            external_owned=True,
-        )
+        with self.store.transaction(room_id) as transaction:
+            created_session, _ = transaction.upsert_session(
+                {
+                    "session_id": participant_id,
+                    "participant_id": participant_id,
+                    "display_name": display_name,
+                    "status": "available",
+                    "provider_kind": provider_kind,
+                    "runtime_kind": "external_bridge",
+                    "connection_kind": "native_cli_bridge",
+                    "runtime_profile_key": "",
+                    "model_observation_policy": spec.model_observation_policy,
+                    "model_verification_status": (
+                        "pending"
+                        if spec.model_observation_policy == "required"
+                        else "unavailable"
+                    ),
+                    "enabled": True,
+                    "runtime_status": "starting",
+                    "pending_event_ids": [],
+                    "inflight_event_ids": [],
+                    "turn_count": 0,
+                    "last_provider_sync_event_id": "",
+                    "last_provider_sync_seq": 0,
+                    "last_seen_event_id": "",
+                    "last_seen_seq": 0,
+                    "bootstrap_cutoff_seq": 0,
+                    "external_owned": True,
+                    "process_ownership": "external",
+                    "reported_provider_pid": None,
+                    "bridge_handle_id": "",
+                    "bridge_generation": 0,
+                    "pty": False,
+                    "transport": "websocket",
+                    "is_one_shot": False,
+                },
+            )
+            state = transaction.advance_attention_state(
+                participant_id,
+                provider_sync_seq=0,
+            )
+            assert_provider_sync_cursor_parity(created_session, state)
+            transaction.append_event(
+                "agent_session_created",
+                participant_id=participant_id,
+                session_id=participant_id,
+                provider_kind=provider_kind,
+                external_owned=True,
+            )
 
     def disconnect(self, channel: RoomSocketChannel) -> None:
         identity = channel.identity
@@ -714,6 +728,20 @@ class RoomRealtimeController:
                 "result": result,
                 "deduplicated": False,
             }
+        if action == "room.observed":
+            self._require_bridge(identity)
+            # This checkpoint is repository-atomic and generation-validated.
+            # It must also bypass ensure_room's lifecycle lock so a bridge can
+            # flush while a remote stop waits for that bridge's confirmation.
+            result = self._turn_coordinator.observe_room(identity, room_id, payload)
+            return {
+                "op": "ack",
+                "request_id": request_id,
+                "accepted": True,
+                "action": action,
+                "result": result,
+                "deduplicated": False,
+            }
         if action == "room.delete":
             self._require_capability(identity, "room.delete")
             with self._lock:
@@ -727,18 +755,6 @@ class RoomRealtimeController:
                         tombstone=deleted,
                     )
         self.ensure_room(room_id)
-        if action == "room.observed":
-            self._require_bridge(identity)
-            with self._lock:
-                result = self._turn_coordinator.observe_room(identity, room_id, payload)
-            return {
-                "op": "ack",
-                "request_id": request_id,
-                "accepted": True,
-                "action": action,
-                "result": result,
-                "deduplicated": False,
-            }
         if action == "room.delete":
             with self._lock:
                 prior_ack = self._prior_command_ack(
@@ -1023,6 +1039,8 @@ class RoomRealtimeController:
             return unit.resolved_ack()
         except RoomCommandIdempotencyConflict as error:
             raise RoomCommandRejected(str(error), code="idempotency_conflict") from error
+        except ProviderSyncCursorParityError as error:
+            raise RoomCommandRejected(str(error), code=error.code) from error
 
     def _prior_command_ack(
         self,
@@ -2129,6 +2147,9 @@ class RoomRealtimeController:
             "mode": "active",
             "error_count": self._attention_active_error_count,
             "last_error": self._attention_active_last_error,
+            "provider_sync_cursor_reconciliation": (
+                self._provider_sync_cursor_reconciliation_report.as_dict()
+            ),
             "startup_reconciliation": self._attention_reconciliation_report.as_dict(),
         }
 
@@ -2241,55 +2262,60 @@ class RoomRealtimeController:
         latest_public_event = latest_events[-1] if latest_events else {}
         latest_public = clean_lobby_text(latest_public_event.get("id"), limit=128)
         latest_public_seq = int(latest_public_event.get("seq") or 0)
-        self.store.upsert_session(
-            room_id,
-            {
-                "session_id": agent_id,
-                "participant_id": agent_id,
-                "display_name": spec.display_name,
-                "status": "available",
-                "provider_kind": spec.normalized_provider_kind(),
-                "runtime_kind": spec.runtime_kind,
-                "connection_kind": "native_cli_bridge",
-                "command_configured": list(spec.command),
-                "workspace": str(Path(spec.cwd).expanduser().resolve()),
-                "model": spec.model,
-                "requested_model_id": spec.requested_model_id or spec.model,
-                "observed_model_id": "",
-                "model_selection_kind": spec.model_selection_kind,
-                "model_observation_policy": spec.model_observation_policy,
-                "model_verification_status": _model_verification_status(
-                    requested_model_id=spec.requested_model_id or spec.model,
-                    observed_model_id="",
-                    selection_kind=spec.model_selection_kind,
-                    observation_policy=spec.model_observation_policy,
-                ),
-                "catalog_revision": spec.catalog_revision,
-                "reasoning_effort": spec.reasoning_effort,
-                "service_tier": spec.service_tier,
-                "variant": spec.variant,
-                "permission_mode": spec.permission_mode,
-                "runtime_profile_key": spec.runtime_profile_key(),
-                "enabled": False,
-                "runtime_status": "stopped",
-                "pending_event_ids": [],
-                "inflight_event_ids": [],
-                "turn_count": 0,
-                "last_provider_sync_event_id": latest_public,
-                "last_provider_sync_seq": latest_public_seq,
-                "last_seen_event_id": latest_public,
-                "last_seen_seq": latest_public_seq,
-                "bootstrap_cutoff_seq": latest_public_seq,
-                "recovery_attempt_count": 0,
-                "pty": spec.transport in {"pty", "conpty"},
-                "transport": spec.transport,
-                "is_one_shot": False,
-                "process_ownership": "server",
-                "reported_provider_pid": None,
-                "bridge_handle_id": "",
-                "bridge_generation": 0,
-            },
-        )
+        with self.store.transaction(room_id) as transaction:
+            created_session, _ = transaction.upsert_session(
+                {
+                    "session_id": agent_id,
+                    "participant_id": agent_id,
+                    "display_name": spec.display_name,
+                    "status": "available",
+                    "provider_kind": spec.normalized_provider_kind(),
+                    "runtime_kind": spec.runtime_kind,
+                    "connection_kind": "native_cli_bridge",
+                    "command_configured": list(spec.command),
+                    "workspace": str(Path(spec.cwd).expanduser().resolve()),
+                    "model": spec.model,
+                    "requested_model_id": spec.requested_model_id or spec.model,
+                    "observed_model_id": "",
+                    "model_selection_kind": spec.model_selection_kind,
+                    "model_observation_policy": spec.model_observation_policy,
+                    "model_verification_status": _model_verification_status(
+                        requested_model_id=spec.requested_model_id or spec.model,
+                        observed_model_id="",
+                        selection_kind=spec.model_selection_kind,
+                        observation_policy=spec.model_observation_policy,
+                    ),
+                    "catalog_revision": spec.catalog_revision,
+                    "reasoning_effort": spec.reasoning_effort,
+                    "service_tier": spec.service_tier,
+                    "variant": spec.variant,
+                    "permission_mode": spec.permission_mode,
+                    "runtime_profile_key": spec.runtime_profile_key(),
+                    "enabled": False,
+                    "runtime_status": "stopped",
+                    "pending_event_ids": [],
+                    "inflight_event_ids": [],
+                    "turn_count": 0,
+                    "last_provider_sync_event_id": latest_public,
+                    "last_provider_sync_seq": latest_public_seq,
+                    "last_seen_event_id": latest_public,
+                    "last_seen_seq": latest_public_seq,
+                    "bootstrap_cutoff_seq": latest_public_seq,
+                    "recovery_attempt_count": 0,
+                    "pty": spec.transport in {"pty", "conpty"},
+                    "transport": spec.transport,
+                    "is_one_shot": False,
+                    "process_ownership": "server",
+                    "reported_provider_pid": None,
+                    "bridge_handle_id": "",
+                    "bridge_generation": 0,
+                },
+            )
+            state = transaction.advance_attention_state(
+                agent_id,
+                provider_sync_seq=latest_public_seq,
+            )
+            assert_provider_sync_cursor_parity(created_session, state)
 
     def _room_providers(self, room_id: str) -> dict[str, NativeCliProviderSpec]:
         with self._lock:

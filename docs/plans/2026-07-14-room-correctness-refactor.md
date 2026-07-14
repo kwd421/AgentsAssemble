@@ -520,3 +520,23 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   0.25-second receive loop was removed; the one-second blocking socket timeout
   only services the local flush deadline and sends no poll. The next slice is
   Phase 2.5, provider-sync cursor authority and compatibility parity.
+- 2026-07-14: `agent_attention_state.last_provider_sync_seq` is now the sole
+  provider-context read authority. Packet construction and assignment require
+  parity with both Agent Session compatibility cursor fields; mismatches fail
+  closed instead of selecting a convenient copy. New local and external
+  sessions initialize canonical and compatibility state in one transaction,
+  and both canonical and compatibility turn-completion paths advance them
+  together. A bounded startup reconciler restores missing copies, audits every
+  repaired room, marks true nonzero divergence `recovery_required`, and leaves
+  future or nonexistent cursors blocked. SQLite repository, controller,
+  packet/finalization, rollback, and migration tests cover the contract;
+  PostgreSQL contract tests compile but require a configured test DSN for real
+  execution. Phase 2 is complete; the next slice is Phase 3.1, defining the
+  canonical room-global settings record.
+- 2026-07-14: full-suite verification exposed a deterministic remote-stop
+  deadlock left by Phase 2.4: a Bridge flushed `room.observed` before sending
+  `bridge.stopped`, while implicit `ensure_room()` waited on the lifecycle lock
+  held by the kick command. `room.observed` now runs before implicit room
+  creation and relies on repository atomicity plus bridge-generation checks.
+  The invited external CLI kick E2E and an explicit held-lifecycle-lock test
+  prove the final observation ACK no longer blocks shutdown confirmation.

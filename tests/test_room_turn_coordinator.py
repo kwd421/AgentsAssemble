@@ -5,6 +5,7 @@ from pathlib import Path
 
 from agentsassemble.native_cli_providers import NativeCliProviderSpec
 from agentsassemble.room_attention import AttentionEvaluation
+from agentsassemble.room_database import open_room_database
 from agentsassemble.room_errors import RoomCommandRejected
 from agentsassemble.room_event_broker import RoomEventBroker
 from agentsassemble.room_store import RoomStore
@@ -229,6 +230,11 @@ class RoomTurnCoordinatorTests(unittest.TestCase):
                 active_attention_lease_id=old_lease["lease_id"],
                 active_attention_source_event_id=source["id"],
             )
+        with open_room_database(self.store.database_path) as connection:
+            connection.execute(
+                "UPDATE attention_leases SET expires_at = ? WHERE lease_id = ?",
+                ("2000-01-01T00:00:00+00:00", old_lease["lease_id"]),
+            )
 
         crashed = self.store.session("general", "codex")
         fields = self.coordinator.reconcile_session_attention(
@@ -259,6 +265,22 @@ class RoomTurnCoordinatorTests(unittest.TestCase):
             self.store.attention_lease("general", new_lease_id)["owner_id"],
             "old-controller",
         )
+
+    def test_assignment_rejects_a_session_only_provider_cursor_update(self):
+        source = self._message("already delivered")
+        self._set_packet(source)
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            last_provider_sync_event_id=source["id"],
+            last_provider_sync_seq=source["seq"],
+            pending_event_ids=[source["id"]],
+        )
+
+        with self.assertRaises(RoomCommandRejected) as mismatch:
+            self.coordinator.assign_pending("general", "codex")
+
+        self.assertEqual(mismatch.exception.code, "provider_sync_cursor_mismatch")
 
 
 if __name__ == "__main__":

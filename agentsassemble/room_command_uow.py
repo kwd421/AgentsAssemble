@@ -140,6 +140,9 @@ class RoomCommandUnitOfWork:
             spoke_seq=spoke_seq,
         )
 
+    def attention_state(self, participant_id: str) -> AgentAttentionState:
+        return self._require_transaction().attention_state(participant_id)
+
     def resolve_attention_lease(
         self,
         lease_id: str,

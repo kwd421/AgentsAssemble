@@ -17,6 +17,11 @@ from uuid import uuid4
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.process_environment import sanitized_provider_environment
 from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room_provider_sync_cursor import (
+    ProviderSyncCursorParityError,
+    assert_provider_sync_cursor_parity,
+    provider_sync_session_fields,
+)
 from agentsassemble.room_store import RoomStore
 from agentsassemble.codex_app_server_runtime import (
     CODEX_APP_SERVER_IDLE_COMPLETION_GRACE_SECONDS,
@@ -605,16 +610,8 @@ def run_agent_session_turn_payload(
             "events": appended,
             "diagnostics": [*_diagnostic_items(runtime_state), *diagnostics],
         }
-    appended.append(
-        store.append_event(
-            room_id,
-            "turn_finished",
-            participant_id=agent_id,
-            session_id=session_id,
-            provider_kind=provider_kind,
-            turn_id=turn_id,
-            diagnostics=_diagnostic_items({**runtime_state, "turn_finished_ms": _elapsed_ms(started_monotonic)}),
-        )
+    turn_finished_diagnostics = _diagnostic_items(
+        {**runtime_state, "turn_finished_ms": _elapsed_ms(started_monotonic)}
     )
     latest_public_event_id = clean_lobby_text(packet.get("last_provider_sync_event_id_after"), limit=128)
     latest_public_seq = _nonnegative_int(packet.get("last_provider_sync_seq_after"))
@@ -626,20 +623,43 @@ def run_agent_session_turn_payload(
         ),
         "",
     )
-    session_update = {
-        **store.session(room_id, session_id),
-        "status": "attached",
-        "bootstrap_done": True,
-        "recovery_required": False,
-        "recovery_attempt_count": 0,
-        "last_provider_sync_event_id": latest_public_event_id,
-        "last_provider_sync_seq": latest_public_seq,
-        "last_seen_event_id": latest_public_event_id,
-        "last_seen_seq": latest_public_seq,
-    }
-    if last_spoke_event_id:
-        session_update["last_spoke_event_id"] = last_spoke_event_id
-    store.upsert_session(room_id, session_update)
+    with store.transaction(room_id) as transaction:
+        current_session = transaction.session(session_id)
+        current_state = transaction.attention_state(agent_id)
+        assert_provider_sync_cursor_parity(current_session, current_state)
+        if latest_public_seq < current_state.last_provider_sync_seq:
+            raise ProviderSyncCursorParityError(
+                "Provider turn completion cannot move the canonical sync cursor backward."
+            )
+        updated_state = transaction.advance_attention_state(
+            agent_id,
+            provider_sync_seq=latest_public_seq,
+        )
+        turn_finished = transaction.append_event(
+            "turn_finished",
+            participant_id=agent_id,
+            session_id=session_id,
+            provider_kind=provider_kind,
+            turn_id=turn_id,
+            diagnostics=turn_finished_diagnostics,
+        )
+        session_updates = {
+            "status": "attached",
+            "bootstrap_done": True,
+            "recovery_required": False,
+            "recovery_attempt_count": 0,
+            **provider_sync_session_fields(
+                updated_state,
+                event_id=latest_public_event_id,
+            ),
+            "last_seen_event_id": latest_public_event_id,
+            "last_seen_seq": latest_public_seq,
+        }
+        if last_spoke_event_id:
+            session_updates["last_spoke_event_id"] = last_spoke_event_id
+        updated_session = transaction.update_session_fields(session_id, **session_updates)
+        assert_provider_sync_cursor_parity(updated_session, updated_state)
+    appended.append(turn_finished)
     return {
         "status": "finished",
         "turn_status": "finished",

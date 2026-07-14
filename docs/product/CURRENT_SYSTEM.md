@@ -151,7 +151,20 @@ equal or stale retries do nothing, future sequences are rejected, and these
 high-frequency checkpoints do not fill the general command-result table. The
 bridge changes its local cursor only after ACK and flushes pending progress on
 graceful disconnect. Its one-second socket read timeout is a local deadline,
-not room polling and not a provider invocation.
+not room polling and not a provider invocation. `room.observed` also bypasses
+the controller lifecycle lock and implicit room creation so a remote-stop
+confirmation cannot deadlock behind its own final observation flush.
+
+`agent_attention_state.last_provider_sync_seq` is the canonical record of room
+context actually delivered to a provider. Agent Session
+`last_provider_sync_seq` and `last_provider_sync_event_id` remain compatibility
+copies, but normal packet construction and turn assignment read the canonical
+cursor and require exact parity with both compatibility fields. New sessions
+initialize both records together and turn completion advances them in one room
+transaction. Startup performs a bounded, audited compatibility migration; a
+nonzero divergence advances to the monotonic maximum and marks the session
+`recovery_required`, while an invalid or future cursor remains blocked instead
+of being silently substituted.
 
 ## Current Media Boundary
 

@@ -27,6 +27,12 @@ from agentsassemble.room_projection import (
     public_session,
     runtime_diagnostic_fields,
 )
+from agentsassemble.room_provider_sync_cursor import (
+    ProviderSyncCursorParityError,
+    assert_provider_sync_cursor_parity,
+    canonical_provider_sync_seq,
+    provider_sync_session_fields,
+)
 from agentsassemble.room_repository import RoomRepository, RoomTransaction
 from agentsassemble.room_turn_attention import RoomTurnAttention
 from agentsassemble.room_types import RoomEvent, TurnAssignment
@@ -139,7 +145,15 @@ class RoomTurnCoordinator:
                     code="no_room_message",
                 )
             source_seq = int(source.get("seq") or 0)
-            last_sync_seq = int(session.get("last_provider_sync_seq") or 0)
+            try:
+                last_sync_seq = canonical_provider_sync_seq(
+                    self.store,
+                    clean_room_id,
+                    clean_agent_id,
+                    session,
+                )
+            except ProviderSyncCursorParityError as error:
+                raise RoomCommandRejected(str(error), code="provider_sync_cursor_mismatch") from error
             if session.get("bootstrap_done") and source_seq <= last_sync_seq:
                 raise RoomCommandRejected(
                     "The Agent Session has no unseen public room message to answer.",
@@ -228,6 +242,15 @@ class RoomTurnCoordinator:
             or not self.broker.has_bridge(room_id, agent_id)
         ):
             return False
+        try:
+            canonical_sync_seq = canonical_provider_sync_seq(
+                self.store,
+                room_id,
+                agent_id,
+                session,
+            )
+        except ProviderSyncCursorParityError as error:
+            raise RoomCommandRejected(str(error), code="provider_sync_cursor_mismatch") from error
         turn_id = f"turn-{uuid4().hex[:12]}"
         packet = self._packet_builder(
             self.output_root,
@@ -261,7 +284,7 @@ class RoomTurnCoordinator:
             included_event_ids=set(provider_context_event_ids),
             last_provider_sync_seq=(
                 safe_bounded_int(
-                    packet.get("last_provider_sync_seq_before", session.get("last_provider_sync_seq")),
+                    packet.get("last_provider_sync_seq_before", canonical_sync_seq),
                     default=0,
                     minimum=0,
                 )
@@ -974,6 +997,16 @@ class RoomTurnCoordinator:
         extra_session_updates: dict[str, object] | None = None,
     ) -> tuple[dict[str, object], dict[str, object]]:
         active_turn_id = str(session["active_turn_id"])
+        state_before = writer.attention_state(str(session["participant_id"]))
+        canonical_before = assert_provider_sync_cursor_parity(session, state_before)
+        provider_sync_target = input_up_to_seq or canonical_before
+        if provider_sync_target < canonical_before:
+            raise ProviderSyncCursorParityError(
+                "Provider turn completion cannot move the canonical sync cursor backward."
+            )
+        provider_sync_event_id = (
+            input_up_to_event_id or session.get("last_provider_sync_event_id") or ""
+        )
         updates: dict[str, object] = {
             "status": "attached",
             "runtime_status": "idle",
@@ -987,12 +1020,8 @@ class RoomTurnCoordinator:
             "active_attention_job_id": "",
             "active_attention_lease_id": "",
             "active_attention_source_event_id": "",
-            "last_provider_sync_event_id": (
-                input_up_to_event_id or session.get("last_provider_sync_event_id") or ""
-            ),
-            "last_provider_sync_seq": input_up_to_seq or session.get("last_provider_sync_seq") or 0,
-            "last_seen_event_id": input_up_to_event_id or session.get("last_seen_event_id") or "",
-            "last_seen_seq": input_up_to_seq or session.get("last_seen_seq") or 0,
+            "last_seen_event_id": provider_sync_event_id or session.get("last_seen_event_id") or "",
+            "last_seen_seq": provider_sync_target,
             "bootstrap_done": True,
             "recovery_required": False,
             "recovery_attempt_count": 0,
@@ -1017,14 +1046,21 @@ class RoomTurnCoordinator:
             session,
             status="released",
         )
-        writer.advance_attention_state(
+        state = writer.advance_attention_state(
             str(session["participant_id"]),
-            provider_sync_seq=input_up_to_seq,
+            provider_sync_seq=provider_sync_target,
+        )
+        updates.update(
+            provider_sync_session_fields(
+                state,
+                event_id=clean_lobby_text(provider_sync_event_id, limit=128),
+            )
         )
         updated = writer.update_session_fields(
             str(session["session_id"]),
             **updates,
         )
+        assert_provider_sync_cursor_parity(updated, state)
         return finished, updated
 
     def after_message_final(
