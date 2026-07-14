@@ -11,7 +11,8 @@ those routes by product ownership and records the safe extraction order.
 
 ## Purpose
 
-`gui.py` is 9,525 lines at this snapshot. Size alone is not the defect. The
+`gui.py` was 9,525 lines when this inventory started and is 6,417 lines after
+the retained read/diagnostic extraction. Size alone is not the defect. The
 maintainability problem is that server construction, process lifetime, route
 registration, static delivery, current room behavior, and several retained
 legacy products still meet in one module.
@@ -167,6 +168,7 @@ These families already have a clear module owner and should not move back into
 | `gui_legacy_live_agent_preflight_http.py` | Compatibility | Configuration-only resident preflight and redacted diagnostics | `tests/test_gui_legacy_live_agent_preflight_http.py`, `tests/test_gui_server_preflight.py` |
 | `gui_legacy_live_agent_discovery_http.py` | Compatibility | Local CLI discovery and generated resident config bundles | `tests/test_gui_legacy_live_agent_discovery_http.py`, `tests/test_live_agent_discovery.py` |
 | `gui_legacy_live_agent_smoke_http.py` | Compatibility | Basic, official-round, durable session, and approval-gated real-provider smoke execution | `tests/test_gui_legacy_live_agent_smoke_http.py`, `tests/test_gui_server_smoke_routes.py`, `tests/test_gui_server_real_session_smoke.py` |
+| `gui_legacy_live_agent_readiness_http.py` | Compatibility | Aggregate readiness orchestration over health, smoke, and bounded resident probes | `tests/test_gui_legacy_live_agent_readiness_http.py`, `tests/test_gui_server_readiness_probes.py` |
 
 `gui_room_http.py` is a compatibility coordinator and re-export surface. It
 registers the room subdomains and retains historical patch points. It is not a
@@ -182,7 +184,7 @@ families directly.
 | `/ws`, `/`, `/app/*`, `/join`, guarded React assets | Current core composition | Protocol upgrade and static delivery are transport concerns | Keep thin transport branches in the final handler |
 | `/api/meetings/{meeting_id}` finalize, review, and official-turn mutations | Compatibility | Legacy CLI and meeting workflows still call them | Retain mutation behavior until a separate legacy decision; read projections already belong to `gui_legacy_meeting_http.py` |
 | `/api/live-agents*` registration, heartbeat, lobby, DM reply, official turn, probe, leave, and engagement | Compatibility | CLI, MCP, resident runner, and smoke clients still call them | Move behind typed legacy resident-agent services and Router registrations; room and return-packet GETs are already moved |
-| Remaining `/api/live-agent-*` aggregate readiness smoke, create/login, and room/session operations | Mixed current support and compatibility | Provider login is current; most process/session operations remain operator or CLI contracts | Split current provider-login support from legacy diagnostics; preserve exact ACK/error payloads. Discovery, preflight, health reads, and all four direct smoke routes are already Router-owned |
+| Remaining `/api/live-agent-*` create/login and room/session operations | Mixed current support and compatibility | Provider login is current; most process/session operations remain operator or CLI contracts | Split current provider-login support from legacy mutations; preserve exact ACK/error payloads. Discovery, preflight, health reads, all four direct smoke routes, and aggregate readiness are Router-owned |
 | `/api/codex-sessions/invite` and `/join` | Compatibility | CLI still calls the Codex meeting-session compatibility workflow | Move with legacy meeting/session service, never into the canonical provider adapter |
 | `/api/lobby/promote` and `/api/lobby/remote` | Compatibility | Promotion and remote-bridge behavior remain documented legacy workflows | Move with their policy and tests; do not connect them to canonical ambient routing |
 
@@ -228,7 +230,7 @@ decision. Leaving them in the old chain makes their compatibility cost visible.
    admission projection; `gui_legacy_meeting_http.py` owns the six public GET
    routes. `agentsassemble.gui` re-exports the historical query function names
    for compatibility without owning their implementation.
-2. In progress: room and return-packet reads now belong to
+2. Completed: room and return-packet reads now belong to
    `LegacyLiveAgentQueryService`; their dynamic GET routes are Router-owned.
    `lobby_queries.py` owns the shared append-only lobby history reads used by
    this service and other compatibility paths. `LegacyLiveAgentDiagnosticQueryService`
@@ -256,8 +258,10 @@ decision. Leaving them in the old chain makes their compatibility cost visible.
    soak validation and a fixed redacted `502` failure contract. Real-provider
    session smoke is also Router-owned but keeps its explicit approval and
    three-config gate, allowlisted response, degraded status, and redacted
-   failures. Aggregate readiness remains separate because it composes health,
-   probes, and the other smoke services.
+   failures. Aggregate readiness now belongs to
+   `LegacyLiveAgentReadinessService`; execution policy is separate from the
+   allowlisted response and operation-audit projection, and its Router route
+   receives the same health and smoke service instances as the direct routes.
 3. Register their routes on `Router`; preserve methods, paths, authorization,
    status codes, redaction, and payloads.
 4. Move a helper only with the route/service that owns its reason to change.
@@ -298,13 +302,15 @@ completion:
 After a context reset, read `CURRENT_SYSTEM.md`, the active room-correctness
 plan, and this file. Phase 5.3 meeting reads, room/return-packet reads, durable
 diagnostic histories, process connection projections, readiness, roster/
-admission projections, health aggregation, preflight, discovery, and the
-credential-free basic/official-round smoke pair, durable session smoke, and
-approval-gated real-provider smoke are complete. Move aggregate readiness next
-as its own verified slice. Do not move the seven
-deletion candidates while doing that work. Do not infer that a route is
+admission projections, health aggregation, preflight, discovery, all four
+direct smoke routes, and aggregate readiness are complete. Begin Phase 5.4 by
+inventorying the domain behavior still inside generated handler methods; move
+one typed route family per verified commit. Do not move the seven deletion
+candidates while doing that work. Do not infer that a route is
 obsolete merely because it is not called by React; CLI, MCP, smoke, and legacy
 meeting clients are real compatibility consumers. The canonical identity
 invariant still requires an Agent Session name/avatar update to reproject old
 loaded messages, later history pages, typing state, roster, and new messages by
-`participant_id`. Do not push unless the user explicitly asks.
+`participant_id`. A user-visible screenshot has disproved the earlier claim
+that this contract is fully covered, so reproduce the actual settings-to-chat
+path before claiming it fixed. Do not push unless the user explicitly asks.

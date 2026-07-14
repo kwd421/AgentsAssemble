@@ -83,6 +83,22 @@ The following review findings were checked against the starting commit:
 
 ## Identity Defect: Required Contract
 
+### Current observed gap
+
+On 2026-07-14 the actual browser UI still showed historical messages authored
+as `Antigravity CLI` after the Agent Session profile was saved as `Makima` with
+a new avatar. This is direct evidence that the acceptance contract below is
+not yet satisfied, even though earlier hook/backend tests and progress entries
+described it as covered. Treat those entries as evidence for narrower paths,
+not as completion of the browser behavior.
+
+The next identity repair must use the real frontend settings controls and the
+real chat history path. It must inspect the stable author key carried by those
+older events, the participant/session merge used by `useCanonicalRoom`, history
+pagination, and message grouping/render memoization. Do not repair it by
+rewriting old event rows or by matching provider labels, session names, or
+display names. The only valid join key is canonical `participant_id`.
+
 ### Canonical identity
 
 `participant_id` is the stable message author key. A message event may retain
@@ -877,3 +893,18 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   readiness is the last smoke route left in the generated handler and is the
   next extraction. The seven deletion candidates and canonical name/avatar
   reprojection by stable `participant_id` remain unchanged.
+- 2026-07-14: Aggregate resident readiness is now the final Phase 5.3 route
+  moved from the generated handler to Router ownership.
+  `LegacyLiveAgentReadinessService` owns health/smoke/probe orchestration and
+  status policy; `legacy_live_agent_readiness_projection.py` separately owns
+  bounded public results and redacted operation-audit details. The composition
+  shares one health service and one smoke service between direct and aggregate
+  routes, while late-bound runner injection preserves established test seams.
+  The old readiness implementation and projection helpers were removed from
+  `gui.py`, which is now 6,417 lines. Focused route, readiness, smoke,
+  ownership, and architecture verification passed all 73 tests. Phase 5.3 is
+  complete and Phase 5.4 thin composition is next. Separately, the user's
+  browser screenshot proves the Agent Session name/avatar history contract is
+  still broken on at least one real path: old `Antigravity CLI` messages did
+  not reproject to the saved `Makima` profile. Reproduce and fix that actual
+  UI path before any future claim that identity reprojection is complete.

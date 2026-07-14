@@ -67,6 +67,10 @@ from agentsassemble.gui_legacy_live_agent_preflight_http import (
     LegacyLiveAgentPreflightHttpDeps,
     register_legacy_live_agent_preflight_route,
 )
+from agentsassemble.gui_legacy_live_agent_readiness_http import (
+    LegacyLiveAgentReadinessHttpDeps,
+    register_legacy_live_agent_readiness_route,
+)
 from agentsassemble.gui_legacy_live_agent_smoke_http import (
     LegacyLiveAgentSmokeHttpDeps,
     register_legacy_live_agent_smoke_routes,
@@ -159,7 +163,6 @@ from agentsassemble.legacy_live_agent_process_control import (
     process_stop_running_operation_status as _process_stop_running_operation_status,
 )
 from agentsassemble.diagnostic_report_projection import (
-    looks_sensitive_operator_diagnostic_text as _looks_sensitive_operator_diagnostic_text,
     safe_diagnostic_report_payload as _safe_diagnostic_report_payload,
 )
 from agentsassemble.legacy_live_agent_process_service import (
@@ -284,6 +287,14 @@ from agentsassemble.legacy_live_agent_preflight import (
     LegacyLiveAgentPreflightService,
     live_agent_preflight_payload,
 )
+from agentsassemble.legacy_live_agent_readiness import (
+    LegacyLiveAgentReadinessService,
+    live_agent_readiness_payload as _resident_live_agent_readiness_payload,
+)
+from agentsassemble.legacy_live_agent_readiness_projection import (
+    readiness_health_operation_details as _readiness_health_operation_details,
+    safe_readiness_probe_result as _safe_readiness_probe_result,
+)
 from agentsassemble.legacy_live_agent_smoke import (
     LegacyLiveAgentSmokeService,
     live_agent_real_session_smoke_payload as _resident_live_agent_real_session_smoke_payload,
@@ -395,9 +406,6 @@ from agentsassemble.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS, SSE_KEEP
 
 SSE_ERROR_MESSAGE_LIMIT = 500
 REMOTE_LOBBY_REQUESTER = None
-MAX_READINESS_PROBE_AGENTS = 10
-OFFICIAL_ROUND_SMOKE_ERROR = "official round smoke could not be run"
-SESSION_SMOKE_ERROR = "session smoke could not be run"
 REAL_SESSION_SMOKE_PROBE_REDACTION = "[redacted real session smoke probe]"
 
 
@@ -3505,140 +3513,22 @@ def live_agent_readiness_payload(
     default_server: str,
     session_run_monitor: LiveAgentSessionRunMonitor | None = None,
 ) -> dict[str, object]:
-    health = live_agent_health_payload(output_root, process_supervisor, session_run_monitor=session_run_monitor)
-    checks = [{"id": "health", "status": health.get("status") or "unknown"}]
-    invalid_probe_payload = _invalid_probe_id_payload(payload.get("probe_agent_ids")) or _invalid_probe_id_payload(
-        payload.get("probe_group_ids")
+    smoke = LegacyLiveAgentSmokeService(
+        output_root,
+        basic_smoke_runner=lambda **kwargs: run_live_agent_smoke(**kwargs),
+        official_round_smoke_runner=lambda **kwargs: run_live_agent_official_round_smoke(**kwargs),
+        session_smoke_runner=lambda **kwargs: run_live_agent_session_smoke(**kwargs),
+        real_session_smoke_runner=lambda **kwargs: run_live_agent_real_session_smoke(**kwargs),
     )
-    probe_plan = _readiness_probe_plan(
-        process_supervisor.snapshot_groups(),
-        requested_agent_ids=_payload_probe_agent_ids(payload.get("probe_agent_ids")),
-        requested_group_ids=_payload_probe_group_ids(payload.get("probe_group_ids")),
+    return _resident_live_agent_readiness_payload(
+        output_root,
+        process_supervisor,
+        payload,
+        default_server=default_server,
+        session_run_monitor=session_run_monitor,
+        smoke=smoke,
+        probe_runner=lambda *args, **kwargs: run_live_agent_probe(*args, **kwargs),
     )
-    probe_agent_ids = list(probe_plan["agent_ids"])
-    probe_groups = list(probe_plan["probe_groups"])
-    probe_timeout = safe_probe_timeout(_payload_nonnegative_float(payload.get("probe_timeout_seconds", payload.get("timeout")), 12.0))
-    probe_error = ""
-    official_round_requested = _payload_bool(payload.get("official_round_smoke"))
-    session_smoke_requested = _payload_bool(payload.get("session_smoke"))
-    if invalid_probe_payload:
-        probe_error = "Invalid probe id payload; expected a list of strings."
-    elif len(probe_agent_ids) > MAX_READINESS_PROBE_AGENTS:
-        probe_error = f"Too many probe agents requested; maximum is {MAX_READINESS_PROBE_AGENTS}."
-    try:
-        smoke = _safe_readiness_smoke_result(live_agent_smoke_payload(payload, default_server=default_server))
-    except LiveAgentSmokeFailed as error:
-        smoke = _safe_readiness_smoke_result(
-            {
-                "status": "failed",
-                "group_id": str(payload.get("group_id") or ""),
-                "error": str(error),
-            }
-        )
-    checks.append({"id": "smoke", "status": smoke.get("status") or "unknown"})
-    official_round_smoke: dict[str, object] = {}
-    if official_round_requested and smoke.get("status") == "ok":
-        try:
-            official_round_smoke = _safe_readiness_official_round_smoke_result(
-                live_agent_official_round_smoke_payload(output_root, payload, default_server=default_server)
-            )
-        except (LiveAgentSmokeFailed, ValueError, urllib.error.URLError):
-            official_round_smoke = _safe_readiness_official_round_smoke_result(
-                {
-                    "status": "failed",
-                    "group_id": str(payload.get("group_id") or ""),
-                    "error": OFFICIAL_ROUND_SMOKE_ERROR,
-                }
-            )
-        checks.append({"id": "official_round_smoke", "status": official_round_smoke.get("status") or "unknown"})
-    elif official_round_requested:
-        official_round_smoke = {
-            "status": "skipped",
-            "group_id": str(payload.get("group_id") or ""),
-            "reason": "smoke did not pass",
-        }
-        checks.append({"id": "official_round_smoke", "status": "skipped"})
-    session_smoke: dict[str, object] = {}
-    if session_smoke_requested and smoke.get("status") == "ok":
-        try:
-            session_smoke = _safe_readiness_session_smoke_result(
-                live_agent_session_smoke_payload(
-                    output_root,
-                    {
-                        "timeout": _payload_nonnegative_float(payload.get("timeout"), 12.0),
-                        "lobby_probe_count": _payload_nonnegative_int(payload.get("session_smoke_lobby_probe_count"), 1),
-                        "soak_cycle_count": _payload_session_smoke_soak_cycle_count(
-                            payload.get("session_smoke_soak_cycle_count")
-                        ),
-                        "soak_interval_seconds": _payload_session_smoke_soak_interval_seconds(
-                            payload.get("session_smoke_soak_interval_seconds")
-                        ),
-                    },
-                    default_server=default_server,
-                )
-            )
-        except (LiveAgentSmokeFailed, ValueError, urllib.error.URLError):
-            session_smoke = _safe_readiness_session_smoke_result(
-                {
-                    "status": "failed",
-                    "error": SESSION_SMOKE_ERROR,
-                }
-            )
-        checks.append({"id": "session_smoke", "status": session_smoke.get("status") or "unknown"})
-    elif session_smoke_requested:
-        session_smoke = {
-            "status": "skipped",
-            "reason": "smoke did not pass",
-        }
-        checks.append({"id": "session_smoke", "status": "skipped"})
-    probes: list[dict[str, object]] = []
-    probe_group_failed = any(group.get("status") != "ok" for group in probe_groups)
-    if smoke.get("status") == "ok":
-        for group in probe_groups:
-            checks.append({"id": f"probe_group:{group.get('group_id') or 'unknown'}", "status": group.get("status") or "unknown"})
-    if smoke.get("status") == "ok" and (probe_error or probe_group_failed):
-        if probe_error:
-            check_id = "probe_request_payload" if invalid_probe_payload else "probe_request_limit"
-            checks.append({"id": check_id, "status": "failed"})
-    elif smoke.get("status") == "ok":
-        for agent_id in probe_agent_ids:
-            try:
-                probe = run_live_agent_probe(output_root, agent_id, timeout_seconds=probe_timeout)
-            except ValueError:
-                probe = {"status": "failed", "agent_id": agent_id, "reason": "probe could not be run"}
-            safe_probe = _safe_readiness_probe_result(probe)
-            probes.append(safe_probe)
-            checks.append({"id": f"probe:{agent_id}", "status": safe_probe.get("status") or "unknown"})
-    if smoke.get("status") != "ok":
-        status = "failed"
-    elif official_round_requested and official_round_smoke.get("status") != "ok":
-        status = "failed"
-    elif session_smoke_requested and session_smoke.get("status") != "ok":
-        status = "failed"
-    elif probe_group_failed:
-        status = "failed"
-    elif probe_error:
-        status = "failed"
-    elif any(probe.get("status") != "ok" for probe in probes):
-        status = "failed"
-    elif health.get("status") != "ok":
-        status = "degraded"
-    else:
-        status = "ready"
-    result = {"status": status, "checks": checks, "health": health, "smoke": smoke}
-    if official_round_smoke:
-        result["official_round_smoke"] = official_round_smoke
-    if session_smoke:
-        result["session_smoke"] = session_smoke
-    if probe_error:
-        result["probe_error"] = probe_error
-    if probe_groups:
-        result["probe_groups"] = _safe_readiness_probe_groups(probe_groups, include_agent_ids=not probe_error)
-    if probe_agent_ids and not probe_error and not probe_group_failed:
-        result["effective_probe_agent_ids"] = probe_agent_ids
-    if probes:
-        result["probes"] = probes
-    return result
 
 
 def start_live_agent_process_payload(
@@ -4267,338 +4157,6 @@ def _operation_result_status(value: object) -> str:
 
 def _operation_success_for_result(value: object, *, success_values: set[str]) -> str:
     return "success" if _operation_result_status(value) in success_values else "failed"
-
-
-def _payload_probe_agent_ids(value: object) -> list[str]:
-    raw_items = value if isinstance(value, list) else []
-    agent_ids = []
-    seen = set()
-    for item in raw_items:
-        if not isinstance(item, str):
-            continue
-        agent_id = item.strip()[:64]
-        if not agent_id or agent_id in seen:
-            continue
-        seen.add(agent_id)
-        agent_ids.append(agent_id)
-    return agent_ids
-
-
-def _payload_probe_group_ids(value: object) -> list[str]:
-    raw_items = value if isinstance(value, list) else []
-    group_ids = []
-    seen = set()
-    for item in raw_items:
-        if not isinstance(item, str):
-            continue
-        group_id = item.strip()[:64]
-        if not group_id or group_id in seen:
-            continue
-        seen.add(group_id)
-        group_ids.append(group_id)
-    return group_ids
-
-
-def _invalid_probe_id_payload(value: object) -> bool:
-    if value is None:
-        return False
-    if not isinstance(value, list):
-        return True
-    return any(not isinstance(item, str) for item in value)
-
-
-def _readiness_probe_plan(
-    groups: list[dict[str, object]],
-    *,
-    requested_agent_ids: list[str],
-    requested_group_ids: list[str],
-) -> dict[str, list[dict[str, object]] | list[str]]:
-    agent_ids = []
-    seen_agents = set()
-    for agent_id in requested_agent_ids:
-        if agent_id not in seen_agents:
-            seen_agents.add(agent_id)
-            agent_ids.append(agent_id)
-
-    groups_by_id = {str(group.get("group_id") or ""): group for group in groups}
-    probe_groups: list[dict[str, object]] = []
-    for group_id in requested_group_ids:
-        group = groups_by_id.get(group_id)
-        if group is None:
-            probe_groups.append({"status": "failed", "group_id": group_id, "reason": "group was not found"})
-            continue
-        if str(group.get("status") or "") != "running":
-            probe_groups.append({"status": "failed", "group_id": group_id, "reason": "group is not running"})
-            continue
-        manifest_agent_ids = _manifest_agent_ids(group.get("agents"))
-        if not manifest_agent_ids:
-            probe_groups.append({"status": "failed", "group_id": group_id, "reason": "group has no manifest agents"})
-            continue
-        probe_groups.append({"status": "ok", "group_id": group_id, "agent_ids": manifest_agent_ids})
-        for agent_id in manifest_agent_ids:
-            if agent_id in seen_agents:
-                continue
-            seen_agents.add(agent_id)
-            agent_ids.append(agent_id)
-    return {"agent_ids": agent_ids, "probe_groups": probe_groups}
-
-
-def _manifest_agent_ids(value: object) -> list[str]:
-    agent_ids = []
-    seen = set()
-    for item in _as_dict_list(value):
-        agent_id = str(item.get("agent_id") or "").strip()[:64]
-        if not agent_id or agent_id in seen:
-            continue
-        seen.add(agent_id)
-        agent_ids.append(agent_id)
-    return agent_ids
-
-
-def _safe_readiness_smoke_result(smoke: dict[str, object]) -> dict[str, object]:
-    safe = {
-        "status": str(smoke.get("status") or "unknown"),
-        "group_id": str(smoke.get("group_id") or ""),
-    }
-    agent_ids = _payload_probe_agent_ids(smoke.get("agent_ids"))
-    if agent_ids:
-        safe["agent_ids"] = agent_ids
-    replies = smoke.get("replies") if isinstance(smoke.get("replies"), list) else []
-    safe["reply_count"] = len(replies)
-    error = str(smoke.get("error") or "").strip()[:240]
-    if error:
-        safe["error"] = error
-    return safe
-
-
-def _safe_readiness_official_round_smoke_result(smoke: dict[str, object]) -> dict[str, object]:
-    safe = {
-        "status": str(smoke.get("status") or "unknown"),
-        "group_id": clean_lobby_text(smoke.get("group_id"), limit=128),
-        "meeting_id": clean_lobby_text(smoke.get("meeting_id"), limit=128),
-        "round_id": clean_lobby_text(smoke.get("round_id"), limit=128),
-        "agent_ids": _safe_payload_strings(smoke.get("agent_ids"), limit=64),
-        "role_ids": _safe_payload_strings(smoke.get("role_ids"), limit=128),
-        "turn_count": _payload_nonnegative_int(smoke.get("turn_count"), 0),
-        "answered_count": _payload_nonnegative_int(smoke.get("answered_count"), 0),
-        "timeout_count": _payload_nonnegative_int(smoke.get("timeout_count"), 0),
-        "skipped_count": _payload_nonnegative_int(smoke.get("skipped_count"), 0),
-        "stopped": smoke.get("stopped") is True,
-        "timeout_seconds": _payload_nonnegative_float(smoke.get("timeout_seconds"), 0.0),
-        "statuses": _safe_payload_strings(smoke.get("statuses"), limit=32),
-    }
-    error = str(smoke.get("error") or "").strip()[:240]
-    if error:
-        safe["error"] = OFFICIAL_ROUND_SMOKE_ERROR
-    reason = str(smoke.get("reason") or "").strip()[:128]
-    if reason:
-        safe["reason"] = reason
-    return safe
-
-
-def _safe_readiness_session_smoke_result(smoke: dict[str, object]) -> dict[str, object]:
-    safe = {
-        "status": str(smoke.get("status") or "unknown"),
-        "meeting_id": clean_lobby_text(smoke.get("meeting_id"), limit=128),
-        "group_id": clean_lobby_text(smoke.get("group_id"), limit=128),
-        "agent_ids": _safe_payload_strings(smoke.get("agent_ids"), limit=64),
-        "terminal_session_supported": smoke.get("terminal_session_supported") is True,
-        "terminal_session_included": smoke.get("terminal_session_included") is True,
-        "terminal_session_status": _operation_result_status(smoke.get("terminal_session_status")),
-        "terminal_session_reason": clean_lobby_text(smoke.get("terminal_session_reason"), limit=128),
-        "rounds_status": _operation_result_status(smoke.get("rounds_status")),
-        "answered_round_count": _payload_nonnegative_int(smoke.get("answered_round_count"), 0),
-        "finalization_status": _operation_result_status(smoke.get("finalization_status")),
-        "finalization_official_event_count": _payload_nonnegative_int(
-            smoke.get("finalization_official_event_count"),
-            0,
-        ),
-        "return_packet_event_count": _payload_nonnegative_int(smoke.get("return_packet_event_count"), 0),
-        "artifact_status": _operation_result_status(smoke.get("artifact_status")),
-        "artifact_paths": _safe_payload_strings(smoke.get("artifact_paths"), limit=128),
-        "lobby_probe_count": _payload_nonnegative_int(smoke.get("lobby_probe_count"), 1),
-        "expected_reply_count": _payload_nonnegative_int(smoke.get("expected_reply_count"), 0),
-        "self_service_official_reply_count": _payload_nonnegative_int(smoke.get("self_service_official_reply_count"), 0),
-        "self_service_lobby_reply_count": _payload_nonnegative_int(smoke.get("self_service_lobby_reply_count"), 0),
-        "self_service_post_restart_reply_count": _payload_nonnegative_int(
-            smoke.get("self_service_post_restart_reply_count"),
-            0,
-        ),
-        "self_service_post_recover_reply_count": _payload_nonnegative_int(
-            smoke.get("self_service_post_recover_reply_count"),
-            0,
-        ),
-        "self_service_soak_reply_count": _payload_nonnegative_int(smoke.get("self_service_soak_reply_count"), 0),
-        "reply_count": _payload_nonnegative_int(smoke.get("reply_count"), 0),
-        "post_restart_reply_count": _payload_nonnegative_int(smoke.get("post_restart_reply_count"), 0),
-        "post_recover_reply_count": _payload_nonnegative_int(smoke.get("post_recover_reply_count"), 0),
-        "soak_cycle_count": _payload_nonnegative_int(smoke.get("soak_cycle_count"), 0),
-        "soak_reply_count": _payload_nonnegative_int(smoke.get("soak_reply_count"), 0),
-        "soak_check_statuses": _safe_payload_strings(smoke.get("soak_check_statuses"), limit=32),
-        "start_status": _operation_result_status(smoke.get("start_status")),
-        "check_status": _operation_result_status(smoke.get("check_status")),
-        "resume_status": _operation_result_status(smoke.get("resume_status")),
-        "restart_status": _operation_result_status(smoke.get("restart_status")),
-        "recover_status": _operation_result_status(smoke.get("recover_status")),
-        "stop_status": _operation_result_status(smoke.get("stop_status")),
-        "post_stop_process_status": _operation_result_status(smoke.get("post_stop_process_status")),
-    }
-    error = str(smoke.get("error") or "").strip()
-    if error:
-        safe["error"] = SESSION_SMOKE_ERROR
-    reason = clean_lobby_text(smoke.get("reason"), limit=128)
-    if reason:
-        safe["reason"] = reason
-    return safe
-
-
-def _safe_readiness_probe_groups(
-    probe_groups: list[dict[str, object]],
-    *,
-    include_agent_ids: bool,
-) -> list[dict[str, object]]:
-    safe_groups = []
-    for group in probe_groups:
-        safe_group = {
-            "status": str(group.get("status") or "unknown"),
-            "group_id": str(group.get("group_id") or ""),
-        }
-        agent_ids = _payload_probe_agent_ids(group.get("agent_ids"))
-        if agent_ids and include_agent_ids:
-            safe_group["agent_ids"] = agent_ids
-        elif agent_ids:
-            safe_group["agent_count"] = len(agent_ids)
-        reason = str(group.get("reason") or "").strip()[:128]
-        if reason:
-            safe_group["reason"] = reason
-        safe_groups.append(safe_group)
-    return safe_groups
-
-
-def _safe_readiness_probe_result(probe: dict[str, object]) -> dict[str, object]:
-    safe = {
-        "status": str(probe.get("status") or "unknown"),
-        "agent_id": str(probe.get("agent_id") or ""),
-    }
-    for key in ("agent_status", "reason", "source_event_id", "reply_event_id"):
-        value = str(probe.get(key) or "")
-        if value:
-            safe[key] = value[:128]
-    return safe
-
-
-def _probe_statuses(probes: object) -> list[str]:
-    if not isinstance(probes, list):
-        return []
-    statuses = []
-    for probe in probes:
-        if not isinstance(probe, dict):
-            continue
-        agent_id = str(probe.get("agent_id") or "").strip()
-        status = str(probe.get("status") or "unknown").strip() or "unknown"
-        if agent_id:
-            statuses.append(f"{agent_id}:{status}")
-    return statuses
-
-
-def _probe_group_statuses(probe_groups: object) -> list[str]:
-    if not isinstance(probe_groups, list):
-        return []
-    statuses = []
-    for group in probe_groups:
-        if not isinstance(group, dict):
-            continue
-        group_id = str(group.get("group_id") or "").strip()
-        status = str(group.get("status") or "unknown").strip() or "unknown"
-        if group_id:
-            statuses.append(f"{group_id}:{status}")
-    return statuses
-
-
-def _readiness_health_operation_details(health: object) -> dict[str, object]:
-    if not isinstance(health, dict):
-        return {}
-    details: dict[str, object] = {"health_status": _operation_result_status(health.get("status"))}
-    detail_names = {
-        "agents": "agent",
-        "processes": "process",
-        "connections": "connection",
-        "sessions": "session",
-    }
-    for section_name, detail_name in detail_names.items():
-        section = health.get(section_name)
-        if not isinstance(section, dict):
-            continue
-        attention = _safe_health_operation_strings(section.get("attention"), limit=128)
-        if attention:
-            details[f"health_{detail_name}_attention"] = attention
-    long_session_sections = {
-        "observations": (
-            "observation",
-            ("lobby_behind_count", "live_behind_count", "error_count"),
-        ),
-        "shared_memory": (
-            "shared_memory",
-            ("ready_sessions", "with_memory"),
-        ),
-        "session_runs": (
-            "session_run",
-            ("active", "retrying"),
-        ),
-        "session_run_monitor": (
-            "session_run_monitor",
-            ("last_result_count",),
-        ),
-    }
-    for section_name, (detail_name, count_names) in long_session_sections.items():
-        section = health.get(section_name)
-        if not isinstance(section, dict):
-            continue
-        attention = _safe_health_operation_strings(section.get("attention"), limit=128)
-        if attention:
-            details[f"health_{detail_name}_attention"] = attention
-        for count_name in count_names:
-            count = _payload_nonnegative_int(section.get(count_name), 0)
-            if count:
-                details[f"health_{detail_name}_{count_name}"] = count
-    process_reasons = _health_process_reason_labels(health.get("processes"))
-    if process_reasons:
-        details["health_process_reasons"] = process_reasons
-    return details
-
-
-def _health_process_reason_labels(processes: object) -> list[str]:
-    if not isinstance(processes, dict):
-        return []
-    reasons = processes.get("reasons")
-    if not isinstance(reasons, dict):
-        return []
-    labels = []
-    for group_id, reason_payload in reasons.items():
-        clean_group_id = clean_lobby_text(group_id, limit=64)
-        if not clean_group_id:
-            continue
-        if isinstance(reason_payload, dict):
-            event_type = clean_lobby_text(reason_payload.get("event_type"), limit=64)
-            reason = clean_lobby_text(reason_payload.get("reason"), limit=160)
-        else:
-            event_type = ""
-            reason = clean_lobby_text(reason_payload, limit=160)
-        label = " ".join(part for part in (clean_group_id, event_type, reason) if part)
-        if _looks_sensitive_operator_diagnostic_text(label):
-            continue
-        if label:
-            labels.append(label)
-    return labels
-
-
-def _safe_health_operation_strings(value: object, *, limit: int) -> list[str]:
-    strings = []
-    for text in _safe_payload_strings(value, limit=limit):
-        if _looks_sensitive_operator_diagnostic_text(text):
-            continue
-        strings.append(text)
-    return strings
 
 
 def _payload_bool(value: object) -> bool:
@@ -5253,16 +4811,17 @@ def _make_handler(
     )
 
     register_observability_routes(route_table, processes=live_agent_process_supervisor)
+    legacy_health_queries = LegacyLiveAgentHealthQueryService(
+        output_root=output_root,
+        processes=live_agent_process_supervisor,
+        session_run_monitor=session_run_monitor,
+    )
     register_legacy_live_agent_read_routes(
         route_table,
         deps=LegacyLiveAgentReadDeps(
             queries=LegacyLiveAgentQueryService.build(output_root),
             roster=LegacyLiveAgentRosterQueryService(output_root),
-            health=LegacyLiveAgentHealthQueryService(
-                output_root=output_root,
-                processes=live_agent_process_supervisor,
-                session_run_monitor=session_run_monitor,
-            ),
+            health=legacy_health_queries,
             diagnostics=LegacyLiveAgentDiagnosticQueryService(
                 output_root=output_root,
                 processes=live_agent_process_supervisor,
@@ -5297,13 +4856,31 @@ def _make_handler(
             request_server_url=lambda ctx: ctx.handler._request_server_url(),
         ),
     )
+    legacy_smoke_service = LegacyLiveAgentSmokeService(
+        output_root,
+        basic_smoke_runner=lambda **kwargs: run_live_agent_smoke(**kwargs),
+        official_round_smoke_runner=lambda **kwargs: run_live_agent_official_round_smoke(**kwargs),
+        session_smoke_runner=lambda **kwargs: run_live_agent_session_smoke(**kwargs),
+        real_session_smoke_runner=lambda **kwargs: run_live_agent_real_session_smoke(**kwargs),
+    )
     register_legacy_live_agent_smoke_routes(
         route_table,
         deps=LegacyLiveAgentSmokeHttpDeps(
-            smoke=LegacyLiveAgentSmokeService(
-                output_root,
-                session_smoke_runner=lambda **kwargs: run_live_agent_session_smoke(**kwargs),
-                real_session_smoke_runner=lambda **kwargs: run_live_agent_real_session_smoke(**kwargs),
+            smoke=legacy_smoke_service,
+            read_operation_payload=_late_operation_json_payload,
+            record_operation=record_live_agent_operation,
+            local_server_url=lambda ctx: ctx.handler._local_server_url(),
+        ),
+    )
+    register_legacy_live_agent_readiness_route(
+        route_table,
+        deps=LegacyLiveAgentReadinessHttpDeps(
+            readiness=LegacyLiveAgentReadinessService(
+                output_root=output_root,
+                processes=live_agent_process_supervisor,
+                health=legacy_health_queries,
+                smoke=legacy_smoke_service,
+                probe_runner=lambda *args, **kwargs: run_live_agent_probe(*args, **kwargs),
             ),
             read_operation_payload=_late_operation_json_payload,
             record_operation=record_live_agent_operation,
@@ -6278,136 +5855,6 @@ def _make_handler(
                     self._send_json(_safe_diagnostic_report_payload(provider_health_payload(payload)))
                 except ValueError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                return
-            if parsed.path == "/api/live-agent-readiness":
-                payload = self._operation_json_payload(operation="readiness.check")
-                if payload is None:
-                    return
-                try:
-                    readiness = live_agent_readiness_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                        default_server=self._local_server_url(),
-                        session_run_monitor=session_run_monitor,
-                    )
-                except (ValueError, urllib.error.URLError) as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="readiness.check",
-                        status="failed",
-                        target_id=str(payload.get("group_id") or ""),
-                        error=str(error),
-                        details={"group_id": str(payload.get("group_id") or "")},
-                    )
-                    self._send_error(HTTPStatus.BAD_GATEWAY, str(error))
-                    return
-                result_status = _operation_result_status(readiness.get("status"))
-                smoke = readiness.get("smoke") if isinstance(readiness.get("smoke"), dict) else {}
-                official_round_smoke = (
-                    readiness.get("official_round_smoke")
-                    if isinstance(readiness.get("official_round_smoke"), dict)
-                    else {}
-                )
-                session_smoke = readiness.get("session_smoke") if isinstance(readiness.get("session_smoke"), dict) else {}
-                probes = readiness.get("probes") if isinstance(readiness.get("probes"), list) else []
-                probe_groups = readiness.get("probe_groups") if isinstance(readiness.get("probe_groups"), list) else []
-                record_live_agent_operation(
-                    output_root,
-                    operation="readiness.check",
-                    status="degraded"
-                    if result_status == "degraded"
-                    else _operation_success_for_result(result_status, success_values={"ready"}),
-                    target_id=str(smoke.get("group_id") or payload.get("group_id") or ""),
-                    summary="checked live-agent readiness",
-                    details={
-                        "group_id": str(smoke.get("group_id") or payload.get("group_id") or ""),
-                        "result_status": result_status,
-                        **_readiness_health_operation_details(readiness.get("health")),
-                        "probe_agent_ids": _payload_probe_agent_ids(payload.get("probe_agent_ids")),
-                        "probe_group_ids": _payload_probe_group_ids(payload.get("probe_group_ids")),
-                        "effective_probe_agent_ids": _payload_probe_agent_ids(readiness.get("effective_probe_agent_ids")),
-                        "probe_error": str(readiness.get("probe_error") or ""),
-                        "probe_group_statuses": _probe_group_statuses(probe_groups),
-                        "probe_statuses": _probe_statuses(probes),
-                        "official_round_smoke": _operation_result_status(official_round_smoke.get("status")),
-                        "official_round_answered_count": _payload_nonnegative_int(
-                            official_round_smoke.get("answered_count"),
-                            0,
-                        ),
-                        "official_round_timeout_count": _payload_nonnegative_int(
-                            official_round_smoke.get("timeout_count"),
-                            0,
-                        ),
-                        "official_round_skipped_count": _payload_nonnegative_int(
-                            official_round_smoke.get("skipped_count"),
-                            0,
-                        ),
-                        "session_smoke": _operation_result_status(session_smoke.get("status")),
-                        "session_smoke_terminal_session_status": _operation_result_status(
-                            session_smoke.get("terminal_session_status")
-                        ),
-                        "session_smoke_terminal_session_included": session_smoke.get("terminal_session_included") is True,
-                        "session_smoke_finalization_status": _operation_result_status(
-                            session_smoke.get("finalization_status")
-                        ),
-                        "session_smoke_finalization_official_event_count": _payload_nonnegative_int(
-                            session_smoke.get("finalization_official_event_count"),
-                            0,
-                        ),
-                        "session_smoke_return_packet_event_count": _payload_nonnegative_int(
-                            session_smoke.get("return_packet_event_count"),
-                            0,
-                        ),
-                        "session_smoke_artifact_status": _operation_result_status(session_smoke.get("artifact_status")),
-                        "session_smoke_self_service_official_reply_count": _payload_nonnegative_int(
-                            session_smoke.get("self_service_official_reply_count"),
-                            0,
-                        ),
-                        "session_smoke_self_service_lobby_reply_count": _payload_nonnegative_int(
-                            session_smoke.get("self_service_lobby_reply_count"),
-                            0,
-                        ),
-                        "session_smoke_self_service_post_restart_reply_count": _payload_nonnegative_int(
-                            session_smoke.get("self_service_post_restart_reply_count"),
-                            0,
-                        ),
-                        "session_smoke_self_service_post_recover_reply_count": _payload_nonnegative_int(
-                            session_smoke.get("self_service_post_recover_reply_count"),
-                            0,
-                        ),
-                        "session_smoke_self_service_soak_reply_count": _payload_nonnegative_int(
-                            session_smoke.get("self_service_soak_reply_count"),
-                            0,
-                        ),
-                        "session_smoke_reply_count": _payload_nonnegative_int(session_smoke.get("reply_count"), 0),
-                        "session_smoke_post_restart_reply_count": _payload_nonnegative_int(
-                            session_smoke.get("post_restart_reply_count"),
-                            0,
-                        ),
-                        "session_smoke_post_recover_reply_count": _payload_nonnegative_int(
-                            session_smoke.get("post_recover_reply_count"),
-                            0,
-                        ),
-                        "session_smoke_soak_cycle_count": _payload_nonnegative_int(
-                            session_smoke.get("soak_cycle_count"),
-                            0,
-                        ),
-                        "session_smoke_soak_reply_count": _payload_nonnegative_int(
-                            session_smoke.get("soak_reply_count"),
-                            0,
-                        ),
-                        "session_smoke_soak_check_statuses": _safe_payload_strings(
-                            session_smoke.get("soak_check_statuses"),
-                            limit=32,
-                        ),
-                        "session_smoke_post_stop_process_status": _operation_result_status(
-                            session_smoke.get("post_stop_process_status")
-                        ),
-                        "session_smoke_recover_status": _operation_result_status(session_smoke.get("recover_status")),
-                    },
-                )
-                self._send_json(readiness)
                 return
             live_agent_probe_id = _live_agent_action_path(parsed.path, "probe")
             if live_agent_probe_id is not None:

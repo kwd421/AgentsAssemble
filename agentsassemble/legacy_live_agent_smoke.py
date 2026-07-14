@@ -45,6 +45,8 @@ def request_json(
 class LegacyLiveAgentSmokeService:
     output_root: Path
     request_json: RequestJson = request_json
+    basic_smoke_runner: SmokeRunner = run_live_agent_smoke
+    official_round_smoke_runner: SmokeRunner = run_live_agent_official_round_smoke
     session_smoke_runner: SmokeRunner = run_live_agent_session_smoke
     real_session_smoke_runner: SmokeRunner = run_live_agent_real_session_smoke
 
@@ -53,6 +55,7 @@ class LegacyLiveAgentSmokeService:
             payload,
             default_server=default_server,
             request_json=self.request_json,
+            runner=self.basic_smoke_runner,
         )
 
     def run_official_round(
@@ -66,6 +69,7 @@ class LegacyLiveAgentSmokeService:
             payload,
             default_server=default_server,
             request_json=self.request_json,
+            runner=self.official_round_smoke_runner,
         )
 
     def run_session(
@@ -103,8 +107,9 @@ def live_agent_smoke_payload(
     *,
     default_server: str,
     request_json: RequestJson = request_json,
+    runner: SmokeRunner = run_live_agent_smoke,
 ) -> dict[str, object]:
-    return run_live_agent_smoke(
+    return runner(
         server=default_server,
         group_id=str(payload.get("group_id") or ""),
         timeout_seconds=_nonnegative_float(payload.get("timeout"), 12.0),
@@ -118,8 +123,9 @@ def live_agent_official_round_smoke_payload(
     *,
     default_server: str,
     request_json: RequestJson = request_json,
+    runner: SmokeRunner = run_live_agent_official_round_smoke,
 ) -> dict[str, object]:
-    return run_live_agent_official_round_smoke(
+    return runner(
         output_root=output_root,
         server=default_server,
         group_id=str(payload.get("group_id") or ""),
