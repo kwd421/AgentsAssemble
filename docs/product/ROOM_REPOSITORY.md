@@ -33,7 +33,16 @@ participant row. Both repository backends are authoritative for this record;
 `rooms.label` is an indexed projection updated in the same transaction.
 `room_settings.json` remains temporary compatibility storage only for user-level
 notification/read preferences. Existing legacy room-global values are not
-silently imported: Phase 3.3 provides an explicit, fingerprinted migration.
+silently imported. Run `assemble room migrate-room-settings --dry-run` against
+the canonical SQLite source, repair every reported issue, then run the same
+command with `--apply`. Apply requires the saved dry-run plan, verifies both
+the room-global source fingerprint and target fingerprint, backs up
+`room_settings.json` and `rooms.sqlite3`, updates every eligible room in one
+SQLite transaction, and records a durable applied fingerprint. Invalid modes,
+relay counts, aliases, channel records, and orphan room entries block apply;
+they are never replaced with defaults. User-preference-only changes do not
+invalidate the room-global fingerprint. The legacy file remains temporarily for
+preference compatibility but can no longer replay the same migrated globals.
 
 ## Transaction Contract
 
@@ -129,3 +138,9 @@ source. The GUI selects storage explicitly with
 from `--room-postgres-dsn-env`. Startup validates the head schema and authority
 marker and never auto-migrates or falls back to SQLite. SQLite remains the
 default.
+
+When a local installation still has `room_settings.json`, run and verify
+`migrate-room-settings` before `migrate-postgres`. The PostgreSQL transfer then
+copies the already-migrated canonical `room_settings` rows with the rest of the
+SQLite authority. The legacy settings command deliberately does not write
+directly to an activated PostgreSQL repository.

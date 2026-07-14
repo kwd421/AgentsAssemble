@@ -234,6 +234,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Legacy resident read-only HTTP projections | `gui_legacy_live_agent_read_http.py`; payload policy remains outside the registrar |
 | Room-global settings | `room_global_settings.py`, `room_settings_service.py`, repository methods; HTTP in `gui_room_settings_http.py` |
 | Legacy user preference compatibility | `room_settings.py`; do not add room-global authority here |
+| Legacy room-global settings migration | source inspection in `legacy_room_settings_source.py`; atomic SQLite migration in `room_settings_migration.py` |
 | Friends, direct-message and local-profile HTTP | `gui_social_http.py`; direct-message process callback wired in `gui.py` |
 | Play Mode Mafia HTTP | `gui_mafia_http.py`; game state and rules in `mafia_game.py` |
 | Side-chat storage and room scoping | `side_chat.py`; event normalization in `meeting_events.py`; HTTP/SSE routes in `gui_side_chat_http.py` |

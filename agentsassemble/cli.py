@@ -5478,6 +5478,40 @@ def run_room_command(args: argparse.Namespace) -> int:
             elif not result.get("can_apply"):
                 print("target is not safe to apply")
         return 0 if result.get("status") in {"ready", "applied"} else 1
+    if args.room_command == "migrate-room-settings":
+        from agentsassemble.room_settings_migration import (
+            LegacyRoomSettingsMigrationError,
+            migrate_legacy_room_settings,
+        )
+
+        try:
+            result = migrate_legacy_room_settings(
+                Path(args.output_root),
+                apply=bool(args.apply),
+            )
+        except (LegacyRoomSettingsMigrationError, OSError, ValueError, sqlite3.Error) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        if args.as_json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(
+                f"Legacy room settings migration {result['mode']}: {result['status']} · "
+                f"rooms={result['candidate_room_count']} · changes={result['change_count']} · "
+                f"issues={result['issue_count']}"
+            )
+            if result.get("source_fingerprint"):
+                print(f"source fingerprint: {result['source_fingerprint']}")
+            for issue in result.get("issues", []):
+                print(
+                    f"- {issue.get('room_id') or '<file>'} {issue.get('field') or '<record>'}: "
+                    f"{issue.get('message')}"
+                )
+            if result.get("backup_dir"):
+                print(f"backup: {result['backup_dir']}")
+            elif result.get("status") == "ready":
+                print("Run the same command with --apply after reviewing the dry-run plan.")
+        return 0 if result.get("status") in {"ready", "applied", "already_applied", "not_needed"} else 1
     if args.room_command == "list":
         query = urllib.parse.urlencode({"include_archived": "true"} if args.include_archived else {})
         path = "/api/rooms" + (f"?{query}" if query else "")

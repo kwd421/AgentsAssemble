@@ -563,3 +563,20 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   explicit error instead of auto-creating a room or crashing the request. The
   next slice is Phase 3.3: an explicit dry-run/backup/fingerprint migration for
   existing legacy room-global settings.
+- 2026-07-14: Phase 3.3 adds `assemble room migrate-room-settings`, scoped to
+  the canonical SQLite source before any PostgreSQL authority transfer. A
+  dry-run writes a reviewable plan with separate source-global and target
+  fingerprints. Apply requires that unchanged plan, takes consistent backups
+  of the legacy JSON and SQLite database under the database write lock, updates
+  all eligible settings and room-label projections in one transaction, verifies
+  the committed rows, and stores an applied fingerprint so stale JSON cannot be
+  replayed over later canonical edits. Legacy source interpretation is isolated
+  from database effects. Invalid modes/relay values, alias conflicts, malformed
+  channels, and orphan room entries produce blocking per-room repair issues;
+  no defaults or fallback values are substituted. Eleven behavior tests cover
+  CLI dispatch, backup, fingerprint changes, preference-only changes, rollback,
+  and replay prevention. A dry-run against a v5 copy of current local data found
+  15 candidate entries, 6 eligible changes, and 10 blocking issues: four invalid
+  `free`/`quiet` modes and six orphan room entries, with one room in both groups.
+  No live user data was applied. The next slice is Phase 3.4, moving user
+  preferences to their owning repository.

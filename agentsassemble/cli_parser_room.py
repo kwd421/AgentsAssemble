@@ -52,6 +52,17 @@ def register_room_parsers(subparsers: argparse._SubParsersAction) -> None:
     room_migrate_postgres.set_defaults(apply=False)
     room_migrate_postgres.add_argument("--json", action="store_true", dest="as_json")
 
+    room_migrate_settings = room_subparsers.add_parser(
+        "migrate-room-settings",
+        help="Inspect or move legacy room_settings.json globals into canonical SQLite rooms.",
+    )
+    room_migrate_settings.add_argument("--output-root", default=".agentsassemble")
+    migrate_settings_mode = room_migrate_settings.add_mutually_exclusive_group()
+    migrate_settings_mode.add_argument("--dry-run", action="store_false", dest="apply")
+    migrate_settings_mode.add_argument("--apply", action="store_true")
+    room_migrate_settings.set_defaults(apply=False)
+    room_migrate_settings.add_argument("--json", action="store_true", dest="as_json")
+
     room_attend = room_subparsers.add_parser(
         "attend",
         help="Join an agent-owned room invite over the canonical WebSocket; reads the invite URL from hidden stdin.",
