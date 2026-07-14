@@ -29,7 +29,7 @@ from agentsassemble.codex_sessions import (
     write_agent_config,
 )
 from agentsassemble.config import load_council_config
-from agentsassemble.live_agent_context import live_agent_context_contract, live_agent_context_contract_with_join_semantics
+from agentsassemble.live_agent_context import live_agent_context_contract
 from agentsassemble.live_agent_flow import FLOW_SPEAKING_ACTIONS, FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
 from agentsassemble.live_agent_frontend_create import (
     frontend_live_agent_check_payload,
@@ -56,6 +56,7 @@ from agentsassemble.gui_legacy_live_agent_read_http import (
     LegacyLiveAgentReadDeps,
     register_legacy_live_agent_read_routes,
 )
+from agentsassemble.gui_legacy_live_agent_presence_http import register_legacy_live_agent_presence_routes
 from agentsassemble.gui_legacy_live_agent_process_http import (
     LegacyProcessHttpDeps,
     register_legacy_process_mutation_routes,
@@ -207,7 +208,6 @@ from agentsassemble.live_agent_settings import (
     update_live_agent_config_poll_interval,
 )
 from agentsassemble.live_agents import (
-    connect_live_agent,
     heartbeat_live_agent,
     read_live_agents,
     update_live_agent_cooldown,
@@ -308,11 +308,16 @@ from agentsassemble.legacy_live_agent_smoke import (
 )
 from agentsassemble.legacy_live_agent_roster_queries import (
     LegacyLiveAgentRosterQueryService,
-    live_agent_register_admission_details as _live_agent_register_admission_details,
     live_agent_roster_admission_details as _live_agent_roster_admission_details,
     live_agent_roster_with_admission_evidence as _live_agent_roster_with_admission_evidence,
     live_agent_without_quota_fields as _live_agent_without_quota_fields,
     live_agents_payload,
+)
+from agentsassemble.legacy_live_agent_presence import (
+    LegacyLiveAgentPresenceService,
+    connect_live_agent_payload,
+    live_agent_heartbeat_payload,
+    live_agent_leave_payload,
 )
 from agentsassemble.legacy_meeting_queries import (
     LegacyMeetingQueryService,
@@ -2400,10 +2405,6 @@ def _skipped_session_auto_rounds_result(
     }
 
 
-def connect_live_agent_payload(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
-    return {"agent": connect_live_agent(output_root, payload), "agents": read_live_agents(output_root)}
-
-
 def live_agent_join_brief_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
     return build_live_agent_join_brief(
         server=payload.get("server") or default_server,
@@ -2454,21 +2455,6 @@ def room_friend_direct_dm_payload(
         process_groups=snapshot_groups,
         resume_callback=resume_existing_group,
     )
-
-
-def live_agent_heartbeat_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
-    agent = heartbeat_live_agent(output_root, agent_id, status=str(payload.get("status") or "online"), metadata=payload)
-    return {"agent": agent, "agents": read_live_agents(output_root)}
-
-
-def live_agent_leave_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
-    _live_agent_for_id(output_root, agent_id)
-    metadata: dict[str, object] = {"last_error": ""}
-    for key in ("last_observed_event_id", "last_observed_live_event_id", "last_observed_dm_event_id"):
-        if key in payload:
-            metadata[key] = payload.get(key)
-    agent = heartbeat_live_agent(output_root, agent_id, status="offline", metadata=metadata)
-    return {"agent": agent, "agents": read_live_agents(output_root)}
 
 
 def live_agent_dm_reply_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
@@ -3304,34 +3290,6 @@ def _codex_session_join_error_details(output_root: Path, payload: dict[str, obje
     return details
 
 
-def _live_agent_register_operation_details(
-    output_root: Path,
-    agent: dict[str, object],
-    *,
-    clean_agent_id: str,
-    previous_agent: dict[str, object],
-) -> dict[str, object]:
-    context_contract = live_agent_context_contract_with_join_semantics(
-        agent.get("provider_kind"),
-        agent.get("connection_kind"),
-        agent.get("join_semantics"),
-    )
-    details = {
-        "agent_id": clean_lobby_text(agent.get("agent_id") or clean_agent_id, limit=64),
-        "meeting_id": clean_lobby_text(agent.get("meeting_id"), limit=128),
-        "provider_kind": clean_lobby_text(agent.get("provider_kind"), limit=64),
-        "connection_kind": clean_lobby_text(agent.get("connection_kind"), limit=64),
-        "join_semantics": context_contract["join_semantics"],
-        "context_durability": context_contract["context_durability"],
-        "sandbox_enforcement": context_contract["sandbox_enforcement"],
-        "engagement_mode": clean_lobby_text(agent.get("engagement_mode"), limit=64),
-        "previous_status": clean_lobby_text(previous_agent.get("status"), limit=32),
-        "registered_status": clean_lobby_text(agent.get("status"), limit=32),
-    }
-    details.update(_live_agent_register_admission_details(output_root, agent))
-    return details
-
-
 def _matching_live_agent_turn_request(meeting_dir: Path, agent_id: str, source_event_id: str) -> dict[str, object] | None:
     for event in read_live_events(meeting_dir, limit=None):
         if event.get("id") != source_event_id:
@@ -3817,6 +3775,10 @@ def _make_handler(
             readiness_error_message=_session_check_error_message,
         ),
     )
+    register_legacy_live_agent_presence_routes(
+        route_table,
+        service=LegacyLiveAgentPresenceService(output_root),
+    )
 
     def _late_operation_json_payload(
         ctx: RequestContext,
@@ -4222,47 +4184,6 @@ def _make_handler(
                 )
                 self._send_json(result)
                 return
-            if parsed.path == "/api/live-agents":
-                payload = self._operation_json_payload(
-                    operation="live_agent.register",
-                    target_id="",
-                )
-                if payload is None:
-                    return
-                clean_agent_id = clean_lobby_text(payload.get("agent_id"), limit=64)
-                previous_agent = next(
-                    (agent for agent in read_live_agents(output_root) if agent.get("agent_id") == clean_agent_id),
-                    {},
-                )
-                try:
-                    live_agent = connect_live_agent_payload(output_root, payload)
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="live_agent.register",
-                        status="failed",
-                        target_id=clean_agent_id,
-                        error=str(error),
-                        details={"agent_id": clean_agent_id},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                agent = live_agent.get("agent") if isinstance(live_agent.get("agent"), dict) else {}
-                record_live_agent_operation(
-                    output_root,
-                    operation="live_agent.register",
-                    status="success",
-                    target_id=str(agent.get("agent_id") or clean_agent_id),
-                    summary="registered live agent",
-                    details=_live_agent_register_operation_details(
-                        output_root,
-                        agent,
-                        clean_agent_id=clean_agent_id,
-                        previous_agent=previous_agent,
-                    ),
-                )
-                self._send_json(live_agent)
-                return
             if parsed.path == "/api/live-agent-join-brief":
                 length = int(self.headers.get("Content-Length", "0") or "0")
                 try:
@@ -4424,64 +4345,6 @@ def _make_handler(
                     details=reply_details,
                 )
                 self._send_json(official_turn)
-                return
-            live_agent_heartbeat_id = _live_agent_action_path(parsed.path, "heartbeat")
-            if live_agent_heartbeat_id is not None:
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                try:
-                    heartbeat = live_agent_heartbeat_payload(output_root, live_agent_heartbeat_id, payload)
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                self._send_json(heartbeat)
-                return
-            live_agent_leave_id = _live_agent_action_path(parsed.path, "leave")
-            if live_agent_leave_id is not None:
-                payload = self._operation_json_payload(
-                    operation="live_agent.leave",
-                    target_id=live_agent_leave_id,
-                    details={"agent_id": clean_lobby_text(live_agent_leave_id, limit=64)},
-                )
-                if payload is None:
-                    return
-                try:
-                    previous_agent = _live_agent_for_id(output_root, live_agent_leave_id)
-                    leave = live_agent_leave_payload(output_root, live_agent_leave_id, payload)
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="live_agent.leave",
-                        status="failed",
-                        target_id=live_agent_leave_id,
-                        error=str(error),
-                        details={"agent_id": clean_lobby_text(live_agent_leave_id, limit=64)},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                agent = leave.get("agent") if isinstance(leave.get("agent"), dict) else {}
-                record_live_agent_operation(
-                    output_root,
-                    operation="live_agent.leave",
-                    status="success",
-                    target_id=live_agent_leave_id,
-                    summary="marked live agent offline",
-                    details={
-                        "agent_id": clean_lobby_text(agent.get("agent_id") or live_agent_leave_id, limit=64),
-                        "meeting_id": clean_lobby_text(agent.get("meeting_id"), limit=128),
-                        "previous_status": clean_lobby_text(previous_agent.get("status"), limit=32),
-                        "last_observed_event_id": clean_lobby_text(agent.get("last_observed_event_id"), limit=128),
-                        "last_observed_live_event_id": clean_lobby_text(agent.get("last_observed_live_event_id"), limit=128),
-                    },
-                )
-                self._send_json(leave)
                 return
             live_agent_dm_reply_id = _live_agent_action_path(parsed.path, "dm-reply")
             if live_agent_dm_reply_id is not None:

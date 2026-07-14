@@ -166,6 +166,7 @@ These families already have a clear module owner and should not move back into
 | `gui_observability_http.py` | Active optional | Read-only local resources and release-health projections | `tests/test_gui_server_health.py` |
 | `gui_live_agent_flow_http.py` | Compatibility | Legacy Play/flow supervisor controls | `tests/test_gui_server_session_lifecycle.py` |
 | `gui_legacy_live_agent_read_http.py` | Compatibility | Legacy resident room/return-packet reads plus diagnostic history and health/readiness projections | `tests/test_gui_legacy_live_agent_read_http.py`, `tests/test_gui_server_room_payload.py`, `tests/test_gui_server_session_runs.py` |
+| `gui_legacy_live_agent_presence_http.py` | Compatibility | Resident registration, heartbeat metadata, and graceful leave; state/audit behavior lives in `legacy_live_agent_presence.py` | `tests/test_gui_legacy_live_agent_presence_http.py`, `tests/test_legacy_live_agent_presence.py`, `tests/test_gui_server_roster.py`, `tests/test_gui_server_lobby_social.py` |
 | `gui_legacy_live_agent_session_http.py` | Compatibility | Legacy resident-session mutations | `tests/test_gui_legacy_live_agent_session_http.py`, `tests/test_legacy_live_agent_session_service.py` |
 | `gui_legacy_live_agent_process_http.py` | Compatibility | Legacy process-group mutations | `tests/test_gui_legacy_live_agent_process_http.py`, `tests/test_legacy_live_agent_process_service.py` |
 | `gui_legacy_live_agent_session_run_http.py` | Compatibility | Durable legacy session-run controls | `tests/test_gui_legacy_live_agent_session_run_http.py`, `tests/test_legacy_live_agent_session_run_service.py` |
@@ -188,7 +189,7 @@ families directly.
 | Family | Classification | Why it remains reachable | Next action |
 | --- | --- | --- | --- |
 | `/ws`, `/`, `/app/*`, `/join`, guarded React assets | Current core composition | Protocol upgrade and static delivery are transport concerns | Keep thin transport branches in the final handler |
-| `/api/live-agents*` registration, heartbeat, lobby, DM reply, official turn, probe, leave, and engagement | Compatibility | CLI, MCP, resident runner, and smoke clients still call them | Move behind typed legacy resident-agent services and Router registrations; room and return-packet GETs are already moved |
+| `/api/live-agents*` lobby, DM reply, official turn, probe, and engagement | Compatibility | CLI, MCP, resident runner, and smoke clients still call them | Separate speech, diagnostics, and engagement policy rather than moving them as one generic resident service; reads and presence lifecycle are already Router-owned |
 | Remaining `/api/live-agent-create*` and `/api/live-agent-room/expel` | Deletion candidates | No supported current caller remains for check/create/expel; provider login and retained room-session controls are Router-owned | Leave visible in the handler until the separate compatibility deletion decision |
 | `/api/codex-sessions/invite` and `/join` | Compatibility | CLI still calls the Codex meeting-session compatibility workflow | Move with legacy meeting/session service, never into the canonical provider adapter |
 
@@ -342,6 +343,9 @@ reentrant lock shared with rounds and Codex join lives in
 `legacy_turn_scheduler.py`. Round/rounds/preset scheduling, progress,
 finalization, and prompt-free auditing are Router-owned through
 `LegacyOfficialRoundService`. The retained handler no longer owns a legacy
-meeting mutation route; Phase 5.4 continues with a fresh inventory of the
-remaining resident-agent and Codex compatibility families. Do not push unless
+meeting mutation route. Resident registration, heartbeat, and graceful leave
+are also Router-owned through `LegacyLiveAgentPresenceService`; heartbeat keeps
+its existing no-operation-audit policy while registration and leave retain
+bounded audits. Phase 5.4 continues with the remaining resident speech,
+diagnostic, engagement, and Codex compatibility families. Do not push unless
 the user explicitly asks.

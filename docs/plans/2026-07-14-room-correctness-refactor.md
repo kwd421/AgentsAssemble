@@ -1097,3 +1097,20 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   candidates remain untouched. Agent Session name/avatar history continues to
   resolve current canonical identity by stable `participant_id`, including an
   explicitly empty current avatar.
+- 2026-07-15: Retained resident presence is now a separate compatibility
+  boundary. `LegacyLiveAgentPresenceService` owns registration, heartbeat
+  metadata, graceful leave, and the existing operation-audit policy;
+  `legacy_live_agent_presence_projection.py` owns bounded registration and
+  leave details. Heartbeat intentionally remains unaudited, matching the prior
+  high-frequency path. The Router owns `POST /api/live-agents` plus dynamic
+  heartbeat and leave routes, while `gui.py` keeps import-compatible payload
+  names for CLI and test callers. Focused service/Router/ownership tests passed
+  11 tests; real roster and lobby-social HTTP coverage passed 46; CLI presence,
+  runtime-process, and delegate coverage passed 68; and server lifecycle, MCP,
+  and self-service coverage passed 49. Registration admission evidence,
+  heartbeat cursor/error metadata, leave cursor persistence, invalid-JSON
+  audits, and response shapes remain unchanged. The next slice should keep
+  resident speech, probe diagnostics, and engagement settings as separate
+  boundaries rather than creating one generic live-agent service. The seven
+  deletion candidates and canonical name/avatar history reprojection remain
+  unchanged.
