@@ -241,7 +241,8 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Legacy resident roster and admission projections | `legacy_live_agent_roster_queries.py`, `gui_legacy_live_agent_read_http.py` |
 | Legacy resident health aggregation | `legacy_live_agent_health_queries.py`; observation cursor/event policy in `legacy_live_agent_observation_health.py`; durable run/monitor policy in `legacy_live_agent_session_run_health.py` |
 | Legacy resident preflight | `legacy_live_agent_preflight.py`, safe response projection in `diagnostic_report_projection.py`, HTTP in `gui_legacy_live_agent_preflight_http.py` |
-| Remaining legacy resident discovery/smoke compatibility | `gui.py`; classify and extract one verified family at a time |
+| Legacy resident local CLI discovery | `legacy_live_agent_discovery.py`, HTTP in `gui_legacy_live_agent_discovery_http.py` |
+| Remaining legacy resident smoke compatibility | `gui.py`; classify and extract one verified family at a time |
 | Room-global settings | `room_global_settings.py`, `room_settings_service.py`, repository methods; HTTP in `gui_room_settings_http.py` |
 | User-owned room notification/read preferences | validation in `room_user_preferences.py`; SQLite persistence in `identity_room_preferences.py`; composition in `room_settings_service.py` |
 | Legacy room-global settings migration | source inspection in `legacy_room_settings_source.py`; atomic SQLite migration in `room_settings_migration.py` |

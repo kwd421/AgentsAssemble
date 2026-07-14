@@ -243,7 +243,9 @@ decision. Leaving them in the old chain makes their compatibility cost visible.
    longer receives process, monitor, or health callbacks. Configuration-only
    preflight now belongs to `LegacyLiveAgentPreflightService`, with its POST
    route on Router and shared report redaction in
-   `diagnostic_report_projection.py`. Move discovery and smoke behind typed
+   `diagnostic_report_projection.py`. Local CLI discovery and generated config/
+   bundle writes belong to `LegacyLiveAgentDiscoveryService`; its POST route
+   and safe audit projection are Router-owned. Move smoke behind typed
    compatibility services next.
 3. Register their routes on `Router`; preserve methods, paths, authorization,
    status codes, redaction, and payloads.
@@ -285,8 +287,8 @@ completion:
 After a context reset, read `CURRENT_SYSTEM.md`, the active room-correctness
 plan, and this file. Phase 5.3 meeting reads, room/return-packet reads, durable
 diagnostic histories, process connection projections, readiness, roster/
-admission projections, health aggregation, and preflight are complete. Start
-with discovery, then classify each smoke route separately. Do not move the seven
+admission projections, health aggregation, preflight, and discovery are
+complete. Classify each smoke route separately next. Do not move the seven
 deletion candidates while doing that work. Do not infer that a route is
 obsolete merely because it is not called by React; CLI, MCP, smoke, and legacy
 meeting clients are real compatibility consumers. The canonical identity

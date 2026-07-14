@@ -806,3 +806,18 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   session, real-session, and readiness smoke remain later, independently
   verified slices. The seven deletion candidates and canonical name/avatar
   history reprojection contract remain unchanged.
+- 2026-07-14: Local CLI discovery now belongs to
+  `LegacyLiveAgentDiscoveryService`. The service owns command discovery,
+  exact agent/command approval filtering, optional generated config writes,
+  collision-checked council/agent session bundles, and next-command output.
+  `gui_legacy_live_agent_discovery_http.py` owns the existing POST route and
+  records counts, join/context/sandbox/evidence values, and bounded agent IDs
+  without persisting resolved executable paths or command names. Existing
+  `live_agent_discovery_payload` and operation-detail imports remain available
+  through `agentsassemble.gui`. Focused payload, actual HTTP, approval,
+  route-ownership, and parity verification passed all 51 tests. The remaining
+  diagnostic work is smoke: first classify credential-free, official-round,
+  session, real-session, and aggregate readiness routes by side effects and
+  error/redaction contract, then move one coherent family per commit. The seven
+  deletion candidates remain visible in the old handler chain, and name/avatar
+  history must continue to resolve through canonical `participant_id`.

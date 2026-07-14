@@ -32,15 +32,6 @@ from agentsassemble.codex_sessions import (
     write_agent_config,
 )
 from agentsassemble.config import load_agent_runtime_config, load_council_config, providers_from_config
-from agentsassemble.live_agent_discovery import (
-    add_session_bundle_outputs,
-    apply_discovery_approval_filter,
-    build_discovered_live_agent_config,
-    build_discovered_session_bundle,
-    discovered_session_bundle_paths,
-    fill_discovery_next_command_output,
-    validate_distinct_session_bundle_paths,
-)
 from agentsassemble.live_agent_context import live_agent_context_contract, live_agent_context_contract_with_join_semantics
 from agentsassemble.live_agent_flow import FLOW_SPEAKING_ACTIONS, FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
 from agentsassemble.live_agent_frontend_create import (
@@ -68,6 +59,10 @@ from agentsassemble.gui_legacy_live_agent_read_http import (
 from agentsassemble.gui_legacy_live_agent_process_http import (
     LegacyProcessHttpDeps,
     register_legacy_process_mutation_routes,
+)
+from agentsassemble.gui_legacy_live_agent_discovery_http import (
+    LegacyLiveAgentDiscoveryHttpDeps,
+    register_legacy_live_agent_discovery_route,
 )
 from agentsassemble.gui_legacy_live_agent_preflight_http import (
     LegacyLiveAgentPreflightHttpDeps,
@@ -137,6 +132,11 @@ from agentsassemble.legacy_live_agent_health import (
 from agentsassemble.legacy_live_agent_health_queries import (
     LegacyLiveAgentHealthQueryService,
     live_agent_health_payload,
+)
+from agentsassemble.legacy_live_agent_discovery import (
+    LegacyLiveAgentDiscoveryService,
+    discovery_operation_details as _discovery_operation_details,
+    live_agent_discovery_payload,
 )
 from agentsassemble.legacy_live_agent_observation_health import (
     latest_live_agent_turn_request_for_agent as _latest_live_agent_turn_request_for_agent,
@@ -3429,50 +3429,6 @@ def live_agent_probe_payload(output_root: Path, agent_id: str, payload: dict[str
     )
 
 
-def live_agent_discovery_payload(
-    output_root: Path,
-    payload: dict[str, object],
-    *,
-    default_server: str,
-) -> dict[str, object]:
-    report = build_discovered_live_agent_config(
-        server=str(payload.get("server") or default_server),
-        meeting_id=str(payload.get("meeting_id") or ""),
-        engagement_mode=str(payload.get("engagement_mode") or "mentioned"),
-        include_legacy_gemini=_payload_bool(payload.get("include_legacy_gemini")),
-    )
-    approved_agents = _safe_payload_strings(payload.get("approved_agents"), limit=64)
-    approved_commands = _safe_payload_strings(payload.get("approved_commands"), limit=64)
-    if approved_agents or approved_commands:
-        apply_discovery_approval_filter(report, approved_agents=approved_agents, approved_commands=approved_commands)
-    output_path = output_root / "live-agents.discovered.local.json"
-    should_write = not ("write_config" in payload and not _payload_bool(payload.get("write_config")))
-    if report.get("status") == "ok" and should_write:
-        write_agent_config(output_path, report["config"])
-        fill_discovery_next_command_output(report, str(output_path))
-        report["output"] = str(output_path)
-        report["written"] = True
-        if _payload_bool(payload.get("session_bundle")):
-            council_output, agent_output = discovered_session_bundle_paths(output_path)
-            validate_distinct_session_bundle_paths(output_path, council_output, agent_output)
-            bundle = build_discovered_session_bundle(report["config"])
-            write_agent_config(council_output, bundle["council_config"])
-            write_agent_config(agent_output, bundle["agent_config"])
-            add_session_bundle_outputs(
-                report,
-                live_agent_output=str(output_path),
-                council_output=str(council_output),
-                agent_output=str(agent_output),
-                server=str(payload.get("server") or default_server),
-                meeting_id=str(payload.get("meeting_id") or ""),
-                group_id=clean_live_agent_group_id(output_path.stem),
-            )
-    else:
-        report["output"] = ""
-        report["written"] = False
-    return report
-
-
 def live_agent_smoke_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
     return run_live_agent_smoke(
         server=default_server,
@@ -4308,57 +4264,6 @@ def _operation_result_status(value: object) -> str:
 
 def _operation_success_for_result(value: object, *, success_values: set[str]) -> str:
     return "success" if _operation_result_status(value) in success_values else "failed"
-
-
-def _discovery_operation_details(discoveries: list[object], approval_filter: object = None) -> dict[str, object]:
-    return {
-        "join_semantics": _discovery_operation_values(discoveries, "join_semantics"),
-        "context_durability": _discovery_operation_values(discoveries, "context_durability"),
-        "sandbox_enforcement": _discovery_operation_values(discoveries, "sandbox_enforcement"),
-        "evidence_basis": _discovery_operation_values(discoveries, "evidence_basis"),
-        "approval_required": sum(
-            1
-            for item in discoveries
-            if isinstance(item, dict) and item.get("available") and item.get("included") and item.get("requires_approval")
-        ),
-        **_discovery_approval_operation_details(approval_filter),
-    }
-
-
-def _discovery_approval_operation_details(approval_filter: object) -> dict[str, object]:
-    if not isinstance(approval_filter, dict):
-        return {}
-    approved_agents = _safe_payload_strings(approval_filter.get("approved_agents"), limit=64)
-    excluded_agents = _safe_payload_strings(approval_filter.get("excluded_agents"), limit=64)
-    approved_clis = _safe_payload_strings(approval_filter.get("approved_commands"), limit=64)
-    excluded_clis = _safe_payload_strings(approval_filter.get("excluded_commands"), limit=64)
-    approved_count = _payload_nonnegative_int(approval_filter.get("approved_count"), 0)
-    unmatched_count = _payload_nonnegative_int(approval_filter.get("unmatched_approval_count"), 0)
-    if not (approved_agents or excluded_agents or approved_clis or excluded_clis or approved_count or unmatched_count):
-        return {}
-    details: dict[str, object] = {
-        "approved_count": approved_count,
-        "excluded_agent_count": len(excluded_agents),
-        "unmatched_approval_count": unmatched_count,
-    }
-    if approved_agents:
-        details["approved_agent_ids"] = approved_agents[:10]
-    if approved_clis:
-        details["approved_cli_count"] = len(approved_clis)
-    if excluded_clis:
-        details["excluded_cli_count"] = len(excluded_clis)
-    return details
-
-
-def _discovery_operation_values(discoveries: list[object], field_name: str) -> list[str]:
-    values = set()
-    for item in discoveries:
-        if not isinstance(item, dict) or not item.get("available"):
-            continue
-        value = clean_lobby_text(item.get(field_name), limit=128)
-        if value:
-            values.add(value)
-    return sorted(values)
 
 
 def _payload_probe_agent_ids(value: object) -> list[str]:
@@ -5585,6 +5490,15 @@ def _make_handler(
             request_server_url=lambda ctx: ctx.handler._request_server_url(),
         ),
     )
+    register_legacy_live_agent_discovery_route(
+        route_table,
+        deps=LegacyLiveAgentDiscoveryHttpDeps(
+            discovery=LegacyLiveAgentDiscoveryService(output_root),
+            read_operation_payload=_late_operation_json_payload,
+            record_operation=record_live_agent_operation,
+            request_server_url=lambda ctx: ctx.handler._request_server_url(),
+        ),
+    )
 
     legacy_session_service = LegacyLiveAgentSessionMutationService(
         output_root,
@@ -6538,29 +6452,6 @@ def _make_handler(
                     },
                 )
                 self._send_json(engagement)
-                return
-            if parsed.path == "/api/live-agent-discovery":
-                payload = self._operation_json_payload(operation="discovery.run")
-                if payload is None:
-                    return
-                discovery = live_agent_discovery_payload(output_root, payload, default_server=self._request_server_url())
-                result_status = _operation_result_status(discovery.get("status"))
-                discoveries = discovery.get("discoveries") if isinstance(discovery.get("discoveries"), list) else []
-                agents = (discovery.get("config") or {}).get("agents", []) if isinstance(discovery.get("config"), dict) else []
-                record_live_agent_operation(
-                    output_root,
-                    operation="discovery.run",
-                    status=_operation_success_for_result(result_status, success_values={"ok"}),
-                    target_id="live-agent-discovery",
-                    summary="discovered local live-agent CLIs",
-                    details={
-                        "result_status": result_status,
-                        "agents": len(agents) if isinstance(agents, list) else 0,
-                        "discovered": sum(1 for item in discoveries if isinstance(item, dict) and item.get("available")),
-                        **_discovery_operation_details(discoveries, discovery.get("approval_filter")),
-                    },
-                )
-                self._send_json(discovery)
                 return
             if parsed.path == "/api/provider-health":
                 length = int(self.headers.get("Content-Length", "0") or "0")
