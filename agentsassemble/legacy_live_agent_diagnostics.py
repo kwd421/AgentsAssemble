@@ -1,11 +1,11 @@
-"""Read-only histories and readiness overlays for legacy resident diagnostics."""
+"""Read-only history, process, and readiness queries for legacy residents."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentsassemble.legacy_live_agent_health import safe_health_identity
+from agentsassemble.legacy_live_agent_health import live_agent_process_health_reason, safe_health_identity
 from agentsassemble.legacy_live_agent_process_projection import live_agent_processes_payload
 from agentsassemble.live_agent_operations import read_live_agent_operation_history
 from agentsassemble.live_agent_processes import (
@@ -13,12 +13,12 @@ from agentsassemble.live_agent_processes import (
     read_live_agent_process_event_history,
 )
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
-from agentsassemble.live_agent_sessions import live_agent_session_readiness_summary
+from agentsassemble.live_agent_sessions import check_live_agent_session, live_agent_session_readiness_summary
 
 
 @dataclass(frozen=True)
 class LegacyLiveAgentDiagnosticQueryService:
-    """Server-scoped read facade for durable resident diagnostic histories."""
+    """Server-scoped read facade for retained resident diagnostics."""
 
     output_root: Path
     processes: LiveAgentProcessSupervisor
@@ -60,6 +60,14 @@ class LegacyLiveAgentDiagnosticQueryService:
 
     def process_groups(self) -> dict[str, object]:
         return live_agent_processes_payload(self.processes, output_root=self.output_root)
+
+    def readiness(self, *, meeting_id: str, group_id: str) -> dict[str, object]:
+        return live_agent_session_readiness_payload(
+            self.output_root,
+            self.processes,
+            meeting_id=meeting_id,
+            group_id=group_id,
+        )
 
     def session_runs(
         self,
@@ -142,6 +150,74 @@ def live_agent_session_runs_payload(
             process_supervisor=process_supervisor,
         )
     return {"runs": runs}
+
+
+def live_agent_session_check_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    group_id = str(payload.get("group_id") or "").strip()
+    if not group_id:
+        raise ValueError("Live agent group id is required.")
+    return _session_check_payload_with_process_reason(
+        output_root,
+        process_supervisor,
+        meeting_id=str(payload.get("meeting_id") or ""),
+        group_id=group_id,
+    )
+
+
+def live_agent_session_readiness_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    *,
+    meeting_id: str,
+    group_id: str,
+) -> dict[str, object]:
+    if not str(group_id or "").strip():
+        raise ValueError("Live agent group id is required.")
+    return _session_check_payload_with_process_reason(
+        output_root,
+        process_supervisor,
+        meeting_id=str(meeting_id or ""),
+        group_id=str(group_id or ""),
+    )
+
+
+def _session_check_payload_with_process_reason(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    *,
+    meeting_id: str,
+    group_id: str,
+) -> dict[str, object]:
+    groups = session_process_groups_snapshot(process_supervisor)
+    session = check_live_agent_session(
+        output_root,
+        process_supervisor,
+        meeting_id=meeting_id,
+        group_id=group_id,
+        groups=groups,
+    )
+    resolved_group_id = str(session.get("group_id") or "").strip()
+    if not resolved_group_id or "process_reason" in session:
+        return session
+    group = _find_session_process_group(groups, resolved_group_id)
+    reason = live_agent_process_health_reason(group) if group else {}
+    if not reason:
+        return session
+    return {**session, "process_reason": reason}
+
+
+def _find_session_process_group(
+    groups: list[dict[str, object]],
+    group_id: str,
+) -> dict[str, object]:
+    for group in groups:
+        if str(group.get("group_id") or "") == group_id:
+            return group
+    return {}
 
 
 def session_runs_with_readiness(

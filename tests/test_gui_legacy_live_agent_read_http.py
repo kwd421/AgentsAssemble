@@ -72,6 +72,10 @@ class FakeLegacyLiveAgentDiagnostics:
         self.calls.append(("process_groups", {}))
         return {"groups": []}
 
+    def readiness(self, *, meeting_id: str, group_id: str) -> dict[str, object]:
+        self.calls.append(("readiness", {"meeting_id": meeting_id, "group_id": group_id}))
+        return {"status": "ready"}
+
     def session_runs(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(("session_runs", kwargs))
         return {"runs": []}
@@ -85,7 +89,6 @@ def _deps(**overrides: object) -> LegacyLiveAgentReadDeps:
         "session_run_monitor": None,
         "agents_payload": _unused_payload,
         "health_payload": _unused_payload,
-        "readiness_payload": _unused_payload,
         "readiness_error_message": lambda error: str(error),
     }
     values.update(overrides)
@@ -216,14 +219,15 @@ class LegacyLiveAgentReadRoutesTests(unittest.TestCase):
         )
 
     def test_readiness_error_preserves_safe_target_details(self) -> None:
-        def readiness_payload(*args: object, **kwargs: object) -> dict[str, object]:
-            raise ValueError("safe readiness error")
+        class InvalidReadiness(FakeLegacyLiveAgentDiagnostics):
+            def readiness(self, *, meeting_id: str, group_id: str) -> dict[str, object]:
+                raise ValueError("safe readiness error")
 
         router = Router()
         register_legacy_live_agent_read_routes(
             router,
             deps=_deps(
-                readiness_payload=readiness_payload,
+                diagnostics=InvalidReadiness(),
                 readiness_error_message=lambda error: f"safe: {error}",
             ),
         )
@@ -244,13 +248,14 @@ class LegacyLiveAgentReadRoutesTests(unittest.TestCase):
         )
 
     def test_missing_readiness_target_is_not_found_with_a_machine_code(self) -> None:
-        def readiness_payload(*args: object, **kwargs: object) -> dict[str, object]:
-            raise LiveAgentSessionNotFoundError("Meeting room-missing was not found.")
+        class MissingReadiness(FakeLegacyLiveAgentDiagnostics):
+            def readiness(self, *, meeting_id: str, group_id: str) -> dict[str, object]:
+                raise LiveAgentSessionNotFoundError("Meeting room-missing was not found.")
 
         router = Router()
         register_legacy_live_agent_read_routes(
             router,
-            deps=_deps(readiness_payload=readiness_payload),
+            deps=_deps(diagnostics=MissingReadiness()),
         )
 
         handler = _dispatch(

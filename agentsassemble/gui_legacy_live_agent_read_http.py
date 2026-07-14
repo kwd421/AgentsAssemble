@@ -23,7 +23,6 @@ class LegacyLiveAgentReadDeps:
     session_run_monitor: object | None
     agents_payload: PayloadBuilder
     health_payload: PayloadBuilder
-    readiness_payload: PayloadBuilder
     readiness_error_message: Callable[[Exception], str]
 
 
@@ -80,9 +79,7 @@ def register_legacy_live_agent_read_routes(
         group_id = ctx.query_value("group_id")
         try:
             ctx.send_json(
-                deps.readiness_payload(
-                    ctx.deps.output_root,
-                    deps.processes,
+                deps.diagnostics.readiness(
                     meeting_id=meeting_id,
                     group_id=group_id,
                 )

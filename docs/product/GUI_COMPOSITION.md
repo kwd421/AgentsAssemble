@@ -232,8 +232,10 @@ decision. Leaving them in the old chain makes their compatibility cost visible.
    now owns operation history, process-event history, durable session-run
    listing, readiness overlays, and process-list projection.
    `legacy_live_agent_process_projection.py` owns the connection evidence shared
-   by process reads and start/stop/restart responses. Move health, readiness,
-   discovery, preflight, and smoke behind typed compatibility services next.
+   by process reads and start/stop/restart responses. The diagnostic service
+   also owns readiness/session-check projection and process-reason enrichment.
+   Move health, discovery, preflight, and smoke behind typed compatibility
+   services next.
 3. Register their routes on `Router`; preserve methods, paths, authorization,
    status codes, redaction, and payloads.
 4. Move a helper only with the route/service that owns its reason to change.
@@ -274,8 +276,8 @@ completion:
 After a context reset, read `CURRENT_SYSTEM.md`, the active room-correctness
 plan, and this file. Phase 5.3 step 1, room/return-packet reads, durable
 diagnostic histories, and process connection projections are complete. Start
-with retained readiness and health aggregation, then classify discovery,
-preflight, and smoke as
+with retained health aggregation, then classify discovery, preflight, and
+smoke as
 separate slices. Do not move the seven
 deletion candidates while doing that work. Do not infer that a route is
 obsolete merely because it is not called by React; CLI, MCP, smoke, and legacy

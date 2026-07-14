@@ -218,7 +218,6 @@ from agentsassemble.live_agent_play_presets import build_play_preset_turns
 from agentsassemble.live_agent_review_checkpoints import write_review_checkpoint_artifacts
 from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
 from agentsassemble.live_agent_sessions import (
-    check_live_agent_session,
     live_agent_session_readiness_summary,
     recover_live_agent_session,
     restart_live_agent_session,
@@ -269,6 +268,8 @@ from agentsassemble.legacy_live_agent_diagnostics import (
     LegacyLiveAgentDiagnosticQueryService,
     live_agent_operations_payload,
     live_agent_process_events_payload,
+    live_agent_session_check_payload,
+    live_agent_session_readiness_payload,
     live_agent_session_runs_payload,
     session_process_groups_snapshot as _session_process_groups_snapshot,
     session_readiness_by_target as _session_readiness_by_target,
@@ -2043,64 +2044,6 @@ def _live_agent_session_ensured_readiness_payload(
         if isinstance(value, dict):
             ensured[key] = value
     return ensured
-
-
-def live_agent_session_check_payload(
-    output_root: Path,
-    process_supervisor: LiveAgentProcessSupervisor,
-    payload: dict[str, object],
-) -> dict[str, object]:
-    group_id = str(payload.get("group_id") or "").strip()
-    if not group_id:
-        raise ValueError("Live agent group id is required.")
-    return _session_check_payload_with_process_reason(
-        output_root,
-        process_supervisor,
-        meeting_id=str(payload.get("meeting_id") or ""),
-        group_id=group_id,
-    )
-
-
-def live_agent_session_readiness_payload(
-    output_root: Path,
-    process_supervisor: LiveAgentProcessSupervisor,
-    *,
-    meeting_id: str,
-    group_id: str,
-) -> dict[str, object]:
-    if not str(group_id or "").strip():
-        raise ValueError("Live agent group id is required.")
-    return _session_check_payload_with_process_reason(
-        output_root,
-        process_supervisor,
-        meeting_id=str(meeting_id or ""),
-        group_id=str(group_id or ""),
-    )
-
-
-def _session_check_payload_with_process_reason(
-    output_root: Path,
-    process_supervisor: LiveAgentProcessSupervisor,
-    *,
-    meeting_id: str,
-    group_id: str,
-) -> dict[str, object]:
-    groups = _session_process_groups_snapshot(process_supervisor)
-    session = check_live_agent_session(
-        output_root,
-        process_supervisor,
-        meeting_id=meeting_id,
-        group_id=group_id,
-        groups=groups,
-    )
-    group_id = str(session.get("group_id") or "").strip()
-    if not group_id or "process_reason" in session:
-        return session
-    group = _find_session_process_group(groups, group_id)
-    reason = _live_agent_process_health_reason(group) if group else {}
-    if not reason:
-        return session
-    return {**session, "process_reason": reason}
 
 
 def _find_session_process_group(
@@ -6410,7 +6353,6 @@ def _make_handler(
             session_run_monitor=session_run_monitor,
             agents_payload=live_agents_payload,
             health_payload=live_agent_health_payload,
-            readiness_payload=live_agent_session_readiness_payload,
             readiness_error_message=_session_check_error_message,
         ),
     )

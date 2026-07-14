@@ -736,3 +736,14 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   Readiness and health aggregation remain in `gui.py` and are next. Discovery,
   preflight, smoke, all seven deletion candidates, and canonical name/avatar
   history reprojection remain unchanged.
+- 2026-07-14: Resident readiness and session-check projection now belong to
+  `LegacyLiveAgentDiagnosticQueryService`. It takes one process snapshot,
+  invokes the existing session readiness contract, and enriches the result
+  with the same redacted process reason used by health. Existing ensure,
+  recovery, POST check, and direct-import callers continue through re-exported
+  function names; the GET Router calls the service directly and retains its
+  `not_found`, `invalid_request`, and `storage_error` mappings. Focused
+  readiness probe, recovery, session-run, and Router checks passed 68 tests.
+  Health aggregation is the next slice. Discovery/preflight/smoke, the seven
+  deletion candidates, and canonical name/avatar history reprojection remain
+  unchanged.
