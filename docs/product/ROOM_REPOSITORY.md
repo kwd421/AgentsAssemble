@@ -156,6 +156,14 @@ transaction in the same context is an error; callers must use the active
 `RoomTransaction` instead. This prevents a command from deadlocking against its
 own bounded pool or reading state outside its atomic command snapshot.
 
+GitHub Actions runs the PostgreSQL repository, migration, schema, and pool
+contracts against a real PostgreSQL 16 service. The dedicated
+`python -m tests.run_postgres_contracts` entrypoint requires the PostgreSQL
+extra and `AGENTSASSEMBLE_TEST_POSTGRES_DSN` before loading the contracts, and
+returns failure when no tests run or any selected test is skipped. The ordinary
+cross-platform unit suite may still skip environment-dependent PostgreSQL
+integration cases; only the dedicated service job is backend-parity evidence.
+
 The GUI handler, canonical WebSocket controller, Agent Session HTTP actions,
 room lifecycle, roster projection, invite admission, attachment metadata, and
 canonical SSE replay now receive one server-scoped repository instance. Handler

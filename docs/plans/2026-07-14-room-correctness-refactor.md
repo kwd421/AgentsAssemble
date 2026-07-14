@@ -632,3 +632,18 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   environment-dependent skips, all 104 frontend tests, the production frontend
   build, `compileall`, and `git diff --check`. The next slice is Phase 4.3,
   making the real backend contracts mandatory in GitHub Actions.
+- 2026-07-14: Phase 4.3 adds a dedicated PostgreSQL 16 GitHub Actions service
+  job and a strict `python -m tests.run_postgres_contracts` entrypoint. The
+  runner checks the DSN and complete PostgreSQL extra before loading tests,
+  fails when discovery finds zero tests, and treats any skip in the selected
+  repository, migration, schema, or pool contracts as a failed job. This keeps
+  the ordinary portable suite's environment-dependent skips from being
+  mistaken for PostgreSQL parity evidence. The strict entrypoint passed all 54
+  selected contracts with zero skips against an isolated UTF-8 PostgreSQL 17
+  instance on this host. The official service job uses PostgreSQL 16 and cannot
+  be claimed as hosted CI evidence until the commit is pushed and that job
+  completes. Final local verification passed all 3,241 Python tests with 34
+  environment-dependent skips, all 104 frontend tests, the production frontend
+  build, workflow YAML parsing, `compileall`, and `git diff --check`. The next
+  slice is Phase 5.1, inventorying the remaining `gui.py` routes and services
+  before moving any composition boundary.
