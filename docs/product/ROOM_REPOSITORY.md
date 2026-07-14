@@ -129,6 +129,24 @@ attention contract as `RoomStore`. PostgreSQL-specific reads, mutations, and
 attention persistence are separate modules; the repository facade owns
 connections, transaction locks, listeners, and filesystem side effects.
 
+The optional PostgreSQL installation includes `psycopg_pool`. One
+server-scoped `PostgresRoomRepository` opens one bounded pool at startup and
+waits at most 10 seconds for its minimum connection. The current conservative
+limits are 1 minimum connection, 8 maximum connections, 32 queued borrowers,
+and a 5-second acquisition timeout. Every operation borrows from that pool;
+normal repository methods do not call `psycopg.connect()` directly. GUI
+shutdown closes the realtime controller and HTTP server before closing the
+repository-owned pool, while a startup failure after repository construction
+also closes it. SQLite implements the same repository lifecycle with a no-op
+close because its connections remain operation-scoped.
+
+PostgreSQL pool diagnostics are an explicit numeric allowlist. They report
+bounded configuration and pool counters such as size, available connections,
+and waiting requests. They never expose the DSN, connection info, host,
+database name, username, arbitrary driver values, or exception text. Pool
+startup, acquisition, and closed-state errors are explicit; none can trigger a
+SQLite fallback.
+
 The GUI handler, canonical WebSocket controller, Agent Session HTTP actions,
 room lifecycle, roster projection, invite admission, attachment metadata, and
 canonical SSE replay now receive one server-scoped repository instance. Handler

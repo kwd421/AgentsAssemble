@@ -1262,28 +1262,32 @@ def serve_gui(
         postgres_dsn_env=room_postgres_dsn_env,
     )
     room_repository = build_room_repository(root, room_repository_settings)
-    process_supervisor = LiveAgentProcessSupervisor(root)
-    session_run_controller = LiveAgentSessionRunController(root)
-    flow_supervisor = LiveAgentFlowSupervisor(root)
-    public_tunnel_manager = PublicTunnelManager()
-    session_run_monitor = LiveAgentSessionRunMonitor(
-        root,
-        process_supervisor,
-        session_run_controller,
-        default_server="",
-    )
-    handler = _make_handler(
-        root,
-        process_supervisor=process_supervisor,
-        session_run_controller=session_run_controller,
-        session_run_monitor=session_run_monitor,
-        flow_supervisor=flow_supervisor,
-        frontend_dist_root=frontend_dist_root,
-        public_tunnel_manager=public_tunnel_manager,
-        room_repository_override=room_repository,
-        attention_shadow_mode=attention_shadow_mode,
-    )
-    server = ThreadingHTTPServer((host, port), handler)
+    try:
+        process_supervisor = LiveAgentProcessSupervisor(root)
+        session_run_controller = LiveAgentSessionRunController(root)
+        flow_supervisor = LiveAgentFlowSupervisor(root)
+        public_tunnel_manager = PublicTunnelManager()
+        session_run_monitor = LiveAgentSessionRunMonitor(
+            root,
+            process_supervisor,
+            session_run_controller,
+            default_server="",
+        )
+        handler = _make_handler(
+            root,
+            process_supervisor=process_supervisor,
+            session_run_controller=session_run_controller,
+            session_run_monitor=session_run_monitor,
+            flow_supervisor=flow_supervisor,
+            frontend_dist_root=frontend_dist_root,
+            public_tunnel_manager=public_tunnel_manager,
+            room_repository_override=room_repository,
+            attention_shadow_mode=attention_shadow_mode,
+        )
+        server = ThreadingHTTPServer((host, port), handler)
+    except BaseException:
+        room_repository.close()
+        raise
     if not _is_loopback_host(host):
         print(
             f"WARNING: AgentsAssemble GUI explicitly bound to non-loopback host {host!r}; the control "
@@ -1332,6 +1336,7 @@ def serve_gui(
         if realtime_controller is not None:
             realtime_controller.close()
         server.server_close()
+        room_repository.close()
 
 
 def _autostart_live_agent_group(

@@ -35,7 +35,7 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
             self.assertFalse((root / "rooms" / "rooms.sqlite3").exists())
 
     def test_gui_startup_injects_selected_repository_without_exposing_dsn(self) -> None:
-        repository = object()
+        repository = MagicMock()
         settings = RoomRepositorySettings(
             backend="postgresql",
             postgres_dsn="postgresql://secret-user:secret-pass@example.invalid/rooms",
@@ -96,6 +96,26 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
         self.assertIn("Room repository: postgresql", stdout.getvalue())
         self.assertNotIn("secret-user", stdout.getvalue())
         self.assertNotIn("secret-pass", stdout.getvalue())
+        repository.close.assert_called_once_with()
+
+    def test_gui_closes_repository_when_later_startup_fails(self) -> None:
+        repository = MagicMock()
+        settings = RoomRepositorySettings(backend="sqlite")
+
+        with patch(
+            "agentsassemble.gui.RoomRepositorySettings.from_environment",
+            return_value=settings,
+        ), patch(
+            "agentsassemble.gui.build_room_repository",
+            return_value=repository,
+        ), patch(
+            "agentsassemble.gui.LiveAgentProcessSupervisor",
+            side_effect=RuntimeError("startup failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "startup failed"):
+                serve_gui(output_root=Path("/tmp/gui-room-repository-startup-failure"))
+
+        repository.close.assert_called_once_with()
 
     def test_handler_shares_one_explicit_repository_with_controller_and_routes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -273,6 +273,12 @@ class RoomStore:
                 if signature is not None:
                     _INITIALIZED_DATABASES[database_key] = (signature, dict(self._migration_report))
 
+    def close(self) -> None:
+        """SQLite connections are operation-scoped, so the repository has no resident handle."""
+
+    def public_diagnostics(self) -> dict[str, object]:
+        return {"backend": "sqlite"}
+
     def create_room(self, room_id: str, *, label: str = "", status: str = "active") -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
         with self.transaction(clean_room_id) as transaction:

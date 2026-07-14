@@ -601,3 +601,20 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   fixtures that relied on invite or channel requests implicitly creating a
   missing room. Those fixtures now create their canonical room explicitly; the
   removed product fallback was not restored.
+- 2026-07-14: Phase 4.1 replaces per-operation PostgreSQL connects with one
+  repository-owned bounded `psycopg_pool`. Startup waits at most 10 seconds for
+  a minimum connection; the pool permits 1-8 connections, at most 32 queued
+  borrowers, and a 5-second acquisition timeout. Repository and GUI shutdown
+  close it idempotently, including startup failure after repository creation.
+  Public diagnostics use a numeric allowlist and cannot expose a DSN or
+  arbitrary driver values. Unit fakes prove bounded construction, reuse,
+  timeout propagation, partial-start cleanup, closed-state rejection, and
+  secret redaction; the optional `psycopg_pool 3.3.1` integration path also
+  passes, including construction against the installed library API without
+  opening a network connection. Final verification passed all 3,232 Python
+  tests with 36 environment-dependent skips, all 104 frontend tests, the
+  production frontend build, `compileall`, and `git diff --check`. The 28 real
+  PostgreSQL backend contracts remain deliberately unclaimed because this host
+  has no test DSN; Phase 4.3 will supply one through a CI service. The next
+  slice is Phase 4.2, reusing a command unit's checked-out transaction
+  connection for all reads in that unit.

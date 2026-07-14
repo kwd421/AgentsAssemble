@@ -29,6 +29,59 @@ if _PSYCOPG_AVAILABLE:
     )
 
 
+@unittest.skipUnless(_PSYCOPG_AVAILABLE, "the postgres extra is required")
+class PostgresRoomRepositoryPoolIntegrationTests(unittest.TestCase):
+    def test_repository_borrows_from_one_pool_and_exposes_safe_diagnostics(self) -> None:
+        class FakePool:
+            def __init__(self, kwargs: dict[str, object]) -> None:
+                self.kwargs = kwargs
+                self.closed = False
+                self.waited = False
+                self.borrow_count = 0
+
+            def wait(self, timeout: float) -> None:
+                self.waited = timeout > 0
+
+            def connection(self, timeout: float):
+                from contextlib import nullcontext
+
+                self.borrow_count += 1
+                return nullcontext("connection")
+
+            def close(self, timeout: float) -> None:
+                self.closed = True
+
+            def get_stats(self) -> dict[str, object]:
+                return {"pool_size": 1, "conninfo": "secret-password"}
+
+        pools: list[FakePool] = []
+
+        def factory(**kwargs: object) -> FakePool:
+            pool = FakePool(dict(kwargs))
+            pools.append(pool)
+            return pool
+
+        repository = PostgresRoomRepository(
+            "postgresql://secret-user:secret-password@example.invalid/rooms",
+            pool_factory=factory,
+        )
+        try:
+            with repository._connection() as connection:
+                self.assertEqual(connection, "connection")
+
+            self.assertEqual(len(pools), 1)
+            self.assertTrue(pools[0].waited)
+            self.assertEqual(pools[0].borrow_count, 1)
+            diagnostics = repository.public_diagnostics()
+            self.assertEqual(diagnostics["backend"], "postgresql")
+            self.assertNotIn("secret-user", str(diagnostics))
+            self.assertNotIn("secret-password", str(diagnostics))
+        finally:
+            repository.close()
+
+        self.assertTrue(pools[0].closed)
+
+
 @unittest.skipUnless(
     _PSYCOPG_AVAILABLE and _POSTGRES_DSN,
     "AGENTSASSEMBLE_TEST_POSTGRES_DSN and the postgres extra are required",
@@ -71,6 +124,9 @@ class PostgresRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.
             migrate=False,
         )
 
+    def tearDown(self) -> None:
+        self.repository.close()
+
     def test_postgres_repository_implements_repository_protocol(self) -> None:
         self.assertIsInstance(self.repository, RoomRepository)
 
@@ -82,7 +138,9 @@ class PostgresRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.
         with patch(
             "agentsassemble.postgres_room_repository.upgrade_postgres_room_schema"
         ) as upgrade:
-            PostgresRoomRepository(self.test_dsn)
+            repository = PostgresRoomRepository(self.test_dsn)
+
+        repository.close()
 
         upgrade.assert_not_called()
 
@@ -95,6 +153,7 @@ class PostgresRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.
 
         self.assertIsInstance(repository, PostgresRoomRepository)
         self.assertFalse((output_root / "rooms" / "rooms.sqlite3").exists())
+        repository.close()
 
     def test_gui_handler_uses_postgres_for_controller_and_routes_without_sqlite(self) -> None:
         from agentsassemble.gui import _make_handler

@@ -7,12 +7,16 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
-import psycopg
 from psycopg import Connection
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.postgres_connection_pool import (
+    BoundedPostgresConnectionPool,
+    PoolFactory,
+    PostgresPoolSettings,
+)
 from agentsassemble.postgres_attention_repository import (
     cancel_attention_job,
     checkpoint_observed_seq,
@@ -252,19 +256,35 @@ class PostgresRoomRepository:
         *,
         output_root: Path | None = None,
         migrate: bool = False,
+        pool_settings: PostgresPoolSettings | None = None,
+        pool_factory: PoolFactory | None = None,
     ) -> None:
         clean_dsn = str(dsn or "").strip()
         if not clean_dsn:
             raise ValueError("PostgreSQL room repository requires a database DSN.")
-        self._dsn = clean_dsn
         self.output_root = Path(output_root) if output_root is not None else None
         self._listener_lock = threading.RLock()
         self._listeners: dict[str, list[Callable[[dict[str, object]], None]]] = {}
         if migrate:
             upgrade_postgres_room_schema(clean_dsn)
+        self._pool = BoundedPostgresConnectionPool(
+            clean_dsn,
+            connection_kwargs={"row_factory": dict_row},
+            settings=pool_settings,
+            pool_factory=pool_factory,
+        )
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(configured=True)"
+
+    def close(self) -> None:
+        self._pool.close()
+
+    def public_diagnostics(self) -> dict[str, object]:
+        return {
+            "backend": "postgresql",
+            "pool": self._pool.public_diagnostics(),
+        }
 
     def create_room(self, room_id: str, *, label: str = "", status: str = "active") -> dict[str, object]:
         clean_id = clean_room_id(room_id)
@@ -842,11 +862,8 @@ class PostgresRoomRepository:
 
     @contextmanager
     def _connection(self) -> Iterator[Connection]:
-        connection = psycopg.connect(self._dsn, row_factory=dict_row)
-        try:
+        with self._pool.connection() as connection:
             yield connection
-        finally:
-            connection.close()
 
     def _require_output_root(self) -> Path:
         if self.output_root is None:
