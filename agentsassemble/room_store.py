@@ -19,6 +19,12 @@ from agentsassemble.room_database import (
     open_room_database,
 )
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
+from agentsassemble.room_global_settings import (
+    RoomGlobalSettingsRecord,
+    default_room_global_settings,
+    merge_room_global_settings,
+    validate_room_global_settings,
+)
 from agentsassemble.room_repository import RoomTransaction
 from agentsassemble.room_repository_records import (
     ACTIVE_PARTICIPANT_STATUSES,
@@ -92,6 +98,16 @@ class _SQLiteRoomTransaction:
             self._room_id,
             principal_id,
             request_id,
+        )
+
+    def room_settings(self) -> RoomGlobalSettingsRecord:
+        return self._store._room_settings(self._connection, self._room_id)
+
+    def update_room_settings(self, updates: dict[str, object]) -> RoomGlobalSettingsRecord:
+        return self._store._update_room_settings(
+            self._connection,
+            self._room_id,
+            updates,
         )
 
     def create_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
@@ -448,6 +464,20 @@ class RoomStore:
         with self._connection() as connection:
             row = connection.execute("SELECT data_json FROM rooms WHERE room_id = ?", (clean_room_id,)).fetchone()
         return _row_payload(row)
+
+    def room_settings(self, room_id: str) -> RoomGlobalSettingsRecord:
+        clean_room_id = _clean_room_id(room_id)
+        with self._connection() as connection:
+            return self._room_settings(connection, clean_room_id)
+
+    def update_room_settings(
+        self,
+        room_id: str,
+        updates: dict[str, object],
+    ) -> RoomGlobalSettingsRecord:
+        clean_room_id = _clean_room_id(room_id)
+        with self.transaction(clean_room_id) as transaction:
+            return transaction.update_room_settings(updates)
 
     def list_rooms(self, *, include_archived: bool = False) -> list[dict[str, object]]:
         query = "SELECT data_json FROM rooms"
@@ -908,7 +938,86 @@ class RoomStore:
                 _json_dumps(room),
             ),
         )
+        current_settings_row = connection.execute(
+            "SELECT data_json FROM room_settings WHERE room_id = ?",
+            (room_id,),
+        ).fetchone()
+        if current_settings_row is None:
+            if existing:
+                raise ValueError(f"Room settings for {room_id} are missing.")
+            settings = default_room_global_settings(label=str(room["label"]))
+        else:
+            settings = merge_room_global_settings(
+                _row_payload(current_settings_row),
+                {"label": str(room["label"])},
+            )
+        self._write_room_settings(connection, room_id, settings)
         return room, not bool(existing)
+
+    def _room_settings(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+    ) -> RoomGlobalSettingsRecord:
+        row = connection.execute(
+            "SELECT data_json FROM room_settings WHERE room_id = ?",
+            (room_id,),
+        ).fetchone()
+        if row is not None:
+            return validate_room_global_settings(_row_payload(row))
+        room = connection.execute(
+            "SELECT label FROM rooms WHERE room_id = ?",
+            (room_id,),
+        ).fetchone()
+        if room is None:
+            raise ValueError(f"Room {room_id} was not found.")
+        raise ValueError(f"Room settings for {room_id} are missing.")
+
+    def _update_room_settings(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        updates: dict[str, object],
+    ) -> RoomGlobalSettingsRecord:
+        current = self._room_settings(connection, room_id)
+        settings = merge_room_global_settings(current, updates)
+        self._write_room_settings(connection, room_id, settings)
+        if settings["label"] != current["label"]:
+            room_row = connection.execute(
+                "SELECT data_json FROM rooms WHERE room_id = ?",
+                (room_id,),
+            ).fetchone()
+            room = _row_payload(room_row)
+            if not room:
+                raise ValueError(f"Room {room_id} was not found.")
+            room = {**room, "label": settings["label"], "updated_at": _now()}
+            connection.execute(
+                """UPDATE rooms SET label = ?, updated_at = ?, data_json = ?
+                   WHERE room_id = ?""",
+                (
+                    settings["label"],
+                    room["updated_at"],
+                    _json_dumps(room),
+                    room_id,
+                ),
+            )
+        return settings
+
+    def _write_room_settings(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        settings: RoomGlobalSettingsRecord,
+    ) -> None:
+        canonical = validate_room_global_settings(settings)
+        connection.execute(
+            """INSERT INTO room_settings(room_id, updated_at, data_json)
+               VALUES(?, ?, ?)
+               ON CONFLICT(room_id) DO UPDATE SET
+                   updated_at = excluded.updated_at,
+                   data_json = excluded.data_json""",
+            (room_id, _now(), _json_dumps(canonical)),
+        )
 
     def _upsert_participant(
         self,

@@ -159,6 +159,50 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
         self.assertEqual(tombstone["cleanup_status"], "complete")
         self.assertEqual(tombstone["result"], {})
 
+    def test_version_four_database_adds_default_room_global_settings(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = RoomStore(root)
+            store.create_room("general", label="General")
+            with open_room_database(store.database_path) as connection:
+                connection.execute("DROP TABLE room_settings")
+                connection.execute(
+                    "UPDATE schema_meta SET value = '4' WHERE key = 'schema_version'"
+                )
+
+            initialize_room_database(store.rooms_root, store.database_path)
+
+            with open_room_database(store.database_path) as connection:
+                version = int(
+                    connection.execute(
+                        "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+                    ).fetchone()["value"]
+                )
+                settings_count = int(
+                    connection.execute("SELECT COUNT(*) AS count FROM room_settings").fetchone()[
+                        "count"
+                    ]
+                )
+            settings = store.room_settings("general")
+
+        self.assertEqual(version, ROOM_SCHEMA_VERSION)
+        self.assertEqual(settings_count, 1)
+        self.assertEqual(settings["label"], "General")
+        self.assertEqual(settings["conversation_mode"], "ordered")
+
+    def test_missing_room_global_settings_row_is_not_silently_recreated(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = RoomStore(root)
+            store.create_room("general", label="General")
+            with open_room_database(store.database_path) as connection:
+                connection.execute("DELETE FROM room_settings WHERE room_id = 'general'")
+
+            with self.assertRaisesRegex(ValueError, "settings.*missing"):
+                store.room_settings("general")
+            with self.assertRaisesRegex(ValueError, "settings.*missing"):
+                store.create_room("general", label="General")
+
     def test_session_fields_can_be_explicitly_cleared_and_command_results_are_deduplicated(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

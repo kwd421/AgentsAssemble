@@ -548,3 +548,18 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   at this boundary. The legacy JSON path remains behaviorally unchanged until
   both repository backends and the explicit migration exist. The next slice is
   Phase 3.2, adding this record to SQLite and PostgreSQL.
+- 2026-07-14: Phase 3.2 makes the strict room-global settings record
+  authoritative in both SQLite schema v5 and PostgreSQL revision
+  `0004_room_global_settings`. Repository transactions create, validate, and
+  update the settings row while keeping `rooms.label` synchronized; missing or
+  corrupt rows fail closed. Canonical HTTP, invite, channel, and realtime
+  routing paths now use the injected repository. `room_settings.json` is kept
+  only as temporary user-preference compatibility storage, and schema upgrades
+  intentionally backfill defaults rather than guessing legacy global values.
+  Backend-neutral contracts cover update, rollback, validation, and label
+  projection. Full GUI regression also exposed a legacy invite that referenced
+  no canonical room. Invite creation now requires an existing repository room;
+  joining a stale deleted-room invite revokes the issued session and returns an
+  explicit error instead of auto-creating a room or crashing the request. The
+  next slice is Phase 3.3: an explicit dry-run/backup/fingerprint migration for
+  existing legacy room-global settings.

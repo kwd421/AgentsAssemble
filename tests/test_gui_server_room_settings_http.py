@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 from agentsassemble.gui import _make_handler
 from agentsassemble.gui_room_settings_http import register_room_settings_routes
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.room_store import RoomStore
 
 
 class FakeHandler:
@@ -46,7 +47,13 @@ class RoomSettingsHttpTests(unittest.TestCase):
     ) -> FakeHandler:
         handler = FakeHandler(path, body=body)
         parsed = urlparse(path)
-        context = RequestContext(handler, GuiDeps(output_root=output_root), parsed, parse_qs(parsed.query))
+        repository = RoomStore(output_root)
+        context = RequestContext(
+            handler,
+            GuiDeps(output_root=output_root, room_repository=repository),
+            parsed,
+            parse_qs(parsed.query),
+        )
         self.assertTrue(self.router.dispatch(method, context))
         return handler
 
@@ -64,18 +71,46 @@ class RoomSettingsHttpTests(unittest.TestCase):
             "room_id": "room-1",
             "label": "Planning room",
             "topic": "Ship the next slice",
-            "appearance": {"banner_preset": "forest"},
+            "appearance": {"banner_preset": "forest", "notifications": "mute"},
+            "channel_settings": {
+                "lobby": {"notifications": "mentions", "last_read_at": "2026-07-14"}
+            },
         }
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            RoomStore(root).create_room("room-1", label="Room 1")
             saved = self._dispatch(root, "/api/room-settings", "POST", body=json.dumps(payload).encode())
             loaded = self._dispatch(root, "/api/room-settings?room_id=room-1", "GET")
+            canonical = RoomStore(root).room_settings("room-1")
 
         settings = loaded.sent_json["settings"]
         self.assertEqual(saved.sent_json["settings"]["label"], "Planning room")
         self.assertEqual(settings["label"], "Planning room")
         self.assertEqual(settings["topic"], "Ship the next slice")
         self.assertEqual(settings["appearance"]["banner_preset"], "forest")
+        self.assertEqual(settings["appearance"]["notifications"], "mute")
+        self.assertEqual(settings["channel_settings"]["lobby"]["notifications"], "mentions")
+        self.assertNotIn("notifications", canonical["appearance"])
+        self.assertNotIn("channel_settings", canonical)
+
+    def test_invalid_global_setting_is_rejected_without_changing_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            repository = RoomStore(root)
+            repository.create_room("room-1", label="Room 1")
+
+            response = self._dispatch(
+                root,
+                "/api/room-settings",
+                "POST",
+                body=json.dumps(
+                    {"room_id": "room-1", "conversation_mode": "not-a-mode"}
+                ).encode(),
+            )
+
+            self.assertEqual(response.sent_error[0], HTTPStatus.BAD_REQUEST)
+            self.assertIn("Unsupported conversation_mode", response.sent_error[1])
+            self.assertEqual(repository.room_settings("room-1")["conversation_mode"], "ordered")
 
     def test_post_rejects_malformed_and_non_object_json(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -99,6 +134,7 @@ class RoomSettingsHandlerDispatchTests(unittest.TestCase):
         payload = {"room_id": "live-room", "label": "Live room", "topic": "Integration"}
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            RoomStore(root).create_room("live-room", label="Live room")
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()

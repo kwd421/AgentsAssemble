@@ -33,6 +33,7 @@ from agentsassemble.postgres_room_mutations import (
     detach_participant_sessions as detach_sessions,
     record_command_result as persist_command_result,
     update_participant,
+    update_room_settings as persist_room_settings,
     update_room_status,
     update_session,
     upsert_participant,
@@ -50,12 +51,14 @@ from agentsassemble.postgres_room_queries import (
     read_participant,
     read_participants,
     read_room,
+    read_room_settings,
     read_rooms,
     read_session,
     read_sessions,
     room_is_deleted as query_room_is_deleted,
 )
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
+from agentsassemble.room_global_settings import RoomGlobalSettingsRecord
 from agentsassemble.room_repository import RoomTransaction
 from agentsassemble.room_repository_records import (
     clean_participant_id,
@@ -98,6 +101,16 @@ class _PostgresRoomTransaction:
             self._room_id,
             clean_lobby_text(principal_id, limit=256),
             clean_lobby_text(request_id, limit=128),
+        )
+
+    def room_settings(self) -> RoomGlobalSettingsRecord:
+        return read_room_settings(self._connection, self._room_id)
+
+    def update_room_settings(self, updates: dict[str, object]) -> RoomGlobalSettingsRecord:
+        return persist_room_settings(
+            self._connection,
+            self._room_id,
+            updates,
         )
 
     def create_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
@@ -392,6 +405,20 @@ class PostgresRoomRepository:
         clean_id = clean_room_id(room_id)
         with self._connection() as connection:
             return read_room(connection, clean_id)
+
+    def room_settings(self, room_id: str) -> RoomGlobalSettingsRecord:
+        clean_id = clean_room_id(room_id)
+        with self._connection() as connection:
+            return read_room_settings(connection, clean_id)
+
+    def update_room_settings(
+        self,
+        room_id: str,
+        updates: dict[str, object],
+    ) -> RoomGlobalSettingsRecord:
+        clean_id = clean_room_id(room_id)
+        with self.transaction(clean_id) as transaction:
+            return transaction.update_room_settings(updates)
 
     def list_rooms(self, *, include_archived: bool = False) -> list[dict[str, object]]:
         with self._connection() as connection:

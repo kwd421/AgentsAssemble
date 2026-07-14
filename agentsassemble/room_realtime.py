@@ -82,7 +82,6 @@ from agentsassemble.room_provider_sync_cursor import (
 )
 from agentsassemble.room_routing import route_message_targets
 from agentsassemble.room_repository import RoomRepository
-from agentsassemble.room_settings import room_settings_payload
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room_turn_coordinator import (
     RoomTurnCoordinator,
@@ -1991,8 +1990,7 @@ class RoomRealtimeController:
     def _route_message_event(self, event: RoomEvent | dict[str, object]) -> None:
         room_id = clean_lobby_text(event.get("room_id"), limit=128)
         providers = self._room_providers(room_id)
-        room_settings = room_settings_payload(self.output_root, room_id=room_id).get("settings")
-        settings = room_settings if isinstance(room_settings, dict) else {}
+        settings = self.store.room_settings(room_id)
         if settings.get("conversation_mode") == "ambient":
             self._route_ambient_event(
                 dict(event),

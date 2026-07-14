@@ -42,6 +42,13 @@ _TABLES = (
         timestamp_columns=frozenset({"updated_at"}),
     ),
     _TableSpec(
+        "room_settings",
+        ("room_id", "updated_at", "data_json"),
+        ("room_id",),
+        json_columns=frozenset({"data_json"}),
+        timestamp_columns=frozenset({"updated_at"}),
+    ),
+    _TableSpec(
         "participants",
         ("room_id", "participant_id", "status", "role", "data_json"),
         ("room_id", "participant_id"),

@@ -41,6 +41,62 @@ class RoomRepositoryContractMixin:
         case.assertEqual(second["label"], "General renamed")
         case.assertEqual([event["type"] for event in events], ["room_created"])
 
+    def test_room_global_settings_are_backend_neutral_and_strict(self) -> None:
+        self.repository.create_room("settings-room", label="Initial")
+
+        defaults = self.repository.room_settings("settings-room")
+        updated = self.repository.update_room_settings(
+            "settings-room",
+            {
+                "label": "Renamed",
+                "topic": "Repository-owned settings",
+                "appearance": {"banner_preset": "midnight"},
+                "conversation_mode": "ambient",
+                "max_relay_turns": 4,
+            },
+        )
+
+        case = self._test_case()
+        case.assertEqual(defaults["label"], "Initial")
+        case.assertEqual(defaults["conversation_mode"], "ordered")
+        case.assertEqual(updated["label"], "Renamed")
+        case.assertEqual(updated["appearance"]["banner_preset"], "midnight")
+        case.assertEqual(updated["appearance"]["invite_scope"], "room")
+        case.assertEqual(self.repository.room("settings-room")["label"], "Renamed")
+        case.assertEqual(self.repository.room_settings("settings-room"), updated)
+
+        with case.assertRaisesRegex(ValueError, "Unsupported conversation_mode"):
+            self.repository.update_room_settings(
+                "settings-room",
+                {"conversation_mode": "free"},
+            )
+        with case.assertRaisesRegex(ValueError, "Unsupported room settings fields"):
+            self.repository.update_room_settings(
+                "settings-room",
+                {"notifications": "mute"},
+            )
+        case.assertEqual(self.repository.room_settings("settings-room"), updated)
+
+    def test_room_global_settings_roll_back_with_the_room_transaction(self) -> None:
+        self.repository.create_room("settings-rollback", label="Before")
+
+        with self._test_case().assertRaisesRegex(RuntimeError, "abort settings"):
+            with self.repository.transaction("settings-rollback") as transaction:
+                transaction.update_room_settings(
+                    {
+                        "label": "Must Roll Back",
+                        "conversation_mode": "continuous",
+                    }
+                )
+                raise RuntimeError("abort settings")
+
+        case = self._test_case()
+        case.assertEqual(self.repository.room("settings-rollback")["label"], "Before")
+        case.assertEqual(
+            self.repository.room_settings("settings-rollback")["conversation_mode"],
+            "ordered",
+        )
+
     def test_transaction_commits_state_before_publishing_events(self) -> None:
         self.repository.create_room("general")
         received: list[dict[str, object]] = []

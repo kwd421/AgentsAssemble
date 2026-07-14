@@ -5,6 +5,12 @@ from psycopg.types.json import Jsonb
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.postgres_room_rows import payload_from_row
+from agentsassemble.room_global_settings import (
+    RoomGlobalSettingsRecord,
+    default_room_global_settings,
+    merge_room_global_settings,
+    validate_room_global_settings,
+)
 from agentsassemble.room_repository_records import (
     build_room_event,
     build_room_record,
@@ -56,7 +62,68 @@ def create_room(
             Jsonb(room),
         ),
     )
+    settings_row = connection.execute(
+        "SELECT data_json FROM room_settings WHERE room_id = %s",
+        (room_id,),
+    ).fetchone()
+    if settings_row is None:
+        if existing:
+            raise ValueError(f"Room settings for {room_id} are missing.")
+        settings = default_room_global_settings(label=str(room["label"]))
+    else:
+        settings = merge_room_global_settings(
+            payload_from_row(settings_row),
+            {"label": str(room["label"])},
+        )
+    _write_room_settings(connection, room_id, settings)
     return room, not bool(existing)
+
+
+def update_room_settings(
+    connection: Connection,
+    room_id: str,
+    updates: dict[str, object],
+) -> RoomGlobalSettingsRecord:
+    settings_row = connection.execute(
+        "SELECT data_json FROM room_settings WHERE room_id = %s",
+        (room_id,),
+    ).fetchone()
+    room_row = connection.execute(
+        "SELECT data_json FROM rooms WHERE room_id = %s",
+        (room_id,),
+    ).fetchone()
+    room = payload_from_row(room_row)
+    if not room:
+        raise ValueError(f"Room {room_id} was not found.")
+    if settings_row is None:
+        raise ValueError(f"Room settings for {room_id} are missing.")
+    current = validate_room_global_settings(payload_from_row(settings_row))
+    settings = merge_room_global_settings(current, updates)
+    _write_room_settings(connection, room_id, settings)
+    if settings["label"] != current["label"]:
+        room = {**room, "label": settings["label"], "updated_at": utc_now()}
+        connection.execute(
+            """UPDATE rooms SET label = %s, updated_at = %s, data_json = %s
+               WHERE room_id = %s""",
+            (settings["label"], room["updated_at"], Jsonb(room), room_id),
+        )
+    return settings
+
+
+def _write_room_settings(
+    connection: Connection,
+    room_id: str,
+    settings: RoomGlobalSettingsRecord,
+) -> None:
+    canonical = validate_room_global_settings(settings)
+    connection.execute(
+        """INSERT INTO room_settings(room_id, updated_at, data_json)
+           VALUES(%s, %s, %s)
+           ON CONFLICT(room_id) DO UPDATE SET
+               updated_at = excluded.updated_at,
+               data_json = excluded.data_json""",
+        (room_id, utc_now(), Jsonb(canonical)),
+    )
 
 
 def upsert_participant(

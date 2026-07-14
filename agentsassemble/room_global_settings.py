@@ -32,6 +32,7 @@ DEFAULT_CONVERSATION_MODE = "ordered"
 DEFAULT_MAX_RELAY_TURNS = 6
 MIN_RELAY_TURNS = 2
 MAX_RELAY_TURNS = 20
+ROOM_LABEL_LIMIT = 128
 
 ROOM_GLOBAL_SETTING_FIELDS = frozenset(
     {
@@ -107,7 +108,7 @@ def validate_room_global_settings(value: object) -> RoomGlobalSettingsRecord:
     source = _require_mapping(value, field="room settings")
     _require_exact_fields(source, ROOM_GLOBAL_SETTING_FIELDS, field="room settings")
     return {
-        "label": _strict_text(source["label"], field="label", limit=80),
+        "label": _strict_text(source["label"], field="label", limit=ROOM_LABEL_LIMIT),
         "topic": _strict_text(source["topic"], field="topic", limit=ROOM_TEXT_LIMIT),
         "appearance": _validate_appearance(source["appearance"]),
         "conversation_mode": _validate_conversation_mode(source["conversation_mode"]),
@@ -127,6 +128,18 @@ def merge_room_global_settings(
     unknown = set(changes) - ROOM_GLOBAL_SETTING_FIELDS
     if unknown:
         raise ValueError(f"Unsupported room settings fields: {', '.join(sorted(unknown))}.")
+    if "appearance" in changes:
+        appearance_changes = _require_mapping(changes["appearance"], field="appearance update")
+        unknown_appearance = set(appearance_changes) - ROOM_APPEARANCE_FIELDS
+        if unknown_appearance:
+            raise ValueError(
+                "Unsupported appearance fields: "
+                f"{', '.join(sorted(unknown_appearance))}."
+            )
+        changes = {
+            **changes,
+            "appearance": {**canonical["appearance"], **appearance_changes},
+        }
     return validate_room_global_settings({**canonical, **changes})
 
 

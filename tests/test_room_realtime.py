@@ -21,8 +21,8 @@ from agentsassemble.room_realtime import (
 from agentsassemble.room_command_uow import RoomCommandUnitOfWork
 from agentsassemble.room_members import is_room_member_muted, set_room_member_muted
 from agentsassemble.room_store import RoomStore
+from agentsassemble.room_settings import update_room_settings as update_legacy_room_settings
 from agentsassemble.identity_store import identity_store_for_output_root
-from agentsassemble.room_settings import update_room_settings
 from agentsassemble.provider_capabilities import ProviderCapabilityCatalog
 from agentsassemble.native_cli_providers import native_cli_provider_definition
 
@@ -1142,9 +1142,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.controller.create_provider_session("general", _spec("peer"))
         codex_identity, codex_channel = self._connect_bridge("codex")
         peer_identity, peer_channel = self._connect_bridge("peer")
-        update_room_settings(
-            self.root,
-            {"room_id": "general", "conversation_mode": "continuous", "max_relay_turns": 2},
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "continuous", "max_relay_turns": 2},
         )
         self._command("continuous-topic", "message.send", {"content": "둘이 이어서 이야기해"})
         first = next(message for message in codex_channel.drain() if message.get("op") == "turn.assign")
@@ -1166,15 +1166,48 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         finals = [event for event in RoomStore(self.root).read_events("general") if event.get("type") == "message_final"]
         self.assertEqual([event.get("participant_id") for event in finals[-3:]], ["operator-local", "codex", "peer"])
 
+    def test_routing_ignores_conflicting_legacy_room_settings_file(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        codex_identity, codex_channel = self._connect_bridge("codex")
+        _peer_identity, peer_channel = self._connect_bridge("peer")
+        update_legacy_room_settings(
+            self.root,
+            {
+                "room_id": "general",
+                "conversation_mode": "continuous",
+                "max_relay_turns": 4,
+            },
+        )
+
+        self._command("repository-mode-topic", "message.send", {"content": "한 명만 답해"})
+        first = next(
+            message for message in codex_channel.drain() if message.get("op") == "turn.assign"
+        )
+        peer_channel.drain()
+        self._command(
+            "repository-mode-final",
+            "message.final",
+            {"turn_id": first["turn_id"], "content": "DB 설정은 ordered야."},
+            codex_identity,
+        )
+
+        self.assertEqual(
+            self.controller.store.room_settings("general")["conversation_mode"],
+            "ordered",
+        )
+        self.assertFalse(
+            any(message.get("op") == "turn.assign" for message in peer_channel.drain())
+        )
+
     def test_ambient_mode_leases_one_fair_speaker_and_releases_each_turn(self):
         self.controller.create_provider_session("general", _spec("peer"))
         codex_identity, codex_channel = self._connect_bridge("codex")
         peer_identity, peer_channel = self._connect_bridge("peer")
         codex_channel.drain()
         peer_channel.drain()
-        update_room_settings(
-            self.root,
-            {"room_id": "general", "conversation_mode": "ambient", "max_relay_turns": 2},
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient", "max_relay_turns": 2},
         )
 
         source = self._command(
@@ -1223,9 +1256,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
     def test_provider_final_rolls_back_turn_session_cursors_and_lease_with_ack(self):
         identity, channel = self._connect_bridge("codex")
         channel.drain()
-        update_room_settings(
-            self.root,
-            {"room_id": "general", "conversation_mode": "ambient", "max_relay_turns": 2},
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient", "max_relay_turns": 2},
         )
         source = self._command(
             "atomic-final-source",
@@ -1294,9 +1327,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.controller.create_provider_session("general", _spec("peer"))
         _peer_identity, peer_channel = self._connect_bridge("peer")
         peer_channel.drain()
-        update_room_settings(
-            self.root,
-            {"room_id": "general", "conversation_mode": "ambient", "max_relay_turns": 2},
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient", "max_relay_turns": 2},
         )
 
         self._command("ambient-unavailable", "message.send", {"content": "@codex 답해줘"})
@@ -1310,9 +1343,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
     def test_ambient_mode_records_vote_as_silent_without_waking_provider(self):
         _identity, channel = self._connect_bridge("codex")
         channel.drain()
-        update_room_settings(
-            self.root,
-            {"room_id": "general", "conversation_mode": "ambient", "max_relay_turns": 2},
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient", "max_relay_turns": 2},
         )
 
         event = self._command(
@@ -1335,9 +1368,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
     def test_stopping_ambient_speaker_cancels_lease_and_drops_selected_work(self):
         _identity, channel = self._connect_bridge("codex")
         channel.drain()
-        update_room_settings(
-            self.root,
-            {"room_id": "general", "conversation_mode": "ambient"},
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient"},
         )
         source = self._command(
             "ambient-stop-source",
@@ -1360,9 +1393,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(stopped["active_attention_lease_id"], "")
 
     def test_ambient_attention_failure_is_visible_and_never_uses_legacy_routing(self):
-        update_room_settings(
-            self.root,
-            {"room_id": "general", "conversation_mode": "ambient", "max_relay_turns": 2},
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient", "max_relay_turns": 2},
         )
         with patch.object(
             self.controller._attention_coordinator,
@@ -1403,9 +1436,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             enabled=True,
         )
         _active_identity, active_channel = self._connect_bridge("active")
-        update_room_settings(
-            self.root,
-            {"room_id": "general", "conversation_mode": "continuous", "max_relay_turns": 2},
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "continuous", "max_relay_turns": 2},
         )
 
         self._command("continuous-active-topic", "message.send", {"content": "활성 참가자만 이어서 말해"})
@@ -1467,9 +1500,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.controller.create_provider_session("general", _spec("peer"))
         codex_identity, codex_channel = self._connect_bridge("codex")
         _peer_identity, peer_channel = self._connect_bridge("peer")
-        update_room_settings(
-            self.root,
-            {"room_id": "general", "conversation_mode": "continuous", "max_relay_turns": 4},
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "continuous", "max_relay_turns": 4},
         )
         self._command("silent-topic", "message.send", {"content": "조용히 있어"})
         assignment = next(message for message in codex_channel.drain() if message.get("op") == "turn.assign")

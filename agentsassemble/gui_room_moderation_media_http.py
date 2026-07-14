@@ -37,7 +37,6 @@ from agentsassemble.room_members import (
     set_room_member_muted,
     upsert_room_member,
 )
-from agentsassemble.room_settings import room_settings_payload, update_room_settings
 from agentsassemble.room_speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
@@ -180,10 +179,9 @@ def register_moderation_media_routes(
             }
         )
 
-    def _channels_for(output_root, meeting_id: str) -> list[dict[str, object]]:
-        payload = room_settings_payload(output_root, room_id=meeting_id)
-        settings = payload.get("settings") if isinstance(payload, dict) else {}
-        channels = settings.get("channels") if isinstance(settings, dict) else None
+    def _channels_for(repository, meeting_id: str) -> list[dict[str, object]]:
+        settings = repository.room_settings(meeting_id)
+        channels = settings.get("channels")
         return list(channels) if isinstance(channels, list) else []
 
     def _channel_error(ctx: RequestContext, error: ChannelError) -> None:
@@ -204,7 +202,7 @@ def register_moderation_media_routes(
             ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
             return
         meeting_id = ctx.query_value("meeting_id") or ctx.query_value("room_id")
-        ctx.send_json({"room_id": meeting_id, "channels": _channels_for(ctx.deps.output_root, meeting_id)})
+        ctx.send_json({"room_id": meeting_id, "channels": _channels_for(ctx.deps.rooms, meeting_id)})
 
     @router.post("/api/room-channels")
     def room_channels_mutate(ctx: RequestContext) -> None:
@@ -218,8 +216,7 @@ def register_moderation_media_routes(
             ctx.send_error(HTTPStatus.BAD_REQUEST, "meeting_id is required")
             return
         action = str(payload.get("action") or "").strip().lower()
-        output_root = ctx.deps.output_root
-        current = _channels_for(output_root, meeting_id)
+        current = _channels_for(ctx.deps.rooms, meeting_id)
         created: dict[str, object] | None = None
         try:
             if action == "create":
@@ -241,9 +238,8 @@ def register_moderation_media_routes(
         except ChannelError as error:
             _channel_error(ctx, error)
             return
-        saved = update_room_settings(output_root, {"room_id": meeting_id, "channels": current})
-        result_settings = saved.get("settings") if isinstance(saved, dict) else {}
-        channels = result_settings.get("channels") if isinstance(result_settings, dict) else None
+        result_settings = ctx.deps.rooms.update_room_settings(meeting_id, {"channels": current})
+        channels = result_settings.get("channels")
         response: dict[str, object] = {
             "room_id": meeting_id,
             "channels": list(channels) if isinstance(channels, list) else [],
@@ -265,7 +261,7 @@ def register_moderation_media_routes(
         return None, None
 
     def _resolve_channel(ctx: RequestContext, meeting_id: str, channel_id: str, *, want_type: str):
-        channel = find_channel(_channels_for(ctx.deps.output_root, meeting_id), channel_id)
+        channel = find_channel(_channels_for(ctx.deps.rooms, meeting_id), channel_id)
         if channel is None:
             ctx.send_error(HTTPStatus.NOT_FOUND, "unknown channel")
             return None

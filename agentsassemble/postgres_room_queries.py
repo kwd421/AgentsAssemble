@@ -7,6 +7,10 @@ from psycopg import Connection
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.postgres_room_rows import payload_from_row
 from agentsassemble.room_database import VISIBLE
+from agentsassemble.room_global_settings import (
+    RoomGlobalSettingsRecord,
+    validate_room_global_settings,
+)
 from agentsassemble.room_repository_records import ACTIVE_PARTICIPANT_STATUSES
 
 
@@ -23,6 +27,22 @@ def read_room(connection: Connection, room_id: str) -> dict[str, object]:
         (room_id,),
     ).fetchone()
     return payload_from_row(row)
+
+
+def read_room_settings(connection: Connection, room_id: str) -> RoomGlobalSettingsRecord:
+    row = connection.execute(
+        "SELECT data_json FROM room_settings WHERE room_id = %s",
+        (room_id,),
+    ).fetchone()
+    if row is not None:
+        return validate_room_global_settings(payload_from_row(row))
+    room = connection.execute(
+        "SELECT label FROM rooms WHERE room_id = %s",
+        (room_id,),
+    ).fetchone()
+    if room is None:
+        raise ValueError(f"Room {room_id} was not found.")
+    raise ValueError(f"Room settings for {room_id} are missing.")
 
 
 def read_rooms(connection: Connection, *, include_archived: bool) -> list[dict[str, object]]:

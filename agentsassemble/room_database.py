@@ -12,6 +12,7 @@ from typing import Iterator
 from uuid import uuid4
 
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.room_global_settings import default_room_global_settings
 
 try:
     import fcntl
@@ -20,7 +21,7 @@ except ImportError:  # pragma: no cover - AgentsAssemble's supported hosts are U
 
 
 ROOM_DATABASE_FILENAME = "rooms.sqlite3"
-ROOM_SCHEMA_VERSION = 4
+ROOM_SCHEMA_VERSION = 5
 LEGACY_AUTHORITY_FILES = (
     "room.json",
     "participants.json",
@@ -315,6 +316,12 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             updated_at TEXT NOT NULL,
             data_json TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS room_settings (
+            room_id TEXT PRIMARY KEY,
+            updated_at TEXT NOT NULL,
+            data_json TEXT NOT NULL,
+            FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE
+        );
         CREATE TABLE IF NOT EXISTS participants (
             room_id TEXT NOT NULL,
             participant_id TEXT NOT NULL,
@@ -398,7 +405,7 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         raise RoomDatabaseMigrationError(
             f"Unsupported room database schema version {version}; expected {ROOM_SCHEMA_VERSION}."
         )
-    if version not in {1, 2, 3}:
+    if version not in {1, 2, 3, 4}:
         raise RoomDatabaseMigrationError(f"Unsupported room database schema version {version}.")
     connection.execute("BEGIN IMMEDIATE")
     try:
@@ -448,6 +455,10 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
                         f"ALTER TABLE deleted_rooms ADD COLUMN {column} {declaration}"
                     )
             version = 4
+        if version == 4:
+            _create_room_settings_schema(connection)
+            _backfill_room_settings(connection)
+            version = 5
         connection.execute(
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', ?)",
             (str(version),),
@@ -461,6 +472,35 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
 def _create_attention_schema(connection: sqlite3.Connection) -> None:
     for statement in ATTENTION_SCHEMA_STATEMENTS:
         connection.execute(statement)
+
+
+def _create_room_settings_schema(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS room_settings (
+               room_id TEXT PRIMARY KEY,
+               updated_at TEXT NOT NULL,
+               data_json TEXT NOT NULL,
+               FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE
+           )"""
+    )
+
+
+def _backfill_room_settings(connection: sqlite3.Connection) -> None:
+    rows = connection.execute(
+        """SELECT rooms.room_id, rooms.label, rooms.updated_at
+           FROM rooms
+           LEFT JOIN room_settings ON room_settings.room_id = rooms.room_id
+           WHERE room_settings.room_id IS NULL"""
+    ).fetchall()
+    for row in rows:
+        connection.execute(
+            "INSERT INTO room_settings(room_id, updated_at, data_json) VALUES(?, ?, ?)",
+            (
+                str(row["room_id"]),
+                str(row["updated_at"]),
+                _json_dumps(default_room_global_settings(label=str(row["label"] or ""))),
+            ),
+        )
 
 
 def _schema_version(connection: sqlite3.Connection) -> int | None:
@@ -573,6 +613,14 @@ def _import_legacy_rooms(
                 1 if room["status"] == "archived" else 0,
                 str(room["updated_at"]),
                 _json_dumps(room),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO room_settings(room_id, updated_at, data_json) VALUES(?, ?, ?)",
+            (
+                room_id,
+                str(room["updated_at"]),
+                _json_dumps(default_room_global_settings(label=str(room["label"]))),
             ),
         )
 

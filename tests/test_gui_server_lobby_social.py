@@ -4,6 +4,7 @@ from tests.gui_server_test_support import (
     LiveAgentFlowSupervisor,
     Path,
     Request,
+    RoomStore,
     ThreadingHTTPServer,
     UTC,
     _make_handler,
@@ -540,6 +541,7 @@ class GuiServerLobbySocialTests(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
                 root = Path(temp_dir)
+                RoomStore(root).create_room("room-1", label="Room 1")
                 connect_live_agent(
                     root,
                     {

@@ -12,7 +12,7 @@ promise to migrate every legacy file into the canonical repository.
 
 | State | Current authority | Target | Decision |
 | --- | --- | --- | --- |
-| Rooms, participants, Agent Sessions, events, command dedupe | `RoomStore` in `rooms/rooms.sqlite3` | `RoomRepository` | Canonical; SQLite and PostgreSQL must share one contract. |
+| Rooms, room-global settings, participants, Agent Sessions, events, command dedupe | `RoomRepository` (`RoomStore` SQLite by default) | `RoomRepository` | Canonical; SQLite and PostgreSQL share one contract. |
 | Deleted-room tombstones | `RoomStore.deleted_rooms` | `RoomRepository` | Canonical; must prevent stale clients from recreating deleted rooms. |
 | Human identity, credentials, room membership compatibility, usage | `identity_store.py` SQLite | Separate identity repository | Keep the security boundary separate initially; migrate deliberately after room parity. |
 | Browser and Agent Bridge invite claims | `room_invite.py` plus `room-invite-state.json` | Invite repository | Compatibility state; replace with durable single-use claims, not room events. |
@@ -29,9 +29,11 @@ Canonical room-global settings have a strict domain record in
 `room_global_settings.py`. It contains only label, topic, room appearance,
 conversation mode, bounded relay count, and custom channels. Notification and
 read state are user preferences, while participant role belongs to the
-participant row. The record definition does not yet make the repository
-authoritative: `room_settings.json` remains the compatibility authority until
-the SQLite and PostgreSQL schema plus explicit migration are completed.
+participant row. Both repository backends are authoritative for this record;
+`rooms.label` is an indexed projection updated in the same transaction.
+`room_settings.json` remains temporary compatibility storage only for user-level
+notification/read preferences. Existing legacy room-global values are not
+silently imported: Phase 3.3 provides an explicit, fingerprinted migration.
 
 ## Transaction Contract
 
@@ -95,6 +97,12 @@ conflicting retries. Runtime repository construction never runs Alembic and
 refuses PostgreSQL until both the head revision and the authority marker are
 present. The existing SQLite migrator remains responsible for upgrading
 pre-repository local files and old SQLite versions.
+
+Revision `0004_room_global_settings`, which corresponds to SQLite schema version
+5, adds one strict settings row per room. Schema upgrade backfills canonical
+defaults derived only from the room label; it deliberately does not infer or
+copy values from legacy JSON files. A missing or invalid settings row for an
+existing room is an error, never a request to recreate defaults silently.
 
 `PostgresRoomRepository` now implements the same transaction, event replay,
 participant/session lifecycle, command dedupe, media metadata, and durable

@@ -6,10 +6,11 @@ creates: each text channel gets its own message stream (channel_<id>.jsonl,
 read/written through the generic lobby event reader); each voice channel is a
 presence entity (who is connected) with real audio streaming deferred.
 
-Channels persist in room_settings.json under "channels" as an ordered list.
-This module is the single source of truth for id/name/type normalization, the
-default (empty) list, and the create/rename/delete/reorder mutations — all pure
-functions over a channel list, so the HTTP layer stays thin and tests are direct.
+Channels persist in the canonical RoomRepository settings record as an ordered
+list. This module is the single source of truth for id/name/type normalization,
+the default (empty) list, and the create/rename/delete/reorder mutations — all
+pure functions over a channel list, so the HTTP layer stays thin and tests are
+direct.
 """
 from __future__ import annotations
 

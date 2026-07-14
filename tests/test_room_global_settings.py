@@ -106,11 +106,17 @@ class RoomGlobalSettingsTests(unittest.TestCase):
 
         updated = merge_room_global_settings(
             current,
-            {"topic": "Updated", "conversation_mode": "ordered"},
+            {
+                "topic": "Updated",
+                "conversation_mode": "ordered",
+                "appearance": {"banner_preset": "ember"},
+            },
         )
 
         self.assertEqual(updated["topic"], "Updated")
         self.assertEqual(updated["conversation_mode"], "ordered")
+        self.assertEqual(updated["appearance"]["banner_preset"], "ember")
+        self.assertEqual(updated["appearance"]["icon_label"], "AA")
         self.assertEqual(updated["channels"], current["channels"])
         with self.assertRaisesRegex(ValueError, "Unsupported room settings fields"):
             merge_room_global_settings(current, {"last_read_at": "now"})

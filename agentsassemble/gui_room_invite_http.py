@@ -16,7 +16,6 @@ from agentsassemble.room_invite import (
     revoke_session,
 )
 from agentsassemble.room_members import upsert_room_member
-from agentsassemble.room_settings import room_settings_payload
 from agentsassemble.room_users import (
     grant_operator_to_device,
     operator_user_id,
@@ -77,6 +76,15 @@ def register_invite_admission_routes(router: Router) -> None:
                 "public URL is required before creating an external guest invite",
             )
             return
+        room_id = str(payload.get("meeting_id") or "").strip()
+        try:
+            room = ctx.deps.rooms.room(room_id)
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+        if not room:
+            ctx.send_error(HTTPStatus.NOT_FOUND, "room was not found")
+            return
         try:
             client_type = str(payload.get("client_type") or "browser")
             request_session = ctx.session()
@@ -85,7 +93,7 @@ def register_invite_admission_routes(router: Router) -> None:
             created_by_user_id = str((creator_user or {}).get("user_id") or operator_user_id())
             invite = create_room_invite(
                 room_url=ctx.handler._local_server_url(),
-                meeting_id=str(payload.get("meeting_id") or ""),
+                meeting_id=room_id,
                 agent_id=str(payload.get("agent_id") or ""),
                 display_name=str(payload.get("display_name") or ""),
                 ttl_seconds=int(payload.get("ttl_seconds") or 600),
@@ -127,8 +135,16 @@ def register_invite_admission_routes(router: Router) -> None:
             return
         room_id = str(result.get("meeting_id") or "")
         room = ctx.deps.rooms.room(room_id)
-        settings_payload = room_settings_payload(ctx.deps.output_root, room_id=room_id)
-        settings = settings_payload.get("settings") if isinstance(settings_payload.get("settings"), dict) else {}
+        if not room:
+            revoke_session(str(result.get("session_token") or ""))
+            ctx.send_error(HTTPStatus.GONE, "room was deleted or does not exist")
+            return
+        try:
+            settings = ctx.deps.rooms.room_settings(room_id)
+        except ValueError:
+            revoke_session(str(result.get("session_token") or ""))
+            ctx.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, "room settings are unavailable")
+            return
         result["room_label"] = str(settings.get("label") or room.get("label") or room_id)
         result["room_topic"] = str(settings.get("topic") or room.get("topic") or "")
         result["room_created_at"] = str(room.get("created_at") or "")

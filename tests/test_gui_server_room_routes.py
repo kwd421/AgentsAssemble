@@ -37,6 +37,46 @@ from tests.gui_server_test_support import (
 
 class GuiServerRoomRouteTests(unittest.TestCase):
 
+    def test_room_invite_creation_requires_an_existing_canonical_room(self):
+        reset_room_invite_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            response = _dispatch_room_route(
+                root,
+                path="/api/room-invite/create",
+                method="POST",
+                payload={
+                    "meeting_id": "missing-room",
+                    "display_name": "Guest",
+                    "local_dev_preview": True,
+                },
+            )
+
+        self.assertEqual(response.sent_error, (HTTPStatus.NOT_FOUND, "room was not found"))
+
+    def test_room_invite_join_rejects_a_stale_deleted_room_without_crashing(self):
+        reset_room_invite_state()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            invite = create_room_invite(
+                room_url="http://127.0.0.1:8765",
+                meeting_id="deleted-room",
+                display_name="Guest",
+            )
+
+            response = _dispatch_room_route(
+                root,
+                path="/api/room-invite/join",
+                method="POST",
+                payload={"invite_token": invite["invite_token"]},
+            )
+
+        self.assertEqual(
+            response.sent_error,
+            (HTTPStatus.GONE, "room was deleted or does not exist"),
+        )
+
     def test_room_route_split_preserves_historical_service_imports(self):
         from agentsassemble import gui_room_http
 

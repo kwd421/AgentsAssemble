@@ -42,7 +42,7 @@ RoomRealtimeController
 
 There is one authority for each concern:
 
-- room, participant, Agent Session, event, and command state:
+- room, room-global settings, participant, Agent Session, event, and command state:
   controller-injected `RoomRepository` (SQLite by default, or explicitly activated PostgreSQL);
 - live transport: canonical ticket-authenticated WebSocket;
 - browser state: canonical snapshot plus sequenced events;
@@ -73,6 +73,13 @@ loading state, but cannot create a session until native discovery or an explicit
 static provider manifest produces a revision. Discovery completion is pushed on
 the canonical room WebSocket; `agent.create` must present that revision and the
 server validates every selected control against it.
+
+Room-global settings are repository-owned. The strict record contains label,
+topic, appearance, conversation mode, bounded relay count, and custom channels.
+`room_settings.json` is temporary compatibility storage only for user-scoped
+notification/read preferences; routing and canonical room mutations must not
+read room-global values from it. Existing legacy room-global values require the
+explicit migration described in `docs/product/ROOM_REPOSITORY.md`.
 
 Canonical `message.send` uses one room transaction for participant validation,
 the visible `message_final`, its ACK, and the idempotency record. Repository
@@ -225,7 +232,8 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Canonical room HTTP routes | `gui_room_*_http.py`; coordinator in `gui_room_http.py` |
 | Legacy lobby POST/SSE compatibility | `gui_legacy_lobby_http.py`; do not attach new canonical behavior here |
 | Legacy resident read-only HTTP projections | `gui_legacy_live_agent_read_http.py`; payload policy remains outside the registrar |
-| Room settings HTTP | `gui_room_settings_http.py`; persistence and normalization in `room_settings.py` |
+| Room-global settings | `room_global_settings.py`, `room_settings_service.py`, repository methods; HTTP in `gui_room_settings_http.py` |
+| Legacy user preference compatibility | `room_settings.py`; do not add room-global authority here |
 | Friends, direct-message and local-profile HTTP | `gui_social_http.py`; direct-message process callback wired in `gui.py` |
 | Play Mode Mafia HTTP | `gui_mafia_http.py`; game state and rules in `mafia_game.py` |
 | Side-chat storage and room scoping | `side_chat.py`; event normalization in `meeting_events.py`; HTTP/SSE routes in `gui_side_chat_http.py` |

@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable
 from typing import ContextManager, Protocol, runtime_checkable
 
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
+from agentsassemble.room_global_settings import RoomGlobalSettingsRecord
 
 
 RoomRecord = dict[str, object]
@@ -25,6 +26,10 @@ class RoomTransaction(Protocol):
     def session(self, session_id: str) -> SessionRecord: ...
 
     def command_record(self, principal_id: str, request_id: str) -> CommandRecord: ...
+
+    def room_settings(self) -> RoomGlobalSettingsRecord: ...
+
+    def update_room_settings(self, updates: dict[str, object]) -> RoomGlobalSettingsRecord: ...
 
     def create_room(self, *, label: str = "", status: str = "active") -> tuple[RoomRecord, bool]: ...
 
@@ -137,6 +142,14 @@ class RoomRepository(Protocol):
     ) -> bool: ...
 
     def room(self, room_id: str) -> RoomRecord: ...
+
+    def room_settings(self, room_id: str) -> RoomGlobalSettingsRecord: ...
+
+    def update_room_settings(
+        self,
+        room_id: str,
+        updates: dict[str, object],
+    ) -> RoomGlobalSettingsRecord: ...
 
     def list_rooms(self, *, include_archived: bool = False) -> list[RoomRecord]: ...
 

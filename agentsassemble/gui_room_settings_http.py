@@ -4,7 +4,7 @@ from __future__ import annotations
 from http import HTTPStatus
 
 from agentsassemble.gui_router import RequestContext, Router
-from agentsassemble.room_settings import room_settings_payload, update_room_settings
+from agentsassemble.room_settings_service import room_settings_payload, update_room_settings
 
 
 def register_room_settings_routes(router: Router) -> None:
@@ -14,6 +14,7 @@ def register_room_settings_routes(router: Router) -> None:
     def room_settings(ctx: RequestContext) -> None:
         ctx.send_json(
             room_settings_payload(
+                ctx.deps.rooms,
                 ctx.deps.output_root,
                 room_id=ctx.query_value("room_id"),
             )
@@ -25,6 +26,6 @@ def register_room_settings_routes(router: Router) -> None:
         if payload is None:
             return
         try:
-            ctx.send_json(update_room_settings(ctx.deps.output_root, payload))
+            ctx.send_json(update_room_settings(ctx.deps.rooms, ctx.deps.output_root, payload))
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))

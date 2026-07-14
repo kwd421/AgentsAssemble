@@ -1,3 +1,4 @@
+"""Legacy file-backed room preferences retained during repository migration."""
 from __future__ import annotations
 
 import json
