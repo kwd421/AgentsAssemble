@@ -14,6 +14,7 @@ from agentsassemble.room_attention import (
     AttentionEvaluation,
     AttentionEvaluationConflict,
     AttentionLeaseConflict,
+    attention_lease_is_expired,
 )
 from agentsassemble.room_repository_records import utc_now
 
@@ -196,6 +197,7 @@ def claim_attention_job(
     if job["outcome"] != "selected" or job["selected_participant_id"] != clean_participant_id:
         raise AttentionLeaseConflict("attention_job_participant_mismatch")
 
+    acquired = datetime.now(UTC)
     existing_row = connection.execute(
         """SELECT * FROM attention_leases
            WHERE room_id = %s AND job_id = %s AND status = 'active'""",
@@ -203,16 +205,30 @@ def claim_attention_job(
     ).fetchone()
     if existing_row is not None:
         existing = attention_lease_from_row(existing_row)
-        if (
+        if attention_lease_is_expired(existing_row["expires_at"], at=acquired):
+            connection.execute(
+                """UPDATE attention_leases
+                   SET status = 'expired', released_at = %s
+                   WHERE room_id = %s AND lease_id = %s""",
+                (acquired, room_id, existing["lease_id"]),
+            )
+            connection.execute(
+                """UPDATE attention_jobs
+                   SET status = 'pending', updated_at = %s
+                   WHERE room_id = %s AND job_id = %s""",
+                (acquired, room_id, clean_job_id),
+            )
+            job = {**job, "status": "pending"}
+        elif (
             existing["participant_id"] == clean_participant_id
             and existing["owner_id"] == clean_owner_id
         ):
             return existing
-        raise AttentionLeaseConflict("attention_job_already_leased")
+        else:
+            raise AttentionLeaseConflict("attention_job_already_leased")
     if job["status"] != "pending":
         raise AttentionLeaseConflict(f"attention_job_not_pending:{job['status']}")
 
-    acquired = datetime.now(UTC)
     expires = acquired + timedelta(seconds=max(1.0, float(lease_seconds)))
     lease = {
         "room_id": room_id,

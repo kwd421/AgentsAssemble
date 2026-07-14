@@ -103,7 +103,9 @@ after an assigned turn completes or declines.
    pending attention identifiers commit in one room repository transaction.
 3. Duplicate evaluation of the same `(room_id, source_seq)` returns the durable
    existing result rather than creating another job.
-4. A lease is claimable by at most one worker and has an explicit expiry.
+4. A lease is claimable by at most one worker and has an explicit expiry. Claim
+   expires an elapsed active lease and creates its replacement in the same room
+   transaction; an unexpired lease owned by another worker remains a conflict.
 5. Provider assignment occurs only after a selected job owns an active lease.
 6. Completing, declining, failing, or expiring a turn closes or reschedules the
    lease explicitly; blank visible messages are never control flow.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import cast
 from unittest import TestCase
 
@@ -638,6 +639,77 @@ class RoomRepositoryContractMixin:
         case.assertEqual(
             self.repository.attention_jobs("general", mode="active")[0]["status"],
             "completed",
+        )
+
+    def test_expired_active_attention_lease_is_reclaimed_in_the_claim_transaction(self) -> None:
+        self.repository.create_room("general")
+        with self.repository.transaction("general") as transaction:
+            transaction.upsert_participant(
+                {
+                    "participant_id": "agent-a",
+                    "display_name": "Agent A",
+                    "participant_type": "agent",
+                }
+            )
+            job = transaction.record_attention_evaluation(
+                AttentionEvaluation(
+                    room_id="general",
+                    source_event_id="event-expiry",
+                    source_seq=10,
+                    outcome="selected",
+                    selected_participant_id="agent-a",
+                    eligible_participant_ids=("agent-a",),
+                    reasons=("direct_mention",),
+                ),
+                mode="active",
+                status="pending",
+            )
+            first = transaction.claim_attention_job(
+                job["job_id"],
+                participant_id="agent-a",
+                owner_id="worker-a",
+                lease_seconds=1,
+            )
+
+        time.sleep(1.05)
+        with self._test_case().assertRaisesRegex(RuntimeError, "rollback reclaimed lease"):
+            with self.repository.transaction("general") as transaction:
+                transaction.claim_attention_job(
+                    job["job_id"],
+                    participant_id="agent-a",
+                    owner_id="worker-b",
+                    lease_seconds=30,
+                )
+                raise RuntimeError("rollback reclaimed lease")
+
+        case = self._test_case()
+        case.assertEqual(
+            self.repository.attention_lease("general", first["lease_id"])["status"],
+            "active",
+        )
+        case.assertEqual(
+            self.repository.attention_jobs("general", mode="active")[0]["status"],
+            "leased",
+        )
+
+        with self.repository.transaction("general") as transaction:
+            reclaimed = transaction.claim_attention_job(
+                job["job_id"],
+                participant_id="agent-a",
+                owner_id="worker-b",
+                lease_seconds=30,
+            )
+
+        case.assertNotEqual(reclaimed["lease_id"], first["lease_id"])
+        case.assertEqual(
+            self.repository.attention_lease("general", first["lease_id"])["status"],
+            "expired",
+        )
+        case.assertEqual(reclaimed["status"], "active")
+        case.assertEqual(reclaimed["owner_id"], "worker-b")
+        case.assertEqual(
+            self.repository.attention_jobs("general", mode="active")[0]["status"],
+            "leased",
         )
 
     def test_selected_attention_queue_rolls_back_as_one_repository_unit(self) -> None:

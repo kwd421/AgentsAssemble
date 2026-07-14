@@ -495,3 +495,10 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   commit. SQLite failure injection and the backend-neutral repository contract
   prove a failed session write leaves no job, lease, cursor advance, or pending
   input. The next slice is Phase 2.2, expiry-aware lease claims.
+- 2026-07-14: SQLite and PostgreSQL lease claims now compare the active lease's
+  persisted expiry at the transaction checkpoint. An elapsed lease transitions
+  to `expired`, its job returns to `pending`, and the replacement lease is
+  inserted before the transaction commits. Backend-neutral tests prove an
+  injected rollback preserves the old lease and that a successful retry gives
+  one new owner the lease; an unexpired different owner still conflicts. The
+  next slice is Phase 2.3, bounded orphan-attention reconciliation.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import Literal
 
 from agentsassemble.meeting_events import clean_lobby_text
@@ -26,6 +27,28 @@ class AttentionEvaluationConflict(ValueError):
 
 class AttentionLeaseConflict(ValueError):
     """An attention job cannot be claimed or resolved in its current state."""
+
+
+def attention_lease_is_expired(
+    expires_at: object,
+    *,
+    at: datetime | None = None,
+) -> bool:
+    """Return whether a persisted lease expiry is at or before the UTC checkpoint."""
+
+    if isinstance(expires_at, datetime):
+        expiry = expires_at
+    else:
+        try:
+            expiry = datetime.fromisoformat(str(expires_at or ""))
+        except ValueError as error:
+            raise AttentionLeaseConflict("attention_lease_expiry_invalid") from error
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=UTC)
+    checkpoint = at or datetime.now(UTC)
+    if checkpoint.tzinfo is None:
+        checkpoint = checkpoint.replace(tzinfo=UTC)
+    return expiry.astimezone(UTC) <= checkpoint.astimezone(UTC)
 
 
 @dataclass(frozen=True)

@@ -135,6 +135,10 @@ lease, and the Agent Session's pending source/job/lease fields commit together.
 A failed pending-session write cannot leave a leased job without the input that
 lease authorizes.
 
+Attention lease claim checks the persisted expiry. An elapsed active lease is
+expired and replaced in the same transaction; a rollback restores the prior
+lease, while an unexpired lease held by another worker remains exclusive.
+
 ## Current Media Boundary
 
 The browser can upload and render room attachments. Media events and safe media
