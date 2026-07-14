@@ -205,14 +205,13 @@ from agentsassemble.live_agents import (
     update_live_agent_options,
     update_live_agent_poll_interval,
 )
-from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operation_history
+from agentsassemble.live_agent_operations import append_live_agent_operation
 from agentsassemble.lobby_promotion import LOBBY_PROMOTION_OPERATION, promote_lobby_events_to_official
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_finalization import finalize_live_agent_meeting
 from agentsassemble.live_agent_processes import (
     LiveAgentProcessSupervisor,
     clean_live_agent_group_id,
-    read_live_agent_process_event_history,
 )
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_play_presets import build_play_preset_turns
@@ -265,6 +264,15 @@ from agentsassemble.legacy_live_agent_queries import (
     live_agent_room_payload,
     live_events_visible_to_agent as _live_events_visible_to_agent,
     require_live_agent as _live_agent_for_id,
+)
+from agentsassemble.legacy_live_agent_diagnostics import (
+    LegacyLiveAgentDiagnosticQueryService,
+    live_agent_operations_payload,
+    live_agent_process_events_payload,
+    live_agent_session_runs_payload,
+    session_process_groups_snapshot as _session_process_groups_snapshot,
+    session_readiness_by_target as _session_readiness_by_target,
+    session_run_readiness_overlay as _session_run_readiness_overlay,
 )
 from agentsassemble.legacy_meeting_queries import (
     LegacyMeetingQueryService,
@@ -1554,100 +1562,6 @@ def _live_agent_without_admission_evidence(agent: dict[str, object]) -> dict[str
     return {key: value for key, value in agent.items() if key not in admission_fields}
 
 
-def live_agent_operations_payload(
-    output_root: Path,
-    *,
-    limit: int = 50,
-    operation: str = "",
-    target_id: str = "",
-    status: str = "",
-    scan_limit: object = None,
-    scan_tail: bool = False,
-) -> dict[str, object]:
-    return read_live_agent_operation_history(
-        output_root,
-        limit=limit,
-        operation=operation,
-        target_id=target_id,
-        status=status,
-        scan_limit=scan_limit,
-        scan_tail=scan_tail,
-    )
-
-
-def live_agent_session_runs_payload(
-    session_run_controller: LiveAgentSessionRunController,
-    *,
-    limit: int = 50,
-    run_id: str = "",
-    meeting_id: str = "",
-    group_id: str = "",
-    include_readiness: bool = False,
-    output_root: Path | None = None,
-    process_supervisor: LiveAgentProcessSupervisor | None = None,
-) -> dict[str, object]:
-    runs = session_run_controller.list_runs(limit=limit, run_id=run_id, meeting_id=meeting_id, group_id=group_id)
-    if include_readiness and output_root is not None and process_supervisor is not None:
-        runs = _session_runs_with_readiness(runs, output_root=output_root, process_supervisor=process_supervisor)
-    return {"runs": runs}
-
-
-def _session_runs_with_readiness(
-    runs: list[dict[str, object]],
-    *,
-    output_root: Path,
-    process_supervisor: LiveAgentProcessSupervisor,
-) -> list[dict[str, object]]:
-    groups = _session_process_groups_snapshot(process_supervisor)
-    summary = live_agent_session_readiness_summary(output_root, groups)
-    readiness_by_target = _session_readiness_by_target(summary)
-    return [
-        {
-            **run,
-            "readiness": _session_run_readiness_overlay(run, readiness_by_target),
-        }
-        for run in runs
-    ]
-
-
-def _session_readiness_by_target(summary: dict[str, object]) -> dict[tuple[str, str], dict[str, object]]:
-    items = summary.get("items") if isinstance(summary.get("items"), list) else []
-    return {
-        (str(item.get("meeting_id") or ""), str(item.get("group_id") or "")): item
-        for item in items
-        if isinstance(item, dict)
-    }
-
-
-def _session_run_readiness_overlay(
-    run: dict[str, object],
-    readiness_by_target: dict[tuple[str, str], dict[str, object]],
-) -> dict[str, object]:
-    meeting_id = _safe_session_run_health_identity(run.get("meeting_id"))
-    group_id = _safe_session_run_health_identity(run.get("group_id"))
-    if not meeting_id or not group_id:
-        return {"status": "degraded", "attention": ["session_run:missing_target"]}
-    readiness = readiness_by_target.get((meeting_id, group_id))
-    if readiness is None:
-        return {
-            "meeting_id": meeting_id,
-            "group_id": group_id,
-            "status": "degraded",
-            "attention": ["session_run:no_current_readiness"],
-        }
-    return dict(readiness)
-
-
-def live_agent_process_events_payload(
-    output_root: Path,
-    *,
-    limit: int = 50,
-    group_id: str = "",
-    scan_limit: object = None,
-) -> dict[str, object]:
-    return read_live_agent_process_event_history(output_root, limit=limit, group_id=group_id, scan_limit=scan_limit)
-
-
 def live_agent_meeting_start_payload(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
     council_config_path = str(payload.get("council_config_path") or payload.get("council_config") or "").strip()
     agent_config_path = str(payload.get("agent_config_path") or payload.get("agent_config") or "").strip()
@@ -2179,15 +2093,6 @@ def _session_check_payload_with_process_reason(
     if not reason:
         return session
     return {**session, "process_reason": reason}
-
-
-def _session_process_groups_snapshot(
-    process_supervisor: LiveAgentProcessSupervisor,
-) -> list[dict[str, object]]:
-    if not hasattr(process_supervisor, "snapshot_groups"):
-        return []
-    groups = process_supervisor.snapshot_groups()
-    return [group for group in groups if isinstance(group, dict)] if isinstance(groups, list) else []
 
 
 def _find_session_process_group(
@@ -6596,16 +6501,17 @@ def _make_handler(
         route_table,
         deps=LegacyLiveAgentReadDeps(
             queries=LegacyLiveAgentQueryService.build(output_root),
+            diagnostics=LegacyLiveAgentDiagnosticQueryService(
+                output_root=output_root,
+                processes=live_agent_process_supervisor,
+                session_run_controller=live_agent_session_run_controller,
+            ),
             processes=live_agent_process_supervisor,
-            session_runs=live_agent_session_run_controller,
             session_run_monitor=session_run_monitor,
             agents_payload=live_agents_payload,
             health_payload=live_agent_health_payload,
             readiness_payload=live_agent_session_readiness_payload,
             processes_payload=live_agent_processes_payload,
-            process_events_payload=live_agent_process_events_payload,
-            operations_payload=live_agent_operations_payload,
-            session_runs_payload=live_agent_session_runs_payload,
             readiness_error_message=_session_check_error_message,
         ),
     )

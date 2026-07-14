@@ -56,19 +56,33 @@ class FakeLegacyLiveAgentQueries:
         return {"agent_id": agent_id, "source_event_id": source_event_id}
 
 
+class FakeLegacyLiveAgentDiagnostics:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def operations(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(("operations", kwargs))
+        return {"operations": []}
+
+    def process_events(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(("process_events", kwargs))
+        return {"events": []}
+
+    def session_runs(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(("session_runs", kwargs))
+        return {"runs": []}
+
+
 def _deps(**overrides: object) -> LegacyLiveAgentReadDeps:
     values = {
         "queries": FakeLegacyLiveAgentQueries(),
+        "diagnostics": FakeLegacyLiveAgentDiagnostics(),
         "processes": object(),
-        "session_runs": object(),
         "session_run_monitor": None,
         "agents_payload": _unused_payload,
         "health_payload": _unused_payload,
         "readiness_payload": _unused_payload,
         "processes_payload": _unused_payload,
-        "process_events_payload": _unused_payload,
-        "operations_payload": _unused_payload,
-        "session_runs_payload": _unused_payload,
         "readiness_error_message": lambda error: str(error),
     }
     values.update(overrides)
@@ -141,35 +155,58 @@ class LegacyLiveAgentReadRoutesTests(unittest.TestCase):
         self.assertEqual(handler.sent_error, (404, "Return packet not found", "", None))
 
     def test_forwards_query_filters_to_the_read_service(self) -> None:
-        calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
-
-        def operations_payload(*args: object, **kwargs: object) -> dict[str, object]:
-            calls.append((args, kwargs))
-            return {"operations": []}
-
+        diagnostics = FakeLegacyLiveAgentDiagnostics()
         router = Router()
         register_legacy_live_agent_read_routes(
             router,
-            deps=_deps(operations_payload=operations_payload),
+            deps=_deps(diagnostics=diagnostics),
         )
 
-        handler = _dispatch(
+        operations_handler = _dispatch(
             router,
             "/api/live-agent-operations?limit=12&operation=start&target_id=crew&status=failed&scan_limit=40&scan_tail=yes",
         )
+        process_events_handler = _dispatch(
+            router,
+            "/api/live-agent-process-events?limit=7&group_id=crew&scan_limit=30",
+        )
+        session_runs_handler = _dispatch(
+            router,
+            "/api/live-agent-session-runs?limit=9&run_id=run-1&meeting_id=room-a&group_id=crew&include_readiness=on",
+        )
 
-        self.assertEqual(handler.sent_json, {"operations": []})
-        self.assertEqual(calls[0][0], (Path("/tmp/room-root"),))
+        self.assertEqual(operations_handler.sent_json, {"operations": []})
+        self.assertEqual(process_events_handler.sent_json, {"events": []})
+        self.assertEqual(session_runs_handler.sent_json, {"runs": []})
         self.assertEqual(
-            calls[0][1],
-            {
-                "limit": 12,
-                "operation": "start",
-                "target_id": "crew",
-                "status": "failed",
-                "scan_limit": "40",
-                "scan_tail": True,
-            },
+            diagnostics.calls,
+            [
+                (
+                    "operations",
+                    {
+                        "limit": 12,
+                        "operation": "start",
+                        "target_id": "crew",
+                        "status": "failed",
+                        "scan_limit": "40",
+                        "scan_tail": True,
+                    },
+                ),
+                (
+                    "process_events",
+                    {"limit": 7, "group_id": "crew", "scan_limit": "30"},
+                ),
+                (
+                    "session_runs",
+                    {
+                        "limit": 9,
+                        "run_id": "run-1",
+                        "meeting_id": "room-a",
+                        "group_id": "crew",
+                        "include_readiness": True,
+                    },
+                ),
+            ],
         )
 
     def test_readiness_error_preserves_safe_target_details(self) -> None:

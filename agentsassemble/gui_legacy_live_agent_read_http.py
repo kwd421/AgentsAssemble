@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 
 from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.legacy_live_agent_diagnostics import LegacyLiveAgentDiagnosticQueryService
 from agentsassemble.legacy_live_agent_queries import LegacyLiveAgentQueryService
 from agentsassemble.live_agent_sessions import LiveAgentSessionNotFoundError
 
@@ -17,16 +18,13 @@ PayloadBuilder = Callable[..., dict[str, object]]
 @dataclass(frozen=True)
 class LegacyLiveAgentReadDeps:
     queries: LegacyLiveAgentQueryService
+    diagnostics: LegacyLiveAgentDiagnosticQueryService
     processes: object
-    session_runs: object
     session_run_monitor: object | None
     agents_payload: PayloadBuilder
     health_payload: PayloadBuilder
     readiness_payload: PayloadBuilder
     processes_payload: PayloadBuilder
-    process_events_payload: PayloadBuilder
-    operations_payload: PayloadBuilder
-    session_runs_payload: PayloadBuilder
     readiness_error_message: Callable[[Exception], str]
 
 
@@ -119,8 +117,7 @@ def register_legacy_live_agent_read_routes(
     @router.get("/api/live-agent-process-events")
     def live_agent_process_events(ctx: RequestContext) -> None:
         ctx.send_json(
-            deps.process_events_payload(
-                ctx.deps.output_root,
+            deps.diagnostics.process_events(
                 limit=_query_limit(ctx, default=50),
                 group_id=ctx.query_value("group_id"),
                 scan_limit=ctx.query_value("scan_limit"),
@@ -130,8 +127,7 @@ def register_legacy_live_agent_read_routes(
     @router.get("/api/live-agent-operations")
     def live_agent_operations(ctx: RequestContext) -> None:
         ctx.send_json(
-            deps.operations_payload(
-                ctx.deps.output_root,
+            deps.diagnostics.operations(
                 limit=_query_limit(ctx, default=50),
                 operation=ctx.query_value("operation"),
                 target_id=ctx.query_value("target_id"),
@@ -144,15 +140,12 @@ def register_legacy_live_agent_read_routes(
     @router.get("/api/live-agent-session-runs")
     def live_agent_session_runs(ctx: RequestContext) -> None:
         ctx.send_json(
-            deps.session_runs_payload(
-                deps.session_runs,
+            deps.diagnostics.session_runs(
                 limit=_query_limit(ctx, default=50),
                 run_id=ctx.query_value("run_id"),
                 meeting_id=ctx.query_value("meeting_id"),
                 group_id=ctx.query_value("group_id"),
                 include_readiness=_query_bool(ctx.query_value("include_readiness")),
-                output_root=ctx.deps.output_root,
-                process_supervisor=deps.processes,
             )
         )
 

@@ -160,7 +160,7 @@ These families already have a clear module owner and should not move back into
 | `gui_mafia_http.py` | Active optional | Mafia game state and actions | `tests/test_gui_server_mafia_http.py`, `tests/test_mafia_game.py` |
 | `gui_observability_http.py` | Active optional | Read-only local resources and release-health projections | `tests/test_gui_server_health.py` |
 | `gui_live_agent_flow_http.py` | Compatibility | Legacy Play/flow supervisor controls | `tests/test_gui_server_session_lifecycle.py` |
-| `gui_legacy_live_agent_read_http.py` | Compatibility | Legacy resident room/return-packet reads plus process/session/readiness/operation projections | `tests/test_gui_legacy_live_agent_read_http.py`, `tests/test_gui_server_room_payload.py` |
+| `gui_legacy_live_agent_read_http.py` | Compatibility | Legacy resident room/return-packet reads plus diagnostic history and health/readiness projections | `tests/test_gui_legacy_live_agent_read_http.py`, `tests/test_gui_server_room_payload.py`, `tests/test_gui_server_session_runs.py` |
 | `gui_legacy_live_agent_session_http.py` | Compatibility | Legacy resident-session mutations | `tests/test_gui_legacy_live_agent_session_http.py`, `tests/test_legacy_live_agent_session_service.py` |
 | `gui_legacy_live_agent_process_http.py` | Compatibility | Legacy process-group mutations | `tests/test_gui_legacy_live_agent_process_http.py`, `tests/test_legacy_live_agent_process_service.py` |
 | `gui_legacy_live_agent_session_run_http.py` | Compatibility | Durable legacy session-run controls | `tests/test_gui_legacy_live_agent_session_run_http.py`, `tests/test_legacy_live_agent_session_run_service.py` |
@@ -228,8 +228,10 @@ decision. Leaving them in the old chain makes their compatibility cost visible.
 2. In progress: room and return-packet reads now belong to
    `LegacyLiveAgentQueryService`; their dynamic GET routes are Router-owned.
    `lobby_queries.py` owns the shared append-only lobby history reads used by
-   this service and other compatibility paths. Move health, discovery,
-   preflight, smoke, and readiness behind typed compatibility services next.
+   this service and other compatibility paths. `LegacyLiveAgentDiagnosticQueryService`
+   now owns operation history, process-event history, durable session-run
+   listing, and readiness overlays. Move process snapshots, health, readiness,
+   discovery, preflight, and smoke behind typed compatibility services next.
 3. Register their routes on `Router`; preserve methods, paths, authorization,
    status codes, redaction, and payloads.
 4. Move a helper only with the route/service that owns its reason to change.
@@ -268,9 +270,10 @@ completion:
 ## Context Reset Brief
 
 After a context reset, read `CURRENT_SYSTEM.md`, the active room-correctness
-plan, and this file. Phase 5.3 step 1 and the room/return-packet portion of
-step 2 are complete. Start with retained health/readiness/process diagnostics,
-then classify discovery, preflight, and smoke as separate slices. Do not move the seven
+plan, and this file. Phase 5.3 step 1, room/return-packet reads, and durable
+diagnostic histories are complete. Start with retained process snapshots,
+health, and readiness, then classify discovery, preflight, and smoke as
+separate slices. Do not move the seven
 deletion candidates while doing that work. Do not infer that a route is
 obsolete merely because it is not called by React; CLI, MCP, smoke, and legacy
 meeting clients are real compatibility consumers. The canonical identity

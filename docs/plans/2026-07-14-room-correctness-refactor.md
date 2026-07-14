@@ -711,3 +711,16 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   reproject every loaded and later-loaded message by `participant_id`, so an
   agent name/avatar change updates all chat history rather than only future
   messages.
+- 2026-07-14: The next Phase 5.3 slice moves durable resident diagnostic
+  histories into `LegacyLiveAgentDiagnosticQueryService`. It now owns filtered
+  operation history, process lifecycle-event history, session-run listing,
+  process snapshot acquisition for readiness overlays, and the overlay policy
+  used by both session-run responses and health summaries. The read Router
+  calls this typed service directly instead of receiving three payload
+  callbacks and a separate session-run controller. Existing free-function
+  names remain re-exported through `agentsassemble.gui`. Focused process-smoke,
+  session-run, monitor, and route tests pass all 60 cases. Process list
+  connection evidence, health aggregation, and readiness error mapping remain
+  in `gui.py` and are the next slice; discovery/preflight/smoke remain separate
+  after that. The seven deletion candidates and canonical name/avatar history
+  reprojection are unchanged.
