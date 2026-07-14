@@ -17,6 +17,7 @@ from agentsassemble.room_realtime import (
     default_native_cli_provider_specs,
     validate_native_cli_provider_spec,
 )
+from agentsassemble.room_command_uow import RoomCommandUnitOfWork
 from agentsassemble.room_store import RoomStore
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.room_settings import update_room_settings
@@ -515,6 +516,40 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(len(messages), 1)
         self.assertEqual(messages[0]["actor"]["participant_id"], "operator-local")
         self.assertEqual(messages[0]["content"], "@codex hello")
+
+    def test_message_command_rolls_back_event_and_routing_when_ack_record_fails(self):
+        with patch.object(
+            RoomCommandUnitOfWork,
+            "record_ack",
+            side_effect=RuntimeError("command result unavailable"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "command result unavailable"):
+                self._command("req-message-rollback", "message.send", {"content": "must roll back"})
+
+        self.assertEqual(
+            [
+                event
+                for event in self.controller.store.read_events("general")
+                if event.get("type") == "message_final" and event.get("content") == "must roll back"
+            ],
+            [],
+        )
+        self.assertEqual(self.controller.store.session("general", "codex")["pending_event_ids"], [])
+        self.assertEqual(
+            self.controller.store.command_record("general", "operator-local", "req-message-rollback"),
+            {},
+        )
+
+        retry = self._command("req-message-rollback", "message.send", {"content": "must roll back"})
+
+        self.assertTrue(retry["accepted"])
+        messages = [
+            event
+            for event in self.controller.store.read_events("general")
+            if event.get("type") == "message_final" and event.get("content") == "must roll back"
+        ]
+        self.assertEqual(len(messages), 1)
+        self.assertIn(messages[0]["id"], self.controller.store.session("general", "codex")["pending_event_ids"])
 
     def test_shadow_attention_records_silence_without_changing_ordered_routing(self):
         self.controller.attention_shadow_mode = "full"

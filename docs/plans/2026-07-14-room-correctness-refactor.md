@@ -433,3 +433,8 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   payload hashing, ACK construction, result recording, and selected domain
   operations. A new command that exits without a durable ACK is rolled back;
   backend connections and SQL remain private to repository adapters.
+- 2026-07-14: canonical `message.send` moved into the command unit of work.
+  Participant state, visible event, ACK, and idempotency result now commit
+  together; listeners broadcast and route only after commit. Failure injection
+  at ACK recording proves rollback leaves no message, pending provider input,
+  command record, or duplicate on retry.

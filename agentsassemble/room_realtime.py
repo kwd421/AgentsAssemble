@@ -43,6 +43,11 @@ from agentsassemble.room_commands import (
     capabilities_for_identity,
     parse_room_command,
 )
+from agentsassemble.room_command_uow import (
+    RoomCommandIdempotencyConflict,
+    RoomCommandUnitOfWork,
+    command_payload_hash,
+)
 from agentsassemble.room_agent_lifecycle import (
     AgentBridgeManager,
     RecoveryScheduler,
@@ -710,11 +715,31 @@ class RoomRealtimeController:
                 "result": result,
                 "deduplicated": False,
             }
+        if action == "message.send":
+            self._require_capability(identity, "message.send")
+            with self._lock:
+                participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
+                compatibility_muted = is_room_member_muted(
+                    self.output_root,
+                    room_id,
+                    participant_id,
+                )
+                return self._execute_durable_command(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                    lambda unit: self._send_message(
+                        identity,
+                        payload,
+                        unit=unit,
+                        compatibility_muted=compatibility_muted,
+                    ),
+                )
         with self._lock:
             principal_id = _command_principal(identity)
-            payload_hash = hashlib.sha256(
-                json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-            ).hexdigest()
+            payload_hash = command_payload_hash(payload)
             prior = self.store.command_record(room_id, principal_id, request_id)
             if prior:
                 if prior.get("action") != action or prior.get("payload_hash") != payload_hash:
@@ -749,6 +774,33 @@ class RoomRealtimeController:
                 action=action,
                 payload_hash=payload_hash,
             )
+
+    def _execute_durable_command(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        request_id: str,
+        action: str,
+        payload: dict[str, object],
+        operation: Callable[[RoomCommandUnitOfWork], dict[str, object]],
+    ) -> dict[str, object]:
+        try:
+            with RoomCommandUnitOfWork(
+                self.store,
+                room_id=room_id,
+                principal_id=_command_principal(identity),
+                request_id=request_id,
+                action=action,
+                payload=payload,
+            ) as unit:
+                if unit.deduplicated:
+                    return unit.resolved_ack()
+                result = operation(unit)
+                unit.build_ack(result)
+                unit.record_ack()
+            return unit.resolved_ack()
+        except RoomCommandIdempotencyConflict as error:
+            raise RoomCommandRejected(str(error), code="idempotency_conflict") from error
 
     def close(self) -> CleanupReport:
         with self._lock:
@@ -824,9 +876,6 @@ class RoomRealtimeController:
         server_url: str,
         ticket_issuer: Callable[[dict[str, object]], str] | None,
     ) -> dict[str, object]:
-        if action == "message.send":
-            self._require_capability(identity, "message.send")
-            return self._send_message(identity, room_id, payload)
         if action == "participant.leave":
             self._require_capability(identity, "participant.leave")
             return self._leave_participant(identity, room_id)
@@ -891,19 +940,25 @@ class RoomRealtimeController:
             return self._turn_coordinator.turn_failed(identity, room_id, payload)
         raise RoomCommandRejected(f"Unsupported room command: {action}", code="unknown_action")
 
-    def _send_message(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
+    def _send_message(
+        self,
+        identity: dict[str, object],
+        payload: dict[str, object],
+        *,
+        unit: RoomCommandUnitOfWork,
+        compatibility_muted: bool,
+    ) -> dict[str, object]:
         content = _room_message_text(payload.get("content") or payload.get("message"), limit=12000)
         kind = clean_lobby_text(payload.get("kind"), limit=64) or "message"
         if kind not in {"vote", "vote_cast"} and not content:
             raise RoomCommandRejected("Message content is required.", code="empty")
         participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
-        participant = self.store.participant(room_id, participant_id)
+        participant = unit.participant(participant_id)
         if participant.get("status") in {"kicked", "left"}:
             raise RoomCommandRejected("This participant is no longer in the room.", code="session_revoked")
-        if participant.get("muted") or is_room_member_muted(self.output_root, room_id, participant_id):
+        if participant.get("muted") or compatibility_muted:
             raise RoomCommandRejected("You are muted by the room host.", code="muted")
-        event = self.store.append_event(
-            room_id,
+        event = unit.append_event(
             "message_final",
             participant_id=participant_id,
             participant_type="human",

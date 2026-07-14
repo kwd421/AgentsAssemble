@@ -74,6 +74,11 @@ static provider manifest produces a revision. Discovery completion is pushed on
 the canonical room WebSocket; `agent.create` must present that revision and the
 server validates every selected control against it.
 
+Canonical `message.send` uses one room transaction for participant validation,
+the visible `message_final`, its ACK, and the idempotency record. Repository
+listeners publish and route that event only after commit, so a failed command
+result write cannot leave a visible message or provider turn behind.
+
 An event-driven deterministic attention gate can record durable `selected`,
 `eligible`, or `silent` decisions. Shadow recording for existing `ordered` and
 `continuous` rooms is server-configured as `off | sample | full` and defaults to
