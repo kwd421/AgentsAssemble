@@ -255,6 +255,30 @@ class RoomStore:
                 "SELECT 1 FROM deleted_rooms WHERE room_id = ?", (clean_room_id,)
             ).fetchone() is not None
 
+    def deleted_room_record(self, room_id: str) -> dict[str, object]:
+        clean_room_id = _clean_room_id(room_id)
+        with self._connection() as connection:
+            row = connection.execute(
+                """SELECT room_id, deleted_at, reason, principal_id, request_id,
+                          action, payload_hash, cleanup_status, room_name, result_json
+                   FROM deleted_rooms WHERE room_id = ?""",
+                (clean_room_id,),
+            ).fetchone()
+        if row is None:
+            return {}
+        return {
+            "room_id": str(row["room_id"] or ""),
+            "deleted_at": str(row["deleted_at"] or ""),
+            "reason": str(row["reason"] or ""),
+            "principal_id": str(row["principal_id"] or ""),
+            "request_id": str(row["request_id"] or ""),
+            "action": str(row["action"] or ""),
+            "payload_hash": str(row["payload_hash"] or ""),
+            "cleanup_status": str(row["cleanup_status"] or ""),
+            "room_name": str(row["room_name"] or ""),
+            "result": _row_payload(row, column="result_json"),
+        }
+
     def attention_state(self, room_id: str, participant_id: str) -> AgentAttentionState:
         clean_room_id = _clean_room_id(room_id)
         clean_participant_id = _clean_participant_id(participant_id)
@@ -287,25 +311,83 @@ class RoomStore:
         with self._connection() as connection:
             return read_attention_lease(connection, clean_room_id, clean_lease_id)
 
-    def delete_room(self, room_id: str, *, reason: str = "") -> bool:
+    def delete_room(
+        self,
+        room_id: str,
+        *,
+        reason: str = "",
+        tombstone: dict[str, object] | None = None,
+        cleanup_status: str = "complete",
+        room_name: str = "",
+    ) -> bool:
         """Delete canonical room state and retain a tombstone against stale clients."""
 
         clean_room_id = _clean_room_id(room_id)
         now = _now()
+        command = dict(tombstone or {})
         with self._lock, self._write_transaction() as connection:
             existed = connection.execute(
                 "SELECT 1 FROM rooms WHERE room_id = ?", (clean_room_id,)
             ).fetchone() is not None
+            if not existed and connection.execute(
+                "SELECT 1 FROM deleted_rooms WHERE room_id = ?",
+                (clean_room_id,),
+            ).fetchone() is not None:
+                return False
             for table in ("command_results", "room_events", "agent_sessions", "participants", "rooms"):
                 connection.execute(f"DELETE FROM {table} WHERE room_id = ?", (clean_room_id,))
             connection.execute(
-                """INSERT INTO deleted_rooms(room_id, deleted_at, reason) VALUES(?, ?, ?)
+                """INSERT INTO deleted_rooms(
+                       room_id, deleted_at, reason, principal_id, request_id, action,
+                       payload_hash, cleanup_status, room_name, result_json
+                   ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(room_id) DO UPDATE SET
                        deleted_at = excluded.deleted_at,
-                       reason = excluded.reason""",
-                (clean_room_id, now, clean_lobby_text(reason, limit=500)),
+                       reason = excluded.reason,
+                       principal_id = excluded.principal_id,
+                       request_id = excluded.request_id,
+                       action = excluded.action,
+                       payload_hash = excluded.payload_hash,
+                       cleanup_status = excluded.cleanup_status,
+                       room_name = excluded.room_name,
+                       result_json = excluded.result_json""",
+                (
+                    clean_room_id,
+                    now,
+                    clean_lobby_text(reason, limit=500),
+                    clean_lobby_text(command.get("principal_id"), limit=256),
+                    clean_lobby_text(command.get("request_id"), limit=128),
+                    clean_lobby_text(command.get("action"), limit=64),
+                    clean_lobby_text(command.get("payload_hash"), limit=128),
+                    clean_lobby_text(cleanup_status, limit=32) or "complete",
+                    clean_lobby_text(room_name, limit=128),
+                    _json_dumps(command.get("result") if isinstance(command.get("result"), dict) else {}),
+                ),
             )
         return existed
+
+    def update_deleted_room_record(
+        self,
+        room_id: str,
+        *,
+        result: dict[str, object],
+        cleanup_status: str,
+    ) -> dict[str, object]:
+        clean_room_id = _clean_room_id(room_id)
+        with self._lock, self._write_transaction() as connection:
+            updated = connection.execute(
+                """UPDATE deleted_rooms
+                   SET result_json = ?, cleanup_status = ?
+                   WHERE room_id = ?""",
+                (
+                    _json_dumps(result),
+                    clean_lobby_text(cleanup_status, limit=32) or "complete",
+                    clean_room_id,
+                ),
+            ).rowcount
+            if not updated:
+                raise ValueError(f"Deleted room tombstone {clean_room_id} was not found.")
+        return self.deleted_room_record(clean_room_id)
 
     def room(self, room_id: str) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)

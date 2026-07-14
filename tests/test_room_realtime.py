@@ -1735,6 +1735,69 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         revoke_sessions.assert_called_once_with("general", "external-disconnected")
         self.assertTrue(RoomStore(self.root).room_is_deleted("general"))
 
+    def test_room_delete_retry_resumes_tombstone_cleanup_without_stopping_twice(self):
+        identity_store = identity_store_for_output_root(self.root)
+        identity_store.upsert_room(room_id="general", owner_id="owner-user", label="Council")
+        identity_store.resolve_credential_user(
+            "owner-device-delete-retry",
+            user_id="owner-user",
+            participant_id="owner",
+            display_name="Owner",
+        )
+        owner = {**HOST, "agent_id": "owner"}
+        self.controller.connect(owner)
+        self._command("delete-retry-start", "agent.start", {"agent_id": "codex"})
+
+        with patch.object(
+            self.controller.store,
+            "update_deleted_room_record",
+            side_effect=RuntimeError("injected tombstone cleanup failure"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "injected tombstone cleanup failure"):
+                self._command(
+                    "delete-retry-request",
+                    "room.delete",
+                    {"confirmation_name": "Council"},
+                    owner,
+                )
+
+        pending = self.controller.store.deleted_room_record("general")
+        self.assertEqual(pending["cleanup_status"], "pending")
+        self.assertEqual(pending["request_id"], "delete-retry-request")
+        self.assertEqual(self.manager.stops, [("general", "codex")])
+        self.assertIsNone(identity_store.get_room("general"))
+
+        recovered = self._command(
+            "delete-retry-request",
+            "room.delete",
+            {"confirmation_name": "Council"},
+            owner,
+        )
+
+        self.assertTrue(recovered["deduplicated"])
+        self.assertTrue(recovered["result"]["deleted"])
+        self.assertEqual(self.manager.stops, [("general", "codex")])
+        self.assertEqual(
+            self.controller.store.deleted_room_record("general")["cleanup_status"],
+            "complete",
+        )
+        with self.assertRaises(RoomCommandRejected) as conflict:
+            self._command(
+                "delete-retry-request",
+                "room.delete",
+                {"confirmation_name": "Different"},
+                owner,
+            )
+        self.assertEqual(conflict.exception.code, "idempotency_conflict")
+        with self.assertRaises(RoomCommandRejected) as deleted:
+            self._command(
+                "different-delete-request",
+                "room.delete",
+                {"confirmation_name": "Council"},
+                owner,
+            )
+        self.assertEqual(deleted.exception.code, "room_deleted")
+
     def test_snapshot_capabilities_are_server_authoritative(self):
         operator_snapshot = self.controller.snapshot(HOST)
         operator = operator_snapshot["capabilities"]

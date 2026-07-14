@@ -87,8 +87,20 @@ _TABLES = (
     ),
     _TableSpec(
         "deleted_rooms",
-        ("room_id", "deleted_at", "reason"),
+        (
+            "room_id",
+            "deleted_at",
+            "reason",
+            "principal_id",
+            "request_id",
+            "action",
+            "payload_hash",
+            "cleanup_status",
+            "room_name",
+            "result_json",
+        ),
         ("room_id",),
+        json_columns=frozenset({"result_json"}),
         timestamp_columns=frozenset({"deleted_at"}),
     ),
     _TableSpec(

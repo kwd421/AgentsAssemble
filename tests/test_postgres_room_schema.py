@@ -14,7 +14,7 @@ from agentsassemble.postgres_room_schema import (
 
 class PostgresRoomSchemaTests(unittest.TestCase):
     def test_current_revision_requires_authority_activation(self) -> None:
-        self.assertEqual(POSTGRES_ROOM_SCHEMA_REVISION, "0002_room_repository_authority")
+        self.assertEqual(POSTGRES_ROOM_SCHEMA_REVISION, "0003_deleted_room_commands")
 
     def test_sqlalchemy_url_explicitly_selects_psycopg3(self) -> None:
         self.assertEqual(

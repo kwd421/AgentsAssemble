@@ -712,7 +712,45 @@ class RoomRealtimeController:
                 "result": result,
                 "deduplicated": False,
             }
+        if action == "room.delete":
+            self._require_capability(identity, "room.delete")
+            with self._lock:
+                deleted = self.store.deleted_room_record(room_id)
+                if deleted:
+                    return self._resume_deleted_room_command(
+                        identity,
+                        room_id,
+                        request_id=request_id,
+                        payload=payload,
+                        tombstone=deleted,
+                    )
         self.ensure_room(room_id)
+        if action == "room.delete":
+            with self._lock:
+                prior_ack = self._prior_command_ack(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                )
+                if prior_ack:
+                    return prior_ack
+                principal_id = _command_principal(identity)
+                return self._delete_room(
+                    identity,
+                    room_id,
+                    payload,
+                    request_id=request_id,
+                    principal_id=principal_id,
+                    payload_hash=command_payload_hash(payload),
+                    operation_id=_external_effect_operation_id(
+                        room_id,
+                        principal_id,
+                        request_id,
+                        action,
+                    ),
+                )
         if action == "room.history":
             if identity.get("client_type") == "agent_bridge":
                 raise RoomCommandRejected("Agent Bridges receive assigned context, not browser history pages.", code="permission_denied")
@@ -936,8 +974,6 @@ class RoomRealtimeController:
                 "result": result,
                 "deduplicated": False,
             }
-            if action == "room.delete":
-                return ack
             return self.store.record_command_result(
                 room_id,
                 request_id,
@@ -1074,9 +1110,6 @@ class RoomRealtimeController:
         server_url: str,
         ticket_issuer: Callable[[dict[str, object]], str] | None,
     ) -> dict[str, object]:
-        if action == "room.delete":
-            self._require_capability(identity, "room.delete")
-            return self._delete_room(identity, room_id, payload)
         if action == "agent.create":
             self._require_capability(identity, "agent.control")
             return self._create_agent(
@@ -1629,6 +1662,11 @@ class RoomRealtimeController:
         identity: dict[str, object],
         room_id: str,
         payload: dict[str, object],
+        *,
+        request_id: str,
+        principal_id: str,
+        payload_hash: str,
+        operation_id: str,
     ) -> dict[str, object]:
         if not self._is_room_owner(identity, room_id):
             raise RoomCommandRejected("Only the room owner can delete this server.", code="permission_denied")
@@ -1660,7 +1698,11 @@ class RoomRealtimeController:
                 )
                 continue
             try:
-                self._agent_lifecycle.stop(room_id, session_id)
+                self._agent_lifecycle.stop(
+                    room_id,
+                    session_id,
+                    operation_id=_nested_effect_operation_id(operation_id, session_id),
+                )
             except (RoomCommandRejected, ValueError) as error:
                 if ownership == "external":
                     cleanup_warnings.append(f"{session_id}: {error}")
@@ -1672,27 +1714,110 @@ class RoomRealtimeController:
                 + "; ".join(cleanup_failures),
                 code="room_cleanup_failed",
             )
+        result = {
+            "room_id": room_id,
+            "deleted": True,
+            "cleanup_warnings": cleanup_warnings,
+        }
+        ack = {
+            "op": "ack",
+            "request_id": request_id,
+            "accepted": True,
+            "action": "room.delete",
+            "result": result,
+            "deduplicated": False,
+        }
+        deleted = self.store.delete_room(
+            room_id,
+            reason="owner deleted server",
+            tombstone={
+                "principal_id": principal_id,
+                "request_id": request_id,
+                "action": "room.delete",
+                "payload_hash": payload_hash,
+                "result": ack,
+            },
+            cleanup_status="pending",
+            room_name=room_name,
+        )
+        if not deleted:
+            raise RoomCommandRejected("The room no longer exists.", code="room_deleted")
+        return self._complete_deleted_room_cleanup(
+            room_id,
+            room_name=room_name,
+            ack=ack,
+            deduplicated=False,
+        )
+
+    def _resume_deleted_room_command(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        *,
+        request_id: str,
+        payload: dict[str, object],
+        tombstone: dict[str, object],
+    ) -> dict[str, object]:
+        principal_id = _command_principal(identity)
+        if (
+            tombstone.get("principal_id") != principal_id
+            or tombstone.get("request_id") != request_id
+            or tombstone.get("action") != "room.delete"
+        ):
+            raise RoomCommandRejected("The room was deleted.", code="room_deleted")
+        if tombstone.get("payload_hash") != command_payload_hash(payload):
+            raise RoomCommandRejected(
+                "request_id was already used for a different command.",
+                code="idempotency_conflict",
+            )
+        ack = dict(tombstone.get("result") or {})
+        if not ack:
+            raise RoomCommandRejected("The room was deleted.", code="room_deleted")
+        if tombstone.get("cleanup_status") != "complete":
+            ack = self._complete_deleted_room_cleanup(
+                room_id,
+                room_name=clean_lobby_text(tombstone.get("room_name"), limit=128) or room_id,
+                ack=ack,
+                deduplicated=True,
+            )
+        return {**ack, "deduplicated": True}
+
+    def _complete_deleted_room_cleanup(
+        self,
+        room_id: str,
+        *,
+        room_name: str,
+        ack: dict[str, object],
+        deduplicated: bool,
+    ) -> dict[str, object]:
         self.broker.broadcast_control(
             room_id,
             {"op": "room_deleted", "room_id": room_id, "room_name": room_name},
         )
         revoked = revoke_room_access(room_id)
-        identity_store.delete_room(room_id)
+        identity_store_for_output_root(self.output_root).delete_room(room_id)
         remove_listener = self._event_listener_removers.pop(room_id, None)
         if remove_listener is not None:
             remove_listener()
-        self.store.delete_room(room_id, reason="owner deleted server")
         self._providers_by_room.pop(room_id, None)
         for path in (self.output_root / "rooms" / room_id, self.output_root / "meetings" / room_id):
             if path.exists() and path.is_dir():
                 shutil.rmtree(path)
-        threading.Timer(0.1, lambda: self.broker.disconnect_room(room_id)).start()
-        return {
-            "room_id": room_id,
-            "deleted": True,
-            "cleanup_warnings": cleanup_warnings,
-            **revoked,
+        disconnect = threading.Timer(0.1, lambda: self.broker.disconnect_room(room_id))
+        disconnect.daemon = True
+        disconnect.start()
+        result = dict(ack.get("result") or {})
+        completed_ack = {
+            **ack,
+            "result": {**result, **revoked},
+            "deduplicated": deduplicated,
         }
+        self.store.update_deleted_room_record(
+            room_id,
+            result={**completed_ack, "deduplicated": False},
+            cleanup_status="complete",
+        )
+        return completed_ack
 
     def _is_room_owner(self, identity: dict[str, object], room_id: str) -> bool:
         store = identity_store_for_output_root(self.output_root)
@@ -2266,6 +2391,11 @@ def _external_effect_operation_id(
     action: str,
 ) -> str:
     serialized = "\0".join((room_id, principal_id, request_id, action))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _nested_effect_operation_id(parent_operation_id: str, subject_id: str) -> str:
+    serialized = "\0".join((parent_operation_id, subject_id))
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 

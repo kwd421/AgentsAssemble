@@ -10,6 +10,7 @@ from uuid import uuid4
 import psycopg
 from psycopg import Connection
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.postgres_attention_repository import (
@@ -246,8 +247,45 @@ class PostgresRoomRepository:
         with self._connection() as connection:
             return query_room_is_deleted(connection, clean_id)
 
-    def delete_room(self, room_id: str, *, reason: str = "") -> bool:
+    def deleted_room_record(self, room_id: str) -> dict[str, object]:
         clean_id = clean_room_id(room_id)
+        with self._connection() as connection:
+            row = connection.execute(
+                """SELECT room_id, deleted_at, reason, principal_id, request_id,
+                          action, payload_hash, cleanup_status, room_name, result_json
+                   FROM deleted_rooms WHERE room_id = %s""",
+                (clean_id,),
+            ).fetchone()
+        if row is None:
+            return {}
+        return {
+            "room_id": str(row["room_id"] or ""),
+            "deleted_at": (
+                row["deleted_at"].isoformat()
+                if hasattr(row["deleted_at"], "isoformat")
+                else str(row["deleted_at"] or "")
+            ),
+            "reason": str(row["reason"] or ""),
+            "principal_id": str(row["principal_id"] or ""),
+            "request_id": str(row["request_id"] or ""),
+            "action": str(row["action"] or ""),
+            "payload_hash": str(row["payload_hash"] or ""),
+            "cleanup_status": str(row["cleanup_status"] or ""),
+            "room_name": str(row["room_name"] or ""),
+            "result": dict(row["result_json"]) if isinstance(row["result_json"], dict) else {},
+        }
+
+    def delete_room(
+        self,
+        room_id: str,
+        *,
+        reason: str = "",
+        tombstone: dict[str, object] | None = None,
+        cleanup_status: str = "complete",
+        room_name: str = "",
+    ) -> bool:
+        clean_id = clean_room_id(room_id)
+        command = dict(tombstone or {})
         with self._connection() as connection:
             with connection.transaction():
                 connection.execute(
@@ -258,16 +296,65 @@ class PostgresRoomRepository:
                     "SELECT 1 FROM rooms WHERE room_id = %s",
                     (clean_id,),
                 ).fetchone() is not None
+                if not existed and connection.execute(
+                    "SELECT 1 FROM deleted_rooms WHERE room_id = %s",
+                    (clean_id,),
+                ).fetchone() is not None:
+                    return False
                 connection.execute("DELETE FROM rooms WHERE room_id = %s", (clean_id,))
                 connection.execute(
-                    """INSERT INTO deleted_rooms(room_id, deleted_at, reason)
-                       VALUES(%s, %s, %s)
+                    """INSERT INTO deleted_rooms(
+                           room_id, deleted_at, reason, principal_id, request_id, action,
+                           payload_hash, cleanup_status, room_name, result_json
+                       ) VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT(room_id) DO UPDATE SET
                            deleted_at = excluded.deleted_at,
-                           reason = excluded.reason""",
-                    (clean_id, utc_now(), clean_lobby_text(reason, limit=500)),
+                           reason = excluded.reason,
+                           principal_id = excluded.principal_id,
+                           request_id = excluded.request_id,
+                           action = excluded.action,
+                           payload_hash = excluded.payload_hash,
+                           cleanup_status = excluded.cleanup_status,
+                           room_name = excluded.room_name,
+                           result_json = excluded.result_json""",
+                    (
+                        clean_id,
+                        utc_now(),
+                        clean_lobby_text(reason, limit=500),
+                        clean_lobby_text(command.get("principal_id"), limit=256),
+                        clean_lobby_text(command.get("request_id"), limit=128),
+                        clean_lobby_text(command.get("action"), limit=64),
+                        clean_lobby_text(command.get("payload_hash"), limit=128),
+                        clean_lobby_text(cleanup_status, limit=32) or "complete",
+                        clean_lobby_text(room_name, limit=128),
+                        Jsonb(command.get("result") if isinstance(command.get("result"), dict) else {}),
+                    ),
                 )
         return existed
+
+    def update_deleted_room_record(
+        self,
+        room_id: str,
+        *,
+        result: dict[str, object],
+        cleanup_status: str,
+    ) -> dict[str, object]:
+        clean_id = clean_room_id(room_id)
+        with self._connection() as connection:
+            with connection.transaction():
+                updated = connection.execute(
+                    """UPDATE deleted_rooms
+                       SET result_json = %s, cleanup_status = %s
+                       WHERE room_id = %s""",
+                    (
+                        Jsonb(result),
+                        clean_lobby_text(cleanup_status, limit=32) or "complete",
+                        clean_id,
+                    ),
+                ).rowcount
+                if not updated:
+                    raise ValueError(f"Deleted room tombstone {clean_id} was not found.")
+        return self.deleted_room_record(clean_id)
 
     def room(self, room_id: str) -> dict[str, object]:
         clean_id = clean_room_id(room_id)

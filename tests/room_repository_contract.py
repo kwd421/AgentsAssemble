@@ -412,6 +412,57 @@ class RoomRepositoryContractMixin:
         with case.assertRaisesRegex(ValueError, "cannot be recreated"):
             self.repository.create_room("general")
 
+    def test_deleted_room_tombstone_preserves_command_and_cleanup_state(self) -> None:
+        self.repository.create_room("general")
+        pending_ack = {
+            "op": "ack",
+            "request_id": "delete-request",
+            "accepted": True,
+            "action": "room.delete",
+            "result": {"room_id": "general", "deleted": True},
+            "deduplicated": False,
+        }
+
+        self.repository.delete_room(
+            "general",
+            reason="owner deleted server",
+            tombstone={
+                "principal_id": "browser:owner",
+                "request_id": "delete-request",
+                "action": "room.delete",
+                "payload_hash": "payload-hash",
+                "result": pending_ack,
+            },
+            cleanup_status="pending",
+            room_name="Council",
+        )
+        pending = self.repository.deleted_room_record("general")
+
+        self.repository.delete_room("general", reason="redundant delete")
+        preserved = self.repository.deleted_room_record("general")
+
+        case = self._test_case()
+        case.assertEqual(pending["principal_id"], "browser:owner")
+        case.assertEqual(pending["request_id"], "delete-request")
+        case.assertEqual(pending["payload_hash"], "payload-hash")
+        case.assertEqual(pending["cleanup_status"], "pending")
+        case.assertEqual(pending["room_name"], "Council")
+        case.assertEqual(pending["result"], pending_ack)
+        case.assertEqual(preserved, pending)
+
+        completed_ack = {
+            **pending_ack,
+            "result": {"room_id": "general", "deleted": True, "revoked_sessions": 2},
+        }
+        completed = self.repository.update_deleted_room_record(
+            "general",
+            result=completed_ack,
+            cleanup_status="complete",
+        )
+
+        case.assertEqual(completed["cleanup_status"], "complete")
+        case.assertEqual(completed["result"], completed_ack)
+
     def test_attention_state_and_shadow_job_are_durable_and_idempotent(self) -> None:
         self.repository.create_room("general")
         with self.repository.transaction("general") as transaction:

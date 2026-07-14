@@ -105,6 +105,60 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
         self.assertEqual(preserved[-1]["id"], original["id"])
         self.assertTrue(ATTENTION_SCHEMA_STATEMENTS)
 
+    def test_version_three_database_adds_delete_command_tombstone_fields(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = RoomStore(root)
+            store.create_room("deleted-room")
+            store.delete_room("deleted-room", reason="preserve tombstone")
+            with open_room_database(store.database_path) as connection:
+                connection.execute("ALTER TABLE deleted_rooms RENAME TO deleted_rooms_v4")
+                connection.execute(
+                    """CREATE TABLE deleted_rooms (
+                           room_id TEXT PRIMARY KEY,
+                           deleted_at TEXT NOT NULL,
+                           reason TEXT NOT NULL DEFAULT ''
+                       )"""
+                )
+                connection.execute(
+                    """INSERT INTO deleted_rooms(room_id, deleted_at, reason)
+                       SELECT room_id, deleted_at, reason FROM deleted_rooms_v4"""
+                )
+                connection.execute("DROP TABLE deleted_rooms_v4")
+                connection.execute(
+                    "UPDATE schema_meta SET value = '3' WHERE key = 'schema_version'"
+                )
+
+            initialize_room_database(store.rooms_root, store.database_path)
+
+            with open_room_database(store.database_path) as connection:
+                version = int(
+                    connection.execute(
+                        "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+                    ).fetchone()["value"]
+                )
+                columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(deleted_rooms)").fetchall()
+                }
+            tombstone = store.deleted_room_record("deleted-room")
+
+        self.assertEqual(version, ROOM_SCHEMA_VERSION)
+        self.assertTrue(
+            {
+                "principal_id",
+                "request_id",
+                "action",
+                "payload_hash",
+                "cleanup_status",
+                "room_name",
+                "result_json",
+            }.issubset(columns)
+        )
+        self.assertEqual(tombstone["reason"], "preserve tombstone")
+        self.assertEqual(tombstone["cleanup_status"], "complete")
+        self.assertEqual(tombstone["result"], {})
+
     def test_session_fields_can_be_explicitly_cleared_and_command_results_are_deduplicated(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

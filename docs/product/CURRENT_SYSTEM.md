@@ -110,6 +110,14 @@ one room transaction. If ACK persistence fails, retry observes the applied
 cleanup marker and does not stop the provider a second time. Moderation intent
 state is excluded from browser and Agent Bridge participant snapshots.
 
+`room.delete` stops owned provider sessions before deleting canonical room
+state. The deletion transaction retains a tombstone-scoped command identity,
+payload hash, ACK, room name, and cleanup status after ordinary room command
+records are removed. Invite, identity, listener, provider-registry, file, and
+socket cleanup is idempotent and resumable from a pending tombstone. Only the
+same principal/request/payload can resume or deduplicate that delete; a
+different request receives `room_deleted`.
+
 An event-driven deterministic attention gate can record durable `selected`,
 `eligible`, or `silent` decisions. Shadow recording for existing `ordered` and
 `continuous` rooms is server-configured as `off | sample | full` and defaults to

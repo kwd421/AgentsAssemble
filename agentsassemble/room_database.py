@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover - AgentsAssemble's supported hosts are U
 
 
 ROOM_DATABASE_FILENAME = "rooms.sqlite3"
-ROOM_SCHEMA_VERSION = 3
+ROOM_SCHEMA_VERSION = 4
 LEGACY_AUTHORITY_FILES = (
     "room.json",
     "participants.json",
@@ -358,7 +358,14 @@ def _create_schema(connection: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS deleted_rooms (
             room_id TEXT PRIMARY KEY,
             deleted_at TEXT NOT NULL,
-            reason TEXT NOT NULL DEFAULT ''
+            reason TEXT NOT NULL DEFAULT '',
+            principal_id TEXT NOT NULL DEFAULT '',
+            request_id TEXT NOT NULL DEFAULT '',
+            action TEXT NOT NULL DEFAULT '',
+            payload_hash TEXT NOT NULL DEFAULT '',
+            cleanup_status TEXT NOT NULL DEFAULT 'complete',
+            room_name TEXT NOT NULL DEFAULT '',
+            result_json TEXT NOT NULL DEFAULT '{}'
         );
         CREATE INDEX IF NOT EXISTS idx_rooms_updated ON rooms(updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_participants_status ON participants(room_id, status);
@@ -391,7 +398,7 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         raise RoomDatabaseMigrationError(
             f"Unsupported room database schema version {version}; expected {ROOM_SCHEMA_VERSION}."
         )
-    if version not in {1, 2}:
+    if version not in {1, 2, 3}:
         raise RoomDatabaseMigrationError(f"Unsupported room database schema version {version}.")
     connection.execute("BEGIN IMMEDIATE")
     try:
@@ -422,6 +429,25 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         if version == 2:
             _create_attention_schema(connection)
             version = 3
+        if version == 3:
+            existing_columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(deleted_rooms)").fetchall()
+            }
+            for column, declaration in (
+                ("principal_id", "TEXT NOT NULL DEFAULT ''"),
+                ("request_id", "TEXT NOT NULL DEFAULT ''"),
+                ("action", "TEXT NOT NULL DEFAULT ''"),
+                ("payload_hash", "TEXT NOT NULL DEFAULT ''"),
+                ("cleanup_status", "TEXT NOT NULL DEFAULT 'complete'"),
+                ("room_name", "TEXT NOT NULL DEFAULT ''"),
+                ("result_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ):
+                if column not in existing_columns:
+                    connection.execute(
+                        f"ALTER TABLE deleted_rooms ADD COLUMN {column} {declaration}"
+                    )
+            version = 4
         connection.execute(
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', ?)",
             (str(version),),

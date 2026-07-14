@@ -112,13 +112,31 @@ class RoomRepository(Protocol):
 
     def create_room(self, room_id: str, *, label: str = "", status: str = "active") -> RoomRecord: ...
 
-    def delete_room(self, room_id: str, *, reason: str = "") -> bool: ...
+    def delete_room(
+        self,
+        room_id: str,
+        *,
+        reason: str = "",
+        tombstone: CommandRecord | None = None,
+        cleanup_status: str = "complete",
+        room_name: str = "",
+    ) -> bool: ...
 
     def room(self, room_id: str) -> RoomRecord: ...
 
     def list_rooms(self, *, include_archived: bool = False) -> list[RoomRecord]: ...
 
     def room_is_deleted(self, room_id: str) -> bool: ...
+
+    def deleted_room_record(self, room_id: str) -> CommandRecord: ...
+
+    def update_deleted_room_record(
+        self,
+        room_id: str,
+        *,
+        result: CommandRecord,
+        cleanup_status: str,
+    ) -> CommandRecord: ...
 
     def participants(self, room_id: str) -> list[ParticipantRecord]: ...
 

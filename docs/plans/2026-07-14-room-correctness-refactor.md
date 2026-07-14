@@ -476,3 +476,15 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   in-memory provider registry on controller startup, and moderation intent
   fields are removed from browser and bridge participant snapshots. The next
   slice is tombstone-scoped `room.delete` idempotency.
+- 2026-07-14: `room.delete` now stops owned provider sessions with stable nested
+  lifecycle operation IDs, then atomically deletes canonical room state while
+  retaining the command principal, request ID, payload hash, room name, pending
+  ACK, and cleanup status in `deleted_rooms`. Post-delete invite, identity,
+  listener, provider registry, file, and socket cleanup is idempotent. If its
+  final tombstone update fails, only the same command can resume cleanup; it
+  does not revisit provider stop. Different payload reuse is an
+  `idempotency_conflict`, while another request receives `room_deleted`.
+  SQLite schema v4 and PostgreSQL revision `0003_deleted_room_commands` share
+  this contract, with repository parity and v3 migration coverage. Commit 1.6
+  is complete; the next slice is Phase 2.1, binding attention selection and
+  pending session input in one transaction.
