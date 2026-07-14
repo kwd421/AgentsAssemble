@@ -76,6 +76,20 @@ class _SQLiteRoomTransaction:
     def room_id(self) -> str:
         return self._room_id
 
+    def participant(self, participant_id: str) -> dict[str, object]:
+        return self._store._participant(self._connection, self._room_id, participant_id)
+
+    def session(self, session_id: str) -> dict[str, object]:
+        return self._store._session(self._connection, self._room_id, session_id)
+
+    def command_record(self, principal_id: str, request_id: str) -> dict[str, object]:
+        return self._store._command_record(
+            self._connection,
+            self._room_id,
+            principal_id,
+            request_id,
+        )
+
     def create_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
         return self._store._create_room(self._connection, self._room_id, label=label, status=status)
 
@@ -320,13 +334,8 @@ class RoomStore:
 
     def participant(self, room_id: str, participant_id: str) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
-        clean_participant_id = _clean_participant_id(participant_id)
         with self._connection() as connection:
-            row = connection.execute(
-                "SELECT data_json FROM participants WHERE room_id = ? AND participant_id = ?",
-                (clean_room_id, clean_participant_id),
-            ).fetchone()
-        return _row_payload(row)
+            return self._participant(connection, clean_room_id, participant_id)
 
     def active_participants(self, room_id: str) -> list[dict[str, object]]:
         clean_room_id = _clean_room_id(room_id)
@@ -385,13 +394,8 @@ class RoomStore:
 
     def session(self, room_id: str, session_id: str) -> dict[str, object]:
         clean_room_id = _clean_room_id(room_id)
-        clean_session_id = _clean_session_id(session_id)
         with self._connection() as connection:
-            row = connection.execute(
-                "SELECT data_json FROM agent_sessions WHERE room_id = ? AND session_id = ?",
-                (clean_room_id, clean_session_id),
-            ).fetchone()
-        return _row_payload(row)
+            return self._session(connection, clean_room_id, session_id)
 
     def upsert_session(self, room_id: str, session: dict[str, object]) -> tuple[dict[str, object], bool]:
         clean_room_id = _clean_room_id(room_id)
@@ -415,18 +419,12 @@ class RoomStore:
         if not clean_request_id:
             return {}
         with self._connection() as connection:
-            row = connection.execute(
-                """SELECT action, payload_hash, result_json FROM command_results
-                   WHERE room_id = ? AND principal_id = ? AND request_id = ?""",
-                (clean_room_id, clean_principal_id, clean_request_id),
-            ).fetchone()
-        if row is None:
-            return {}
-        return {
-            "action": str(row["action"] or ""),
-            "payload_hash": str(row["payload_hash"] or ""),
-            "result": _row_payload(row, column="result_json"),
-        }
+            return self._command_record(
+                connection,
+                clean_room_id,
+                clean_principal_id,
+                clean_request_id,
+            )
 
     def command_result(self, room_id: str, request_id: str, *, principal_id: str = "") -> dict[str, object]:
         return dict(self.command_record(room_id, principal_id, request_id).get("result") or {})
@@ -888,6 +886,56 @@ class RoomStore:
             (room_id, keep),
         )
         return dict(result)
+
+    def _command_record(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        principal_id: str,
+        request_id: str,
+    ) -> dict[str, object]:
+        clean_principal_id = clean_lobby_text(principal_id, limit=256)
+        clean_request_id = clean_lobby_text(request_id, limit=128)
+        if not clean_request_id:
+            return {}
+        row = connection.execute(
+            """SELECT action, payload_hash, result_json FROM command_results
+               WHERE room_id = ? AND principal_id = ? AND request_id = ?""",
+            (room_id, clean_principal_id, clean_request_id),
+        ).fetchone()
+        if row is None:
+            return {}
+        return {
+            "action": str(row["action"] or ""),
+            "payload_hash": str(row["payload_hash"] or ""),
+            "result": _row_payload(row, column="result_json"),
+        }
+
+    def _participant(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        participant_id: str,
+    ) -> dict[str, object]:
+        clean_participant_id = _clean_participant_id(participant_id)
+        row = connection.execute(
+            "SELECT data_json FROM participants WHERE room_id = ? AND participant_id = ?",
+            (room_id, clean_participant_id),
+        ).fetchone()
+        return _row_payload(row)
+
+    def _session(
+        self,
+        connection: sqlite3.Connection,
+        room_id: str,
+        session_id: str,
+    ) -> dict[str, object]:
+        clean_session_id = _clean_session_id(session_id)
+        row = connection.execute(
+            "SELECT data_json FROM agent_sessions WHERE room_id = ? AND session_id = ?",
+            (room_id, clean_session_id),
+        ).fetchone()
+        return _row_payload(row)
 
     def _append_event(
         self,

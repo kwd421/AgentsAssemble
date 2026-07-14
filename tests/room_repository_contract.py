@@ -8,6 +8,11 @@ from agentsassemble.room_attention import (
     AttentionEvaluationConflict,
     AttentionLeaseConflict,
 )
+from agentsassemble.room_command_uow import (
+    RoomCommandIdempotencyConflict,
+    RoomCommandNotFinalized,
+    RoomCommandUnitOfWork,
+)
 from agentsassemble.room_repository import RoomRepository
 
 
@@ -180,6 +185,86 @@ class RoomRepositoryContractMixin:
                     self.repository.command_record(room_id, "host-a", request_id)["result"],
                     committed["ack"],
                 )
+
+    def test_command_unit_of_work_owns_dedupe_ack_and_rollback(self) -> None:
+        room_id = "command-uow"
+        payload = {"content": "hello"}
+        self.repository.create_room(room_id)
+        received: list[dict[str, object]] = []
+        remove_listener = self.repository.add_event_listener(room_id, received.append)
+        try:
+            with RoomCommandUnitOfWork(
+                self.repository,
+                room_id=room_id,
+                principal_id="host-a",
+                request_id="request-a",
+                action="message.send",
+                payload=payload,
+            ) as unit:
+                case = self._test_case()
+                case.assertFalse(unit.deduplicated)
+                participant, _created = unit.upsert_participant(
+                    {
+                        "participant_id": "agent-a",
+                        "display_name": "Agent A",
+                        "participant_type": "agent",
+                        "status": "joined",
+                    }
+                )
+                event = unit.append_event(
+                    "message_final",
+                    participant_id="agent-a",
+                    participant_type="agent",
+                    content="hello",
+                )
+                ack = unit.build_ack({"event": event, "participant": participant})
+                unit.record_ack()
+
+            with RoomCommandUnitOfWork(
+                self.repository,
+                room_id=room_id,
+                principal_id="host-a",
+                request_id="request-a",
+                action="message.send",
+                payload=payload,
+            ) as duplicate:
+                case.assertTrue(duplicate.deduplicated)
+                duplicate_ack = duplicate.resolved_ack()
+
+            with case.assertRaises(RoomCommandIdempotencyConflict):
+                with RoomCommandUnitOfWork(
+                    self.repository,
+                    room_id=room_id,
+                    principal_id="host-a",
+                    request_id="request-a",
+                    action="message.send",
+                    payload={"content": "different"},
+                ):
+                    pass
+
+            with case.assertRaises(RoomCommandNotFinalized):
+                with RoomCommandUnitOfWork(
+                    self.repository,
+                    room_id=room_id,
+                    principal_id="host-a",
+                    request_id="request-unfinalized",
+                    action="agent.configure",
+                    payload={"display_name": "Must Roll Back"},
+                ) as unfinished:
+                    case.assertEqual(unfinished.participant("agent-a")["display_name"], "Agent A")
+                    unfinished.update_participant_fields("agent-a", display_name="Must Roll Back")
+        finally:
+            remove_listener()
+
+        case.assertEqual(ack["deduplicated"], False)
+        case.assertEqual(duplicate_ack, {**ack, "deduplicated": True})
+        case.assertEqual(self.repository.event_count(room_id, event_types=("message_final",)), 1)
+        case.assertEqual([item["id"] for item in received], [event["id"]])
+        case.assertEqual(self.repository.participant(room_id, "agent-a")["display_name"], "Agent A")
+        case.assertEqual(
+            self.repository.command_record(room_id, "host-a", "request-unfinalized"),
+            {},
+        )
 
     def _run_command_transaction(
         self,

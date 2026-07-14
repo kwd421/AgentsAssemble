@@ -428,3 +428,8 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   write, and immediately before commit. Every backend must roll each window
   back without publishing an event or consuming a sequence, then accept one
   duplicate-free retry.
+- 2026-07-14: `RoomCommandUnitOfWork` added as a backend-neutral room command
+  transaction boundary. It owns in-transaction prior-command lookup, canonical
+  payload hashing, ACK construction, result recording, and selected domain
+  operations. A new command that exits without a durable ACK is rolled back;
+  backend connections and SQL remain private to repository adapters.

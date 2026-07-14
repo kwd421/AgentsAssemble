@@ -81,6 +81,20 @@ class _PostgresRoomTransaction:
     def room_id(self) -> str:
         return self._room_id
 
+    def participant(self, participant_id: str) -> dict[str, object]:
+        return read_participant(self._connection, self._room_id, clean_participant_id(participant_id))
+
+    def session(self, session_id: str) -> dict[str, object]:
+        return read_session(self._connection, self._room_id, clean_session_id(session_id))
+
+    def command_record(self, principal_id: str, request_id: str) -> dict[str, object]:
+        return read_command_record(
+            self._connection,
+            self._room_id,
+            clean_lobby_text(principal_id, limit=256),
+            clean_lobby_text(request_id, limit=128),
+        )
+
     def create_room(self, *, label: str = "", status: str = "active") -> tuple[dict[str, object], bool]:
         return create_room_record(self._connection, self._room_id, label=label, status=status)
 
