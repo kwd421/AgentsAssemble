@@ -36,8 +36,29 @@ def _unused_payload(*args: object, **kwargs: object) -> dict[str, object]:
     return {}
 
 
+class FakeLegacyLiveAgentQueries:
+    def __init__(self) -> None:
+        self.room_calls: list[str] = []
+        self.return_packet_calls: list[tuple[str, str, str]] = []
+
+    def room(self, agent_id: str) -> dict[str, object]:
+        self.room_calls.append(agent_id)
+        return {"agent": {"agent_id": agent_id}}
+
+    def return_packet(
+        self,
+        agent_id: str,
+        *,
+        meeting_id: str = "",
+        source_event_id: str = "",
+    ) -> dict[str, object]:
+        self.return_packet_calls.append((agent_id, meeting_id, source_event_id))
+        return {"agent_id": agent_id, "source_event_id": source_event_id}
+
+
 def _deps(**overrides: object) -> LegacyLiveAgentReadDeps:
     values = {
+        "queries": FakeLegacyLiveAgentQueries(),
         "processes": object(),
         "session_runs": object(),
         "session_run_monitor": None,
@@ -80,6 +101,44 @@ class LegacyLiveAgentReadRoutesTests(unittest.TestCase):
                 ("GET", "/api/live-agent-session-runs"),
             },
         )
+        self.assertEqual(
+            set(router.dynamic_routes()),
+            {
+                ("GET", "/api/live-agents/{agent_id}/return-packet"),
+                ("GET", "/api/live-agents/{agent_id}/room"),
+            },
+        )
+
+    def test_forwards_dynamic_room_and_return_packet_queries(self) -> None:
+        queries = FakeLegacyLiveAgentQueries()
+        router = Router()
+        register_legacy_live_agent_read_routes(router, deps=_deps(queries=queries))
+
+        room_handler = _dispatch(router, "/api/live-agents/agent-a/room")
+        packet_handler = _dispatch(
+            router,
+            "/api/live-agents/agent-a/return-packet?meeting_id=room-a&source_event_id=event-1",
+        )
+
+        self.assertEqual(room_handler.sent_json, {"agent": {"agent_id": "agent-a"}})
+        self.assertEqual(packet_handler.sent_json, {"agent_id": "agent-a", "source_event_id": "event-1"})
+        self.assertEqual(queries.room_calls, ["agent-a"])
+        self.assertEqual(queries.return_packet_calls, [("agent-a", "room-a", "event-1")])
+
+    def test_return_packet_errors_do_not_expose_private_details(self) -> None:
+        class FailingQueries(FakeLegacyLiveAgentQueries):
+            def return_packet(self, *args: object, **kwargs: object) -> dict[str, object]:
+                raise ValueError("private packet path")
+
+        router = Router()
+        register_legacy_live_agent_read_routes(router, deps=_deps(queries=FailingQueries()))
+
+        handler = _dispatch(
+            router,
+            "/api/live-agents/agent-a/return-packet?meeting_id=room-a&source_event_id=missing",
+        )
+
+        self.assertEqual(handler.sent_error, (404, "Return packet not found", "", None))
 
     def test_forwards_query_filters_to_the_read_service(self) -> None:
         calls: list[tuple[tuple[object, ...], dict[str, object]]] = []

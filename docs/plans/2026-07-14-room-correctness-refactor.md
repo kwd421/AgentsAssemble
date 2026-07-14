@@ -696,3 +696,18 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   `participant_id`. The next slice is Phase 5.3 step 2, classifying and moving
   only the retained resident-agent read/diagnostic routes while leaving all
   seven deletion candidates in the legacy handler chain.
+- 2026-07-14: Phase 5.3 step 2 begins by moving the two retained dynamic
+  resident reads, `GET /api/live-agents/{agent_id}/room` and
+  `GET /api/live-agents/{agent_id}/return-packet`, to Router ownership.
+  `LegacyLiveAgentQueryService` now owns agent lookup, per-agent live-event
+  visibility, projected return-packet discovery, targeted artifact reads,
+  shared-memory/DM/lobby/side-chat aggregation, and meeting-list projection.
+  `lobby_queries.py` owns the shared backward-scanning history reads instead
+  of making the service import `gui.py`. Historical function names remain
+  re-exported from `agentsassemble.gui`. The next slice is the retained
+  health/readiness/process diagnostic family; discovery, preflight, and smoke
+  remain later, separately verified slices. The seven deletion candidates
+  remain untouched. Canonical Agent Session profile updates must still
+  reproject every loaded and later-loaded message by `participant_id`, so an
+  agent name/avatar change updates all chat history rather than only future
+  messages.

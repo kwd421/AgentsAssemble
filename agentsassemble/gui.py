@@ -14,7 +14,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import uuid4
 
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.attachments import (
@@ -214,7 +214,7 @@ from agentsassemble.live_agent_processes import (
     clean_live_agent_group_id,
     read_live_agent_process_event_history,
 )
-from agentsassemble.live_agent_probe import PROBE_REPLY_EVENT_TAIL_LIMIT, run_live_agent_probe, safe_probe_timeout
+from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_play_presets import build_play_preset_turns
 from agentsassemble.live_agent_review_checkpoints import write_review_checkpoint_artifacts
 from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
@@ -256,8 +256,15 @@ from agentsassemble.lobby_queries import (
 )
 from agentsassemble.live_meeting_memory import (
     build_live_meeting_memory,
-    load_live_meeting_memory_context,
     write_live_meeting_memory_artifacts,
+)
+from agentsassemble.legacy_live_agent_queries import (
+    LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT,
+    LegacyLiveAgentQueryService,
+    live_agent_return_packet_payload,
+    live_agent_room_payload,
+    live_events_visible_to_agent as _live_events_visible_to_agent,
+    require_live_agent as _live_agent_for_id,
 )
 from agentsassemble.legacy_meeting_queries import (
     LegacyMeetingQueryService,
@@ -285,7 +292,6 @@ from agentsassemble.frontend_runtime import (
 from agentsassemble.room_friend_dms import (
     append_live_agent_dm_reply,
     enqueue_room_friend_direct_dm,
-    read_live_agent_dm_events,
 )
 from agentsassemble.identity_store import default_identity_db_path, identity_store_for_output_root
 from agentsassemble.room_members import is_room_member_muted, mark_thinking, room_members_payload
@@ -343,12 +349,10 @@ from agentsassemble.meeting_events import (
 )
 from agentsassemble.side_chat import (
     _filter_side_chat_events_for_meeting,
-    read_side_chat,
 )
 from agentsassemble.models import ProviderConfig, Role
 from agentsassemble.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS, SSE_KEEPALIVE_INTERVAL_SECONDS
 
-LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT = PROBE_REPLY_EVENT_TAIL_LIMIT
 SSE_ERROR_MESSAGE_LIMIT = 500
 REMOTE_LOBBY_REQUESTER = None
 MAX_READINESS_PROBE_AGENTS = 10
@@ -2721,42 +2725,6 @@ def update_live_agent_engagement_payload(output_root: Path, agent_id: str, paylo
     return {"agent": agent, "agents": read_live_agents(output_root)}
 
 
-def live_agent_room_payload(output_root: Path, agent_id: str) -> dict[str, object]:
-    agent = _live_agent_for_id(output_root, agent_id)
-    meeting_id = str(agent.get("meeting_id") or "").strip()
-    live_events = []
-    shared_memory: dict[str, object] = {}
-    if meeting_id:
-        meeting_dir = _safe_meeting_dir(output_root, meeting_id)
-        if meeting_dir.exists():
-            try:
-                meeting = _read_meeting_record(meeting_dir)
-            except (ValueError, OSError, json.JSONDecodeError):
-                meeting = {}
-            live_events = _live_events_with_projected_return_packets(
-                read_live_events(meeting_dir),
-                meeting_dir=meeting_dir,
-                meeting=meeting,
-                agent=agent,
-            )
-            shared_memory = load_live_meeting_memory_context(meeting_dir, meeting=meeting)
-    return {
-        "agent": agent,
-        "agents": read_live_agents(output_root),
-        "meetings": list_meetings(output_root),
-        "meeting_id": meeting_id,
-        "shared_memory": shared_memory,
-        "live_events": live_events,
-        "dm_events": read_live_agent_dm_events(
-            output_root,
-            str(agent.get("agent_id") or agent_id),
-            after_event_id=clean_lobby_text(agent.get("last_observed_dm_event_id"), limit=128),
-        ),
-        "lobby_events": read_lobby(output_root, limit=LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT, meeting_id=meeting_id),
-        "side_chat_events": read_side_chat(output_root),
-    }
-
-
 def room_friend_direct_dm_payload(
     output_root: Path,
     process_supervisor: LiveAgentProcessSupervisor,
@@ -2787,56 +2755,6 @@ def room_friend_direct_dm_payload(
         process_groups=snapshot_groups,
         resume_callback=resume_existing_group,
     )
-
-
-def live_agent_return_packet_payload(
-    output_root: Path,
-    agent_id: str,
-    *,
-    meeting_id: str = "",
-    source_event_id: str = "",
-) -> dict[str, object]:
-    agent = _live_agent_for_id(output_root, agent_id)
-    clean_source_event_id = clean_lobby_text(source_event_id, limit=128)
-    requested_meeting_id = clean_lobby_text(meeting_id, limit=128)
-    agent_meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
-    if not clean_source_event_id or not agent_meeting_id:
-        raise ValueError("Return packet not found.")
-    if requested_meeting_id and requested_meeting_id != agent_meeting_id:
-        raise ValueError("Return packet not found.")
-    clean_meeting_id = agent_meeting_id
-    try:
-        meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
-        meeting = _read_meeting_record(meeting_dir)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
-        raise ValueError("Return packet not found.") from error
-    candidate = _return_packet_read_candidate(
-        meeting_dir,
-        meeting=meeting,
-        agent_id=clean_lobby_text(agent.get("agent_id"), limit=64),
-        source_event_id=clean_source_event_id,
-    )
-    if candidate is None:
-        raise ValueError("Return packet not found.")
-    packet_path = candidate["packet_path"]
-    packet_json_path = candidate["packet_json_path"]
-    try:
-        packet_markdown = packet_path.read_text(encoding="utf-8")
-        packet_json = json.loads(packet_json_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise ValueError("Return packet not found.") from error
-    return {
-        "status": "ok",
-        "agent_id": clean_lobby_text(agent.get("agent_id"), limit=64),
-        "meeting_id": clean_meeting_id,
-        "source_event_id": clean_source_event_id,
-        "role_id": candidate["role_id"],
-        "artifact_path": candidate["artifact_path"],
-        "artifact_json_path": candidate["artifact_json_path"],
-        "markdown": packet_markdown,
-        "json": packet_json,
-        "event": candidate["event"],
-    }
 
 
 def live_agent_heartbeat_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
@@ -5130,322 +5048,6 @@ def _live_agent_roster_admission_details(output_root: Path, agent: dict[str, obj
     return _live_agent_admission_details_from_meeting(meeting, agent, agent_id=agent_id)
 
 
-def _live_agent_for_id(output_root: Path, agent_id: str) -> dict[str, object]:
-    for agent in read_live_agents(output_root):
-        if agent.get("agent_id") == agent_id:
-            return agent
-    raise ValueError(f"Live agent {agent_id} was not found.")
-
-
-def _live_events_visible_to_agent(events: list[dict[str, object]], agent_id: str) -> list[dict[str, object]]:
-    return [event for event in events if _live_event_visible_to_agent(event, agent_id)]
-
-
-def _live_events_with_projected_return_packets(
-    events: list[dict[str, object]],
-    *,
-    meeting_dir: Path,
-    meeting: dict[str, object],
-    agent: dict[str, object],
-) -> list[dict[str, object]]:
-    agent_id = clean_lobby_text(agent.get("agent_id"), limit=64)
-    if not agent_id:
-        return []
-    cursor = clean_lobby_text(agent.get("last_observed_live_event_id"), limit=128)
-    visible_events = _visible_live_events_pending_for_agent(_live_events_visible_to_agent(events, agent_id), agent_id, cursor)
-    projected_events = _projected_return_packet_events(
-        meeting_dir,
-        meeting=meeting,
-        agent_id=agent_id,
-        cursor=cursor,
-        visible_events=visible_events,
-    )
-    existing_artifacts = {
-        (
-            str(event.get("artifact_path") or ""),
-            str(event.get("artifact_json_path") or ""),
-        )
-        for event in visible_events
-        if event.get("kind") == "artifact" and event.get("artifact_kind") == "return_packet"
-    }
-    for event in projected_events:
-        artifact_key = (str(event.get("artifact_path") or ""), str(event.get("artifact_json_path") or ""))
-        if artifact_key in existing_artifacts:
-            continue
-        visible_events.append(event)
-    return visible_events
-
-
-def _projected_return_packet_events(
-    meeting_dir: Path,
-    *,
-    meeting: dict[str, object],
-    agent_id: str,
-    cursor: str,
-    visible_events: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    role_names = {
-        role_id: str(role.get("display_name") or role_id)
-        for role in _as_dict_list(meeting.get("roles"))
-        if (role_id := clean_lobby_text(role.get("id"), limit=128))
-    }
-    events: list[dict[str, object]] = []
-    full_events: list[dict[str, object]] | None = None
-    visible_artifacts = {
-        (
-            str(event.get("artifact_path") or ""),
-            str(event.get("artifact_json_path") or ""),
-        )
-        for event in visible_events
-        if event.get("kind") == "artifact" and event.get("artifact_kind") == "return_packet"
-    }
-    for binding in _as_dict_list(meeting.get("agent_bindings")):
-        if clean_lobby_text(binding.get("agent_id"), limit=64) != agent_id:
-            continue
-        role_id = clean_lobby_text(binding.get("role_id"), limit=128)
-        if not role_id:
-            continue
-        packet_path = meeting_dir / "return_packets" / f"{role_id}.md"
-        packet_json_path = meeting_dir / "return_packets" / f"{role_id}.json"
-        if not packet_path.exists() or not packet_json_path.exists():
-            continue
-        artifact_path = f"return_packets/{role_id}.md"
-        artifact_json_path = f"return_packets/{role_id}.json"
-        fallback_event_id = _projected_return_packet_event_id(
-            meeting_id=clean_lobby_text(meeting.get("meeting_id"), limit=128) or meeting_dir.name,
-            agent_id=agent_id,
-            role_id=role_id,
-            artifact_path=artifact_path,
-        )
-        if cursor == fallback_event_id:
-            continue
-        artifact_key = (artifact_path, artifact_json_path)
-        if artifact_key in visible_artifacts:
-            continue
-        if full_events is None:
-            full_events = read_live_events(meeting_dir, limit=None)
-        original_event = _return_packet_artifact_event(
-            full_events,
-            agent_id=agent_id,
-            artifact_path=artifact_path,
-            artifact_json_path=artifact_json_path,
-        )
-        meeting_id = clean_lobby_text(meeting.get("meeting_id"), limit=128) or meeting_dir.name
-        event_id = clean_lobby_text(original_event.get("id") if original_event else "", limit=128)
-        if not event_id:
-            event_id = fallback_event_id
-        if _return_packet_event_observed(
-            cursor,
-            event_id=event_id,
-            fallback_event_id=fallback_event_id,
-            original_event=original_event,
-            full_events=full_events,
-        ):
-            continue
-        created_at = (
-            clean_lobby_text(original_event.get("created_at"), limit=128)
-            if original_event
-            else _return_packet_projection_created_at(packet_path, packet_json_path)
-        )
-        events.append(
-            {
-                "id": event_id,
-                "created_at": created_at,
-                "kind": "artifact",
-                "meeting_id": meeting_id,
-                "channel": "system",
-                "audience": f"agent:{agent_id}",
-                "official_record": False,
-                "actor_id": "",
-                "target_agent_id": agent_id,
-                "source_event_id": "",
-                "role_id": role_id,
-                "display_name": role_names.get(role_id, role_id),
-                "artifact_kind": "return_packet",
-                "artifact_path": artifact_path,
-                "artifact_json_path": artifact_json_path,
-                "content": f"Return packet ready: {artifact_path}",
-                "projected": True,
-            }
-        )
-    return events
-
-
-def _return_packet_read_candidate(
-    meeting_dir: Path,
-    *,
-    meeting: dict[str, object],
-    agent_id: str,
-    source_event_id: str,
-) -> dict[str, object] | None:
-    if not agent_id or not source_event_id:
-        return None
-    meeting_id = clean_lobby_text(meeting.get("meeting_id"), limit=128) or meeting_dir.name
-    full_events = read_live_events(meeting_dir, limit=None)
-    for binding in _as_dict_list(meeting.get("agent_bindings")):
-        if clean_lobby_text(binding.get("agent_id"), limit=64) != agent_id:
-            continue
-        role_id = clean_lobby_text(binding.get("role_id"), limit=128)
-        paths = _return_packet_role_paths(meeting_dir, role_id)
-        if paths is None:
-            continue
-        packet_path, packet_json_path, artifact_path, artifact_json_path = paths
-        if not packet_path.exists() or not packet_json_path.exists():
-            continue
-        fallback_event_id = _projected_return_packet_event_id(
-            meeting_id=meeting_id,
-            agent_id=agent_id,
-            role_id=role_id,
-            artifact_path=artifact_path,
-        )
-        original_event = _return_packet_artifact_event(
-            full_events,
-            agent_id=agent_id,
-            artifact_path=artifact_path,
-            artifact_json_path=artifact_json_path,
-        )
-        original_event_id = clean_lobby_text(original_event.get("id") if original_event else "", limit=128)
-        if source_event_id not in {original_event_id, fallback_event_id}:
-            continue
-        event = original_event or {
-            "id": fallback_event_id,
-            "kind": "artifact",
-            "meeting_id": meeting_id,
-            "channel": "system",
-            "audience": f"agent:{agent_id}",
-            "official_record": False,
-            "target_agent_id": agent_id,
-            "role_id": role_id,
-            "artifact_kind": "return_packet",
-            "artifact_path": artifact_path,
-            "artifact_json_path": artifact_json_path,
-            "projected": True,
-        }
-        return {
-            "role_id": role_id,
-            "artifact_path": artifact_path,
-            "artifact_json_path": artifact_json_path,
-            "packet_path": packet_path,
-            "packet_json_path": packet_json_path,
-            "event": event,
-        }
-    return None
-
-
-def _return_packet_role_paths(meeting_dir: Path, role_id: str) -> tuple[Path, Path, str, str] | None:
-    if not role_id:
-        return None
-    markdown_name = f"{role_id}.md"
-    json_name = f"{role_id}.json"
-    if Path(markdown_name).name != markdown_name or Path(json_name).name != json_name:
-        return None
-    packet_dir = (meeting_dir / "return_packets").resolve()
-    packet_path = (packet_dir / markdown_name).resolve()
-    packet_json_path = (packet_dir / json_name).resolve()
-    if packet_path.parent != packet_dir or packet_json_path.parent != packet_dir:
-        return None
-    return packet_path, packet_json_path, f"return_packets/{markdown_name}", f"return_packets/{json_name}"
-
-
-def _visible_live_events_pending_for_agent(
-    events: list[dict[str, object]],
-    agent_id: str,
-    cursor: str,
-) -> list[dict[str, object]]:
-    if not cursor:
-        return events
-    pending_events: list[dict[str, object]] = []
-    for event in events:
-        if event.get("kind") == "artifact" and event.get("artifact_kind") == "return_packet":
-            meeting_id = clean_lobby_text(event.get("meeting_id"), limit=128)
-            role_id = clean_lobby_text(event.get("role_id"), limit=128)
-            artifact_path = clean_lobby_text(event.get("artifact_path"), limit=256)
-            if meeting_id and role_id and artifact_path:
-                fallback_event_id = _projected_return_packet_event_id(
-                    meeting_id=meeting_id,
-                    agent_id=agent_id,
-                    role_id=role_id,
-                    artifact_path=artifact_path,
-                )
-                if cursor == fallback_event_id:
-                    continue
-        pending_events.append(event)
-    return pending_events
-
-
-def _return_packet_artifact_event(
-    events: list[dict[str, object]],
-    *,
-    agent_id: str,
-    artifact_path: str,
-    artifact_json_path: str,
-) -> dict[str, object]:
-    matching_event: dict[str, object] = {}
-    for event in events:
-        if event.get("kind") != "artifact" or event.get("artifact_kind") != "return_packet":
-            continue
-        if str(event.get("target_agent_id") or "") != agent_id and str(event.get("audience") or "") != f"agent:{agent_id}":
-            continue
-        if str(event.get("artifact_path") or "") != artifact_path:
-            continue
-        if str(event.get("artifact_json_path") or "") != artifact_json_path:
-            continue
-        matching_event = event
-    return matching_event
-
-
-def _return_packet_event_observed(
-    cursor: str,
-    *,
-    event_id: str,
-    fallback_event_id: str,
-    original_event: dict[str, object],
-    full_events: list[dict[str, object]],
-) -> bool:
-    if not cursor:
-        return False
-    if cursor in {event_id, fallback_event_id}:
-        return True
-    cursor_index = _live_event_index(full_events, cursor)
-    if not original_event:
-        return cursor_index is not None
-    event_index = _live_event_index(full_events, event_id)
-    return cursor_index is not None and event_index is not None and cursor_index >= event_index
-
-
-def _live_event_index(events: list[dict[str, object]], event_id: str) -> int | None:
-    for index, event in enumerate(events):
-        if str(event.get("id") or "") == event_id:
-            return index
-    return None
-
-
-def _projected_return_packet_event_id(*, meeting_id: str, agent_id: str, role_id: str, artifact_path: str) -> str:
-    return uuid5(NAMESPACE_URL, f"agentsassemble:return-packet:{meeting_id}:{agent_id}:{role_id}:{artifact_path}").hex[:12]
-
-
-def _return_packet_projection_created_at(packet_path: Path, packet_json_path: Path) -> str:
-    try:
-        packet_stat = packet_path.stat()
-        packet_json_stat = packet_json_path.stat()
-    except OSError:
-        return ""
-    version_ns = max(packet_stat.st_mtime_ns, packet_json_stat.st_mtime_ns)
-    return datetime.fromtimestamp(version_ns / 1_000_000_000, UTC).isoformat()
-
-
-def _live_event_visible_to_agent(event: dict[str, object], agent_id: str) -> bool:
-    if event.get("official_record") is True:
-        return True
-    target_agent_id = str(event.get("target_agent_id") or "")
-    if target_agent_id:
-        return target_agent_id == agent_id
-    audience = str(event.get("audience") or "")
-    if audience.startswith("agent:"):
-        return audience == f"agent:{agent_id}"
-    return True
-
-
 def _matching_live_agent_turn_request(meeting_dir: Path, agent_id: str, source_event_id: str) -> dict[str, object] | None:
     for event in read_live_events(meeting_dir, limit=None):
         if event.get("id") != source_event_id:
@@ -6993,6 +6595,7 @@ def _make_handler(
     register_legacy_live_agent_read_routes(
         route_table,
         deps=LegacyLiveAgentReadDeps(
+            queries=LegacyLiveAgentQueryService.build(output_root),
             processes=live_agent_process_supervisor,
             session_runs=live_agent_session_run_controller,
             session_run_monitor=session_run_monitor,
@@ -7217,27 +6820,6 @@ def _make_handler(
                         )
                     }
                 )
-                return
-            live_agent_room_id = _live_agent_action_path(path, "room")
-            if live_agent_room_id is not None:
-                try:
-                    self._send_json(live_agent_room_payload(output_root, live_agent_room_id))
-                except ValueError as error:
-                    self._send_error(HTTPStatus.NOT_FOUND, str(error))
-                return
-            live_agent_return_packet_id = _live_agent_action_path(path, "return-packet")
-            if live_agent_return_packet_id is not None:
-                try:
-                    self._send_json(
-                        live_agent_return_packet_payload(
-                            output_root,
-                            live_agent_return_packet_id,
-                            meeting_id=str(query.get("meeting_id", [""])[0] or ""),
-                            source_event_id=str(query.get("source_event_id", [""])[0] or ""),
-                        )
-                    )
-                except ValueError:
-                    self._send_error(HTTPStatus.NOT_FOUND, "Return packet not found")
                 return
             if path == "/api/codex-sessions":
                 self._send_json(codex_sessions_payload(limit=self._limit(query, default=20)))

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 
 from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.legacy_live_agent_queries import LegacyLiveAgentQueryService
 from agentsassemble.live_agent_sessions import LiveAgentSessionNotFoundError
 
 
@@ -15,6 +16,7 @@ PayloadBuilder = Callable[..., dict[str, object]]
 
 @dataclass(frozen=True)
 class LegacyLiveAgentReadDeps:
+    queries: LegacyLiveAgentQueryService
     processes: object
     session_runs: object
     session_run_monitor: object | None
@@ -33,6 +35,26 @@ def register_legacy_live_agent_read_routes(
     *,
     deps: LegacyLiveAgentReadDeps,
 ) -> None:
+    @router.get_dynamic("/api/live-agents/{agent_id}/room")
+    def live_agent_room(ctx: RequestContext, params: dict[str, str]) -> None:
+        try:
+            ctx.send_json(deps.queries.room(params["agent_id"]))
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.NOT_FOUND, str(error))
+
+    @router.get_dynamic("/api/live-agents/{agent_id}/return-packet")
+    def live_agent_return_packet(ctx: RequestContext, params: dict[str, str]) -> None:
+        try:
+            ctx.send_json(
+                deps.queries.return_packet(
+                    params["agent_id"],
+                    meeting_id=ctx.query_value("meeting_id"),
+                    source_event_id=ctx.query_value("source_event_id"),
+                )
+            )
+        except ValueError:
+            ctx.send_error(HTTPStatus.NOT_FOUND, "Return packet not found")
+
     @router.get("/api/live-agents")
     def live_agents(ctx: RequestContext) -> None:
         ctx.send_json(

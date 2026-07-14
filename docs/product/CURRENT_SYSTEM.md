@@ -234,7 +234,8 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Canonical room HTTP routes | `gui_room_*_http.py`; coordinator in `gui_room_http.py` |
 | Legacy lobby POST/SSE compatibility | `gui_legacy_lobby_http.py`; do not attach new canonical behavior here |
 | Legacy meeting read/lifecycle/workroom/SSE compatibility | `gui_legacy_meeting_http.py`, query projection in `legacy_meeting_queries.py`, record semantics in `legacy_meeting_records.py` |
-| Legacy resident read-only HTTP projections | `gui_legacy_live_agent_read_http.py`; payload policy remains outside the registrar |
+| Legacy resident room/return-packet reads | `legacy_live_agent_queries.py`, `gui_legacy_live_agent_read_http.py` |
+| Remaining legacy resident diagnostics | `gui_legacy_live_agent_read_http.py`; health/readiness/process payload ownership is the next refactor slice |
 | Room-global settings | `room_global_settings.py`, `room_settings_service.py`, repository methods; HTTP in `gui_room_settings_http.py` |
 | User-owned room notification/read preferences | validation in `room_user_preferences.py`; SQLite persistence in `identity_room_preferences.py`; composition in `room_settings_service.py` |
 | Legacy room-global settings migration | source inspection in `legacy_room_settings_source.py`; atomic SQLite migration in `room_settings_migration.py` |
