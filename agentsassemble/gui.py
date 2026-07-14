@@ -69,6 +69,7 @@ from agentsassemble.gui_legacy_live_agent_readiness_http import (
     LegacyLiveAgentReadinessHttpDeps,
     register_legacy_live_agent_readiness_route,
 )
+from agentsassemble.gui_legacy_live_agent_room_session_http import register_legacy_room_session_route
 from agentsassemble.gui_legacy_live_agent_self_managed_http import register_legacy_self_managed_agent_routes
 from agentsassemble.gui_legacy_live_agent_smoke_http import (
     LegacyLiveAgentSmokeHttpDeps,
@@ -118,7 +119,7 @@ from agentsassemble.room_realtime import (
 from agentsassemble.session_run_monitor import PeriodicSessionRunMonitor, safe_monitor_error_type
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
 from agentsassemble.live_agent_room_admin import (
-    delete_live_agent_session_payload,
+    LegacyLiveAgentRoomSessionService,
     expel_live_agent_from_room_payload,
 )
 from agentsassemble.live_agent_self_managed import LegacySelfManagedAgentService
@@ -4878,6 +4879,10 @@ def _make_handler(
         route_table,
         service=LegacySelfManagedAgentService(output_root),
     )
+    register_legacy_room_session_route(
+        route_table,
+        service=LegacyLiveAgentRoomSessionService(output_root, live_agent_process_supervisor),
+    )
 
     register_mafia_routes(route_table, read_operation_payload=_late_operation_json_payload)
 
@@ -5122,38 +5127,6 @@ def _make_handler(
                     status="success",
                     target_id=str(result.get("agent_id") or agent_id),
                     summary="expelled frontend live agent from room",
-                    details={"meeting_id": str(result.get("meeting_id") or payload.get("meeting_id") or "")},
-                )
-                self._send_json(result)
-                return
-            if parsed.path == "/api/live-agent-room/delete-session":
-                payload = self._operation_json_payload(operation="frontend_agent.delete_session")
-                if payload is None:
-                    return
-                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
-                try:
-                    result = delete_live_agent_session_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                    )
-                except (OSError, ValueError) as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="frontend_agent.delete_session",
-                        status="failed",
-                        target_id=agent_id,
-                        error=str(error),
-                        details={"meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128)},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error), details={"agent_id": agent_id})
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="frontend_agent.delete_session",
-                    status="success",
-                    target_id=str(result.get("agent_id") or agent_id),
-                    summary="deleted frontend live agent session",
                     details={"meeting_id": str(result.get("meeting_id") or payload.get("meeting_id") or "")},
                 )
                 self._send_json(result)

@@ -5,9 +5,11 @@ from pathlib import Path
 
 from agentsassemble.live_agent_frontend_create import frontend_live_agent_create_payload
 from agentsassemble.live_agent_room_admin import (
+    LegacyLiveAgentRoomSessionService,
     delete_live_agent_session_payload,
     expel_live_agent_from_room_payload,
 )
+from agentsassemble.live_agent_operations import read_live_agent_operations
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.room_invite import create_room_invite, join_room_with_invite, reset_state, verify_session_token
@@ -194,6 +196,38 @@ class LiveAgentRoomAdminTests(unittest.TestCase):
             meeting = json.loads((root / "meetings" / "room-a" / "live_state.json").read_text(encoding="utf-8"))
             self.assertEqual(meeting["agent_bindings"], [])
             self.assertEqual(supervisor.deleted, [created["group_id"]])
+
+    def test_delete_session_service_records_success_and_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            calls: list[dict[str, object]] = []
+
+            def delete_command(output_root, supervisor, payload):
+                calls.append(payload)
+                if payload["agent_id"] == "bad-agent":
+                    raise ValueError("not owned")
+                return {
+                    "status": "deleted",
+                    "meeting_id": payload["meeting_id"],
+                    "agent_id": payload["agent_id"],
+                }
+
+            service = LegacyLiveAgentRoomSessionService(
+                root,
+                AdminSupervisor(),
+                delete_command=delete_command,
+            )
+
+            result = service.delete({"meeting_id": "room-a", "agent_id": "agent-a"})
+            with self.assertRaisesRegex(ValueError, "not owned"):
+                service.delete({"meeting_id": "room-a", "agent_id": "bad-agent"})
+
+            self.assertEqual(result["status"], "deleted")
+            self.assertEqual(len(calls), 2)
+            operations = read_live_agent_operations(root, operation="frontend_agent.delete_session")
+            by_agent = {str(item["target_id"]): item for item in operations}
+            self.assertEqual(by_agent["agent-a"]["status"], "success")
+            self.assertEqual(by_agent["bad-agent"]["status"], "failed")
 
 
 if __name__ == "__main__":

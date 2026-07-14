@@ -1016,3 +1016,14 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   deletion, which is a different failure and verification boundary. The
   `expel` deletion candidate also remains untouched. The next slice should move
   delete-session behind its own typed service and Router route.
+- 2026-07-14: Frontend-created session deletion is now Router-owned without
+  being conflated with self-managed process signaling. The existing
+  `delete_live_agent_session_payload()` still performs owned-group stop/delete,
+  managed-config removal, meeting binding cleanup, and roster deletion in its
+  original order. `LegacyLiveAgentRoomSessionService` adds only the preserved
+  operation audit and command boundary; its HTTP module owns JSON parsing and
+  the existing `400` response shape. Focused tests cover the real deletion
+  behavior, service success/failure audit, Router delegation/error mapping,
+  frontend API path, route ownership, and parity. `/api/live-agent-room/expel`
+  remains an unmoved deletion candidate. The next Phase 5.4 slice should move
+  the retained legacy meeting start/finalize/review command family.

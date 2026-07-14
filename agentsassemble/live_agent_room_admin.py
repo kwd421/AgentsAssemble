@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
+from agentsassemble.live_agent_operations import append_live_agent_operation
 from agentsassemble.live_agents import delete_live_agent, detach_live_agent_from_meeting, read_live_agents
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.meeting_events import clean_lobby_text, write_live_state
@@ -91,6 +94,61 @@ def delete_live_agent_session_payload(
         "deleted_group": deleted_group,
         "deleted_configs": deleted_configs,
     }
+
+
+DeleteSessionCommand = Callable[[Path, object, dict[str, object]], dict[str, object]]
+
+
+@dataclass(frozen=True)
+class LegacyLiveAgentRoomSessionService:
+    """Delete one retained frontend-created session and record its audit."""
+
+    output_root: Path
+    process_supervisor: object
+    delete_command: DeleteSessionCommand = delete_live_agent_session_payload
+
+    def delete(self, payload: dict[str, object]) -> dict[str, object]:
+        agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
+        meeting_id = clean_lobby_text(payload.get("meeting_id"), limit=128)
+        try:
+            result = self.delete_command(self.output_root, self.process_supervisor, payload)
+        except (OSError, ValueError) as error:
+            self._record(
+                status="failed",
+                target_id=agent_id,
+                error=str(error),
+                details={"meeting_id": meeting_id},
+            )
+            raise
+        self._record(
+            status="success",
+            target_id=str(result.get("agent_id") or agent_id),
+            summary="deleted frontend live agent session",
+            details={"meeting_id": str(result.get("meeting_id") or meeting_id)},
+        )
+        return result
+
+    def record_invalid_json(self) -> None:
+        self._record(status="failed", target_id="", error="Invalid JSON")
+
+    def _record(
+        self,
+        *,
+        status: str,
+        target_id: str,
+        summary: str = "",
+        error: str = "",
+        details: dict[str, object] | None = None,
+    ) -> None:
+        append_live_agent_operation(
+            self.output_root,
+            operation="frontend_agent.delete_session",
+            status=status,
+            target_id=target_id,
+            summary=summary,
+            error=error,
+            details=details or {},
+        )
 
 
 def _clean_existing_meeting_id(value: object) -> str:
