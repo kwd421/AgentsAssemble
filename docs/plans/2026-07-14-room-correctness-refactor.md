@@ -842,3 +842,21 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   reproject old loaded messages, history fetched later, typing state, roster,
   detail UI, and new messages by stable `participant_id`; persisted author
   snapshots are fallback only when no current participant profile exists.
+- 2026-07-14: Credential-free durable session smoke now joins the typed smoke
+  service and Router without being conflated with real-provider execution.
+  `LegacyLiveAgentSmokeService.run_session()` owns timeout/lobby-probe/soak
+  normalization and receives its runner as an explicit dependency; GUI
+  composition supplies a late-bound compatibility runner so existing test and
+  operator patch points remain valid until aggregate readiness moves. Soak
+  cycles remain limited to 0-5 and soak interval to 0-60 seconds. The HTTP
+  route preserves the fixed `502` response `Session smoke could not be run.`
+  for contract, validation, and transport failures and records only bounded
+  group/meeting identity rather than raw exceptions, config paths, tokens, or
+  smoke transcripts. Its success audit projection moved with the route and
+  retains terminal-session, round, reply, lifecycle, and soak counts without
+  provider credentials. Focused route, real GUI smoke, readiness, core smoke,
+  and ownership verification passed all 90 tests. Real-provider session smoke
+  is next and must keep its explicit approval/config gates and stronger result
+  redaction separate; aggregate readiness follows after that. The seven
+  deletion candidates remain untouched, as does canonical name/avatar history
+  reprojection by stable `participant_id`.

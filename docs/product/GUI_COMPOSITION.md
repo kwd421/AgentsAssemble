@@ -166,7 +166,7 @@ These families already have a clear module owner and should not move back into
 | `gui_legacy_live_agent_session_run_http.py` | Compatibility | Durable legacy session-run controls | `tests/test_gui_legacy_live_agent_session_run_http.py`, `tests/test_legacy_live_agent_session_run_service.py` |
 | `gui_legacy_live_agent_preflight_http.py` | Compatibility | Configuration-only resident preflight and redacted diagnostics | `tests/test_gui_legacy_live_agent_preflight_http.py`, `tests/test_gui_server_preflight.py` |
 | `gui_legacy_live_agent_discovery_http.py` | Compatibility | Local CLI discovery and generated resident config bundles | `tests/test_gui_legacy_live_agent_discovery_http.py`, `tests/test_live_agent_discovery.py` |
-| `gui_legacy_live_agent_smoke_http.py` | Compatibility | Credential-free resident and official-round smoke execution | `tests/test_gui_legacy_live_agent_smoke_http.py`, `tests/test_gui_server_smoke_routes.py` |
+| `gui_legacy_live_agent_smoke_http.py` | Compatibility | Credential-free basic, official-round, and durable session smoke execution | `tests/test_gui_legacy_live_agent_smoke_http.py`, `tests/test_gui_server_smoke_routes.py` |
 
 `gui_room_http.py` is a compatibility coordinator and re-export surface. It
 registers the room subdomains and retains historical patch points. It is not a
@@ -182,7 +182,7 @@ families directly.
 | `/ws`, `/`, `/app/*`, `/join`, guarded React assets | Current core composition | Protocol upgrade and static delivery are transport concerns | Keep thin transport branches in the final handler |
 | `/api/meetings/{meeting_id}` finalize, review, and official-turn mutations | Compatibility | Legacy CLI and meeting workflows still call them | Retain mutation behavior until a separate legacy decision; read projections already belong to `gui_legacy_meeting_http.py` |
 | `/api/live-agents*` registration, heartbeat, lobby, DM reply, official turn, probe, leave, and engagement | Compatibility | CLI, MCP, resident runner, and smoke clients still call them | Move behind typed legacy resident-agent services and Router registrations; room and return-packet GETs are already moved |
-| Remaining `/api/live-agent-*` session/real-session/readiness smoke, create/login, and room/session operations | Mixed current support and compatibility | Provider login is current; most process/session/smoke operations remain operator or CLI contracts | Split current provider-login support from legacy diagnostics; preserve exact ACK/error payloads. Discovery, preflight, health reads, basic smoke, and official-round smoke are already Router-owned |
+| Remaining `/api/live-agent-*` real-session/readiness smoke, create/login, and room/session operations | Mixed current support and compatibility | Provider login is current; most process/session/smoke operations remain operator or CLI contracts | Split current provider-login support from legacy diagnostics; preserve exact ACK/error payloads. Discovery, preflight, health reads, basic, official-round, and session smoke are already Router-owned |
 | `/api/codex-sessions/invite` and `/join` | Compatibility | CLI still calls the Codex meeting-session compatibility workflow | Move with legacy meeting/session service, never into the canonical provider adapter |
 | `/api/lobby/promote` and `/api/lobby/remote` | Compatibility | Promotion and remote-bridge behavior remain documented legacy workflows | Move with their policy and tests; do not connect them to canonical ambient routing |
 
@@ -251,9 +251,11 @@ decision. Leaving them in the old chain makes their compatibility cost visible.
    and safe audit projection are Router-owned. Credential-free basic and
    official-round smoke now share `LegacyLiveAgentSmokeService`; their Router
    routes preserve the basic smoke `409` contract-failure mapping, transport
-   `502`, official-round `502`, and bounded operation audits. Session smoke,
-   real-provider session smoke, and aggregate readiness remain separate
-   because their approval, redaction, and side-effect contracts differ.
+   `502`, official-round `502`, and bounded operation audits. Credential-free
+   durable session smoke is now on the same service and Router, with bounded
+   soak validation and a fixed redacted `502` failure contract. Real-provider
+   session smoke and aggregate readiness remain separate because their
+   approval, redaction, and side-effect contracts differ.
 3. Register their routes on `Router`; preserve methods, paths, authorization,
    status codes, redaction, and payloads.
 4. Move a helper only with the route/service that owns its reason to change.
@@ -295,8 +297,8 @@ After a context reset, read `CURRENT_SYSTEM.md`, the active room-correctness
 plan, and this file. Phase 5.3 meeting reads, room/return-packet reads, durable
 diagnostic histories, process connection projections, readiness, roster/
 admission projections, health aggregation, preflight, discovery, and the
-credential-free basic/official-round smoke pair are complete. Move session
-smoke next, then real-provider smoke, then aggregate readiness as separately
+credential-free basic/official-round smoke pair and durable session smoke are
+complete. Move real-provider smoke next, then aggregate readiness as separately
 verified slices. Do not move the seven
 deletion candidates while doing that work. Do not infer that a route is
 obsolete merely because it is not called by React; CLI, MCP, smoke, and legacy

@@ -39,9 +39,11 @@ class FakeSmoke:
         *,
         basic: dict[str, object] | Exception | None = None,
         official: dict[str, object] | Exception | None = None,
+        session: dict[str, object] | Exception | None = None,
     ) -> None:
         self.basic = basic or {}
         self.official = official or {}
+        self.session = session or {}
         self.calls: list[tuple[str, dict[str, object], str]] = []
 
     def run_basic(self, payload: dict[str, object], *, default_server: str) -> dict[str, object]:
@@ -60,6 +62,12 @@ class FakeSmoke:
         if isinstance(self.official, Exception):
             raise self.official
         return self.official
+
+    def run_session(self, payload: dict[str, object], *, default_server: str) -> dict[str, object]:
+        self.calls.append(("session", payload, default_server))
+        if isinstance(self.session, Exception):
+            raise self.session
+        return self.session
 
 
 def _dispatch(router: Router, path: str) -> FakeHandler:
@@ -84,6 +92,7 @@ class LegacyLiveAgentSmokeRouteTests(unittest.TestCase):
             router.routes(),
             [
                 ("POST", "/api/live-agent-official-round-smoke"),
+                ("POST", "/api/live-agent-session-smoke"),
                 ("POST", "/api/live-agent-smoke"),
             ],
         )
@@ -200,6 +209,68 @@ class LegacyLiveAgentSmokeRouteTests(unittest.TestCase):
         handler = _dispatch(router, "/api/live-agent-official-round-smoke")
 
         self.assertEqual(handler.sent_error, (502, "round failed", "", None))
+
+    def test_session_smoke_records_only_safe_summary(self) -> None:
+        result = {
+            "status": "ok",
+            "group_id": "session-crew",
+            "meeting_id": "meeting-a",
+            "agent_ids": ["agent-a"],
+            "round_count": 1,
+            "reply_count": 1,
+            "artifact_paths": ["transcript.md"],
+            "auth_ref": "must-not-be-audited",
+        }
+        smoke = FakeSmoke(session=result)
+        operations: list[dict[str, object]] = []
+        router = Router()
+        register_legacy_live_agent_smoke_routes(
+            router,
+            deps=self._deps(
+                smoke,
+                record_operation=lambda _root, **kwargs: operations.append(kwargs),
+            ),
+        )
+
+        handler = _dispatch(router, "/api/live-agent-session-smoke")
+
+        self.assertEqual(handler.sent_json, result)
+        self.assertEqual(smoke.calls, [("session", {"group_id": "crew"}, "http://room.local")])
+        self.assertEqual(operations[0]["operation"], "session.smoke")
+        self.assertEqual(operations[0]["status"], "success")
+        self.assertNotIn("auth_ref", operations[0]["details"])
+
+    def test_session_smoke_failure_redacts_exception_and_payload(self) -> None:
+        operations: list[dict[str, object]] = []
+        payload = {
+            "group_id": "session-crew",
+            "meeting_id": "meeting-a",
+            "config_path": "/private/live-agents.json",
+        }
+        router = Router()
+        register_legacy_live_agent_smoke_routes(
+            router,
+            deps=self._deps(
+                FakeSmoke(session=ValueError("SECRET_TOKEN /private/live-agents.json")),
+                payload=payload,
+                record_operation=lambda _root, **kwargs: operations.append(kwargs),
+            ),
+        )
+
+        handler = _dispatch(router, "/api/live-agent-session-smoke")
+
+        self.assertEqual(
+            handler.sent_error,
+            (
+                502,
+                "Session smoke could not be run.",
+                "",
+                {"group_id": "session-crew", "meeting_id": "meeting-a"},
+            ),
+        )
+        operation_text = repr(operations)
+        self.assertNotIn("SECRET_TOKEN", operation_text)
+        self.assertNotIn("/private/live-agents.json", operation_text)
 
     def _deps(
         self,

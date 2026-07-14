@@ -11,6 +11,8 @@ from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.legacy_live_agent_smoke import (
     LegacyLiveAgentSmokeService,
     official_round_smoke_operation_details,
+    session_smoke_error_details,
+    session_smoke_operation_details,
 )
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 
@@ -18,6 +20,7 @@ from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 ReadOperationPayload = Callable[[RequestContext, str], dict[str, object] | None]
 RecordOperation = Callable[..., object]
 LocalServerUrl = Callable[[RequestContext], str]
+SESSION_SMOKE_ERROR = "Session smoke could not be run."
 
 
 @dataclass(frozen=True)
@@ -87,6 +90,43 @@ def register_legacy_live_agent_smoke_routes(
             target_id=str(result.get("group_id") or payload.get("group_id") or ""),
             summary="ran credential-free official round smoke",
             details=official_round_smoke_operation_details(result),
+        )
+        ctx.send_json(result)
+
+    @router.post("/api/live-agent-session-smoke")
+    def live_agent_session_smoke(ctx: RequestContext) -> None:
+        payload = deps.read_operation_payload(ctx, "session.smoke")
+        if payload is None:
+            return
+        try:
+            result = deps.smoke.run_session(
+                payload,
+                default_server=deps.local_server_url(ctx),
+            )
+        except (LiveAgentSmokeFailed, ValueError, urllib.error.URLError):
+            safe_details = session_smoke_error_details(payload)
+            deps.record_operation(
+                ctx.deps.output_root,
+                operation="session.smoke",
+                status="failed",
+                target_id=str(safe_details.get("group_id") or ""),
+                error=SESSION_SMOKE_ERROR,
+                details=safe_details,
+            )
+            ctx.send_error(
+                HTTPStatus.BAD_GATEWAY,
+                SESSION_SMOKE_ERROR,
+                details=safe_details,
+            )
+            return
+        result_status = _result_status(result.get("status"))
+        deps.record_operation(
+            ctx.deps.output_root,
+            operation="session.smoke",
+            status=_success_for_result(result_status),
+            target_id=str(result.get("group_id") or payload.get("group_id") or ""),
+            summary="ran credential-free resident session smoke",
+            details=session_smoke_operation_details(result),
         )
         ctx.send_json(result)
 

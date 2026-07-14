@@ -237,8 +237,6 @@ from agentsassemble.live_agent_sessions import (
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
 from agentsassemble.live_agent_smoke import (
     LiveAgentSmokeFailed,
-    MAX_SESSION_SMOKE_SOAK_CYCLES,
-    MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS,
     run_live_agent_official_round_smoke,
     run_live_agent_real_session_smoke,
     run_live_agent_session_smoke,
@@ -288,8 +286,13 @@ from agentsassemble.legacy_live_agent_preflight import (
 )
 from agentsassemble.legacy_live_agent_smoke import (
     LegacyLiveAgentSmokeService,
+    live_agent_session_smoke_payload as _resident_live_agent_session_smoke_payload,
     official_round_smoke_operation_details as _official_round_smoke_operation_details,
     request_json as _request_json,
+    session_smoke_error_details as _session_smoke_error_details,
+    session_smoke_operation_details as _session_smoke_operation_details,
+    session_smoke_soak_cycle_count as _payload_session_smoke_soak_cycle_count,
+    session_smoke_soak_interval_seconds as _payload_session_smoke_soak_interval_seconds,
 )
 from agentsassemble.legacy_live_agent_roster_queries import (
     LegacyLiveAgentRosterQueryService,
@@ -3469,16 +3472,13 @@ def live_agent_session_smoke_payload(
     *,
     default_server: str,
 ) -> dict[str, object]:
-    return run_live_agent_session_smoke(
-        server=default_server,
-        group_id=str(payload.get("group_id") or ""),
-        meeting_id=str(payload.get("meeting_id") or ""),
-        timeout_seconds=_payload_nonnegative_float(payload.get("timeout"), 12.0),
-        lobby_probe_count=_payload_nonnegative_int(payload.get("lobby_probe_count"), 1),
-        soak_cycle_count=_payload_session_smoke_soak_cycle_count(payload.get("soak_cycle_count")),
-        soak_interval_seconds=_payload_session_smoke_soak_interval_seconds(payload.get("soak_interval_seconds")),
+    """Compatibility seam used by aggregate readiness until that route moves."""
+    return _resident_live_agent_session_smoke_payload(
+        output_root,
+        payload,
+        default_server=default_server,
         request_json=_request_json,
-        output_root=output_root,
+        runner=run_live_agent_session_smoke,
     )
 
 
@@ -4666,32 +4666,6 @@ def _payload_nonnegative_float(value: object, default: float) -> float:
     return max(0.0, parsed)
 
 
-def _payload_session_smoke_soak_cycle_count(value: object) -> int:
-    if value is None or value == "":
-        return 0
-    try:
-        parsed = int(value)
-    except (OverflowError, TypeError, ValueError) as error:
-        raise ValueError("session smoke soak_cycle_count must be between 0 and 5") from error
-    if parsed < 0 or parsed > MAX_SESSION_SMOKE_SOAK_CYCLES:
-        raise ValueError(f"session smoke soak_cycle_count must be between 0 and {MAX_SESSION_SMOKE_SOAK_CYCLES}")
-    return parsed
-
-
-def _payload_session_smoke_soak_interval_seconds(value: object) -> float:
-    if value is None or value == "":
-        return 0.0
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError) as error:
-        raise ValueError("session smoke soak_interval_seconds must be between 0 and 60") from error
-    if not math.isfinite(parsed) or parsed < 0 or parsed > MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS:
-        raise ValueError(
-            f"session smoke soak_interval_seconds must be between 0 and {MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS:g}"
-        )
-    return parsed
-
-
 def _payload_optional_int(value: object) -> int | None:
     if value is None or isinstance(value, bool):
         return None
@@ -4989,66 +4963,6 @@ def _rounds_finalization_operation_details(finalization: dict[str, object], meet
     if shared_memory:
         details.update(_shared_memory_operation_details(shared_memory))
     return details
-
-
-def _session_smoke_operation_details(smoke: dict[str, object]) -> dict[str, object]:
-    return {
-        "group_id": clean_lobby_text(smoke.get("group_id"), limit=128),
-        "meeting_id": clean_lobby_text(smoke.get("meeting_id"), limit=128),
-        "result_status": _operation_result_status(smoke.get("status")),
-        "agent_ids": _safe_payload_strings(smoke.get("agent_ids"), limit=64),
-        "terminal_session_supported": smoke.get("terminal_session_supported") is True,
-        "terminal_session_included": smoke.get("terminal_session_included") is True,
-        "terminal_session_status": _operation_result_status(smoke.get("terminal_session_status")),
-        "terminal_session_reason": clean_lobby_text(smoke.get("terminal_session_reason"), limit=128),
-        "rounds_status": _operation_result_status(smoke.get("rounds_status")),
-        "round_count": _payload_nonnegative_int(smoke.get("round_count"), 0),
-        "answered_round_count": _payload_nonnegative_int(smoke.get("answered_round_count"), 0),
-        "completed_round_count": _payload_nonnegative_int(smoke.get("completed_round_count"), 0),
-        "timeout_round_count": _payload_nonnegative_int(smoke.get("timeout_round_count"), 0),
-        "skipped_round_count": _payload_nonnegative_int(smoke.get("skipped_round_count"), 0),
-        "finalization_status": _operation_result_status(smoke.get("finalization_status")),
-        "finalization_official_event_count": _payload_nonnegative_int(
-            smoke.get("finalization_official_event_count"),
-            0,
-        ),
-        "return_packet_event_count": _payload_nonnegative_int(smoke.get("return_packet_event_count"), 0),
-        "artifact_status": _operation_result_status(smoke.get("artifact_status")),
-        "artifact_paths": _safe_payload_strings(smoke.get("artifact_paths"), limit=128),
-        "lobby_probe_count": _payload_nonnegative_int(smoke.get("lobby_probe_count"), 1),
-        "expected_reply_count": _payload_nonnegative_int(smoke.get("expected_reply_count"), 0),
-        "self_service_official_reply_count": _payload_nonnegative_int(smoke.get("self_service_official_reply_count"), 0),
-        "self_service_lobby_reply_count": _payload_nonnegative_int(smoke.get("self_service_lobby_reply_count"), 0),
-        "self_service_post_restart_reply_count": _payload_nonnegative_int(
-            smoke.get("self_service_post_restart_reply_count"),
-            0,
-        ),
-        "self_service_post_recover_reply_count": _payload_nonnegative_int(
-            smoke.get("self_service_post_recover_reply_count"),
-            0,
-        ),
-        "self_service_soak_reply_count": _payload_nonnegative_int(smoke.get("self_service_soak_reply_count"), 0),
-        "reply_count": _payload_nonnegative_int(smoke.get("reply_count"), 0),
-        "post_restart_reply_count": _payload_nonnegative_int(smoke.get("post_restart_reply_count"), 0),
-        "post_recover_reply_count": _payload_nonnegative_int(smoke.get("post_recover_reply_count"), 0),
-        "soak_cycle_count": _payload_nonnegative_int(smoke.get("soak_cycle_count"), 0),
-        "soak_reply_count": _payload_nonnegative_int(smoke.get("soak_reply_count"), 0),
-        "soak_check_statuses": _safe_payload_strings(smoke.get("soak_check_statuses"), limit=32),
-        "start_status": _operation_result_status(smoke.get("start_status")),
-        "check_status": _operation_result_status(smoke.get("check_status")),
-        "resume_status": _operation_result_status(smoke.get("resume_status")),
-        "restart_status": _operation_result_status(smoke.get("restart_status")),
-        "recover_status": _operation_result_status(smoke.get("recover_status")),
-        "stop_status": _operation_result_status(smoke.get("stop_status")),
-        "post_stop_process_status": _operation_result_status(smoke.get("post_stop_process_status")),
-    }
-
-
-def _session_smoke_error_details(payload: dict[str, object]) -> dict[str, object]:
-    return {
-        "group_id": clean_lobby_text(payload.get("group_id"), limit=128),
-        "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
-    }
 
 
 def _real_session_smoke_operation_details(smoke: dict[str, object]) -> dict[str, object]:
@@ -5475,7 +5389,10 @@ def _make_handler(
     register_legacy_live_agent_smoke_routes(
         route_table,
         deps=LegacyLiveAgentSmokeHttpDeps(
-            smoke=LegacyLiveAgentSmokeService(output_root),
+            smoke=LegacyLiveAgentSmokeService(
+                output_root,
+                session_smoke_runner=lambda **kwargs: run_live_agent_session_smoke(**kwargs),
+            ),
             read_operation_payload=_late_operation_json_payload,
             record_operation=record_live_agent_operation,
             local_server_url=lambda ctx: ctx.handler._local_server_url(),
@@ -6449,41 +6366,6 @@ def _make_handler(
                     self._send_json(_safe_diagnostic_report_payload(provider_health_payload(payload)))
                 except ValueError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                return
-            if parsed.path == "/api/live-agent-session-smoke":
-                payload = self._operation_json_payload(operation="session.smoke")
-                if payload is None:
-                    return
-                try:
-                    smoke = live_agent_session_smoke_payload(
-                        output_root,
-                        payload,
-                        default_server=self._local_server_url(),
-                    )
-                except (LiveAgentSmokeFailed, ValueError, urllib.error.URLError) as error:
-                    del error
-                    safe_error = "Session smoke could not be run."
-                    safe_details = _session_smoke_error_details(payload)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session.smoke",
-                        status="failed",
-                        target_id=str(safe_details.get("group_id") or ""),
-                        error=safe_error,
-                        details=safe_details,
-                    )
-                    self._send_error(HTTPStatus.BAD_GATEWAY, safe_error, details=safe_details)
-                    return
-                result_status = _operation_result_status(smoke.get("status"))
-                record_live_agent_operation(
-                    output_root,
-                    operation="session.smoke",
-                    status=_operation_success_for_result(result_status, success_values={"ok"}),
-                    target_id=str(smoke.get("group_id") or payload.get("group_id") or ""),
-                    summary="ran credential-free resident session smoke",
-                    details=_session_smoke_operation_details(smoke),
-                )
-                self._send_json(smoke)
                 return
             if parsed.path == "/api/live-agent-real-session-smoke":
                 payload = self._operation_json_payload(operation="session.real_smoke")
