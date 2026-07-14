@@ -56,6 +56,15 @@ class FakeLegacyLiveAgentQueries:
         return {"agent_id": agent_id, "source_event_id": source_event_id}
 
 
+class FakeLegacyLiveAgentRoster:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def list(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(kwargs)
+        return {"agents": [{"agent_id": "agent-a"}]}
+
+
 class FakeLegacyLiveAgentDiagnostics:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
@@ -84,10 +93,10 @@ class FakeLegacyLiveAgentDiagnostics:
 def _deps(**overrides: object) -> LegacyLiveAgentReadDeps:
     values = {
         "queries": FakeLegacyLiveAgentQueries(),
+        "roster": FakeLegacyLiveAgentRoster(),
         "diagnostics": FakeLegacyLiveAgentDiagnostics(),
         "processes": object(),
         "session_run_monitor": None,
-        "agents_payload": _unused_payload,
         "health_payload": _unused_payload,
         "readiness_error_message": lambda error: str(error),
     }
@@ -161,13 +170,18 @@ class LegacyLiveAgentReadRoutesTests(unittest.TestCase):
         self.assertEqual(handler.sent_error, (404, "Return packet not found", "", None))
 
     def test_forwards_query_filters_to_the_read_service(self) -> None:
+        roster = FakeLegacyLiveAgentRoster()
         diagnostics = FakeLegacyLiveAgentDiagnostics()
         router = Router()
         register_legacy_live_agent_read_routes(
             router,
-            deps=_deps(diagnostics=diagnostics),
+            deps=_deps(roster=roster, diagnostics=diagnostics),
         )
 
+        roster_handler = _dispatch(
+            router,
+            "/api/live-agents?meeting_id=room-a&agent_id=agent-a&agent_id=agent-b&status=idle&safe=yes",
+        )
         operations_handler = _dispatch(
             router,
             "/api/live-agent-operations?limit=12&operation=start&target_id=crew&status=failed&scan_limit=40&scan_tail=yes",
@@ -182,10 +196,22 @@ class LegacyLiveAgentReadRoutesTests(unittest.TestCase):
         )
         process_groups_handler = _dispatch(router, "/api/live-agent-processes")
 
+        self.assertEqual(roster_handler.sent_json, {"agents": [{"agent_id": "agent-a"}]})
         self.assertEqual(operations_handler.sent_json, {"operations": []})
         self.assertEqual(process_events_handler.sent_json, {"events": []})
         self.assertEqual(session_runs_handler.sent_json, {"runs": []})
         self.assertEqual(process_groups_handler.sent_json, {"groups": []})
+        self.assertEqual(
+            roster.calls,
+            [
+                {
+                    "meeting_id": "room-a",
+                    "agent_ids": ["agent-a", "agent-b"],
+                    "statuses": ["idle"],
+                    "safe": True,
+                }
+            ],
+        )
         self.assertEqual(
             diagnostics.calls,
             [

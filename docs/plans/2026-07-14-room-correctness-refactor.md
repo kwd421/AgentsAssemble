@@ -747,3 +747,23 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   Health aggregation is the next slice. Discovery/preflight/smoke, the seven
   deletion candidates, and canonical name/avatar history reprojection remain
   unchanged.
+- 2026-07-14: Resident roster filtering and admission projection now belong to
+  `LegacyLiveAgentRosterQueryService`. It owns safe/unsafe roster response
+  shaping, quota-field removal, removal of untrusted stored admission fields,
+  and recomputation from a host-authored meeting record. The read Router calls
+  this service directly instead of receiving `live_agents_payload` as an
+  untyped callback; legacy flow, registration audit, health, tests, and external
+  imports continue through compatibility aliases in `agentsassemble.gui`.
+  Focused roster, health, lobby/social, route-ownership, and parity verification
+  passed all 105 tests. The next coherent slice is retained health aggregation:
+  create a typed health query module that imports roster, process, diagnostic,
+  lobby, session-run, and event projections directly; preserve the public
+  `live_agent_health_payload` alias; then run every `test_gui_server_health*`
+  and session-run monitor family before committing. Discovery, preflight, and
+  smoke remain later independent slices. Do not move the seven deletion
+  candidates during these extractions. The canonical identity acceptance
+  condition is still mandatory: after an agent settings save changes name or
+  avatar, roster, open detail UI, typing state, already loaded chat, history
+  pages fetched later, and new messages must all resolve the current profile by
+  stable `participant_id`; event-time author snapshots are fallback only for
+  deleted, imported, or otherwise unavailable participants.

@@ -123,7 +123,6 @@ from agentsassemble.live_agent_self_managed import (
 from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
-from agentsassemble.live_agent_quota import LIVE_AGENT_QUOTA_FIELDS
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
 from agentsassemble.legacy_live_agent_health import (
@@ -283,6 +282,14 @@ from agentsassemble.legacy_live_agent_process_projection import (
     process_payload_with_agent_connection_evidence as _process_payload_with_agent_connection_evidence,
     safe_agent_connection_identity as _safe_agent_connection_identity,
 )
+from agentsassemble.legacy_live_agent_roster_queries import (
+    LegacyLiveAgentRosterQueryService,
+    live_agent_register_admission_details as _live_agent_register_admission_details,
+    live_agent_roster_admission_details as _live_agent_roster_admission_details,
+    live_agent_roster_with_admission_evidence as _live_agent_roster_with_admission_evidence,
+    live_agent_without_quota_fields as _live_agent_without_quota_fields,
+    live_agents_payload,
+)
 from agentsassemble.legacy_meeting_queries import (
     LegacyMeetingQueryService,
     build_meeting_payload,
@@ -293,7 +300,6 @@ from agentsassemble.legacy_meeting_queries import (
 )
 from agentsassemble.legacy_meeting_records import (
     live_agent_admission_details as _live_agent_admission_details_from_meeting,
-    merge_live_progress_from_path as _merge_live_progress_from_path,
     read_meeting_record as _read_meeting_record,
     safe_meeting_dir as _safe_meeting_dir,
 )
@@ -1508,67 +1514,6 @@ def provider_health_payload(payload: dict[str, object]) -> dict[str, object]:
 
 def codex_sessions_payload(limit: int = 20) -> dict[str, object]:
     return {"sessions": list_codex_sessions(limit=limit)}
-
-
-def live_agents_payload(
-    output_root: Path,
-    *,
-    meeting_id: str = "",
-    agent_ids: list[str] | None = None,
-    statuses: list[str] | None = None,
-    safe: bool = False,
-) -> dict[str, object]:
-    payload = {
-        "agents": filter_live_agent_roster(
-            read_live_agents(output_root),
-            meeting_id=meeting_id,
-            agent_ids=agent_ids or [],
-            statuses=statuses or [],
-        )
-    }
-    if safe:
-        return safe_live_agent_roster_payload(_live_agent_roster_with_admission_evidence(output_root, payload))
-    return {
-        "agents": [
-            _live_agent_without_quota_fields(agent)
-            for agent in payload["agents"]
-            if isinstance(agent, dict)
-        ]
-    }
-
-
-def _live_agent_without_quota_fields(agent: dict[str, object]) -> dict[str, object]:
-    return {key: value for key, value in agent.items() if key not in LIVE_AGENT_QUOTA_FIELDS}
-
-
-def _live_agent_roster_with_admission_evidence(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
-    agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
-    return {
-        "agents": [
-            {
-                **_live_agent_without_admission_evidence(agent),
-                **_live_agent_roster_admission_details(output_root, agent),
-                "admission_evidence_source": "meeting_record",
-            }
-            for agent in agents
-            if isinstance(agent, dict)
-        ]
-    }
-
-
-def _live_agent_without_admission_evidence(agent: dict[str, object]) -> dict[str, object]:
-    admission_fields = {
-        "admission_status",
-        "host_approved_binding",
-        "binding_role_id",
-        "binding_provider_id",
-        "binding_provider_kind",
-        "binding_permission_profile_id",
-        "binding_join_mode",
-        "binding_conflicts",
-        "admission_evidence_source",
-    }
-    return {key: value for key, value in agent.items() if key not in admission_fields}
 
 
 def live_agent_meeting_start_payload(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
@@ -4750,52 +4695,6 @@ def _live_agent_register_operation_details(
     return details
 
 
-def _strict_meeting_record_for_admission(output_root: Path, meeting_id: str) -> dict[str, object]:
-    """Admission evidence requires a host-written meeting record.
-
-    Council meetings carry meeting.json. Live-agent meetings are created by
-    the host via start_live_agent_meeting, whose live_state.json includes the
-    full meeting shape (question/topic/roles). A skeletal live_state.json that
-    only lists agent_bindings is runner-writable state and must never grant
-    admission.
-    """
-    meeting_dir = _safe_meeting_dir(output_root, meeting_id)
-    meeting_path = meeting_dir / "meeting.json"
-    live_path = meeting_dir / "live_state.json"
-    if meeting_path.exists():
-        meeting = json.loads(meeting_path.read_text(encoding="utf-8"))
-        return _merge_live_progress_from_path(meeting, live_path)
-    if live_path.exists():
-        record = json.loads(live_path.read_text(encoding="utf-8"))
-        if isinstance(record, dict) and all(key in record for key in ("question", "topic", "roles")):
-            return record
-    raise ValueError("Meeting record is missing.")
-
-
-def _live_agent_register_admission_details(output_root: Path, agent: dict[str, object]) -> dict[str, object]:
-    agent_id = clean_lobby_text(agent.get("agent_id"), limit=64)
-    meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
-    if not meeting_id:
-        return {"admission_status": "lobby_only", "host_approved_binding": False}
-    try:
-        meeting = _strict_meeting_record_for_admission(output_root, meeting_id)
-    except (OSError, ValueError, json.JSONDecodeError):
-        return {"admission_status": "meeting_missing", "host_approved_binding": False}
-    return _live_agent_admission_details_from_meeting(meeting, agent, agent_id=agent_id)
-
-
-def _live_agent_roster_admission_details(output_root: Path, agent: dict[str, object]) -> dict[str, object]:
-    agent_id = clean_lobby_text(agent.get("agent_id"), limit=64)
-    meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
-    if not meeting_id:
-        return {"admission_status": "lobby_only", "host_approved_binding": False}
-    try:
-        meeting = _strict_meeting_record_for_admission(output_root, meeting_id)
-    except (OSError, ValueError, json.JSONDecodeError):
-        return {"admission_status": "meeting_missing", "host_approved_binding": False}
-    return _live_agent_admission_details_from_meeting(meeting, agent, agent_id=agent_id)
-
-
 def _matching_live_agent_turn_request(meeting_dir: Path, agent_id: str, source_event_id: str) -> dict[str, object] | None:
     for event in read_live_events(meeting_dir, limit=None):
         if event.get("id") != source_event_id:
@@ -6344,6 +6243,7 @@ def _make_handler(
         route_table,
         deps=LegacyLiveAgentReadDeps(
             queries=LegacyLiveAgentQueryService.build(output_root),
+            roster=LegacyLiveAgentRosterQueryService(output_root),
             diagnostics=LegacyLiveAgentDiagnosticQueryService(
                 output_root=output_root,
                 processes=live_agent_process_supervisor,
@@ -6351,7 +6251,6 @@ def _make_handler(
             ),
             processes=live_agent_process_supervisor,
             session_run_monitor=session_run_monitor,
-            agents_payload=live_agents_payload,
             health_payload=live_agent_health_payload,
             readiness_error_message=_session_check_error_message,
         ),

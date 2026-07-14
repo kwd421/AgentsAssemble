@@ -238,6 +238,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Legacy resident diagnostic histories | `legacy_live_agent_diagnostics.py`, `gui_legacy_live_agent_read_http.py` |
 | Legacy resident process/connection projections | `legacy_live_agent_process_projection.py`, `legacy_live_agent_diagnostics.py` |
 | Legacy resident readiness | `legacy_live_agent_diagnostics.py`, `gui_legacy_live_agent_read_http.py` |
+| Legacy resident roster and admission projections | `legacy_live_agent_roster_queries.py`, `gui_legacy_live_agent_read_http.py` |
 | Remaining legacy resident health aggregation | `gui.py`; typed health query migration is the next refactor slice |
 | Room-global settings | `room_global_settings.py`, `room_settings_service.py`, repository methods; HTTP in `gui_room_settings_http.py` |
 | User-owned room notification/read preferences | validation in `room_user_preferences.py`; SQLite persistence in `identity_room_preferences.py`; composition in `room_settings_service.py` |

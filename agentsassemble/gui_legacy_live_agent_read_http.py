@@ -9,6 +9,7 @@ from http import HTTPStatus
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.legacy_live_agent_diagnostics import LegacyLiveAgentDiagnosticQueryService
 from agentsassemble.legacy_live_agent_queries import LegacyLiveAgentQueryService
+from agentsassemble.legacy_live_agent_roster_queries import LegacyLiveAgentRosterQueryService
 from agentsassemble.live_agent_sessions import LiveAgentSessionNotFoundError
 
 
@@ -18,10 +19,10 @@ PayloadBuilder = Callable[..., dict[str, object]]
 @dataclass(frozen=True)
 class LegacyLiveAgentReadDeps:
     queries: LegacyLiveAgentQueryService
+    roster: LegacyLiveAgentRosterQueryService
     diagnostics: LegacyLiveAgentDiagnosticQueryService
     processes: object
     session_run_monitor: object | None
-    agents_payload: PayloadBuilder
     health_payload: PayloadBuilder
     readiness_error_message: Callable[[Exception], str]
 
@@ -54,8 +55,7 @@ def register_legacy_live_agent_read_routes(
     @router.get("/api/live-agents")
     def live_agents(ctx: RequestContext) -> None:
         ctx.send_json(
-            deps.agents_payload(
-                ctx.deps.output_root,
+            deps.roster.list(
                 meeting_id=ctx.query_value("meeting_id"),
                 agent_ids=ctx.query.get("agent_id", []),
                 statuses=ctx.query.get("status", []),
