@@ -17,6 +17,7 @@ from agentsassemble.provider_model_verification import (
 from agentsassemble.provider_runtime_contracts import SUPPORTED_DECLINE_REASONS
 from agentsassemble.room_errors import RoomCommandRejected
 from agentsassemble.room_attention import AttentionLeaseConflict
+from agentsassemble.room_command_uow import RoomCommandUnitOfWork
 from agentsassemble.room_event_broker import RoomEventBroker
 from agentsassemble.room_projection import (
     PUBLIC_ACTIVITY_LABELS,
@@ -26,7 +27,7 @@ from agentsassemble.room_projection import (
     public_session,
     runtime_diagnostic_fields,
 )
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room_repository import RoomRepository, RoomTransaction
 from agentsassemble.room_turn_attention import RoomTurnAttention
 from agentsassemble.room_types import RoomEvent, TurnAssignment
 
@@ -36,6 +37,7 @@ TurnPacketBuilder = Callable[..., dict[str, object]]
 ProviderLookup = Callable[[str, str], NativeCliProviderSpec]
 SessionCallback = Callable[[str, dict[str, object]], object]
 EnsureRoom = Callable[[str], dict[str, object]]
+TurnFinalizationWriter = RoomTransaction | RoomCommandUnitOfWork
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,14 @@ class PendingEventPartition:
     deferred: list[str]
     already_synced: list[str]
     invalid: list[str]
+
+
+@dataclass(frozen=True)
+class PreparedFinalMessage:
+    content: str
+    latency: dict[str, object]
+    diagnostics: dict[str, object]
+    observed_model_id: str
 
 
 class RoomTurnCoordinator:
@@ -451,6 +461,22 @@ class RoomTurnCoordinator:
         agent_id = clean_lobby_text(identity.get("agent_id"), limit=128)
         session_id = clean_lobby_text(identity.get("session_id") or agent_id, limit=128)
         session = self.store.session(room_id, session_id)
+        self._validate_bridge_session(
+            identity,
+            agent_id=agent_id,
+            session=session,
+            allow_unleased=allow_unleased,
+        )
+        return agent_id, session
+
+    @staticmethod
+    def _validate_bridge_session(
+        identity: dict[str, object],
+        *,
+        agent_id: str,
+        session: dict[str, object],
+        allow_unleased: bool,
+    ) -> None:
         if not session or session.get("participant_id") != agent_id:
             raise RoomCommandRejected(
                 "Agent bridge session does not match its ticket identity.",
@@ -460,6 +486,24 @@ class RoomTurnCoordinator:
         session_generation = int(session.get("bridge_generation") or 0)
         if not allow_unleased and session_generation and identity_generation != session_generation:
             raise RoomCommandRejected("Agent bridge lease is stale.", code="stale_bridge_generation")
+
+    def active_bridge_turn_in_writer(
+        self,
+        identity: dict[str, object],
+        payload: dict[str, object],
+        *,
+        writer: TurnFinalizationWriter,
+    ) -> tuple[str, dict[str, object]]:
+        agent_id = clean_lobby_text(identity.get("agent_id"), limit=128)
+        session_id = clean_lobby_text(identity.get("session_id") or agent_id, limit=128)
+        session = writer.session(session_id)
+        self._validate_bridge_session(
+            identity,
+            agent_id=agent_id,
+            session=session,
+            allow_unleased=False,
+        )
+        self._validate_active_turn(payload, session)
         return agent_id, session
 
     def active_bridge_turn(
@@ -469,10 +513,17 @@ class RoomTurnCoordinator:
         payload: dict[str, object],
     ) -> tuple[str, dict[str, object]]:
         agent_id, session = self.bridge_session(identity, room_id)
+        self._validate_active_turn(payload, session)
+        return agent_id, session
+
+    @staticmethod
+    def _validate_active_turn(
+        payload: dict[str, object],
+        session: dict[str, object],
+    ) -> None:
         turn_id = clean_lobby_text(payload.get("turn_id"), limit=128)
         if not turn_id or turn_id != session.get("active_turn_id"):
             raise RoomCommandRejected("Turn does not match the active assignment.", code="turn_conflict")
-        return agent_id, session
 
     def turn_state(
         self,
@@ -573,13 +624,27 @@ class RoomTurnCoordinator:
         room_id: str,
         payload: dict[str, object],
     ) -> dict[str, object]:
+        prepared = self.prepare_message_final(identity, room_id, payload)
+        with self.store.transaction(room_id) as transaction:
+            result = self._commit_final_message(
+                identity,
+                payload,
+                prepared=prepared,
+                writer=transaction,
+            )
+        self.after_message_final(room_id, result, deduplicated=False)
+        return result
+
+    def prepare_message_final(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        payload: dict[str, object],
+    ) -> PreparedFinalMessage:
         agent_id, session = self.active_bridge_turn(identity, room_id, payload)
         require_active_turn_phase(session)
         content = room_message_text(payload.get("content"), limit=12000)
         active_turn_id = str(session["active_turn_id"])
-        input_up_to_event_id = clean_lobby_text(session.get("input_up_to_event_id"), limit=128)
-        input_up_to_seq = safe_bounded_int(session.get("input_up_to_seq"), default=0, minimum=0)
-        relay_depth = int(session.get("active_relay_depth") or 0)
         latency = merged_latency(session.get("latency"), payload.get("latency"))
         diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
         observed_model_id = clean_lobby_text(payload.get("observed_model_id"), limit=128)
@@ -644,47 +709,98 @@ class RoomTurnCoordinator:
                 },
             )
             raise RoomCommandRejected("Provider final message was empty.", code="empty_provider_final")
-        if observed_model_id:
-            self.store.update_session_fields(
-                room_id,
-                str(session["session_id"]),
-                observed_model_id=observed_model_id,
-                model_verification_status=model_verification_status(
+        return PreparedFinalMessage(
+            content=content,
+            latency=latency,
+            diagnostics=diagnostics,
+            observed_model_id=observed_model_id,
+        )
+
+    def message_final_in_unit(
+        self,
+        identity: dict[str, object],
+        payload: dict[str, object],
+        *,
+        prepared: PreparedFinalMessage,
+        unit: RoomCommandUnitOfWork,
+    ) -> dict[str, object]:
+        return self._commit_final_message(
+            identity,
+            payload,
+            prepared=prepared,
+            writer=unit,
+        )
+
+    def _commit_final_message(
+        self,
+        identity: dict[str, object],
+        payload: dict[str, object],
+        *,
+        prepared: PreparedFinalMessage,
+        writer: TurnFinalizationWriter,
+    ) -> dict[str, object]:
+        agent_id, session = self.active_bridge_turn_in_writer(
+            identity,
+            payload,
+            writer=writer,
+        )
+        require_active_turn_phase(session)
+        active_turn_id = str(session["active_turn_id"])
+        input_up_to_event_id = clean_lobby_text(session.get("input_up_to_event_id"), limit=128)
+        input_up_to_seq = safe_bounded_int(session.get("input_up_to_seq"), default=0, minimum=0)
+        event = writer.append_event(
+            "message_final",
+            participant_id=agent_id,
+            participant_type="agent",
+            actor_id=agent_id,
+            actor_type="agent",
+            display_name=session.get("display_name") or agent_id,
+            avatar_image_url=session.get("avatar_image_url") or "",
+            session_id=session["session_id"],
+            turn_id=active_turn_id,
+            content=prepared.content,
+            source_event_id=session.get("active_source_event_id"),
+            relay_depth=int(session.get("active_relay_depth") or 0),
+            message_source=payload.get("message_source"),
+        )
+        writer.advance_attention_state(agent_id, spoke_seq=int(event["seq"]))
+        verification_updates: dict[str, object] = {}
+        if prepared.observed_model_id:
+            requested_model_id = clean_lobby_text(
+                session.get("requested_model_id") or session.get("model"),
+                limit=128,
+            )
+            selection_kind = clean_lobby_text(session.get("model_selection_kind"), limit=16) or "exact"
+            observation_policy = (
+                clean_lobby_text(session.get("model_observation_policy"), limit=32) or "unavailable"
+            )
+            provider_kind = clean_lobby_text(session.get("provider_kind"), limit=64)
+            verification_updates = {
+                "observed_model_id": prepared.observed_model_id,
+                "model_verification_status": model_verification_status(
                     requested_model_id=requested_model_id,
-                    observed_model_id=observed_model_id,
+                    observed_model_id=prepared.observed_model_id,
                     selection_kind=selection_kind,
                     observation_policy=observation_policy,
                     provider_kind=provider_kind,
                 ),
-            )
-        with self.store.transaction(room_id) as transaction:
-            event = transaction.append_event(
-                "message_final",
-                participant_id=agent_id,
-                participant_type="agent",
-                actor_id=agent_id,
-                actor_type="agent",
-                display_name=session.get("display_name") or agent_id,
-                avatar_image_url=session.get("avatar_image_url") or "",
-                session_id=session["session_id"],
-                turn_id=active_turn_id,
-                content=content,
-                source_event_id=session.get("active_source_event_id"),
-                relay_depth=relay_depth,
-                message_source=payload.get("message_source"),
-            )
-            transaction.advance_attention_state(agent_id, spoke_seq=int(event["seq"]))
-        finished, current = self._complete_active_turn(
-            room_id,
+            }
+        finished, updated = self._complete_active_turn_durable(
+            writer,
             session,
             input_up_to_event_id=input_up_to_event_id,
             input_up_to_seq=input_up_to_seq,
-            latency=latency,
-            diagnostics=diagnostics,
+            latency=prepared.latency,
+            diagnostics=prepared.diagnostics,
             finish_status="completed",
-            last_spoke_event_id=event["id"],
+            last_spoke_event_id=str(event["id"]),
+            extra_session_updates=verification_updates,
         )
-        return {"event": event, "turn_finished": finished, "agent_session": public_session(current)}
+        return {
+            "event": event,
+            "turn_finished": finished,
+            "agent_session": public_session(updated),
+        }
 
     def turn_decline(
         self,
@@ -825,6 +941,38 @@ class RoomTurnCoordinator:
         finish_status: str,
         last_spoke_event_id: str = "",
     ) -> tuple[dict[str, object], dict[str, object]]:
+        with self.store.transaction(room_id) as transaction:
+            finished, updated = self._complete_active_turn_durable(
+                transaction,
+                session,
+                input_up_to_event_id=input_up_to_event_id,
+                input_up_to_seq=input_up_to_seq,
+                latency=latency,
+                diagnostics=diagnostics,
+                finish_status=finish_status,
+                last_spoke_event_id=last_spoke_event_id,
+            )
+        current = self._after_completed_turn(
+            room_id,
+            participant_id=str(session["participant_id"]),
+            session_id=str(session["session_id"]),
+            publish_state=True,
+        )
+        return finished, current
+
+    def _complete_active_turn_durable(
+        self,
+        writer: TurnFinalizationWriter,
+        session: dict[str, object],
+        *,
+        input_up_to_event_id: str,
+        input_up_to_seq: int,
+        latency: dict[str, object],
+        diagnostics: dict[str, object],
+        finish_status: str,
+        last_spoke_event_id: str = "",
+        extra_session_updates: dict[str, object] | None = None,
+    ) -> tuple[dict[str, object], dict[str, object]]:
         active_turn_id = str(session["active_turn_id"])
         updates: dict[str, object] = {
             "status": "attached",
@@ -852,35 +1000,65 @@ class RoomTurnCoordinator:
             "latency": latency,
             "last_error": "",
             **runtime_diagnostic_fields(diagnostics),
+            **dict(extra_session_updates or {}),
         }
         if last_spoke_event_id:
             updates["last_spoke_event_id"] = last_spoke_event_id
-        with self.store.transaction(room_id) as transaction:
-            finished = transaction.append_event(
-                "turn_finished",
-                participant_id=session["participant_id"],
-                session_id=session["session_id"],
-                turn_id=active_turn_id,
-                status=finish_status,
-                latency=latency,
-            )
-            self._turn_attention.resolve_active(
-                transaction,
-                session,
-                status="released",
-            )
-            transaction.advance_attention_state(
-                str(session["participant_id"]),
-                provider_sync_seq=input_up_to_seq,
-            )
-            transaction.update_session_fields(
-                str(session["session_id"]),
-                **updates,
-            )
-        self.assign_pending(room_id, str(session["participant_id"]))
-        current = self.store.session(room_id, str(session["session_id"]))
-        self._publish_session_state(room_id, current)
-        return finished, current
+        finished = writer.append_event(
+            "turn_finished",
+            participant_id=session["participant_id"],
+            session_id=session["session_id"],
+            turn_id=active_turn_id,
+            status=finish_status,
+            latency=latency,
+        )
+        self._turn_attention.resolve_active(
+            writer,
+            session,
+            status="released",
+        )
+        writer.advance_attention_state(
+            str(session["participant_id"]),
+            provider_sync_seq=input_up_to_seq,
+        )
+        updated = writer.update_session_fields(
+            str(session["session_id"]),
+            **updates,
+        )
+        return finished, updated
+
+    def after_message_final(
+        self,
+        room_id: str,
+        result: dict[str, object],
+        *,
+        deduplicated: bool,
+    ) -> dict[str, object]:
+        session = result.get("agent_session") if isinstance(result.get("agent_session"), dict) else {}
+        participant_id = clean_lobby_text(session.get("participant_id"), limit=128)
+        session_id = clean_lobby_text(session.get("session_id"), limit=128)
+        if not participant_id or not session_id:
+            return {}
+        return self._after_completed_turn(
+            room_id,
+            participant_id=participant_id,
+            session_id=session_id,
+            publish_state=not deduplicated,
+        )
+
+    def _after_completed_turn(
+        self,
+        room_id: str,
+        *,
+        participant_id: str,
+        session_id: str,
+        publish_state: bool,
+    ) -> dict[str, object]:
+        self.assign_pending(room_id, participant_id)
+        current = self.store.session(room_id, session_id)
+        if publish_state:
+            self._publish_session_state(room_id, current)
+        return current
 
     def _retry_pending_turn(self, room_id: str, session_id: str) -> None:
         key = (room_id, session_id)

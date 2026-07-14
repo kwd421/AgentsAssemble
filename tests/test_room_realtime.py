@@ -1118,6 +1118,72 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
         self.assertEqual(self.controller.attention_active_diagnostics()["error_count"], 0)
 
+    def test_provider_final_rolls_back_turn_session_cursors_and_lease_with_ack(self):
+        identity, channel = self._connect_bridge("codex")
+        channel.drain()
+        update_room_settings(
+            self.root,
+            {"room_id": "general", "conversation_mode": "ambient", "max_relay_turns": 2},
+        )
+        source = self._command(
+            "atomic-final-source",
+            "message.send",
+            {"content": "원자적으로 답해줘"},
+        )["result"]["event"]
+        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+        store = RoomStore(self.root)
+        before_session = store.session("general", "codex")
+        before_attention = store.attention_state("general", "codex")
+        lease_id = str(before_session["active_attention_lease_id"])
+        before_latest_seq = store.latest_event_sequence("general")
+        payload = {"turn_id": assignment["turn_id"], "content": "원자적 최종 답변"}
+
+        with patch.object(RoomCommandUnitOfWork, "record_ack", side_effect=RuntimeError("injected")):
+            with self.assertRaisesRegex(RuntimeError, "injected"):
+                self._command("atomic-provider-final", "message.final", payload, identity)
+
+        rolled_back = store.session("general", "codex")
+        self.assertEqual(rolled_back["runtime_status"], "busy")
+        self.assertEqual(rolled_back["active_turn_id"], assignment["turn_id"])
+        self.assertEqual(rolled_back["inflight_event_ids"], before_session["inflight_event_ids"])
+        self.assertEqual(rolled_back["last_provider_sync_seq"], before_session["last_provider_sync_seq"])
+        self.assertEqual(store.attention_state("general", "codex"), before_attention)
+        self.assertEqual(store.attention_lease("general", lease_id)["status"], "active")
+        self.assertEqual(store.latest_event_sequence("general"), before_latest_seq)
+        self.assertFalse(
+            any(
+                event.get("type") == "message_final"
+                and event.get("content") == "원자적 최종 답변"
+                for event in store.read_events("general")
+            )
+        )
+
+        completed = self._command("atomic-provider-final", "message.final", payload, identity)
+        duplicate = self._command("atomic-provider-final", "message.final", payload, identity)
+        self.assertFalse(completed["deduplicated"])
+        self.assertTrue(duplicate["deduplicated"])
+        current = store.session("general", "codex")
+        self.assertEqual(current["runtime_status"], "idle")
+        self.assertEqual(current["active_turn_id"], "")
+        self.assertEqual(current["inflight_event_ids"], [])
+        self.assertEqual(current["last_provider_sync_seq"], source["seq"])
+        self.assertEqual(store.attention_lease("general", lease_id)["status"], "released")
+        finals = [
+            event
+            for event in store.read_events("general")
+            if event.get("type") == "message_final"
+            and event.get("content") == "원자적 최종 답변"
+        ]
+        finished = [
+            event
+            for event in store.read_events("general")
+            if event.get("type") == "turn_finished"
+            and event.get("turn_id") == assignment["turn_id"]
+        ]
+        self.assertEqual(len(finals), 1)
+        self.assertEqual(len(finished), 1)
+        self.assertEqual(store.attention_state("general", "codex").last_spoke_seq, finals[0]["seq"])
+
     def test_ambient_mode_does_not_replace_unavailable_explicit_target(self):
         self.controller.create_provider_session("general", _spec("peer"))
         _peer_identity, peer_channel = self._connect_bridge("peer")

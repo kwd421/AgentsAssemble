@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from contextlib import AbstractContextManager
 from types import TracebackType
 
+from agentsassemble.room_attention import AgentAttentionState
 from agentsassemble.room_repository import RoomRepository, RoomTransaction
 
 
@@ -121,6 +122,34 @@ class RoomCommandUnitOfWork:
 
     def append_event(self, event_type: str, **payload: object) -> dict[str, object]:
         return self._require_transaction().append_event(event_type, **payload)
+
+    def advance_attention_state(
+        self,
+        participant_id: str,
+        *,
+        observed_seq: int | None = None,
+        attention_evaluated_seq: int | None = None,
+        provider_sync_seq: int | None = None,
+        spoke_seq: int | None = None,
+    ) -> AgentAttentionState:
+        return self._require_transaction().advance_attention_state(
+            participant_id,
+            observed_seq=observed_seq,
+            attention_evaluated_seq=attention_evaluated_seq,
+            provider_sync_seq=provider_sync_seq,
+            spoke_seq=spoke_seq,
+        )
+
+    def resolve_attention_lease(
+        self,
+        lease_id: str,
+        *,
+        status: str,
+    ) -> dict[str, object]:
+        return self._require_transaction().resolve_attention_lease(
+            lease_id,
+            status=status,
+        )
 
     def build_ack(self, result: dict[str, object]) -> dict[str, object]:
         if self.deduplicated:

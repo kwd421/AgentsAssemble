@@ -1,15 +1,25 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from typing import Protocol
 from uuid import uuid4
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.native_cli_providers import NativeCliProviderSpec
 from agentsassemble.room_attention import AttentionLeaseConflict
-from agentsassemble.room_repository import RoomRepository, RoomTransaction
+from agentsassemble.room_repository import RoomRepository
 
 
 ProviderLookup = Callable[[str, str], NativeCliProviderSpec]
+
+
+class AttentionLeaseWriter(Protocol):
+    def resolve_attention_lease(
+        self,
+        lease_id: str,
+        *,
+        status: str,
+    ) -> dict[str, object]: ...
 
 
 class RoomTurnAttention:
@@ -206,7 +216,7 @@ class RoomTurnAttention:
 
     @staticmethod
     def resolve_active(
-        transaction: RoomTransaction,
+        transaction: AttentionLeaseWriter,
         session: dict[str, object],
         *,
         status: str,

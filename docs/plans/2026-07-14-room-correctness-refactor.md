@@ -447,3 +447,12 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   exactly-once retry behavior; canonical mute state now overrides a stale
   compatibility copy. The next implementation slice is Commit 1.5, provider
   turn finalization in one transaction.
+- 2026-07-14: successful provider `message.final` now uses one command unit for
+  the visible final, `turn_finished`, `last_spoke_seq`, provider-sync cursor,
+  active attention lease release, idle/inflight session transition, observed
+  model fields, and durable ACK. Publication and next-pending assignment occur
+  after commit. A failure injected at ACK recording leaves the original busy
+  turn and active lease intact with no consumed event sequence; retry commits
+  one final and one finish, and later duplicates return the stored ACK before
+  active-turn validation. The next slice is Commit 1.6, narrowly scoped durable
+  intents for external process effects.

@@ -87,6 +87,14 @@ revocation, and other process/network effects run only after commit; canonical
 participant mute state takes precedence over an older compatibility roster
 copy.
 
+A successful provider `message.final` commits its visible answer,
+`turn_finished`, attention spoke/provider-sync cursors, active lease release,
+idle session transition, cleared inflight input, model observation, and command
+ACK in one room transaction. Failed ACK recording rolls the entire provider
+final back. Event publication, session-state publication, and assignment of the
+next pending turn happen only after commit; a duplicate final request resolves
+from its durable ACK before active-turn validation.
+
 An event-driven deterministic attention gate can record durable `selected`,
 `eligible`, or `silent` decisions. Shadow recording for existing `ordered` and
 `continuous` rooms is server-configured as `off | sample | full` and defaults to

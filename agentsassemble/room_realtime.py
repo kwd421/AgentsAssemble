@@ -808,17 +808,61 @@ class RoomRealtimeController:
                 )
                 self._schedule_participant_leave_cleanup(room_id, participant_id)
                 return ack
+        if action == "message.final":
+            self._require_bridge(identity)
+            with self._lock:
+                prior_ack = self._prior_command_ack(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                )
+                if prior_ack:
+                    result = (
+                        prior_ack.get("result")
+                        if isinstance(prior_ack.get("result"), dict)
+                        else {}
+                    )
+                    self._turn_coordinator.after_message_final(
+                        room_id,
+                        result,
+                        deduplicated=True,
+                    )
+                    return prior_ack
+                prepared = self._turn_coordinator.prepare_message_final(identity, room_id, payload)
+                ack = self._execute_durable_command(
+                    identity,
+                    room_id,
+                    request_id,
+                    action,
+                    payload,
+                    lambda unit: self._turn_coordinator.message_final_in_unit(
+                        identity,
+                        payload,
+                        prepared=prepared,
+                        unit=unit,
+                    ),
+                )
+                result = ack.get("result") if isinstance(ack.get("result"), dict) else {}
+                self._turn_coordinator.after_message_final(
+                    room_id,
+                    result,
+                    deduplicated=bool(ack.get("deduplicated")),
+                )
+                return ack
         with self._lock:
+            prior_ack = self._prior_command_ack(
+                identity,
+                room_id,
+                request_id,
+                action,
+                payload,
+            )
+            if prior_ack:
+                return prior_ack
             principal_id = _command_principal(identity)
             payload_hash = command_payload_hash(payload)
-            prior = self.store.command_record(room_id, principal_id, request_id)
-            if prior:
-                if prior.get("action") != action or prior.get("payload_hash") != payload_hash:
-                    raise RoomCommandRejected(
-                        "request_id was already used for a different command.",
-                        code="idempotency_conflict",
-                    )
-                return {**dict(prior.get("result") or {}), "deduplicated": True}
             result = self._execute_action(
                 identity,
                 room_id,
@@ -872,6 +916,31 @@ class RoomRealtimeController:
             return unit.resolved_ack()
         except RoomCommandIdempotencyConflict as error:
             raise RoomCommandRejected(str(error), code="idempotency_conflict") from error
+
+    def _prior_command_ack(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        request_id: str,
+        action: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        prior = self.store.command_record(
+            room_id,
+            _command_principal(identity),
+            request_id,
+        )
+        if not prior:
+            return {}
+        if (
+            prior.get("action") != action
+            or prior.get("payload_hash") != command_payload_hash(payload)
+        ):
+            raise RoomCommandRejected(
+                "request_id was already used for a different command.",
+                code="idempotency_conflict",
+            )
+        return {**dict(prior.get("result") or {}), "deduplicated": True}
 
     def close(self) -> CleanupReport:
         with self._lock:
@@ -999,8 +1068,6 @@ class RoomRealtimeController:
             return self._turn_coordinator.activity_update(identity, room_id, payload)
         if action == "message.delta":
             return self._turn_coordinator.message_delta(identity, room_id, payload)
-        if action == "message.final":
-            return self._turn_coordinator.message_final(identity, room_id, payload)
         if action == "turn.failed":
             return self._turn_coordinator.turn_failed(identity, room_id, payload)
         raise RoomCommandRejected(f"Unsupported room command: {action}", code="unknown_action")
