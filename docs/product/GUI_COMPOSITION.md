@@ -236,8 +236,12 @@ decision. Leaving them in the old chain makes their compatibility cost visible.
    also owns readiness/session-check projection and process-reason enrichment.
    `LegacyLiveAgentRosterQueryService` owns roster filters, safe projections,
    quota-field removal, and host-authored admission evidence. The Router calls
-   it directly instead of receiving a free-function callback. Move health,
-   discovery, preflight, and smoke behind typed compatibility services next.
+   it directly instead of receiving a free-function callback.
+   `LegacyLiveAgentHealthQueryService` owns the aggregate health response;
+   observation cursor/event policy and durable session-run/monitor policy live
+   in separate focused modules. The Router calls this service directly and no
+   longer receives process, monitor, or health callbacks. Move discovery,
+   preflight, and smoke behind typed compatibility services next.
 3. Register their routes on `Router`; preserve methods, paths, authorization,
    status codes, redaction, and payloads.
 4. Move a helper only with the route/service that owns its reason to change.
@@ -277,9 +281,9 @@ completion:
 
 After a context reset, read `CURRENT_SYSTEM.md`, the active room-correctness
 plan, and this file. Phase 5.3 meeting reads, room/return-packet reads, durable
-diagnostic histories, process connection projections, readiness, and roster/
-admission projections are complete. Start with retained health aggregation,
-then classify discovery, preflight, and smoke as separate slices. Do not move the seven
+diagnostic histories, process connection projections, readiness, roster/
+admission projections, and health aggregation are complete. Start by
+classifying discovery, preflight, and smoke as separate slices. Do not move the seven
 deletion candidates while doing that work. Do not infer that a route is
 obsolete merely because it is not called by React; CLI, MCP, smoke, and legacy
 meeting clients are real compatibility consumers. The canonical identity

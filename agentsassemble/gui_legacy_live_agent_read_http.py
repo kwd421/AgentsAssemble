@@ -8,22 +8,18 @@ from http import HTTPStatus
 
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.legacy_live_agent_diagnostics import LegacyLiveAgentDiagnosticQueryService
+from agentsassemble.legacy_live_agent_health_queries import LegacyLiveAgentHealthQueryService
 from agentsassemble.legacy_live_agent_queries import LegacyLiveAgentQueryService
 from agentsassemble.legacy_live_agent_roster_queries import LegacyLiveAgentRosterQueryService
 from agentsassemble.live_agent_sessions import LiveAgentSessionNotFoundError
-
-
-PayloadBuilder = Callable[..., dict[str, object]]
 
 
 @dataclass(frozen=True)
 class LegacyLiveAgentReadDeps:
     queries: LegacyLiveAgentQueryService
     roster: LegacyLiveAgentRosterQueryService
+    health: LegacyLiveAgentHealthQueryService
     diagnostics: LegacyLiveAgentDiagnosticQueryService
-    processes: object
-    session_run_monitor: object | None
-    health_payload: PayloadBuilder
     readiness_error_message: Callable[[Exception], str]
 
 
@@ -65,13 +61,7 @@ def register_legacy_live_agent_read_routes(
 
     @router.get("/api/live-agent-health")
     def live_agent_health(ctx: RequestContext) -> None:
-        ctx.send_json(
-            deps.health_payload(
-                ctx.deps.output_root,
-                deps.processes,
-                session_run_monitor=deps.session_run_monitor,
-            )
-        )
+        ctx.send_json(deps.health.health())
 
     @router.get("/api/live-agent-sessions/readiness")
     def live_agent_session_readiness(ctx: RequestContext) -> None:

@@ -127,21 +127,20 @@ from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
 from agentsassemble.legacy_live_agent_health import (
     DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
-    LIVE_AGENT_ADMISSION_HEALTH_STATUSES,
     MIN_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
-    diagnostic_agent_group_ids as _diagnostic_agent_group_ids,
-    is_diagnostic_agent as _is_diagnostic_agent,
-    is_diagnostic_process_group as _is_diagnostic_process_group,
-    live_agent_process_health_reason as _live_agent_process_health_reason,
-    live_agent_process_monitor_summary as _live_agent_process_monitor_health_summary,
-    live_agent_process_status_summary as _live_agent_process_health_summary,
-    live_agent_status_summary as _live_agent_health_summary,
     safe_health_identity as _safe_session_run_health_identity,
-    safe_health_int as _safe_session_run_health_int,
-    safe_health_phase as _safe_session_run_health_phase,
-    safe_health_reason as _safe_session_run_health_reason,
-    safe_health_timestamp as _safe_session_run_health_timestamp,
     safe_process_group_id as _safe_process_group_id,
+)
+from agentsassemble.legacy_live_agent_health_queries import (
+    LegacyLiveAgentHealthQueryService,
+    live_agent_health_payload,
+)
+from agentsassemble.legacy_live_agent_observation_health import (
+    latest_live_agent_turn_request_for_agent as _latest_live_agent_turn_request_for_agent,
+    latest_lobby_event as _latest_lobby_event,
+    live_agent_live_observation_status as _live_agent_live_observation_status,
+    live_agent_lobby_observation_status as _live_agent_lobby_observation_status,
+    live_agent_observation_events as _live_agent_observation_events,
 )
 from agentsassemble.legacy_live_agent_process_control import (
     looks_sensitive_process_control_error as _looks_sensitive_process_control_error,
@@ -217,7 +216,6 @@ from agentsassemble.live_agent_play_presets import build_play_preset_turns
 from agentsassemble.live_agent_review_checkpoints import write_review_checkpoint_artifacts
 from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
 from agentsassemble.live_agent_sessions import (
-    live_agent_session_readiness_summary,
     recover_live_agent_session,
     restart_live_agent_session,
     resume_live_agent_session_agent,
@@ -238,7 +236,6 @@ from agentsassemble.live_agent_smoke import (
     run_live_agent_smoke,
 )
 from agentsassemble.live_agent_turns import (
-    is_official_turn_cancellation_event,
     is_official_turn_reply_event,
     is_review_checkpoint_reply_event,
     official_turn_cancellation,
@@ -252,7 +249,6 @@ from agentsassemble.lobby_queries import (
     read_lobby_before,
 )
 from agentsassemble.live_meeting_memory import (
-    build_live_meeting_memory,
     write_live_meeting_memory_artifacts,
 )
 from agentsassemble.legacy_live_agent_queries import (
@@ -271,16 +267,11 @@ from agentsassemble.legacy_live_agent_diagnostics import (
     live_agent_session_readiness_payload,
     live_agent_session_runs_payload,
     session_process_groups_snapshot as _session_process_groups_snapshot,
-    session_readiness_by_target as _session_readiness_by_target,
-    session_run_readiness_overlay as _session_run_readiness_overlay,
 )
 from agentsassemble.legacy_live_agent_process_projection import (
-    agent_connection_evidence as _agent_connection_evidence,
-    groups_with_agent_connection_evidence as _groups_with_agent_connection_evidence,
     live_agent_processes_payload,
     parse_public_timestamp as _parse_public_timestamp,
     process_payload_with_agent_connection_evidence as _process_payload_with_agent_connection_evidence,
-    safe_agent_connection_identity as _safe_agent_connection_identity,
 )
 from agentsassemble.legacy_live_agent_roster_queries import (
     LegacyLiveAgentRosterQueryService,
@@ -3687,641 +3678,6 @@ def live_agent_readiness_payload(
     return result
 
 
-def live_agent_health_payload(
-    output_root: Path,
-    process_supervisor: LiveAgentProcessSupervisor,
-    *,
-    session_run_monitor: LiveAgentSessionRunMonitor | None = None,
-) -> dict[str, object]:
-    agents = read_live_agents(output_root)
-    groups = process_supervisor.snapshot_groups()
-    diagnostic_group_ids = _diagnostic_agent_group_ids(agents)
-    agent_summary = _live_agent_health_summary(agents)
-    admission_summary = _live_agent_admission_health_summary(output_root, agents)
-    process_summary = _live_agent_process_health_summary(groups, diagnostic_group_ids=diagnostic_group_ids)
-    connection_summary = _live_agent_connection_health_summary(
-        groups,
-        agents,
-        diagnostic_group_ids=diagnostic_group_ids,
-    )
-    session_summary = _live_agent_session_health_summary(
-        output_root,
-        groups,
-        diagnostic_group_ids=diagnostic_group_ids,
-    )
-    observation_summary = _live_agent_observation_health_summary(
-        output_root,
-        groups,
-        agents,
-        session_summary,
-        diagnostic_group_ids=diagnostic_group_ids,
-    )
-    sandbox_enforcement_summary = _live_agent_sandbox_enforcement_health_summary(agents)
-    process_monitor_summary = _live_agent_process_monitor_health_summary(process_supervisor)
-    process_monitor_attention = (
-        process_monitor_summary.get("attention")
-        if isinstance(process_monitor_summary.get("attention"), list)
-        else []
-    )
-    shared_memory_summary = _live_agent_shared_memory_health_summary(output_root, session_summary)
-    shared_memory_attention = (
-        shared_memory_summary.get("attention")
-        if isinstance(shared_memory_summary.get("attention"), list)
-        else []
-    )
-    session_run_summary = _live_agent_session_run_health_summary(output_root, session_summary=session_summary)
-    session_run_monitor_summary = _live_agent_session_run_monitor_health_summary(session_run_monitor)
-    session_run_monitor_attention = (
-        session_run_monitor_summary.get("attention")
-        if isinstance(session_run_monitor_summary.get("attention"), list)
-        else []
-    )
-    sandbox_enforcement_attention = (
-        sandbox_enforcement_summary.get("attention")
-        if isinstance(sandbox_enforcement_summary.get("attention"), list)
-        else []
-    )
-    status = (
-        "degraded"
-        if agent_summary["attention"]
-        or process_summary["attention"]
-        or process_monitor_attention
-        or connection_summary["attention"]
-        or session_summary["attention"]
-        or observation_summary["attention"]
-        or sandbox_enforcement_attention
-        or shared_memory_attention
-        or session_run_summary["attention"]
-        or session_run_monitor_attention
-        else "ok"
-    )
-    payload = {
-        "status": status,
-        "agents": agent_summary,
-        "admission": admission_summary,
-        "processes": process_summary,
-        "connections": connection_summary,
-        "sessions": session_summary,
-        "observations": observation_summary,
-        "sandbox_enforcement": sandbox_enforcement_summary,
-        "shared_memory": shared_memory_summary,
-        "session_runs": session_run_summary,
-    }
-    if process_monitor_summary:
-        payload["process_monitor"] = process_monitor_summary
-    if session_run_monitor_summary:
-        payload["session_run_monitor"] = session_run_monitor_summary
-    return payload
-
-
-def _live_agent_admission_health_summary(output_root: Path, agents: list[dict[str, object]]) -> dict[str, object]:
-    visible_agents = [agent for agent in agents if not _is_diagnostic_agent(agent)]
-    safe_payload = safe_live_agent_roster_payload(
-        _live_agent_roster_with_admission_evidence(output_root, {"agents": visible_agents})
-    )
-    safe_agents = _as_dict_list(safe_payload.get("agents"))
-    counts = {status: 0 for status in LIVE_AGENT_ADMISSION_HEALTH_STATUSES}
-    host_approved = 0
-    attention: list[str] = []
-    for index, agent in enumerate(safe_agents, start=1):
-        status = str(agent.get("admission_status") or "")
-        if status not in counts:
-            status = "unknown"
-        counts[status] += 1
-        if agent.get("host_approved_binding") is True:
-            host_approved += 1
-            continue
-        meeting_id = _safe_session_run_health_identity(agent.get("meeting_id")) or "lobby"
-        agent_id = _safe_session_run_health_identity(agent.get("agent_id")) or f"missing-agent-id-{index}"
-        attention.append(f"{meeting_id}:{agent_id}:{status}")
-    return {
-        "total": len(safe_agents),
-        "host_approved": host_approved,
-        "unapproved": len(safe_agents) - host_approved,
-        "counts": counts,
-        "attention": attention,
-    }
-
-
-def _live_agent_sandbox_enforcement_health_summary(agents: list[dict[str, object]]) -> dict[str, object]:
-    safe_payload = safe_live_agent_roster_payload({"agents": [agent for agent in agents if not _is_diagnostic_agent(agent)]})
-    safe_agents = _as_dict_list(safe_payload.get("agents"))
-    counts = {"advisory": 0, "codex_readonly": 0, "os_sandboxed": 0, "unknown": 0}
-    attention = []
-    for index, agent in enumerate(safe_agents, start=1):
-        enforcement = str(agent.get("sandbox_enforcement") or "")
-        if enforcement not in counts:
-            enforcement = "unknown"
-        counts[enforcement] += 1
-        if enforcement == "unknown":
-            agent_id = _safe_session_run_health_identity(agent.get("agent_id")) or f"missing-agent-id-{index}"
-            attention.append(agent_id)
-    return {"counts": counts, "attention": attention}
-
-
-def _live_agent_shared_memory_health_summary(
-    output_root: Path,
-    session_summary: dict[str, object],
-) -> dict[str, object]:
-    ready_sessions = 0
-    items: list[dict[str, object]] = []
-    latest_event_id = ""
-    official_event_count = 0
-    open_question_count = 0
-    action_item_count = 0
-    decision_count = 0
-    attention: list[str] = []
-    for session in _as_dict_list(session_summary.get("items")):
-        if str(session.get("status") or "") != "ready":
-            continue
-        ready_sessions += 1
-        meeting_id = _safe_session_run_health_identity(session.get("meeting_id"))
-        group_id = _safe_session_run_health_identity(session.get("group_id"))
-        if not meeting_id or not group_id:
-            continue
-        meeting_dir = output_root / "meetings" / meeting_id
-        try:
-            meeting = _read_live_agent_health_meeting(meeting_dir)
-            memory = build_live_meeting_memory(read_live_events(meeting_dir, limit=None), meeting=meeting)
-        except Exception:
-            attention.append(f"{meeting_id}:{group_id}:memory_unavailable")
-            continue
-        item = _live_agent_shared_memory_health_item(memory, meeting_id=meeting_id, group_id=group_id)
-        if not item:
-            continue
-        items.append(item)
-        official_event_count += int(item["official_event_count"])
-        open_question_count += int(item["open_question_count"])
-        action_item_count += int(item["action_item_count"])
-        decision_count += int(item["decision_count"])
-        latest_event_id = str(item.get("last_official_event_id") or latest_event_id)
-    return {
-        "ready_sessions": ready_sessions,
-        "with_memory": len(items),
-        "official_event_count": official_event_count,
-        "decision_count": decision_count,
-        "open_question_count": open_question_count,
-        "action_item_count": action_item_count,
-        "last_official_event_id": latest_event_id,
-        "attention": attention,
-        "items": items,
-    }
-
-
-def _live_agent_shared_memory_health_item(
-    memory: dict[str, object],
-    *,
-    meeting_id: str,
-    group_id: str,
-) -> dict[str, object]:
-    official_event_count = _payload_nonnegative_int(memory.get("official_event_count"), 0)
-    if official_event_count <= 0:
-        return {}
-    return {
-        "meeting_id": meeting_id,
-        "group_id": group_id,
-        "official_event_count": official_event_count,
-        "official_message_count": _payload_nonnegative_int(memory.get("official_message_count"), 0),
-        "official_synthesis_count": _payload_nonnegative_int(memory.get("official_synthesis_count"), 0),
-        "decision_count": _payload_nonnegative_int(memory.get("decision_count"), _memory_item_count(memory.get("decisions"))),
-        "open_question_count": _payload_nonnegative_int(
-            memory.get("open_question_count"),
-            _memory_item_count(memory.get("open_questions")),
-        ),
-        "action_item_count": _payload_nonnegative_int(
-            memory.get("action_item_count"),
-            _memory_item_count(memory.get("action_items")),
-        ),
-        "last_official_event_id": _safe_session_run_health_identity(memory.get("last_official_event_id")),
-    }
-
-
-def _read_live_agent_health_meeting(meeting_dir: Path) -> dict[str, object]:
-    try:
-        value = json.loads((meeting_dir / "meeting.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
-def _live_agent_connection_health_summary(
-    groups: list[dict[str, object]],
-    agents: list[dict[str, object]],
-    *,
-    diagnostic_group_ids: set[str] | None = None,
-) -> dict[str, object]:
-    diagnostic_group_ids = diagnostic_group_ids or set()
-    visible_agents = [agent for agent in agents if not _is_diagnostic_agent(agent)]
-    expected = 0
-    connected = 0
-    attention = []
-    for group in groups:
-        if str(group.get("status") or "") != "running":
-            continue
-        if _is_diagnostic_process_group(group, diagnostic_group_ids):
-            continue
-        group_connection = _agent_connection_evidence(group, visible_agents)
-        expected += int(group_connection.get("expected") or 0)
-        connected += int(group_connection.get("connected") or 0)
-        group_id = _safe_agent_connection_identity(group.get("group_id"))
-        for item in _as_dict_list(group_connection.get("attention")):
-            agent_id = _safe_agent_connection_identity(item.get("agent_id"))
-            status = str(item.get("status") or "unknown")
-            attention.append(f"{group_id}:{agent_id}:{status}")
-    return {"expected": expected, "connected": connected, "attention": attention}
-
-
-def _live_agent_session_health_summary(
-    output_root: Path,
-    groups: list[dict[str, object]],
-    *,
-    diagnostic_group_ids: set[str] | None = None,
-) -> dict[str, object]:
-    diagnostic_group_ids = diagnostic_group_ids or set()
-    visible_groups = [group for group in groups if not _is_diagnostic_process_group(group, diagnostic_group_ids)]
-    summary = live_agent_session_readiness_summary(output_root, visible_groups)
-    reasons_by_group = {
-        str(group.get("group_id") or ""): _live_agent_process_health_reason(group)
-        for group in visible_groups
-    }
-    for item in _as_dict_list(summary.get("items")):
-        reason = reasons_by_group.get(str(item.get("group_id") or ""))
-        if reason:
-            item["process_reason"] = reason
-    return summary
-
-
-def _live_agent_observation_health_summary(
-    output_root: Path,
-    groups: list[dict[str, object]],
-    agents: list[dict[str, object]],
-    session_summary: dict[str, object],
-    *,
-    diagnostic_group_ids: set[str] | None = None,
-) -> dict[str, object]:
-    diagnostic_group_ids = diagnostic_group_ids or set()
-    agents_by_id = {
-        _safe_session_run_health_identity(agent.get("agent_id")): agent
-        for agent in agents
-        if _safe_session_run_health_identity(agent.get("agent_id")) and not _is_diagnostic_agent(agent)
-    }
-    groups_by_session = {
-        (
-            _safe_session_run_health_identity(group.get("meeting_id")),
-            _safe_session_run_health_identity(group.get("group_id")),
-        ): group
-        for group in groups
-        if not _is_diagnostic_process_group(group, diagnostic_group_ids)
-    }
-    latest_lobby_event = _latest_lobby_event(output_root)
-    latest_lobby_event_id = _safe_session_run_health_identity(latest_lobby_event.get("id")) if latest_lobby_event else ""
-    latest_lobby_actor_id = _safe_session_run_health_identity(latest_lobby_event.get("actor_id")) if latest_lobby_event else ""
-    events_by_meeting: dict[str, list[dict[str, object]]] = {}
-    items: list[dict[str, object]] = []
-    attention: list[str] = []
-    lobby_behind_count = 0
-    live_behind_count = 0
-    error_count = 0
-    latest_live_request_count = 0
-
-    for session_item in _as_dict_list(session_summary.get("items")):
-        if str(session_item.get("status") or "") != "ready":
-            continue
-        meeting_id = _safe_session_run_health_identity(session_item.get("meeting_id"))
-        group_id = _safe_session_run_health_identity(session_item.get("group_id"))
-        if not meeting_id or not group_id:
-            continue
-        group = groups_by_session.get((meeting_id, group_id))
-        if group is None:
-            continue
-        meeting_events = _live_agent_observation_events(output_root, meeting_id, events_by_meeting)
-        for manifest_agent in _as_dict_list(group.get("agents")):
-            agent_id = _safe_session_run_health_identity(manifest_agent.get("agent_id"))
-            if not agent_id:
-                continue
-            agent = agents_by_id.get(agent_id, {})
-            latest_request = _latest_live_agent_turn_request_for_agent(meeting_events, agent_id)
-            if latest_request:
-                latest_live_request_count += 1
-            item = _live_agent_observation_item(
-                agent,
-                meeting_id=meeting_id,
-                group_id=group_id,
-                agent_id=agent_id,
-                latest_lobby_event_id=latest_lobby_event_id,
-                latest_lobby_actor_id=latest_lobby_actor_id,
-                latest_live_request=latest_request,
-                meeting_events=meeting_events,
-            )
-            if item["lobby_status"] == "behind":
-                lobby_behind_count += 1
-                attention.append(f"{meeting_id}:{group_id}:{agent_id}:lobby_cursor_behind")
-            if item["live_status"] == "behind":
-                live_behind_count += 1
-                attention.append(f"{meeting_id}:{group_id}:{agent_id}:live_cursor_behind")
-            if _live_agent_observation_has_active_error(agent):
-                error_count += 1
-            items.append(item)
-
-    return {
-        "ready_agent_count": len(items),
-        "lobby_behind_count": lobby_behind_count,
-        "live_behind_count": live_behind_count,
-        "error_count": error_count,
-        "latest_lobby_event_id": latest_lobby_event_id,
-        "latest_live_request_count": latest_live_request_count,
-        "attention": attention,
-        "items": items,
-    }
-
-
-def _latest_lobby_event(output_root: Path) -> dict[str, object]:
-    events = read_lobby(output_root, limit=1)
-    return events[-1] if events else {}
-
-
-def _live_agent_observation_events(
-    output_root: Path,
-    meeting_id: str,
-    events_by_meeting: dict[str, list[dict[str, object]]],
-) -> list[dict[str, object]]:
-    if meeting_id not in events_by_meeting:
-        try:
-            events_by_meeting[meeting_id] = read_live_events(_safe_meeting_dir(output_root, meeting_id), limit=200)
-        except ValueError:
-            events_by_meeting[meeting_id] = []
-    return events_by_meeting[meeting_id]
-
-
-def _latest_live_agent_turn_request_for_agent(
-    events: list[dict[str, object]],
-    agent_id: str,
-) -> dict[str, object]:
-    for event in reversed(events):
-        if event.get("kind") != "live_agent_turn_request":
-            continue
-        if _safe_session_run_health_identity(event.get("target_agent_id")) != agent_id:
-            continue
-        return event
-    return {}
-
-
-def _live_agent_observation_item(
-    agent: dict[str, object],
-    *,
-    meeting_id: str,
-    group_id: str,
-    agent_id: str,
-    latest_lobby_event_id: str,
-    latest_lobby_actor_id: str,
-    latest_live_request: dict[str, object],
-    meeting_events: list[dict[str, object]],
-) -> dict[str, object]:
-    last_observed_lobby = _safe_session_run_health_identity(agent.get("last_observed_event_id"))
-    last_observed_live = _safe_session_run_health_identity(agent.get("last_observed_live_event_id"))
-    latest_live_event_id = _safe_session_run_health_identity(latest_live_request.get("id"))
-    return {
-        "meeting_id": meeting_id,
-        "group_id": group_id,
-        "agent_id": agent_id,
-        "lobby_status": _live_agent_lobby_observation_status(
-            latest_lobby_event_id,
-            last_observed_lobby,
-            latest_actor_id=latest_lobby_actor_id,
-            agent_id=agent_id,
-        ),
-        "live_status": _live_agent_live_observation_status(
-            meeting_events,
-            agent_id=agent_id,
-            latest_request_id=latest_live_event_id,
-            last_observed_live_event_id=last_observed_live,
-        ),
-        "latest_lobby_event_id": latest_lobby_event_id,
-        "latest_live_event_id": latest_live_event_id,
-        "last_observed_event_id": last_observed_lobby,
-        "last_observed_live_event_id": last_observed_live,
-        "last_reply_at": _safe_session_run_health_timestamp(agent.get("last_reply_at")),
-    }
-
-
-def _live_agent_lobby_observation_status(
-    latest_event_id: str,
-    last_observed_event_id: str,
-    *,
-    latest_actor_id: str,
-    agent_id: str,
-) -> str:
-    if not latest_event_id:
-        return "none"
-    if latest_actor_id and latest_actor_id == agent_id:
-        return "self"
-    return "current" if last_observed_event_id == latest_event_id else "behind"
-
-
-def _live_agent_live_observation_status(
-    events: list[dict[str, object]],
-    *,
-    agent_id: str,
-    latest_request_id: str,
-    last_observed_live_event_id: str,
-) -> str:
-    if not latest_request_id:
-        return "none"
-    terminal_status = _live_agent_turn_terminal_status_in_events(events, agent_id=agent_id, source_event_id=latest_request_id)
-    if terminal_status:
-        return terminal_status
-    event_index = _live_event_index_by_id(events)
-    latest_index = event_index.get(latest_request_id)
-    observed_index = event_index.get(last_observed_live_event_id)
-    if latest_index is not None and observed_index is not None and observed_index >= latest_index:
-        return "current"
-    return "current" if last_observed_live_event_id == latest_request_id else "behind"
-
-
-def _live_agent_turn_terminal_status_in_events(
-    events: list[dict[str, object]],
-    *,
-    agent_id: str,
-    source_event_id: str,
-) -> str:
-    for event in events:
-        if is_official_turn_cancellation_event(event):
-            if _safe_session_run_health_identity(event.get("target_agent_id")) != agent_id:
-                continue
-            if _safe_session_run_health_identity(event.get("source_event_id")) == source_event_id:
-                return "cancelled"
-            continue
-        if not is_official_turn_reply_event(event) and not is_review_checkpoint_reply_event(event):
-            continue
-        if _safe_session_run_health_identity(event.get("actor_id")) != agent_id:
-            continue
-        if _safe_session_run_health_identity(event.get("source_event_id")) == source_event_id:
-            return "answered"
-    return ""
-
-
-def _live_agent_reply_for_request_in_events(
-    events: list[dict[str, object]],
-    *,
-    agent_id: str,
-    source_event_id: str,
-) -> bool:
-    for event in events:
-        if not is_official_turn_reply_event(event) and not is_review_checkpoint_reply_event(event):
-            continue
-        if _safe_session_run_health_identity(event.get("actor_id")) != agent_id:
-            continue
-        if _safe_session_run_health_identity(event.get("source_event_id")) == source_event_id:
-            return True
-    return False
-
-
-def _live_event_index_by_id(events: list[dict[str, object]]) -> dict[str, int]:
-    result: dict[str, int] = {}
-    for index, event in enumerate(events):
-        event_id = _safe_session_run_health_identity(event.get("id"))
-        if event_id:
-            result[event_id] = index
-    return result
-
-
-def _live_agent_observation_has_active_error(agent: dict[str, object]) -> bool:
-    return clean_lobby_text(agent.get("status"), limit=64) == "error"
-
-
-def _live_agent_session_run_health_summary(
-    output_root: Path,
-    *,
-    session_summary: dict[str, object] | None = None,
-) -> dict[str, object]:
-    snapshot = LiveAgentSessionRunController(output_root).health_snapshot()
-    runs = snapshot.get("runs") if isinstance(snapshot.get("runs"), list) else []
-    readiness_by_target = _session_readiness_by_target(session_summary or {})
-    items = []
-    attention = []
-    retrying_count = 0
-    for run in runs:
-        if not isinstance(run, dict):
-            continue
-        status = str(run.get("status") or "unknown").strip() or "unknown"
-        active = run.get("active") is True
-        retrying = _live_agent_session_run_retrying(run)
-        if retrying:
-            retrying_count += 1
-        readiness = _session_run_readiness_overlay(run, readiness_by_target) if active else {}
-        readiness_issue = _live_agent_session_run_readiness_issue(readiness) if active and status == "ready" else ""
-        if active and status != "ready":
-            attention.append(_live_agent_session_run_attention_label(run, status=status, retrying=retrying))
-        elif readiness_issue:
-            attention.append(_live_agent_session_run_attention_label(run, status=status, reason=readiness_issue))
-        item = {
-            "run_id": _safe_session_run_health_identity(run.get("run_id")),
-            "meeting_id": _safe_session_run_health_identity(run.get("meeting_id")),
-            "group_id": _safe_session_run_health_identity(run.get("group_id")),
-            "status": clean_lobby_text(status, limit=64),
-            "active": active,
-            "phase": _safe_session_run_health_phase(run.get("phase")),
-            "reconcile_failure_count": _safe_session_run_health_int(run.get("reconcile_failure_count")),
-            "reconcile_backoff_seconds": _safe_session_run_health_int(run.get("reconcile_backoff_seconds")),
-            "next_reconcile_at": _safe_session_run_health_timestamp(run.get("next_reconcile_at")),
-        }
-        if active:
-            item["readiness"] = readiness
-        items.append(item)
-    return {
-        "total": _safe_session_run_health_int(snapshot.get("total")),
-        "active": _safe_session_run_health_int(snapshot.get("active")),
-        "ready": _safe_session_run_health_int(snapshot.get("ready")),
-        "retrying": retrying_count,
-        "attention": attention,
-        "items": items,
-    }
-
-
-def _live_agent_session_run_monitor_health_summary(
-    monitor: LiveAgentSessionRunMonitor | None,
-) -> dict[str, object]:
-    if monitor is None:
-        return {}
-    raw = monitor.snapshot()
-    last_status = _safe_session_run_monitor_status(raw.get("last_status"))
-    last_error_type = _safe_session_run_monitor_error_type_value(raw.get("last_error_type"))
-    attention = []
-    if last_status == "failed":
-        attention.append(f"failed:{last_error_type or 'Exception'}")
-    return {
-        "running": raw.get("running") is True,
-        "interval_seconds": _safe_session_run_monitor_interval_value(raw.get("interval_seconds")),
-        "last_tick_at": _safe_session_run_health_timestamp(raw.get("last_tick_at")),
-        "last_status": last_status,
-        "last_result_count": _safe_session_run_health_int(raw.get("last_result_count")),
-        "last_error_type": last_error_type,
-        "attention": attention,
-    }
-
-
-def _safe_session_run_monitor_status(value: object) -> str:
-    status = clean_lobby_text(value, limit=64)
-    return status if status in {"not_started", "ok", "degraded", "failed"} else "unknown"
-
-
-def _safe_session_run_monitor_error_type_value(value: object) -> str:
-    error_type = clean_lobby_text(value, limit=80)
-    return error_type if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,79}", error_type) else ""
-
-
-def _safe_session_run_monitor_interval_value(value: object) -> float:
-    try:
-        seconds = float(value)
-    except (TypeError, ValueError):
-        return DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS
-    if not math.isfinite(seconds):
-        return DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS
-    return max(MIN_SESSION_RUN_MONITOR_INTERVAL_SECONDS, seconds)
-
-
-def _live_agent_session_run_retrying(run: dict[str, object]) -> bool:
-    return (
-        _safe_session_run_health_int(run.get("reconcile_failure_count")) > 0
-        or _safe_session_run_health_int(run.get("reconcile_backoff_seconds")) > 0
-        or bool(_safe_session_run_health_timestamp(run.get("next_reconcile_at")))
-    )
-
-
-def _live_agent_session_run_readiness_issue(readiness: dict[str, object]) -> str:
-    if clean_lobby_text(readiness.get("status"), limit=64) == "ready":
-        return ""
-    attention = readiness.get("attention") if isinstance(readiness.get("attention"), list) else []
-    if "session_run:no_current_readiness" in attention:
-        return "no_current_readiness"
-    if "session_run:missing_target" in attention:
-        return "missing_target"
-    process_status = clean_lobby_text(readiness.get("process_status"), limit=64)
-    if process_status and process_status != "running":
-        return f"process_{process_status}"
-    return "current_readiness_degraded"
-
-
-def _live_agent_session_run_attention_label(
-    run: dict[str, object],
-    *,
-    status: str,
-    retrying: bool = False,
-    reason: str = "",
-) -> str:
-    parts = [
-        _safe_session_run_health_identity(run.get("meeting_id")) or "-",
-        _safe_session_run_health_identity(run.get("group_id")) or "-",
-        _safe_session_run_health_identity(run.get("run_id")) or "-",
-        clean_lobby_text(status, limit=64) or "unknown",
-    ]
-    if reason:
-        parts.append(_safe_session_run_health_reason(reason))
-    elif retrying:
-        parts.append("retrying")
-    return ":".join(parts)
-
-
 def start_live_agent_process_payload(
     process_supervisor: LiveAgentProcessSupervisor,
     payload: dict[str, object],
@@ -6244,14 +5600,16 @@ def _make_handler(
         deps=LegacyLiveAgentReadDeps(
             queries=LegacyLiveAgentQueryService.build(output_root),
             roster=LegacyLiveAgentRosterQueryService(output_root),
+            health=LegacyLiveAgentHealthQueryService(
+                output_root=output_root,
+                processes=live_agent_process_supervisor,
+                session_run_monitor=session_run_monitor,
+            ),
             diagnostics=LegacyLiveAgentDiagnosticQueryService(
                 output_root=output_root,
                 processes=live_agent_process_supervisor,
                 session_run_controller=live_agent_session_run_controller,
             ),
-            processes=live_agent_process_supervisor,
-            session_run_monitor=session_run_monitor,
-            health_payload=live_agent_health_payload,
             readiness_error_message=_session_check_error_message,
         ),
     )

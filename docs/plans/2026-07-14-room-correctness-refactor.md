@@ -767,3 +767,27 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   pages fetched later, and new messages must all resolve the current profile by
   stable `participant_id`; event-time author snapshots are fallback only for
   deleted, imported, or otherwise unavailable participants.
+- 2026-07-14: Resident health aggregation now belongs to
+  `LegacyLiveAgentHealthQueryService`, which is injected into the read Router
+  directly. `legacy_live_agent_health_queries.py` combines agent, admission,
+  process, connection, readiness, sandbox, shared-memory, observation, durable
+  run, and monitor summaries without importing `gui.py`.
+  `legacy_live_agent_observation_health.py` owns lobby/live cursor comparison
+  and turn-terminal event interpretation; its five shared observation queries
+  are also used explicitly by the session-run stale-observation restart policy.
+  This dependency was previously hidden inside `gui.py` and was exposed by the
+  first extraction test as a `NameError`; it was fixed at the source by naming
+  the shared boundary, not by adding a fallback. `legacy_live_agent_session_run_health.py`
+  owns durable run/readiness overlays and monitor sanitization. The Router no
+  longer receives process supervisor, monitor, or free-function health
+  callbacks. Focused verification passed 61 tests, then the complete process,
+  readiness, recovery, session-run, health, route-ownership, and parity group
+  passed all 310 tests; the complete GUI discovery then passed all 472 tests in
+  224.611 seconds. `gui.py` is now 7,514 lines, down 674 lines in this
+  slice; the new modules are 345, 270, and 157 lines and split by data source
+  and failure mode rather than arbitrary line targets. Next, inventory and move
+  discovery, preflight, and smoke as independent compatibility slices, leaving
+  all seven deletion candidates in place until a separate deletion decision.
+  No later refactor may regress canonical Agent Session identity reprojection:
+  an agent name/avatar save must update old loaded chat, later history pages,
+  typing state, roster/detail views, and new chat by `participant_id`.

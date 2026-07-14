@@ -32,10 +32,6 @@ class FakeHandler:
         self.sent_error = (status, message, code, details)
 
 
-def _unused_payload(*args: object, **kwargs: object) -> dict[str, object]:
-    return {}
-
-
 class FakeLegacyLiveAgentQueries:
     def __init__(self) -> None:
         self.room_calls: list[str] = []
@@ -63,6 +59,15 @@ class FakeLegacyLiveAgentRoster:
     def list(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(kwargs)
         return {"agents": [{"agent_id": "agent-a"}]}
+
+
+class FakeLegacyLiveAgentHealth:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def health(self) -> dict[str, object]:
+        self.calls += 1
+        return {"status": "ok"}
 
 
 class FakeLegacyLiveAgentDiagnostics:
@@ -94,10 +99,8 @@ def _deps(**overrides: object) -> LegacyLiveAgentReadDeps:
     values = {
         "queries": FakeLegacyLiveAgentQueries(),
         "roster": FakeLegacyLiveAgentRoster(),
+        "health": FakeLegacyLiveAgentHealth(),
         "diagnostics": FakeLegacyLiveAgentDiagnostics(),
-        "processes": object(),
-        "session_run_monitor": None,
-        "health_payload": _unused_payload,
         "readiness_error_message": lambda error: str(error),
     }
     values.update(overrides)
@@ -171,17 +174,19 @@ class LegacyLiveAgentReadRoutesTests(unittest.TestCase):
 
     def test_forwards_query_filters_to_the_read_service(self) -> None:
         roster = FakeLegacyLiveAgentRoster()
+        health = FakeLegacyLiveAgentHealth()
         diagnostics = FakeLegacyLiveAgentDiagnostics()
         router = Router()
         register_legacy_live_agent_read_routes(
             router,
-            deps=_deps(roster=roster, diagnostics=diagnostics),
+            deps=_deps(roster=roster, health=health, diagnostics=diagnostics),
         )
 
         roster_handler = _dispatch(
             router,
             "/api/live-agents?meeting_id=room-a&agent_id=agent-a&agent_id=agent-b&status=idle&safe=yes",
         )
+        health_handler = _dispatch(router, "/api/live-agent-health")
         operations_handler = _dispatch(
             router,
             "/api/live-agent-operations?limit=12&operation=start&target_id=crew&status=failed&scan_limit=40&scan_tail=yes",
@@ -197,6 +202,8 @@ class LegacyLiveAgentReadRoutesTests(unittest.TestCase):
         process_groups_handler = _dispatch(router, "/api/live-agent-processes")
 
         self.assertEqual(roster_handler.sent_json, {"agents": [{"agent_id": "agent-a"}]})
+        self.assertEqual(health_handler.sent_json, {"status": "ok"})
+        self.assertEqual(health.calls, 1)
         self.assertEqual(operations_handler.sent_json, {"operations": []})
         self.assertEqual(process_events_handler.sent_json, {"events": []})
         self.assertEqual(session_runs_handler.sent_json, {"runs": []})
