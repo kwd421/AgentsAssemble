@@ -7,7 +7,6 @@ import re
 import threading
 import time
 import urllib.error
-import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
@@ -67,6 +66,10 @@ from agentsassemble.gui_legacy_live_agent_discovery_http import (
 from agentsassemble.gui_legacy_live_agent_preflight_http import (
     LegacyLiveAgentPreflightHttpDeps,
     register_legacy_live_agent_preflight_route,
+)
+from agentsassemble.gui_legacy_live_agent_smoke_http import (
+    LegacyLiveAgentSmokeHttpDeps,
+    register_legacy_live_agent_smoke_routes,
 )
 from agentsassemble.gui_legacy_live_agent_session_http import (
     LegacySessionHttpDeps,
@@ -282,6 +285,11 @@ from agentsassemble.legacy_live_agent_process_projection import (
 from agentsassemble.legacy_live_agent_preflight import (
     LegacyLiveAgentPreflightService,
     live_agent_preflight_payload,
+)
+from agentsassemble.legacy_live_agent_smoke import (
+    LegacyLiveAgentSmokeService,
+    official_round_smoke_operation_details as _official_round_smoke_operation_details,
+    request_json as _request_json,
 )
 from agentsassemble.legacy_live_agent_roster_queries import (
     LegacyLiveAgentRosterQueryService,
@@ -3430,6 +3438,7 @@ def live_agent_probe_payload(output_root: Path, agent_id: str, payload: dict[str
 
 
 def live_agent_smoke_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
+    """Compatibility seam used by aggregate readiness until that route moves."""
     return run_live_agent_smoke(
         server=default_server,
         group_id=str(payload.get("group_id") or ""),
@@ -3444,6 +3453,7 @@ def live_agent_official_round_smoke_payload(
     *,
     default_server: str,
 ) -> dict[str, object]:
+    """Compatibility seam used by aggregate readiness until that route moves."""
     return run_live_agent_official_round_smoke(
         output_root=output_root,
         server=default_server,
@@ -4981,26 +4991,6 @@ def _rounds_finalization_operation_details(finalization: dict[str, object], meet
     return details
 
 
-def _official_round_smoke_operation_details(smoke: dict[str, object]) -> dict[str, object]:
-    return {
-        "group_id": clean_lobby_text(smoke.get("group_id"), limit=128),
-        "result_status": _operation_result_status(smoke.get("status")),
-        "meeting_id": clean_lobby_text(smoke.get("meeting_id"), limit=128),
-        "round_id": clean_lobby_text(smoke.get("round_id"), limit=128),
-        "agent_ids": _safe_payload_strings(smoke.get("agent_ids"), limit=64),
-        "role_ids": _safe_payload_strings(smoke.get("role_ids"), limit=128),
-        "turn_count": _payload_nonnegative_int(smoke.get("turn_count"), 0),
-        "answered_count": _payload_nonnegative_int(smoke.get("answered_count"), 0),
-        "timeout_count": _payload_nonnegative_int(smoke.get("timeout_count"), 0),
-        "skipped_count": _payload_nonnegative_int(smoke.get("skipped_count"), 0),
-        "stopped": smoke.get("stopped") is True,
-        "timeout_seconds": _payload_nonnegative_float(smoke.get("timeout_seconds"), 0.0),
-        "statuses": _safe_payload_strings(smoke.get("statuses"), limit=32),
-        "request_event_ids": _safe_payload_strings(smoke.get("request_event_ids"), limit=128),
-        "reply_event_ids": _safe_payload_strings(smoke.get("reply_event_ids"), limit=128),
-    }
-
-
 def _session_smoke_operation_details(smoke: dict[str, object]) -> dict[str, object]:
     return {
         "group_id": clean_lobby_text(smoke.get("group_id"), limit=128),
@@ -5173,23 +5163,6 @@ def _turn_preset_operation_details(preset_result: dict[str, object], meeting_id:
     details["round_id"] = clean_lobby_text(preset_result.get("round_id"), limit=128)
     details["role_ids"] = _safe_payload_role_ids(preset_result.get("role_ids"))
     return details
-
-
-def _request_json(
-    url: str,
-    *,
-    method: str = "GET",
-    payload: dict[str, object] | None = None,
-    timeout_seconds: float = 15.0,
-) -> dict[str, object]:
-    data = None
-    headers = {}
-    if payload is not None:
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-        return json.loads(response.read().decode("utf-8"))
 
 
 def _local_server_url(server_address: tuple[object, ...]) -> str:
@@ -5497,6 +5470,15 @@ def _make_handler(
             read_operation_payload=_late_operation_json_payload,
             record_operation=record_live_agent_operation,
             request_server_url=lambda ctx: ctx.handler._request_server_url(),
+        ),
+    )
+    register_legacy_live_agent_smoke_routes(
+        route_table,
+        deps=LegacyLiveAgentSmokeHttpDeps(
+            smoke=LegacyLiveAgentSmokeService(output_root),
+            read_operation_payload=_late_operation_json_payload,
+            record_operation=record_live_agent_operation,
+            local_server_url=lambda ctx: ctx.handler._local_server_url(),
         ),
     )
 
@@ -6467,77 +6449,6 @@ def _make_handler(
                     self._send_json(_safe_diagnostic_report_payload(provider_health_payload(payload)))
                 except ValueError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                return
-            if parsed.path == "/api/live-agent-smoke":
-                payload = self._operation_json_payload(operation="smoke.run")
-                if payload is None:
-                    return
-                try:
-                    smoke = live_agent_smoke_payload(payload, default_server=self._local_server_url())
-                except LiveAgentSmokeFailed as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="smoke.run",
-                        status="failed",
-                        target_id=str(payload.get("group_id") or ""),
-                        error=str(error),
-                        details={"group_id": str(payload.get("group_id") or "")},
-                    )
-                    self._send_error(HTTPStatus.CONFLICT, str(error))
-                    return
-                except (ValueError, urllib.error.URLError) as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="smoke.run",
-                        status="failed",
-                        target_id=str(payload.get("group_id") or ""),
-                        error=str(error),
-                        details={"group_id": str(payload.get("group_id") or "")},
-                    )
-                    self._send_error(HTTPStatus.BAD_GATEWAY, str(error))
-                    return
-                result_status = _operation_result_status(smoke.get("status"))
-                record_live_agent_operation(
-                    output_root,
-                    operation="smoke.run",
-                    status=_operation_success_for_result(result_status, success_values={"ok"}),
-                    target_id=str(smoke.get("group_id") or payload.get("group_id") or ""),
-                    summary="ran credential-free live-agent smoke",
-                    details={"group_id": str(smoke.get("group_id") or ""), "result_status": result_status},
-                )
-                self._send_json(smoke)
-                return
-            if parsed.path == "/api/live-agent-official-round-smoke":
-                payload = self._operation_json_payload(operation="smoke.official_round")
-                if payload is None:
-                    return
-                try:
-                    smoke = live_agent_official_round_smoke_payload(
-                        output_root,
-                        payload,
-                        default_server=self._local_server_url(),
-                    )
-                except (LiveAgentSmokeFailed, ValueError, urllib.error.URLError) as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="smoke.official_round",
-                        status="failed",
-                        target_id=str(payload.get("group_id") or ""),
-                        error=str(error),
-                        details={"group_id": str(payload.get("group_id") or "")},
-                    )
-                    self._send_error(HTTPStatus.BAD_GATEWAY, str(error))
-                    return
-                result_status = _operation_result_status(smoke.get("status"))
-                record_live_agent_operation(
-                    output_root,
-                    operation="smoke.official_round",
-                    status=_operation_success_for_result(result_status, success_values={"ok"}),
-                    target_id=str(smoke.get("group_id") or payload.get("group_id") or ""),
-                    summary="ran credential-free official round smoke",
-                    details=_official_round_smoke_operation_details(smoke),
-                )
-                self._send_json(smoke)
                 return
             if parsed.path == "/api/live-agent-session-smoke":
                 payload = self._operation_json_payload(operation="session.smoke")

@@ -821,3 +821,24 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   error/redaction contract, then move one coherent family per commit. The seven
   deletion candidates remain visible in the old handler chain, and name/avatar
   history must continue to resolve through canonical `participant_id`.
+- 2026-07-14: Credential-free basic resident smoke and credential-free
+  official-round smoke now belong to `LegacyLiveAgentSmokeService` and
+  `gui_legacy_live_agent_smoke_http.py`. The service owns loopback JSON calls,
+  timeout normalization, and core smoke invocation; the Router module owns the
+  two exact POST paths, operation recording, and their intentionally different
+  error contracts. Basic smoke still maps a `LiveAgentSmokeFailed` contract
+  failure to `409` and transport/value failures to `502`; official-round smoke
+  maps all three to `502`. Internal callbacks use the bound loopback server
+  URL, never the request `Host` header. The first integration run caught this
+  boundary because the test supplies `Host: 127.0.0.1:1`; fixing the source
+  restored real credential-free basic and official-round execution. Aggregate
+  readiness still calls the historical `agentsassemble.gui` smoke seams, so
+  those compatibility wrappers and runner patch points remain explicitly until
+  readiness itself moves. Focused service/route, real GUI smoke, readiness,
+  core smoke, ownership, and architecture checks pass; session smoke is the
+  next slice, followed by real-provider smoke and aggregate readiness. The
+  seven deletion candidates remain unmoved. Canonical identity remains a hard
+  acceptance contract: an Agent Session name/avatar save must immediately
+  reproject old loaded messages, history fetched later, typing state, roster,
+  detail UI, and new messages by stable `participant_id`; persisted author
+  snapshots are fallback only when no current participant profile exists.
