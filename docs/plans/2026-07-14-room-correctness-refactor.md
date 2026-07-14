@@ -791,3 +791,18 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   No later refactor may regress canonical Agent Session identity reprojection:
   an agent name/avatar save must update old loaded chat, later history pages,
   typing state, roster/detail views, and new chat by `participant_id`.
+- 2026-07-14: Configuration-only resident preflight is now separated from
+  discovery and smoke. `LegacyLiveAgentPreflightService` owns payload-to-config
+  validation without process startup, and `gui_legacy_live_agent_preflight_http.py`
+  owns the existing POST method/path, operation audit, status mapping, and
+  response. `diagnostic_report_projection.py` owns the config-path/message
+  redaction shared by preflight and provider-health, so moving the route did not
+  weaken the information boundary. `agentsassemble.gui` still re-exports
+  `live_agent_preflight_payload` and the historical private projection aliases
+  for compatibility. Focused service, HTTP behavior, full preflight policy,
+  provider-health, route-ownership, and parity verification passed all 120
+  tests. Discovery is next because it writes generated configs and therefore
+  must not share the preflight service. Credential-free, official-round,
+  session, real-session, and readiness smoke remain later, independently
+  verified slices. The seven deletion candidates and canonical name/avatar
+  history reprojection contract remain unchanged.

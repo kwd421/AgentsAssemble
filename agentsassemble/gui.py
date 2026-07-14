@@ -69,6 +69,10 @@ from agentsassemble.gui_legacy_live_agent_process_http import (
     LegacyProcessHttpDeps,
     register_legacy_process_mutation_routes,
 )
+from agentsassemble.gui_legacy_live_agent_preflight_http import (
+    LegacyLiveAgentPreflightHttpDeps,
+    register_legacy_live_agent_preflight_route,
+)
 from agentsassemble.gui_legacy_live_agent_session_http import (
     LegacySessionHttpDeps,
     register_legacy_session_mutation_routes,
@@ -122,7 +126,6 @@ from agentsassemble.live_agent_self_managed import (
 )
 from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
-from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
 from agentsassemble.legacy_live_agent_health import (
@@ -143,7 +146,6 @@ from agentsassemble.legacy_live_agent_observation_health import (
     live_agent_observation_events as _live_agent_observation_events,
 )
 from agentsassemble.legacy_live_agent_process_control import (
-    looks_sensitive_process_control_error as _looks_sensitive_process_control_error,
     process_bulk_offline_operation_details as _process_bulk_offline_operation_details,
     process_offline_operation_details as _process_offline_operation_details,
     process_recover_error_message as _process_recover_error_message,
@@ -152,6 +154,10 @@ from agentsassemble.legacy_live_agent_process_control import (
     process_stop_error_message as _process_stop_error_message,
     process_stop_running_error_message as _process_stop_running_error_message,
     process_stop_running_operation_status as _process_stop_running_operation_status,
+)
+from agentsassemble.diagnostic_report_projection import (
+    looks_sensitive_operator_diagnostic_text as _looks_sensitive_operator_diagnostic_text,
+    safe_diagnostic_report_payload as _safe_diagnostic_report_payload,
 )
 from agentsassemble.legacy_live_agent_process_service import (
     LegacyLiveAgentProcessMutationService,
@@ -272,6 +278,10 @@ from agentsassemble.legacy_live_agent_process_projection import (
     live_agent_processes_payload,
     parse_public_timestamp as _parse_public_timestamp,
     process_payload_with_agent_connection_evidence as _process_payload_with_agent_connection_evidence,
+)
+from agentsassemble.legacy_live_agent_preflight import (
+    LegacyLiveAgentPreflightService,
+    live_agent_preflight_payload,
 )
 from agentsassemble.legacy_live_agent_roster_queries import (
     LegacyLiveAgentRosterQueryService,
@@ -3419,12 +3429,6 @@ def live_agent_probe_payload(output_root: Path, agent_id: str, payload: dict[str
     )
 
 
-def live_agent_preflight_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
-    config_path = Path(str(payload.get("config_path") or "configs/live-agents.example.json"))
-    server = str(payload.get("server") or default_server)
-    return preflight_live_agent_config(config_path, server_override=server)
-
-
 def live_agent_discovery_payload(
     output_root: Path,
     payload: dict[str, object],
@@ -5238,55 +5242,6 @@ def _memory_item_count(value: object) -> int:
     return len(value) if isinstance(value, list) else 0
 
 
-def _safe_diagnostic_report_payload(report: dict[str, object]) -> dict[str, object]:
-    safe = dict(report)
-    has_failed_config_load = _diagnostic_report_has_failed_config_load(safe)
-    if has_failed_config_load or _diagnostic_report_exposes_sensitive_config_path(safe):
-        safe["config_path"] = "[redacted]"
-    checks = safe.get("checks")
-    if isinstance(checks, list):
-        safe["checks"] = [
-            _safe_diagnostic_check_payload(check, redact_config_load=has_failed_config_load)
-            for check in checks
-        ]
-    return safe
-
-
-def _diagnostic_report_has_failed_config_load(report: dict[str, object]) -> bool:
-    checks = report.get("checks")
-    if not isinstance(checks, list):
-        return False
-    return any(
-        isinstance(check, dict) and check.get("id") == "config_load" and check.get("status") == "failed"
-        for check in checks
-    )
-
-
-def _diagnostic_report_exposes_sensitive_config_path(report: dict[str, object]) -> bool:
-    if report.get("status") != "failed":
-        return False
-    config_path = str(report.get("config_path") or "")
-    return bool(config_path and _looks_sensitive_operator_diagnostic_text(config_path))
-
-
-def _safe_diagnostic_check_payload(check: object, *, redact_config_load: bool) -> object:
-    if not isinstance(check, dict):
-        return check
-    safe = dict(check)
-    message = str(safe.get("message") or "")
-    if (
-        redact_config_load
-        and safe.get("id") == "config_load"
-        and safe.get("status") == "failed"
-    ) or _looks_sensitive_operator_diagnostic_text(message):
-        safe["message"] = "Config load failed: details redacted."
-    return safe
-
-
-def _looks_sensitive_operator_diagnostic_text(message: str) -> bool:
-    return _looks_sensitive_process_control_error(message)
-
-
 def _turn_round_request_operation_details(payload: dict[str, object], meeting_id: str) -> dict[str, object]:
     return {
         "meeting_id": meeting_id,
@@ -5620,6 +5575,16 @@ def _make_handler(
         target_id: str = "",
     ) -> dict[str, object] | None:
         return ctx.handler._operation_json_payload(operation=operation_name, target_id=target_id)
+
+    register_legacy_live_agent_preflight_route(
+        route_table,
+        deps=LegacyLiveAgentPreflightHttpDeps(
+            preflight=LegacyLiveAgentPreflightService(),
+            read_operation_payload=_late_operation_json_payload,
+            record_operation=record_live_agent_operation,
+            request_server_url=lambda ctx: ctx.handler._request_server_url(),
+        ),
+    )
 
     legacy_session_service = LegacyLiveAgentSessionMutationService(
         output_root,
@@ -6573,40 +6538,6 @@ def _make_handler(
                     },
                 )
                 self._send_json(engagement)
-                return
-            if parsed.path == "/api/live-agent-preflight":
-                payload = self._operation_json_payload(operation="preflight.check")
-                if payload is None:
-                    return
-                try:
-                    preflight = live_agent_preflight_payload(payload, default_server=self._request_server_url())
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="preflight.check",
-                        status="failed",
-                        error=str(error),
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                result_status = _operation_result_status(preflight.get("status"))
-                record_live_agent_operation(
-                    output_root,
-                    operation="preflight.check",
-                    status=_operation_success_for_result(result_status, success_values={"ok"}),
-                    target_id=str(payload.get("group_id") or ""),
-                    summary="checked live-agent config",
-                    details={
-                        "result_status": result_status,
-                        "agents": (preflight.get("summary") or {}).get("agents", 0)
-                        if isinstance(preflight.get("summary"), dict)
-                        else 0,
-                        "failed_agents": (preflight.get("summary") or {}).get("failed_agents", 0)
-                        if isinstance(preflight.get("summary"), dict)
-                        else 0,
-                    },
-                )
-                self._send_json(_safe_diagnostic_report_payload(preflight))
                 return
             if parsed.path == "/api/live-agent-discovery":
                 payload = self._operation_json_payload(operation="discovery.run")
