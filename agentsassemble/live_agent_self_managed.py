@@ -21,9 +21,11 @@ import os
 import signal
 import socket
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from agentsassemble.live_agent_operations import append_live_agent_operation
 from agentsassemble.live_agents import read_live_agents, set_live_agent_status
 from agentsassemble.meeting_events import clean_lobby_text
 
@@ -133,3 +135,84 @@ def resume_self_managed_agent_payload(
         "pid": new_pid,
         "cwd": cwd_arg or "",
     }
+
+
+SelfManagedCommand = Callable[[Path, dict[str, object]], dict[str, object]]
+
+
+@dataclass(frozen=True)
+class LegacySelfManagedAgentService:
+    """Run retained self-managed process controls and record their audit."""
+
+    output_root: Path
+    stop_command: SelfManagedCommand = stop_self_managed_agent_payload
+    resume_command: SelfManagedCommand = resume_self_managed_agent_payload
+
+    def stop(self, payload: dict[str, object]) -> dict[str, object]:
+        agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
+        try:
+            result = self.stop_command(self.output_root, payload)
+        except (OSError, ValueError) as error:
+            self._record_failure("stop_self_managed", agent_id, str(error))
+            raise
+        result_agent_id = str(result.get("agent_id") or agent_id)
+        self._record_success(
+            "stop_self_managed",
+            result_agent_id,
+            summary=f"stopped self-managed agent pid={result.get('pid')}",
+            pid=result.get("pid"),
+        )
+        return result
+
+    def resume(self, payload: dict[str, object]) -> dict[str, object]:
+        agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
+        try:
+            result = self.resume_command(self.output_root, payload)
+        except (OSError, ValueError) as error:
+            self._record_failure("resume_self_managed", agent_id, str(error))
+            raise
+        result_agent_id = str(result.get("agent_id") or agent_id)
+        self._record_success(
+            "resume_self_managed",
+            result_agent_id,
+            summary=f"relaunched self-managed agent pid={result.get('pid')}",
+            pid=result.get("pid"),
+        )
+        return result
+
+    def record_invalid_json(self, action: str) -> None:
+        self._record_failure(action, "", "Invalid JSON", include_agent_detail=False)
+
+    def _record_failure(
+        self,
+        action: str,
+        agent_id: str,
+        error: str,
+        *,
+        include_agent_detail: bool = True,
+    ) -> None:
+        append_live_agent_operation(
+            self.output_root,
+            operation=f"frontend_agent.{action}",
+            status="failed",
+            target_id=agent_id,
+            error=error,
+            details={"agent_id": agent_id} if include_agent_detail else {},
+        )
+
+    def _record_success(
+        self,
+        action: str,
+        agent_id: str,
+        *,
+        summary: str,
+        pid: object,
+    ) -> None:
+        append_live_agent_operation(
+            self.output_root,
+            operation=f"frontend_agent.{action}",
+            status="success",
+            target_id=agent_id,
+            summary=summary,
+            details={"agent_id": agent_id, "pid": pid},
+        )

@@ -5,9 +5,11 @@ from pathlib import Path
 
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
 from agentsassemble.live_agent_self_managed import (
+    LegacySelfManagedAgentService,
     resume_self_managed_agent_payload,
     stop_self_managed_agent_payload,
 )
+from agentsassemble.live_agent_operations import read_live_agent_operations
 
 
 def _register(root: Path, **overrides):
@@ -100,6 +102,35 @@ class SelfManagedResumeTests(unittest.TestCase):
             _register(root, relaunch_argv=[])
             with self.assertRaisesRegex(ValueError, "did not register a relaunch command"):
                 resume_self_managed_agent_payload(root, {"agent_id": "grok-live"}, launcher=lambda *a, **k: None)
+
+
+class SelfManagedServiceTests(unittest.TestCase):
+    def test_service_records_success_and_failure_without_replacing_commands(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            def stop_command(output_root, payload):
+                return {"status": "stopped", "agent_id": payload["agent_id"], "pid": 4242}
+
+            def resume_command(output_root, payload):
+                raise ValueError("resume recipe missing")
+
+            service = LegacySelfManagedAgentService(
+                root,
+                stop_command=stop_command,
+                resume_command=resume_command,
+            )
+
+            self.assertEqual(service.stop({"agent_id": "grok-live"})["status"], "stopped")
+            with self.assertRaisesRegex(ValueError, "resume recipe missing"):
+                service.resume({"agent_id": "grok-live"})
+
+            operations = read_live_agent_operations(root)
+            by_operation = {str(item["operation"]): item for item in operations}
+            self.assertEqual(by_operation["frontend_agent.stop_self_managed"]["status"], "success")
+            self.assertEqual(by_operation["frontend_agent.stop_self_managed"]["target_id"], "grok-live")
+            self.assertEqual(by_operation["frontend_agent.resume_self_managed"]["status"], "failed")
+            self.assertEqual(by_operation["frontend_agent.resume_self_managed"]["target_id"], "grok-live")
 
 
 if __name__ == "__main__":

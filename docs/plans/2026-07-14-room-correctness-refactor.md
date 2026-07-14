@@ -1005,3 +1005,14 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   the handler and were not moved. The next Phase 5.4 slice should classify and
   move the retained self-managed room/session commands without moving
   `/api/live-agent-room/expel`.
+- 2026-07-14: Self-managed stop/resume is now a separate retained compatibility
+  family. `LegacySelfManagedAgentService` owns the existing command call and
+  success/failure operation audit; its Router module owns JSON parsing and the
+  preserved `400` response with agent details. Focused service tests still use
+  injected signal/launcher seams, while Router tests prove stop and resume
+  dispatch, malformed JSON audit, and error mapping without touching a real
+  process. `delete-session` was deliberately not bundled into this service:
+  it owns server process-group, generated config, meeting binding, and roster
+  deletion, which is a different failure and verification boundary. The
+  `expel` deletion candidate also remains untouched. The next slice should move
+  delete-session behind its own typed service and Router route.

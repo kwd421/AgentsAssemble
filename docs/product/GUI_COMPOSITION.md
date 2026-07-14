@@ -165,6 +165,7 @@ These families already have a clear module owner and should not move back into
 | `gui_legacy_live_agent_session_http.py` | Compatibility | Legacy resident-session mutations | `tests/test_gui_legacy_live_agent_session_http.py`, `tests/test_legacy_live_agent_session_service.py` |
 | `gui_legacy_live_agent_process_http.py` | Compatibility | Legacy process-group mutations | `tests/test_gui_legacy_live_agent_process_http.py`, `tests/test_legacy_live_agent_process_service.py` |
 | `gui_legacy_live_agent_session_run_http.py` | Compatibility | Durable legacy session-run controls | `tests/test_gui_legacy_live_agent_session_run_http.py`, `tests/test_legacy_live_agent_session_run_service.py` |
+| `gui_legacy_live_agent_self_managed_http.py` | Compatibility | Retained stop/resume controls for same-host self-managed residents; execution and audit live in `live_agent_self_managed.py` | `tests/test_gui_legacy_live_agent_self_managed_http.py`, `tests/test_live_agent_self_managed.py` |
 | `gui_legacy_live_agent_preflight_http.py` | Compatibility | Configuration-only resident preflight and redacted diagnostics | `tests/test_gui_legacy_live_agent_preflight_http.py`, `tests/test_gui_server_preflight.py` |
 | `gui_legacy_live_agent_discovery_http.py` | Compatibility | Local CLI discovery and generated resident config bundles | `tests/test_gui_legacy_live_agent_discovery_http.py`, `tests/test_live_agent_discovery.py` |
 | `gui_legacy_live_agent_smoke_http.py` | Compatibility | Basic, official-round, durable session, and approval-gated real-provider smoke execution | `tests/test_gui_legacy_live_agent_smoke_http.py`, `tests/test_gui_server_smoke_routes.py`, `tests/test_gui_server_real_session_smoke.py` |
@@ -184,7 +185,7 @@ families directly.
 | `/ws`, `/`, `/app/*`, `/join`, guarded React assets | Current core composition | Protocol upgrade and static delivery are transport concerns | Keep thin transport branches in the final handler |
 | `/api/meetings/{meeting_id}` finalize, review, and official-turn mutations | Compatibility | Legacy CLI and meeting workflows still call them | Retain mutation behavior until a separate legacy decision; read projections already belong to `gui_legacy_meeting_http.py` |
 | `/api/live-agents*` registration, heartbeat, lobby, DM reply, official turn, probe, leave, and engagement | Compatibility | CLI, MCP, resident runner, and smoke clients still call them | Move behind typed legacy resident-agent services and Router registrations; room and return-packet GETs are already moved |
-| Remaining `/api/live-agent-*` create and room/session operations | Compatibility or deletion candidates | Most process/session operations remain operator or CLI contracts; current provider login is already Router-owned | Preserve exact ACK/error payloads while moving retained operations. Discovery, preflight, health reads, all four direct smoke routes, and aggregate readiness are Router-owned |
+| Remaining `/api/live-agent-*` create and room/session operations | Compatibility or deletion candidates | Delete-session remains a current React compatibility contract; provider login and self-managed stop/resume are Router-owned | Preserve exact ACK/error payloads while moving retained operations. Discovery, preflight, health reads, all four direct smoke routes, and aggregate readiness are Router-owned |
 | `/api/codex-sessions/invite` and `/join` | Compatibility | CLI still calls the Codex meeting-session compatibility workflow | Move with legacy meeting/session service, never into the canonical provider adapter |
 
 ## Deletion Candidates
@@ -323,5 +324,8 @@ avatar truthiness bug: empty canonical avatars could revive event-time or
 localStorage images. That fallback is removed, typing names prefer the current
 participant, and the real Playwright settings flow now covers image selection,
 crop/apply, canonical save, old-message reprojection, roster/detail projection,
-and reload. Phase 5.4 may continue. Do not push unless the user explicitly
-asks.
+and reload. Self-managed resident stop/resume is Router-owned through
+`LegacySelfManagedAgentService`; delete-session remains a separate handler
+branch because it owns server process-group/config/meeting deletion rather than
+self-managed process signaling. Phase 5.4 may continue. Do not push unless the
+user explicitly asks.

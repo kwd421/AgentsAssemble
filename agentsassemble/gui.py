@@ -69,6 +69,7 @@ from agentsassemble.gui_legacy_live_agent_readiness_http import (
     LegacyLiveAgentReadinessHttpDeps,
     register_legacy_live_agent_readiness_route,
 )
+from agentsassemble.gui_legacy_live_agent_self_managed_http import register_legacy_self_managed_agent_routes
 from agentsassemble.gui_legacy_live_agent_smoke_http import (
     LegacyLiveAgentSmokeHttpDeps,
     register_legacy_live_agent_smoke_routes,
@@ -120,10 +121,7 @@ from agentsassemble.live_agent_room_admin import (
     delete_live_agent_session_payload,
     expel_live_agent_from_room_payload,
 )
-from agentsassemble.live_agent_self_managed import (
-    resume_self_managed_agent_payload,
-    stop_self_managed_agent_payload,
-)
+from agentsassemble.live_agent_self_managed import LegacySelfManagedAgentService
 from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_runner import load_group_configs
@@ -4876,6 +4874,10 @@ def _make_handler(
             default_server_url=lambda ctx: ctx.handler._request_server_url(),
         ),
     )
+    register_legacy_self_managed_agent_routes(
+        route_table,
+        service=LegacySelfManagedAgentService(output_root),
+    )
 
     register_mafia_routes(route_table, read_operation_payload=_late_operation_json_payload)
 
@@ -5121,62 +5123,6 @@ def _make_handler(
                     target_id=str(result.get("agent_id") or agent_id),
                     summary="expelled frontend live agent from room",
                     details={"meeting_id": str(result.get("meeting_id") or payload.get("meeting_id") or "")},
-                )
-                self._send_json(result)
-                return
-            if parsed.path == "/api/live-agent-room/stop-self-managed":
-                payload = self._operation_json_payload(operation="frontend_agent.stop_self_managed")
-                if payload is None:
-                    return
-                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
-                try:
-                    result = stop_self_managed_agent_payload(output_root, payload)
-                except (OSError, ValueError) as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="frontend_agent.stop_self_managed",
-                        status="failed",
-                        target_id=agent_id,
-                        error=str(error),
-                        details={"agent_id": agent_id},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error), details={"agent_id": agent_id})
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="frontend_agent.stop_self_managed",
-                    status="success",
-                    target_id=str(result.get("agent_id") or agent_id),
-                    summary=f"stopped self-managed agent pid={result.get('pid')}",
-                    details={"agent_id": str(result.get("agent_id") or agent_id), "pid": result.get("pid")},
-                )
-                self._send_json(result)
-                return
-            if parsed.path == "/api/live-agent-room/resume-self-managed":
-                payload = self._operation_json_payload(operation="frontend_agent.resume_self_managed")
-                if payload is None:
-                    return
-                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
-                try:
-                    result = resume_self_managed_agent_payload(output_root, payload)
-                except (OSError, ValueError) as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="frontend_agent.resume_self_managed",
-                        status="failed",
-                        target_id=agent_id,
-                        error=str(error),
-                        details={"agent_id": agent_id},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error), details={"agent_id": agent_id})
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="frontend_agent.resume_self_managed",
-                    status="success",
-                    target_id=str(result.get("agent_id") or agent_id),
-                    summary=f"relaunched self-managed agent pid={result.get('pid')}",
-                    details={"agent_id": str(result.get("agent_id") or agent_id), "pid": result.get("pid")},
                 )
                 self._send_json(result)
                 return
