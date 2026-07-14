@@ -28,7 +28,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from agentsassemble.identity_room_preferences import (
+    delete_room_preferences,
+    ensure_room_preferences_schema,
+    read_room_preferences,
+    update_room_preferences,
+)
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.room_user_preferences import (
+    RoomUserPreferencesRecord,
+)
 
 IDENTITY_DB_FILENAME = "identity.db"
 
@@ -79,6 +88,13 @@ class IdentityBackend(Protocol):
     def set_room_archived(self, room_id: str, archived: bool) -> bool: ...
     def touch_room(self, room_id: str) -> None: ...
     def delete_room(self, room_id: str) -> bool: ...
+    def room_preferences(self, user_id: str, room_id: str) -> RoomUserPreferencesRecord: ...
+    def update_room_preferences(
+        self,
+        user_id: str,
+        room_id: str,
+        updates: dict[str, object],
+    ) -> RoomUserPreferencesRecord: ...
     def record_usage(self, event: dict[str, object]) -> None: ...
     def usage_summary(self, *, user_id: str = "", meeting_id: str = "", since: str = "") -> dict[str, object]: ...
 
@@ -229,6 +245,7 @@ class IdentityStore:
         with self._write_lock, closing(self._connect()) as connection, connection:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.executescript(_SCHEMA)
+            ensure_room_preferences_schema(connection)
             # Additive column migrations (CREATE TABLE IF NOT EXISTS won't add
             # columns to a pre-existing table). Idempotent: skip if present.
             self._ensure_column(connection, "usage_events", "estimated", "INTEGER NOT NULL DEFAULT 0")
@@ -612,9 +629,30 @@ class IdentityStore:
         if not clean_room_id:
             return False
         with self._write_lock, closing(self._connect()) as connection, connection:
+            delete_room_preferences(connection, clean_room_id)
             connection.execute("DELETE FROM memberships WHERE meeting_id = ?", (clean_room_id,))
             cursor = connection.execute("DELETE FROM rooms WHERE room_id = ?", (clean_room_id,))
         return cursor.rowcount > 0
+
+    # -- user-owned room preferences ----------------------------------------
+    def room_preferences(self, user_id: str, room_id: str) -> RoomUserPreferencesRecord:
+        with closing(self._connect()) as connection:
+            return read_room_preferences(connection, user_id, room_id)
+
+    def update_room_preferences(
+        self,
+        user_id: str,
+        room_id: str,
+        updates: dict[str, object],
+    ) -> RoomUserPreferencesRecord:
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            return update_room_preferences(
+                connection,
+                user_id,
+                room_id,
+                updates,
+                now=_now(),
+            )
 
     # -- usage accounting -----------------------------------------------------
     def record_usage(self, event: dict[str, object]) -> None:

@@ -31,9 +31,9 @@ conversation mode, bounded relay count, and custom channels. Notification and
 read state are user preferences, while participant role belongs to the
 participant row. Both repository backends are authoritative for this record;
 `rooms.label` is an indexed projection updated in the same transaction.
-`room_settings.json` remains temporary compatibility storage only for user-level
-notification/read preferences. Existing legacy room-global values are not
-silently imported. Run `assemble room migrate-room-settings --dry-run` against
+User-level notification and read preferences live in identity storage, not in
+this room-global record. Existing legacy room-global values are not silently
+imported. Run `assemble room migrate-room-settings --dry-run` against
 the canonical SQLite source, repair every reported issue, then run the same
 command with `--apply`. Apply requires the saved dry-run plan, verifies both
 the room-global source fingerprint and target fingerprint, backs up
@@ -42,7 +42,17 @@ SQLite transaction, and records a durable applied fingerprint. Invalid modes,
 relay counts, aliases, channel records, and orphan room entries block apply;
 they are never replaced with defaults. User-preference-only changes do not
 invalidate the room-global fingerprint. The legacy file remains temporarily for
-preference compatibility but can no longer replay the same migrated globals.
+preference migration input but can no longer replay the same migrated globals.
+
+Legacy notification and read preferences have a separate target because the
+old file did not identify their owner. Choose an existing identity user and run
+`assemble room migrate-room-preferences --user-id <user-id> --dry-run`, repair
+every invalid or orphan entry, then repeat with `--apply`. The saved plan binds
+the target user, preference-only source fingerprint, and current target
+fingerprint. Apply backs up `room_settings.json` and `identity.db`, writes all
+eligible preferences in one identity transaction, verifies the committed rows,
+and records a user-scoped migration marker. The command never guesses which
+operator account should receive old local preferences.
 
 ## Transaction Contract
 

@@ -11,6 +11,7 @@ from unittest.mock import patch
 import agentsassemble.ws_room_client as ws_room_client
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import create_room_invite, join_room_with_invite, reset_state
+from agentsassemble.room_store import RoomStore
 from agentsassemble.room_websocket import (
     OP_PING,
     OP_PONG,
@@ -218,7 +219,9 @@ class LiveRoundTripTests(unittest.TestCase):
 
     def test_python_client_talks_to_real_ws_server(self):
         with tempfile.TemporaryDirectory() as tmp:
-            base = self._start(Path(tmp))
+            root = Path(tmp)
+            RoomStore(root).create_room("room-1", label="Room 1")
+            base = self._start(root)
             invite = create_room_invite(
                 room_url=base, meeting_id="room-1", agent_id="agent-ws", display_name="WS봇", max_uses=1
             )
@@ -236,7 +239,9 @@ class LiveRoundTripTests(unittest.TestCase):
 
     def test_join_room_session_returns_admitted_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
-            base = self._start(Path(tmp))
+            root = Path(tmp)
+            RoomStore(root).create_room("room-join", label="Join room")
+            base = self._start(root)
             invite = create_room_invite(
                 room_url=base,
                 meeting_id="room-join",

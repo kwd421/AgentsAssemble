@@ -108,6 +108,7 @@ import {
 } from "./lib/agentActivityPreferences";
 import { remoteClientPacketPreview } from "./lib/roomInviteCopy";
 import { GUEST_SESSION_EXPIRED_MESSAGE } from "./lib/apiErrors";
+import { getOrCreateDeviceToken } from "./lib/deviceIdentity";
 import { roomPostingState } from "./lib/roomGuestPosting";
 import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
 import { isActivePresence } from "./lib/presenceStatus";
@@ -307,6 +308,7 @@ function mobileViewportMatches() {
 
 export default function App() {
   const [startupRoute] = useState(createStartupRoute);
+  const [deviceToken] = useState(getOrCreateDeviceToken);
   const guestInvite = startupRoute.guestInvite;
   const guestJoinToken = startupRoute.guestJoinToken;
   // A fixed Channel ("lobby"/"live"/...) OR a custom channel id (opaque "c…").
@@ -545,6 +547,8 @@ export default function App() {
   const refreshMembers = roomMembers.refresh;
   const roomSettings = useRoomSettingsController({
     activeRoom,
+    sessionToken: guestSession?.sessionToken || "",
+    deviceToken,
     onRoomMetadataLoaded: updateRoomByMeetingId,
     onMembersChanged: roomMembers.replaceMembers,
   });
@@ -1187,7 +1191,13 @@ export default function App() {
       }) as CSSProperties,
     [activeRoomStyle, channelSidebarWidth]
   );
-  const activeMemberRoles = roomSettings.memberRolesFor(activeRoom);
+  const activeMemberRoles = useMemo(
+    () =>
+      Object.fromEntries(
+        activeRoomMembers.map((member) => [member.participant_id, member.role])
+      ),
+    [activeRoomMembers]
+  );
 
   function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return;

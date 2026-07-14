@@ -15,6 +15,7 @@ from urllib.parse import urlencode
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import reset_state, verify_session_token
 from agentsassemble.room_speech import SERVER_AUTO_CHAIN_DEPTH_LIMIT
+from agentsassemble.room_store import RoomStore
 
 
 class TestRoomSayIdentity(unittest.TestCase):
@@ -24,6 +25,9 @@ class TestRoomSayIdentity(unittest.TestCase):
         reset_state()
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
+        store = RoomStore(root)
+        store.create_room("test-m", label="Test room")
+        store.create_room("friend-room", label="Friend room")
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()

@@ -269,7 +269,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("빠른 작업", app_source)
         self.assertNotIn("promote", side_chat_source)
 
-    def test_react_discord_member_panel_uses_persisted_room_roles(self):
+    def test_react_discord_member_panel_uses_canonical_participant_roles(self):
         api_source = api_module_source("room")
         app_source = frontend_file("App.tsx")
         member_source = member_components_source()
@@ -281,7 +281,6 @@ class StaticUiAssetTests(unittest.TestCase):
         css = (FRONTEND_DIR / "index.css").read_text()
 
         self.assertIn("export interface RoomSettings", api_source)
-        self.assertIn("memberRoles: Record<string, string>;", api_source)
         self.assertIn("export function fetchRoomSettings", api_source)
         self.assertIn("export function saveRoomSettings", api_source)
         self.assertIn('"/api/room-settings"', api_source)

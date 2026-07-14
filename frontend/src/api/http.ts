@@ -99,6 +99,35 @@ export async function postJsonWithToken<T>(url: string, body: object, sessionTok
   return res.json();
 }
 
+export async function fetchJsonWithIdentity<T>(
+  url: string,
+  { sessionToken = "", deviceToken = "" }: { sessionToken?: string; deviceToken?: string }
+): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`;
+  if (deviceToken) headers["X-Device-Token"] = deviceToken;
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw await responseError(res);
+  return res.json();
+}
+
+export async function postJsonWithIdentity<T>(
+  url: string,
+  body: object,
+  { sessionToken = "", deviceToken = "" }: { sessionToken?: string; deviceToken?: string }
+): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`;
+  if (deviceToken) headers["X-Device-Token"] = deviceToken;
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await responseError(res);
+  return res.json();
+}
+
 export async function deleteJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { method: "DELETE" });
   if (!res.ok) {

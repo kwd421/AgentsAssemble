@@ -63,6 +63,18 @@ def register_room_parsers(subparsers: argparse._SubParsersAction) -> None:
     room_migrate_settings.set_defaults(apply=False)
     room_migrate_settings.add_argument("--json", action="store_true", dest="as_json")
 
+    room_migrate_preferences = room_subparsers.add_parser(
+        "migrate-room-preferences",
+        help="Inspect or move legacy room notifications/read state to one identity user.",
+    )
+    room_migrate_preferences.add_argument("--output-root", default=".agentsassemble")
+    room_migrate_preferences.add_argument("--user-id", required=True)
+    migrate_preferences_mode = room_migrate_preferences.add_mutually_exclusive_group()
+    migrate_preferences_mode.add_argument("--dry-run", action="store_false", dest="apply")
+    migrate_preferences_mode.add_argument("--apply", action="store_true")
+    room_migrate_preferences.set_defaults(apply=False)
+    room_migrate_preferences.add_argument("--json", action="store_true", dest="as_json")
+
     room_attend = room_subparsers.add_parser(
         "attend",
         help="Join an agent-owned room invite over the canonical WebSocket; reads the invite URL from hidden stdin.",

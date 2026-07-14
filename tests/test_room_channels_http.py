@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import reset_state, set_runtime_host_token
+from agentsassemble.room_store import RoomStore
 
 
 class RoomChannelsHttpTests(unittest.TestCase):
@@ -55,7 +56,9 @@ class RoomChannelsHttpTests(unittest.TestCase):
     def test_create_rename_reorder_delete_round_trip(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             set_runtime_host_token("host-secret")
-            base = self._start(Path(temp_dir) / "room")
+            root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("r1", label="Room 1")
+            base = self._start(root)
 
             created = self._post(base, {"meeting_id": "r1", "action": "create", "name": "구현방", "type": "text"})
             self.assertEqual(created["channel"]["name"], "구현방")
@@ -84,7 +87,9 @@ class RoomChannelsHttpTests(unittest.TestCase):
     def test_mutation_requires_moderator(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             set_runtime_host_token("host-secret")
-            base = self._start(Path(temp_dir) / "room")
+            root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("r1", label="Room 1")
+            base = self._start(root)
             with self.assertRaises(HTTPError) as ctx:
                 self._post(base, {"meeting_id": "r1", "action": "create", "name": "x"}, host_token="wrong")
             self.assertEqual(ctx.exception.code, 403)
@@ -93,7 +98,9 @@ class RoomChannelsHttpTests(unittest.TestCase):
     def test_error_categories_map_to_status(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             set_runtime_host_token("host-secret")
-            base = self._start(Path(temp_dir) / "room")
+            root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("r1", label="Room 1")
+            base = self._start(root)
             with self.assertRaises(HTTPError) as ctx:
                 self._post(base, {"meeting_id": "r1", "action": "create", "name": "   "})
             self.assertEqual(ctx.exception.code, 400)  # empty name

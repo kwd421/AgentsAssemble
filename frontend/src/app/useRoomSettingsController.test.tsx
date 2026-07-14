@@ -52,7 +52,6 @@ function settings(room: RoomDockItem, bannerPreset: "forest" | "ember"): RoomSet
       notifications: "mentions",
       inviteScope: "room",
     },
-    memberRoles: {},
     channelSettings: {},
     conversationMode: "ordered",
     maxRelayTurns: 6,
@@ -84,6 +83,8 @@ describe("useRoomSettingsController", () => {
       ({ room }) =>
         useRoomSettingsController({
           activeRoom: room,
+          sessionToken: "",
+          deviceToken: "device-test",
           onRoomMetadataLoaded,
           onMembersChanged,
         }),
@@ -100,6 +101,10 @@ describe("useRoomSettingsController", () => {
       roomB.meetingId,
       expect.objectContaining({ label: "Room B saved" })
     );
+    expect(apiMocks.fetchRoomSettings).toHaveBeenCalledWith(roomB.meetingId, {
+      sessionToken: "",
+      deviceToken: "device-test",
+    });
   });
 
   it("persists a role change and publishes the canonical member list", async () => {
@@ -112,6 +117,8 @@ describe("useRoomSettingsController", () => {
     const hook = renderHook(() =>
       useRoomSettingsController({
         activeRoom: roomA,
+        sessionToken: "",
+        deviceToken: "device-test",
         onRoomMetadataLoaded,
         onMembersChanged,
       })
@@ -128,9 +135,7 @@ describe("useRoomSettingsController", () => {
     });
 
     await waitFor(() => expect(onMembersChanged).toHaveBeenCalledTimes(1));
-    expect(apiMocks.saveRoomSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ memberRoles: { "agent-a": "reviewer" } })
-    );
+    expect(apiMocks.saveRoomSettings).not.toHaveBeenCalled();
     expect(apiMocks.upsertRoomMember).toHaveBeenCalledWith(
       expect.objectContaining({ meeting_id: roomA.meetingId, role: "reviewer" })
     );
@@ -138,5 +143,35 @@ describe("useRoomSettingsController", () => {
       roomA,
       [{ participant_id: "agent-a", role: "reviewer" }]
     );
+  });
+
+  it("persists channel preferences without rewriting room-global settings", async () => {
+    apiMocks.fetchRoomSettings.mockResolvedValue(settings(roomA, "forest"));
+    const hook = renderHook(() =>
+      useRoomSettingsController({
+        activeRoom: roomA,
+        sessionToken: "session-a",
+        deviceToken: "device-test",
+        onRoomMetadataLoaded: vi.fn(),
+        onMembersChanged: vi.fn(),
+      })
+    );
+    await waitFor(() => expect(hook.result.current.appearanceFor(roomA).bannerPreset).toBe("forest"));
+
+    act(() => {
+      hook.result.current.updateChannelSetting(roomA, "lobby", {
+        notifications: "mute",
+        lastReadAt: "cursor-9",
+      });
+    });
+
+    await waitFor(() => expect(apiMocks.saveRoomSettings).toHaveBeenCalledTimes(1));
+    expect(apiMocks.saveRoomSettings).toHaveBeenCalledWith({
+      roomId: roomA.meetingId,
+      channelSettings: {
+        lobby: { notifications: "mute", lastReadAt: "cursor-9" },
+      },
+      identity: { sessionToken: "session-a", deviceToken: "device-test" },
+    });
   });
 });

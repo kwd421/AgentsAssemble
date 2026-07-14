@@ -19,6 +19,7 @@ from agentsassemble.room_invite import (
     reset_state,
     set_runtime_host_token,
 )
+from agentsassemble.room_store import RoomStore
 from agentsassemble.voice_presence import (
     join_voice,
     leave_all_voice,
@@ -115,7 +116,9 @@ class VoicePresenceHttpTests(unittest.TestCase):
     def test_join_leave_presence_round_trip(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             set_runtime_host_token("host-secret")
-            base = self._start(Path(temp_dir) / "room")
+            root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("room-1", label="Room 1")
+            base = self._start(root)
             voice_id = self._create_channel(base, "room-1", "음성", "voice")
             alice = self._token(base, "room-1", "alice")
             bob = self._token(base, "room-1", "bob")
@@ -141,7 +144,9 @@ class VoicePresenceHttpTests(unittest.TestCase):
     def test_join_rejects_text_channel(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             set_runtime_host_token("host-secret")
-            base = self._start(Path(temp_dir) / "room")
+            root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("room-1", label="Room 1")
+            base = self._start(root)
             text_id = self._create_channel(base, "room-1", "구현방", "text")
             token = self._token(base, "room-1", "alice")
             with self.assertRaises(HTTPError) as ctx:

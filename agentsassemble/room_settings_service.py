@@ -1,8 +1,7 @@
-"""Compose canonical room settings with temporary legacy user preferences."""
+"""Compose repository-owned room settings with identity-owned preferences."""
 from __future__ import annotations
 
-from pathlib import Path
-
+from agentsassemble.identity_store import IdentityBackend
 from agentsassemble.room_global_settings import (
     ROOM_APPEARANCE_FIELDS,
     ROOM_GLOBAL_SETTING_FIELDS,
@@ -11,9 +10,9 @@ from agentsassemble.room_global_settings import (
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_repository_records import clean_room_id
 from agentsassemble.room_setting_values import clean_short_label
-from agentsassemble.room_settings import (
-    room_settings_payload as legacy_room_settings_payload,
-    update_room_settings as update_legacy_room_settings,
+from agentsassemble.room_user_preferences import (
+    default_room_user_preferences,
+    merge_room_user_preferences,
 )
 
 
@@ -21,7 +20,6 @@ _TOP_LEVEL_FIELDS = ROOM_GLOBAL_SETTING_FIELDS | frozenset(
     {
         "room_id",
         "short_label",
-        "member_roles",
         "channel_settings",
         "channelSettings",
         "conversationMode",
@@ -45,18 +43,29 @@ _APPEARANCE_PREFERENCE_FIELDS = frozenset({"notifications"})
 
 def room_settings_payload(
     repository: RoomRepository,
-    output_root: Path,
+    identities: IdentityBackend,
     *,
+    user_id: str,
     room_id: str = "",
 ) -> dict[str, object]:
     if room_id:
         return {
             "room_id": room_id,
-            "settings": _project_room_settings(repository, output_root, room_id),
+            "settings": _project_room_settings(
+                repository,
+                identities,
+                user_id=user_id,
+                room_id=room_id,
+            ),
         }
     return {
         "rooms": [
-            _project_room_settings(repository, output_root, str(room["room_id"]))
+            _project_room_settings(
+                repository,
+                identities,
+                user_id=user_id,
+                room_id=str(room["room_id"]),
+            )
             for room in repository.list_rooms(include_archived=True)
         ]
     }
@@ -64,7 +73,9 @@ def room_settings_payload(
 
 def update_room_settings(
     repository: RoomRepository,
-    output_root: Path,
+    identities: IdentityBackend,
+    *,
+    user_id: str,
     payload: dict[str, object],
 ) -> dict[str, object]:
     raw_room_id = str(payload.get("room_id") or "").strip()
@@ -78,37 +89,55 @@ def update_room_settings(
     current = repository.room_settings(room_id)
     global_updates = _global_updates(payload)
     merge_room_global_settings(current, global_updates)
-    repository.update_room_settings(room_id, global_updates)
 
-    preference_updates = _legacy_preference_updates(payload)
-    if len(preference_updates) > 1:
-        update_legacy_room_settings(output_root, preference_updates)
-    return room_settings_payload(repository, output_root, room_id=room_id)
+    preference_updates = _preference_updates(payload)
+    current_preferences = (
+        identities.room_preferences(user_id, room_id)
+        if user_id
+        else default_room_user_preferences()
+    )
+    merge_room_user_preferences(current_preferences, preference_updates)
+    if preference_updates and not user_id:
+        raise ValueError("A stable user identity is required to save room preferences.")
+    if global_updates and preference_updates:
+        raise ValueError(
+            "Room-global settings and user preferences must be saved in separate requests."
+        )
+
+    if global_updates:
+        repository.update_room_settings(room_id, global_updates)
+    if preference_updates:
+        identities.update_room_preferences(user_id, room_id, preference_updates)
+    return room_settings_payload(
+        repository,
+        identities,
+        user_id=user_id,
+        room_id=room_id,
+    )
 
 
 def _project_room_settings(
     repository: RoomRepository,
-    output_root: Path,
+    identities: IdentityBackend,
+    *,
+    user_id: str,
     room_id: str,
 ) -> dict[str, object]:
     global_settings = repository.room_settings(room_id)
-    legacy_payload = legacy_room_settings_payload(output_root, room_id=room_id)
-    legacy = legacy_payload.get("settings") if isinstance(legacy_payload, dict) else {}
-    legacy = legacy if isinstance(legacy, dict) else {}
-    legacy_appearance = legacy.get("appearance")
-    legacy_appearance = legacy_appearance if isinstance(legacy_appearance, dict) else {}
+    preferences = (
+        identities.room_preferences(user_id, room_id)
+        if user_id
+        else default_room_user_preferences()
+    )
     return {
         "room_id": room_id,
         **global_settings,
         "short_label": global_settings["appearance"]["icon_label"],
         "appearance": {
             **global_settings["appearance"],
-            "notifications": str(legacy_appearance.get("notifications") or "mentions"),
+            "notifications": preferences["notifications"],
         },
-        "member_roles": dict(legacy.get("member_roles") or {}),
-        "channel_settings": dict(legacy.get("channel_settings") or {}),
-        "created_at": str(legacy.get("created_at") or ""),
-        "updated_at": str(legacy.get("updated_at") or ""),
+        "channel_settings": preferences["channel_settings"],
     }
 
 
@@ -162,20 +191,56 @@ def _global_updates(payload: dict[str, object]) -> dict[str, object]:
     return updates
 
 
-def _legacy_preference_updates(payload: dict[str, object]) -> dict[str, object]:
-    updates: dict[str, object] = {"room_id": payload["room_id"]}
+def _preference_updates(payload: dict[str, object]) -> dict[str, object]:
+    updates: dict[str, object] = {}
     appearance = payload.get("appearance")
     if isinstance(appearance, dict) and "notifications" in appearance:
-        updates["appearance"] = {"notifications": appearance["notifications"]}
-    if "member_roles" in payload:
-        updates["member_roles"] = payload["member_roles"]
+        updates["notifications"] = appearance["notifications"]
     if "channel_settings" in payload or "channelSettings" in payload:
-        updates["channel_settings"] = (
+        if (
+            "channel_settings" in payload
+            and "channelSettings" in payload
+            and payload["channel_settings"] != payload["channelSettings"]
+        ):
+            raise ValueError("Conflicting room settings aliases for channel_settings.")
+        raw_settings = (
             payload["channel_settings"]
             if "channel_settings" in payload
             else payload["channelSettings"]
         )
+        updates["channel_settings"] = _canonical_channel_preferences(raw_settings)
     return updates
+
+
+def _canonical_channel_preferences(value: object) -> dict[str, dict[str, object]]:
+    if not isinstance(value, dict):
+        raise ValueError("channel_settings must be an object.")
+    output: dict[str, dict[str, object]] = {}
+    for channel_id, raw_setting in value.items():
+        if not isinstance(raw_setting, dict):
+            raise ValueError(f"channel_settings.{channel_id} must be an object.")
+        unknown = set(raw_setting) - {"notifications", "last_read_at", "lastReadAt"}
+        if unknown:
+            raise ValueError(
+                f"Unsupported channel preference fields for {channel_id}: "
+                f"{', '.join(sorted(unknown))}."
+            )
+        if (
+            "last_read_at" in raw_setting
+            and "lastReadAt" in raw_setting
+            and raw_setting["last_read_at"] != raw_setting["lastReadAt"]
+        ):
+            raise ValueError(f"Conflicting read cursor aliases for {channel_id}.")
+        cursor = (
+            raw_setting["last_read_at"]
+            if "last_read_at" in raw_setting
+            else raw_setting.get("lastReadAt", "")
+        )
+        output[str(channel_id)] = {
+            "notifications": raw_setting.get("notifications"),
+            "last_read_at": cursor,
+        }
+    return output
 
 
 def _copy_alias(

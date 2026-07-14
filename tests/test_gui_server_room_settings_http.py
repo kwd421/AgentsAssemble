@@ -18,9 +18,18 @@ from agentsassemble.room_store import RoomStore
 
 
 class FakeHandler:
-    def __init__(self, path: str, *, body: bytes = b"") -> None:
+    def __init__(
+        self,
+        path: str,
+        *,
+        body: bytes = b"",
+        device_token: str = "room-settings-test-device",
+    ) -> None:
         self.path = path
-        self.headers = {"Content-Length": str(len(body))}
+        self.headers = {
+            "Content-Length": str(len(body)),
+            "X-Device-Token": device_token,
+        }
         self.rfile = io.BytesIO(body)
         self.sent_json: dict[str, object] | None = None
         self.sent_error: tuple[HTTPStatus, str] | None = None
@@ -44,8 +53,9 @@ class RoomSettingsHttpTests(unittest.TestCase):
         method: str,
         *,
         body: bytes = b"",
+        device_token: str = "room-settings-test-device",
     ) -> FakeHandler:
-        handler = FakeHandler(path, body=body)
+        handler = FakeHandler(path, body=body, device_token=device_token)
         parsed = urlparse(path)
         repository = RoomStore(output_root)
         context = RequestContext(
@@ -71,7 +81,11 @@ class RoomSettingsHttpTests(unittest.TestCase):
             "room_id": "room-1",
             "label": "Planning room",
             "topic": "Ship the next slice",
-            "appearance": {"banner_preset": "forest", "notifications": "mute"},
+            "appearance": {"banner_preset": "forest"},
+        }
+        preferences = {
+            "room_id": "room-1",
+            "appearance": {"notifications": "mute"},
             "channel_settings": {
                 "lobby": {"notifications": "mentions", "last_read_at": "2026-07-14"}
             },
@@ -80,6 +94,12 @@ class RoomSettingsHttpTests(unittest.TestCase):
             root = Path(temp_dir)
             RoomStore(root).create_room("room-1", label="Room 1")
             saved = self._dispatch(root, "/api/room-settings", "POST", body=json.dumps(payload).encode())
+            self._dispatch(
+                root,
+                "/api/room-settings",
+                "POST",
+                body=json.dumps(preferences).encode(),
+            )
             loaded = self._dispatch(root, "/api/room-settings?room_id=room-1", "GET")
             canonical = RoomStore(root).room_settings("room-1")
 
@@ -92,6 +112,142 @@ class RoomSettingsHttpTests(unittest.TestCase):
         self.assertEqual(settings["channel_settings"]["lobby"]["notifications"], "mentions")
         self.assertNotIn("notifications", canonical["appearance"])
         self.assertNotIn("channel_settings", canonical)
+
+    def test_post_rejects_mixed_global_and_user_preference_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            RoomStore(root).create_room("room-1", label="Room 1")
+
+            response = self._dispatch(
+                root,
+                "/api/room-settings",
+                "POST",
+                body=json.dumps(
+                    {
+                        "room_id": "room-1",
+                        "label": "Changed",
+                        "appearance": {"notifications": "mute"},
+                    }
+                ).encode(),
+            )
+
+        self.assertEqual(response.sent_error[0], HTTPStatus.BAD_REQUEST)
+        self.assertIn("separate requests", response.sent_error[1])
+
+    def test_notification_and_read_preferences_are_isolated_by_device_user(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            RoomStore(root).create_room("room-1", label="Shared room")
+            self._dispatch(
+                root,
+                "/api/room-settings",
+                "POST",
+                body=json.dumps(
+                    {
+                        "room_id": "room-1",
+                        "appearance": {"notifications": "mute"},
+                        "channel_settings": {
+                            "lobby": {
+                                "notifications": "all",
+                                "last_read_at": "cursor-a",
+                            }
+                        },
+                    }
+                ).encode(),
+                device_token="device-user-alpha",
+            )
+
+            first = self._dispatch(
+                root,
+                "/api/room-settings?room_id=room-1",
+                "GET",
+                device_token="device-user-alpha",
+            )
+            second = self._dispatch(
+                root,
+                "/api/room-settings?room_id=room-1",
+                "GET",
+                device_token="device-user-bravo",
+            )
+
+        self.assertEqual(first.sent_json["settings"]["appearance"]["notifications"], "mute")
+        self.assertEqual(
+            first.sent_json["settings"]["channel_settings"]["lobby"]["last_read_at"],
+            "cursor-a",
+        )
+        self.assertEqual(second.sent_json["settings"]["appearance"]["notifications"], "mentions")
+        self.assertEqual(second.sent_json["settings"]["channel_settings"], {})
+
+    def test_camel_case_channel_preferences_are_canonicalized(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            RoomStore(root).create_room("room-1", label="Room 1")
+
+            response = self._dispatch(
+                root,
+                "/api/room-settings",
+                "POST",
+                body=json.dumps(
+                    {
+                        "room_id": "room-1",
+                        "channelSettings": {
+                            "lobby": {
+                                "notifications": "mentions",
+                                "lastReadAt": "cursor-camel",
+                            }
+                        },
+                    }
+                ).encode(),
+            )
+
+        self.assertEqual(
+            response.sent_json["settings"]["channel_settings"]["lobby"],
+            {"notifications": "mentions", "last_read_at": "cursor-camel"},
+        )
+
+    def test_conflicting_channel_preference_aliases_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            RoomStore(root).create_room("room-1", label="Room 1")
+
+            response = self._dispatch(
+                root,
+                "/api/room-settings",
+                "POST",
+                body=json.dumps(
+                    {
+                        "room_id": "room-1",
+                        "channel_settings": {},
+                        "channelSettings": {
+                            "lobby": {"notifications": "all", "lastReadAt": ""}
+                        },
+                    }
+                ).encode(),
+            )
+
+        self.assertEqual(response.sent_error[0], HTTPStatus.BAD_REQUEST)
+        self.assertIn("Conflicting room settings aliases", response.sent_error[1])
+
+    def test_preference_update_without_stable_identity_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            RoomStore(root).create_room("room-1", label="Room 1")
+
+            response = self._dispatch(
+                root,
+                "/api/room-settings",
+                "POST",
+                body=json.dumps(
+                    {
+                        "room_id": "room-1",
+                        "appearance": {"notifications": "mute"},
+                    }
+                ).encode(),
+                device_token="",
+            )
+
+        self.assertEqual(response.sent_error[0], HTTPStatus.BAD_REQUEST)
+        self.assertIn("stable user identity", response.sent_error[1])
 
     def test_invalid_global_setting_is_rejected_without_changing_repository(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -140,9 +296,19 @@ class RoomSettingsHandlerDispatchTests(unittest.TestCase):
             thread.start()
             try:
                 url = f"http://127.0.0.1:{server.server_port}/api/room-settings"
-                with urlopen(Request(url, data=json.dumps(payload).encode(), method="POST"), timeout=4) as response:
+                request = Request(
+                    url,
+                    data=json.dumps(payload).encode(),
+                    method="POST",
+                    headers={"X-Device-Token": "live-room-settings-device"},
+                )
+                with urlopen(request, timeout=4) as response:
                     saved = json.loads(response.read().decode())
-                with urlopen(f"{url}?room_id=live-room", timeout=4) as response:
+                loaded_request = Request(
+                    f"{url}?room_id=live-room",
+                    headers={"X-Device-Token": "live-room-settings-device"},
+                )
+                with urlopen(loaded_request, timeout=4) as response:
                     loaded = json.loads(response.read().decode())
             finally:
                 server.shutdown()

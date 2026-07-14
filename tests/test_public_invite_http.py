@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 from agentsassemble.gui import _make_handler
 from agentsassemble.public_tunnel import PublicTunnelManager
 from agentsassemble.room_invite import get_public_url, reset_state, set_runtime_host_token, set_runtime_public_url
+from agentsassemble.room_store import RoomStore
 
 
 def _json_request(url: str, payload: dict[str, object], headers: dict[str, str] | None = None) -> Request:
@@ -69,6 +70,7 @@ class PublicInviteHttpTests(unittest.TestCase):
     def test_room_invite_create_uses_public_url_with_host_token(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("friend-room", label="Friend room")
             set_runtime_host_token("host-secret")
             set_runtime_public_url("https://shared-room.example.com")
             server = self._start_server(root)
@@ -209,6 +211,7 @@ class PublicInviteHttpTests(unittest.TestCase):
             os.environ.pop("AGENTSASSEMBLE_PUBLIC_URL", None)
             with tempfile.TemporaryDirectory() as temp_dir:
                 root = Path(temp_dir) / "room"
+                RoomStore(root).create_room("friend-room", label="Friend room")
                 dist = Path(temp_dir) / "dist"
                 assets = dist / "assets"
                 assets.mkdir(parents=True)
@@ -442,6 +445,7 @@ class PublicInviteHttpTests(unittest.TestCase):
     def test_public_guest_invite_allows_null_origin_only_on_guest_routes(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("friend-room", label="Friend room")
             set_runtime_host_token("host-secret")
             set_runtime_public_url("https://shared-room.example.com")
             server = self._start_server(root)
@@ -525,6 +529,7 @@ class PublicInviteHttpTests(unittest.TestCase):
     def test_gui_invite_session_store_survives_server_restart_without_raw_session_token(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("restart-room", label="Restart room")
             server = self._start_server(root)
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
@@ -590,6 +595,7 @@ class PublicInviteHttpTests(unittest.TestCase):
     def test_guest_companion_packet_uses_session_room_and_does_not_reflect_guest_secrets(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("friend-room", label="Friend room")
             server = self._start_server(root)
             try:
                 base = f"http://127.0.0.1:{server.server_port}"

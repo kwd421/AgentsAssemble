@@ -15,7 +15,8 @@ def register_room_settings_routes(router: Router) -> None:
         ctx.send_json(
             room_settings_payload(
                 ctx.deps.rooms,
-                ctx.deps.output_root,
+                ctx.deps.identities,
+                user_id=ctx.preference_user_id(),
                 room_id=ctx.query_value("room_id"),
             )
         )
@@ -26,6 +27,13 @@ def register_room_settings_routes(router: Router) -> None:
         if payload is None:
             return
         try:
-            ctx.send_json(update_room_settings(ctx.deps.rooms, ctx.deps.output_root, payload))
+            ctx.send_json(
+                update_room_settings(
+                    ctx.deps.rooms,
+                    ctx.deps.identities,
+                    user_id=ctx.preference_user_id(),
+                    payload=payload,
+                )
+            )
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))

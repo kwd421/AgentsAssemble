@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agentsassemble.legacy_room_settings_document import (
+    LegacyRoomSettingsSourceError,
+    read_legacy_room_settings_document,
+)
 from agentsassemble.room_global_settings import (
     default_room_global_settings,
     merge_room_global_settings,
@@ -55,10 +59,6 @@ _APPEARANCE_ALIASES = {
 _APPEARANCE_PREFERENCE_FIELDS = frozenset({"notifications"})
 
 
-class LegacyRoomSettingsSourceError(ValueError):
-    """The legacy settings source cannot produce a safe migration plan."""
-
-
 @dataclass(frozen=True)
 class LegacyRoomSettingsSource:
     path: Path
@@ -74,29 +74,10 @@ class LegacyRoomSettingsSource:
 
 
 def read_legacy_room_settings_source(path: Path) -> LegacyRoomSettingsSource:
-    try:
-        raw_bytes = path.read_bytes()
-        payload = json.loads(raw_bytes.decode("utf-8"))
-    except UnicodeDecodeError as error:
-        raise LegacyRoomSettingsSourceError(
-            "Legacy room_settings.json is not valid UTF-8."
-        ) from error
-    except json.JSONDecodeError as error:
-        raise LegacyRoomSettingsSourceError(
-            f"Legacy room_settings.json is malformed at line {error.lineno}, column {error.colno}."
-        ) from error
-    except OSError as error:
-        raise LegacyRoomSettingsSourceError(
-            f"Legacy room_settings.json could not be read: {type(error).__name__}."
-        ) from error
-    if not isinstance(payload, dict):
-        raise LegacyRoomSettingsSourceError("Legacy room_settings.json must contain an object.")
-    rooms = payload.get("rooms")
-    if not isinstance(rooms, dict):
-        raise LegacyRoomSettingsSourceError(
-            "Legacy room_settings.json must contain a rooms object."
-        )
-
+    document = read_legacy_room_settings_document(path)
+    raw_bytes = document.raw_bytes
+    payload = document.payload
+    rooms = document.rooms
     issues: list[dict[str, str]] = []
     unknown_top_level = set(payload) - {"rooms"}
     for field in sorted(unknown_top_level):

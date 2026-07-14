@@ -64,7 +64,6 @@ from agentsassemble.room_members import (
     set_room_member_muted,
     upsert_room_member,
 )
-from agentsassemble.room_settings import room_settings_payload, update_room_settings
 from agentsassemble.room_speech import (
     ActorIdentity,
     GovernedLobbySayRejected,

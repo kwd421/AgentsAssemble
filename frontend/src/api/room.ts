@@ -1,10 +1,12 @@
 import type { RoomAppearance } from "../lib/roomAppearance";
 import {
   fetchJson,
+  fetchJsonWithIdentity,
   fetchJsonWithToken,
   deleteJson,
   postJson,
   postJsonHost,
+  postJsonWithIdentity,
   postJsonWithToken,
   queryString,
 } from "./http";
@@ -31,7 +33,6 @@ export interface RoomSettings {
   topic: string;
   shortLabel: string;
   appearance: RoomAppearance;
-  memberRoles: Record<string, string>;
   channelSettings: Record<string, ChannelSettings>;
   // continuous is retained only for rooms that already use the legacy relay mode.
   conversationMode: ConversationMode;
@@ -174,7 +175,6 @@ type ApiRoomSettings = {
   topic?: string;
   short_label?: string;
   appearance?: ApiRoomAppearance;
-  member_roles?: Record<string, string>;
   channel_settings?: Record<string, ApiChannelSettings>;
   conversation_mode?: ConversationMode;
   max_relay_turns?: number;
@@ -215,7 +215,6 @@ function normalizeRoomSettings(payload: ApiRoomSettings | undefined, fallbackRoo
       notifications: appearance.notifications || "mentions",
       inviteScope: appearance.invite_scope || "room",
     },
-    memberRoles: payload?.member_roles && typeof payload.member_roles === "object" ? payload.member_roles : {},
     channelSettings: normalizeChannelSettings(payload?.channel_settings),
     conversationMode:
       payload?.conversation_mode === "ambient" || payload?.conversation_mode === "continuous"
@@ -298,9 +297,24 @@ function userProfileToApi(profile: UserProfile): ApiUserProfile {
   };
 }
 
-export function fetchRoomSettings(roomId: string): Promise<RoomSettings> {
-  return fetchJson<{ room_id: string; settings: ApiRoomSettings }>(
-    `/api/room-settings${queryString({ room_id: roomId })}`
+type RoomSettingsIdentity = {
+  sessionToken?: string;
+  deviceToken?: string;
+};
+
+type RoomSettingsUpdate = Partial<Omit<RoomSettings, "roomId" | "appearance">> & {
+  roomId: string;
+  appearance?: Partial<RoomAppearance>;
+  identity?: RoomSettingsIdentity;
+};
+
+export function fetchRoomSettings(
+  roomId: string,
+  identity: RoomSettingsIdentity = {}
+): Promise<RoomSettings> {
+  return fetchJsonWithIdentity<{ room_id: string; settings: ApiRoomSettings }>(
+    `/api/room-settings${queryString({ room_id: roomId })}`,
+    identity
   ).then((payload) => normalizeRoomSettings(payload.settings, payload.room_id || roomId));
 }
 
@@ -310,22 +324,25 @@ export function saveRoomSettings({
   topic,
   shortLabel,
   appearance,
-  memberRoles,
   channelSettings,
   conversationMode,
   maxRelayTurns,
-}: Partial<Omit<RoomSettings, "roomId">> & { roomId: string }): Promise<RoomSettings> {
-  return postJson<{ room_id: string; settings: ApiRoomSettings }>("/api/room-settings", {
-    room_id: roomId,
-    label,
-    topic,
-    short_label: shortLabel,
-    appearance: roomAppearanceToApi(appearance),
-    member_roles: memberRoles,
-    channel_settings: channelSettingsToApi(channelSettings),
-    conversation_mode: conversationMode,
-    max_relay_turns: maxRelayTurns,
-  }).then((payload) => normalizeRoomSettings(payload.settings, payload.room_id || roomId));
+  identity = {},
+}: RoomSettingsUpdate): Promise<RoomSettings> {
+  return postJsonWithIdentity<{ room_id: string; settings: ApiRoomSettings }>(
+    "/api/room-settings",
+    {
+      room_id: roomId,
+      label,
+      topic,
+      short_label: shortLabel,
+      appearance: roomAppearanceToApi(appearance),
+      channel_settings: channelSettingsToApi(channelSettings),
+      conversation_mode: conversationMode,
+      max_relay_turns: maxRelayTurns,
+    },
+    identity
+  ).then((payload) => normalizeRoomSettings(payload.settings, payload.room_id || roomId));
 }
 
 export function fetchRoomFriends() {

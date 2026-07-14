@@ -18,6 +18,7 @@ from agentsassemble.room_invite import (
     reset_state,
     set_runtime_host_token,
 )
+from agentsassemble.room_store import RoomStore
 
 
 class RoomChannelStreamTests(unittest.TestCase):
@@ -32,6 +33,7 @@ class RoomChannelStreamTests(unittest.TestCase):
         reset_state()
 
     def _start(self, root: Path) -> str:
+        RoomStore(root).create_room("room-1", label="Room 1")
         server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self._servers.append(server)

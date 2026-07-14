@@ -5512,6 +5512,39 @@ def run_room_command(args: argparse.Namespace) -> int:
             elif result.get("status") == "ready":
                 print("Run the same command with --apply after reviewing the dry-run plan.")
         return 0 if result.get("status") in {"ready", "applied", "already_applied", "not_needed"} else 1
+    if args.room_command == "migrate-room-preferences":
+        from agentsassemble.room_preferences_migration import (
+            LegacyRoomPreferencesMigrationError,
+            migrate_legacy_room_preferences,
+        )
+
+        try:
+            result = migrate_legacy_room_preferences(
+                Path(args.output_root),
+                user_id=str(args.user_id),
+                apply=bool(args.apply),
+            )
+        except (LegacyRoomPreferencesMigrationError, OSError, ValueError, sqlite3.Error) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        if args.as_json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(
+                f"Legacy room preference migration {result['mode']}: {result['status']} · "
+                f"user={result['user_id']} · rooms={result['candidate_room_count']} · "
+                f"changes={result['change_count']} · issues={result['issue_count']}"
+            )
+            for issue in result.get("issues", []):
+                print(
+                    f"- {issue.get('room_id') or '<file>'} {issue.get('field') or '<record>'}: "
+                    f"{issue.get('message')}"
+                )
+            if result.get("backup_dir"):
+                print(f"backup: {result['backup_dir']}")
+            elif result.get("status") == "ready":
+                print("Run the same command with --apply after reviewing the dry-run plan.")
+        return 0 if result.get("status") in {"ready", "applied", "already_applied", "not_needed"} else 1
     if args.room_command == "list":
         query = urllib.parse.urlencode({"include_archived": "true"} if args.include_archived else {})
         path = "/api/rooms" + (f"?{query}" if query else "")

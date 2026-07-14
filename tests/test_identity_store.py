@@ -162,6 +162,59 @@ class RoomRegistryTests(IdentityStoreTestCase):
         self.assertGreater(touched["last_active_at"], created["last_active_at"])
 
 
+class RoomPreferenceTests(IdentityStoreTestCase):
+    def setUp(self):
+        super().setUp()
+        self.user_a = self.store.resolve_credential_user("device:alpha-preference")
+        self.user_b = self.store.resolve_credential_user("device:bravo-preference")
+
+    def test_preferences_are_isolated_by_user_and_room(self):
+        updated = self.store.update_room_preferences(
+            self.user_a["user_id"],
+            "room-a",
+            {
+                "notifications": "mute",
+                "channel_settings": {
+                    "lobby": {"notifications": "all", "last_read_at": "cursor-7"}
+                },
+            },
+        )
+
+        self.assertEqual(updated["notifications"], "mute")
+        self.assertEqual(
+            self.store.room_preferences(self.user_a["user_id"], "room-a"),
+            updated,
+        )
+        self.assertEqual(
+            self.store.room_preferences(self.user_b["user_id"], "room-a"),
+            {"notifications": "mentions", "channel_settings": {}},
+        )
+        self.assertEqual(
+            self.store.room_preferences(self.user_a["user_id"], "room-b"),
+            {"notifications": "mentions", "channel_settings": {}},
+        )
+
+    def test_preference_update_requires_an_existing_user(self):
+        with self.assertRaisesRegex(ValueError, "was not found"):
+            self.store.update_room_preferences("missing-user", "room-a", {"notifications": "all"})
+
+    def test_deleting_room_registry_removes_room_preferences(self):
+        self.store.upsert_room(room_id="room-a", owner_id=self.user_a["user_id"])
+        self.store.update_room_preferences(
+            self.user_a["user_id"],
+            "room-a",
+            {"notifications": "all"},
+        )
+
+        self.assertTrue(self.store.delete_room("room-a"))
+
+        with closing(sqlite3.connect(self.store.db_path)) as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM room_user_preferences WHERE room_id = 'room-a'"
+            ).fetchone()[0]
+        self.assertEqual(count, 0)
+
+
 class MigrationTests(IdentityStoreTestCase):
     def test_legacy_members_json_imported_once_when_db_empty(self):
         legacy = {

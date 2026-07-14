@@ -17,27 +17,28 @@ import { roomSettingsKey, type RoomDockItem } from "../lib/roomDockModel";
 
 type UseRoomSettingsControllerOptions = {
   activeRoom: RoomDockItem;
+  sessionToken: string;
+  deviceToken: string;
   onRoomMetadataLoaded: (meetingId: string, updates: Partial<RoomDockItem>) => void;
   onMembersChanged: (room: RoomDockItem, members: RoomMember[]) => void;
 };
 
 type PersistedRoomSettingsOverrides = {
   appearance?: RoomAppearance;
-  memberRoles?: Record<string, string>;
-  channelSettings?: Record<string, ChannelSettings>;
   conversationMode?: ConversationMode;
   maxRelayTurns?: number;
 };
 
 export function useRoomSettingsController({
   activeRoom,
+  sessionToken,
+  deviceToken,
   onRoomMetadataLoaded,
   onMembersChanged,
 }: UseRoomSettingsControllerOptions) {
   const [appearances, setAppearances] = useState<Record<string, RoomAppearance>>(
     loadRoomAppearances
   );
-  const [memberRoles, setMemberRoles] = useState<Record<string, Record<string, string>>>({});
   const [channelSettings, setChannelSettings] = useState<
     Record<string, Record<string, ChannelSettings>>
   >({});
@@ -52,10 +53,6 @@ export function useRoomSettingsController({
     (room: RoomDockItem) =>
       completeRoomAppearance(appearances[roomSettingsKey(room)] || appearances[room.id]),
     [appearances]
-  );
-  const memberRolesFor = useCallback(
-    (room: RoomDockItem) => memberRoles[roomSettingsKey(room)] || {},
-    [memberRoles]
   );
   const channelSettingsFor = useCallback(
     (room: RoomDockItem) => channelSettings[roomSettingsKey(room)] || {},
@@ -75,7 +72,7 @@ export function useRoomSettingsController({
     const meetingId = activeMeetingId;
     const key = activeRoomKey;
     let cancelled = false;
-    fetchRoomSettings(meetingId)
+    fetchRoomSettings(meetingId, { sessionToken, deviceToken })
       .then((settings) => {
         if (cancelled) return;
         if (settings.label || settings.topic || settings.shortLabel) {
@@ -86,7 +83,6 @@ export function useRoomSettingsController({
           });
         }
         setAppearances((previous) => ({ ...previous, [key]: settings.appearance }));
-        setMemberRoles((previous) => ({ ...previous, [key]: settings.memberRoles }));
         setChannelSettings((previous) => ({ ...previous, [key]: settings.channelSettings }));
         setConversationModes((previous) => ({
           ...previous,
@@ -100,31 +96,59 @@ export function useRoomSettingsController({
     return () => {
       cancelled = true;
     };
-  }, [activeMeetingId, activeRoomKey, onRoomMetadataLoaded]);
+  }, [activeMeetingId, activeRoomKey, deviceToken, onRoomMetadataLoaded, sessionToken]);
 
   const persist = useCallback(
     (room: RoomDockItem, overrides: PersistedRoomSettingsOverrides = {}) => {
+      const appearance = overrides.appearance ?? appearanceFor(room);
       void saveRoomSettings({
         roomId: room.meetingId,
         label: room.label,
         topic: room.topic,
         shortLabel: room.shortLabel,
-        appearance: overrides.appearance ?? appearanceFor(room),
-        memberRoles: overrides.memberRoles ?? memberRolesFor(room),
-        channelSettings: overrides.channelSettings ?? channelSettingsFor(room),
+        appearance: {
+          bannerPreset: appearance.bannerPreset,
+          bannerImage: appearance.bannerImage,
+          iconImage: appearance.iconImage,
+          iconLabel: appearance.iconLabel,
+          inviteScope: appearance.inviteScope,
+        },
         conversationMode: overrides.conversationMode ?? conversationModeFor(room),
         maxRelayTurns: overrides.maxRelayTurns ?? maxRelayTurnsFor(room),
+        identity: { sessionToken, deviceToken },
       }).catch(() => {
         // The next explicit settings read reconciles a failed optimistic save.
       });
     },
     [
       appearanceFor,
-      channelSettingsFor,
       conversationModeFor,
+      deviceToken,
       maxRelayTurnsFor,
-      memberRolesFor,
+      sessionToken,
     ]
+  );
+
+  const persistPreferences = useCallback(
+    (
+      room: RoomDockItem,
+      updates: {
+        notifications?: RoomAppearance["notifications"];
+        channelSettings?: Record<string, ChannelSettings>;
+      }
+    ) => {
+      void saveRoomSettings({
+        roomId: room.meetingId,
+        ...(updates.notifications
+          ? { appearance: { notifications: updates.notifications } }
+          : {}),
+        ...(updates.channelSettings ? { channelSettings: updates.channelSettings } : {}),
+        identity: { sessionToken, deviceToken },
+      }).catch(() => {
+        // The next explicit settings read reconciles a failed optimistic save.
+      });
+    },
+    [deviceToken, sessionToken]
   );
 
   const updateAppearance = useCallback(
@@ -136,17 +160,19 @@ export function useRoomSettingsController({
         persistRoomAppearances(next);
         return next;
       });
-      persist(room, { appearance: nextAppearance });
+      const { notifications, ...globalUpdates } = updates;
+      if (Object.keys(globalUpdates).length > 0) {
+        persist(room, { appearance: nextAppearance });
+      }
+      if (notifications) {
+        persistPreferences(room, { notifications });
+      }
     },
-    [appearanceFor, persist]
+    [appearanceFor, persist, persistPreferences]
   );
 
   const updateMemberRole = useCallback(
     (room: RoomDockItem, members: RoomMember[], memberId: string, role: RoomMember["role"]) => {
-      const key = roomSettingsKey(room);
-      const nextRoles = { ...memberRolesFor(room), [memberId]: role };
-      setMemberRoles((previous) => ({ ...previous, [key]: nextRoles }));
-      persist(room, { memberRoles: nextRoles });
       const existingMember = members.find((member) => member.participant_id === memberId);
       if (!existingMember || !room.meetingId) return;
       void upsertRoomMember({ ...existingMember, meeting_id: room.meetingId, role })
@@ -155,7 +181,7 @@ export function useRoomSettingsController({
           // Keep the optimistic grouping; the next roster refresh reconciles persistence.
         });
     },
-    [memberRolesFor, onMembersChanged, persist]
+    [onMembersChanged]
   );
 
   const updateChannelSetting = useCallback(
@@ -169,9 +195,9 @@ export function useRoomSettingsController({
       };
       const nextSettings = { ...currentSettings, [channelId]: nextSetting };
       setChannelSettings((previous) => ({ ...previous, [key]: nextSettings }));
-      persist(room, { channelSettings: nextSettings });
+      persistPreferences(room, { channelSettings: nextSettings });
     },
-    [channelSettingsFor, persist]
+    [channelSettingsFor, persistPreferences]
   );
 
   const updateConversationMode = useCallback(
@@ -195,7 +221,6 @@ export function useRoomSettingsController({
   return {
     appearances,
     appearanceFor,
-    memberRolesFor,
     channelSettingsFor,
     conversationModeFor,
     maxRelayTurnsFor,

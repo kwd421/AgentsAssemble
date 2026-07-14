@@ -580,3 +580,24 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   `free`/`quiet` modes and six orphan room entries, with one room in both groups.
   No live user data was applied. The next slice is Phase 3.4, moving user
   preferences to their owning repository.
+- 2026-07-14: Phase 3.4 moves room notification mode, per-channel notification
+  mode, and read cursors into strict user-scoped rows in `identity.db`. Browser
+  settings requests carry their session identity or hashed device credential;
+  reads and writes are isolated by `(user_id, room_id)`. Participant roles now
+  render from canonical participant rows and are no longer copied through room
+  settings. Room-global updates and user-preference updates are separate HTTP
+  writes, and the server rejects a mixed write instead of risking partial
+  success across the room and identity databases. Legacy preferences use a
+  separate `migrate-room-preferences` dry-run/apply command whose plan binds an
+  explicitly chosen existing user, source fingerprint, and target fingerprint;
+  it never guesses an owner. Apply is transactional, backed up, verified, and
+  replay-marked. A dry-run against copies of current local data found 15 legacy
+  preference entries: one real change, eight unchanged canonical-room targets,
+  and six orphan-room blockers. No live data was applied. The next slice is
+  Phase 4.1, introducing bounded PostgreSQL connection pooling. Final
+  verification passed all 3,223 Python tests with 34 environment-dependent
+  skips, all 104 frontend tests, the production frontend build, `compileall`,
+  and `git diff --check`. The full suite also found 17 legacy HTTP/WebSocket
+  fixtures that relied on invite or channel requests implicitly creating a
+  missing room. Those fixtures now create their canonical room explicitly; the
+  removed product fallback was not restored.
