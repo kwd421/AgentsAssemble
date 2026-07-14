@@ -1,21 +1,26 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import UTC, datetime
 from pathlib import Path
 
 from agentsassemble.room_channels import clean_channels
+from agentsassemble.room_setting_values import (
+    CONVERSATION_MODES,
+    IMAGE_URL_LIMIT,
+    ROOM_TEXT_LIMIT,
+    VALID_BANNER_PRESETS,
+    VALID_INVITE_SCOPES,
+    clean_room_asset_url,
+    clean_room_text,
+    clean_short_label,
+)
 
-ROOM_TEXT_LIMIT = 160
 ROOM_ID_LIMIT = 128
-IMAGE_URL_LIMIT = 240
 ROLE_ID_LIMIT = 32
 MEMBER_ID_LIMIT = 128
 
-VALID_BANNER_PRESETS = {"default", "forest", "midnight", "ember", "custom"}
 VALID_NOTIFICATIONS = {"all", "mentions", "mute"}
-VALID_INVITE_SCOPES = {"room", "read_only"}
 VALID_MEMBER_ROLES = {"human", "director", "implementer", "reviewer", "agent"}
 VALID_CHANNEL_IDS = {"lobby", "live", "board", "records"}
 VALID_CHANNEL_NOTIFICATIONS = {"default", "all", "mentions", "mute"}
@@ -107,9 +112,6 @@ def public_room_settings(value: object, *, room_id: str) -> dict[str, object]:
     }
 
 
-CONVERSATION_MODES = {"ordered", "continuous", "ambient"}
-
-
 def clean_conversation_mode(value: object) -> str:
     mode = str(value or "").strip().lower()
     return mode if mode in CONVERSATION_MODES else "ordered"
@@ -127,16 +129,6 @@ def clean_room_id(value: object, *, required: bool) -> str:
     if not text and required:
         raise ValueError("room_id is required")
     return text
-
-
-def clean_room_text(value: object, *, limit: int) -> str:
-    text = str(value or "").replace("\r", " ").replace("\n", " ").replace("\t", " ")
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:limit]
-
-
-def clean_short_label(value: object) -> str:
-    return clean_room_text(value, limit=2).upper()[:2]
 
 
 def clean_appearance(value: object) -> dict[str, str]:
@@ -158,15 +150,6 @@ def clean_appearance(value: object) -> dict[str, str]:
         "notifications": notifications,
         "invite_scope": invite_scope,
     }
-
-
-def clean_room_asset_url(value: object) -> str:
-    text = clean_room_text(value, limit=IMAGE_URL_LIMIT)
-    if not text:
-        return ""
-    if text.startswith("/api/attachments/") and re.fullmatch(r"/api/attachments/[A-Za-z0-9_-]{8,64}\?(view|download)=1", text):
-        return text
-    return ""
 
 
 def clean_member_roles(value: object) -> dict[str, str]:

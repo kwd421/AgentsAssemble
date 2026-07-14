@@ -25,6 +25,14 @@ promise to migrate every legacy file into the canonical repository.
 | Server-owned process handles and live sockets | In-process runtime managers | Runtime-owned | Ephemeral; durable session rows store recovery state, never reusable OS handles. |
 | Legacy session-run monitor records | `live-agent-runs/session-runs.json` | Legacy compatibility | Keep outside the canonical room migration until that product path is removed or redesigned. |
 
+Canonical room-global settings have a strict domain record in
+`room_global_settings.py`. It contains only label, topic, room appearance,
+conversation mode, bounded relay count, and custom channels. Notification and
+read state are user preferences, while participant role belongs to the
+participant row. The record definition does not yet make the repository
+authoritative: `room_settings.json` remains the compatibility authority until
+the SQLite and PostgreSQL schema plus explicit migration are completed.
+
 ## Transaction Contract
 
 `RoomRepository.transaction(room_id)` is the write boundary. A transaction is

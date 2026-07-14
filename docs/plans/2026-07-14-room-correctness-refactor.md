@@ -540,3 +540,11 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   creation and relies on repository atomicity plus bridge-generation checks.
   The invited external CLI kick E2E and an explicit held-lifecycle-lock test
   prove the final observation ACK no longer blocks shutdown confirmation.
+- 2026-07-14: Phase 3.1 defines a strict canonical room-global settings record
+  containing only label, topic, appearance, conversation mode, bounded relay
+  count, and custom channels. Invalid modes, relay counts, asset URLs, and
+  channel shapes now have a fail-closed domain validator for repository writes.
+  User notification/read state and participant roles are explicitly rejected
+  at this boundary. The legacy JSON path remains behaviorally unchanged until
+  both repository backends and the explicit migration exist. The next slice is
+  Phase 3.2, adding this record to SQLite and PostgreSQL.
