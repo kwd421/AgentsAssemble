@@ -248,6 +248,12 @@ from agentsassemble.live_agent_turns import (
     wait_for_official_turn_reply,
     wait_for_review_checkpoint_reply,
 )
+from agentsassemble.lobby_queries import (
+    LOBBY_HISTORY_MAX_PAGE_LIMIT,
+    LOBBY_HISTORY_PAGE_LIMIT,
+    read_lobby,
+    read_lobby_before,
+)
 from agentsassemble.live_meeting_memory import (
     build_live_meeting_memory,
     load_live_meeting_memory_context,
@@ -329,10 +335,8 @@ from agentsassemble.meeting_events import (
     append_live_event,
     append_lobby_event_to_file,
     clean_lobby_text,
-    iter_lobby_events_newest_first,
     read_live_events,
     read_live_events_after,
-    read_lobby_events,
     read_lobby_events_after,
     read_side_chat_events_after,
     write_live_state,
@@ -1261,66 +1265,6 @@ class LiveAgentSessionRunMonitor(PeriodicSessionRunMonitor):
             error=SESSION_RUN_MONITOR_ERROR,
             details={"error_type": error_type},
         )
-
-
-def read_lobby(output_root: Path, limit: int | None = 80, *, meeting_id: str = "") -> list[dict[str, object]]:
-    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
-    if not clean_meeting_id:
-        # Global lobby: a plain global tail is what we want.
-        return read_lobby_events(output_root / "lobby.jsonl", limit=limit)
-    # Per-room: scan newest-first and keep this room's last `limit` events. The
-    # lobby is one shared append-only log, so a global tail (read_lobby_events)
-    # can contain zero of this room's events once other rooms' messages push
-    # past the window — which made older rooms load empty. Filtering during the
-    # backward scan (like the scroll-up pagination) fixes that.
-    cap = limit if isinstance(limit, int) and limit > 0 else None
-    collected: list[dict[str, object]] = []
-    for event in iter_lobby_events_newest_first(output_root / "lobby.jsonl"):
-        if clean_lobby_text(event.get("flow_meeting_id"), limit=128) != clean_meeting_id:
-            continue
-        collected.append(event)
-        if cap is not None and len(collected) >= cap:
-            break
-    collected.reverse()  # oldest-last, matching read_lobby_events ordering
-    return collected
-
-
-LOBBY_HISTORY_PAGE_LIMIT = 50
-LOBBY_HISTORY_MAX_PAGE_LIMIT = 200
-
-
-def read_lobby_before(
-    output_root: Path,
-    *,
-    before_event_id: str,
-    limit: int = LOBBY_HISTORY_PAGE_LIMIT,
-    meeting_id: str = "",
-) -> dict[str, object]:
-    """One page of history strictly older than before_event_id (newest-last).
-
-    Streams the log backwards with the room filter applied during the scan,
-    so a page is full even when other rooms' messages are interleaved.
-    Returns {"events": [...], "has_more": bool} for scroll-up pagination.
-    """
-    clean_limit = max(1, min(int(limit or LOBBY_HISTORY_PAGE_LIMIT), LOBBY_HISTORY_MAX_PAGE_LIMIT))
-    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
-    anchor = clean_lobby_text(before_event_id, limit=128)
-    events: list[dict[str, object]] = []
-    has_more = False
-    seen_anchor = not anchor
-    for event in iter_lobby_events_newest_first(output_root / "lobby.jsonl"):
-        if not seen_anchor:
-            if str(event.get("id") or "") == anchor:
-                seen_anchor = True
-            continue
-        if clean_meeting_id and clean_lobby_text(event.get("flow_meeting_id"), limit=128) != clean_meeting_id:
-            continue
-        if len(events) >= clean_limit:
-            has_more = True
-            break
-        events.append(event)
-    events.reverse()
-    return {"events": events, "has_more": has_more}
 
 
 def _filter_lobby_events_for_meeting(events: list[dict[str, object]], *, meeting_id: str = "") -> list[dict[str, object]]:
