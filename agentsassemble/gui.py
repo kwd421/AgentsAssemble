@@ -13,7 +13,6 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
-from uuid import uuid4
 
 from agentsassemble.attachments import (
     AttachmentError,
@@ -50,6 +49,7 @@ from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_rou
 from agentsassemble.gui_legacy_lobby_http import register_legacy_lobby_routes
 from agentsassemble.gui_legacy_meeting_http import register_legacy_meeting_routes
 from agentsassemble.gui_legacy_meeting_lifecycle_http import register_legacy_meeting_lifecycle_routes
+from agentsassemble.gui_legacy_review_checkpoint_http import register_legacy_review_checkpoint_route
 from agentsassemble.gui_legacy_live_agent_read_http import (
     LegacyLiveAgentReadDeps,
     register_legacy_live_agent_read_routes,
@@ -221,7 +221,6 @@ from agentsassemble.live_agent_processes import (
 )
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_play_presets import build_play_preset_turns
-from agentsassemble.live_agent_review_checkpoints import write_review_checkpoint_artifacts
 from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
 from agentsassemble.live_agent_sessions import (
     recover_live_agent_session,
@@ -246,7 +245,6 @@ from agentsassemble.live_agent_turns import (
     is_review_checkpoint_reply_event,
     official_turn_cancellation,
     wait_for_official_turn_reply,
-    wait_for_review_checkpoint_reply,
 )
 from agentsassemble.lobby_queries import (
     LOBBY_HISTORY_MAX_PAGE_LIMIT,
@@ -334,11 +332,20 @@ from agentsassemble.legacy_meeting_lifecycle import (
 from agentsassemble.legacy_meeting_operation_projection import (
     meeting_finalize_operation_details as _meeting_finalize_operation_details,
     shared_memory_operation_details as _shared_memory_operation_details,
+    turn_sequence_operation_details as _turn_sequence_operation_details,
 )
 from agentsassemble.legacy_meeting_records import (
     live_agent_admission_details as _live_agent_admission_details_from_meeting,
     read_meeting_record as _read_meeting_record,
     safe_meeting_dir as _safe_meeting_dir,
+)
+from agentsassemble.legacy_review_checkpoint import (
+    LegacyReviewCheckpointService,
+    create_review_checkpoint as _create_review_checkpoint,
+)
+from agentsassemble.legacy_turn_results import (
+    turn_sequence_result as _live_agent_turn_sequence_result,
+    turn_sequence_status as _live_agent_turn_sequence_status,
 )
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_report
@@ -2954,128 +2961,13 @@ def live_agent_review_checkpoint_payload(
     meeting_id: str,
     payload: dict[str, object],
 ) -> dict[str, object]:
-    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
-    meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
-    if not clean_meeting_id or not meeting_dir.exists():
-        raise ValueError(f"Meeting {clean_meeting_id or '(blank)'} was not found.")
-    group_id = clean_live_agent_group_id(str(payload.get("group_id") or ""))
-    if not group_id:
-        raise ValueError("Live agent group id is required.")
-    content = clean_lobby_text(payload.get("content") or payload.get("message"), limit=4000)
-    if not content:
-        raise ValueError("Review checkpoint content is required.")
-    timeout_seconds = _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0)
-    checkpoint_id = clean_lobby_text(payload.get("checkpoint_id") or payload.get("review_checkpoint_id"), limit=128)
-    if not checkpoint_id:
-        checkpoint_id = f"review-{uuid4().hex[:8]}"
-    readiness = live_agent_session_readiness_payload(
+    return _create_review_checkpoint(
         output_root,
         process_supervisor,
-        meeting_id=clean_meeting_id,
-        group_id=group_id,
+        meeting_id,
+        payload,
+        turn_requester=live_agent_turn_request_payload,
     )
-    expected_agent_ids = _review_checkpoint_expected_agent_ids(readiness)
-    if readiness.get("status") != "ready":
-        return {
-            "status": "degraded",
-            "reason": "session_not_ready",
-            "checkpoint_id": checkpoint_id,
-            "meeting_id": clean_meeting_id,
-            "group_id": group_id,
-            "turn_count": 0,
-            "answered_count": 0,
-            "timeout_count": 0,
-            "skipped_count": 0,
-            "timeout_seconds": timeout_seconds,
-            "agent_ids": [],
-            "expected_agent_ids": expected_agent_ids,
-            "results": [],
-            "readiness": readiness,
-        }
-
-    target_agent_ids = _review_checkpoint_target_agent_ids(payload.get("agent_ids"), expected_agent_ids)
-    identities = _review_checkpoint_agent_identities(_read_meeting_record(meeting_dir))
-    results = []
-    for index, agent_id in enumerate(target_agent_ids):
-        identity = identities.get(agent_id, {})
-        request = live_agent_turn_request_payload(
-            output_root,
-            clean_meeting_id,
-            {
-                "agent_id": agent_id,
-                "role_id": clean_lobby_text(identity.get("role_id"), limit=128) or agent_id,
-                "display_name": clean_lobby_text(identity.get("display_name"), limit=64) or agent_id,
-                "turn_id": checkpoint_id,
-                "turn_index": index,
-                "content": content,
-                "review_checkpoint_id": checkpoint_id,
-            },
-        )
-        request_event = request.get("event") if isinstance(request.get("event"), dict) else {}
-        source_event_id = clean_lobby_text(request_event.get("id"), limit=128)
-        if not source_event_id:
-            raise ValueError("Review checkpoint request could not be created.")
-        wait_result = wait_for_review_checkpoint_reply(
-            meeting_dir,
-            agent_id=agent_id,
-            source_event_id=source_event_id,
-            checkpoint_id=checkpoint_id,
-            timeout_seconds=timeout_seconds,
-        )
-        results.append(
-            _live_agent_turn_sequence_result(
-                index,
-                {
-                    "status": wait_result["status"],
-                    "request_event": request_event,
-                    "reply_event": wait_result["reply_event"],
-                    "elapsed_seconds": wait_result["elapsed_seconds"],
-                    "timeout_seconds": wait_result["timeout_seconds"],
-                },
-            )
-        )
-    answered_count = sum(1 for result in results if result["status"] == "answered")
-    timeout_count = sum(1 for result in results if result["status"] == "timeout")
-    skipped_count = sum(1 for result in results if result["status"] == "skipped")
-    cancelled_count = sum(1 for result in results if result["status"] == "cancelled")
-    checkpoint = {
-        "status": _live_agent_turn_sequence_status(
-            answered_count,
-            timeout_count,
-            skipped_count,
-            cancelled_count,
-            turn_count=len(target_agent_ids),
-        ),
-        "checkpoint_id": checkpoint_id,
-        "meeting_id": clean_meeting_id,
-        "group_id": group_id,
-        "turn_count": len(target_agent_ids),
-        "answered_count": answered_count,
-        "timeout_count": timeout_count,
-        "skipped_count": skipped_count,
-        "cancelled_count": cancelled_count,
-        "timeout_seconds": timeout_seconds,
-        "agent_ids": target_agent_ids,
-        "results": results,
-        "readiness": readiness,
-    }
-    artifacts = write_review_checkpoint_artifacts(meeting_dir, checkpoint)
-    checkpoint.update(artifacts)
-    append_live_event(
-        meeting_dir,
-        {
-            "kind": "artifact",
-            "meeting_id": clean_meeting_id,
-            "channel": "review",
-            "official_record": False,
-            "artifact_kind": "review_checkpoint",
-            "artifact_path": artifacts["artifact_path"],
-            "artifact_json_path": artifacts["artifact_json_path"],
-            "review_checkpoint_id": checkpoint_id,
-            "content": f"Review checkpoint artifact ready: {artifacts['artifact_path']}",
-        },
-    )
-    return checkpoint
 
 
 def live_agent_turn_round_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
@@ -3944,13 +3836,6 @@ def _meeting_live_agent_turn_preset_path(path: str) -> str | None:
     return _meeting_live_agent_turn_action_path(path, "preset")
 
 
-def _meeting_review_checkpoint_path(path: str) -> str | None:
-    parts = path.strip("/").split("/")
-    if len(parts) == 4 and parts[0] == "api" and parts[1] == "meetings" and parts[3] == "review-checkpoints":
-        return unquote(parts[2])
-    return None
-
-
 def _meeting_live_agent_turn_action_path(path: str, action: str) -> str | None:
     parts = path.strip("/").split("/")
     if (
@@ -4113,45 +3998,6 @@ def _safe_payload_strings(value: object, *, limit: int) -> list[str]:
     return strings
 
 
-def _review_checkpoint_expected_agent_ids(readiness: dict[str, object]) -> list[str]:
-    connection = readiness.get("connection") if isinstance(readiness.get("connection"), dict) else {}
-    return _safe_payload_strings(connection.get("agent_ids"), limit=64)
-
-
-def _review_checkpoint_target_agent_ids(value: object, expected_agent_ids: list[str]) -> list[str]:
-    if value is None or value == "" or value == []:
-        targets = list(expected_agent_ids)
-    else:
-        if not isinstance(value, list):
-            raise ValueError("Review checkpoint agent_ids must be an array.")
-        targets = _safe_payload_strings(value, limit=64)
-    deduped = list(dict.fromkeys(targets))
-    if not deduped:
-        raise ValueError("Review checkpoint requires at least one live agent.")
-    expected = set(expected_agent_ids)
-    unexpected = [agent_id for agent_id in deduped if agent_id not in expected]
-    if unexpected:
-        raise ValueError(f"Review checkpoint target is not in the ready resident session: {', '.join(unexpected)}.")
-    return deduped
-
-
-def _review_checkpoint_agent_identities(meeting: dict[str, object]) -> dict[str, dict[str, str]]:
-    roles = _index_by_id(meeting.get("roles", []))
-    identities: dict[str, dict[str, str]] = {}
-    for binding in _as_dict_list(meeting.get("agent_bindings", [])):
-        agent_id = clean_lobby_text(binding.get("agent_id"), limit=64)
-        role_id = clean_lobby_text(binding.get("role_id"), limit=128)
-        if not agent_id:
-            continue
-        role = roles.get(role_id) if role_id else None
-        display_name = clean_lobby_text(role.get("display_name"), limit=64) if role else ""
-        identities[agent_id] = {
-            "role_id": role_id or agent_id,
-            "display_name": display_name or agent_id,
-        }
-    return identities
-
-
 def _validate_live_agent_turn_sequence(output_root: Path, meeting_id: str, turns: list[dict[str, object]]) -> str:
     clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
     meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
@@ -4171,21 +4017,6 @@ def _validate_live_agent_turn_sequence(output_root: Path, meeting_id: str, turns
     return clean_meeting_id
 
 
-def _live_agent_turn_sequence_result(index: int, result: dict[str, object]) -> dict[str, object]:
-    request_event = result.get("request_event") if isinstance(result.get("request_event"), dict) else {}
-    reply_event = result.get("reply_event") if isinstance(result.get("reply_event"), dict) else None
-    return {
-        "index": index,
-        "agent_id": str(request_event.get("target_agent_id") or ""),
-        "role_id": str(request_event.get("role_id") or ""),
-        "status": str(result.get("status") or "unknown"),
-        "request_event": request_event,
-        "reply_event": reply_event,
-        "elapsed_seconds": _payload_nonnegative_float(result.get("elapsed_seconds"), 0.0),
-        "timeout_seconds": _payload_nonnegative_float(result.get("timeout_seconds"), 0.0),
-    }
-
-
 def _skipped_turn_sequence_results(turns: list[dict[str, object]], *, start_index: int) -> list[dict[str, object]]:
     skipped = []
     for offset, turn in enumerate(turns):
@@ -4202,84 +4033,6 @@ def _skipped_turn_sequence_results(turns: list[dict[str, object]], *, start_inde
             }
         )
     return skipped
-
-
-def _live_agent_turn_sequence_status(
-    answered_count: int,
-    timeout_count: int,
-    skipped_count: int,
-    cancelled_count: int,
-    *,
-    turn_count: int,
-) -> str:
-    if skipped_count:
-        return "stopped"
-    if timeout_count:
-        return "timeout"
-    if cancelled_count:
-        return "cancelled"
-    if answered_count == turn_count:
-        return "answered"
-    return "degraded"
-
-
-def _turn_sequence_operation_details(sequence: dict[str, object], meeting_id: str) -> dict[str, object]:
-    results = sequence.get("results") if isinstance(sequence.get("results"), list) else []
-    request_event_ids = []
-    reply_event_ids = []
-    agent_ids = []
-    statuses = []
-    for item in results:
-        if not isinstance(item, dict):
-            continue
-        request_event = item.get("request_event") if isinstance(item.get("request_event"), dict) else {}
-        reply_event = item.get("reply_event") if isinstance(item.get("reply_event"), dict) else {}
-        if request_event.get("id"):
-            request_event_ids.append(str(request_event.get("id") or ""))
-        if reply_event.get("id"):
-            reply_event_ids.append(str(reply_event.get("id") or ""))
-        if item.get("agent_id"):
-            agent_ids.append(str(item.get("agent_id") or ""))
-        if item.get("status"):
-            statuses.append(str(item.get("status") or "unknown"))
-    return {
-        "meeting_id": meeting_id,
-        "turn_count": _payload_nonnegative_int(sequence.get("turn_count"), 0),
-        "answered_count": _payload_nonnegative_int(sequence.get("answered_count"), 0),
-        "timeout_count": _payload_nonnegative_int(sequence.get("timeout_count"), 0),
-        "skipped_count": _payload_nonnegative_int(sequence.get("skipped_count"), 0),
-        "cancelled_count": _payload_nonnegative_int(sequence.get("cancelled_count"), 0),
-        "stopped": sequence.get("stopped") is True,
-        "agent_ids": agent_ids,
-        "statuses": statuses,
-        "request_event_ids": request_event_ids,
-        "reply_event_ids": reply_event_ids,
-        "timeout_seconds": _payload_nonnegative_float(sequence.get("timeout_seconds"), 0.0),
-    }
-
-
-def _review_checkpoint_operation_details(checkpoint: dict[str, object], meeting_id: str) -> dict[str, object]:
-    details = _turn_sequence_operation_details(checkpoint, meeting_id)
-    details["result_status"] = _operation_result_status(checkpoint.get("status"))
-    details["checkpoint_id"] = clean_lobby_text(checkpoint.get("checkpoint_id"), limit=128)
-    details["group_id"] = clean_lobby_text(checkpoint.get("group_id"), limit=128)
-    reason = clean_lobby_text(checkpoint.get("reason"), limit=128)
-    if reason:
-        details["reason"] = reason
-    expected_agent_ids = _safe_payload_strings(checkpoint.get("expected_agent_ids"), limit=64)
-    if expected_agent_ids:
-        details["expected_agent_ids"] = expected_agent_ids
-    return details
-
-
-def _review_checkpoint_request_operation_details(payload: dict[str, object], meeting_id: str) -> dict[str, object]:
-    return {
-        "meeting_id": meeting_id,
-        "group_id": clean_live_agent_group_id(str(payload.get("group_id") or "")),
-        "checkpoint_id": clean_lobby_text(payload.get("checkpoint_id") or payload.get("review_checkpoint_id"), limit=128),
-        "agent_ids": _safe_payload_strings(payload.get("agent_ids"), limit=64),
-        "timeout_seconds": _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0),
-    }
 
 
 def _turn_round_operation_details(round_result: dict[str, object], meeting_id: str) -> dict[str, object]:
@@ -4592,6 +4345,14 @@ def _make_handler(
     register_legacy_meeting_lifecycle_routes(
         route_table,
         service=LegacyMeetingLifecycleService(output_root),
+    )
+    register_legacy_review_checkpoint_route(
+        route_table,
+        service=LegacyReviewCheckpointService(
+            output_root=output_root,
+            process_supervisor=live_agent_process_supervisor,
+            turn_requester=live_agent_turn_request_payload,
+        ),
     )
 
     def _enqueue_legacy_lobby_auto_turn(event: dict[str, object]) -> None:
@@ -5138,44 +4899,6 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json(join_brief)
-                return
-            review_checkpoint_meeting_id = _meeting_review_checkpoint_path(parsed.path)
-            if review_checkpoint_meeting_id is not None:
-                payload = self._operation_json_payload(operation="review.checkpoint")
-                if payload is None:
-                    return
-                try:
-                    checkpoint = live_agent_review_checkpoint_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        review_checkpoint_meeting_id,
-                        payload,
-                    )
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="review.checkpoint",
-                        status="failed",
-                        target_id=review_checkpoint_meeting_id,
-                        error=str(error),
-                        details=_review_checkpoint_request_operation_details(payload, review_checkpoint_meeting_id),
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                checkpoint_status = str(checkpoint.get("status") or "unknown")
-                record_live_agent_operation(
-                    output_root,
-                    operation="review.checkpoint",
-                    status="success" if checkpoint_status == "answered" else "degraded",
-                    target_id=review_checkpoint_meeting_id,
-                    summary=(
-                        "completed resident live-agent review checkpoint"
-                        if checkpoint_status == "answered"
-                        else "resident live-agent review checkpoint was not fully answered"
-                    ),
-                    details=_review_checkpoint_operation_details(checkpoint, review_checkpoint_meeting_id),
-                )
-                self._send_json(checkpoint)
                 return
             turn_rounds_meeting_id = _meeting_live_agent_turn_rounds_path(parsed.path)
             if turn_rounds_meeting_id is not None:

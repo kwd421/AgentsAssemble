@@ -1045,3 +1045,21 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   messages, typing state, roster, and details from current participant identity
   by stable `participant_id`; event-time names and avatars are not historical
   display authority.
+- 2026-07-14: Resident review checkpoints are now outside the generated HTTP
+  handler. `LegacyReviewCheckpointService` owns readiness gating, validated
+  target selection, sequential request/reply waits, non-official artifacts,
+  and prompt-free operation audits. Its Router module owns only JSON parsing,
+  the dynamic meeting path, and preserved `400` mapping. Shared sequential
+  result/status normalization moved to `legacy_turn_results.py`; bounded
+  review and turn-sequence audit projections moved beside the existing meeting
+  lifecycle projection. The old callable remains as a thin compatibility
+  wrapper in `gui.py`, but all orchestration lives in the service module.
+  Focused service/Router/result/ownership checks passed 17 tests, checkpoint artifact
+  and CLI checks passed 29 tests, and the real server moderation/finalization
+  suite passed 15 tests including two-agent replies, degraded readiness,
+  private prompt exclusion from official records, and redacted audits. The
+  next Phase 5.4 slice is the official-turn request/call/sequence family;
+  round/rounds/preset follows separately because it adds scheduling, progress,
+  finalization, and preset policy. The seven deletion candidates remain
+  untouched, and Agent Session history continues to resolve current profile
+  name/avatar by stable `participant_id` rather than event-time display fields.
