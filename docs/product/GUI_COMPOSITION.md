@@ -1,6 +1,6 @@
 # GUI Server Composition Inventory
 
-Status: current refactor inventory
+Status: current composition and refactor inventory
 
 Updated: 2026-07-14
 
@@ -91,6 +91,51 @@ Every composition change must preserve these product boundaries:
 not bind a port itself. Binding produces the local server URL needed by the
 session-run monitor, tunnel manager, and bridge ticket issuer, so startup has a
 deliberate pre-bind construction step and post-bind activation step.
+
+## Current Application Services Boundary
+
+Phase 5.2 introduced `GuiApplicationServices` in
+`agentsassemble/gui_application.py`. `_build_gui_application_services()` is the
+single composition function used by both `serve_gui()` and the compatibility
+`_make_handler()` test/helper surface.
+
+The object now retains the exact instances for:
+
+- the selected `RoomRepository`;
+- the explicit identity backend injected into `GuiDeps`;
+- the configured invite-state path;
+- one `FileAttachmentStore` injected into attachment routes;
+- legacy process and session-run supervision;
+- the disabled legacy flow supervisor;
+- public tunnel state;
+- the single-use WebSocket ticket store;
+- the native Agent Bridge manager owned through `RoomRealtimeController`; and
+- the canonical `RoomRealtimeController`.
+
+`start(server_url)` runs only after HTTP bind. It preserves this order:
+
+1. legacy process monitor;
+2. local URL assignment for tunnel and session monitor;
+3. explicit legacy group autostart callback, when configured;
+4. session-run monitor;
+5. explicitly requested public tunnel.
+
+`shutdown(transport_close=...)` is idempotent and attempts every cleanup even
+if an earlier close fails. It stops the session monitor, tunnel, legacy process
+supervisor, and canonical realtime controller; closes the HTTP transport; then
+closes the owned room repository. Injected resources carry explicit ownership
+flags and are not closed by the container.
+
+Invite/session token implementation still uses `room_invite.py`'s
+server-lifetime global state. Phase 5.2 centralizes its one path-configuration
+step but does not disguise that global implementation behind a pass-through
+object. Replacing that authority belongs to the hosted-deployment decision
+gate, not this composition-only refactor.
+
+The handler class retains `room_realtime_controller`, `room_repository`, and
+`gui_deps` attributes for compatibility tests and fixtures, but also exposes
+`application_services`. Production shutdown no longer discovers its controller
+through the generated handler type.
 
 ## Router-Owned Route Families
 

@@ -6,8 +6,6 @@ from http import HTTPStatus
 from agentsassemble.attachments import (
     AttachmentError,
     INLINE_SAFE_IMAGE_TYPES,
-    read_attachment_file,
-    store_uploaded_attachment,
 )
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.meeting_events import clean_lobby_text
@@ -17,10 +15,7 @@ def register_attachment_routes(router: Router) -> None:
     @router.get_dynamic("/api/attachments/{attachment_id}")
     def download_attachment(ctx: RequestContext, params: dict[str, str]) -> None:
         try:
-            metadata, file_path = read_attachment_file(
-                ctx.deps.output_root,
-                params["attachment_id"],
-            )
+            metadata, file_path = ctx.deps.media.read_file(params["attachment_id"])
         except AttachmentError as error:
             ctx.send_error(HTTPStatus.NOT_FOUND, str(error))
             return
@@ -33,7 +28,7 @@ def register_attachment_routes(router: Router) -> None:
         if payload is None:
             return
         try:
-            attachment = store_uploaded_attachment(ctx.deps.output_root, payload)
+            attachment = ctx.deps.media.store(payload)
         except AttachmentError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
@@ -41,10 +36,7 @@ def register_attachment_routes(router: Router) -> None:
         room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
         if room_id:
             try:
-                _metadata, file_path = read_attachment_file(
-                    ctx.deps.output_root,
-                    str(attachment.get("id") or ""),
-                )
+                _metadata, file_path = ctx.deps.media.read_file(str(attachment.get("id") or ""))
                 response["room_media"] = ctx.deps.rooms.attach_media(
                     room_id,
                     filename=str(attachment.get("filename") or ""),

@@ -1,0 +1,244 @@
+from __future__ import annotations
+
+import tempfile
+import threading
+import time
+import unittest
+from pathlib import Path
+
+from agentsassemble.attachments import FileAttachmentStore
+from agentsassemble.gui_application import GuiApplicationServices
+
+
+class _Repository:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    def close(self) -> None:
+        self.events.append("repository.close")
+
+
+class _ProcessSupervisor:
+    def __init__(self, events: list[str], *, fail_start: bool = False) -> None:
+        self.events = events
+        self.fail_start = fail_start
+
+    def start_monitor(self) -> None:
+        self.events.append("process.start")
+        if self.fail_start:
+            raise RuntimeError("process monitor failed")
+
+    def close(self) -> None:
+        self.events.append("process.close")
+
+
+class _BlockingProcessSupervisor(_ProcessSupervisor):
+    def __init__(self, events: list[str]) -> None:
+        super().__init__(events)
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def start_monitor(self) -> None:
+        self.events.append("process.start")
+        self.entered.set()
+        self.release.wait(timeout=2)
+
+
+class _SessionMonitor:
+    def __init__(self, events: list[str], *, fail_stop: bool = False) -> None:
+        self.events = events
+        self.fail_stop = fail_stop
+        self.default_server = ""
+
+    def start(self) -> None:
+        self.events.append("session.start")
+
+    def stop(self) -> None:
+        self.events.append("session.stop")
+        if self.fail_stop:
+            raise RuntimeError("session monitor stop failed")
+
+
+class _Tunnel:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    def set_local_url(self, server_url: str) -> None:
+        self.events.append(f"tunnel.url:{server_url}")
+
+    def start(self) -> None:
+        self.events.append("tunnel.start")
+
+    def stop(self) -> None:
+        self.events.append("tunnel.stop")
+
+
+class _RealtimeController:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    def close(self) -> None:
+        self.events.append("realtime.close")
+
+
+class _FlowSupervisor:
+    def status(self, *, meeting_id: str = "", quota_viewer=None):
+        del meeting_id, quota_viewer
+        return {"flow": {"status": "idle"}}
+
+
+class GuiApplicationServicesTests(unittest.TestCase):
+    def _services(
+        self,
+        root: Path,
+        events: list[str],
+        *,
+        fail_process_start: bool = False,
+        fail_session_stop: bool = False,
+        owns_resources: bool = True,
+    ) -> GuiApplicationServices:
+        return GuiApplicationServices(
+            output_root=root,
+            room_repository=_Repository(events),  # type: ignore[arg-type]
+            identity_backend=object(),  # type: ignore[arg-type]
+            invite_store_path=root / "room-invites.json",
+            media_store=FileAttachmentStore(root),
+            process_supervisor=_ProcessSupervisor(  # type: ignore[arg-type]
+                events,
+                fail_start=fail_process_start,
+            ),
+            session_run_controller=object(),  # type: ignore[arg-type]
+            session_run_monitor=_SessionMonitor(events, fail_stop=fail_session_stop),
+            flow_supervisor=_FlowSupervisor(),
+            public_tunnel_manager=_Tunnel(events),  # type: ignore[arg-type]
+            ws_ticket_store=object(),  # type: ignore[arg-type]
+            native_cli_bridge_manager=None,
+            room_realtime_controller=_RealtimeController(events),  # type: ignore[arg-type]
+            owns_room_repository=owns_resources,
+            owns_process_supervisor=owns_resources,
+            owns_session_run_monitor=owns_resources,
+            owns_public_tunnel_manager=owns_resources,
+            owns_room_realtime_controller=owns_resources,
+        )
+
+    def test_start_preserves_post_bind_order_and_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events: list[str] = []
+            services = self._services(Path(temp_dir), events)
+
+            services.start(
+                "http://127.0.0.1:8765/",
+                before_session_monitor=lambda server_url: events.append(f"autostart:{server_url}"),
+                start_public_tunnel=True,
+            )
+            services.start("http://127.0.0.1:8765")
+
+        self.assertEqual(
+            events,
+            [
+                "process.start",
+                "tunnel.url:http://127.0.0.1:8765",
+                "autostart:http://127.0.0.1:8765",
+                "session.start",
+                "tunnel.start",
+            ],
+        )
+
+    def test_shutdown_preserves_order_and_closes_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events: list[str] = []
+            services = self._services(Path(temp_dir), events)
+
+            services.shutdown(transport_close=lambda: events.append("transport.close"))
+            services.shutdown(transport_close=lambda: events.append("transport.close.again"))
+
+        self.assertEqual(
+            events,
+            [
+                "session.stop",
+                "tunnel.stop",
+                "process.close",
+                "realtime.close",
+                "transport.close",
+                "repository.close",
+            ],
+        )
+
+    def test_shutdown_does_not_close_borrowed_resources(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events: list[str] = []
+            services = self._services(Path(temp_dir), events, owns_resources=False)
+
+            services.shutdown(transport_close=lambda: events.append("transport.close"))
+
+        self.assertEqual(events, ["transport.close"])
+
+    def test_shutdown_attempts_all_cleanup_after_one_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events: list[str] = []
+            services = self._services(Path(temp_dir), events, fail_session_stop=True)
+
+            with self.assertRaisesRegex(RuntimeError, "session monitor stop failed"):
+                services.shutdown(transport_close=lambda: events.append("transport.close"))
+
+        self.assertEqual(
+            events,
+            [
+                "session.stop",
+                "tunnel.stop",
+                "process.close",
+                "realtime.close",
+                "transport.close",
+                "repository.close",
+            ],
+        )
+
+    def test_failed_start_cannot_be_silently_retried_and_can_be_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events: list[str] = []
+            services = self._services(Path(temp_dir), events, fail_process_start=True)
+
+            with self.assertRaisesRegex(RuntimeError, "process monitor failed"):
+                services.start("http://127.0.0.1:8765")
+            with self.assertRaisesRegex(RuntimeError, "cannot start from state 'start_failed'"):
+                services.start("http://127.0.0.1:8765")
+            services.close()
+
+        self.assertEqual(
+            events,
+            [
+                "process.start",
+                "session.stop",
+                "tunnel.stop",
+                "process.close",
+                "realtime.close",
+                "repository.close",
+            ],
+        )
+
+    def test_shutdown_waits_for_in_progress_start_before_closing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events: list[str] = []
+            services = self._services(Path(temp_dir), events)
+            process_supervisor = _BlockingProcessSupervisor(events)
+            services.process_supervisor = process_supervisor  # type: ignore[assignment]
+
+            starter = threading.Thread(target=lambda: services.start("http://127.0.0.1:8765"))
+            stopper = threading.Thread(target=services.close)
+            starter.start()
+            self.assertTrue(process_supervisor.entered.wait(timeout=1))
+            stopper.start()
+            time.sleep(0.05)
+            self.assertTrue(stopper.is_alive())
+            process_supervisor.release.set()
+            starter.join(timeout=1)
+            stopper.join(timeout=1)
+
+        self.assertFalse(starter.is_alive())
+        self.assertFalse(stopper.is_alive())
+        self.assertLess(events.index("session.start"), events.index("session.stop"))
+        self.assertEqual(events[-1], "repository.close")
+
+
+if __name__ == "__main__":
+    unittest.main()

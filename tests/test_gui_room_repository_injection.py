@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from agentsassemble.agent_sessions import create_agent_session_payload
-from agentsassemble.gui import _make_handler, serve_gui
+from agentsassemble.gui import _build_gui_application_services, _make_handler, serve_gui
 from agentsassemble.room_realtime import RoomRealtimeController
 from agentsassemble.room_repository_factory import (
     RoomRepositoryConfigurationError,
@@ -117,6 +117,24 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
 
         repository.close.assert_called_once_with()
 
+    def test_service_build_failure_does_not_close_borrowed_resources(self) -> None:
+        repository = MagicMock()
+        process_supervisor = MagicMock()
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "agentsassemble.gui.LiveAgentSessionRunController",
+            side_effect=RuntimeError("session controller failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "session controller failed"):
+                _build_gui_application_services(
+                    Path(temp_dir),
+                    room_repository_override=repository,
+                    process_supervisor=process_supervisor,
+                )
+
+        repository.close.assert_not_called()
+        process_supervisor.close.assert_not_called()
+
     def test_handler_shares_one_explicit_repository_with_controller_and_routes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -132,6 +150,15 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
                 self.assertIs(handler.room_repository, repository)
                 self.assertIs(handler.gui_deps.rooms, repository)
                 self.assertIs(handler.room_realtime_controller.store, repository)
+                self.assertIs(handler.application_services.room_repository, repository)
+                self.assertIs(
+                    handler.gui_deps.identities,
+                    handler.application_services.identity_backend,
+                )
+                self.assertIs(
+                    handler.gui_deps.media,
+                    handler.application_services.media_store,
+                )
                 self.assertFalse((server_root / "rooms" / "rooms.sqlite3").exists())
             finally:
                 handler.room_realtime_controller.close()

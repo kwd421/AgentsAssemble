@@ -660,3 +660,23 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   history reprojection invariant so a context reset cannot turn this refactor
   into a redesign. Route-ownership, parity-inventory, and architecture-doc
   verification passed (31 tests) before commit.
+- 2026-07-14: Phase 5.2 now has one typed `GuiApplicationServices` lifetime
+  boundary shared by `serve_gui()` and `_make_handler()`. It retains the exact
+  room repository, identity backend, invite-state configuration path,
+  `FileAttachmentStore`, process/session supervisors, tunnel, WebSocket ticket
+  store, native bridge manager, and canonical realtime controller. Post-bind
+  `start(server_url)` preserves legacy autostart ordering. Idempotent shutdown
+  stops background services, closes the HTTP transport, and closes the owned
+  repository last; cleanup continues after an individual failure, while
+  borrowed resources are never closed. `GuiDeps` receives the same explicit
+  identity and media-store instances. Production shutdown no longer locates
+  the realtime controller through a generated handler class. The invite token
+  implementation remains honestly documented as server-global state; this
+  refactor centralizes its configuration but does not invent a pass-through
+  abstraction or migrate hosted authority. Final GUI discovery passed all 470
+  tests after the media-store injection; the focused lifecycle, concurrency,
+  repository, attachment, room-route, ownership, and documentation subset also
+  passed all 132 tests. Name/avatar history
+  reprojection remains keyed by canonical `participant_id` and is unchanged.
+  Phase 5.3 is next: move only retained legacy read/diagnostic families whose
+  responsibility and behavioral tests are already identified.

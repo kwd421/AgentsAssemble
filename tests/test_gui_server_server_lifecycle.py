@@ -400,6 +400,7 @@ class GuiServerLifecycleTests(unittest.TestCase):
     def test_serve_gui_cleans_up_when_monitor_start_fails(self):
         class FakeServer:
             def __init__(self, address, handler):
+                self.server_address = (address[0], 43210 if address[1] == 0 else address[1])
                 self.closed = False
 
             def serve_forever(self):

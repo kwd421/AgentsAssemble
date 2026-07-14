@@ -5,6 +5,7 @@ import binascii
 import json
 import mimetypes
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -21,6 +22,26 @@ INLINE_SAFE_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 
 class AttachmentError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class FileAttachmentStore:
+    """Filesystem attachment boundary for one GUI application root."""
+
+    output_root: Path
+
+    @property
+    def root(self) -> Path:
+        return attachment_root(self.output_root)
+
+    def store(self, payload: dict[str, object]) -> dict[str, object]:
+        return store_uploaded_attachment(self.output_root, payload)
+
+    def normalize_references(self, value: object) -> list[dict[str, object]]:
+        return normalize_attachment_references(self.output_root, value)
+
+    def read_file(self, attachment_id: str) -> tuple[dict[str, object], Path]:
+        return read_attachment_file(self.output_root, attachment_id)
 
 
 def store_uploaded_attachment(output_root: Path, payload: dict[str, object]) -> dict[str, object]:

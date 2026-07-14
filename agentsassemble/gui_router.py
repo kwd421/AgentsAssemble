@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
+from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.identity_store import IdentityBackend, identity_store_for_output_root
 from agentsassemble.room_invite import verify_host_token, verify_session_token
 from agentsassemble.room_repository import RoomRepository
@@ -42,6 +43,7 @@ class GuiDeps:
     output_root: Path
     room_repository: RoomRepository | None = None
     identity_backend: IdentityBackend | None = None
+    attachment_store: FileAttachmentStore | None = None
     process_supervisor: Any = None
     read_lobby: Callable[..., list[dict[str, object]]] | None = None
     read_lobby_before: Callable[..., dict[str, object]] | None = None
@@ -64,6 +66,13 @@ class GuiDeps:
             backend = identity_store_for_output_root(self.output_root)
             self.identity_backend = backend
         return backend
+
+    @property
+    def media(self) -> FileAttachmentStore:
+        store = self.attachment_store
+        if store is None:
+            raise RuntimeError("GUI attachment store is not configured.")
+        return store
 
 
 class RequestContext:

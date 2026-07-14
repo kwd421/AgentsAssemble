@@ -8,6 +8,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,6 +19,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.attachments import (
     AttachmentError,
+    FileAttachmentStore,
     normalize_attachment_references,
 )
 from agentsassemble.codex_sessions import (
@@ -53,6 +55,7 @@ from agentsassemble.gui_provider_http import (
     provider_catalog_payload,
     register_provider_routes,
 )
+from agentsassemble.gui_application import GuiApplicationServices
 from agentsassemble.gui_attachment_http import register_attachment_routes
 from agentsassemble.gui_mafia_http import register_mafia_routes
 from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
@@ -266,7 +269,7 @@ from agentsassemble.room_friend_dms import (
     enqueue_room_friend_direct_dm,
     read_live_agent_dm_events,
 )
-from agentsassemble.identity_store import default_identity_db_path
+from agentsassemble.identity_store import default_identity_db_path, identity_store_for_output_root
 from agentsassemble.room_members import is_room_member_muted, mark_thinking, room_members_payload
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_repository_factory import (
@@ -1230,6 +1233,132 @@ def _load_meeting_record(meeting_dir: Path) -> tuple[dict[str, object], Path, bo
     return json.loads(live_path.read_text(encoding="utf-8")), live_path, False
 
 
+def _build_gui_application_services(
+    output_root: Path,
+    *,
+    process_supervisor: LiveAgentProcessSupervisor | None = None,
+    session_run_controller: LiveAgentSessionRunController | None = None,
+    session_run_monitor: LiveAgentSessionRunMonitor | None = None,
+    flow_supervisor: LiveAgentFlowSupervisor | None = None,
+    public_tunnel_manager: PublicTunnelManager | None = None,
+    room_realtime_controller_override: RoomRealtimeController | None = None,
+    room_repository_override: RoomRepository | None = None,
+    owns_room_repository_override: bool = False,
+    attention_shadow_mode: str = "off",
+) -> GuiApplicationServices:
+    """Build one ownership graph for the GUI server and handler factory."""
+
+    if room_realtime_controller_override is not None:
+        room_repository = room_repository_override or room_realtime_controller_override.store
+        if room_repository is not room_realtime_controller_override.store:
+            raise ValueError(
+                "Room realtime controller and GUI routes must share one room repository instance."
+            )
+        owns_room_repository = bool(owns_room_repository_override and room_repository_override is not None)
+    else:
+        room_repository = room_repository_override or RoomStore(output_root)
+        owns_room_repository = bool(room_repository_override is None or owns_room_repository_override)
+
+    cleanup_actions: list[tuple[str, Callable[[], object]]] = []
+
+    def remember_cleanup(name: str, callback: Callable[[], object]) -> None:
+        cleanup_actions.append((name, callback))
+
+    if owns_room_repository:
+        remember_cleanup("room_repository.close", room_repository.close)
+
+    owns_process_supervisor = process_supervisor is None
+    owns_session_run_monitor = session_run_monitor is None
+    owns_public_tunnel_manager = public_tunnel_manager is None
+    owns_room_realtime_controller = room_realtime_controller_override is None
+
+    try:
+        configure_room_invite_store(default_room_invite_store_path(output_root))
+        configure_room_users_store(default_identity_db_path(output_root))
+        _backfill_room_registry(output_root)
+        identity_backend = identity_store_for_output_root(output_root)
+
+        live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
+        if owns_process_supervisor:
+            remember_cleanup("process_supervisor.close", live_agent_process_supervisor.close)
+
+        live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
+        live_agent_flow_supervisor = flow_supervisor or LiveAgentFlowSupervisor(output_root)
+        invite_tunnel_manager = public_tunnel_manager or PublicTunnelManager()
+        if owns_public_tunnel_manager:
+            remember_cleanup("public_tunnel_manager.stop", invite_tunnel_manager.stop)
+
+        live_agent_session_run_monitor = session_run_monitor or LiveAgentSessionRunMonitor(
+            output_root,
+            live_agent_process_supervisor,
+            live_agent_session_run_controller,
+            default_server="",
+        )
+        if owns_session_run_monitor:
+            remember_cleanup("session_run_monitor.stop", live_agent_session_run_monitor.stop)
+
+        ws_ticket_store = WsTicketStore()
+        native_cli_bridge_manager: NativeCliBridgeProcessManager | None = None
+        if room_realtime_controller_override is not None:
+            room_realtime_controller = room_realtime_controller_override
+        else:
+            native_cli_bridge_manager = NativeCliBridgeProcessManager(output_root)
+            built_controller: RoomRealtimeController | None = None
+            try:
+                built_controller = RoomRealtimeController(
+                    output_root,
+                    providers=default_native_cli_provider_specs(workspace=Path.cwd()),
+                    bridge_manager=native_cli_bridge_manager,
+                    repository=room_repository,
+                    attention_shadow_mode=attention_shadow_mode,
+                )
+                native_cli_bridge_manager.set_exit_listener(built_controller.bridge_process_exited)
+            except BaseException as error:
+                try:
+                    if built_controller is not None:
+                        built_controller.close()
+                    else:
+                        native_cli_bridge_manager.close()
+                except BaseException as cleanup_error:
+                    error.add_note(
+                        "GUI realtime construction cleanup failed: "
+                        f"{cleanup_error}"
+                    )
+                raise
+            room_realtime_controller = built_controller
+            remember_cleanup("room_realtime_controller.close", room_realtime_controller.close)
+
+        services = GuiApplicationServices(
+            output_root=output_root,
+            room_repository=room_repository,
+            identity_backend=identity_backend,
+            invite_store_path=default_room_invite_store_path(output_root),
+            media_store=FileAttachmentStore(output_root),
+            process_supervisor=live_agent_process_supervisor,
+            session_run_controller=live_agent_session_run_controller,
+            session_run_monitor=live_agent_session_run_monitor,
+            flow_supervisor=live_agent_flow_supervisor,
+            public_tunnel_manager=invite_tunnel_manager,
+            ws_ticket_store=ws_ticket_store,
+            native_cli_bridge_manager=native_cli_bridge_manager,
+            room_realtime_controller=room_realtime_controller,
+            owns_room_repository=owns_room_repository,
+            owns_process_supervisor=owns_process_supervisor,
+            owns_session_run_monitor=owns_session_run_monitor,
+            owns_public_tunnel_manager=owns_public_tunnel_manager,
+            owns_room_realtime_controller=owns_room_realtime_controller,
+        )
+    except BaseException as error:
+        for name, callback in reversed(cleanup_actions):
+            try:
+                callback()
+            except BaseException as cleanup_error:
+                error.add_note(f"GUI service construction cleanup failed in {name}: {cleanup_error}")
+        raise
+    cleanup_actions.clear()
+    return services
+
+
 def serve_gui(
     host: str = "127.0.0.1",
     port: int = 8765,
@@ -1262,31 +1391,34 @@ def serve_gui(
         postgres_dsn_env=room_postgres_dsn_env,
     )
     room_repository = build_room_repository(root, room_repository_settings)
+    services: GuiApplicationServices | None = None
+    server: ThreadingHTTPServer | None = None
     try:
-        process_supervisor = LiveAgentProcessSupervisor(root)
-        session_run_controller = LiveAgentSessionRunController(root)
-        flow_supervisor = LiveAgentFlowSupervisor(root)
-        public_tunnel_manager = PublicTunnelManager()
-        session_run_monitor = LiveAgentSessionRunMonitor(
+        services = _build_gui_application_services(
             root,
-            process_supervisor,
-            session_run_controller,
-            default_server="",
+            room_repository_override=room_repository,
+            owns_room_repository_override=True,
+            attention_shadow_mode=attention_shadow_mode,
         )
         handler = _make_handler(
             root,
-            process_supervisor=process_supervisor,
-            session_run_controller=session_run_controller,
-            session_run_monitor=session_run_monitor,
-            flow_supervisor=flow_supervisor,
+            application_services=services,
+            process_supervisor=services.process_supervisor,
+            session_run_controller=services.session_run_controller,
+            session_run_monitor=services.session_run_monitor,
+            flow_supervisor=services.flow_supervisor,
             frontend_dist_root=frontend_dist_root,
-            public_tunnel_manager=public_tunnel_manager,
+            public_tunnel_manager=services.public_tunnel_manager,
             room_repository_override=room_repository,
             attention_shadow_mode=attention_shadow_mode,
         )
         server = ThreadingHTTPServer((host, port), handler)
-    except BaseException:
-        room_repository.close()
+    except BaseException as error:
+        if services is not None:
+            try:
+                services.close()
+            except BaseException as cleanup_error:
+                error.add_note(f"GUI service cleanup after startup failure failed: {cleanup_error}")
         raise
     if not _is_loopback_host(host):
         print(
@@ -1301,25 +1433,30 @@ def serve_gui(
         if (public_url or start_public_tunnel) and not get_host_token():
             generated_token = generate_runtime_host_token()
             print(f"AgentsAssemble host token: {generated_token}")
-        process_supervisor.start_monitor()
+        assert services is not None
+        assert server is not None
         server_url = _local_server_url(server.server_address)
-        public_tunnel_manager.set_local_url(server_url)
-        session_run_monitor.default_server = server_url
-        if live_agent_config is not None:
+
+        def autostart(server: str) -> None:
+            if live_agent_config is None:
+                return
             _autostart_live_agent_group(
                 root,
-                process_supervisor,
+                services.process_supervisor,
                 config_path=live_agent_config,
-                server_url=server_url,
+                server_url=server,
                 group_id=live_agent_group_id,
                 auto_restart=live_agent_auto_restart,
                 max_restarts=live_agent_max_restarts,
                 restart_backoff_seconds=live_agent_restart_backoff_seconds,
                 stale_restart_after_seconds=live_agent_stale_restart_after_seconds,
             )
-        session_run_monitor.start()
-        if start_public_tunnel:
-            public_tunnel_manager.start()
+
+        services.start(
+            server_url,
+            before_session_monitor=autostart,
+            start_public_tunnel=start_public_tunnel,
+        )
         _print_gui_startup_banner(
             server_url,
             frontend_dist_root=frontend_dist_root,
@@ -1329,14 +1466,9 @@ def serve_gui(
     except KeyboardInterrupt:
         print("\nStopping AgentsAssemble GUI")
     finally:
-        session_run_monitor.stop()
-        public_tunnel_manager.stop()
-        process_supervisor.close()
-        realtime_controller = getattr(handler, "room_realtime_controller", None)
-        if realtime_controller is not None:
-            realtime_controller.close()
-        server.server_close()
-        room_repository.close()
+        assert services is not None
+        assert server is not None
+        services.shutdown(transport_close=server.server_close)
 
 
 def _autostart_live_agent_group(
@@ -7286,6 +7418,7 @@ def _print_gui_startup_banner(
 def _make_handler(
     output_root: Path,
     *,
+    application_services: GuiApplicationServices | None = None,
     process_supervisor: LiveAgentProcessSupervisor | None = None,
     session_run_controller: LiveAgentSessionRunController | None = None,
     session_run_monitor: LiveAgentSessionRunMonitor | None = None,
@@ -7299,39 +7432,47 @@ def _make_handler(
     attention_shadow_mode: str = "off",
     legacy_session_run_actions_override: LegacySessionRunActions | None = None,
 ) -> type[BaseHTTPRequestHandler]:
-    configure_room_invite_store(default_room_invite_store_path(output_root))
-    # Identity (users/credentials/memberships) lives in one SQLite file; a
-    # legacy users.json from the JSON era is imported on first run.
-    configure_room_users_store(default_identity_db_path(output_root))
-    # Seed the rooms registry from existing meeting dirs so rooms that predate
-    # the registry (or survived a localStorage clear) still list in /api/rooms.
-    _backfill_room_registry(output_root)
     react_app_root = (frontend_dist_root or default_frontend_dist_root()).resolve()
-    live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
-    live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
-    live_agent_flow_supervisor = flow_supervisor or LiveAgentFlowSupervisor(output_root)
-    invite_tunnel_manager = public_tunnel_manager or PublicTunnelManager()
-    # WS 전환 (WS-4): single-use tickets bind a verified session to a /ws open
-    # (browsers can't set Authorization on `new WebSocket`).
-    ws_ticket_store = WsTicketStore()
-    if room_realtime_controller_override is not None:
-        room_realtime_controller = room_realtime_controller_override
-        room_repository = room_repository_override or room_realtime_controller.store
-        if room_repository is not room_realtime_controller.store:
-            raise ValueError(
-                "Room realtime controller and GUI routes must share one room repository instance."
-            )
-    else:
-        room_repository = room_repository_override or RoomStore(output_root)
-        native_cli_bridge_manager = NativeCliBridgeProcessManager(output_root)
-        room_realtime_controller = RoomRealtimeController(
-            output_root,
-            providers=default_native_cli_provider_specs(workspace=Path.cwd()),
-            bridge_manager=native_cli_bridge_manager,
-            repository=room_repository,
-            attention_shadow_mode=attention_shadow_mode,
+    services = application_services or _build_gui_application_services(
+        output_root,
+        process_supervisor=process_supervisor,
+        session_run_controller=session_run_controller,
+        session_run_monitor=session_run_monitor,
+        flow_supervisor=flow_supervisor,
+        public_tunnel_manager=public_tunnel_manager,
+        room_realtime_controller_override=room_realtime_controller_override,
+        room_repository_override=room_repository_override,
+        attention_shadow_mode=attention_shadow_mode,
+    )
+
+    def require_same_service(name: str, override: object | None, actual: object) -> None:
+        if override is not None and override is not actual:
+            raise ValueError(f"{name} override does not match the GUI application services instance.")
+
+    if application_services is not None:
+        if output_root.resolve() != services.output_root.resolve():
+            raise ValueError("GUI application services were built for a different output root.")
+        require_same_service("process supervisor", process_supervisor, services.process_supervisor)
+        require_same_service("session run controller", session_run_controller, services.session_run_controller)
+        require_same_service("session run monitor", session_run_monitor, services.session_run_monitor)
+        require_same_service("flow supervisor", flow_supervisor, services.flow_supervisor)
+        require_same_service("public tunnel manager", public_tunnel_manager, services.public_tunnel_manager)
+        require_same_service(
+            "room realtime controller",
+            room_realtime_controller_override,
+            services.room_realtime_controller,
         )
-        native_cli_bridge_manager.set_exit_listener(room_realtime_controller.bridge_process_exited)
+        require_same_service("room repository", room_repository_override, services.room_repository)
+
+    live_agent_process_supervisor = services.process_supervisor
+    live_agent_session_run_controller = services.session_run_controller
+    live_agent_flow_supervisor = services.flow_supervisor
+    invite_tunnel_manager = services.public_tunnel_manager
+    # Single-use tickets bind a verified session to a /ws open. Browsers cannot
+    # set Authorization on ``new WebSocket``.
+    ws_ticket_store = services.ws_ticket_store
+    room_realtime_controller = services.room_realtime_controller
+    room_repository = services.room_repository
 
     def _ws_room_deps(channel, handler) -> WsRoomDeps:
         # Reuse the proven SSE snapshot machinery + the governed say append path,
@@ -7434,6 +7575,8 @@ def _make_handler(
     route_deps = GuiDeps(
         output_root=output_root,
         room_repository=room_repository,
+        identity_backend=services.identity_backend,
+        attachment_store=services.media_store,
         process_supervisor=live_agent_process_supervisor,
         read_lobby=read_lobby,
         read_lobby_before=read_lobby_before,
@@ -9474,6 +9617,7 @@ def _make_handler(
             except (TypeError, ValueError):
                 return default
 
+    AgentsAssembleHandler.application_services = services
     AgentsAssembleHandler.room_realtime_controller = room_realtime_controller
     AgentsAssembleHandler.room_repository = room_repository
     AgentsAssembleHandler.gui_deps = route_deps

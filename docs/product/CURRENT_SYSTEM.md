@@ -214,7 +214,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 
 | Change | Start here |
 | --- | --- |
-| GUI server composition, route ownership, and shutdown | `gui.py`, `docs/product/GUI_COMPOSITION.md` |
+| GUI server composition, route ownership, and shutdown | `gui.py`, `gui_application.py`, `docs/product/GUI_COMPOSITION.md` |
 | Room persistence and sequence | `room_store.py`, `room_database.py`, `room_types.py` |
 | Room storage authority and transaction contract | `room_repository.py`, `docs/product/ROOM_REPOSITORY.md` |
 | Autonomous participation and durable attention | `room_attention.py`, `docs/product/ATTENTION_MODEL.md` |
