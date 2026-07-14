@@ -1027,3 +1027,21 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   frontend API path, route ownership, and parity. `/api/live-agent-room/expel`
   remains an unmoved deletion candidate. The next Phase 5.4 slice should move
   the retained legacy meeting start/finalize/review command family.
+- 2026-07-14: Retained meeting start and finalize commands are now one explicit
+  lifecycle boundary. `LegacyMeetingLifecycleService` owns domain invocation
+  and bounded success/failure operation audits;
+  `legacy_meeting_operation_projection.py` owns finalize/shared-memory audit
+  projection; and `gui_legacy_meeting_lifecycle_http.py` owns exact and dynamic
+  Router transport. `gui.py` retains compatibility imports for direct helper
+  callers but no longer parses or executes either HTTP command. Focused Router
+  and ownership checks passed 13 tests, the real server meeting-start suite
+  passed 26 tests, and real finalize/moderation coverage passed 15 tests.
+  Review checkpoints were deliberately not bundled because they own waiting,
+  timeout, cancellation, and checkpoint-state policy. The next Phase 5.4 slice
+  is that review-checkpoint family; the official-turn request/call/sequence/
+  rounds/round/preset family follows as a separate command-policy boundary.
+  The seven deletion candidates remain untouched. Canonical Agent Session
+  profile updates must continue to resolve all loaded and paged historical
+  messages, typing state, roster, and details from current participant identity
+  by stable `participant_id`; event-time names and avatars are not historical
+  display authority.

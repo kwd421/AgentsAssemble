@@ -156,6 +156,7 @@ These families already have a clear module owner and should not move back into
 | `gui_room_agent_http.py` | Compatibility | Pre-canonical Agent Session HTTP create/resume/turn controls | `tests/test_agent_session_cli.py`, `tests/test_live_agent_session_agent_controls.py` |
 | `gui_legacy_lobby_http.py` | Compatibility | HTTP lobby write/SSE plus explicit promotion and governed remote-bridge commands; command policy lives in `legacy_lobby_commands.py` | `tests/test_gui_server_streams_http.py`, `tests/test_gui_server_lobby_social.py`, `tests/test_lobby_promotion.py` |
 | `gui_legacy_meeting_http.py` | Compatibility | Legacy meeting list/detail, lifecycle, workroom queue, and meeting SSE transport | `tests/test_gui_server_meeting_payload.py`, `tests/test_gui_server_discovery_workroom.py`, `tests/test_gui_server_streams_http.py` |
+| `gui_legacy_meeting_lifecycle_http.py` | Compatibility | Retained meeting start/finalize HTTP commands; domain execution and operation audit live in `legacy_meeting_lifecycle.py`, with bounded audit projection in `legacy_meeting_operation_projection.py` | `tests/test_gui_legacy_meeting_lifecycle_http.py`, `tests/test_gui_server_session_lifecycle.py`, `tests/test_gui_server_moderation_finalization.py` |
 | `gui_side_chat_http.py` | Active optional | Separate side-chat history and SSE | `tests/test_frontend_side_chat_runtime.py` |
 | `gui_social_http.py` | Active optional | Local profile, friends, and friend DM | `tests/test_gui_server_social_http.py`, `tests/test_room_social_flows.py` |
 | `gui_mafia_http.py` | Active optional | Mafia game state and actions | `tests/test_gui_server_mafia_http.py`, `tests/test_mafia_game.py` |
@@ -184,7 +185,7 @@ families directly.
 | Family | Classification | Why it remains reachable | Next action |
 | --- | --- | --- | --- |
 | `/ws`, `/`, `/app/*`, `/join`, guarded React assets | Current core composition | Protocol upgrade and static delivery are transport concerns | Keep thin transport branches in the final handler |
-| `/api/meetings/{meeting_id}` finalize, review, and official-turn mutations | Compatibility | Legacy CLI and meeting workflows still call them | Retain mutation behavior until a separate legacy decision; read projections already belong to `gui_legacy_meeting_http.py` |
+| `/api/meetings/{meeting_id}` review and official-turn mutations | Compatibility | Legacy CLI and meeting workflows still call them | Move one policy-coherent command family at a time; start/finalize and all read projections are already Router-owned |
 | `/api/live-agents*` registration, heartbeat, lobby, DM reply, official turn, probe, leave, and engagement | Compatibility | CLI, MCP, resident runner, and smoke clients still call them | Move behind typed legacy resident-agent services and Router registrations; room and return-packet GETs are already moved |
 | Remaining `/api/live-agent-create*` and `/api/live-agent-room/expel` | Deletion candidates | No supported current caller remains for check/create/expel; provider login and retained room-session controls are Router-owned | Leave visible in the handler until the separate compatibility deletion decision |
 | `/api/codex-sessions/invite` and `/join` | Compatibility | CLI still calls the Codex meeting-session compatibility workflow | Move with legacy meeting/session service, never into the canonical provider adapter |
@@ -326,7 +327,11 @@ localStorage images. That fallback is removed, typing names prefer the current
 participant, and the real Playwright settings flow now covers image selection,
 crop/apply, canonical save, old-message reprojection, roster/detail projection,
 and reload. Self-managed resident stop/resume is Router-owned through
-`LegacySelfManagedAgentService`; delete-session remains a separate handler
-boundary through `LegacyLiveAgentRoomSessionService` because it owns server
+`LegacySelfManagedAgentService`; delete-session is a separate Router boundary
+through `LegacyLiveAgentRoomSessionService` because it owns server
 process-group/config/meeting deletion rather than self-managed process
-signaling. Phase 5.4 may continue. Do not push unless the user explicitly asks.
+signaling. Retained meeting start/finalize are also Router-owned through
+`LegacyMeetingLifecycleService`; review-checkpoint waiting/cancellation and the
+official-turn command family remain in the generated handler and must be moved
+as separate policy boundaries. Phase 5.4 may continue. Do not push unless the
+user explicitly asks.

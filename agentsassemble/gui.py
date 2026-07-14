@@ -49,6 +49,7 @@ from agentsassemble.gui_mafia_http import register_mafia_routes
 from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
 from agentsassemble.gui_legacy_lobby_http import register_legacy_lobby_routes
 from agentsassemble.gui_legacy_meeting_http import register_legacy_meeting_routes
+from agentsassemble.gui_legacy_meeting_lifecycle_http import register_legacy_meeting_lifecycle_routes
 from agentsassemble.gui_legacy_live_agent_read_http import (
     LegacyLiveAgentReadDeps,
     register_legacy_live_agent_read_routes,
@@ -213,7 +214,6 @@ from agentsassemble.live_agents import (
     update_live_agent_poll_interval,
 )
 from agentsassemble.live_agent_operations import append_live_agent_operation
-from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_finalization import finalize_live_agent_meeting
 from agentsassemble.live_agent_processes import (
     LiveAgentProcessSupervisor,
@@ -325,6 +325,15 @@ from agentsassemble.legacy_meeting_queries import (
     build_workroom_queue_payload,
     list_meetings,
     project_meeting_stream_events,
+)
+from agentsassemble.legacy_meeting_lifecycle import (
+    LegacyMeetingLifecycleService,
+    live_agent_finalize_meeting_payload,
+    live_agent_meeting_start_payload,
+)
+from agentsassemble.legacy_meeting_operation_projection import (
+    meeting_finalize_operation_details as _meeting_finalize_operation_details,
+    shared_memory_operation_details as _shared_memory_operation_details,
 )
 from agentsassemble.legacy_meeting_records import (
     live_agent_admission_details as _live_agent_admission_details_from_meeting,
@@ -1498,26 +1507,6 @@ def provider_health_payload(payload: dict[str, object]) -> dict[str, object]:
 
 def codex_sessions_payload(limit: int = 20) -> dict[str, object]:
     return {"sessions": list_codex_sessions(limit=limit)}
-
-
-def live_agent_meeting_start_payload(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
-    council_config_path = str(payload.get("council_config_path") or payload.get("council_config") or "").strip()
-    agent_config_path = str(payload.get("agent_config_path") or payload.get("agent_config") or "").strip()
-    return start_live_agent_meeting(
-        output_root,
-        council_config_path=Path(council_config_path) if council_config_path else None,
-        agent_config_path=Path(agent_config_path) if agent_config_path else None,
-        meeting_id=str(payload.get("meeting_id") or ""),
-    )
-
-
-def live_agent_finalize_meeting_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
-    meeting_dir = _safe_meeting_dir(output_root, meeting_id)
-    return finalize_live_agent_meeting(
-        meeting_dir,
-        force=_payload_bool(payload.get("force")),
-        close_pending=_payload_bool(payload.get("close_pending")),
-    )
 
 
 def live_agent_turn_preset_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
@@ -3955,13 +3944,6 @@ def _meeting_live_agent_turn_preset_path(path: str) -> str | None:
     return _meeting_live_agent_turn_action_path(path, "preset")
 
 
-def _meeting_finalize_path(path: str) -> str | None:
-    parts = path.strip("/").split("/")
-    if len(parts) == 4 and parts[0] == "api" and parts[1] == "meetings" and parts[3] == "finalize":
-        return unquote(parts[2])
-    return None
-
-
 def _meeting_review_checkpoint_path(path: str) -> str | None:
     parts = path.strip("/").split("/")
     if len(parts) == 4 and parts[0] == "api" and parts[1] == "meetings" and parts[3] == "review-checkpoints":
@@ -4364,42 +4346,6 @@ def _rounds_finalization_operation_details(finalization: dict[str, object], meet
     return details
 
 
-def _meeting_finalize_operation_details(result: dict[str, object], meeting_id: str) -> dict[str, object]:
-    details = {
-        "result_status": _operation_result_status(result.get("status")),
-        "meeting_id": clean_lobby_text(result.get("meeting_id") or meeting_id, limit=128),
-        "official_event_count": _payload_nonnegative_int(result.get("official_event_count"), 0),
-        "artifact_event_id": clean_lobby_text(result.get("artifact_event_id"), limit=128),
-        "cancelled_pending_count": _payload_nonnegative_int(result.get("cancelled_pending_count"), 0),
-        "cancelled_event_ids": _safe_payload_strings(result.get("cancelled_event_ids"), limit=128),
-        "cancelled_turn_request_ids": _safe_payload_strings(result.get("cancelled_turn_request_ids"), limit=128),
-    }
-    shared_memory = result.get("shared_memory") if isinstance(result.get("shared_memory"), dict) else {}
-    if shared_memory:
-        details.update(_shared_memory_operation_details(shared_memory))
-    return details
-
-
-def _shared_memory_operation_details(memory: dict[str, object]) -> dict[str, object]:
-    return {
-        "shared_memory_official_event_count": _payload_nonnegative_int(memory.get("official_event_count"), 0),
-        "shared_memory_last_event_id": clean_lobby_text(memory.get("last_official_event_id"), limit=128),
-        "shared_memory_decision_count": _payload_nonnegative_int(memory.get("decision_count"), _memory_item_count(memory.get("decisions"))),
-        "shared_memory_open_question_count": _payload_nonnegative_int(
-            memory.get("open_question_count"),
-            _memory_item_count(memory.get("open_questions")),
-        ),
-        "shared_memory_action_item_count": _payload_nonnegative_int(
-            memory.get("action_item_count"),
-            _memory_item_count(memory.get("action_items")),
-        ),
-    }
-
-
-def _memory_item_count(value: object) -> int:
-    return len(value) if isinstance(value, list) else 0
-
-
 def _turn_round_request_operation_details(payload: dict[str, object], meeting_id: str) -> dict[str, object]:
     return {
         "meeting_id": meeting_id,
@@ -4642,6 +4588,10 @@ def _make_handler(
     register_legacy_meeting_routes(
         route_table,
         queries=LegacyMeetingQueryService(output_root),
+    )
+    register_legacy_meeting_lifecycle_routes(
+        route_table,
+        service=LegacyMeetingLifecycleService(output_root),
     )
 
     def _enqueue_legacy_lobby_auto_turn(event: dict[str, object]) -> None:
@@ -5130,72 +5080,6 @@ def _make_handler(
                     details={"meeting_id": str(result.get("meeting_id") or payload.get("meeting_id") or "")},
                 )
                 self._send_json(result)
-                return
-            if parsed.path == "/api/live-agent-meetings/start":
-                payload = self._operation_json_payload(operation="meeting.start")
-                if payload is None:
-                    return
-                try:
-                    started = live_agent_meeting_start_payload(output_root, payload)
-                except (OSError, ValueError) as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="meeting.start",
-                        status="failed",
-                        target_id=str(payload.get("meeting_id") or ""),
-                        error=str(error),
-                        details={"meeting_id": str(payload.get("meeting_id") or "")},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                meeting = started.get("meeting") if isinstance(started.get("meeting"), dict) else {}
-                record_live_agent_operation(
-                    output_root,
-                    operation="meeting.start",
-                    status="success",
-                    target_id=str(started.get("meeting_id") or payload.get("meeting_id") or ""),
-                    summary="started resident live-agent meeting",
-                    details={
-                        "meeting_id": str(started.get("meeting_id") or ""),
-                        "role_count": len(meeting.get("roles") if isinstance(meeting.get("roles"), list) else []),
-                        "bound_agent_count": len(
-                            meeting.get("agent_bindings") if isinstance(meeting.get("agent_bindings"), list) else []
-                        ),
-                    },
-                )
-                self._send_json(started)
-                return
-            finalize_meeting_id = _meeting_finalize_path(parsed.path)
-            if finalize_meeting_id is not None:
-                payload = self._operation_json_payload(
-                    operation="meeting.finalize",
-                    target_id=finalize_meeting_id,
-                    details={"meeting_id": clean_lobby_text(finalize_meeting_id, limit=128)},
-                )
-                if payload is None:
-                    return
-                try:
-                    finalized = live_agent_finalize_meeting_payload(output_root, finalize_meeting_id, payload)
-                except (OSError, ValueError, json.JSONDecodeError) as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="meeting.finalize",
-                        status="failed",
-                        target_id=finalize_meeting_id,
-                        error=str(error),
-                        details={"meeting_id": clean_lobby_text(finalize_meeting_id, limit=128)},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="meeting.finalize",
-                    status="success" if finalized.get("status") in {"finalized", "already_finalized"} else "degraded",
-                    target_id=finalize_meeting_id,
-                    summary="finalized resident live-agent meeting artifacts",
-                    details=_meeting_finalize_operation_details(finalized, finalize_meeting_id),
-                )
-                self._send_json(finalized)
                 return
             if parsed.path == "/api/live-agents":
                 payload = self._operation_json_payload(

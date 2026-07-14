@@ -20,6 +20,7 @@ EXPECTED_DYNAMIC_ROUTES = {
     ("GET", "/api/meetings/{meeting_id}/workroom-queue"),
     ("GET", "/api/live-agents/{agent_id}/return-packet"),
     ("GET", "/api/live-agents/{agent_id}/room"),
+    ("POST", "/api/meetings/{meeting_id}/finalize"),
     ("POST", "/api/live-agent-processes/{group_id}/stop"),
     ("POST", "/api/live-agent-processes/{group_id}/restart"),
     ("POST", "/api/live-agent-processes/{group_id}/recover"),
