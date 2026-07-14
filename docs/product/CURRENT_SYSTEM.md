@@ -95,6 +95,14 @@ final back. Event publication, session-state publication, and assignment of the
 next pending turn happen only after commit; a duplicate final request resolves
 from its durable ACK before active-turn validation.
 
+Server-owned `agent.start` and `agent.stop` persist a private lifecycle intent
+before touching the provider process. If process launch or shutdown succeeds
+but the final session write fails, retry reuses the manager's session-owned
+handle or completes the already-applied stop instead of launching or stopping a
+second process. External stop confirmation records the applied effect before
+releasing the waiting lifecycle command. Lifecycle intent IDs and owned handles
+remain server-private.
+
 An event-driven deterministic attention gate can record durable `selected`,
 `eligible`, or `silent` decisions. Shadow recording for existing `ordered` and
 `continuous` rooms is server-configured as `off | sample | full` and defaults to

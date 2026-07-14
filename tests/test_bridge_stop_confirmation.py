@@ -56,6 +56,48 @@ class ExternalBridgeStopCoordinatorTests(unittest.TestCase):
         self.assertFalse(thread.is_alive())
         self.assertTrue(results[0]["stopped"])
 
+    def test_confirmation_persists_the_effect_before_releasing_stop(self):
+        coordinator = ExternalBridgeStopCoordinator(timeout_seconds=1.0)
+        delivered: list[dict[str, object]] = []
+        control_delivered = threading.Event()
+        results: list[dict[str, object]] = []
+        persisted: list[tuple[str, bool]] = []
+
+        def send(message: dict[str, object]) -> bool:
+            delivered.append(message)
+            control_delivered.set()
+            return True
+
+        thread = threading.Thread(
+            target=lambda: results.append(
+                coordinator.request(
+                    "general",
+                    "codex",
+                    generation=4,
+                    operation_id="operation-123",
+                    send=send,
+                )
+            ),
+            daemon=True,
+        )
+        thread.start()
+        self.assertTrue(control_delivered.wait(timeout=1.0))
+
+        coordinator.confirm(
+            "general",
+            "codex",
+            generation=4,
+            payload={"control_id": delivered[0]["control_id"], "stopped": True},
+            before_release=lambda operation_id, result: persisted.append(
+                (operation_id, bool(result["stopped"]))
+            ),
+        )
+        thread.join(timeout=1.0)
+
+        self.assertEqual(delivered[0]["control_id"], "stop-operation-123")
+        self.assertEqual(persisted, [("operation-123", True)])
+        self.assertEqual(results[0]["stopped"], True)
+
     def test_missing_confirmation_is_an_explicit_timeout(self):
         coordinator = ExternalBridgeStopCoordinator(timeout_seconds=0.01)
 

@@ -25,6 +25,9 @@ class RoomProjectionTests(unittest.TestCase):
             "command_configured": ["provider", "--secret"],
             "stderr_tail": "private stderr",
             "terminal_tail": "private terminal output",
+            "lifecycle_intent_action": "stop",
+            "lifecycle_intent_id": "private-operation",
+            "lifecycle_intent_status": "prepared",
         }
 
         projected = public_session(session)

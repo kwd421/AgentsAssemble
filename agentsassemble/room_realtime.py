@@ -868,6 +868,12 @@ class RoomRealtimeController:
                 room_id,
                 action,
                 payload,
+                operation_id=_external_effect_operation_id(
+                    room_id,
+                    principal_id,
+                    request_id,
+                    action,
+                ),
                 server_url=server_url,
                 ticket_issuer=ticket_issuer,
             )
@@ -1013,6 +1019,7 @@ class RoomRealtimeController:
         action: str,
         payload: dict[str, object],
         *,
+        operation_id: str,
         server_url: str,
         ticket_issuer: Callable[[dict[str, object]], str] | None,
     ) -> dict[str, object]:
@@ -1042,13 +1049,23 @@ class RoomRealtimeController:
             self._require_capability(identity, "agent.control")
             agent_id = self._payload_agent_id(payload)
             if action == "agent.start":
-                return self._agent_lifecycle.start(room_id, agent_id, server_url=server_url, ticket_issuer=ticket_issuer)
+                return self._agent_lifecycle.start(
+                    room_id,
+                    agent_id,
+                    server_url=server_url,
+                    ticket_issuer=ticket_issuer,
+                    operation_id=operation_id,
+                )
             if action == "agent.pause":
                 return self._agent_lifecycle.pause(room_id, agent_id)
             if action == "agent.resume":
                 return self._agent_lifecycle.resume(room_id, agent_id, server_url=server_url, ticket_issuer=ticket_issuer)
             if action == "agent.stop":
-                return self._agent_lifecycle.stop(room_id, agent_id)
+                return self._agent_lifecycle.stop(
+                    room_id,
+                    agent_id,
+                    operation_id=operation_id,
+                )
             return self._agent_lifecycle.interrupt(room_id, agent_id)
         if action == "participant.kick":
             self._require_capability(identity, "participant.kick")
@@ -2102,6 +2119,16 @@ def _command_principal(identity: dict[str, object]) -> str:
         limit=128,
     )
     return f"{client_type}:{principal or 'anonymous'}"
+
+
+def _external_effect_operation_id(
+    room_id: str,
+    principal_id: str,
+    request_id: str,
+    action: str,
+) -> str:
+    serialized = "\0".join((room_id, principal_id, request_id, action))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 _ACTIVE_TURN_PHASES = frozenset({"thinking", "streaming"})

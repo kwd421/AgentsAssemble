@@ -17,6 +17,7 @@ class BridgeStopConfirmationError(RuntimeError):
 @dataclass
 class _PendingStop:
     generation: int
+    operation_id: str
     event: threading.Event = field(default_factory=threading.Event)
     result: dict[str, object] | None = None
 
@@ -35,13 +36,18 @@ class ExternalBridgeStopCoordinator:
         participant_id: str,
         *,
         generation: int,
+        operation_id: str = "",
         send: Callable[[dict[str, object]], bool],
     ) -> dict[str, object]:
         clean_room_id = clean_lobby_text(room_id, limit=128)
         clean_participant_id = clean_lobby_text(participant_id, limit=128)
-        control_id = f"stop-{uuid4().hex[:20]}"
+        clean_operation_id = clean_lobby_text(operation_id, limit=128) or uuid4().hex
+        control_id = f"stop-{clean_operation_id[:96]}"
         key = (clean_room_id, clean_participant_id, control_id)
-        pending = _PendingStop(generation=max(0, int(generation)))
+        pending = _PendingStop(
+            generation=max(0, int(generation)),
+            operation_id=clean_operation_id,
+        )
         with self._lock:
             self._pending[key] = pending
         try:
@@ -89,6 +95,7 @@ class ExternalBridgeStopCoordinator:
         *,
         generation: int,
         payload: dict[str, object],
+        before_release: Callable[[str, dict[str, object]], None] | None = None,
     ) -> dict[str, object]:
         control_id = clean_lobby_text(payload.get("control_id"), limit=128)
         if not control_id or not isinstance(payload.get("stopped"), bool):
@@ -119,6 +126,8 @@ class ExternalBridgeStopCoordinator:
                 "error_code": clean_lobby_text(payload.get("error_code"), limit=128),
                 "message": clean_lobby_text(payload.get("message"), limit=1000),
             }
+            if before_release is not None:
+                before_release(pending.operation_id, result)
             pending.result = result
             pending.event.set()
             return result

@@ -13,18 +13,23 @@ from agentsassemble.room_store import RoomStore
 class FakeBridgeManager:
     def __init__(self) -> None:
         self.starts: list[tuple[str, str]] = []
+        self.start_attempts: list[tuple[str, str]] = []
         self.stops: list[tuple[str, str, str]] = []
         self.running: set[tuple[str, str]] = set()
 
     def start(self, room_id, session, spec, *, server_url="", ticket_issuer=None):
-        self.starts.append((room_id, str(session["session_id"])))
-        self.running.add((room_id, str(session["session_id"])))
+        key = (room_id, str(session["session_id"]))
+        self.start_attempts.append(key)
+        runtime_reused = key in self.running
+        if not runtime_reused:
+            self.starts.append(key)
+            self.running.add(key)
         return {
             "bridge_pid": 321,
             "bridge_handle_id": f"handle-{session['session_id']}",
             "resolved_executable": f"/bin/{spec.agent_id}",
             "runtime_profile_key": spec.runtime_profile_key(),
-            "runtime_reused": False,
+            "runtime_reused": runtime_reused,
         }
 
     def stop(self, room_id, session_id, *, timeout_seconds=2.0, handle_id=""):
@@ -37,6 +42,7 @@ class FakeBridgeManager:
             "running": (room_id, session_id) in self.running,
             "room_id": room_id,
             "session_id": session_id,
+            "bridge_handle_id": f"handle-{session_id}",
         }
 
     def close(self):
@@ -166,6 +172,78 @@ class RoomAgentLifecycleTests(unittest.TestCase):
         self.assertTrue(stopped["process"]["confirmed"])
         self.assertEqual(self.store.session("general", "codex")["runtime_status"], "stopped")
 
+    def test_start_retry_reuses_process_after_handle_persistence_failure(self):
+        original_update = self.store.update_session_fields
+        failed_once = False
+
+        def fail_first_handle_write(room_id, session_id, **fields):
+            nonlocal failed_once
+            if not failed_once and fields.get("bridge_handle_id"):
+                failed_once = True
+                raise RuntimeError("injected handle persistence failure")
+            return original_update(room_id, session_id, **fields)
+
+        self.store.update_session_fields = fail_first_handle_write  # type: ignore[method-assign]
+
+        with self.assertRaisesRegex(RuntimeError, "injected handle persistence failure"):
+            self.lifecycle.start(
+                "general",
+                "codex",
+                server_url="http://room",
+                ticket_issuer=None,
+                operation_id="start-operation",
+            )
+
+        prepared = self.store.session("general", "codex")
+        self.assertEqual(prepared["runtime_status"], "starting")
+        self.assertEqual(prepared["lifecycle_intent_status"], "prepared")
+        self.assertEqual(self.manager.starts, [("general", "codex")])
+
+        recovered = self.lifecycle.start(
+            "general",
+            "codex",
+            server_url="http://room",
+            ticket_issuer=None,
+            operation_id="start-operation",
+        )
+
+        self.assertTrue(recovered["runtime_reused"])
+        self.assertEqual(self.manager.start_attempts, [("general", "codex"), ("general", "codex")])
+        self.assertEqual(self.manager.starts, [("general", "codex")])
+        session = self.store.session("general", "codex")
+        self.assertEqual(session["bridge_handle_id"], "handle-codex")
+        self.assertEqual(session.get("lifecycle_intent_action"), "")
+
+    def test_stop_retry_finalizes_without_stopping_process_twice(self):
+        self.lifecycle.start("general", "codex", server_url="http://room", ticket_issuer=None)
+        original_update = self.store.update_session_fields
+        failed_once = False
+
+        def fail_first_stopped_write(room_id, session_id, **fields):
+            nonlocal failed_once
+            if not failed_once and fields.get("runtime_status") == "stopped":
+                failed_once = True
+                raise RuntimeError("injected stop finalization failure")
+            return original_update(room_id, session_id, **fields)
+
+        self.store.update_session_fields = fail_first_stopped_write  # type: ignore[method-assign]
+
+        with self.assertRaisesRegex(RuntimeError, "injected stop finalization failure"):
+            self.lifecycle.stop("general", "codex", operation_id="stop-operation")
+
+        prepared = self.store.session("general", "codex")
+        self.assertEqual(prepared["runtime_status"], "stopping")
+        self.assertEqual(prepared["lifecycle_intent_status"], "effect_applied")
+        self.assertEqual(self.manager.stops, [("general", "codex", "handle-codex")])
+
+        recovered = self.lifecycle.stop("general", "codex", operation_id="stop-operation")
+
+        self.assertTrue(recovered["process"]["already_stopped"])
+        self.assertEqual(self.manager.stops, [("general", "codex", "handle-codex")])
+        self.assertEqual(self.store.session("general", "codex")["runtime_status"], "stopped")
+        detached = [event for event in self.store.read_events("general") if event.get("type") == "session_detached"]
+        self.assertEqual(len(detached), 1)
+
     def test_close_does_not_overwrite_an_error_without_an_owned_runtime(self):
         self.store.update_session_fields(
             "general",
@@ -203,6 +281,7 @@ class RoomAgentLifecycleTests(unittest.TestCase):
 
     def test_bridge_exit_requeues_inflight_work_and_schedules_one_restart(self):
         self.lifecycle.start("general", "codex", server_url="http://room", ticket_issuer=None)
+        self.manager.running.discard(("general", "codex"))
         self.store.update_session_fields(
             "general",
             "codex",

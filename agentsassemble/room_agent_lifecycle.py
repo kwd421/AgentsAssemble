@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 from typing import Callable, Iterable, Protocol
+from uuid import uuid4
 
 from agentsassemble.bridge_stop_confirmation import (
     BridgeStopConfirmationError,
@@ -107,6 +108,11 @@ class RoomAgentLifecycle:
                 agent_id,
                 generation=generation,
                 payload=payload,
+                before_release=lambda operation_id, _result: self._record_stop_effect(
+                    room_id,
+                    agent_id,
+                    operation_id=operation_id,
+                ),
             )
         except BridgeStopConfirmationError as error:
             raise RoomCommandRejected(str(error), code=error.code) from error
@@ -124,6 +130,7 @@ class RoomAgentLifecycle:
         server_url: str,
         ticket_issuer: Callable[[dict[str, object]], str] | None,
         automatic_recovery: bool = False,
+        operation_id: str = "",
     ) -> dict[str, object]:
         spec = self._provider_lookup(room_id, agent_id)
         session = self.store.session(room_id, agent_id)
@@ -136,20 +143,39 @@ class RoomAgentLifecycle:
         if not session:
             self._ensure_provider_session(room_id, spec)
             session = self.store.session(room_id, agent_id)
-        if session.get("runtime_status") in {"starting", "idle", "busy", "paused"}:
-            return {"agent_session": public_session(session), "runtime_reused": True}
-        self.store.update_session_fields(
-            room_id,
-            agent_id,
-            status="available",
-            enabled=True,
-            runtime_status="starting",
-            last_error="",
-            recovery_required=bool(session.get("recovery_required")) if automatic_recovery else False,
-            recovery_attempt_count=(
-                int(session.get("recovery_attempt_count") or 0) if automatic_recovery else 0
-            ),
+        intent_action = clean_lobby_text(session.get("lifecycle_intent_action"), limit=32)
+        intent_status = clean_lobby_text(session.get("lifecycle_intent_status"), limit=32)
+        recovering_incomplete_start = bool(
+            intent_action == "start"
+            and intent_status == "prepared"
+            and not session.get("bridge_handle_id")
         )
+        if (
+            session.get("runtime_status") in {"starting", "idle", "busy", "paused"}
+            and not recovering_incomplete_start
+        ):
+            return {"agent_session": public_session(session), "runtime_reused": True}
+        current_operation_id = (
+            clean_lobby_text(session.get("lifecycle_intent_id"), limit=128)
+            if recovering_incomplete_start
+            else _lifecycle_operation_id(operation_id)
+        )
+        if not recovering_incomplete_start:
+            self.store.update_session_fields(
+                room_id,
+                agent_id,
+                status="available",
+                enabled=True,
+                runtime_status="starting",
+                last_error="",
+                recovery_required=bool(session.get("recovery_required")) if automatic_recovery else False,
+                recovery_attempt_count=(
+                    int(session.get("recovery_attempt_count") or 0) if automatic_recovery else 0
+                ),
+                lifecycle_intent_action="start",
+                lifecycle_intent_id=current_operation_id,
+                lifecycle_intent_status="prepared",
+            )
         if self.bridge_manager is None:
             self.store.update_session_fields(
                 room_id,
@@ -158,6 +184,9 @@ class RoomAgentLifecycle:
                 enabled=False,
                 runtime_status="error",
                 last_error="Agent bridge manager is unavailable.",
+                lifecycle_intent_action="",
+                lifecycle_intent_id="",
+                lifecycle_intent_status="",
             )
             raise RoomCommandRejected("Agent bridge manager is unavailable.", code="runtime_unavailable")
         launch_key = (room_id, agent_id)
@@ -180,6 +209,9 @@ class RoomAgentLifecycle:
                 enabled=False,
                 runtime_status="error",
                 last_error=str(error),
+                lifecycle_intent_action="",
+                lifecycle_intent_id="",
+                lifecycle_intent_status="",
             )
             self.store.append_event(
                 room_id,
@@ -197,6 +229,9 @@ class RoomAgentLifecycle:
             bridge_handle_id=launch.get("bridge_handle_id") or "",
             process_ownership="server",
             resolved_executable=launch.get("resolved_executable") or "",
+            lifecycle_intent_action="",
+            lifecycle_intent_id="",
+            lifecycle_intent_status="",
         )
         self._publish_session_state(room_id, updated)
         return {
@@ -205,7 +240,7 @@ class RoomAgentLifecycle:
                 "runtime_reused": bool(launch.get("runtime_reused")),
                 "runtime_profile_key": launch.get("runtime_profile_key") or "",
             },
-            "runtime_reused": False,
+            "runtime_reused": bool(launch.get("runtime_reused")),
         }
 
     def resume(
@@ -290,7 +325,14 @@ class RoomAgentLifecycle:
             "process_preserved": True,
         }
 
-    def stop(self, room_id: str, agent_id: str, *, disable: bool = True) -> dict[str, object]:
+    def stop(
+        self,
+        room_id: str,
+        agent_id: str,
+        *,
+        disable: bool = True,
+        operation_id: str = "",
+    ) -> dict[str, object]:
         session = self.store.session(room_id, agent_id)
         if not session:
             raise RoomCommandRejected(f"Agent session {agent_id} was not found.", code="not_found")
@@ -319,18 +361,50 @@ class RoomAgentLifecycle:
             cancel()
         if disable:
             self._launch_contexts.pop(key, None)
-        self.store.update_session_fields(
-            room_id,
-            agent_id,
-            runtime_status="stopping",
-            enabled=False if disable else bool(session.get("enabled")),
+        existing_stop_intent = clean_lobby_text(session.get("lifecycle_intent_action"), limit=32) == "stop"
+        current_operation_id = (
+            clean_lobby_text(session.get("lifecycle_intent_id"), limit=128)
+            if existing_stop_intent
+            else _lifecycle_operation_id(operation_id)
         )
+        if not existing_stop_intent:
+            self.store.update_session_fields(
+                room_id,
+                agent_id,
+                runtime_status="stopping",
+                enabled=False if disable else bool(session.get("enabled")),
+                lifecycle_intent_action="stop",
+                lifecycle_intent_id=current_operation_id,
+                lifecycle_intent_status="prepared",
+            )
+            session = self.store.session(room_id, agent_id)
+        effect_already_applied = (
+            clean_lobby_text(session.get("lifecycle_intent_status"), limit=32) == "effect_applied"
+        )
+        if effect_already_applied:
+            revoked_sessions = self._revoke_participant_sessions(room_id, agent_id) if disable else 0
+            self.broker.disconnect_participant(room_id, agent_id)
+            return self._finalize_stop(
+                room_id,
+                agent_id,
+                session,
+                disable=disable,
+                process={
+                    "stopped": True,
+                    "alive": False,
+                    "ownership": ownership,
+                    "confirmed": True,
+                    "already_stopped": True,
+                },
+                revoked_sessions=revoked_sessions,
+            )
         if ownership == "external":
             try:
                 stopped = self._external_stop_confirmations.request(
                     room_id,
                     agent_id,
                     generation=int(session.get("bridge_generation") or 0),
+                    operation_id=current_operation_id,
                     send=lambda message: self.broker.direct_to_bridge(room_id, agent_id, message),
                 )
             except BridgeStopConfirmationError as error:
@@ -356,14 +430,44 @@ class RoomAgentLifecycle:
                 revoked_sessions=revoked_sessions,
             )
 
+        manager_health = self.process_health(room_id, agent_id)
+        manager_running = manager_health.get("running")
+        if (
+            existing_stop_intent
+            and manager_running is False
+            and not self.broker.has_bridge(room_id, agent_id)
+        ):
+            self._record_stop_effect(
+                room_id,
+                agent_id,
+                operation_id=current_operation_id,
+            )
+            return self._finalize_stop(
+                room_id,
+                agent_id,
+                self.store.session(room_id, agent_id),
+                disable=disable,
+                process={
+                    "stopped": True,
+                    "alive": False,
+                    "ownership": "server",
+                    "confirmed": True,
+                    "already_stopped": True,
+                },
+                revoked_sessions=0,
+            )
         self.broker.direct_to_bridge(room_id, agent_id, {"op": "agent.control", "action": "stop"})
         try:
             if self.bridge_manager is None:
                 raise RuntimeError("Agent bridge manager is unavailable.")
+            owned_handle_id = clean_lobby_text(
+                session.get("bridge_handle_id") or manager_health.get("bridge_handle_id"),
+                limit=128,
+            )
             stopped = self.bridge_manager.stop(
                 room_id,
                 agent_id,
-                handle_id=clean_lobby_text(session.get("bridge_handle_id"), limit=128),
+                handle_id=owned_handle_id,
             )
         except Exception as error:
             message = clean_lobby_text(error, limit=1000) or "Server-owned provider shutdown failed."
@@ -387,10 +491,15 @@ class RoomAgentLifecycle:
                 error_code="runtime_stop_unconfirmed",
             )
             raise RoomCommandRejected(message, code="runtime_stop_unconfirmed")
+        self._record_stop_effect(
+            room_id,
+            agent_id,
+            operation_id=current_operation_id,
+        )
         return self._finalize_stop(
             room_id,
             agent_id,
-            session,
+            self.store.session(room_id, agent_id),
             disable=disable,
             process={**stopped, "ownership": "server", "confirmed": True},
             revoked_sessions=0,
@@ -561,6 +670,9 @@ class RoomAgentLifecycle:
             last_error=message,
             recovery_required=True,
             recovery_attempt_count=0,
+            lifecycle_intent_action="",
+            lifecycle_intent_id="",
+            lifecycle_intent_status="",
         )
         participant = self.store.participant(room_id, agent_id)
         if participant:
@@ -613,6 +725,9 @@ class RoomAgentLifecycle:
             last_error="",
             recovery_required=False,
             recovery_attempt_count=0,
+            lifecycle_intent_action="",
+            lifecycle_intent_id="",
+            lifecycle_intent_status="",
         )
         participant = self.store.participant(room_id, agent_id)
         if participant:
@@ -630,6 +745,30 @@ class RoomAgentLifecycle:
             "process": process,
             "revoked_sessions": revoked_sessions,
         }
+
+    def _record_stop_effect(
+        self,
+        room_id: str,
+        agent_id: str,
+        *,
+        operation_id: str,
+    ) -> None:
+        session = self.store.session(room_id, agent_id)
+        if not session:
+            raise RoomCommandRejected(f"Agent session {agent_id} was not found.", code="not_found")
+        if (
+            clean_lobby_text(session.get("lifecycle_intent_action"), limit=32) != "stop"
+            or clean_lobby_text(session.get("lifecycle_intent_id"), limit=128) != operation_id
+        ):
+            raise RoomCommandRejected(
+                "The provider stop confirmation does not match the active lifecycle operation.",
+                code="stale_stop_confirmation",
+            )
+        self.store.update_session_fields(
+            room_id,
+            agent_id,
+            lifecycle_intent_status="effect_applied",
+        )
 
     def _recover_bridge(self, room_id: str, session_id: str) -> None:
         key = (room_id, session_id)
@@ -696,3 +835,7 @@ def _bridge_manager_session_running(
         return bool(health(room_id, session_id).get("running", True))
     except Exception:
         return True
+
+
+def _lifecycle_operation_id(value: object) -> str:
+    return clean_lobby_text(value, limit=128) or uuid4().hex

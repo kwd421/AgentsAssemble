@@ -324,6 +324,7 @@ class NativeCliBridgeProcessManager:
         return {
             "running": handle.process.poll() is None,
             "bridge_pid": handle.process.pid,
+            "bridge_handle_id": handle.handle_id,
             "returncode": handle.process.poll(),
             "runtime_profile_key": handle.runtime_profile_key,
             **self._stderr_snapshot(handle),

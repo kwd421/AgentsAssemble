@@ -456,3 +456,13 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   one final and one finish, and later duplicates return the stored ACK before
   active-turn validation. The next slice is Commit 1.6, narrowly scoped durable
   intents for external process effects.
+- 2026-07-14: Commit 1.6 began with Agent Session start/stop. A private durable
+  lifecycle intent is written before the process effect. An incomplete start
+  retries through the bridge manager, which reuses the existing session-owned
+  process and returns its opaque handle; an applied stop records
+  `effect_applied` before final session cleanup, so retry does not stop the
+  process twice. External bridge confirmation persists that applied marker
+  before waking the waiting stop command. Failure-injection tests cover both
+  process-started/handle-write-failed and process-stopped/final-write-failed
+  windows. Lifecycle fields and owned handles are excluded from public session
+  projection. The next slice is the participant-specific kick workflow.
