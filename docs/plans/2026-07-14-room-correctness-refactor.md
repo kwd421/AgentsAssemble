@@ -1081,3 +1081,19 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   generated handler. The seven deletion candidates remain untouched, and
   Agent Session historical identity still resolves from current canonical
   participant name/avatar by stable `participant_id`.
+- 2026-07-15: Official round, remaining-round batch, and play-preset commands
+  now form one explicit scheduling boundary. `LegacyOfficialRoundService`
+  owns round expansion, the shared per-meeting lock, answered-round progress,
+  bounded batch stop/skip policy, optional meeting finalization, and
+  prompt-free success/failure audits. Its Router module owns all three dynamic
+  HTTP paths and preserves invalid-JSON and `400` behavior. Existing
+  `gui.py` payload names remain import-compatible for CLI/session callers, but
+  the generated handler no longer parses or executes a legacy meeting mutation
+  route. Focused service/Router/ownership tests passed 11 tests; the real
+  official-turn server suite passed 21; moderation/preset passed 18; CLI call
+  timeout passed 22; session lifecycle passed 26; and session recovery passed
+  20. Phase 5.4 now requires a fresh retained-handler inventory before moving
+  the next resident-agent or Codex compatibility family. The seven deletion
+  candidates remain untouched. Agent Session name/avatar history continues to
+  resolve current canonical identity by stable `participant_id`, including an
+  explicitly empty current avatar.

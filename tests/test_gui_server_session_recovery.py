@@ -858,7 +858,10 @@ class GuiServerSessionLifecycleTests(unittest.TestCase):
             try:
                 with (
                     patch("agentsassemble.gui.live_agent_turn_rounds_payload", return_value=auto_rounds) as rounds_payload,
-                    patch("agentsassemble.gui.finalize_live_agent_meeting", return_value=finalized) as finalize_meeting,
+                    patch(
+                        "agentsassemble.legacy_official_rounds.finalize_live_agent_meeting",
+                        return_value=finalized,
+                    ) as finalize_meeting,
                 ):
                     request = Request(
                         f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/ensure",

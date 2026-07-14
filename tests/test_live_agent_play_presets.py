@@ -61,7 +61,10 @@ class LiveAgentPlayPresetTests(unittest.TestCase):
             (root / "live_agents.json").write_text(json.dumps({"agents": _live_agents()}), encoding="utf-8")
 
             sequence_response = {"status": "answered", "answered_count": 1, "timeout_count": 0, "skipped_count": 0, "results": []}
-            with patch("agentsassemble.gui.live_agent_turn_sequence_payload", return_value=sequence_response) as sequence_payload:
+            with patch(
+                "agentsassemble.legacy_official_rounds.live_agent_turn_sequence_payload",
+                return_value=sequence_response,
+            ) as sequence_payload:
                 result = live_agent_turn_preset_payload(
                     root,
                     "m1",

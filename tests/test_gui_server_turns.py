@@ -990,7 +990,10 @@ class GuiServerTurnTests(unittest.TestCase):
             responder = threading.Thread(target=answer_remaining_round_requests, daemon=True)
             responder.start()
             try:
-                with patch("agentsassemble.gui.finalize_live_agent_meeting", return_value=finalized) as finalize_meeting:
+                with patch(
+                    "agentsassemble.legacy_official_rounds.finalize_live_agent_meeting",
+                    return_value=finalized,
+                ) as finalize_meeting:
                     rounds_request = Request(
                         f"http://127.0.0.1:{server.server_port}/api/meetings/m1/live-agent-turns/rounds",
                         data=json.dumps({"timeout_seconds": 2, "max_rounds": 1, "finalize_after_rounds": True}).encode("utf-8"),
@@ -1083,7 +1086,7 @@ class GuiServerTurnTests(unittest.TestCase):
             responder.start()
             try:
                 with patch(
-                    "agentsassemble.gui.finalize_live_agent_meeting",
+                    "agentsassemble.legacy_official_rounds.finalize_live_agent_meeting",
                     return_value={"status": "finalized", "meeting_id": "m1", "official_event_count": 1},
                 ) as finalize_meeting:
                     rounds_request = Request(

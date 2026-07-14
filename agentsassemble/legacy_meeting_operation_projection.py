@@ -187,6 +187,139 @@ def official_turn_sequence_request_operation_details(
     }
 
 
+def official_round_operation_details(
+    round_result: dict[str, object],
+    meeting_id: str,
+) -> dict[str, object]:
+    details = turn_sequence_operation_details(round_result, meeting_id)
+    details["round_id"] = clean_lobby_text(round_result.get("round_id"), limit=128)
+    details["role_ids"] = _safe_strings(round_result.get("role_ids"), limit=128)
+    return details
+
+
+def official_round_request_operation_details(
+    payload: dict[str, object],
+    meeting_id: str,
+) -> dict[str, object]:
+    return {
+        "meeting_id": meeting_id,
+        "round_id": clean_lobby_text(payload.get("round_id"), limit=128),
+        "role_ids": _safe_strings(payload.get("role_ids"), limit=128),
+        "timeout_seconds": _nonnegative_float(
+            payload.get("timeout_seconds", payload.get("timeout")),
+            30.0,
+        ),
+        "stop_on_timeout": _payload_bool(payload.get("stop_on_timeout")),
+    }
+
+
+def official_rounds_request_operation_details(
+    payload: dict[str, object],
+    meeting_id: str,
+    *,
+    max_rounds: int,
+) -> dict[str, object]:
+    return {
+        "meeting_id": meeting_id,
+        "timeout_seconds": _nonnegative_float(
+            payload.get("timeout_seconds", payload.get("timeout")),
+            30.0,
+        ),
+        "stop_on_timeout": _payload_bool(payload.get("stop_on_timeout")),
+        "max_rounds": max(0, max_rounds),
+    }
+
+
+def official_rounds_operation_details(
+    rounds_result: dict[str, object],
+    meeting_id: str,
+) -> dict[str, object]:
+    results = rounds_result.get("results") if isinstance(rounds_result.get("results"), list) else []
+    round_ids: list[str] = []
+    statuses: list[str] = []
+    role_ids: list[str] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        if item.get("round_id"):
+            round_ids.append(clean_lobby_text(item.get("round_id"), limit=128))
+        if item.get("status"):
+            statuses.append(clean_lobby_text(item.get("status"), limit=32))
+        role_ids.extend(_safe_strings(item.get("role_ids"), limit=128))
+    details = {
+        "meeting_id": meeting_id,
+        "round_count": _nonnegative_int(rounds_result.get("round_count"), 0),
+        "answered_round_count": _nonnegative_int(rounds_result.get("answered_round_count"), 0),
+        "completed_round_count": _nonnegative_int(rounds_result.get("completed_round_count"), 0),
+        "timeout_round_count": _nonnegative_int(rounds_result.get("timeout_round_count"), 0),
+        "skipped_round_count": _nonnegative_int(rounds_result.get("skipped_round_count"), 0),
+        "stopped_round_count": _nonnegative_int(rounds_result.get("stopped_round_count"), 0),
+        "stopped": rounds_result.get("stopped") is True,
+        "round_ids": round_ids,
+        "statuses": statuses,
+        "role_ids": role_ids,
+        "timeout_seconds": _nonnegative_float(rounds_result.get("timeout_seconds"), 0.0),
+        "max_rounds": _nonnegative_int(rounds_result.get("max_rounds"), 0),
+    }
+    finalization = rounds_result.get("finalization") if isinstance(rounds_result.get("finalization"), dict) else None
+    if finalization is not None:
+        details.update(_rounds_finalization_operation_details(finalization, meeting_id))
+    return details
+
+
+def official_turn_preset_request_operation_details(
+    payload: dict[str, object],
+    meeting_id: str,
+) -> dict[str, object]:
+    return {
+        "meeting_id": meeting_id,
+        "preset_id": clean_lobby_text(payload.get("preset_id") or payload.get("preset"), limit=128),
+        "role_ids": _safe_strings(payload.get("role_ids"), limit=128),
+        "timeout_seconds": _nonnegative_float(
+            payload.get("timeout_seconds", payload.get("timeout")),
+            30.0,
+        ),
+        "stop_on_timeout": _payload_bool(payload.get("stop_on_timeout")),
+    }
+
+
+def official_turn_preset_operation_details(
+    preset_result: dict[str, object],
+    meeting_id: str,
+) -> dict[str, object]:
+    details = turn_sequence_operation_details(preset_result, meeting_id)
+    details["preset_id"] = clean_lobby_text(preset_result.get("preset_id"), limit=128)
+    details["round_id"] = clean_lobby_text(preset_result.get("round_id"), limit=128)
+    details["role_ids"] = _safe_strings(preset_result.get("role_ids"), limit=128)
+    return details
+
+
+def _rounds_finalization_operation_details(
+    finalization: dict[str, object],
+    meeting_id: str,
+) -> dict[str, object]:
+    details = {
+        "finalization_status": _operation_result_status(finalization.get("status")),
+        "finalization_reason": clean_lobby_text(finalization.get("reason"), limit=256),
+        "finalization_meeting_id": clean_lobby_text(
+            finalization.get("meeting_id") or meeting_id,
+            limit=128,
+        ),
+        "finalization_official_event_count": _nonnegative_int(
+            finalization.get("official_event_count"),
+            0,
+        ),
+        "finalization_artifact_event_id": clean_lobby_text(
+            finalization.get("artifact_event_id"),
+            limit=128,
+        ),
+    }
+    shared_memory = finalization.get("shared_memory") if isinstance(finalization.get("shared_memory"), dict) else {}
+    if shared_memory:
+        details.update(shared_memory_operation_details(shared_memory))
+    return details
+
+
 def _operation_result_status(value: object) -> str:
     return str(value or "unknown").strip() or "unknown"
 
