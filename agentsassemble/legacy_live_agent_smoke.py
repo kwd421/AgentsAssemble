@@ -13,6 +13,7 @@ from agentsassemble.live_agent_smoke import (
     MAX_SESSION_SMOKE_SOAK_CYCLES,
     MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS,
     run_live_agent_official_round_smoke,
+    run_live_agent_real_session_smoke,
     run_live_agent_session_smoke,
     run_live_agent_smoke,
 )
@@ -45,6 +46,7 @@ class LegacyLiveAgentSmokeService:
     output_root: Path
     request_json: RequestJson = request_json
     session_smoke_runner: SmokeRunner = run_live_agent_session_smoke
+    real_session_smoke_runner: SmokeRunner = run_live_agent_real_session_smoke
 
     def run_basic(self, payload: dict[str, object], *, default_server: str) -> dict[str, object]:
         return live_agent_smoke_payload(
@@ -79,6 +81,21 @@ class LegacyLiveAgentSmokeService:
             request_json=self.request_json,
             runner=self.session_smoke_runner,
         )
+
+    def run_real_session(
+        self,
+        payload: dict[str, object],
+        *,
+        default_server: str,
+    ) -> dict[str, object]:
+        result = live_agent_real_session_smoke_payload(
+            self.output_root,
+            payload,
+            default_server=default_server,
+            request_json=self.request_json,
+            runner=self.real_session_smoke_runner,
+        )
+        return safe_real_session_smoke_result(result)
 
 
 def live_agent_smoke_payload(
@@ -127,6 +144,30 @@ def live_agent_session_smoke_payload(
         lobby_probe_count=_nonnegative_int(payload.get("lobby_probe_count"), 1),
         soak_cycle_count=session_smoke_soak_cycle_count(payload.get("soak_cycle_count")),
         soak_interval_seconds=session_smoke_soak_interval_seconds(payload.get("soak_interval_seconds")),
+        request_json=request_json,
+        output_root=output_root,
+    )
+
+
+def live_agent_real_session_smoke_payload(
+    output_root: Path,
+    payload: dict[str, object],
+    *,
+    default_server: str,
+    request_json: RequestJson = request_json,
+    runner: SmokeRunner = run_live_agent_real_session_smoke,
+) -> dict[str, object]:
+    return runner(
+        server=default_server,
+        group_id=str(payload.get("group_id") or ""),
+        meeting_id=str(payload.get("meeting_id") or ""),
+        live_agent_config_path=str(payload.get("live_agent_config_path") or payload.get("live_agent_config") or ""),
+        council_config_path=str(payload.get("council_config_path") or payload.get("council_config") or ""),
+        agent_config_path=str(payload.get("agent_config_path") or payload.get("agent_config") or ""),
+        timeout_seconds=_nonnegative_float(payload.get("timeout"), 12.0),
+        approve_real_providers=_payload_bool(payload.get("approve_real_providers")),
+        official_round_smoke=_payload_bool(payload.get("official_round_smoke")),
+        restart_smoke=_payload_bool(payload.get("restart_smoke")),
         request_json=request_json,
         output_root=output_root,
     )
@@ -212,6 +253,60 @@ def session_smoke_error_details(payload: dict[str, object]) -> dict[str, object]
     }
 
 
+def safe_real_session_smoke_result(smoke: dict[str, object]) -> dict[str, object]:
+    return {
+        "status": _result_status(smoke.get("status")),
+        "meeting_id": clean_lobby_text(smoke.get("meeting_id"), limit=128),
+        "group_id": clean_lobby_text(smoke.get("group_id"), limit=128),
+        "approval_required": smoke.get("approval_required") is True,
+        "approved": smoke.get("approved") is True,
+        "diagnostic": smoke.get("diagnostic") is True,
+        "start_status": _result_status(smoke.get("start_status")),
+        "expected_agent_count": _nonnegative_int(smoke.get("expected_agent_count"), 0),
+        "connected_agent_count": _nonnegative_int(smoke.get("connected_agent_count"), 0),
+        "reply_probe_status": _result_status(smoke.get("reply_probe_status")),
+        "reply_probe_count": _nonnegative_int(smoke.get("reply_probe_count"), 0),
+        "reply_probe_ok_count": _nonnegative_int(smoke.get("reply_probe_ok_count"), 0),
+        "official_round_smoke": smoke.get("official_round_smoke") is True,
+        "official_rounds_status": _result_status(smoke.get("official_rounds_status")),
+        "official_round_count": _nonnegative_int(smoke.get("official_round_count"), 0),
+        "official_answered_round_count": _nonnegative_int(smoke.get("official_answered_round_count"), 0),
+        "official_timeout_round_count": _nonnegative_int(smoke.get("official_timeout_round_count"), 0),
+        "official_skipped_round_count": _nonnegative_int(smoke.get("official_skipped_round_count"), 0),
+        "restart_smoke": smoke.get("restart_smoke") is True,
+        "restart_status": _result_status(smoke.get("restart_status")),
+        "post_restart_expected_agent_count": _nonnegative_int(smoke.get("post_restart_expected_agent_count"), 0),
+        "post_restart_connected_agent_count": _nonnegative_int(smoke.get("post_restart_connected_agent_count"), 0),
+        "post_restart_reply_probe_status": _result_status(smoke.get("post_restart_reply_probe_status")),
+        "post_restart_reply_probe_count": _nonnegative_int(smoke.get("post_restart_reply_probe_count"), 0),
+        "post_restart_reply_probe_ok_count": _nonnegative_int(smoke.get("post_restart_reply_probe_ok_count"), 0),
+        "stop_status": _result_status(smoke.get("stop_status")),
+        "post_stop_process_status": _result_status(smoke.get("post_stop_process_status")),
+    }
+
+
+def real_session_smoke_operation_details(smoke: dict[str, object]) -> dict[str, object]:
+    return safe_real_session_smoke_result(smoke)
+
+
+def real_session_smoke_error_details(payload: dict[str, object]) -> dict[str, object]:
+    return {
+        "group_id": clean_lobby_text(payload.get("group_id"), limit=128),
+        "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
+    }
+
+
+def real_session_smoke_has_explicit_configs(payload: dict[str, object]) -> bool:
+    return all(
+        str(value or "").strip()
+        for value in (
+            payload.get("live_agent_config_path") or payload.get("live_agent_config"),
+            payload.get("council_config_path") or payload.get("council_config"),
+            payload.get("agent_config_path") or payload.get("agent_config"),
+        )
+    )
+
+
 def session_smoke_soak_cycle_count(value: object) -> int:
     if value is None or value == "":
         return 0
@@ -240,6 +335,12 @@ def session_smoke_soak_interval_seconds(value: object) -> float:
 
 def _result_status(value: object) -> str:
     return str(value or "unknown").strip() or "unknown"
+
+
+def _payload_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return isinstance(value, str) and value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _safe_strings(value: object, *, limit: int) -> list[str]:

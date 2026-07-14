@@ -1,4 +1,4 @@
-"""HTTP routes for credential-free resident smoke checks."""
+"""HTTP routes for retained resident smoke checks."""
 
 from __future__ import annotations
 
@@ -11,6 +11,9 @@ from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.legacy_live_agent_smoke import (
     LegacyLiveAgentSmokeService,
     official_round_smoke_operation_details,
+    real_session_smoke_error_details,
+    real_session_smoke_has_explicit_configs,
+    real_session_smoke_operation_details,
     session_smoke_error_details,
     session_smoke_operation_details,
 )
@@ -21,6 +24,13 @@ ReadOperationPayload = Callable[[RequestContext, str], dict[str, object] | None]
 RecordOperation = Callable[..., object]
 LocalServerUrl = Callable[[RequestContext], str]
 SESSION_SMOKE_ERROR = "Session smoke could not be run."
+REAL_SESSION_SMOKE_ERROR = "Real session smoke could not be run."
+REAL_SESSION_SMOKE_APPROVAL_REQUIRED_MESSAGE = (
+    "Real session smoke requires current operator approval before starting real providers."
+)
+REAL_SESSION_SMOKE_CONFIG_REQUIRED_MESSAGE = (
+    "Real session smoke requires explicit live-agent, council, and agent config paths."
+)
 
 
 @dataclass(frozen=True)
@@ -130,6 +140,59 @@ def register_legacy_live_agent_smoke_routes(
         )
         ctx.send_json(result)
 
+    @router.post("/api/live-agent-real-session-smoke")
+    def live_agent_real_session_smoke(ctx: RequestContext) -> None:
+        payload = deps.read_operation_payload(ctx, "session.real_smoke")
+        if payload is None:
+            return
+        if not _payload_bool(payload.get("approve_real_providers")):
+            _reject_real_session_smoke(
+                ctx,
+                deps,
+                payload,
+                REAL_SESSION_SMOKE_APPROVAL_REQUIRED_MESSAGE,
+            )
+            return
+        if not real_session_smoke_has_explicit_configs(payload):
+            _reject_real_session_smoke(
+                ctx,
+                deps,
+                payload,
+                REAL_SESSION_SMOKE_CONFIG_REQUIRED_MESSAGE,
+            )
+            return
+        try:
+            result = deps.smoke.run_real_session(
+                payload,
+                default_server=deps.local_server_url(ctx),
+            )
+        except (LiveAgentSmokeFailed, ValueError, urllib.error.URLError):
+            safe_details = real_session_smoke_error_details(payload)
+            deps.record_operation(
+                ctx.deps.output_root,
+                operation="session.real_smoke",
+                status="failed",
+                target_id=str(safe_details.get("meeting_id") or ""),
+                error=REAL_SESSION_SMOKE_ERROR,
+                details=safe_details,
+            )
+            ctx.send_error(
+                HTTPStatus.BAD_GATEWAY,
+                REAL_SESSION_SMOKE_ERROR,
+                details=safe_details,
+            )
+            return
+        result_status = _result_status(result.get("status"))
+        deps.record_operation(
+            ctx.deps.output_root,
+            operation="session.real_smoke",
+            status="degraded" if result_status == "degraded" else _success_for_result(result_status),
+            target_id=str(result.get("meeting_id") or payload.get("meeting_id") or ""),
+            summary="ran approved real resident session smoke",
+            details=real_session_smoke_operation_details(result),
+        )
+        ctx.send_json(result)
+
 
 def _record_failed_smoke(
     ctx: RequestContext,
@@ -149,9 +212,33 @@ def _record_failed_smoke(
     )
 
 
+def _reject_real_session_smoke(
+    ctx: RequestContext,
+    deps: LegacyLiveAgentSmokeHttpDeps,
+    payload: dict[str, object],
+    message: str,
+) -> None:
+    safe_details = real_session_smoke_error_details(payload)
+    deps.record_operation(
+        ctx.deps.output_root,
+        operation="session.real_smoke",
+        status="failed",
+        target_id=str(safe_details.get("meeting_id") or ""),
+        error=message,
+        details=safe_details,
+    )
+    ctx.send_error(HTTPStatus.BAD_REQUEST, message, details=safe_details)
+
+
 def _result_status(value: object) -> str:
     return str(value or "unknown").strip() or "unknown"
 
 
 def _success_for_result(value: object) -> str:
     return "success" if _result_status(value) == "ok" else "failed"
+
+
+def _payload_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return isinstance(value, str) and value.strip().lower() in {"1", "true", "yes", "on"}

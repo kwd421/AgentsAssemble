@@ -860,3 +860,20 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   redaction separate; aggregate readiness follows after that. The seven
   deletion candidates remain untouched, as does canonical name/avatar history
   reprojection by stable `participant_id`.
+- 2026-07-14: Approval-gated real-provider session smoke now uses the same
+  typed smoke service and Router while remaining a distinct policy path. The
+  HTTP boundary rejects missing or string-false operator approval before any
+  runner call, then requires explicit live-agent, council, and agent config
+  paths. Config values are used only by the runner and never copied into error
+  responses or operation audits. Contract, validation, and transport failures
+  return the fixed redacted `502` message; approved results are projected
+  through one allowlist shared by the response and audit, preserving only
+  status, bounded counts, lifecycle status, and approval/diagnostic booleans.
+  `degraded` remains distinct from success and failure. GUI composition uses a
+  late-bound runner so the established no-launch gate tests still prove that
+  `run_live_agent_real_session_smoke` is not called without approval and all
+  three configs. Focused Router, real-session security, direct smoke,
+  readiness, and ownership verification passed all 57 tests. Aggregate
+  readiness is the last smoke route left in the generated handler and is the
+  next extraction. The seven deletion candidates and canonical name/avatar
+  reprojection by stable `participant_id` remain unchanged.
