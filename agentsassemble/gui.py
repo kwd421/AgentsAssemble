@@ -274,6 +274,14 @@ from agentsassemble.legacy_live_agent_diagnostics import (
     session_readiness_by_target as _session_readiness_by_target,
     session_run_readiness_overlay as _session_run_readiness_overlay,
 )
+from agentsassemble.legacy_live_agent_process_projection import (
+    agent_connection_evidence as _agent_connection_evidence,
+    groups_with_agent_connection_evidence as _groups_with_agent_connection_evidence,
+    live_agent_processes_payload,
+    parse_public_timestamp as _parse_public_timestamp,
+    process_payload_with_agent_connection_evidence as _process_payload_with_agent_connection_evidence,
+    safe_agent_connection_identity as _safe_agent_connection_identity,
+)
 from agentsassemble.legacy_meeting_queries import (
     LegacyMeetingQueryService,
     build_meeting_payload,
@@ -3532,17 +3540,6 @@ def live_agent_probe_payload(output_root: Path, agent_id: str, payload: dict[str
     )
 
 
-def live_agent_processes_payload(
-    process_supervisor: LiveAgentProcessSupervisor,
-    *,
-    output_root: Path | None = None,
-) -> dict[str, object]:
-    groups = process_supervisor.list_groups()
-    if output_root is None:
-        return {"groups": groups}
-    return {"groups": _groups_with_agent_connection_evidence(groups, read_live_agents(output_root))}
-
-
 def live_agent_preflight_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
     config_path = Path(str(payload.get("config_path") or "configs/live-agents.example.json"))
     server = str(payload.get("server") or default_server)
@@ -4435,103 +4432,6 @@ def _live_agent_session_run_attention_label(
     elif retrying:
         parts.append("retrying")
     return ":".join(parts)
-
-
-def _safe_process_meeting_id(value: object) -> str:
-    return _safe_session_run_health_identity(value)
-
-
-def _groups_with_agent_connection_evidence(
-    groups: list[dict[str, object]],
-    agents: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    return [{**group, "agent_connection": _agent_connection_evidence(group, agents)} for group in groups]
-
-
-def _process_payload_with_agent_connection_evidence(
-    payload: dict[str, object],
-    output_root: Path | None,
-) -> dict[str, object]:
-    if output_root is None:
-        return payload
-    agents = read_live_agents(output_root)
-    response = dict(payload)
-    group = response.get("group")
-    if isinstance(group, dict):
-        response["group"] = {**group, "agent_connection": _agent_connection_evidence(group, agents)}
-    groups = response.get("groups")
-    if isinstance(groups, list):
-        response["groups"] = _groups_with_agent_connection_evidence([group for group in groups if isinstance(group, dict)], agents)
-    return response
-
-
-def _safe_agent_connection_identity(value: object) -> str:
-    return _safe_session_run_health_identity(value) or "unknown"
-
-
-def _agent_connection_evidence(group: dict[str, object], agents: list[dict[str, object]]) -> dict[str, object]:
-    agents_by_id = {str(agent.get("agent_id") or ""): agent for agent in agents if str(agent.get("agent_id") or "")}
-    group_meeting_id = _safe_process_meeting_id(group.get("meeting_id"))
-    expected = 0
-    connected = 0
-    attention = []
-    for manifest_agent in _as_dict_list(group.get("agents")):
-        agent_id = str(manifest_agent.get("agent_id") or "").strip()
-        if not agent_id:
-            continue
-        expected += 1
-        agent = agents_by_id.get(agent_id)
-        if agent is None:
-            attention.append({"agent_id": agent_id, "status": "missing"})
-            continue
-        if group_meeting_id and str(agent.get("meeting_id") or "") != group_meeting_id:
-            attention.append({"agent_id": agent_id, "status": "wrong_meeting"})
-            continue
-        if _agent_last_seen_before_group_start(agent, group):
-            attention.append({"agent_id": agent_id, "status": "not_reconnected"})
-            continue
-        compatibility_attention = _manifest_agent_connection_attention(agent, manifest_agent)
-        if compatibility_attention:
-            attention.append({"agent_id": agent_id, "status": compatibility_attention})
-            continue
-        status = str(agent.get("status") or "offline")
-        if status in {"online", "working"}:
-            connected += 1
-            continue
-        if status not in {"error", "stale", "offline"}:
-            status = "offline"
-        attention.append({"agent_id": agent_id, "status": status})
-    return {"expected": expected, "connected": connected, "attention": attention}
-
-
-def _manifest_agent_connection_attention(agent: dict[str, object], manifest_agent: dict[str, object]) -> str:
-    provider_kind = clean_lobby_text(manifest_agent.get("provider_kind"), limit=64)
-    if provider_kind and clean_lobby_text(agent.get("provider_kind"), limit=64) != provider_kind:
-        return "provider_kind_mismatch"
-    connection_kind = clean_lobby_text(manifest_agent.get("connection_kind"), limit=64)
-    if connection_kind and clean_lobby_text(agent.get("connection_kind"), limit=64) != connection_kind:
-        return "connection_kind_mismatch"
-    return ""
-
-
-def _agent_last_seen_before_group_start(agent: dict[str, object], group: dict[str, object]) -> bool:
-    group_started_at = _parse_public_timestamp(group.get("started_at"))
-    agent_last_seen_at = _parse_public_timestamp(agent.get("last_seen_at"))
-    if group_started_at is None or agent_last_seen_at is None:
-        return False
-    return agent_last_seen_at < group_started_at
-
-
-def _parse_public_timestamp(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value.strip():
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
 
 
 def start_live_agent_process_payload(
@@ -6511,7 +6411,6 @@ def _make_handler(
             agents_payload=live_agents_payload,
             health_payload=live_agent_health_payload,
             readiness_payload=live_agent_session_readiness_payload,
-            processes_payload=live_agent_processes_payload,
             readiness_error_message=_session_check_error_message,
         ),
     )

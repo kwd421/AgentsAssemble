@@ -24,7 +24,6 @@ class LegacyLiveAgentReadDeps:
     agents_payload: PayloadBuilder
     health_payload: PayloadBuilder
     readiness_payload: PayloadBuilder
-    processes_payload: PayloadBuilder
     readiness_error_message: Callable[[Exception], str]
 
 
@@ -112,7 +111,7 @@ def register_legacy_live_agent_read_routes(
 
     @router.get("/api/live-agent-processes")
     def live_agent_processes(ctx: RequestContext) -> None:
-        ctx.send_json(deps.processes_payload(deps.processes, output_root=ctx.deps.output_root))
+        ctx.send_json(deps.diagnostics.process_groups())
 
     @router.get("/api/live-agent-process-events")
     def live_agent_process_events(ctx: RequestContext) -> None:

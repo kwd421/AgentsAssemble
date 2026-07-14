@@ -68,6 +68,10 @@ class FakeLegacyLiveAgentDiagnostics:
         self.calls.append(("process_events", kwargs))
         return {"events": []}
 
+    def process_groups(self) -> dict[str, object]:
+        self.calls.append(("process_groups", {}))
+        return {"groups": []}
+
     def session_runs(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(("session_runs", kwargs))
         return {"runs": []}
@@ -82,7 +86,6 @@ def _deps(**overrides: object) -> LegacyLiveAgentReadDeps:
         "agents_payload": _unused_payload,
         "health_payload": _unused_payload,
         "readiness_payload": _unused_payload,
-        "processes_payload": _unused_payload,
         "readiness_error_message": lambda error: str(error),
     }
     values.update(overrides)
@@ -174,10 +177,12 @@ class LegacyLiveAgentReadRoutesTests(unittest.TestCase):
             router,
             "/api/live-agent-session-runs?limit=9&run_id=run-1&meeting_id=room-a&group_id=crew&include_readiness=on",
         )
+        process_groups_handler = _dispatch(router, "/api/live-agent-processes")
 
         self.assertEqual(operations_handler.sent_json, {"operations": []})
         self.assertEqual(process_events_handler.sent_json, {"events": []})
         self.assertEqual(session_runs_handler.sent_json, {"runs": []})
+        self.assertEqual(process_groups_handler.sent_json, {"groups": []})
         self.assertEqual(
             diagnostics.calls,
             [
@@ -206,6 +211,7 @@ class LegacyLiveAgentReadRoutesTests(unittest.TestCase):
                         "include_readiness": True,
                     },
                 ),
+                ("process_groups", {}),
             ],
         )
 

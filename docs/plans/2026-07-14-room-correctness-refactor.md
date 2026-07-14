@@ -724,3 +724,15 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   in `gui.py` and are the next slice; discovery/preflight/smoke remain separate
   after that. The seven deletion candidates and canonical name/avatar history
   reprojection are unchanged.
+- 2026-07-14: Process-list and process-mutation connection evidence now live
+  in `legacy_live_agent_process_projection.py`. The module owns expected-agent
+  matching, meeting/provider/connection compatibility, reconnect timestamp
+  comparison, status projection, and safe identity labels. Both the diagnostic
+  GET service and existing start/stop/restart mutation payloads import this one
+  implementation, so the refactor does not create read/write drift. The HTTP
+  dependency object no longer receives a process payload callback. Focused
+  room/process/session-recovery checks passed 58 tests; process-service,
+  mutation-route, health, route-ownership, and parity checks passed 56 tests.
+  Readiness and health aggregation remain in `gui.py` and are next. Discovery,
+  preflight, smoke, all seven deletion candidates, and canonical name/avatar
+  history reprojection remain unchanged.

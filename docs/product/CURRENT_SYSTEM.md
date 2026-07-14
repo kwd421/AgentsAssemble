@@ -236,7 +236,8 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Legacy meeting read/lifecycle/workroom/SSE compatibility | `gui_legacy_meeting_http.py`, query projection in `legacy_meeting_queries.py`, record semantics in `legacy_meeting_records.py` |
 | Legacy resident room/return-packet reads | `legacy_live_agent_queries.py`, `gui_legacy_live_agent_read_http.py` |
 | Legacy resident diagnostic histories | `legacy_live_agent_diagnostics.py`, `gui_legacy_live_agent_read_http.py` |
-| Remaining legacy resident health/readiness snapshots | `gui.py`; typed diagnostic service migration is the next refactor slice |
+| Legacy resident process/connection projections | `legacy_live_agent_process_projection.py`, `legacy_live_agent_diagnostics.py` |
+| Remaining legacy resident health/readiness aggregation | `gui.py`; typed diagnostic service migration is the next refactor slice |
 | Room-global settings | `room_global_settings.py`, `room_settings_service.py`, repository methods; HTTP in `gui_room_settings_http.py` |
 | User-owned room notification/read preferences | validation in `room_user_preferences.py`; SQLite persistence in `identity_room_preferences.py`; composition in `room_settings_service.py` |
 | Legacy room-global settings migration | source inspection in `legacy_room_settings_source.py`; atomic SQLite migration in `room_settings_migration.py` |

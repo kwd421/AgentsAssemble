@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agentsassemble.legacy_live_agent_health import safe_health_identity
+from agentsassemble.legacy_live_agent_process_projection import live_agent_processes_payload
 from agentsassemble.live_agent_operations import read_live_agent_operation_history
 from agentsassemble.live_agent_processes import (
     LiveAgentProcessSupervisor,
@@ -56,6 +57,9 @@ class LegacyLiveAgentDiagnosticQueryService:
             group_id=group_id,
             scan_limit=scan_limit,
         )
+
+    def process_groups(self) -> dict[str, object]:
+        return live_agent_processes_payload(self.processes, output_root=self.output_root)
 
     def session_runs(
         self,
