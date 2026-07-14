@@ -1,0 +1,221 @@
+# GUI Server Composition Inventory
+
+Status: current refactor inventory
+
+Updated: 2026-07-14
+
+Read this document before changing `agentsassemble/gui.py`, GUI server startup
+or shutdown, HTTP route ownership, or server-scoped dependencies. The exact
+API/SSE list remains in `legacy-react-parity-matrix.md`; this document classifies
+those routes by product ownership and records the safe extraction order.
+
+## Purpose
+
+`gui.py` is 9,525 lines at this snapshot. Size alone is not the defect. The
+maintainability problem is that server construction, process lifetime, route
+registration, static delivery, current room behavior, and several retained
+legacy products still meet in one module.
+
+The refactor must make these questions obvious:
+
+- Which object owns each server-scoped resource?
+- Which routes are part of the canonical shared-room product?
+- Which routes are active optional surfaces or compatibility contracts?
+- Which routes have no known production caller and need a separate deletion
+  decision?
+- Which tests prove that moving a boundary did not change behavior?
+
+This inventory does not authorize route deletion, endpoint renaming, payload
+changes, frontend redesign, provider execution, or a new web framework.
+
+## Classification
+
+- **Current core**: required by the canonical room, invite, provider control,
+  credential, or browser startup path.
+- **Active optional**: used by the current React product, but not required by
+  the canonical `#general` room core.
+- **Compatibility**: used by CLI, MCP, smoke, old meeting/session operation, or
+  an HTTP/SSE fallback still called by the current frontend. Preserve its public
+  behavior while moving it.
+- **Deletion candidate**: no production caller was found outside `gui.py` at
+  this snapshot. Candidate status is evidence for a later compatibility change,
+  not permission to delete it during composition work.
+
+The guarded appendix in `legacy-react-parity-matrix.md` contains 159 concrete
+API/SSE method-path rows: 79 have a React wrapper and 80 do not. Tests compare
+that appendix with both Router registrations and the remaining handler chain.
+Do not copy that exact list here and create a second route authority.
+
+## Canonical Invariants
+
+Every composition change must preserve these product boundaries:
+
+1. `/ws?ticket=...` remains the only canonical live room transport.
+2. `RoomRealtimeController` and every room route receive the same
+   `RoomRepository` object.
+3. A handler factory does not silently construct a second SQLite repository
+   when PostgreSQL was selected or injected.
+4. Provider processes start only after explicit operator action.
+5. No route, diagnostic, snapshot, or log exposes credentials, invite tokens,
+   provider-private IDs, argv, absolute workspaces, or unmanaged PIDs.
+6. Agent message authors remain keyed by canonical `participant_id`. A current
+   participant profile overrides the event's historical author snapshot in the
+   normal timeline. After `agent.configure`, old loaded messages, later history
+   pages, typing state, roster rows, and new messages must all use the current
+   name and avatar without rewriting historical events.
+7. Compatibility HTTP/SSE routes cannot become a second room authority or a
+   provider-specific browser transport.
+8. Shutdown order remains bounded and explicit; losing a server-owned handle
+   must never trigger PID fallback killing.
+
+## Server-Scoped Resource Inventory
+
+| Resource | Current construction and lifetime | Current problem | Phase 5.2 target |
+| --- | --- | --- | --- |
+| `RoomRepository` | `serve_gui()` builds it; `_make_handler()` accepts or creates one; `serve_gui()` closes the owned instance | Ownership can be split between two functions and test overrides | One application-services owner builds it once, injects the exact instance, and closes it last |
+| Identity backend | `_make_handler()` configures global paths; `GuiDeps.identities` lazily opens by output root | Hidden global configuration and lazy construction obscure ownership | Build one explicit identity backend and inject it into `GuiDeps` |
+| Invite state | `_make_handler()` calls `configure_room_invite_store()` | Global path mutation occurs during handler type construction | One invite service/configuration step owned by application services |
+| `LiveAgentProcessSupervisor` | Usually built in `serve_gui()`, but `_make_handler()` can also build it; monitor starts/stops in `serve_gui()` | Construction and lifecycle are separated and tests patch both sites | One owner constructs it; application start/close owns monitor lifecycle |
+| `LiveAgentSessionRunController` | Built in `serve_gui()` or `_make_handler()` | Same split ownership as the process supervisor | One injected instance shared by monitor and compatibility services |
+| `LiveAgentSessionRunMonitor` | Built and started/stopped by `serve_gui()`; read routes accept it | Its `default_server` is assigned only after bind | Application services expose a post-bind `start(server_url)` step and bounded `close()` |
+| `LiveAgentFlowSupervisor` | Built in `_make_handler()` unless injected | Hidden handler-factory lifetime | Explicit active-optional service in the container |
+| `PublicTunnelManager` | Built in `serve_gui()` or `_make_handler()`; started/stopped by `serve_gui()` | Handler creation may create an unowned manager | One application-owned manager; routes only issue commands to it |
+| `WsTicketStore` | Built inside `_make_handler()` and captured by closures | Correct lifetime but invisible to diagnostics and tests except through routes | Explicit application-owned ephemeral ticket service |
+| `NativeCliBridgeProcessManager` | Built inside `_make_handler()` only when the realtime controller is not injected | Its ownership is implicit behind controller construction | Build beside the controller and retain an opaque owned handle through application close |
+| `RoomRealtimeController` | Built inside `_make_handler()` or injected; `serve_gui()` discovers it on the handler class to close it | A generated HTTP handler type doubles as a service locator | Explicit application-owned controller; handler receives it but does not own it |
+| `Router` and `GuiDeps` | Built in `_make_handler()` and captured by the generated handler | Reasonable request composition, but `GuiDeps` still carries untyped compatibility callables | Keep per-handler composition; replace only proven service-locator fields with typed services |
+| React dist root | Resolved in `_make_handler()` | Configuration is mixed with service construction | Keep as immutable handler configuration |
+| Legacy mutation services | Built during route registration from process/session dependencies | Stateless wrappers are valid, but construction is buried in the factory | Construct from explicit application services during route registration |
+
+`ThreadingHTTPServer` remains owned by `serve_gui()`. The service container must
+not bind a port itself. Binding produces the local server URL needed by the
+session-run monitor, tunnel manager, and bridge ticket issuer, so startup has a
+deliberate pre-bind construction step and post-bind activation step.
+
+## Router-Owned Route Families
+
+These families already have a clear module owner and should not move back into
+`gui.py`.
+
+| Owner module | Classification | Responsibility | Primary evidence |
+| --- | --- | --- | --- |
+| `gui_ws_http.py` | Current core | Single-use WebSocket ticket issue | `tests/test_ws_room_session.py`, `tests/test_ws_room_client.py` |
+| `gui_attachment_http.py` | Current core | Safe attachment upload/download and room media reference | `tests/test_gui_server_room_routes.py` |
+| `gui_provider_http.py` | Current core | Provider catalog and redacted DeepSeek credential status/mutation | `tests/test_gui_server_provider_http.py` |
+| `gui_public_invite_http.py` | Current core | Host-gated public URL and tunnel control | `tests/test_public_invite_http.py` |
+| `gui_room_invite_http.py` | Current core | Host claim, invite admission, companion invite, leave/revoke | `tests/test_room_invite.py`, `tests/test_public_invite.py` |
+| `gui_room_settings_http.py` | Current core | Repository-owned room-global settings | `tests/test_gui_server_room_settings_http.py` |
+| `gui_room_lifecycle_http.py` | Mixed current/compatibility | Room directory/lifecycle plus HTTP/SSE history compatibility | `tests/test_gui_server_room_routes.py`, `tests/test_gui_server_streams_http.py` |
+| `gui_room_moderation_media_http.py` | Mixed current/optional/compatibility | Roster compatibility, moderation HTTP, custom channels, voice presence | `tests/test_gui_server_room_routes.py`, `tests/test_room_channels_http.py` |
+| `gui_room_agent_http.py` | Compatibility | Pre-canonical Agent Session HTTP create/resume/turn controls | `tests/test_agent_session_cli.py`, `tests/test_live_agent_session_agent_controls.py` |
+| `gui_legacy_lobby_http.py` | Compatibility | HTTP lobby write and lobby SSE used by the current React fallback/history path | `tests/test_gui_server_streams_http.py`, `tests/test_gui_server_lobby_social.py` |
+| `gui_side_chat_http.py` | Active optional | Separate side-chat history and SSE | `tests/test_frontend_side_chat_runtime.py` |
+| `gui_social_http.py` | Active optional | Local profile, friends, and friend DM | `tests/test_gui_server_social_http.py`, `tests/test_room_social_flows.py` |
+| `gui_mafia_http.py` | Active optional | Mafia game state and actions | `tests/test_gui_server_mafia_http.py`, `tests/test_mafia_game.py` |
+| `gui_observability_http.py` | Active optional | Read-only local resources and release-health projections | `tests/test_gui_server_health.py` |
+| `gui_live_agent_flow_http.py` | Compatibility | Legacy Play/flow supervisor controls | `tests/test_gui_server_session_lifecycle.py` |
+| `gui_legacy_live_agent_read_http.py` | Compatibility | Legacy process/session/readiness/operation projections | `tests/test_gui_legacy_live_agent_read_http.py` |
+| `gui_legacy_live_agent_session_http.py` | Compatibility | Legacy resident-session mutations | `tests/test_gui_legacy_live_agent_session_http.py`, `tests/test_legacy_live_agent_session_service.py` |
+| `gui_legacy_live_agent_process_http.py` | Compatibility | Legacy process-group mutations | `tests/test_gui_legacy_live_agent_process_http.py`, `tests/test_legacy_live_agent_process_service.py` |
+| `gui_legacy_live_agent_session_run_http.py` | Compatibility | Durable legacy session-run controls | `tests/test_gui_legacy_live_agent_session_run_http.py`, `tests/test_legacy_live_agent_session_run_service.py` |
+
+`gui_room_http.py` is a compatibility coordinator and re-export surface. It
+registers the room subdomains and retains historical patch points. It is not a
+service catalog for new code.
+
+## Routes Still In The Handler Chain
+
+The generated handler dispatches the Router first, then executes these retained
+families directly.
+
+| Family | Classification | Why it remains reachable | Next action |
+| --- | --- | --- | --- |
+| `/ws`, `/`, `/app/*`, `/join`, guarded React assets | Current core composition | Protocol upgrade and static delivery are transport concerns | Keep thin transport branches in the final handler |
+| `/api/meetings*`, meeting SSE, workroom, finalize, review, and official-turn routes | Compatibility | React archive/board reads and legacy CLI/meeting workflows still call them | Move read projections and diagnostics together; retain mutation behavior until a separate legacy decision |
+| `/api/live-agents*` registration, room packet, heartbeat, lobby, DM reply, official turn, probe, leave, and engagement | Compatibility | CLI, MCP, resident runner, and smoke clients still call them | Move behind a typed legacy resident-agent service and Router registrations |
+| `/api/live-agent-*` discovery, preflight, health, smoke, readiness, create/login, room/session operations | Mixed current support and compatibility | Provider login is current; most process/session/smoke operations remain operator or CLI contracts | Split current provider-login support from legacy diagnostics; preserve exact ACK/error payloads |
+| `/api/codex-sessions/invite` and `/join` | Compatibility | CLI still calls the Codex meeting-session compatibility workflow | Move with legacy meeting/session service, never into the canonical provider adapter |
+| `/api/lobby/promote` and `/api/lobby/remote` | Compatibility | Promotion and remote-bridge behavior remain documented legacy workflows | Move with their policy and tests; do not connect them to canonical ambient routing |
+
+## Deletion Candidates
+
+The following exact routes have no production caller outside `gui.py` in the
+2026-07-14 search. They remain implemented until a separate compatibility
+change proves removal is acceptable.
+
+| Route | Evidence found | Required before deletion |
+| --- | --- | --- |
+| `POST /api/demo` | Historical `docs/gui-v0-spec.md` reference only | Confirm no packaged CLI, external integration, or fixture depends on demo creation |
+| `GET /api/provider-sessions` | No caller outside the handler/matrix | Confirm canonical snapshot/catalog fully replaces it |
+| `GET /api/codex-sessions` | No caller for the list route; `/invite` and `/join` are separate and still used | Delete only the list route, not the compatibility invite/join family |
+| `GET /api/live-agent-create/options` | Direct backend test only | Replace or retire the test after confirming canonical catalog coverage |
+| `POST /api/live-agent-create/check` | No caller outside the handler/matrix | Confirm canonical `agent.create` validation covers every error contract |
+| `POST /api/live-agent-create` | Direct backend test only; React uses canonical WebSocket creation | Confirm no external local operator client uses the HTTP route |
+| `POST /api/live-agent-room/expel` | Frontend test explicitly requires it to be absent from React API code | Confirm canonical `participant.kick` is the only supported moderation path |
+
+Do not move these candidates into new service modules before the deletion
+decision. Leaving them in the old chain makes their compatibility cost visible.
+
+## Extraction Order
+
+### Phase 5.2 - Application services
+
+1. Add one typed server-scoped application-services object.
+2. Construct repository, identity backend, process/session services, ticket
+   store, bridge manager, realtime controller, flow supervisor, and tunnel
+   manager exactly once.
+3. Keep `_make_handler()` compatibility overrides temporarily, but adapt them
+   into the same services object instead of maintaining a second construction
+   path.
+4. Add explicit `start(server_url)` and idempotent `close()` ordering.
+5. Prove startup failure closes only owned resources and an injected resource
+   is neither replaced nor double-closed.
+
+### Phase 5.3 - Retained read and diagnostic behavior
+
+1. Move meeting read/lifecycle/workroom/SSE projections behind a typed legacy
+   meeting query service.
+2. Move resident-agent read packets, health, discovery, preflight, smoke, and
+   readiness behind typed compatibility services.
+3. Register their routes on `Router`; preserve methods, paths, authorization,
+   status codes, redaction, and payloads.
+4. Move a helper only with the route/service that owns its reason to change.
+5. Leave deletion candidates in place.
+
+### Phase 5.4 - Thin composition
+
+The final `gui.py` may retain configuration, dependency construction, route
+registration, WebSocket upgrade, React static delivery, and server
+start/shutdown. Success is measured by ownership and tests, not a target line
+count. `do_GET`, `do_POST`, and `do_DELETE` should become trust check, Router or
+transport dispatch, then 404; domain behavior must not remain in those methods.
+
+## Verification Gates
+
+Run the cheapest relevant tests after each move and the full set before Phase 5
+completion:
+
+- Route ownership: `tests.test_gui_route_ownership` and
+  `tests.test_legacy_react_parity_inventory`.
+- Service lifetime: `tests.test_gui_server_server_lifecycle` and
+  `tests.test_gui_room_repository_injection`.
+- Canonical room: `tests.test_room_realtime`, `tests.test_room_native_cli_e2e`,
+  `tests.test_ws_room_session`, and `tests.test_ws_room_client`.
+- Legacy route families: the `test_gui_legacy_live_agent_*` and
+  `test_legacy_live_agent_*_service` modules.
+- Meeting/stream families: `tests.test_gui_server_meeting_payload` and
+  `tests.test_gui_server_streams_http`.
+- Optional UI families: provider, invite, social, side-chat, Mafia, and
+  observability route tests.
+- Identity regression: frontend `useCanonicalRoom` and
+  `roomEventProjection` tests plus the browser agent-profile scenario.
+- Final: full Python discovery, frontend Vitest, production build, Playwright,
+  `compileall`, and `git diff --check`.
+
+## Context Reset Brief
+
+After a context reset, read `CURRENT_SYSTEM.md`, the active room-correctness
+plan, and this file. Start at the first unfinished phase. Do not infer that a
+route is obsolete merely because it is not called by React; CLI, MCP, smoke,
+and legacy meeting clients are real compatibility consumers. Do not push unless
+the user explicitly asks.

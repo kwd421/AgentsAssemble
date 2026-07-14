@@ -647,3 +647,16 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   build, workflow YAML parsing, `compileall`, and `git diff --check`. The next
   slice is Phase 5.1, inventorying the remaining `gui.py` routes and services
   before moving any composition boundary.
+- 2026-07-14: Phase 5.1 records the 9,525-line GUI server's actual ownership in
+  `docs/product/GUI_COMPOSITION.md`. The guarded parity matrix remains the exact
+  authority for all 159 API/SSE method-path rows; the new inventory classifies
+  route families as current core, active optional, compatibility, or deletion
+  candidate and maps each retained family to behavioral tests. It also records
+  split construction/lifetime for the repository, identity and invite stores,
+  process/session monitors, tunnel and ticket services, bridge manager, and
+  realtime controller. Seven exact routes have no production caller, but none
+  is deleted or moved in this phase. The document fixes the Phase 5.2 service
+  container boundary, startup/close order, and the canonical name/avatar
+  history reprojection invariant so a context reset cannot turn this refactor
+  into a redesign. Route-ownership, parity-inventory, and architecture-doc
+  verification passed (31 tests) before commit.
