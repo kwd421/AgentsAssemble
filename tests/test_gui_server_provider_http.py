@@ -59,6 +59,19 @@ class FakeSecretStore:
         return {"configured": False, "source": "missing", "api_key": "secret-value"}
 
 
+class FakeLoginService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.invalid_json_count = 0
+
+    def start(self, payload: dict[str, object]) -> dict[str, object]:
+        self.calls.append(payload)
+        return {"status": "started", "provider_id": str(payload.get("provider_id") or "")}
+
+    def record_invalid_json(self) -> None:
+        self.invalid_json_count += 1
+
+
 def _context(handler: FakeHandler, path: str) -> RequestContext:
     parsed = urlparse(path)
     return RequestContext(handler, GuiDeps(output_root=Path(".")), parsed, parse_qs(parsed.query))
@@ -67,6 +80,7 @@ def _context(handler: FakeHandler, path: str) -> RequestContext:
 class ProviderRouteTests(unittest.TestCase):
     def setUp(self) -> None:
         self.store = FakeSecretStore()
+        self.login = FakeLoginService()
         self.router = Router()
 
         def credentials_allowed(ctx: RequestContext) -> bool:
@@ -75,6 +89,8 @@ class ProviderRouteTests(unittest.TestCase):
         register_provider_routes(
             self.router,
             credentials_allowed=credentials_allowed,
+            is_local_operator=lambda ctx: True,
+            login_service=self.login,
             secret_store=self.store,
         )
 
@@ -90,12 +106,49 @@ class ProviderRouteTests(unittest.TestCase):
                 ("GET", "/api/providers"),
                 ("GET", "/api/model-catalog"),
                 ("GET", "/api/provider-credentials/deepseek"),
+                ("POST", "/api/live-agent-create/login"),
                 ("POST", "/api/provider-credentials/deepseek"),
                 ("DELETE", "/api/provider-credentials/deepseek"),
             },
         )
         self.assertIn("providers", self.dispatch("GET", "/api/providers").sent_json)
         self.assertIn("providers", self.dispatch("GET", "/api/model-catalog").sent_json)
+
+    def test_provider_login_is_local_only_and_delegates_to_login_service(self):
+        started = self.dispatch(
+            "POST",
+            "/api/live-agent-create/login",
+            body=json.dumps({"provider_id": "grok"}).encode(),
+        )
+
+        self.assertEqual(started.sent_json, {"status": "started", "provider_id": "grok"})
+        self.assertEqual(self.login.calls, [{"provider_id": "grok"}])
+
+        denied_router = Router()
+        register_provider_routes(
+            denied_router,
+            credentials_allowed=lambda ctx: True,
+            is_local_operator=lambda ctx: False,
+            login_service=self.login,
+            secret_store=self.store,
+        )
+        denied = FakeHandler(
+            "/api/live-agent-create/login",
+            body=json.dumps({"provider_id": "codex"}).encode(),
+        )
+        self.assertTrue(denied_router.dispatch("POST", _context(denied, denied.path)))
+        self.assertEqual(
+            denied.sent_error,
+            (HTTPStatus.FORBIDDEN, "provider login can only be started from the local operator UI"),
+        )
+        self.assertEqual(self.login.calls, [{"provider_id": "grok"}])
+
+    def test_invalid_provider_login_json_is_audited_without_launch(self):
+        response = self.dispatch("POST", "/api/live-agent-create/login", body=b"{bad")
+
+        self.assertEqual(response.sent_error, (HTTPStatus.BAD_REQUEST, "Invalid JSON"))
+        self.assertEqual(self.login.invalid_json_count, 1)
+        self.assertEqual(self.login.calls, [])
 
     def test_local_credential_get_post_delete_never_disclose_key(self):
         get_response = self.dispatch("GET", "/api/provider-credentials/deepseek")
@@ -121,7 +174,13 @@ class ProviderRouteTests(unittest.TestCase):
             ctx.send_error(HTTPStatus.FORBIDDEN, "credential management denied")
             return False
 
-        register_provider_routes(router, credentials_allowed=credentials_denied, secret_store=self.store)
+        register_provider_routes(
+            router,
+            credentials_allowed=credentials_denied,
+            is_local_operator=lambda ctx: True,
+            login_service=self.login,
+            secret_store=self.store,
+        )
         handler = FakeHandler("/api/provider-credentials/deepseek")
 
         self.assertTrue(router.dispatch("GET", _context(handler, handler.path)))

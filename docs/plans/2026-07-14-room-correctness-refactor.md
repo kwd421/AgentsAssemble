@@ -992,3 +992,16 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   parity checks pass. The seven deletion candidates remain untouched. The next
   Phase 5.4 slice should move the current provider-login route separately from
   legacy live-agent create/session mutations.
+- 2026-07-14: Current provider login is now separate from legacy frontend-agent
+  creation. `ProviderLoginService` owns allowlisted command launch and the
+  existing success/failure operation audit. `gui_provider_http.py` owns
+  `POST /api/live-agent-create/login`, enforces the same local-operator gate,
+  parses JSON, and maps command errors to the preserved `400` contract. The
+  provider route tests cover registration, local-only denial, invalid JSON
+  audit, and delegation; the existing real HTTP test verifies the injected
+  launcher receives only the resolved native provider login command and now
+  verifies its success audit. Focused provider, frontend-create, ownership, and
+  parity checks pass. The legacy check/create deletion candidates remain in
+  the handler and were not moved. The next Phase 5.4 slice should classify and
+  move the retained self-managed room/session commands without moving
+  `/api/live-agent-room/expel`.

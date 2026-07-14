@@ -35,7 +35,6 @@ from agentsassemble.live_agent_flow import FLOW_SPEAKING_ACTIONS, FLOW_TERMINAL_
 from agentsassemble.live_agent_frontend_create import (
     frontend_live_agent_check_payload,
     frontend_live_agent_create_payload,
-    frontend_live_agent_login_payload,
     frontend_live_agent_options_payload,
 )
 from agentsassemble.provider_sessions import list_provider_sessions
@@ -335,6 +334,7 @@ from agentsassemble.legacy_meeting_records import (
 )
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_report
+from agentsassemble.provider_login import ProviderLoginService
 from agentsassemble.public_tunnel import PublicTunnelManager
 from agentsassemble.frontend_runtime import (
     REACT_APP_BUILD_COMMAND,
@@ -4678,7 +4678,16 @@ def _make_handler(
     def _late_provider_credentials_allowed(ctx: RequestContext) -> bool:
         return ctx.handler._provider_credentials_allowed()
 
-    register_provider_routes(route_table, credentials_allowed=_late_provider_credentials_allowed)
+    register_provider_routes(
+        route_table,
+        credentials_allowed=_late_provider_credentials_allowed,
+        is_local_operator=lambda ctx: ctx.handler._request_is_local_operator(),
+        login_service=ProviderLoginService(
+            output_root=output_root,
+            command_launcher=live_agent_login_launcher,
+            command_resolver=live_agent_login_command_resolver,
+        ),
+    )
 
     register_public_invite_admin_routes(
         route_table,
@@ -5046,39 +5055,6 @@ def _make_handler(
                     },
                 )
                 self._send_json(checked)
-                return
-            if parsed.path == "/api/live-agent-create/login":
-                if not self._request_is_local_operator():
-                    self._send_error(HTTPStatus.FORBIDDEN, "provider login can only be started from the local operator UI")
-                    return
-                payload = self._operation_json_payload(operation="frontend_agent.login")
-                if payload is None:
-                    return
-                try:
-                    login = frontend_live_agent_login_payload(
-                        payload,
-                        command_launcher=live_agent_login_launcher,
-                        command_resolver=live_agent_login_command_resolver,
-                    )
-                except (OSError, ValueError) as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="frontend_agent.login",
-                        status="failed",
-                        target_id=clean_lobby_text(payload.get("provider_id"), limit=64),
-                        error=str(error),
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="frontend_agent.login",
-                    status="success",
-                    target_id=clean_lobby_text(payload.get("provider_id"), limit=64),
-                    summary="started provider login from frontend agent modal",
-                    details={"provider_id": clean_lobby_text(payload.get("provider_id"), limit=64)},
-                )
-                self._send_json(login)
                 return
             if parsed.path == "/api/live-agent-create":
                 payload = self._operation_json_payload(operation="frontend_agent.create")

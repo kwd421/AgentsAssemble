@@ -1,4 +1,4 @@
-"""Provider catalog and credential HTTP routes for the GUI server."""
+"""Provider catalog, local login, and credential HTTP routes."""
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -8,6 +8,7 @@ from typing import Protocol
 from agentsassemble import provider_catalog
 from agentsassemble.adapters import default_provider_registry
 from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.provider_login import ProviderLoginService
 from agentsassemble.provider_secrets import PROVIDER_SECRETS
 
 
@@ -40,9 +41,11 @@ def register_provider_routes(
     router: Router,
     *,
     credentials_allowed: Callable[[RequestContext], bool],
+    is_local_operator: Callable[[RequestContext], bool],
+    login_service: ProviderLoginService,
     secret_store: ProviderSecretStore | None = None,
 ) -> None:
-    """Register provider catalog and local credential-management routes."""
+    """Register provider discovery, login, and credential-management routes."""
     store = PROVIDER_SECRETS if secret_store is None else secret_store
 
     def _send_store_status(ctx: RequestContext, operation: Callable[[], Mapping[str, object]]) -> None:
@@ -55,6 +58,25 @@ def register_provider_routes(
     @router.get("/api/model-catalog")
     def model_catalog(ctx: RequestContext) -> None:
         ctx.send_json(model_catalog_payload())
+
+    @router.post("/api/live-agent-create/login")
+    def provider_login(ctx: RequestContext) -> None:
+        if not is_local_operator(ctx):
+            ctx.send_error(
+                HTTPStatus.FORBIDDEN,
+                "provider login can only be started from the local operator UI",
+            )
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            login_service.record_invalid_json()
+            return
+        try:
+            result = login_service.start(payload)
+        except (OSError, ValueError) as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+        ctx.send_json(result)
 
     @router.get("/api/provider-credentials/deepseek")
     def provider_credentials_status(ctx: RequestContext) -> None:

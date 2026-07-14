@@ -147,7 +147,7 @@ These families already have a clear module owner and should not move back into
 | --- | --- | --- | --- |
 | `gui_ws_http.py` | Current core | Single-use WebSocket ticket issue | `tests/test_ws_room_session.py`, `tests/test_ws_room_client.py` |
 | `gui_attachment_http.py` | Current core | Safe attachment upload/download and room media reference | `tests/test_gui_server_room_routes.py` |
-| `gui_provider_http.py` | Current core | Provider catalog and redacted DeepSeek credential status/mutation | `tests/test_gui_server_provider_http.py` |
+| `gui_provider_http.py` | Current core | Provider catalog, local provider-login command, and redacted DeepSeek credential status/mutation; login execution/audit lives in `provider_login.py` | `tests/test_gui_server_provider_http.py`, `tests/test_live_agent_frontend_create.py` |
 | `gui_public_invite_http.py` | Current core | Host-gated public URL and tunnel control | `tests/test_public_invite_http.py` |
 | `gui_room_invite_http.py` | Current core | Host claim, invite admission, companion invite, leave/revoke | `tests/test_room_invite.py`, `tests/test_public_invite.py` |
 | `gui_room_settings_http.py` | Current core | Repository-owned room-global settings | `tests/test_gui_server_room_settings_http.py` |
@@ -184,7 +184,7 @@ families directly.
 | `/ws`, `/`, `/app/*`, `/join`, guarded React assets | Current core composition | Protocol upgrade and static delivery are transport concerns | Keep thin transport branches in the final handler |
 | `/api/meetings/{meeting_id}` finalize, review, and official-turn mutations | Compatibility | Legacy CLI and meeting workflows still call them | Retain mutation behavior until a separate legacy decision; read projections already belong to `gui_legacy_meeting_http.py` |
 | `/api/live-agents*` registration, heartbeat, lobby, DM reply, official turn, probe, leave, and engagement | Compatibility | CLI, MCP, resident runner, and smoke clients still call them | Move behind typed legacy resident-agent services and Router registrations; room and return-packet GETs are already moved |
-| Remaining `/api/live-agent-*` create/login and room/session operations | Mixed current support and compatibility | Provider login is current; most process/session operations remain operator or CLI contracts | Split current provider-login support from legacy mutations; preserve exact ACK/error payloads. Discovery, preflight, health reads, all four direct smoke routes, and aggregate readiness are Router-owned |
+| Remaining `/api/live-agent-*` create and room/session operations | Compatibility or deletion candidates | Most process/session operations remain operator or CLI contracts; current provider login is already Router-owned | Preserve exact ACK/error payloads while moving retained operations. Discovery, preflight, health reads, all four direct smoke routes, and aggregate readiness are Router-owned |
 | `/api/codex-sessions/invite` and `/join` | Compatibility | CLI still calls the Codex meeting-session compatibility workflow | Move with legacy meeting/session service, never into the canonical provider adapter |
 
 ## Deletion Candidates
@@ -306,7 +306,9 @@ direct smoke routes, and aggregate readiness are complete. Begin Phase 5.4 by
 moving one typed route family per verified commit. Legacy lobby promotion and
 remote-bridge commands are already Router-owned through
 `LegacyLobbyCommandService`; they remain compatibility behavior and are not
-canonical ambient routing. Do not move the seven deletion
+canonical ambient routing. Current provider login is also Router-owned through
+`ProviderLoginService`, separately from the legacy check/create branches. Do
+not move the seven deletion
 candidates while doing that work. Do not infer that a route is
 obsolete merely because it is not called by React; CLI, MCP, smoke, and legacy
 meeting clients are real compatibility consumers. The canonical identity

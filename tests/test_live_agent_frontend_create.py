@@ -16,6 +16,7 @@ from agentsassemble.live_agent_frontend_create import (
     frontend_live_agent_login_payload,
     frontend_live_agent_options_payload,
 )
+from agentsassemble.live_agent_operations import read_live_agent_operations
 from agentsassemble.live_agent_sessions import resume_live_agent_session_agent
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
 from agentsassemble.room_users import configure_room_users_store, reset_state as reset_room_users_state
@@ -754,6 +755,27 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
                     login = json.loads(response.read().decode("utf-8"))
 
                 self.assertEqual(login["status"], "started")
+                self.assertEqual(launched, [["/usr/local/bin/grok", "login"]])
+                operation = read_live_agent_operations(root, operation="frontend_agent.login")[0]
+                self.assertEqual(operation["status"], "success")
+                self.assertEqual(operation["target_id"], "grok")
+
+                unsupported = Request(
+                    f"{server_url}/api/live-agent-create/login",
+                    data=json.dumps({"provider_id": "unknown"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(unsupported, timeout=4)
+                self.assertEqual(raised.exception.code, 400)
+                raised.exception.close()
+                failed_operation = next(
+                    item
+                    for item in read_live_agent_operations(root, operation="frontend_agent.login")
+                    if item["status"] == "failed"
+                )
+                self.assertEqual(failed_operation["target_id"], "unknown")
                 self.assertEqual(launched, [["/usr/local/bin/grok", "login"]])
 
                 blocked = Request(
