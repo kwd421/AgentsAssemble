@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agentsassemble.room_attention_coordinator import RoomAttentionCoordinator
 from agentsassemble.room_attention_policy import (
@@ -232,7 +233,7 @@ class RoomAttentionPolicyTests(unittest.TestCase):
             self.assertEqual(repository.attention_state("general", "codex").last_attention_evaluated_seq, event["seq"])
             self.assertEqual(repository.session("general", "codex"), {})
 
-    def test_active_coordinator_claims_selected_job_without_provider_work(self):
+    def test_active_coordinator_claims_and_queues_selected_job_atomically(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repository = RoomStore(Path(temp_dir))
             repository.create_room("general")
@@ -244,6 +245,16 @@ class RoomAttentionPolicyTests(unittest.TestCase):
                     "participant_type": "agent",
                 },
             )
+            repository.upsert_session(
+                "general",
+                {
+                    "session_id": "codex",
+                    "participant_id": "codex",
+                    "status": "attached",
+                    "runtime_status": "idle",
+                    "pending_event_ids": [],
+                },
+            )
             coordinator = RoomAttentionCoordinator(repository)
             event = repository.append_event(
                 "general",
@@ -253,7 +264,7 @@ class RoomAttentionPolicyTests(unittest.TestCase):
                 content="이어서 이야기해줘",
             )
 
-            result = coordinator.evaluate_active(
+            result = coordinator.evaluate_and_queue_active(
                 event,
                 candidate_ids=("codex",),
                 eligible_ids=("codex",),
@@ -261,6 +272,7 @@ class RoomAttentionPolicyTests(unittest.TestCase):
                 max_agent_relay_depth=2,
                 owner_id="controller-a",
                 lease_seconds=30,
+                relay_depth=1,
             )
 
             self.assertEqual(result["job"]["outcome"], "selected")
@@ -270,7 +282,67 @@ class RoomAttentionPolicyTests(unittest.TestCase):
                 repository.attention_jobs("general", mode="active")[0]["status"],
                 "leased",
             )
-            self.assertEqual(repository.session("general", "codex"), {})
+            session = repository.session("general", "codex")
+            self.assertEqual(session["pending_event_ids"], [event["id"]])
+            self.assertEqual(session["pending_attention_job_id"], result["job"]["job_id"])
+            self.assertEqual(session["pending_attention_lease_id"], result["lease"]["lease_id"])
+            self.assertEqual(session["pending_attention_source_event_id"], event["id"])
+            self.assertEqual(session["pending_relay_depth"], 1)
+
+    def test_active_coordinator_rolls_back_job_lease_cursor_and_queue_together(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repository = RoomStore(Path(temp_dir))
+            repository.create_room("general")
+            repository.upsert_participant(
+                "general",
+                {
+                    "participant_id": "codex",
+                    "display_name": "Codex",
+                    "participant_type": "agent",
+                },
+            )
+            repository.upsert_session(
+                "general",
+                {
+                    "session_id": "codex",
+                    "participant_id": "codex",
+                    "status": "attached",
+                    "runtime_status": "idle",
+                    "pending_event_ids": [],
+                },
+            )
+            coordinator = RoomAttentionCoordinator(repository)
+            event = repository.append_event(
+                "general",
+                "message_final",
+                actor_id="human",
+                actor_type="human",
+                content="이어서 이야기해줘",
+            )
+
+            with patch.object(
+                repository,
+                "_update_session_fields",
+                side_effect=RuntimeError("injected session queue failure"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "injected session queue failure"):
+                    coordinator.evaluate_and_queue_active(
+                        event,
+                        candidate_ids=("codex",),
+                        eligible_ids=("codex",),
+                        last_spoke_sequences={"codex": 0},
+                        max_agent_relay_depth=2,
+                        owner_id="controller-a",
+                        lease_seconds=30,
+                        relay_depth=1,
+                    )
+
+            self.assertEqual(repository.attention_jobs("general", mode="active"), [])
+            self.assertEqual(
+                repository.attention_state("general", "codex").last_attention_evaluated_seq,
+                0,
+            )
+            self.assertEqual(repository.session("general", "codex")["pending_event_ids"], [])
 
 
 if __name__ == "__main__":

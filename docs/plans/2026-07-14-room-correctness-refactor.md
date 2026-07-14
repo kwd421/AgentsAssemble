@@ -488,3 +488,10 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   this contract, with repository parity and v3 migration coverage. Commit 1.6
   is complete; the next slice is Phase 2.1, binding attention selection and
   pending session input in one transaction.
+- 2026-07-14: active ambient attention now records the evaluation, advances all
+  candidate evaluation cursors, claims the selected lease, and appends the
+  source event plus pending attention identifiers to the selected Agent Session
+  in one room transaction. Assignment to the bridge happens only after that
+  commit. SQLite failure injection and the backend-neutral repository contract
+  prove a failed session write leaves no job, lease, cursor advance, or pending
+  input. The next slice is Phase 2.2, expiry-aware lease claims.

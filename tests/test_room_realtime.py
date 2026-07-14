@@ -1260,7 +1260,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
         with patch.object(
             self.controller._attention_coordinator,
-            "evaluate_active",
+            "evaluate_and_queue_active",
             side_effect=RuntimeError("attention repository unavailable"),
         ), self.assertLogs("agentsassemble.room_realtime", level="ERROR"):
             self._command("ambient-error", "message.send", {"content": "이 메시지를 처리해"})

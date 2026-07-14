@@ -640,6 +640,76 @@ class RoomRepositoryContractMixin:
             "completed",
         )
 
+    def test_selected_attention_queue_rolls_back_as_one_repository_unit(self) -> None:
+        self.repository.create_room("general")
+        source = self.repository.append_event(
+            "general",
+            "message_final",
+            actor_id="human",
+            actor_type="human",
+            content="continue",
+        )
+        with self.repository.transaction("general") as transaction:
+            transaction.upsert_participant(
+                {
+                    "participant_id": "agent-a",
+                    "display_name": "Agent A",
+                    "participant_type": "agent",
+                }
+            )
+            transaction.upsert_session(
+                {
+                    "session_id": "agent-a",
+                    "participant_id": "agent-a",
+                    "status": "attached",
+                    "runtime_status": "idle",
+                    "pending_event_ids": [],
+                }
+            )
+        evaluation = AttentionEvaluation(
+            room_id="general",
+            source_event_id=str(source["id"]),
+            source_seq=int(source["seq"]),
+            outcome="selected",
+            selected_participant_id="agent-a",
+            eligible_participant_ids=("agent-a",),
+            reasons=("ambient_human_message",),
+        )
+
+        with self._test_case().assertRaisesRegex(RuntimeError, "rollback selected queue"):
+            with self.repository.transaction("general") as transaction:
+                transaction.advance_attention_state(
+                    "agent-a",
+                    attention_evaluated_seq=int(source["seq"]),
+                )
+                job = transaction.record_attention_evaluation(
+                    evaluation,
+                    mode="active",
+                    status="pending",
+                )
+                lease = transaction.claim_attention_job(
+                    job["job_id"],
+                    participant_id="agent-a",
+                    owner_id="worker-a",
+                    lease_seconds=30,
+                )
+                transaction.update_session_fields(
+                    "agent-a",
+                    pending_event_ids=[source["id"]],
+                    pending_attention_job_id=job["job_id"],
+                    pending_attention_lease_id=lease["lease_id"],
+                    pending_attention_source_event_id=source["id"],
+                )
+                raise RuntimeError("rollback selected queue")
+
+        case = self._test_case()
+        case.assertEqual(self.repository.attention_jobs("general", mode="active"), [])
+        case.assertEqual(
+            self.repository.attention_state("general", "agent-a").last_attention_evaluated_seq,
+            0,
+        )
+        case.assertEqual(self.repository.session("general", "agent-a")["pending_event_ids"], [])
+
     def test_participant_terminal_status_detaches_sessions_and_records_event(self) -> None:
         self.repository.create_room("general")
         self.repository.upsert_participant(

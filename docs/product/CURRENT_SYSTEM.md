@@ -130,6 +130,11 @@ media-only events do not wake providers. Current contract:
 `docs/product/ATTENTION_MODEL.md`; supporting research:
 `docs/reports/autonomous-room-participation-research.md`.
 
+For a selected ambient speaker, the evaluation cursor, attention job and
+lease, and the Agent Session's pending source/job/lease fields commit together.
+A failed pending-session write cannot leave a leased job without the input that
+lease authorizes.
+
 ## Current Media Boundary
 
 The browser can upload and render room attachments. Media events and safe media

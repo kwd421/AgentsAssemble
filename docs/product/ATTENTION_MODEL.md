@@ -99,7 +99,8 @@ after an assigned turn completes or declines.
 ## State and Commit Rules
 
 1. Source room event commit happens first.
-2. Attention state/job writes happen in a room repository transaction.
+2. Attention evaluation, lease claim, selected session pending input, and its
+   pending attention identifiers commit in one room repository transaction.
 3. Duplicate evaluation of the same `(room_id, source_seq)` returns the durable
    existing result rather than creating another job.
 4. A lease is claimable by at most one worker and has an explicit expiry.

@@ -2017,7 +2017,7 @@ class RoomRealtimeController:
             if self.agent_floor_eligibility(room_id, agent_id).eligible
         )
         try:
-            result = self._attention_coordinator.evaluate_active(
+            result = self._attention_coordinator.evaluate_and_queue_active(
                 event,
                 candidate_ids=providers,
                 eligible_ids=eligible_ids,
@@ -2028,20 +2028,14 @@ class RoomRealtimeController:
                 max_agent_relay_depth=max_relay_turns,
                 owner_id=self._attention_owner_id,
                 lease_seconds=self._ambient_lease_seconds(providers, eligible_ids),
+                relay_depth=max(0, int(event.get("relay_depth") or 0)) + 1,
             )
             job = result.get("job") if isinstance(result.get("job"), dict) else {}
             lease = result.get("lease") if isinstance(result.get("lease"), dict) else {}
             selected = clean_lobby_text(job.get("selected_participant_id"), limit=128)
             if not selected:
                 return
-            assigned = self._turn_coordinator.queue_event(
-                room_id,
-                selected,
-                event,
-                relay_depth=max(0, int(event.get("relay_depth") or 0)) + 1,
-                attention_job_id=clean_lobby_text(job.get("job_id"), limit=128),
-                attention_lease_id=clean_lobby_text(lease.get("lease_id"), limit=128),
-            )
+            assigned = self._turn_coordinator.assign_pending(room_id, selected)
             if assigned:
                 return
             self._turn_coordinator.cancel_queued_attention(
