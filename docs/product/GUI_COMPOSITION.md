@@ -312,5 +312,13 @@ meeting clients are real compatibility consumers. The canonical identity
 invariant still requires an Agent Session name/avatar update to reproject old
 loaded messages, later history pages, typing state, roster, and new messages by
 `participant_id`. A user-visible screenshot has disproved the earlier claim
-that this contract is fully covered, so reproduce the actual settings-to-chat
-path before claiming it fixed. Do not push unless the user explicitly asks.
+that this contract is fully covered. Follow-up inspection proved that canonical
+SQLite state, the WebSocket snapshot, and a freshly loaded current bundle all
+resolve the renamed participant as `Makima`; the screenshot tab was still
+executing an older hashed bundle. Follow-up code inspection found a separate
+avatar truthiness bug: empty canonical avatars could revive event-time or
+localStorage images. That fallback is removed, typing names prefer the current
+participant, and the real Playwright settings flow now covers image selection,
+crop/apply, canonical save, old-message reprojection, roster/detail projection,
+and reload. Phase 5.4 may continue. Do not push unless the user explicitly
+asks.

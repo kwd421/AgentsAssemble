@@ -1,4 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { Buffer } from "node:buffer";
+
+const PROFILE_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZfNwAAAAASUVORK5CYII=",
+  "base64"
+);
 
 test("streams on desktop and controls the same canonical session on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -31,13 +37,37 @@ test("streams on desktop and controls the same canonical session on mobile", asy
   await desktopMember.click();
   const profileDialog = page.getByRole("dialog", { name: "나's Fake Interactive CLI" });
   await profileDialog.getByRole("textbox", { name: "이름" }).fill("Makima");
+  await profileDialog.locator('input[type="file"]').setInputFiles({
+    name: "makima.png",
+    mimeType: "image/png",
+    buffer: PROFILE_PNG,
+  });
+  await profileDialog.getByRole("button", { name: "적용", exact: true }).click();
+  await expect(profileDialog.getByText("프로필 사진 준비됨", { exact: true })).toBeVisible();
   await profileDialog.getByRole("button", { name: "저장", exact: true }).click();
   const renamedProfileDialog = page.getByRole("dialog", { name: "나's Makima" });
   await expect(renamedProfileDialog.getByText("에이전트 프로필 저장됨", { exact: true })).toBeVisible();
+  const savedAvatar = renamedProfileDialog.locator("img.dc-member-avatar-image").first();
+  await expect(savedAvatar).toBeVisible();
+  const savedAvatarUrl = await savedAvatar.getAttribute("src");
+  expect(savedAvatarUrl).toMatch(/^\/api\/attachments\//);
   await renamedProfileDialog.getByRole("button", { name: "멤버 정보 닫기" }).click();
   const renamedReply = page.locator(".dc-message").filter({ hasText: "fake reply 1; marker=ui-e2e-001" });
   await expect(renamedReply.getByText("Makima", { exact: true })).toBeVisible();
+  await expect(renamedReply.locator("img.dc-message-avatar-image")).toHaveAttribute(
+    "src",
+    savedAvatarUrl || ""
+  );
   await expect(page.getByRole("button").filter({ hasText: "Makima" }).first()).toBeVisible();
+
+  await page.reload();
+  await page.getByRole("button", { name: "#general", exact: true }).click();
+  const reloadedReply = page.locator(".dc-message").filter({ hasText: "fake reply 1; marker=ui-e2e-001" });
+  await expect(reloadedReply.getByText("Makima", { exact: true })).toBeVisible();
+  await expect(reloadedReply.locator("img.dc-message-avatar-image")).toHaveAttribute(
+    "src",
+    savedAvatarUrl || ""
+  );
 
   await composer.fill("| 에이전트 | 상태 |\n| --- | --- |\n| Fake CLI | 대기 |");
   await page.getByRole("button", { name: "채팅 메시지 보내기" }).click();

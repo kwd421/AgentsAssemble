@@ -93,7 +93,9 @@ name/avatar changes update participant, Agent Session, `participant_updated`,
 and ACK together. Compatibility roster synchronization, voice cleanup, token
 revocation, and other process/network effects run only after commit; canonical
 participant mute state takes precedence over an older compatibility roster
-copy.
+copy. The browser resolves old and new messages, roster/detail state, and typing
+labels from the current participant by stable `participant_id`; an explicitly
+empty canonical avatar clears event-time and legacy local avatar fallbacks.
 
 A successful provider `message.final` commits its visible answer,
 `turn_finished`, attention spoke/provider-sync cursors, active lease release,

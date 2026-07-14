@@ -92,4 +92,17 @@ describe("roomTypingNames", () => {
       })
     ).toEqual([]);
   });
+
+  it("uses the current participant name before a stale session or progress label", () => {
+    expect(
+      roomTypingNames({
+        agents: [],
+        members: [{ ...member, display_name: "Makima", thinking: true }],
+        sessions: [{ ...session, display_name: "Antigravity CLI" }],
+        events: [],
+        progress: { ...progress, displayName: "Antigravity CLI" },
+        activityVisibility: {},
+      })
+    ).toEqual(["Makima"]);
+  });
 });

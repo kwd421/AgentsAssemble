@@ -141,13 +141,15 @@ export default function MemberList({
       const canViewQuotaForAgent = canViewAgentQuota(agent, quotaViewer);
       const ownedByViewer = canViewQuotaForAgent || String(agent.owner_id || "") === "operator-local" || (!agent.owner_id && canEditRoles);
       const ownerDisplayName = String(agent.owner_display_name || (ownedByViewer ? "나" : "다른 사람")).trim();
-      const canonicalDisplayName =
-        member?.display_name || agentSession?.display_name || agent.display_name;
+      const canonicalIdentity = member || agentSession;
       const agentDisplayName = String(
-        canonicalDisplayName || profile.displayName || agent.agent_id
+        canonicalIdentity
+          ? canonicalIdentity.display_name || agent.agent_id
+          : profile.displayName || agent.display_name || agent.agent_id
       ).trim();
-      const canonicalAvatarImage =
-        member?.avatar_image_url || agentSession?.avatar_image_url || agent.avatar_image_url;
+      const avatarImage = canonicalIdentity
+        ? canonicalIdentity.avatar_image_url
+        : profile.avatarImage || agent.avatar_image_url;
       const agentPanelDisplayName = `${ownerDisplayName}'s ${agentDisplayName}`;
       const executionDetail = providerExecutionLabel(agent);
       const detail = [executionDetail, agentSession?.model].filter(Boolean).join(" · ");
@@ -175,7 +177,7 @@ export default function MemberList({
         ownerDisplayName,
         agentDisplayName,
         agentProfile: profile,
-        avatarImage: canonicalAvatarImage || profile.avatarImage,
+        avatarImage,
         icon: ROLE_OPTIONS.find((option) => option.id === role)?.icon || Bot,
       } satisfies MemberEntry;
     });

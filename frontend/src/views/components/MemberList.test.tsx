@@ -80,7 +80,12 @@ describe("MemberList component wiring", () => {
   it("does not let a legacy local profile override canonical room identity", () => {
     localStorage.setItem(
       "agentsassemble.agentProfiles.v1",
-      JSON.stringify({ "agent-1": { displayName: "Local Makima" } })
+      JSON.stringify({
+        "agent-1": {
+          displayName: "Local Makima",
+          avatarImage: "/api/attachments/stale-local-avatar?view=1",
+        },
+      })
     );
 
     render(
@@ -108,7 +113,9 @@ describe("MemberList component wiring", () => {
       />
     );
 
-    expect(screen.getByText("나's Canonical Makima")).toBeTruthy();
+    const canonicalRow = screen.getByText("나's Canonical Makima").closest("[role='button']");
+    expect(canonicalRow).not.toBeNull();
+    expect(canonicalRow?.querySelector("img")).toBeNull();
     expect(screen.queryByText("나's Local Makima")).toBeNull();
   });
 

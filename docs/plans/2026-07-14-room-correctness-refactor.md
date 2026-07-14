@@ -99,6 +99,45 @@ pagination, and message grouping/render memoization. Do not repair it by
 rewriting old event rows or by matching provider labels, session names, or
 display names. The only valid join key is canonical `participant_id`.
 
+### 2026-07-14 real-path investigation
+
+The reported room was inspected through all three relevant layers rather than
+from helper tests alone:
+
+1. `.agentsassemble/rooms/rooms.sqlite3` stores participant and Agent Session
+   `antigravity-antigravity-cli` as `Makima`. Historical messages retain the
+   event-time label `Antigravity CLI`, but their actor key is the same stable
+   participant ID. This is the intended durable shape.
+2. A newly authenticated canonical `/ws?ticket=...` snapshot exposes the
+   participant and session as `Makima` while preserving the old event author
+   snapshots. The server is therefore not losing the renamed participant.
+3. A freshly loaded production frontend bundle renders the old messages, the
+   roster row, and the open detail dialog as `Makima`. The screenshot that
+   still rendered `Antigravity CLI` came from a browser tab that was running an
+   older hashed JavaScript bundle. A long-lived SPA tab does not replace its
+   already executing bundle merely because `frontend/dist` was rebuilt.
+4. The current canonical database has an empty avatar for this participant.
+   The avatar visible in the earlier dialog is not evidence that the final
+   profile-save command persisted it; an uploaded/cropped image can be visible
+   as a local draft before the explicit profile Save action. Avatar completion
+   therefore remains unproven until the actual upload, crop, canonical save,
+   old-message reprojection, and reload path is exercised.
+
+This narrows the remaining work without weakening the product contract. Do not
+add a second local identity authority or rewrite historical events to compensate
+for an old tab. Strengthen the browser test so a future bundle cannot regress
+the live save path, and report stale-bundle evidence separately from canonical
+state defects.
+
+The remaining avatar defect was then reproduced in code: both the timeline and
+member panel used truthy fallback. A current canonical avatar of `""` could
+therefore revive either an event-time avatar or a legacy localStorage avatar.
+The typing projection also preferred a potentially stale Agent Session label
+over the current participant. The repair treats the presence of a canonical
+participant profile as authoritative even when its avatar is empty, keeps
+legacy profile data only as an explicit edit-form migration draft, and gives
+the participant name precedence in the typing indicator.
+
 ### Canonical identity
 
 `participant_id` is the stable message author key. A message event may retain
@@ -142,6 +181,11 @@ history page later must use that same current profile.
   typing state, and next new message all show the new identity.
 - Reload: snapshot plus history still shows the new identity.
 - Different participants with similar provider/session labels are never merged.
+
+The browser scenario must use the profile image file input and crop/apply UI,
+then assert the resulting attachment URL on the already-rendered reply, roster,
+and detail dialog before and after reload. A test that injects a profile object
+directly is useful unit coverage but is not sufficient evidence for this path.
 
 Do not accept a source-string test or a direct projection helper test as proof
 of this user-visible behavior.
@@ -908,3 +952,31 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   still broken on at least one real path: old `Antigravity CLI` messages did
   not reproject to the saved `Makima` profile. Reproduce and fix that actual
   UI path before any future claim that identity reprojection is complete.
+- 2026-07-14: The real-path identity investigation separated stale frontend
+  execution from canonical state. SQLite and a directly authenticated room
+  snapshot both use participant ID `antigravity-antigravity-cli` and current
+  name `Makima`; a freshly loaded production bundle reprojects the same old
+  messages and roster/detail UI as `Makima`. The earlier screenshot was an old
+  tab still executing a pre-fix hashed bundle. The participant's canonical
+  avatar is currently empty, so the image part is not yet accepted. Before
+  resuming Phase 5.4, extend the actual Playwright profile flow through image
+  upload/crop/save and reload, add a component-level canonical-event rerender
+  regression, run the frontend suite/build/E2E, and repeat a reversible profile
+  save through the running frontend. Do not mark avatar reprojection complete
+  from the dialog draft preview alone.
+- 2026-07-14: The remaining identity path is now verified. Timeline projection
+  no longer revives an event-time avatar when the current participant cleared
+  it; roster/detail projection no longer revives a localStorage avatar when a
+  canonical participant or Agent Session exists; and typing names prefer the
+  current participant over stale session/progress labels. The local legacy
+  profile remains available only inside the edit form so an operator can
+  migrate it through `agent.configure`. Focused Vitest passed 24 tests, the
+  complete frontend suite passed 106 tests, the two frontend/static Python
+  suites passed 53 tests, the production build passed, and the canonical-room
+  Playwright flow passed in 4.4 seconds. That browser flow selected an image
+  file, used the crop/apply control, saved name and avatar through the real
+  Agent Session settings UI, verified the already-rendered reply and roster,
+  reloaded the application, and verified the same old reply again. A reversible
+  save through the running port-8765 production UI also changed every visible
+  old `Makima` message to `Makima UI 확인` immediately and restored it to
+  `Makima`. Phase 5.4 thin composition is again the next slice.

@@ -76,7 +76,7 @@ export function roomTypingNames({
       const participant = members.find(
         (candidate) => candidate.participant_id === progress.participantId
       );
-      add(session?.display_name || participant?.display_name || progress.displayName);
+      add(participant?.display_name || session?.display_name || progress.displayName);
     }
   }
 

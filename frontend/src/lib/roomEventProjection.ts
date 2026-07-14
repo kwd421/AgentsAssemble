@@ -38,12 +38,14 @@ function speakerIdentity(
   participantProfiles: NonNullable<ProjectionOptions["participantProfiles"]>
 ) {
   const mine = actorId === "operator-local" || Boolean(viewerParticipantId && actorId === viewerParticipantId);
-  const currentProfile = participantProfiles[actorId] || {};
+  const currentProfile = participantProfiles[actorId];
   return {
     name: mine
       ? "나"
-      : String(currentProfile.displayName || event.display_name || actorId || "Agent Session"),
-    avatarImageUrl: String(currentProfile.avatarImageUrl || event.avatar_image_url || ""),
+      : String(currentProfile?.displayName || event.display_name || actorId || "Agent Session"),
+    avatarImageUrl: String(
+      currentProfile ? currentProfile.avatarImageUrl || "" : event.avatar_image_url || ""
+    ),
     side: mine ? "mine" : "other",
   };
 }

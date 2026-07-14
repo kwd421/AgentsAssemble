@@ -111,6 +111,29 @@ describe("projectRoomEventsToTimeline", () => {
     });
   });
 
+  it("does not revive an event-time avatar after the canonical avatar is cleared", () => {
+    const timeline = projectRoomEventsToTimeline(
+      [
+        event({
+          display_name: "Antigravity CLI",
+          avatar_image_url: "/api/attachments/old-avatar",
+          content: "안녕하세요.",
+        }),
+      ],
+      {
+        participantProfiles: {
+          codex: {
+            displayName: "Makima",
+            avatarImageUrl: undefined,
+          },
+        },
+      }
+    );
+
+    expect(timeline[0].name).toBe("Makima");
+    expect(timeline[0].avatar_image_url).toBeUndefined();
+  });
+
   it("keeps the event author snapshot only when the participant is unavailable", () => {
     const timeline = projectRoomEventsToTimeline([
       event({ display_name: "Imported Agent", content: "legacy" }),

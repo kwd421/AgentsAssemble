@@ -40,7 +40,9 @@ export default function AgentIdentitySettings({
   const [agentNameDraft, setAgentNameDraft] = useState(
     entry.agentProfile?.displayName || entry.agentDisplayName || ""
   );
-  const [agentAvatarImage, setAgentAvatarImage] = useState(entry.avatarImage || "");
+  const [agentAvatarImage, setAgentAvatarImage] = useState(
+    entry.agentProfile?.avatarImage || entry.avatarImage || ""
+  );
   const [agentProfileCropFile, setAgentProfileCropFile] = useState<File | null>(null);
   const [agentProfileStatus, setAgentProfileStatus] = useState("");
   const [permissionDraft, setPermissionDraft] = useState(agent.permission_option || "");
@@ -50,8 +52,13 @@ export default function AgentIdentitySettings({
 
   useEffect(() => {
     setAgentNameDraft(entry.agentProfile?.displayName || entry.agentDisplayName || "");
-    setAgentAvatarImage(entry.avatarImage || "");
-  }, [entry.agentDisplayName, entry.agentProfile?.displayName, entry.avatarImage]);
+    setAgentAvatarImage(entry.agentProfile?.avatarImage || entry.avatarImage || "");
+  }, [
+    entry.agentDisplayName,
+    entry.agentProfile?.avatarImage,
+    entry.agentProfile?.displayName,
+    entry.avatarImage,
+  ]);
 
   useEffect(() => {
     setAgentProfileStatus("");
