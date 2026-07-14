@@ -419,3 +419,7 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   Ordinary operation defaults to `off`; deterministic `sample` records only
   canonical source sequences divisible by 16, while `full` preserves the
   previous diagnostic behavior. Ambient active routing remains independent.
+- 2026-07-14: ambient trigger eligibility restricted to committed human/agent
+  text and server-trusted trigger metadata. Votes, system/lifecycle kinds,
+  empty text, and unsupported media-only events persist as silent decisions
+  without waking a provider.

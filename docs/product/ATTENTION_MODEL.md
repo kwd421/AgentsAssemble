@@ -30,11 +30,18 @@ eligible agent. The initial agent-to-agent chain budget is two relays. A named
 target that is unavailable is reported as unavailable; another provider is not
 silently substituted.
 
-When enabled, the current shadow policy selects one connected direct
-mention/reply/next-speaker
-target, marks multiple direct targets, `@all`, or a room-wide question as
-eligible, and marks messages without a strong signal as silent. Its durable
-decision and each candidate's evaluation cursor commit together.
+Ambient wake inputs are limited to committed text messages from a human or
+agent, or a server-authored event carrying `trusted_ambient_trigger: true`.
+Direct mentions, replies, and room questions remain public selection signals.
+Votes, system/lifecycle kinds, empty text, and unsupported media-only events
+produce a durable silent decision and do not wake a provider. Browser payloads
+cannot set the trusted marker through `message.send`.
+
+When enabled, the current shadow policy selects one connected direct mention,
+reply, or next-speaker target; marks multiple direct targets, `@all`, or a
+room-wide question as eligible; and marks messages without a strong signal as
+silent. Its durable decision and each candidate's evaluation cursor commit
+together.
 
 ## Independent Cursors
 

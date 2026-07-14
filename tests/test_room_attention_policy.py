@@ -5,6 +5,7 @@ from pathlib import Path
 from agentsassemble.room_attention_coordinator import RoomAttentionCoordinator
 from agentsassemble.room_attention_policy import (
     SHADOW_ATTENTION_SAMPLE_MODULUS,
+    ambient_trigger_rejection_reason,
     evaluate_ambient_attention,
     evaluate_attention,
     normalize_shadow_attention_mode,
@@ -53,6 +54,67 @@ class RoomAttentionPolicyTests(unittest.TestCase):
         self.assertEqual(decision.outcome, "selected")
         self.assertEqual(decision.selected_participant_id, "grok")
         self.assertIn("ambient_human_message", decision.reasons)
+
+    def test_ambient_trigger_rejects_votes_system_events_empty_text_and_media_only(self):
+        rejected = {
+            "vote": _event("", message_kind="vote"),
+            "system": _event("maintenance", message_kind="system"),
+            "system_actor": _event("maintenance", actor_id="system", actor_type="system"),
+            "empty": _event(""),
+            "media": _event("", attachments=[{"id": "attachment-1"}]),
+            "lifecycle": {**_event("joined"), "type": "participant_joined"},
+        }
+
+        self.assertEqual(ambient_trigger_rejection_reason(rejected["vote"]), "ambient_vote_event")
+        self.assertEqual(
+            ambient_trigger_rejection_reason(rejected["system"]),
+            "ambient_message_kind_not_supported",
+        )
+        self.assertEqual(
+            ambient_trigger_rejection_reason(rejected["system_actor"]),
+            "ambient_actor_not_trusted",
+        )
+        self.assertEqual(ambient_trigger_rejection_reason(rejected["empty"]), "ambient_empty_content")
+        self.assertEqual(
+            ambient_trigger_rejection_reason(rejected["media"]),
+            "ambient_unsupported_media_only",
+        )
+        self.assertEqual(
+            ambient_trigger_rejection_reason(rejected["lifecycle"]),
+            "ambient_event_type_not_supported",
+        )
+        for event in rejected.values():
+            decision = evaluate_ambient_attention(
+                event,
+                candidate_ids=("codex",),
+                eligible_ids=("codex",),
+                last_spoke_sequences={"codex": 0},
+                max_agent_relay_depth=2,
+            )
+            self.assertEqual(decision.outcome, "silent")
+
+    def test_ambient_accepts_explicit_question_reply_and_trusted_internal_trigger(self):
+        events = (
+            _event("누가 먼저 볼래?"),
+            _event("이어갈게", reply_to_participant_id="codex"),
+            _event(
+                "예약된 후속 논의를 시작합니다.",
+                actor_id="room-scheduler",
+                actor_type="service",
+                metadata={"trusted_ambient_trigger": True},
+            ),
+        )
+
+        for event in events:
+            self.assertEqual(ambient_trigger_rejection_reason(event), "")
+            decision = evaluate_ambient_attention(
+                event,
+                candidate_ids=("codex",),
+                eligible_ids=("codex",),
+                last_spoke_sequences={"codex": 0},
+                max_agent_relay_depth=2,
+            )
+            self.assertEqual(decision.outcome, "selected")
 
     def test_ambient_agent_handoff_stops_at_chain_budget(self):
         first = evaluate_ambient_attention(

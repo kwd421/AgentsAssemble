@@ -10,6 +10,7 @@ from agentsassemble.room_attention import AttentionEvaluation
 
 SHADOW_ATTENTION_MODES = frozenset({"off", "sample", "full"})
 SHADOW_ATTENTION_SAMPLE_MODULUS = 16
+AMBIENT_TEXT_MESSAGE_KINDS = frozenset({"", "message", "text"})
 
 
 def normalize_shadow_attention_mode(value: object) -> str:
@@ -151,6 +152,15 @@ def evaluate_ambient_attention(
         candidate_ids=candidates,
         eligible_ids=eligible,
     )
+    rejection_reason = ambient_trigger_rejection_reason(event)
+    if rejection_reason:
+        return AttentionEvaluation(
+            room_id=base.room_id,
+            source_event_id=base.source_event_id,
+            source_seq=base.source_seq,
+            outcome="silent",
+            reasons=(rejection_reason,),
+        )
     relay_depth = max(0, int(event.get("relay_depth") or 0))
     if actor_type == "agent" and relay_depth >= max(0, int(max_agent_relay_depth)):
         return AttentionEvaluation(
@@ -193,6 +203,33 @@ def evaluate_ambient_attention(
         eligible_participant_ids=tuple(selectable),
         reasons=(*reasons, "ambient_fair_selection"),
     )
+
+
+def ambient_trigger_rejection_reason(event: dict[str, object]) -> str:
+    """Return why a committed event cannot wake an ambient room provider."""
+
+    if clean_lobby_text(event.get("type"), limit=64) != "message_final":
+        return "ambient_event_type_not_supported"
+    message_kind = clean_lobby_text(event.get("message_kind"), limit=64).lower()
+    if message_kind in {"vote", "vote_cast"}:
+        return "ambient_vote_event"
+    if message_kind not in AMBIENT_TEXT_MESSAGE_KINDS:
+        return "ambient_message_kind_not_supported"
+    content = clean_lobby_text(event.get("content"), limit=12000)
+    if not content:
+        attachments = event.get("attachments") if isinstance(event.get("attachments"), list) else []
+        return "ambient_unsupported_media_only" if attachments else "ambient_empty_content"
+    actor = event.get("actor") if isinstance(event.get("actor"), dict) else {}
+    actor_type = clean_lobby_text(
+        actor.get("participant_type") or event.get("participant_type"),
+        limit=32,
+    )
+    if actor_type in {"human", "agent"}:
+        return ""
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    if event.get("trusted_ambient_trigger") is True or metadata.get("trusted_ambient_trigger") is True:
+        return ""
+    return "ambient_actor_not_trusted"
 
 
 def _explicit_targets(

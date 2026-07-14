@@ -81,7 +81,8 @@ An event-driven deterministic attention gate can record durable `selected`,
 explicitly set to `ambient` uses active evaluation independently of that shadow
 setting and acquires one durable lease to wake one fair eligible speaker at a
 time, with an initial two-relay agent chain limit and no silent provider
-substitution. Current contract:
+substitution. Votes, system/lifecycle events, empty text, and unsupported
+media-only events do not wake providers. Current contract:
 `docs/product/ATTENTION_MODEL.md`; supporting research:
 `docs/reports/autonomous-room-participation-research.md`.
 

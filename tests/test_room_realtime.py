@@ -1063,6 +1063,31 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertIn("explicit_target_unavailable", job["reasons"])
         self.assertEqual(self.controller.store.session("general", "peer")["pending_event_ids"], [])
 
+    def test_ambient_mode_records_vote_as_silent_without_waking_provider(self):
+        _identity, channel = self._connect_bridge("codex")
+        channel.drain()
+        update_room_settings(
+            self.root,
+            {"room_id": "general", "conversation_mode": "ambient", "max_relay_turns": 2},
+        )
+
+        event = self._command(
+            "ambient-vote",
+            "message.send",
+            {
+                "kind": "vote",
+                "vote_id": "vote-1",
+                "vote_question": "어디로 갈까?",
+                "vote_options": ["왼쪽", "오른쪽"],
+            },
+        )["result"]["event"]
+
+        self.assertFalse(any(message.get("op") == "turn.assign" for message in channel.drain()))
+        job = self.controller.store.attention_jobs("general", mode="active")[-1]
+        self.assertEqual(job["source_event_id"], event["id"])
+        self.assertEqual(job["outcome"], "silent")
+        self.assertEqual(job["reasons"], ["ambient_vote_event"])
+
     def test_stopping_ambient_speaker_cancels_lease_and_drops_selected_work(self):
         _identity, channel = self._connect_bridge("codex")
         channel.drain()
