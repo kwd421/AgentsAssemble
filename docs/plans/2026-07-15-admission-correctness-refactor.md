@@ -244,3 +244,14 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   lifecycle, and optional-driver tests passed. Real PostgreSQL transaction
   integration remains gated on `AGENTSASSEMBLE_TEST_POSTGRES_DSN` and is part of
   Milestones 2.3 and 5; no frozen conversation or media policy changed.
+- 2026-07-15: Milestone 2.3 added an application transaction boundary to hosted
+  admission and pairing. Admission keeps its durable request workflow, then
+  commits identity resolution, invite consumption, bearer replacement,
+  participant, membership, and completion on one PostgreSQL connection.
+  Pairing deliberately keeps the prior same-device claim as its resumable
+  security lease, then atomically commits participant, membership, bearer, and
+  completion. Retryable failure state is written only after rollback. A local
+  temporary PostgreSQL 17 instance ran all 79 strict PostgreSQL contracts with
+  zero skips, including injected failures proving rollback and same-device
+  recovery. Local JSON/SQLite behavior remained the existing saga and frozen
+  conversation/media policy was not changed.

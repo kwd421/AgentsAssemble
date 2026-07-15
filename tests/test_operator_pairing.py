@@ -4,6 +4,7 @@ import hashlib
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -19,6 +20,26 @@ from agentsassemble.room_invite_repository import JsonInviteSessionRepository
 from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room_users import device_auth_key
+
+
+class _RecordingTransactionBoundary:
+    def __init__(self) -> None:
+        self.active = False
+        self.events: list[str] = []
+
+    @contextmanager
+    def transaction(self):
+        self.events.append("begin")
+        self.active = True
+        try:
+            yield object()
+        except BaseException:
+            self.events.append("rollback")
+            raise
+        else:
+            self.events.append("commit")
+        finally:
+            self.active = False
 
 
 class OperatorPairingServiceTests(unittest.TestCase):
@@ -247,6 +268,82 @@ class OperatorPairingServiceTests(unittest.TestCase):
             resumed["session_token"],
             restarted_sessions.token_for_request(f"operator-pairing:{created['pairing_id']}"),
         )
+
+    def test_hosted_boundary_starts_after_device_claim_and_commits_completion(self) -> None:
+        created = self._create()
+        token = self._token(created)
+        boundary = _RecordingTransactionBoundary()
+        service = OperatorPairingService(
+            identities=self.identities,
+            rooms=self.rooms,
+            sessions=self.sessions,
+            transaction_boundary=boundary,
+            now=lambda: self.now,
+        )
+        consume = self.identities.consume_operator_pairing
+        upsert_membership = self.identities.upsert_membership
+
+        def consume_before_transaction(**kwargs):
+            self.assertFalse(boundary.active)
+            return consume(**kwargs)
+
+        def membership_inside(record):
+            self.assertTrue(boundary.active)
+            return upsert_membership(record)
+
+        with patch.object(
+            self.identities,
+            "consume_operator_pairing",
+            side_effect=consume_before_transaction,
+        ), patch.object(
+            self.identities,
+            "upsert_membership",
+            side_effect=membership_inside,
+        ):
+            result = service.redeem(
+                pairing_token=token,
+                device_token="public-origin-device",
+                request_origin="https://public.example",
+            )
+
+        self.assertEqual(result["status"], "admitted")
+        self.assertEqual(boundary.events, ["begin", "commit"])
+
+    def test_hosted_pairing_failure_status_is_written_after_transaction_rollback(self) -> None:
+        created = self._create()
+        token = self._token(created)
+        boundary = _RecordingTransactionBoundary()
+        service = OperatorPairingService(
+            identities=self.identities,
+            rooms=self.rooms,
+            sessions=self.sessions,
+            transaction_boundary=boundary,
+            now=lambda: self.now,
+        )
+        update = self.identities.update_operator_pairing_redemption
+
+        def track_failure_status(**kwargs):
+            if kwargs.get("status") == "failed_retryable":
+                self.assertFalse(boundary.active)
+            return update(**kwargs)
+
+        with patch.object(
+            self.rooms,
+            "upsert_participant",
+            side_effect=RuntimeError("participant write failed"),
+        ), patch.object(
+            self.identities,
+            "update_operator_pairing_redemption",
+            side_effect=track_failure_status,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "participant write failed"):
+                service.redeem(
+                    pairing_token=token,
+                    device_token="public-origin-device",
+                    request_origin="https://public.example",
+                )
+
+        self.assertEqual(boundary.events, ["begin", "rollback"])
 
     def _restarted_sessions(self) -> RoomSessionService:
         return RoomSessionService(

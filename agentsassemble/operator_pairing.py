@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote, urlsplit, urlunsplit
 
+from agentsassemble.application_transaction import ApplicationTransactionBoundary
 from agentsassemble.identity_store import (
     IdentityBackend,
     LOCAL_OPERATOR_PARTICIPANT_ID,
@@ -62,12 +63,14 @@ class OperatorPairingService:
         identities: IdentityBackend,
         rooms: RoomRepository,
         sessions: RoomSessionService,
+        transaction_boundary: ApplicationTransactionBoundary | None = None,
         now: Callable[[], datetime] | None = None,
         token_factory: Callable[[], str] | None = None,
     ) -> None:
         self._identities = identities
         self._rooms = rooms
         self._sessions = sessions
+        self._transaction_boundary = transaction_boundary
         self._now = now or (lambda: datetime.now(UTC))
         self._token_factory = token_factory or (lambda: secrets.token_urlsafe(32))
 
@@ -162,21 +165,25 @@ class OperatorPairingService:
         if not pairing_id:
             return {"status": "rejected", "reason": "pairing_invalid"}
         try:
-            self._commit_operator_membership(room_id, display_name=display_name)
-            session_token, session = self._sessions.ensure_for_request(
-                f"operator-pairing:{pairing_id}",
-                self._session_record(room_id, display_name=display_name),
-                joined_at=clean_lobby_text(pairing.get("used_at"), limit=64),
-            )
-            completed = self._identities.update_operator_pairing_redemption(
-                pairing_id=pairing_id,
-                auth_key=auth_key,
-                status="completed",
-                completed_at=now.isoformat(),
-                session_fingerprint=session_token_fingerprint(session_token),
-            )
-            if not completed or completed.get("redemption_status") != "completed":
-                raise RuntimeError("operator pairing completion could not be persisted")
+            if self._transaction_boundary is None:
+                session_token, session = self._complete_redemption(
+                    pairing_id=pairing_id,
+                    pairing=pairing,
+                    room_id=room_id,
+                    display_name=display_name,
+                    auth_key=auth_key,
+                    completed_at=now.isoformat(),
+                )
+            else:
+                with self._transaction_boundary.transaction():
+                    session_token, session = self._complete_redemption(
+                        pairing_id=pairing_id,
+                        pairing=pairing,
+                        room_id=room_id,
+                        display_name=display_name,
+                        auth_key=auth_key,
+                        completed_at=now.isoformat(),
+                    )
         except Exception as error:
             try:
                 self._identities.update_operator_pairing_redemption(
@@ -197,6 +204,33 @@ class OperatorPairingService:
             room=room,
             display_name=display_name,
         )
+
+    def _complete_redemption(
+        self,
+        *,
+        pairing_id: str,
+        pairing: dict[str, object],
+        room_id: str,
+        display_name: str,
+        auth_key: str,
+        completed_at: str,
+    ) -> tuple[str, dict[str, object]]:
+        self._commit_operator_membership(room_id, display_name=display_name)
+        session_token, session = self._sessions.ensure_for_request(
+            f"operator-pairing:{pairing_id}",
+            self._session_record(room_id, display_name=display_name),
+            joined_at=clean_lobby_text(pairing.get("used_at"), limit=64),
+        )
+        completed = self._identities.update_operator_pairing_redemption(
+            pairing_id=pairing_id,
+            auth_key=auth_key,
+            status="completed",
+            completed_at=completed_at,
+            session_fingerprint=session_token_fingerprint(session_token),
+        )
+        if not completed or completed.get("redemption_status") != "completed":
+            raise RuntimeError("operator pairing completion could not be persisted")
+        return session_token, session
 
     def revoke(self, pairing_id: str) -> bool:
         return self._identities.revoke_operator_pairing(

@@ -15,6 +15,7 @@ POSTGRES_CONTRACT_MODULES = (
     "tests.test_postgres_room_repository",
     "tests.test_postgres_invite_repository",
     "tests.test_postgres_identity_repository",
+    "tests.test_postgres_cross_authority_transactions",
     "tests.test_room_repository_migration",
 )
 POSTGRES_REQUIRED_MODULES = (

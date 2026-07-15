@@ -193,6 +193,18 @@ transaction in the same context is an error; callers must use the active
 `RoomTransaction` instead. This prevents a command from deadlocking against its
 own bounded pool or reading state outside its atomic command snapshot.
 
+Hosted invite admission uses `PostgresApplicationDatabase.transaction()` as a
+cross-authority boundary after the durable workflow is created. Identity
+resolution, invite consumption, bearer replacement, canonical participant,
+membership, and workflow completion then share one connection and one outer
+transaction. A failure rolls those writes back before a separate retryable
+workflow status is recorded. Operator pairing preserves its already-established
+same-device claim as the resumable security lease, then wraps participant,
+membership, bearer, and pairing completion writes in the same cross-authority
+boundary. This keeps another device rejected after a failed completion while
+preventing partial room or session state. Local JSON plus SQLite does not use
+this boundary and remains an explicit durable saga.
+
 GitHub Actions runs the PostgreSQL repository, migration, schema, and pool
 contracts against a real PostgreSQL 16 service. The dedicated
 `python -m tests.run_postgres_contracts` entrypoint requires the PostgreSQL

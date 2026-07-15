@@ -949,11 +949,13 @@ def _build_gui_application_services(
             sessions=room_session_service,
             identities=identity_backend,
             rooms=room_repository,
+            transaction_boundary=application_database_override,
         )
         operator_pairing_service = OperatorPairingService(
             identities=identity_backend,
             rooms=room_repository,
             sessions=room_session_service,
+            transaction_boundary=application_database_override,
         )
 
         live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)

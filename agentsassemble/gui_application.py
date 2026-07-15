@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from agentsassemble.application_transaction import ApplicationTransactionBoundary
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.identity_store import IdentityBackend
 from agentsassemble.operator_pairing import OperatorPairingService
@@ -40,7 +41,7 @@ class FlowSupervisor(Protocol):
     ) -> dict[str, object]: ...
 
 
-class ApplicationDatabase(Protocol):
+class ApplicationDatabase(ApplicationTransactionBoundary, Protocol):
     def close(self) -> None: ...
 
 

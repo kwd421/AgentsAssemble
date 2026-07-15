@@ -4,6 +4,7 @@ import json
 import tempfile
 import threading
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,6 +20,26 @@ from agentsassemble.room_invite_repository import (
 )
 from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.room_store import RoomStore
+
+
+class _RecordingTransactionBoundary:
+    def __init__(self) -> None:
+        self.active = False
+        self.events: list[str] = []
+
+    @contextmanager
+    def transaction(self):
+        self.events.append("begin")
+        self.active = True
+        try:
+            yield object()
+        except BaseException:
+            self.events.append("rollback")
+            raise
+        else:
+            self.events.append("commit")
+        finally:
+            self.active = False
 
 
 class RoomAdmissionCoordinatorTests(unittest.TestCase):
@@ -203,6 +224,92 @@ class RoomAdmissionCoordinatorTests(unittest.TestCase):
             self.identities.get_membership("room-a", str(resumed["agent_id"]))["status"],
             "online",
         )
+
+    def test_hosted_boundary_surrounds_cross_authority_success_writes(self) -> None:
+        self.rooms.create_room("room-a", label="Room A")
+        invite = self.invites.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            display_name="Guest",
+            max_uses=2,
+        )
+        boundary = _RecordingTransactionBoundary()
+        coordinator = RoomAdmissionCoordinator(
+            invites=self.invites,
+            sessions=self.sessions,
+            identities=self.identities,
+            rooms=self.rooms,
+            transaction_boundary=boundary,
+        )
+        consume = self.repository.consume_for_admission
+        upsert_membership = self.identities.upsert_membership
+
+        def consume_inside(*args, **kwargs):
+            self.assertTrue(boundary.active)
+            return consume(*args, **kwargs)
+
+        def membership_inside(record):
+            self.assertTrue(boundary.active)
+            return upsert_membership(record)
+
+        with patch.object(
+            self.repository,
+            "consume_for_admission",
+            side_effect=consume_inside,
+        ), patch.object(
+            self.identities,
+            "upsert_membership",
+            side_effect=membership_inside,
+        ):
+            result = coordinator.admit(
+                invite_token=str(invite["join_code"]),
+                request_id="hosted-success",
+                device_token="known-device-token",
+            )
+
+        self.assertEqual(result["status"], "admitted")
+        self.assertEqual(boundary.events, ["begin", "commit"])
+
+    def test_hosted_boundary_rolls_back_before_retryable_failure_is_recorded(self) -> None:
+        self.rooms.create_room("room-a", label="Room A")
+        invite = self.invites.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            display_name="Guest",
+            max_uses=2,
+        )
+        boundary = _RecordingTransactionBoundary()
+        coordinator = RoomAdmissionCoordinator(
+            invites=self.invites,
+            sessions=self.sessions,
+            identities=self.identities,
+            rooms=self.rooms,
+            transaction_boundary=boundary,
+        )
+        update_workflow = self.repository.update_admission_workflow
+
+        def track_failure_status(workflow_id, updates):
+            if updates.get("status") == "failed_retryable":
+                self.assertFalse(boundary.active)
+            return update_workflow(workflow_id, updates)
+
+        with patch.object(
+            self.identities,
+            "upsert_membership",
+            side_effect=RuntimeError("identity write failed"),
+        ), patch.object(
+            self.repository,
+            "update_admission_workflow",
+            side_effect=track_failure_status,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "identity write failed"):
+                coordinator.admit(
+                    invite_token=str(invite["join_code"]),
+                    request_id="hosted-failure",
+                    device_token="known-device-token",
+                )
+
+        self.assertEqual(boundary.events, ["begin", "rollback"])
 
     def test_incomplete_json_workflow_resumes_after_repository_restart(self) -> None:
         self.rooms.create_room("room-a", label="Room A")

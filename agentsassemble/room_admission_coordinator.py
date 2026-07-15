@@ -8,6 +8,7 @@ import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from agentsassemble.application_transaction import ApplicationTransactionBoundary
 from agentsassemble.identity_store import IdentityBackend
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
@@ -38,12 +39,14 @@ class RoomAdmissionCoordinator:
         sessions: RoomSessionService,
         identities: IdentityBackend,
         rooms: RoomRepository,
+        transaction_boundary: ApplicationTransactionBoundary | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._invites = invites
         self._sessions = sessions
         self._identities = identities
         self._rooms = rooms
+        self._transaction_boundary = transaction_boundary
         self._now = now or (lambda: datetime.now(UTC))
         self._lock = threading.RLock()
 
@@ -127,93 +130,31 @@ class RoomAdmissionCoordinator:
         participant_type: str,
     ) -> dict[str, object]:
         workflow_id = str(workflow["workflow_id"])
-        if workflow.get("status") == "completed":
-            return self._completed_result(workflow)
-        if workflow.get("status") == "failed_terminal":
-            return {
-                "status": "rejected",
-                "reason": str(workflow.get("failure_code") or "admission_rejected"),
-            }
-
         try:
-            prepared = _prepared_from_workflow(workflow, public_url=self._invites.public_url())
-            if not prepared.meeting_id:
-                refreshed = self._invites.prepare_admission(invite_token)
-                if isinstance(refreshed, dict):
-                    return refreshed
-                prepared = refreshed
-
-            room, settings = self._room_context(prepared.meeting_id)
-            if not room:
-                return {"status": "rejected", "reason": "room_unavailable"}
-
-            if not workflow.get("participant_id"):
-                workflow = self._resolve_identity(
+            if self._transaction_boundary is None:
+                return self._resume_steps(
                     workflow,
-                    prepared,
+                    invite_token=invite_token,
                     display_name=display_name,
                     participant_type=participant_type,
                 )
-
-            if not workflow.get("invite_consumed"):
-                consume_error, workflow = self._invites.consume_for_admission(
-                    workflow_id,
-                    prepared,
-                    updates=self._phase_updates("invite_consumed"),
+            with self._transaction_boundary.transaction():
+                return self._resume_steps(
+                    workflow,
+                    invite_token=invite_token,
+                    display_name=display_name,
+                    participant_type=participant_type,
                 )
-                if consume_error:
-                    self._invites.update_admission_workflow(
-                        workflow_id,
-                        {
-                            **self._phase_updates("failed_terminal"),
-                            "resume_phase": "invite_consumed",
-                            "failure_code": consume_error,
-                        },
-                    )
-                    return {"status": "rejected", "reason": consume_error}
-
-            session_record = _session_record(workflow)
-            session_token, session = self._sessions.ensure_for_request(
-                workflow_id,
-                session_record,
-                joined_at=str(workflow.get("session_joined_at") or ""),
-                expires_at=str(workflow.get("session_expires_at") or ""),
-            )
-            if workflow.get("status") not in {"session_issued", "membership_committed", "completed"}:
-                workflow = self._invites.update_admission_workflow(
-                    workflow_id,
-                    {
-                        **self._phase_updates("session_issued"),
-                        "session_joined_at": str(session.get("joined_at") or ""),
-                        "session_expires_at": str(session.get("expires_at") or ""),
-                    },
-                )
-
-            if workflow.get("status") not in {"membership_committed", "completed"}:
-                self._commit_membership(workflow, prepared)
-                workflow = self._invites.update_admission_workflow(
-                    workflow_id,
-                    self._phase_updates("membership_committed"),
-                )
-
-            workflow = self._invites.update_admission_workflow(
-                workflow_id,
-                {
-                    **self._phase_updates("completed"),
-                    **_room_record(room, settings, prepared.meeting_id),
-                    "failure_code": "",
-                },
-            )
-            return self._result(workflow, prepared, session_token=session_token)
         except AdmissionIdempotencyConflict:
             raise
         except Exception as error:
             try:
+                persisted = self._invites.admission_workflow(workflow_id) or workflow
                 self._invites.update_admission_workflow(
                     workflow_id,
                     {
                         **self._phase_updates("failed_retryable"),
-                        "resume_phase": clean_lobby_text(workflow.get("status"), limit=64)
+                        "resume_phase": clean_lobby_text(persisted.get("status"), limit=64)
                         or "started",
                         "failure_code": type(error).__name__,
                     },
@@ -224,6 +165,97 @@ class RoomAdmissionCoordinator:
                     f"{type(persistence_error).__name__}."
                 )
             raise
+
+    def _resume_steps(
+        self,
+        workflow: dict[str, object],
+        *,
+        invite_token: str,
+        display_name: str,
+        participant_type: str,
+    ) -> dict[str, object]:
+        workflow_id = str(workflow["workflow_id"])
+        if workflow.get("status") == "completed":
+            return self._completed_result(workflow)
+        if workflow.get("status") == "failed_terminal":
+            return {
+                "status": "rejected",
+                "reason": str(workflow.get("failure_code") or "admission_rejected"),
+            }
+
+        prepared = _prepared_from_workflow(workflow, public_url=self._invites.public_url())
+        if not prepared.meeting_id:
+            refreshed = self._invites.prepare_admission(invite_token)
+            if isinstance(refreshed, dict):
+                return refreshed
+            prepared = refreshed
+
+        room, settings = self._room_context(prepared.meeting_id)
+        if not room:
+            return {"status": "rejected", "reason": "room_unavailable"}
+
+        if not workflow.get("participant_id"):
+            workflow = self._resolve_identity(
+                workflow,
+                prepared,
+                display_name=display_name,
+                participant_type=participant_type,
+            )
+
+        if not workflow.get("invite_consumed"):
+            consume_error, workflow = self._invites.consume_for_admission(
+                workflow_id,
+                prepared,
+                updates=self._phase_updates("invite_consumed"),
+            )
+            if consume_error:
+                self._invites.update_admission_workflow(
+                    workflow_id,
+                    {
+                        **self._phase_updates("failed_terminal"),
+                        "resume_phase": "invite_consumed",
+                        "failure_code": consume_error,
+                    },
+                )
+                return {"status": "rejected", "reason": consume_error}
+
+        session_record = _session_record(workflow)
+        session_token, session = self._sessions.ensure_for_request(
+            workflow_id,
+            session_record,
+            joined_at=str(workflow.get("session_joined_at") or ""),
+            expires_at=str(workflow.get("session_expires_at") or ""),
+        )
+        if workflow.get("status") not in {
+            "session_issued",
+            "membership_committed",
+            "completed",
+        }:
+            workflow = self._invites.update_admission_workflow(
+                workflow_id,
+                {
+                    **self._phase_updates("session_issued"),
+                    "session_joined_at": str(session.get("joined_at") or ""),
+                    "session_expires_at": str(session.get("expires_at") or ""),
+                },
+            )
+
+        if workflow.get("status") not in {"membership_committed", "completed"}:
+            self._commit_membership(workflow, prepared)
+            workflow = self._invites.update_admission_workflow(
+                workflow_id,
+                self._phase_updates("membership_committed"),
+            )
+
+        workflow = self._invites.update_admission_workflow(
+            workflow_id,
+            {
+                **self._phase_updates("completed"),
+                **_room_record(room, settings, prepared.meeting_id),
+                "failure_code": "",
+            },
+        )
+        return self._result(workflow, prepared, session_token=session_token)
 
     def _resolve_identity(
         self,
