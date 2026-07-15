@@ -191,6 +191,14 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
                     handler.gui_deps.media,
                     handler.application_services.media_store,
                 )
+                self.assertIs(
+                    handler.gui_deps.pairing,
+                    handler.application_services.pairing,
+                )
+                self.assertIs(
+                    handler.gui_deps.sessions,
+                    handler.application_services.sessions,
+                )
                 self.assertFalse((server_root / "rooms" / "rooms.sqlite3").exists())
             finally:
                 handler.room_realtime_controller.close()

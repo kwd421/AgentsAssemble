@@ -79,6 +79,11 @@ metadata. Raw invite tokens, device credentials, and room bearer tokens are not
 persisted. Reusing a request ID with different admission inputs is an explicit
 `idempotency_conflict`, not a second join.
 
+The GUI application owns one invite service, room-session service, admission
+coordinator, and operator-pairing service for its lifetime. Current invite and
+pairing routes use those injected owners; module-global invite/identity helpers
+are compatibility-only and are not the route authority.
+
 Cross-origin operator continuity uses a separate moderator-created `/pair`
 link. It is room- and target-origin-bound, expires after at most two minutes,
 and is one-use across devices. Redemption durably binds the pairing to the

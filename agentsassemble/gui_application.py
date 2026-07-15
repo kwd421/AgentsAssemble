@@ -8,6 +8,7 @@ from typing import Protocol
 
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.identity_store import IdentityBackend
+from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
 from agentsassemble.room_invite import InviteApplicationService
@@ -55,6 +56,7 @@ class GuiApplicationServices:
     sessions: RoomSessionService
     admission_preflight: RoomAdmissionService
     admission: RoomAdmissionCoordinator
+    pairing: OperatorPairingService
     identity_backend: IdentityBackend
     invite_store_path: Path
     media_store: FileAttachmentStore

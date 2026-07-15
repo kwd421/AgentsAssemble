@@ -108,7 +108,8 @@ Invite/session persistence follows the selected room backend through
 `room-invite-state.json` format through `JsonInviteSessionRepository`.
 PostgreSQL room mode selects `PostgresInviteSessionRepository` with the same
 DSN and never falls back to JSON. `room_invite.py` remains a compatibility
-facade for token policy while repository implementations own locking,
+facade for legacy callers; current GUI invite and pairing routes use their
+application-owned injected services. Repository implementations own locking,
 persistence, atomic invite consumption, replay protection, and session
 revocation. Local and hosted implementations also persist an admission workflow
 keyed by invite fingerprint, device credential fingerprint, and caller request

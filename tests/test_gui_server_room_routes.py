@@ -35,6 +35,7 @@ from tests.gui_server_test_support import (
 )
 from agentsassemble.gui_router import GuiDeps
 from agentsassemble.identity_store import IdentityStore
+from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
 from agentsassemble.room_invite import InviteApplicationService
@@ -69,6 +70,11 @@ def _invite_route_dependencies(root: Path) -> GuiDeps:
             sessions=sessions,
             identities=identities,
             rooms=rooms,
+        ),
+        operator_pairing_service=OperatorPairingService(
+            identities=identities,
+            rooms=rooms,
+            sessions=sessions,
         ),
     )
 

@@ -439,6 +439,7 @@ from agentsassemble.room_invite import (
     set_runtime_public_url,
     verify_session_token,
 )
+from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.meeting_events import (
     FLOW_METADATA_KEYS,
@@ -940,6 +941,11 @@ def _build_gui_application_services(
             identities=identity_backend,
             rooms=room_repository,
         )
+        operator_pairing_service = OperatorPairingService(
+            identities=identity_backend,
+            rooms=room_repository,
+            sessions=room_session_service,
+        )
 
         live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
         if owns_process_supervisor:
@@ -999,6 +1005,7 @@ def _build_gui_application_services(
             sessions=room_session_service,
             admission_preflight=admission_preflight,
             admission=admission_coordinator,
+            pairing=operator_pairing_service,
             identity_backend=identity_backend,
             invite_store_path=default_room_invite_store_path(output_root),
             media_store=FileAttachmentStore(output_root),
@@ -3116,6 +3123,7 @@ def _make_handler(
         room_sessions=services.sessions,
         admission_preflight_service=services.admission_preflight,
         admission_coordinator=services.admission,
+        operator_pairing_service=services.pairing,
         attachment_store=services.media_store,
         process_supervisor=live_agent_process_supervisor,
         read_lobby=read_lobby,

@@ -220,3 +220,11 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   identity contracts, and schema checks passed. PostgreSQL integration cases
   remained environment-skipped because no test DSN was configured, so real
   hosted concurrency evidence remains part of Milestone 5.
+- 2026-07-15: Milestone 1.5 implemented. GUI composition now owns one operator
+  pairing service beside invite, session, and admission services. Current
+  invite/admission/pairing routes resolve creator and operator identity through
+  `ctx.deps.identities` and use `ctx.deps.pairing`; they no longer construct a
+  request-local pairing service or import room-user global facade functions.
+  The generic `RequestContext` host/session compatibility facade remains for
+  legacy routes and is explicitly deferred to Milestone 3 rather than mixed
+  into this current-route change.

@@ -32,6 +32,7 @@ from agentsassemble.gui_request_security import (
     _split_authority_host_port,
 )
 from agentsassemble.identity_store import IdentityBackend, identity_store_for_output_root
+from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
 from agentsassemble.room_invite import InviteApplicationService, verify_host_token, verify_session_token
@@ -56,6 +57,7 @@ class GuiDeps:
     room_sessions: RoomSessionService | None = None
     admission_preflight_service: RoomAdmissionService | None = None
     admission_coordinator: RoomAdmissionCoordinator | None = None
+    operator_pairing_service: OperatorPairingService | None = None
     attachment_store: FileAttachmentStore | None = None
     process_supervisor: Any = None
     read_lobby: Callable[..., list[dict[str, object]]] | None = None
@@ -106,6 +108,13 @@ class GuiDeps:
         service = self.admission_coordinator
         if service is None:
             raise RuntimeError("GUI admission coordinator is not configured.")
+        return service
+
+    @property
+    def pairing(self) -> OperatorPairingService:
+        service = self.operator_pairing_service
+        if service is None:
+            raise RuntimeError("GUI operator pairing service is not configured.")
         return service
 
     @property

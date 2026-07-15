@@ -6,13 +6,9 @@ from http import HTTPStatus
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.live_agents import connect_live_agent
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
-from agentsassemble.operator_pairing import OperatorPairingService, normalize_pairing_origin
+from agentsassemble.operator_pairing import normalize_pairing_origin
 from agentsassemble.room_admission_coordinator import AdmissionIdempotencyConflict
-from agentsassemble.room_users import (
-    grant_operator_to_device,
-    operator_user_id,
-    user_for_participant,
-)
+from agentsassemble.room_users import device_auth_key
 from agentsassemble.stable_entry import stable_entry_url
 
 
@@ -26,8 +22,9 @@ def register_invite_admission_routes(router: Router) -> None:
         payload = ctx.read_json_body()
         if payload is None:
             return
-        user = grant_operator_to_device(
-            str(payload.get("device_token") or ""),
+        auth_key = device_auth_key(str(payload.get("device_token") or ""))
+        user = ctx.deps.identities.claim_local_operator_credential(
+            auth_key,
             display_name=str(payload.get("display_name") or ""),
         )
         if user is None:
@@ -81,8 +78,15 @@ def register_invite_admission_routes(router: Router) -> None:
             client_type = str(payload.get("client_type") or "browser")
             request_session = ctx.session()
             creator_participant_id = str((request_session or {}).get("agent_id") or "")
-            creator_user = user_for_participant(creator_participant_id) if creator_participant_id else None
-            created_by_user_id = str((creator_user or {}).get("user_id") or operator_user_id())
+            creator_user = (
+                ctx.deps.identities.user_for_participant(creator_participant_id)
+                if creator_participant_id
+                else None
+            )
+            created_by_user_id = str(
+                (creator_user or {}).get("user_id")
+                or ctx.deps.identities.operator_user_id()
+            )
             invite = ctx.deps.invites.create(
                 room_url=ctx.local_server_url(),
                 meeting_id=room_id,
@@ -186,11 +190,7 @@ def register_invite_admission_routes(router: Router) -> None:
             ctx.send_error(HTTPStatus.CONFLICT, "public URL is required before pairing")
             return
         try:
-            result = OperatorPairingService(
-                identities=ctx.deps.identities,
-                rooms=ctx.deps.rooms,
-                sessions=ctx.deps.sessions,
-            ).create(
+            result = ctx.deps.pairing.create(
                 room_id=str(payload.get("meeting_id") or ""),
                 public_url=public_url,
                 ttl_seconds=int(payload.get("ttl_seconds") or 120),
@@ -214,11 +214,7 @@ def register_invite_admission_routes(router: Router) -> None:
         except ValueError:
             ctx.send_error(HTTPStatus.FORBIDDEN, "pairing_origin_invalid")
             return
-        result = OperatorPairingService(
-            identities=ctx.deps.identities,
-            rooms=ctx.deps.rooms,
-            sessions=ctx.deps.sessions,
-        ).redeem(
+        result = ctx.deps.pairing.redeem(
             pairing_token=str(payload.get("pairing_token") or ""),
             device_token=str(ctx.headers.get("X-Device-Token") or ""),
             request_origin=request_origin,
@@ -239,11 +235,7 @@ def register_invite_admission_routes(router: Router) -> None:
         if not pairing_id:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "pairing_id is required")
             return
-        revoked = OperatorPairingService(
-            identities=ctx.deps.identities,
-            rooms=ctx.deps.rooms,
-            sessions=ctx.deps.sessions,
-        ).revoke(pairing_id)
+        revoked = ctx.deps.pairing.revoke(pairing_id)
         if not revoked:
             ctx.send_error(HTTPStatus.NOT_FOUND, "active pairing was not found")
             return
@@ -267,7 +259,15 @@ def register_invite_admission_routes(router: Router) -> None:
                 invite_scope="room",
                 participant_type="remote",
                 max_uses=1,
-                created_by_user_id=str((user_for_participant(str(session.get("agent_id") or "")) or {}).get("user_id") or ""),
+                created_by_user_id=str(
+                    (
+                        ctx.deps.identities.user_for_participant(
+                            str(session.get("agent_id") or "")
+                        )
+                        or {}
+                    ).get("user_id")
+                    or ""
+                ),
             )
         except (ValueError, TypeError) as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
