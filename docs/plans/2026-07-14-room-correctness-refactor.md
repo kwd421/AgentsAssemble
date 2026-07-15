@@ -1191,3 +1191,11 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   POST handler now contains only explicit deletion candidates; do not migrate
   those candidates before a separate compatibility decision. Canonical
   name/avatar history reprojection remains unchanged.
+- 2026-07-15: Phase 5's handler boundary is now enforced by AST ownership
+  tests. The complete exact-path inventory is limited to WebSocket/React/join
+  shell transport plus the seven documented deletion candidates; adding any
+  other exact API branch directly to `gui.py` fails the suite. Prefix-based
+  React asset delivery remains an intentional transport responsibility. This
+  closes the planned retained-route extraction without disguising deletion
+  candidates as new abstractions. Final full Python/frontend/build/browser
+  verification remains the next gate before declaring the phase complete.

@@ -44,6 +44,26 @@ EXPECTED_DYNAMIC_ROUTES = {
     ("POST", "/api/live-agent-session-runs/{run_id}/retry-now"),
 }
 
+EXPECTED_RETAINED_HANDLER_EXACT_ROUTES = {
+    ("GET", "/"),
+    ("GET", "/api"),
+    ("GET", "/api/"),
+    ("GET", "/api/codex-sessions"),
+    ("GET", "/api/live-agent-create/options"),
+    ("GET", "/api/provider-sessions"),
+    ("GET", "/app"),
+    ("GET", "/app/"),
+    ("GET", "/join"),
+    ("GET", "/join/"),
+    ("GET", "/legacy"),
+    ("GET", "/legacy/"),
+    ("GET", "/ws"),
+    ("POST", "/api/demo"),
+    ("POST", "/api/live-agent-create"),
+    ("POST", "/api/live-agent-create/check"),
+    ("POST", "/api/live-agent-room/expel"),
+}
+
 
 def _registered_exact_routes() -> set[tuple[str, str]]:
     routes: set[tuple[str, str]] = set()
@@ -166,6 +186,9 @@ class GuiRouteOwnershipTests(unittest.TestCase):
 
         self.assertIn(("GET", "/join"), routes)
         self.assertIn(("GET", "/app"), routes)
+
+    def test_handler_exact_routes_are_limited_to_transport_and_deletion_candidates(self) -> None:
+        self.assertEqual(_legacy_exact_routes(), EXPECTED_RETAINED_HANDLER_EXACT_ROUTES)
 
     def test_dynamic_route_inventory_is_explicit_and_has_one_owner(self) -> None:
         owners = _dynamic_route_owners()

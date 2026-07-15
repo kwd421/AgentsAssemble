@@ -216,6 +216,10 @@ change proves removal is acceptable.
 
 Do not move these candidates into new service modules before the deletion
 decision. Leaving them in the old chain makes their compatibility cost visible.
+`tests/test_gui_route_ownership.py` locks the complete exact-path handler
+inventory to the transport/static paths above plus these seven candidates. A
+new exact API branch in `gui.py` is therefore a test failure; retained API work
+must register on `Router`.
 
 ## Extraction Order
 
