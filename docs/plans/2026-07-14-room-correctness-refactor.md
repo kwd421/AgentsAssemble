@@ -1114,3 +1114,12 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   boundaries rather than creating one generic live-agent service. The seven
   deletion candidates and canonical name/avatar history reprojection remain
   unchanged.
+- 2026-07-15: Resident engagement-mode updates are now a focused settings
+  boundary rather than part of the generated handler or presence service.
+  `LegacyLiveAgentEngagementService` owns validation, mutation, previous/current
+  mode auditing, and invalid-JSON failure audit; its Router owns the dynamic
+  endpoint. Focused service/Router/ownership plus real room-payload coverage
+  passed 26 tests, and the complete CLI presence suite passed 46. Unknown modes
+  keep the existing fail-closed error and do not mutate the resident record.
+  The next slices are probe diagnostics and resident speech. The seven deletion
+  candidates and canonical name/avatar history reprojection remain unchanged.

@@ -28,6 +28,7 @@ EXPECTED_DYNAMIC_ROUTES = {
     ("POST", "/api/meetings/{meeting_id}/live-agent-turns/rounds"),
     ("POST", "/api/meetings/{meeting_id}/live-agent-turns/sequence"),
     ("POST", "/api/meetings/{meeting_id}/review-checkpoints"),
+    ("POST", "/api/live-agents/{agent_id}/engagement"),
     ("POST", "/api/live-agents/{agent_id}/heartbeat"),
     ("POST", "/api/live-agents/{agent_id}/leave"),
     ("POST", "/api/live-agent-processes/{group_id}/stop"),

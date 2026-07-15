@@ -57,6 +57,7 @@ from agentsassemble.gui_legacy_live_agent_read_http import (
     register_legacy_live_agent_read_routes,
 )
 from agentsassemble.gui_legacy_live_agent_presence_http import register_legacy_live_agent_presence_routes
+from agentsassemble.gui_legacy_live_agent_engagement_http import register_legacy_live_agent_engagement_route
 from agentsassemble.gui_legacy_live_agent_process_http import (
     LegacyProcessHttpDeps,
     register_legacy_process_mutation_routes,
@@ -318,6 +319,10 @@ from agentsassemble.legacy_live_agent_presence import (
     connect_live_agent_payload,
     live_agent_heartbeat_payload,
     live_agent_leave_payload,
+)
+from agentsassemble.legacy_live_agent_engagement import (
+    LegacyLiveAgentEngagementService,
+    update_live_agent_engagement_payload,
 )
 from agentsassemble.legacy_meeting_queries import (
     LegacyMeetingQueryService,
@@ -2420,11 +2425,6 @@ def live_agent_join_brief_payload(payload: dict[str, object], *, default_server:
     )
 
 
-def update_live_agent_engagement_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
-    agent = update_live_agent_engagement(output_root, agent_id, str(payload.get("engagement_mode") or ""))
-    return {"agent": agent, "agents": read_live_agents(output_root)}
-
-
 def room_friend_direct_dm_payload(
     output_root: Path,
     process_supervisor: LiveAgentProcessSupervisor,
@@ -3394,13 +3394,6 @@ def _operation_group_ids(records: object) -> list[str]:
     return group_ids
 
 
-def _operation_agent_engagement(output_root: Path, agent_id: str) -> str:
-    for agent in read_live_agents(output_root):
-        if str(agent.get("agent_id") or "") == agent_id:
-            return str(agent.get("engagement_mode") or "")
-    return ""
-
-
 def _operation_result_status(value: object) -> str:
     return str(value or "unknown").strip() or "unknown"
 
@@ -3778,6 +3771,10 @@ def _make_handler(
     register_legacy_live_agent_presence_routes(
         route_table,
         service=LegacyLiveAgentPresenceService(output_root),
+    )
+    register_legacy_live_agent_engagement_route(
+        route_table,
+        service=LegacyLiveAgentEngagementService(output_root),
     )
 
     def _late_operation_json_payload(
@@ -4200,42 +4197,6 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json(join_brief)
-                return
-            live_agent_engagement_id = _live_agent_action_path(parsed.path, "engagement")
-            if live_agent_engagement_id is not None:
-                payload = self._operation_json_payload(
-                    operation="engagement.update",
-                    target_id=live_agent_engagement_id,
-                )
-                if payload is None:
-                    return
-                previous_mode = _operation_agent_engagement(output_root, live_agent_engagement_id)
-                try:
-                    engagement = update_live_agent_engagement_payload(output_root, live_agent_engagement_id, payload)
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="engagement.update",
-                        status="failed",
-                        target_id=live_agent_engagement_id,
-                        error=str(error),
-                        details={"engagement_mode": str(payload.get("engagement_mode") or "")},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                agent = engagement.get("agent") if isinstance(engagement.get("agent"), dict) else {}
-                record_live_agent_operation(
-                    output_root,
-                    operation="engagement.update",
-                    status="success",
-                    target_id=live_agent_engagement_id,
-                    summary="updated engagement mode",
-                    details={
-                        "previous_engagement_mode": previous_mode,
-                        "engagement_mode": str(agent.get("engagement_mode") or payload.get("engagement_mode") or ""),
-                    },
-                )
-                self._send_json(engagement)
                 return
             if parsed.path == "/api/provider-health":
                 length = int(self.headers.get("Content-Length", "0") or "0")
