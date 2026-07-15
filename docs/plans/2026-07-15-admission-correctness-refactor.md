@@ -164,3 +164,8 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   process-local invite and session state. Memory storage remains available
   only through explicit ephemeral/test configuration; normal GUI composition
   continues to install its JSON or PostgreSQL repository before serving.
+- 2026-07-15: Milestone 0.3 implemented. Session issuance now calls one atomic
+  participant-session replacement operation. Memory and JSON repositories
+  replace under their persistence lock, existing duplicate local sessions fail
+  closed, and PostgreSQL revision `0007_unique_room_access_session` plus a
+  conflict upsert enforce one active token per room participant under races.

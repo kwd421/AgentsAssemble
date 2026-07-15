@@ -41,7 +41,10 @@ class RoomSessionIssuer:
             "joined_at": now.isoformat(),
             "expires_at": (now + timedelta(seconds=self._ttl_seconds)).isoformat(),
         }
-        self._repository.save_session(session_token_fingerprint(token), session)
+        self._repository.replace_participant_session(
+            session_token_fingerprint(token),
+            session,
+        )
         return token, session
 
     def verify(self, token: str) -> dict[str, object] | None:

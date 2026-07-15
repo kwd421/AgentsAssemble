@@ -77,6 +77,12 @@ class InviteRepository(Protocol):
 class SessionRepository(Protocol):
     def save_session(self, token_fingerprint: str, record: dict[str, object]) -> None: ...
 
+    def replace_participant_session(
+        self,
+        token_fingerprint: str,
+        record: dict[str, object],
+    ) -> None: ...
+
     def session(self, token_fingerprint: str) -> dict[str, object] | None: ...
 
     def revoke_session(self, token_fingerprint: str) -> bool: ...
@@ -150,6 +156,14 @@ class UnconfiguredInviteSessionRepository:
         self._raise()
 
     def save_session(self, token_fingerprint: str, record: dict[str, object]) -> None:
+        del token_fingerprint, record
+        self._raise()
+
+    def replace_participant_session(
+        self,
+        token_fingerprint: str,
+        record: dict[str, object],
+    ) -> None:
         del token_fingerprint, record
         self._raise()
 
@@ -291,11 +305,28 @@ class MemoryInviteSessionRepository:
             return [deepcopy(record) for record in self._invites.values()]
 
     def save_session(self, token_fingerprint: str, record: dict[str, object]) -> None:
+        self.replace_participant_session(token_fingerprint, record)
+
+    def replace_participant_session(
+        self,
+        token_fingerprint: str,
+        record: dict[str, object],
+    ) -> None:
         clean_fingerprint = clean_lobby_text(token_fingerprint, limit=128)
         if not clean_fingerprint:
             raise ValueError("session token fingerprint is required")
+        room_id, participant_id = _session_identity(record)
         with self._lock:
             with self._persisted_mutation_locked():
+                replaced = [
+                    fingerprint
+                    for fingerprint, existing in self._sessions.items()
+                    if fingerprint != clean_fingerprint
+                    and existing.get("meeting_id") == room_id
+                    and existing.get("agent_id") == participant_id
+                ]
+                for fingerprint in replaced:
+                    del self._sessions[fingerprint]
                 self._sessions[clean_fingerprint] = deepcopy(record)
 
     def session(self, token_fingerprint: str) -> dict[str, object] | None:
@@ -447,6 +478,7 @@ class JsonInviteSessionRepository(MemoryInviteSessionRepository):
             )
 
         loaded_sessions: dict[str, dict[str, object]] = {}
+        loaded_session_identities: set[tuple[str, str]] = set()
         loaded_invites: dict[str, dict[str, object]] = {}
         loaded_nonces: set[str] = set()
         now = datetime.now(UTC)
@@ -463,6 +495,12 @@ class JsonInviteSessionRepository(MemoryInviteSessionRepository):
                     "Invite repository state contains an invalid session expiry."
                 )
             if expires_at > now:
+                identity = _session_identity(record)
+                if identity in loaded_session_identities:
+                    raise InviteRepositoryCorrupt(
+                        "Invite repository state contains duplicate participant sessions."
+                    )
+                loaded_session_identities.add(identity)
                 loaded_sessions[fingerprint] = record
         for raw_invite_id, raw_record in invites.items():
             invite_id = clean_lobby_text(raw_invite_id, limit=128)
@@ -534,6 +572,14 @@ def _parse_datetime(value: object) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else None
+
+
+def _session_identity(record: dict[str, object]) -> tuple[str, str]:
+    room_id = clean_lobby_text(record.get("meeting_id"), limit=128)
+    participant_id = clean_lobby_text(record.get("agent_id"), limit=128)
+    if not room_id or not participant_id:
+        raise ValueError("session room and participant are required")
+    return room_id, participant_id
 
 
 def _clean_session_record(value: object) -> dict[str, object]:

@@ -182,16 +182,29 @@ class PostgresInviteSessionRepository:
         return [_invite_from_row(row) for row in rows]
 
     def save_session(self, token_fingerprint: str, record: dict[str, object]) -> None:
+        self.replace_participant_session(token_fingerprint, record)
+
+    def replace_participant_session(
+        self,
+        token_fingerprint: str,
+        record: dict[str, object],
+    ) -> None:
+        parameters = _session_parameters(token_fingerprint, record)
+        if not parameters[0] or not parameters[1] or not parameters[2]:
+            raise ValueError("session token, room, and participant are required")
         with self._pool.connection() as connection, connection.transaction():
+            connection.execute(
+                "DELETE FROM room_access_sessions WHERE token_fingerprint = %s",
+                (parameters[0],),
+            )
             connection.execute(
                 """INSERT INTO room_access_sessions(
                        token_fingerprint, room_id, participant_id, display_name,
                        invite_scope, participant_type, client_type, provider_kind,
                        owner_id, connection_kind, joined_at, expires_at
                    ) VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                   ON CONFLICT(token_fingerprint) DO UPDATE SET
-                       room_id = excluded.room_id,
-                       participant_id = excluded.participant_id,
+                   ON CONFLICT(room_id, participant_id) DO UPDATE SET
+                       token_fingerprint = excluded.token_fingerprint,
                        display_name = excluded.display_name,
                        invite_scope = excluded.invite_scope,
                        participant_type = excluded.participant_type,
@@ -201,7 +214,7 @@ class PostgresInviteSessionRepository:
                        connection_kind = excluded.connection_kind,
                        joined_at = excluded.joined_at,
                        expires_at = excluded.expires_at""",
-                _session_parameters(token_fingerprint, record),
+                parameters,
             )
 
     def session(self, token_fingerprint: str) -> dict[str, object] | None:

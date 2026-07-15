@@ -86,6 +86,7 @@ class UnconfiguredInviteSessionRepositoryTests(unittest.TestCase):
             lambda: self.repository.revoke_room_invites("room-a"),
             self.repository.list_invites,
             lambda: self.repository.save_session("session-1", _session()),
+            lambda: self.repository.replace_participant_session("session-1", _session()),
             lambda: self.repository.session("session-1"),
             lambda: self.repository.revoke_session("session-1"),
             lambda: self.repository.revoke_participant_sessions("room-a", "guest-a"),
@@ -182,6 +183,46 @@ class InviteSessionRepositoryContract:
         self.assertIsNotNone(self.repository.session("session-c"))
         self.assertEqual(self.repository.revoke_room_sessions("room-a"), 1)
         self.assertIsNotNone(self.repository.session("session-c"))
+
+    def test_session_save_atomically_replaces_same_room_participant(self) -> None:
+        first = _session()
+        replacement = {**_session(), "display_name": "Replacement"}
+
+        self.repository.save_session("session-old", first)
+        self.repository.save_session("session-new", replacement)
+
+        self.assertIsNone(self.repository.session("session-old"))
+        self.assertEqual(
+            self.repository.session("session-new")["display_name"],
+            "Replacement",
+        )
+        self.assertEqual(len(self.repository.list_sessions()), 1)
+
+    def test_concurrent_session_replacement_keeps_one_active_token(self) -> None:
+        barrier = threading.Barrier(8)
+        failures: list[BaseException] = []
+
+        def replace(index: int) -> None:
+            try:
+                barrier.wait()
+                self.repository.replace_participant_session(
+                    f"session-{index}",
+                    {**_session(), "display_name": f"Guest {index}"},
+                )
+            except BaseException as error:
+                failures.append(error)
+
+        threads = [threading.Thread(target=replace, args=(index,)) for index in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+
+        self.assertFalse(failures)
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        sessions = self.repository.list_sessions()
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual(sessions[0][1]["agent_id"], "guest-a")
 
     def test_room_invite_revocation_is_scoped(self) -> None:
         self.repository.save_invite(_invite(invite_id="invite-a"))
@@ -309,6 +350,22 @@ class JsonInviteSessionRepositoryTests(
         self.path.write_text(json.dumps(payload), encoding="utf-8")
 
         with self.assertRaises(InviteRepositoryCorrupt):
+            JsonInviteSessionRepository(self.path)
+
+    def test_existing_duplicate_participant_sessions_fail_closed(self) -> None:
+        payload = {
+            "schema": ROOM_INVITE_STORE_SCHEMA,
+            "invite_secret": "",
+            "sessions": {
+                "session-a": _session(),
+                "session-b": {**_session(), "display_name": "Duplicate"},
+            },
+            "pending_invites": {},
+            "used_nonce_fingerprints": [],
+        }
+        self.path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with self.assertRaisesRegex(InviteRepositoryCorrupt, "duplicate"):
             JsonInviteSessionRepository(self.path)
 
     def test_existing_invalid_expiry_fails_closed(self) -> None:

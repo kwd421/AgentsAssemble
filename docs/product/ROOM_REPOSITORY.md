@@ -134,7 +134,9 @@ conflicting retries. Revision `0004_room_global_settings` adds canonical
 room-global settings, revision `0005_invite_sessions` adds the hosted invite
 and bearer-session authority, and revision `0006_identity_authority` adds
 hosted users, credentials, operator pairing, membership compatibility,
-preferences, and usage. Runtime repository construction never runs Alembic and
+preferences, and usage. Revision `0007_unique_room_access_session` enforces one
+active room bearer session for each `(room_id, participant_id)`. Runtime
+repository construction never runs Alembic and
 refuses PostgreSQL until both the head revision and the authority marker are
 present. The existing SQLite migrator remains responsible for upgrading
 pre-repository local files and old SQLite versions.

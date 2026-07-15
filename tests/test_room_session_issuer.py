@@ -49,6 +49,26 @@ class RoomSessionIssuerTests(unittest.TestCase):
         self.assertIsNone(self.issuer.verify(malformed_token))
         self.assertEqual(self.repository.list_sessions(), [])
 
+    def test_issuing_replacement_invalidates_prior_participant_token(self) -> None:
+        first_token, _ = self.issuer.issue(
+            {"agent_id": "guest-a", "meeting_id": "room-a"}
+        )
+        replacement = RoomSessionIssuer(
+            self.repository,
+            token_prefix="aas1",
+            ttl_seconds=60,
+            now=lambda: self.now,
+            token_factory=lambda: "replacement-token",
+        )
+
+        second_token, second_session = replacement.issue(
+            {"agent_id": "guest-a", "meeting_id": "room-a"}
+        )
+
+        self.assertIsNone(self.issuer.verify(first_token))
+        self.assertEqual(replacement.verify(second_token), second_session)
+        self.assertEqual(len(self.repository.list_sessions()), 1)
+
     def test_participant_and_room_revocation_are_delegated(self) -> None:
         first = RoomSessionIssuer(
             self.repository,
