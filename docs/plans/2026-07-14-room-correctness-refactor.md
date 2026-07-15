@@ -1134,3 +1134,16 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   lobby/DM speech and official-record replies, kept separate by persistence and
   artifact side effects. The seven deletion candidates and canonical
   name/avatar history reprojection remain unchanged.
+- 2026-07-15: Ordinary resident lobby and friend-DM replies are now a focused
+  speech boundary. `LegacyLiveAgentSpeechService` owns lobby identity/mute
+  policy, source-event idempotency, flow turn conflict, smoke redaction,
+  governed append, reply cursors, DM delivery, and heartbeat projection. The
+  shared lobby lock and GUI append/scope callbacks are explicit dependencies,
+  so the service does not import `gui.py` and established concurrency patch
+  points remain late-bound. Its Router owns both dynamic POST paths and keeps
+  invalid JSON and domain failures at `400`. Focused service/Router/turn tests
+  plus lobby/social, real-session smoke, and room-route coverage passed 87;
+  CLI/MCP coverage passed 58. The next slice is official/review reply recording,
+  which remains separate because it mutates meeting events, official artifacts,
+  and shared memory. The seven deletion candidates and canonical name/avatar
+  history reprojection remain unchanged.
