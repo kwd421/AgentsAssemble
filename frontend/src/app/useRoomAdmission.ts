@@ -159,7 +159,6 @@ export function useRoomAdmission({
     redeemOperatorPairing({
       pairingToken: operatorPairingToken,
       deviceToken: getOrCreateDeviceToken(),
-      origin: window.location.origin,
     })
       .then((payload) => {
         if (cancelled) return;

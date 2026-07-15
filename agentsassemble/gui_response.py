@@ -61,7 +61,12 @@ class GuiResponseMethods:
             return
         html = index_path.read_text(encoding="utf-8")
         data = _rewrite_react_app_index(html).encode("utf-8")
-        self._send_bytes(data, "text/html; charset=utf-8", cache_control="no-cache")
+        self._send_bytes(
+            data,
+            "text/html; charset=utf-8",
+            cache_control="no-cache",
+            referrer_policy="no-referrer",
+        )
 
     def _send_file(
         self,
@@ -77,11 +82,20 @@ class GuiResponseMethods:
         data = path.read_bytes()
         self._send_bytes(data, guessed, cache_control=cache_control)
 
-    def _send_bytes(self, data: bytes, content_type: str, *, cache_control: str) -> None:
+    def _send_bytes(
+        self,
+        data: bytes,
+        content_type: str,
+        *,
+        cache_control: str,
+        referrer_policy: str = "",
+    ) -> None:
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", cache_control)
+        if referrer_policy:
+            self.send_header("Referrer-Policy", referrer_policy)
         self.end_headers()
         self.wfile.write(data)
 

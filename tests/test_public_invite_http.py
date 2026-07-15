@@ -167,6 +167,22 @@ class PublicInviteHttpTests(unittest.TestCase):
                 ) as response:
                     pairing = json.loads(response.read().decode("utf-8"))
                 pairing_token = pairing["pairing_url"].split("token=", 1)[1]
+                with self.assertRaises(HTTPError) as missing_origin_error:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/operator-pairing/redeem",
+                            {
+                                "pairing_token": pairing_token,
+                                "origin": "https://shared-room.example.com",
+                            },
+                            {
+                                "Host": "shared-room.example.com",
+                                "X-Device-Token": "public-origin-device",
+                            },
+                        ),
+                        timeout=4,
+                    )
+                self.addCleanup(missing_origin_error.exception.close)
                 public_headers = {
                     "Host": "shared-room.example.com",
                     "Origin": "https://shared-room.example.com",
@@ -177,7 +193,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                         f"{base}/api/operator-pairing/redeem",
                         {
                             "pairing_token": pairing_token,
-                            "origin": "https://shared-room.example.com",
+                            "origin": "https://forged-body.example.com",
                         },
                         public_headers,
                     ),
@@ -214,6 +230,11 @@ class PublicInviteHttpTests(unittest.TestCase):
                 server.server_close()
 
         self.assertEqual(pairing["target_origin"], "https://shared-room.example.com")
+        self.assertEqual(missing_origin_error.exception.code, 403)
+        self.assertIn(
+            "pairing_origin_required",
+            missing_origin_error.exception.read().decode("utf-8"),
+        )
         self.assertEqual(admitted["agent_id"], "operator-local")
         self.assertTrue(admitted["operator"])
         self.assertEqual(admitted["room_label"], "friend-room")

@@ -223,7 +223,6 @@ describe("useRoomAdmission", () => {
     expect(apiMocks.redeemOperatorPairing).toHaveBeenCalledWith({
       pairingToken: "aap1_pairing-token",
       deviceToken: "device-1",
-      origin: window.location.origin,
     });
     expect(loadRoomGuestSession()?.operator).toBe(true);
     expect(onRoomJoined).toHaveBeenCalledWith(expect.objectContaining({ meetingId: "room-1" }));

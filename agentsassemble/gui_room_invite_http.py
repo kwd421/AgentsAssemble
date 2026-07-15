@@ -246,26 +246,22 @@ def register_invite_admission_routes(router: Router) -> None:
         payload = ctx.read_json_body()
         if payload is None:
             return
-        declared_origin = str(payload.get("origin") or "").strip()
         header_origin = str(ctx.headers.get("Origin") or "").strip()
-        if not declared_origin:
-            ctx.send_error(HTTPStatus.BAD_REQUEST, "origin is required")
+        if not header_origin:
+            ctx.send_error(HTTPStatus.FORBIDDEN, "pairing_origin_required")
             return
-        if header_origin:
-            try:
-                if normalize_pairing_origin(header_origin) != normalize_pairing_origin(declared_origin):
-                    ctx.send_error(HTTPStatus.FORBIDDEN, "pairing_origin_mismatch")
-                    return
-            except ValueError:
-                ctx.send_error(HTTPStatus.FORBIDDEN, "pairing_origin_invalid")
-                return
+        try:
+            request_origin = normalize_pairing_origin(header_origin)
+        except ValueError:
+            ctx.send_error(HTTPStatus.FORBIDDEN, "pairing_origin_invalid")
+            return
         result = OperatorPairingService(
             identities=ctx.deps.identities,
             rooms=ctx.deps.rooms,
         ).redeem(
             pairing_token=str(payload.get("pairing_token") or ""),
             device_token=str(ctx.headers.get("X-Device-Token") or ""),
-            request_origin=declared_origin,
+            request_origin=request_origin,
         )
         if result.get("status") != "admitted":
             ctx.send_error(HTTPStatus.FORBIDDEN, str(result.get("reason") or "pairing_rejected"))

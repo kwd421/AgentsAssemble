@@ -177,3 +177,8 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   returns `invite_not_found` when its durable policy row is absent in memory,
   JSON, and PostgreSQL implementations. The code no longer invents an
   unlimited use count after losing the authority needed to enforce it.
+- 2026-07-15: Milestone 0.5 implemented. Operator pairing redemption now
+  requires and trusts only the normalized HTTP `Origin` header; body origin is
+  ignored. Default ports and IPv6 normalize consistently. React bootstrap HTML
+  sends and declares `Referrer-Policy: no-referrer`, while the existing
+  one-time URL consumer removes the token from browser history immediately.

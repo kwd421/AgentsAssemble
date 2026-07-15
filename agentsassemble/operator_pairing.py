@@ -33,11 +33,15 @@ def normalize_pairing_origin(value: str) -> str:
         raise ValueError("pairing target must be a valid HTTP(S) origin")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError("pairing target must not contain credentials, query, or fragment")
+    scheme = parsed.scheme.lower()
     hostname = parsed.hostname.lower()
     if ":" in hostname and not hostname.startswith("["):
         hostname = f"[{hostname}]"
-    netloc = f"{hostname}:{parsed.port}" if parsed.port is not None else hostname
-    return urlunsplit((parsed.scheme.lower(), netloc, "", "", ""))
+    port = parsed.port
+    if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):
+        port = None
+    netloc = f"{hostname}:{port}" if port is not None else hostname
+    return urlunsplit((scheme, netloc, "", "", ""))
 
 
 def _token_fingerprint(token: str) -> str:

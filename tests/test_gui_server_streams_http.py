@@ -1022,6 +1022,8 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                 root_response = urlopen(f"{base}/", timeout=4)
                 root_html = root_response.read().decode("utf-8")
                 app_html = urlopen(f"{base}/app/", timeout=4).read().decode("utf-8")
+                pair_response = urlopen(f"{base}/pair?token=aap1_secret", timeout=4)
+                pair_html = pair_response.read().decode("utf-8")
                 asset_response = urlopen(f"{base}/app/assets/app.js", timeout=4)
                 asset_body = asset_response.read().decode("utf-8")
                 with self.assertRaises(HTTPError) as legacy_raised:
@@ -1037,6 +1039,8 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
         self.assertIn('href="/app/assets/app.css"', root_html)
         self.assertEqual(root_response.headers.get("Content-Type"), "text/html; charset=utf-8")
         self.assertEqual(root_response.headers.get("Cache-Control"), "no-cache")
+        self.assertEqual(pair_html, root_html)
+        self.assertEqual(pair_response.headers.get("Referrer-Policy"), "no-referrer")
         self.assertIn("javascript", asset_response.headers.get("Content-Type", ""))
         self.assertEqual(asset_response.headers.get("Cache-Control"), "no-cache")
         self.assertEqual(asset_body, "console.log('react preview');")

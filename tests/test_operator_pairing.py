@@ -12,7 +12,7 @@ from agentsassemble.identity_store import (
     LOCAL_OPERATOR_PARTICIPANT_ID,
     LOCAL_OPERATOR_USER_ID,
 )
-from agentsassemble.operator_pairing import OperatorPairingService
+from agentsassemble.operator_pairing import OperatorPairingService, normalize_pairing_origin
 from agentsassemble.room_invite import reset_state, verify_session_token
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room_users import device_auth_key
@@ -84,6 +84,20 @@ class OperatorPairingServiceTests(unittest.TestCase):
         token = self._token(created)
 
         self.assertNotIn(token.encode("utf-8"), (self.root / "identity.db").read_bytes())
+
+    def test_origin_normalization_handles_default_ports_and_ipv6(self) -> None:
+        self.assertEqual(
+            normalize_pairing_origin("https://Public.Example:443/path"),
+            "https://public.example",
+        )
+        self.assertEqual(
+            normalize_pairing_origin("http://[::1]:80/path"),
+            "http://[::1]",
+        )
+        self.assertEqual(
+            normalize_pairing_origin("https://[2001:db8::1]:8443/path"),
+            "https://[2001:db8::1]:8443",
+        )
 
     def test_wrong_origin_does_not_consume_pairing(self) -> None:
         created = self._create()

@@ -210,15 +210,13 @@ export function createOperatorPairing({
 export function redeemOperatorPairing({
   pairingToken,
   deviceToken,
-  origin,
 }: {
   pairingToken: string;
   deviceToken: string;
-  origin: string;
 }) {
   return postJsonWithIdentity<RoomInviteJoinResponse>(
     "/api/operator-pairing/redeem",
-    { pairing_token: pairingToken, origin },
+    { pairing_token: pairingToken },
     { deviceToken }
   );
 }
