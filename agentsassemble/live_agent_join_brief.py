@@ -7,6 +7,26 @@ from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.meeting_events import clean_lobby_text
 
 
+def live_agent_join_brief_payload(
+    payload: dict[str, object],
+    *,
+    default_server: str,
+) -> dict[str, object]:
+    """Map the HTTP/GUI request shape onto the shared join-brief builder."""
+    return build_live_agent_join_brief(
+        server=payload.get("server") or default_server,
+        agent_id=payload.get("agent_id") or "",
+        display_name=payload.get("display_name") or "",
+        provider_kind=payload.get("provider_kind") or "manual",
+        connection_kind=payload.get("connection_kind") or "manual",
+        meeting_id=payload.get("meeting_id") or "",
+        engagement_mode=payload.get("engagement_mode") or "mentioned",
+        timeout=payload.get("timeout", 30.0),
+        poll_interval=payload.get("poll_interval", DEFAULT_LIVE_AGENT_POLL_INTERVAL),
+        max_chain_depth=payload.get("max_chain_depth", 1),
+    )
+
+
 def build_live_agent_join_brief(
     *,
     server: object = "",

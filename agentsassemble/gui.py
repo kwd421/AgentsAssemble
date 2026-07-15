@@ -62,6 +62,7 @@ from agentsassemble.gui_legacy_live_agent_read_http import (
 )
 from agentsassemble.gui_legacy_live_agent_presence_http import register_legacy_live_agent_presence_routes
 from agentsassemble.gui_legacy_live_agent_engagement_http import register_legacy_live_agent_engagement_route
+from agentsassemble.gui_legacy_live_agent_join_brief_http import register_legacy_live_agent_join_brief_route
 from agentsassemble.gui_legacy_live_agent_probe_http import (
     LegacyLiveAgentProbeHttpDeps,
     register_legacy_live_agent_probe_route,
@@ -131,13 +132,12 @@ from agentsassemble.room_realtime import (
     default_native_cli_provider_specs,
 )
 from agentsassemble.session_run_monitor import PeriodicSessionRunMonitor, safe_monitor_error_type
-from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
+from agentsassemble.live_agent_join_brief import live_agent_join_brief_payload
 from agentsassemble.live_agent_room_admin import (
     LegacyLiveAgentRoomSessionService,
     expel_live_agent_from_room_payload,
 )
 from agentsassemble.live_agent_self_managed import LegacySelfManagedAgentService
-from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
@@ -2414,21 +2414,6 @@ def _skipped_session_auto_rounds_result(
     }
 
 
-def live_agent_join_brief_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
-    return build_live_agent_join_brief(
-        server=payload.get("server") or default_server,
-        agent_id=payload.get("agent_id") or "",
-        display_name=payload.get("display_name") or "",
-        provider_kind=payload.get("provider_kind") or "manual",
-        connection_kind=payload.get("connection_kind") or "manual",
-        meeting_id=payload.get("meeting_id") or "",
-        engagement_mode=payload.get("engagement_mode") or "mentioned",
-        timeout=payload.get("timeout", 30.0),
-        poll_interval=payload.get("poll_interval", DEFAULT_LIVE_AGENT_POLL_INTERVAL),
-        max_chain_depth=payload.get("max_chain_depth", 1),
-    )
-
-
 def room_friend_direct_dm_payload(
     output_root: Path,
     process_supervisor: LiveAgentProcessSupervisor,
@@ -3424,6 +3409,10 @@ def _make_handler(
         route_table,
         service=LegacyLiveAgentEngagementService(output_root),
     )
+    register_legacy_live_agent_join_brief_route(
+        route_table,
+        request_server_url=lambda ctx: ctx.handler._request_server_url(),
+    )
 
     def _late_operation_json_payload(
         ctx: RequestContext,
@@ -3851,23 +3840,6 @@ def _make_handler(
                     details={"meeting_id": str(result.get("meeting_id") or payload.get("meeting_id") or "")},
                 )
                 self._send_json(result)
-                return
-            if parsed.path == "/api/live-agent-join-brief":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                try:
-                    join_brief = live_agent_join_brief_payload(payload, default_server=self._request_server_url())
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                self._send_json(join_brief)
                 return
             if parsed.path == "/api/provider-health":
                 length = int(self.headers.get("Content-Length", "0") or "0")

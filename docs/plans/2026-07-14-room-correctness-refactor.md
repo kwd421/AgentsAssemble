@@ -1160,3 +1160,13 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   the fixed-path inventory for join brief, provider health, Codex invite/join,
   and the seven deletion candidates. Canonical name/avatar history reprojection
   remains unchanged.
+- 2026-07-15: The retained external-resident join brief is now Router-owned.
+  Request-to-builder mapping lives beside the existing side-effect-free packet
+  builder in `live_agent_join_brief.py`; the thin HTTP route owns JSON parsing,
+  request-host defaulting, and the established `400` contract. No registration,
+  provider start, room write, operation audit, or token generation was added.
+  Focused route/default/security tests and the existing real HTTP/CLI parity
+  checks verify that generated packets remain identical and safe. The next
+  retained fixed path is provider-health; Codex invite/join remain a separate
+  meeting-session compatibility family. The seven deletion candidates and
+  canonical name/avatar history reprojection remain unchanged.
