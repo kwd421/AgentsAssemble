@@ -3104,6 +3104,7 @@ def _make_handler(
                 status="failed",
                 target_id=target_id,
                 error="Invalid JSON",
+                details={},
             )
         return payload
 
