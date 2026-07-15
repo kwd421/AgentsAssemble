@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   joinRoomInvite,
   preflightRoomInvite,
@@ -32,6 +32,111 @@ export type OperatorPairingState =
   | "pairing_failed_retryable"
   | "pairing_failed_terminal"
   | "paired";
+
+type AdmissionSource = "initial" | "invite" | "pairing" | "existing_session" | "restored";
+type AdmissionOperation = "preflight" | "join" | "pairing";
+
+export type AdmissionState =
+  | { kind: "idle"; session: null; status: "" }
+  | { kind: "preflighting"; session: RoomGuestSession | null; status: string }
+  | { kind: "profile_required"; session: RoomGuestSession | null; status: "" }
+  | { kind: "joining"; session: RoomGuestSession | null; status: string }
+  | {
+      kind: "joined";
+      session: RoomGuestSession;
+      source: AdmissionSource;
+      status: "";
+    }
+  | { kind: "pairing"; session: RoomGuestSession | null; status: string }
+  | {
+      kind: "failed";
+      session: RoomGuestSession | null;
+      operation: AdmissionOperation;
+      code: string;
+      message: string;
+      retryable: boolean;
+      status: string;
+    }
+  | { kind: "expired"; session: null; status: string };
+
+type AdmissionAction =
+  | { type: "preflight_started"; status: string }
+  | { type: "profile_required" }
+  | { type: "join_requested"; status: string }
+  | { type: "pairing_started"; status: string }
+  | { type: "joined"; session: RoomGuestSession; source: AdmissionSource }
+  | {
+      type: "failed";
+      operation: AdmissionOperation;
+      code: string;
+      message: string;
+      retryable: boolean;
+      status: string;
+    }
+  | { type: "expired"; status: string }
+  | { type: "session_cleared" };
+
+function initialAdmissionState({
+  guestJoinToken,
+  operatorPairingToken,
+  initialSession,
+}: Pick<RoomAdmissionOptions, "guestJoinToken" | "operatorPairingToken" | "initialSession">): AdmissionState {
+  if (operatorPairingToken) {
+    return { kind: "pairing", session: initialSession, status: "" };
+  }
+  if (guestJoinToken) {
+    return { kind: "preflighting", session: initialSession, status: "" };
+  }
+  if (initialSession) {
+    return { kind: "joined", session: initialSession, source: "initial", status: "" };
+  }
+  return { kind: "idle", session: null, status: "" };
+}
+
+function admissionReducer(state: AdmissionState, action: AdmissionAction): AdmissionState {
+  switch (action.type) {
+    case "preflight_started":
+      return { kind: "preflighting", session: state.session, status: action.status };
+    case "profile_required":
+      return { kind: "profile_required", session: state.session, status: "" };
+    case "join_requested":
+      if (
+        state.kind !== "preflighting" &&
+        state.kind !== "profile_required" &&
+        state.kind !== "joining" &&
+        !(state.kind === "failed" && state.operation === "join")
+      ) {
+        return state;
+      }
+      return { kind: "joining", session: state.session, status: action.status };
+    case "pairing_started":
+      if (
+        state.kind !== "pairing" &&
+        !(state.kind === "failed" && state.operation === "pairing" && state.retryable)
+      ) {
+        return state;
+      }
+      return { kind: "pairing", session: state.session, status: action.status };
+    case "joined":
+      return { kind: "joined", session: action.session, source: action.source, status: "" };
+    case "failed":
+      return {
+        kind: "failed",
+        session: state.session,
+        operation: action.operation,
+        code: action.code,
+        message: action.message,
+        retryable: action.retryable,
+        status: action.status,
+      };
+    case "expired":
+      return { kind: "expired", session: null, status: action.status };
+    case "session_cleared":
+      if (state.kind === "idle" || state.kind === "expired") return state;
+      if (state.kind === "joined") return { kind: "idle", session: null, status: "" };
+      return { ...state, session: null };
+  }
+}
 
 const ADMISSION_REQUEST_ID_STORAGE_KEY = "agentsassemble.roomAdmissionRequestId.v1";
 
@@ -68,21 +173,13 @@ export function useRoomAdmission({
   onRoomJoined,
   onResetToLobby,
 }: RoomAdmissionOptions) {
-  const [guestSession, setGuestSession] = useState<RoomGuestSession | null>(initialSession);
-  const [guestExpired, setGuestExpired] = useState(false);
-  const [guestJoinRequested, setGuestJoinRequested] = useState(false);
+  const [admissionState, dispatchAdmission] = useReducer(
+    admissionReducer,
+    { guestJoinToken, operatorPairingToken, initialSession },
+    initialAdmissionState
+  );
   const [pendingGuestDisplayName, setPendingGuestDisplayName] = useState("Guest");
   const [pendingGuestAvatarImage, setPendingGuestAvatarImage] = useState("");
-  const [guestJoinStatus, setGuestJoinStatus] = useState("");
-  const [guestAdmissionResolved, setGuestAdmissionResolved] = useState(
-    !guestJoinToken && !operatorPairingToken
-  );
-  const [guestAdmissionBusy, setGuestAdmissionBusy] = useState(
-    Boolean(guestJoinToken || operatorPairingToken)
-  );
-  const [operatorPairingState, setOperatorPairingState] = useState<OperatorPairingState>(
-    operatorPairingToken ? "pairing" : "idle"
-  );
   const [operatorPairingAttempt, setOperatorPairingAttempt] = useState(0);
   const preflightAttemptedTokenRef = useRef("");
   const pairingAttemptedTokenRef = useRef("");
@@ -90,6 +187,25 @@ export function useRoomAdmission({
   useEffect(() => {
     onPairingTokenConsumedRef.current = onPairingTokenConsumed;
   }, [onPairingTokenConsumed]);
+
+  const guestSession = admissionState.session;
+  const guestExpired = admissionState.kind === "expired";
+  const guestJoinRequested = admissionState.kind === "joining";
+  const guestAdmissionBusy =
+    admissionState.kind === "preflighting" ||
+    admissionState.kind === "joining" ||
+    admissionState.kind === "pairing";
+  const guestJoinStatus = admissionState.status;
+  const operatorPairingState: OperatorPairingState =
+    admissionState.kind === "pairing"
+      ? "pairing"
+      : admissionState.kind === "failed" && admissionState.operation === "pairing"
+      ? admissionState.retryable
+        ? "pairing_failed_retryable"
+        : "pairing_failed_terminal"
+      : admissionState.kind === "joined" && admissionState.source === "pairing"
+      ? "paired"
+      : "idle";
 
   const guestLocked = Boolean(
     guestInvite ||
@@ -153,27 +269,26 @@ export function useRoomAdmission({
 
   const expireGuestSession = useCallback(() => {
     persistRoomGuestSession(null);
-    setGuestSession(null);
-    setGuestExpired(true);
-    setGuestJoinStatus(GUEST_SESSION_EXPIRED_MESSAGE);
+    dispatchAdmission({ type: "expired", status: GUEST_SESSION_EXPIRED_MESSAGE });
     onResetToLobby();
   }, [onResetToLobby]);
 
   const clearGuestSession = useCallback(() => {
     persistRoomGuestSession(null);
-    setGuestSession(null);
+    dispatchAdmission({ type: "session_cleared" });
   }, []);
 
   const requestGuestJoin = useCallback(() => {
-    if (!guestAdmissionResolved) return;
-    setGuestJoinStatus("");
-    setGuestJoinRequested(true);
-  }, [guestAdmissionResolved]);
+    dispatchAdmission({ type: "join_requested", status: "" });
+  }, []);
 
   const retryOperatorPairing = useCallback(() => {
     if (operatorPairingState !== "pairing_failed_retryable") return;
     pairingAttemptedTokenRef.current = "";
-    setOperatorPairingState("pairing");
+    dispatchAdmission({
+      type: "pairing_started",
+      status: "공개 주소의 운영자 신원을 연결하는 중...",
+    });
     setOperatorPairingAttempt((attempt) => attempt + 1);
   }, [operatorPairingState]);
 
@@ -186,7 +301,12 @@ export function useRoomAdmission({
   }, []);
 
   const applyJoinedSession = useCallback(
-    (inviteToken: string, payload: RoomInviteJoinResponse, avatarImage: string) => {
+    (
+      inviteToken: string,
+      payload: RoomInviteJoinResponse,
+      avatarImage: string,
+      source: AdmissionSource
+    ) => {
       const nextSession = roomGuestSessionFromJoinPayload(inviteToken, {
         ...payload,
         avatar_image_url: payload.avatar_image_url || avatarImage,
@@ -196,26 +316,22 @@ export function useRoomAdmission({
         displayName: nextSession.displayName || pendingGuestDisplayName,
         avatarImage: nextSession.avatarImage || avatarImage || undefined,
       });
-      setGuestSession(nextSession);
-      setGuestExpired(false);
-      setGuestJoinRequested(false);
-      setGuestAdmissionBusy(false);
-      setGuestAdmissionResolved(true);
+      dispatchAdmission({ type: "joined", session: nextSession, source });
       onRoomJoined(roomFromGuestSession(nextSession));
-      setGuestJoinStatus("");
       clearInviteUrl();
     },
     [clearInviteUrl, onRoomJoined, pendingGuestDisplayName]
   );
 
   useEffect(() => {
-    if (!operatorPairingToken || guestExpired || operatorPairingState !== "pairing") return;
+    if (!operatorPairingToken || admissionState.kind !== "pairing") return;
     if (pairingAttemptedTokenRef.current === operatorPairingToken) return;
     pairingAttemptedTokenRef.current = operatorPairingToken;
     let cancelled = false;
-    setGuestAdmissionBusy(true);
-    setGuestAdmissionResolved(false);
-    setGuestJoinStatus("공개 주소의 운영자 신원을 연결하는 중...");
+    dispatchAdmission({
+      type: "pairing_started",
+      status: "공개 주소의 운영자 신원을 연결하는 중...",
+    });
     redeemOperatorPairing({
       pairingToken: operatorPairingToken,
       deviceToken: getOrCreateDeviceToken(),
@@ -223,44 +339,49 @@ export function useRoomAdmission({
       .then((payload) => {
         if (cancelled) return;
         onPairingTokenConsumedRef.current();
-        setOperatorPairingState("paired");
-        applyJoinedSession("", payload, payload.avatar_image_url || "");
+        applyJoinedSession("", payload, payload.avatar_image_url || "", "pairing");
       })
       .catch((error) => {
         if (cancelled) return;
         const retryable = pairingFailureIsRetryable(error);
         if (!retryable) onPairingTokenConsumedRef.current();
-        setOperatorPairingState(
-          retryable ? "pairing_failed_retryable" : "pairing_failed_terminal"
-        );
-        setGuestAdmissionResolved(false);
-        setGuestAdmissionBusy(false);
         const message = error instanceof Error ? error.message : "운영자 기기 연결 실패";
-        setGuestJoinStatus(
-          retryable
+        dispatchAdmission({
+          type: "failed",
+          operation: "pairing",
+          code: error instanceof ApiError ? error.message : "pairing_failed",
+          message,
+          retryable,
+          status: retryable
             ? `${message} 다시 시도할 수 있습니다.`
-            : `${message} 이 연결 링크는 사용할 수 없습니다. 호스트에게 새 링크를 요청하세요.`
-        );
+            : `${message} 이 연결 링크는 사용할 수 없습니다. 호스트에게 새 링크를 요청하세요.`,
+        });
       });
     return () => {
       cancelled = true;
     };
   }, [
+    admissionState.kind,
     applyJoinedSession,
-    guestExpired,
     operatorPairingAttempt,
-    operatorPairingState,
     operatorPairingToken,
   ]);
 
   useEffect(() => {
-    if (!guestJoinToken || operatorPairingToken || guestExpired) return;
+    if (
+      !guestJoinToken ||
+      operatorPairingToken ||
+      admissionState.kind !== "preflighting"
+    ) {
+      return;
+    }
     if (preflightAttemptedTokenRef.current === guestJoinToken) return;
     preflightAttemptedTokenRef.current = guestJoinToken;
     let cancelled = false;
-    setGuestAdmissionBusy(true);
-    setGuestAdmissionResolved(false);
-    setGuestJoinStatus("초대와 기존 신원을 확인하는 중...");
+    dispatchAdmission({
+      type: "preflight_started",
+      status: "초대와 기존 신원을 확인하는 중...",
+    });
     preflightRoomInvite({
       inviteToken: guestJoinToken,
       deviceToken: getOrCreateDeviceToken(),
@@ -274,10 +395,11 @@ export function useRoomAdmission({
             roomLabel: decision.room_label || guestSession.roomLabel,
             inviteScope: decision.invite_scope || guestSession.inviteScope,
           };
-          setGuestSession(preservedSession);
-          setGuestAdmissionResolved(true);
-          setGuestAdmissionBusy(false);
-          setGuestJoinStatus("");
+          dispatchAdmission({
+            type: "joined",
+            session: preservedSession,
+            source: "existing_session",
+          });
           onRoomJoined(roomFromGuestSession(preservedSession));
           clearAdmissionRequestId();
           clearInviteUrl();
@@ -290,10 +412,7 @@ export function useRoomAdmission({
         ) {
           setPendingGuestDisplayName(decision.participant.display_name || "Guest");
           setPendingGuestAvatarImage(decision.participant.avatar_image_url || "");
-          setGuestAdmissionResolved(true);
-          setGuestAdmissionBusy(false);
-          setGuestJoinStatus("");
-          setGuestJoinRequested(true);
+          dispatchAdmission({ type: "join_requested", status: "" });
           return;
         }
         if (decision.status === "profile_required") {
@@ -302,45 +421,68 @@ export function useRoomAdmission({
             setPendingGuestDisplayName(remembered.displayName);
             setPendingGuestAvatarImage(remembered.avatarImage || "");
           }
-          setGuestAdmissionResolved(true);
-          setGuestAdmissionBusy(false);
-          setGuestJoinStatus("");
+          dispatchAdmission({ type: "profile_required" });
           return;
         }
-        setGuestAdmissionResolved(false);
-        setGuestAdmissionBusy(false);
-        setGuestJoinStatus(
+        const message =
           decision.status === "invite_expired"
             ? "초대 링크가 만료되었습니다."
-            : decision.reason || "유효하지 않은 초대 링크입니다."
-        );
+            : decision.reason || "유효하지 않은 초대 링크입니다.";
+        dispatchAdmission({
+          type: "failed",
+          operation: "preflight",
+          code: decision.status,
+          message,
+          retryable: false,
+          status: message,
+        });
       })
       .catch((error) => {
         if (cancelled) return;
-        setGuestAdmissionResolved(false);
-        setGuestAdmissionBusy(false);
-        setGuestJoinStatus(error instanceof Error ? error.message : "초대 확인 실패");
+        const message = error instanceof Error ? error.message : "초대 확인 실패";
+        dispatchAdmission({
+          type: "failed",
+          operation: "preflight",
+          code: error instanceof ApiError ? error.message : "preflight_failed",
+          message,
+          retryable: pairingFailureIsRetryable(error),
+          status: message,
+        });
       });
     return () => {
       cancelled = true;
     };
-  }, [clearInviteUrl, guestExpired, guestJoinToken, guestSession, onRoomJoined, operatorPairingToken]);
+  }, [
+    admissionState.kind,
+    clearInviteUrl,
+    guestJoinToken,
+    guestSession,
+    onRoomJoined,
+    operatorPairingToken,
+  ]);
 
   useEffect(() => {
     if (!guestJoinToken || guestAlreadyJoinedThisInvite) return;
-    if (!guestAdmissionResolved || !guestJoinRequested) return;
+    if (admissionState.kind !== "joining") return;
     let cancelled = false;
-    setGuestAdmissionBusy(true);
-    setGuestJoinStatus("초대 링크로 방에 입장 중...");
+    dispatchAdmission({
+      type: "join_requested",
+      status: "초대 링크로 방에 입장 중...",
+    });
     let requestId = "";
     try {
       requestId = loadOrCreateAdmissionRequestId();
     } catch (error) {
-      setGuestAdmissionBusy(false);
-      setGuestJoinRequested(false);
-      setGuestJoinStatus(
-        error instanceof Error ? error.message : "안전한 입장 요청을 만들 수 없습니다."
-      );
+      const message =
+        error instanceof Error ? error.message : "안전한 입장 요청을 만들 수 없습니다.";
+      dispatchAdmission({
+        type: "failed",
+        operation: "join",
+        code: "request_id_unavailable",
+        message,
+        retryable: true,
+        status: message,
+      });
       return;
     }
     joinRoomInvite({
@@ -354,35 +496,41 @@ export function useRoomAdmission({
       .then((payload) => {
         if (!cancelled) {
           clearAdmissionRequestId();
-          applyJoinedSession(guestJoinToken, payload, pendingGuestAvatarImage);
+          applyJoinedSession(guestJoinToken, payload, pendingGuestAvatarImage, "invite");
         }
       })
       .catch((error) => {
         if (cancelled) return;
         const restoredSession = loadRoomGuestSession();
         if (restoredSession?.inviteToken === guestJoinToken) {
-          setGuestSession(restoredSession);
-          setGuestExpired(false);
-          setGuestAdmissionBusy(false);
+          dispatchAdmission({
+            type: "joined",
+            session: restoredSession,
+            source: "restored",
+          });
           onRoomJoined(roomFromGuestSession(restoredSession));
-          setGuestJoinStatus("");
           clearAdmissionRequestId();
           clearInviteUrl();
           return;
         }
-        setGuestJoinStatus(error instanceof Error ? error.message : "초대 링크 입장 실패");
-        setGuestAdmissionBusy(false);
-        setGuestJoinRequested(false);
+        const message = error instanceof Error ? error.message : "초대 링크 입장 실패";
+        dispatchAdmission({
+          type: "failed",
+          operation: "join",
+          code: error instanceof ApiError ? error.message : "join_failed",
+          message,
+          retryable: true,
+          status: message,
+        });
       });
     return () => {
       cancelled = true;
     };
   }, [
+    admissionState.kind,
     applyJoinedSession,
     clearInviteUrl,
-    guestAdmissionResolved,
     guestAlreadyJoinedThisInvite,
-    guestJoinRequested,
     guestJoinToken,
     onRoomJoined,
     pendingGuestAvatarImage,
@@ -390,6 +538,7 @@ export function useRoomAdmission({
   ]);
 
   return {
+    admissionState,
     guestSession,
     guestExpired,
     guestJoinRequested,

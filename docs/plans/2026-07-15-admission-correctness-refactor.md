@@ -333,3 +333,14 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   be added behind them during the retention period. This is documentation of
   the existing fail-visible contract, not a behavior or conversation-policy
   change.
+- 2026-07-15: Milestone 4.1 replaced the invite admission hook's independent
+  resolved, busy, requested, expired, session, and pairing flags with one
+  discriminated reducer state: `idle`, `preflighting`, `profile_required`,
+  `joining`, `joined`, `pairing`, `failed`, or `expired`. Existing component
+  selectors remain derived compatibility projections, while failures now carry
+  their operation and retryability in the authoritative state. Automatic known
+  user admission, remembered-profile prefill, existing-session preservation,
+  pairing retry, stable join request IDs, and lost-response session recovery
+  retain their prior behavior and copy. The focused 10 admission tests, all 116
+  frontend tests, and the production TypeScript/Vite build passed. No room
+  conversation, sequence, autonomous-attention, or media behavior changed.

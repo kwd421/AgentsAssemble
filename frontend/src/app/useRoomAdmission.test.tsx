@@ -111,6 +111,10 @@ describe("useRoomAdmission", () => {
     );
 
     await waitFor(() => expect(result.current.guestSession?.sessionToken).toBe("session-2"));
+    expect(result.current.admissionState).toMatchObject({
+      kind: "joined",
+      source: "invite",
+    });
     expect(apiMocks.joinRoomInvite).toHaveBeenCalledWith({
       inviteToken: "invite-1",
       displayName: "Known Guest",
@@ -150,6 +154,11 @@ describe("useRoomAdmission", () => {
     );
 
     await waitFor(() => expect(result.current.guestAdmissionBusy).toBe(false));
+    expect(result.current.admissionState).toEqual({
+      kind: "profile_required",
+      session: null,
+      status: "",
+    });
     expect(result.current.pendingGuestDisplayName).toBe("Remembered Guest");
     expect(result.current.pendingGuestAvatarImage).toBe("data:image/png;base64,remembered");
     expect(apiMocks.joinRoomInvite).not.toHaveBeenCalled();
@@ -263,6 +272,11 @@ describe("useRoomAdmission", () => {
     await waitFor(() =>
       expect(result.current.operatorPairingState).toBe("pairing_failed_retryable")
     );
+    expect(result.current.admissionState).toMatchObject({
+      kind: "failed",
+      operation: "pairing",
+      retryable: true,
+    });
     expect(result.current.guestJoinStatus).toContain("다시 시도");
     expect(onPairingTokenConsumed).not.toHaveBeenCalled();
 
@@ -356,6 +370,11 @@ describe("useRoomAdmission", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 20));
     expect(apiMocks.joinRoomInvite).toHaveBeenCalledOnce();
     expect(result.current.guestJoinRequested).toBe(false);
+    expect(result.current.admissionState).toMatchObject({
+      kind: "failed",
+      operation: "join",
+      retryable: true,
+    });
   });
 
   it("reuses the secure request id when a failed join is retried", async () => {
