@@ -62,8 +62,19 @@ class HostAccountTests(unittest.TestCase):
         room_users.grant_operator_to_device(DEVICE_TOKEN, display_name="SeiNel")
         result = self._join(device_token=DEVICE_TOKEN)
         self.assertEqual(result["status"], "admitted")
+        self.assertEqual(result["agent_id"], "operator-local")
         self.assertTrue(result["operator"])
         self.assertTrue(result["stable_identity"])
+
+    def test_two_claimed_devices_join_as_the_same_operator_participant(self):
+        second_device = "tablet-device-token-5678"
+        first_user = room_users.grant_operator_to_device(DEVICE_TOKEN, display_name="SeiNel")
+        second_user = room_users.grant_operator_to_device(second_device)
+
+        self.assertEqual(first_user["user_id"], second_user["user_id"])
+        self.assertEqual(first_user["participant_id"], "operator-local")
+        self.assertEqual(self._join(device_token=DEVICE_TOKEN)["agent_id"], "operator-local")
+        self.assertEqual(self._join(device_token=second_device)["agent_id"], "operator-local")
 
     def test_unclaimed_device_join_is_not_operator(self):
         result = self._join(device_token="someone-elses-device-1")

@@ -26,6 +26,7 @@ from pathlib import Path
 from agentsassemble.identity_store import (
     IDENTITY_DB_FILENAME,
     IdentityStore,
+    LOCAL_OPERATOR_PARTICIPANT_ID,
     identity_store_at,
     migrate_legacy_users_json,
 )
@@ -192,17 +193,17 @@ def touch_room(room_id: str) -> None:
 
 
 def grant_operator_to_device(device_token: str, *, display_name: str = "") -> dict[str, object] | None:
-    """Mark the device-token user as the server operator (host across entrances)."""
+    """Attach a host-authorized device to the one local operator identity."""
     auth_key = device_auth_key(device_token)
     if not auth_key:
         return None
     with _state_lock:
         store = _active_store()
-        user = store.resolve_credential_user(auth_key, provider="device", display_name=display_name)
-        if not user:
-            return None
-        store.set_user_operator(str(user["user_id"]), True)
-        return store.get_user(str(user["user_id"]))
+        return store.claim_local_operator_credential(
+            auth_key,
+            provider="device",
+            display_name=display_name,
+        )
 
 
 def reset_state() -> None:

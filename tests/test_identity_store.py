@@ -9,6 +9,8 @@ from pathlib import Path
 from agentsassemble.identity_store import (
     IdentityBackend,
     IdentityStore,
+    LOCAL_OPERATOR_PARTICIPANT_ID,
+    LOCAL_OPERATOR_USER_ID,
     SqliteIdentityStore,
     identity_store_for_output_root,
     make_identity_backend,
@@ -53,6 +55,43 @@ class UserCredentialTests(IdentityStoreTestCase):
     def test_missing_credential_returns_none(self):
         self.assertIsNone(self.store.user_for_credential("device:nope"))
         self.assertIsNone(self.store.resolve_credential_user(""))
+
+    def test_host_claims_attach_multiple_credentials_to_one_canonical_operator(self):
+        first = self.store.claim_local_operator_credential(
+            "device:host-alpha",
+            display_name="SeiNel",
+        )
+        second = self.store.claim_local_operator_credential("device:host-bravo")
+
+        self.assertEqual(first["user_id"], LOCAL_OPERATOR_USER_ID)
+        self.assertEqual(first["participant_id"], LOCAL_OPERATOR_PARTICIPANT_ID)
+        self.assertEqual(second["user_id"], LOCAL_OPERATOR_USER_ID)
+        self.assertEqual(self.store.user_for_credential("device:host-alpha")["user_id"], LOCAL_OPERATOR_USER_ID)
+        self.assertEqual(self.store.user_for_credential("device:host-bravo")["user_id"], LOCAL_OPERATOR_USER_ID)
+        self.assertEqual(self.store.count_users(), 1)
+
+    def test_host_claim_rebinds_presented_legacy_operator_without_deleting_user(self):
+        legacy = self.store.resolve_credential_user(
+            "device:legacy-host",
+            display_name="Legacy Host",
+        )
+        self.store.set_user_operator(legacy["user_id"], True)
+        self.store.upsert_room(room_id="legacy-room", owner_id=legacy["user_id"])
+
+        claimed = self.store.claim_local_operator_credential("device:legacy-host")
+
+        self.assertEqual(claimed["user_id"], LOCAL_OPERATOR_USER_ID)
+        self.assertEqual(self.store.user_for_credential("device:legacy-host")["user_id"], LOCAL_OPERATOR_USER_ID)
+        self.assertFalse(self.store.get_user(legacy["user_id"])["is_operator"])
+        self.assertEqual(self.store.get_room("legacy-room")["owner_id"], LOCAL_OPERATOR_USER_ID)
+        self.assertEqual(self.store.count_users(), 2)
+
+    def test_resolving_a_guest_credential_never_creates_or_promotes_operator(self):
+        guest = self.store.resolve_credential_user("device:ordinary-guest")
+
+        self.assertFalse(guest["is_operator"])
+        self.assertNotEqual(guest["participant_id"], LOCAL_OPERATOR_PARTICIPANT_ID)
+        self.assertEqual(self.store.operator_user_id(), "")
 
 
 class MembershipTests(IdentityStoreTestCase):

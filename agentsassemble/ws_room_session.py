@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
+from agentsassemble.identity_store import LOCAL_OPERATOR_PARTICIPANT_ID
 from agentsassemble.room_websocket import (
     CLOSE_NORMAL,
     CLOSE_POLICY_VIOLATION,
@@ -62,7 +63,7 @@ WS_SAY_METADATA_FIELDS = {
 }
 WS_SESSION_TOKEN_KEY = "_ws_session_token"
 WS_SESSION_REVOKED_CATEGORY = "session_revoked"
-HOST_BROWSER_PARTICIPANT_ID = "operator-local"
+HOST_BROWSER_PARTICIPANT_ID = LOCAL_OPERATOR_PARTICIPANT_ID
 HOST_BROWSER_DISPLAY_DEFAULT = "호스트"
 
 

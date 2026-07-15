@@ -40,6 +40,8 @@ from agentsassemble.room_user_preferences import (
 )
 
 IDENTITY_DB_FILENAME = "identity.db"
+LOCAL_OPERATOR_USER_ID = "operator-local-user"
+LOCAL_OPERATOR_PARTICIPANT_ID = "operator-local"
 
 
 @runtime_checkable
@@ -74,6 +76,13 @@ class IdentityBackend(Protocol):
         participant_type: str = "",
     ) -> dict[str, object] | None: ...
     def set_user_operator(self, user_id: str, is_operator: bool) -> bool: ...
+    def claim_local_operator_credential(
+        self,
+        auth_key: str,
+        *,
+        provider: str = "device",
+        display_name: str = "",
+    ) -> dict[str, object] | None: ...
     def participant_is_operator(self, participant_id: str) -> bool: ...
     def operator_user_id(self) -> str: ...
     def list_memberships(self, meeting_id: str = "") -> list[dict[str, object]]: ...
@@ -400,6 +409,120 @@ class IdentityStore:
             )
         return cursor.rowcount > 0
 
+    def claim_local_operator_credential(
+        self,
+        auth_key: str,
+        *,
+        provider: str = "device",
+        display_name: str = "",
+    ) -> dict[str, object] | None:
+        """Attach one host-authorized credential to the local operator.
+
+        The host token is verified by the HTTP boundary before this method is
+        called. Rebinding is therefore explicit; ordinary invite admission
+        must continue to use ``resolve_credential_user`` and can never reach
+        this path.
+
+        Historical operator rows are preserved for audit/profile recovery, but
+        they lose operator authority. Rooms owned by those legacy user IDs are
+        reassigned to the canonical local operator in the same transaction.
+        """
+        clean_key = clean_lobby_text(auth_key, limit=128)
+        if not clean_key:
+            return None
+        clean_provider = clean_lobby_text(provider, limit=32) or "device"
+        clean_display_name = clean_lobby_text(display_name, limit=64)
+        now = _now()
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            conflicting_user = connection.execute(
+                "SELECT participant_id FROM users WHERE user_id = ?",
+                (LOCAL_OPERATOR_USER_ID,),
+            ).fetchone()
+            if conflicting_user and conflicting_user["participant_id"] != LOCAL_OPERATOR_PARTICIPANT_ID:
+                raise RuntimeError("The canonical operator user id is already assigned to another participant.")
+            conflicting_participant = connection.execute(
+                "SELECT user_id FROM users WHERE participant_id = ?",
+                (LOCAL_OPERATOR_PARTICIPANT_ID,),
+            ).fetchone()
+            if conflicting_participant and conflicting_participant["user_id"] != LOCAL_OPERATOR_USER_ID:
+                raise RuntimeError("The canonical operator participant id is already assigned to another user.")
+
+            credential = connection.execute(
+                "SELECT c.user_id, u.display_name FROM credentials c"
+                " JOIN users u ON u.user_id = c.user_id WHERE c.auth_key = ?",
+                (clean_key,),
+            ).fetchone()
+            legacy_operator_ids = [
+                str(row["user_id"])
+                for row in connection.execute(
+                    "SELECT user_id FROM users WHERE is_operator = 1 AND user_id != ?",
+                    (LOCAL_OPERATOR_USER_ID,),
+                ).fetchall()
+            ]
+            inherited_display_name = clean_display_name or (
+                str(credential["display_name"] or "") if credential else ""
+            )
+            canonical = connection.execute(
+                "SELECT * FROM users WHERE user_id = ?",
+                (LOCAL_OPERATOR_USER_ID,),
+            ).fetchone()
+            if canonical is None:
+                connection.execute(
+                    "INSERT INTO users (user_id, participant_id, display_name, avatar_image_url,"
+                    " participant_type, auth_provider, is_operator, created_at, last_seen_at)"
+                    " VALUES (?, ?, ?, '', 'human', ?, 1, ?, ?)",
+                    (
+                        LOCAL_OPERATOR_USER_ID,
+                        LOCAL_OPERATOR_PARTICIPANT_ID,
+                        inherited_display_name,
+                        clean_provider,
+                        now,
+                        now,
+                    ),
+                )
+            else:
+                updates: dict[str, object] = {
+                    "is_operator": 1,
+                    "last_seen_at": now,
+                }
+                if inherited_display_name:
+                    updates["display_name"] = inherited_display_name
+                assignments = ", ".join(f"{column} = ?" for column in updates)
+                connection.execute(
+                    f"UPDATE users SET {assignments} WHERE user_id = ?",
+                    (*updates.values(), LOCAL_OPERATOR_USER_ID),
+                )
+
+            connection.execute(
+                "UPDATE users SET is_operator = 0"
+                " WHERE user_id != ? AND is_operator = 1",
+                (LOCAL_OPERATOR_USER_ID,),
+            )
+            if legacy_operator_ids:
+                placeholders = ", ".join("?" for _ in legacy_operator_ids)
+                connection.execute(
+                    f"UPDATE rooms SET owner_id = ? WHERE owner_id IN ({placeholders})",
+                    (LOCAL_OPERATOR_USER_ID, *legacy_operator_ids),
+                )
+
+            if credential is None:
+                connection.execute(
+                    "INSERT INTO credentials (auth_key, user_id, provider, created_at, last_used_at)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (clean_key, LOCAL_OPERATOR_USER_ID, clean_provider, now, now),
+                )
+            else:
+                connection.execute(
+                    "UPDATE credentials SET user_id = ?, provider = ?, last_used_at = ?"
+                    " WHERE auth_key = ?",
+                    (LOCAL_OPERATOR_USER_ID, clean_provider, now, clean_key),
+                )
+            refreshed = connection.execute(
+                "SELECT * FROM users WHERE user_id = ?",
+                (LOCAL_OPERATOR_USER_ID,),
+            ).fetchone()
+        return self._user_dict(refreshed) if refreshed else None
+
     def participant_is_operator(self, participant_id: str) -> bool:
         user = self.user_for_participant(participant_id)
         return bool(user and user.get("is_operator"))
@@ -407,8 +530,14 @@ class IdentityStore:
     def operator_user_id(self) -> str:
         with closing(self._connect()) as connection:
             row = connection.execute(
-                "SELECT user_id FROM users WHERE is_operator = 1 ORDER BY last_seen_at DESC, created_at DESC LIMIT 1"
+                "SELECT user_id FROM users WHERE participant_id = ? AND is_operator = 1",
+                (LOCAL_OPERATOR_PARTICIPANT_ID,),
             ).fetchone()
+            if row is None:
+                row = connection.execute(
+                    "SELECT user_id FROM users WHERE is_operator = 1"
+                    " ORDER BY last_seen_at DESC, created_at DESC LIMIT 1"
+                ).fetchone()
         return str(row["user_id"]) if row else ""
 
     # -- memberships ----------------------------------------------------------
