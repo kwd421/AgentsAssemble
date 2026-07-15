@@ -4,7 +4,10 @@ import hashlib
 import importlib.util
 import os
 import tempfile
+import threading
 import unittest
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs, quote, urlsplit
@@ -21,7 +24,10 @@ if _POSTGRES_AVAILABLE:
     import psycopg
     from psycopg import sql
 
-    from agentsassemble.identity_store import LOCAL_OPERATOR_PARTICIPANT_ID
+    from agentsassemble.identity_store import (
+        LOCAL_OPERATOR_PARTICIPANT_ID,
+        LOCAL_OPERATOR_USER_ID,
+    )
     from agentsassemble.operator_pairing import OperatorPairingService
     from agentsassemble.postgres_application_database import PostgresApplicationDatabase
     from agentsassemble.postgres_identity_repository import PostgresIdentityRepository
@@ -35,6 +41,44 @@ if _POSTGRES_AVAILABLE:
     from agentsassemble.room_invite_application import InviteApplicationService
     from agentsassemble.room_session_service import RoomSessionService
     from agentsassemble.room_users import device_auth_key
+
+
+    class _PostgresAppContext:
+        """One independently pooled application stack sharing the test schema."""
+
+        def __init__(self, dsn: str, *, output_root: Path) -> None:
+            self.database = PostgresApplicationDatabase(dsn)
+            self.rooms = PostgresRoomRepository(
+                database=self.database,
+                output_root=output_root,
+            )
+            self.identities = PostgresIdentityRepository(database=self.database)
+            self.invite_repository = PostgresInviteSessionRepository(
+                database=self.database
+            )
+            self.invites = InviteApplicationService(
+                self.invite_repository,
+                public_url=lambda: "https://room.example",
+            )
+            self.sessions = RoomSessionService(
+                self.invite_repository,
+                token_prefix="aas1",
+                ttl_seconds=3600,
+                token_key=self.invites.signing_secret,
+            )
+            self.admission = RoomAdmissionCoordinator(
+                invites=self.invites,
+                sessions=self.sessions,
+                identities=self.identities,
+                rooms=self.rooms,
+                transaction_boundary=self.database,
+            )
+
+        def close(self) -> None:
+            self.invite_repository.close()
+            self.identities.close()
+            self.rooms.close()
+            self.database.close()
 
 
 @unittest.skipUnless(
@@ -91,29 +135,19 @@ class PostgresCrossAuthorityTransactionTests(unittest.TestCase):
                        room_invite_authority
                    RESTART IDENTITY CASCADE"""
             )
-        self.database = PostgresApplicationDatabase(self.test_dsn)
-        self.rooms = PostgresRoomRepository(
-            database=self.database,
-            output_root=Path(self._temporary_directory.name),
+        self.context = _PostgresAppContext(
+            self.test_dsn,
+            output_root=Path(self._temporary_directory.name) / "primary",
         )
-        self.identities = PostgresIdentityRepository(database=self.database)
-        self.invite_repository = PostgresInviteSessionRepository(database=self.database)
-        self.invites = InviteApplicationService(
-            self.invite_repository,
-            public_url=lambda: "https://room.example",
-        )
-        self.sessions = RoomSessionService(
-            self.invite_repository,
-            token_prefix="aas1",
-            ttl_seconds=3600,
-            token_key=self.invites.signing_secret,
-        )
+        self.database = self.context.database
+        self.rooms = self.context.rooms
+        self.identities = self.context.identities
+        self.invite_repository = self.context.invite_repository
+        self.invites = self.context.invites
+        self.sessions = self.context.sessions
 
     def tearDown(self) -> None:
-        self.invite_repository.close()
-        self.identities.close()
-        self.rooms.close()
-        self.database.close()
+        self.context.close()
 
     def test_admission_failure_rolls_back_every_authority_before_retry(self) -> None:
         self.rooms.create_room("room-a", label="Room A")
@@ -230,6 +264,196 @@ class PostgresCrossAuthorityTransactionTests(unittest.TestCase):
         self.assertEqual(resumed["status"], "admitted")
         self.assertEqual(len(self.invite_repository.list_sessions()), 1)
         self.assertEqual(len(self.identities.list_memberships("room-a")), 1)
+
+    def test_independent_apps_compete_for_one_use_invite_exactly_once(self) -> None:
+        secondary = self._new_context("one-use-secondary")
+        self.rooms.create_room("room-a", label="Room A")
+        invite = self.invites.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            display_name="Guest",
+            max_uses=1,
+        )
+
+        results = self._run_concurrently(
+            lambda: self.context.admission.admit(
+                invite_token=str(invite["join_code"]),
+                request_id="one-use-primary",
+                device_token="one-use-device-a",
+            ),
+            lambda: secondary.admission.admit(
+                invite_token=str(invite["join_code"]),
+                request_id="one-use-secondary",
+                device_token="one-use-device-b",
+            ),
+        )
+
+        self.assertEqual(sum(row.get("status") == "admitted" for row in results), 1)
+        self.assertEqual(
+            [row.get("reason") for row in results if row.get("status") != "admitted"],
+            ["token_already_used"],
+        )
+        self.assertEqual(len(self.rooms.participants("room-a")), 1)
+        self.assertEqual(len(self.identities.list_memberships("room-a")), 1)
+        self.assertEqual(len(self.invite_repository.list_sessions()), 1)
+        with self.database.connection() as connection:
+            used_nonces = connection.execute(
+                "SELECT COUNT(*) AS count FROM room_invite_used_nonces"
+            ).fetchone()["count"]
+        self.assertEqual(used_nonces, 1)
+
+    def test_independent_apps_enforce_reusable_invite_cap_under_race(self) -> None:
+        secondary = self._new_context("capped-secondary")
+        self.rooms.create_room("room-a", label="Room A")
+        invite = self.invites.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            display_name="Guest",
+            max_uses=2,
+        )
+        calls = []
+        for index in range(4):
+            app = self.context if index % 2 == 0 else secondary
+            calls.append(
+                lambda index=index, app=app: app.admission.admit(
+                    invite_token=str(invite["join_code"]),
+                    request_id=f"capped-request-{index}",
+                    device_token=f"capped-device-{index}",
+                )
+            )
+
+        results = self._run_concurrently(*calls)
+
+        self.assertEqual(sum(row.get("status") == "admitted" for row in results), 2)
+        self.assertEqual(
+            sum(row.get("reason") == "invite_use_limit_reached" for row in results),
+            2,
+        )
+        self.assertEqual(
+            self.invite_repository.invite(str(invite["invite_id"]))["use_count"],
+            2,
+        )
+        self.assertEqual(len(self.rooms.participants("room-a")), 2)
+        self.assertEqual(len(self.identities.list_memberships("room-a")), 2)
+        self.assertEqual(len(self.invite_repository.list_sessions()), 2)
+
+    def test_independent_apps_converge_same_device_on_one_identity_and_session(self) -> None:
+        secondary = self._new_context("identity-secondary")
+        self.rooms.create_room("room-a", label="Room A")
+        invite = self.invites.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            display_name="Shared Device",
+            max_uses=2,
+        )
+
+        results = self._run_concurrently(
+            lambda: self.context.admission.admit(
+                invite_token=str(invite["join_code"]),
+                request_id="same-device-primary",
+                display_name="Shared Device",
+                device_token="same-device-token",
+            ),
+            lambda: secondary.admission.admit(
+                invite_token=str(invite["join_code"]),
+                request_id="same-device-secondary",
+                display_name="Shared Device",
+                device_token="same-device-token",
+            ),
+        )
+
+        self.assertTrue(all(row.get("status") == "admitted" for row in results))
+        self.assertEqual({row["agent_id"] for row in results}, {results[0]["agent_id"]})
+        self.assertEqual(self.identities.count_users(), 1)
+        self.assertEqual(len(self.rooms.participants("room-a")), 1)
+        self.assertEqual(len(self.identities.list_memberships("room-a")), 1)
+        self.assertEqual(len(self.invite_repository.list_sessions()), 1)
+        self.assertEqual(
+            self.invite_repository.invite(str(invite["invite_id"]))["use_count"],
+            2,
+        )
+
+    def test_independent_apps_redeem_pairing_for_only_one_device(self) -> None:
+        secondary = self._new_context("pairing-secondary")
+        self.rooms.create_room("room-a", label="Room A")
+        self.identities.claim_local_operator_credential(
+            device_auth_key("local-operator-device"),
+            display_name="SeiNel",
+        )
+        primary_pairing = OperatorPairingService(
+            identities=self.identities,
+            rooms=self.rooms,
+            sessions=self.sessions,
+            transaction_boundary=self.database,
+            token_factory=lambda: "multi-app-pairing-secret",
+        )
+        secondary_pairing = OperatorPairingService(
+            identities=secondary.identities,
+            rooms=secondary.rooms,
+            sessions=secondary.sessions,
+            transaction_boundary=secondary.database,
+        )
+        created = primary_pairing.create(
+            room_id="room-a",
+            public_url="https://public.example",
+        )
+        token = parse_qs(urlsplit(str(created["pairing_url"])).query)["token"][0]
+
+        results = self._run_concurrently(
+            lambda: primary_pairing.redeem(
+                pairing_token=token,
+                device_token="pairing-device-a",
+                request_origin="https://public.example",
+            ),
+            lambda: secondary_pairing.redeem(
+                pairing_token=token,
+                device_token="pairing-device-b",
+                request_origin="https://public.example",
+            ),
+        )
+
+        self.assertEqual(sum(row.get("status") == "admitted" for row in results), 1)
+        self.assertEqual(
+            [row.get("reason") for row in results if row.get("status") != "admitted"],
+            ["pairing_already_used"],
+        )
+        admitted_index = next(
+            index for index, row in enumerate(results) if row.get("status") == "admitted"
+        )
+        winner = f"pairing-device-{'a' if admitted_index == 0 else 'b'}"
+        loser = f"pairing-device-{'b' if admitted_index == 0 else 'a'}"
+        self.assertEqual(
+            self.identities.user_for_credential(device_auth_key(winner))["user_id"],
+            LOCAL_OPERATOR_USER_ID,
+        )
+        self.assertIsNone(
+            self.identities.user_for_credential(device_auth_key(loser))
+        )
+        self.assertEqual(len(self.rooms.participants("room-a")), 1)
+        self.assertEqual(len(self.identities.list_memberships("room-a")), 1)
+        self.assertEqual(len(self.invite_repository.list_sessions()), 1)
+
+    def _new_context(self, name: str) -> _PostgresAppContext:
+        context = _PostgresAppContext(
+            self.test_dsn,
+            output_root=Path(self._temporary_directory.name) / name,
+        )
+        self.addCleanup(context.close)
+        return context
+
+    @staticmethod
+    def _run_concurrently(
+        *calls: Callable[[], dict[str, object]],
+    ) -> list[dict[str, object]]:
+        barrier = threading.Barrier(len(calls))
+
+        def invoke(call: Callable[[], dict[str, object]]) -> dict[str, object]:
+            barrier.wait(timeout=10)
+            return call()
+
+        with ThreadPoolExecutor(max_workers=len(calls)) as executor:
+            futures = [executor.submit(invoke, call) for call in calls]
+            return [future.result(timeout=20) for future in futures]
 
 
 def _dsn_with_search_path(dsn: str, schema_name: str) -> str:

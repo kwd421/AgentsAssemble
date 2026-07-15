@@ -393,3 +393,14 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   with exactly one new bearer. The focused admission, pairing, session, and
   repository suite passed 84 tests. No frozen conversation or media behavior
   changed.
+- 2026-07-15: Milestone 5.2 added real multi-instance PostgreSQL contracts.
+  Each side owns a separate `PostgresApplicationDatabase` pool and independent
+  room, identity, invite/session, and admission service objects while sharing
+  only the database schema. Concurrent races proved that a one-use invite
+  admits exactly one participant, a two-use invite admits exactly two of four
+  callers, the same device converges on one user/participant/membership/session,
+  and a one-time operator pairing binds only the winning device. A temporary
+  local PostgreSQL 17 instance ran all six cross-authority transaction tests
+  with no skips. The system Python lacked the optional PostgreSQL packages, so
+  the evidence used an isolated temporary virtual environment rather than
+  weakening the skip gate or changing project dependencies.
