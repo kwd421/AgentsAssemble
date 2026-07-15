@@ -202,7 +202,7 @@ families directly.
 | --- | --- | --- | --- |
 | `/ws` | Current core composition | Authenticated protocol upgrade is a transport concern | Keep the thin upgrade branch in the final handler |
 | `/`, `/app/*`, `/join`, `/pair`, guarded React assets | Current core composition | `ReactStaticTransport` owns SPA/bootstrap delivery as one side-effect boundary | Keep static behavior out of domain route registrars |
-| Seven retired exact API paths | Compatibility tombstones | No supported frontend or CLI caller remains; each returns `410 legacy_route_retired` from `gui_retired_http.py` | Keep the explicit failure contract while obsolete external callers age out |
+| Seven retired exact API paths | Compatibility tombstones | No supported frontend or CLI caller remains; each returns `410 legacy_route_retired` from `gui_retired_http.py` | Retain through the first tagged `v0.1.x` release; audit for removal in `v0.2` or later |
 
 ## Retired Exact Routes
 
@@ -222,6 +222,25 @@ obsolete external caller fails visibly instead of receiving a false success.
 `tests/test_gui_route_ownership.py` limits the exact paths left in the handler
 chain to transport and static delivery. New API behavior must register on the
 `Router`; retired paths must not regain implementation behind their tombstone.
+
+### Compatibility decision
+
+Decision date: 2026-07-15.
+
+Keep all seven `410 Gone` tombstones through the first tagged `v0.1.x`
+release. The repository had no existing Git tag when this decision was made,
+so the compatibility window has not yet elapsed. Removal is permitted no
+earlier than `v0.2`, and only after a fresh frontend, CLI, documentation, and
+external-caller audit confirms that no supported caller depends on the stable
+`legacy_route_retired` response.
+
+During the retention window:
+
+- do not restore behavior behind these paths;
+- do not add new product callers;
+- preserve the `410`, stable error code, and replacement guidance; and
+- treat final removal as a separate compatibility change with its own tests
+  and release note.
 
 ## Extraction Order
 

@@ -325,3 +325,11 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   cases, patch/session/process tests passed 162 cases, and the full GUI server
   suite passed 433 cases. Frozen conversation, autonomous-attention, sequence,
   and media behavior was not changed.
+- 2026-07-15: Milestone 3.4 made the seven retired-route compatibility decision
+  explicit. All seven `410 legacy_route_retired` tombstones remain through the
+  first tagged `v0.1.x` release; because the repository currently has no tags,
+  that window has not elapsed. They may be removed in `v0.2` or later only
+  after a fresh supported-caller audit, and no implementation or new caller may
+  be added behind them during the retention period. This is documentation of
+  the existing fail-visible contract, not a behavior or conversation-policy
+  change.
