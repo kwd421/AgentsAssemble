@@ -153,3 +153,9 @@ be fixed in a separate corrective commit or the causing change must be reverted.
 
 - 2026-07-15: Plan recorded from the post-`b2cccf11` external review. Milestone
   0 begins with local JSON persistence fail-closed behavior.
+- 2026-07-15: Milestone 0.1 implemented. Existing unreadable, malformed,
+  wrong-schema, and structurally invalid state now aborts repository startup.
+  Failed write/chmod/replace mutations restore the prior in-memory state and
+  raise a typed durability error. Repository, invite, admission, HTTP, session,
+  and GUI composition verification passed 111 tests; a copy of the current
+  local store loaded with all 88 invite records under the stricter validator.

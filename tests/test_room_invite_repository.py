@@ -6,10 +6,15 @@ import threading
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from agentsassemble.room_invite_repository import (
+    InviteRepositoryCorrupt,
+    InviteRepositoryUnavailable,
+    InviteRepositoryWriteFailed,
     JsonInviteSessionRepository,
     MemoryInviteSessionRepository,
+    ROOM_INVITE_STORE_SCHEMA,
 )
 
 
@@ -195,6 +200,164 @@ class JsonInviteSessionRepositoryTests(
     def test_reading_an_uninitialized_secret_has_no_persistence_side_effect(self) -> None:
         self.assertEqual(self.repository.existing_signing_secret(), "")
         self.assertFalse(self.path.exists())
+
+    def test_existing_invalid_json_fails_closed(self) -> None:
+        self.path.write_text("{not-json", encoding="utf-8")
+
+        with self.assertRaises(InviteRepositoryCorrupt):
+            JsonInviteSessionRepository(self.path)
+
+    def test_existing_non_object_state_fails_closed(self) -> None:
+        self.path.write_text("[]", encoding="utf-8")
+
+        with self.assertRaises(InviteRepositoryCorrupt):
+            JsonInviteSessionRepository(self.path)
+
+    def test_existing_unknown_schema_fails_closed(self) -> None:
+        self.path.write_text(
+            json.dumps(
+                {
+                    "schema": "agentsassemble.room_invite_state.v999",
+                    "invite_secret": "",
+                    "sessions": {},
+                    "pending_invites": {},
+                    "used_nonce_fingerprints": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(InviteRepositoryCorrupt):
+            JsonInviteSessionRepository(self.path)
+
+    def test_existing_invalid_field_types_fail_closed(self) -> None:
+        self.path.write_text(
+            json.dumps(
+                {
+                    "schema": ROOM_INVITE_STORE_SCHEMA,
+                    "invite_secret": "",
+                    "sessions": [],
+                    "pending_invites": {},
+                    "used_nonce_fingerprints": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(InviteRepositoryCorrupt):
+            JsonInviteSessionRepository(self.path)
+
+    def test_existing_invalid_nested_values_fail_closed(self) -> None:
+        payload = {
+            "schema": ROOM_INVITE_STORE_SCHEMA,
+            "invite_secret": "",
+            "sessions": {},
+            "pending_invites": {
+                "invite-1": {**_invite(), "max_uses": "not-a-number"},
+            },
+            "used_nonce_fingerprints": [],
+        }
+        self.path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with self.assertRaises(InviteRepositoryCorrupt):
+            JsonInviteSessionRepository(self.path)
+
+    def test_existing_invalid_expiry_fails_closed(self) -> None:
+        payload = {
+            "schema": ROOM_INVITE_STORE_SCHEMA,
+            "invite_secret": "",
+            "sessions": {
+                "session-fingerprint": {**_session(), "expires_at": "not-a-date"},
+            },
+            "pending_invites": {},
+            "used_nonce_fingerprints": [],
+        }
+        self.path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with self.assertRaises(InviteRepositoryCorrupt):
+            JsonInviteSessionRepository(self.path)
+
+    def test_existing_non_string_nonce_fails_closed(self) -> None:
+        payload = {
+            "schema": ROOM_INVITE_STORE_SCHEMA,
+            "invite_secret": "",
+            "sessions": {},
+            "pending_invites": {},
+            "used_nonce_fingerprints": [123],
+        }
+        self.path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with self.assertRaises(InviteRepositoryCorrupt):
+            JsonInviteSessionRepository(self.path)
+
+    def test_existing_unreadable_state_fails_closed(self) -> None:
+        self.path.write_text("{}", encoding="utf-8")
+
+        with patch.object(Path, "read_text", side_effect=PermissionError("denied")):
+            with self.assertRaises(InviteRepositoryUnavailable):
+                JsonInviteSessionRepository(self.path)
+
+    def test_write_failure_rolls_back_invite_and_signing_secret(self) -> None:
+        with patch.object(Path, "write_text", side_effect=OSError("disk full")):
+            with self.assertRaises(InviteRepositoryWriteFailed):
+                self.repository.signing_secret()
+            with self.assertRaises(InviteRepositoryWriteFailed):
+                self.repository.save_invite(_invite())
+
+        self.assertEqual(self.repository.existing_signing_secret(), "")
+        self.assertIsNone(self.repository.invite("invite-1"))
+        self.assertFalse(self.path.exists())
+
+    def test_replace_failure_rolls_back_session_mutation(self) -> None:
+        self.repository.save_invite(_invite())
+        with patch.object(Path, "replace", side_effect=OSError("replace failed")):
+            with self.assertRaises(InviteRepositoryWriteFailed):
+                self.repository.save_session("session-fingerprint", _session())
+
+        self.assertIsNone(self.repository.session("session-fingerprint"))
+        reloaded = JsonInviteSessionRepository(self.path)
+        self.assertIsNone(reloaded.session("session-fingerprint"))
+
+    def test_permission_hardening_failure_does_not_publish_new_state(self) -> None:
+        with patch.object(Path, "chmod", side_effect=OSError("chmod failed")):
+            with self.assertRaises(InviteRepositoryWriteFailed):
+                self.repository.save_invite(_invite())
+
+        self.assertIsNone(self.repository.invite("invite-1"))
+        self.assertFalse(self.path.exists())
+
+    def test_failed_nonce_persistence_does_not_consume_token(self) -> None:
+        with patch.object(Path, "replace", side_effect=OSError("replace failed")):
+            with self.assertRaises(InviteRepositoryWriteFailed):
+                self.repository.consume(
+                    invite_id="single",
+                    nonce_fingerprint="nonce-fingerprint",
+                    reusable=False,
+                    max_uses=1,
+                )
+
+        self.assertFalse(self.repository.nonce_was_used("nonce-fingerprint"))
+
+    def test_failed_revoke_persistence_restores_invite(self) -> None:
+        self.repository.save_invite(_invite())
+        with patch.object(Path, "replace", side_effect=OSError("replace failed")):
+            with self.assertRaises(InviteRepositoryWriteFailed):
+                self.repository.revoke_invite("invite-1")
+
+        self.assertFalse(self.repository.invite("invite-1")["revoked"])
+
+    def test_failed_reusable_consume_restores_use_count(self) -> None:
+        self.repository.save_invite(_invite(max_uses=2))
+        with patch.object(Path, "replace", side_effect=OSError("replace failed")):
+            with self.assertRaises(InviteRepositoryWriteFailed):
+                self.repository.consume(
+                    invite_id="invite-1",
+                    nonce_fingerprint="unused",
+                    reusable=True,
+                    max_uses=2,
+                )
+
+        self.assertEqual(self.repository.invite("invite-1")["use_count"], 0)
 
 
 if __name__ == "__main__":

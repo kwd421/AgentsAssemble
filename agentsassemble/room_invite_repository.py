@@ -4,14 +4,39 @@ from __future__ import annotations
 import json
 import secrets
 import threading
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Iterator, Protocol, runtime_checkable
 
 from agentsassemble.meeting_events import clean_lobby_text
 
 ROOM_INVITE_STORE_SCHEMA = "agentsassemble.room_invite_state.v1"
+
+
+class InviteRepositoryError(RuntimeError):
+    """Base error for unavailable or invalid invite/session persistence."""
+
+
+class InviteRepositoryUnavailable(InviteRepositoryError):
+    """The configured repository cannot be read."""
+
+
+class InviteRepositoryCorrupt(InviteRepositoryError):
+    """The configured repository contains invalid or unsupported state."""
+
+
+class InviteRepositoryWriteFailed(InviteRepositoryError):
+    """A repository mutation could not be durably persisted."""
+
+
+_RepositoryState = tuple[
+    str,
+    dict[str, dict[str, object]],
+    set[str],
+    dict[str, dict[str, object]],
+]
 
 
 @runtime_checkable
@@ -81,8 +106,8 @@ class MemoryInviteSessionRepository:
     def signing_secret(self) -> str:
         with self._lock:
             if not self._invite_secret:
-                self._invite_secret = secrets.token_urlsafe(32)
-                self._persist_locked()
+                with self._persisted_mutation_locked():
+                    self._invite_secret = secrets.token_urlsafe(32)
             return self._invite_secret
 
     def existing_signing_secret(self) -> str:
@@ -94,8 +119,8 @@ class MemoryInviteSessionRepository:
         if not invite_id:
             raise ValueError("invite_id is required")
         with self._lock:
-            self._invites[invite_id] = deepcopy(record)
-            self._persist_locked()
+            with self._persisted_mutation_locked():
+                self._invites[invite_id] = deepcopy(record)
 
     def invite(self, invite_id: str) -> dict[str, object] | None:
         with self._lock:
@@ -139,13 +164,14 @@ class MemoryInviteSessionRepository:
                 current_uses = int(record.get("use_count", 0)) if record else 0
                 if max_uses and current_uses >= max_uses:
                     return "invite_use_limit_reached"
-                if record is not None:
-                    record["use_count"] = current_uses + 1
+                with self._persisted_mutation_locked():
+                    if record is not None:
+                        record["use_count"] = current_uses + 1
             else:
                 if clean_nonce in self._used_nonce_fingerprints:
                     return "token_already_used"
-                self._used_nonce_fingerprints.add(clean_nonce)
-            self._persist_locked()
+                with self._persisted_mutation_locked():
+                    self._used_nonce_fingerprints.add(clean_nonce)
         return ""
 
     def revoke_invite(self, invite_id: str) -> bool:
@@ -153,21 +179,23 @@ class MemoryInviteSessionRepository:
             record = self._invites.get(clean_lobby_text(invite_id, limit=128))
             if record is None:
                 return False
-            record["revoked"] = True
-            self._persist_locked()
+            with self._persisted_mutation_locked():
+                record["revoked"] = True
             return True
 
     def revoke_room_invites(self, room_id: str) -> int:
         clean_room_id = clean_lobby_text(room_id, limit=128)
         with self._lock:
-            revoked = 0
-            for record in self._invites.values():
-                if record.get("meeting_id") == clean_room_id and not record.get("revoked"):
-                    record["revoked"] = True
-                    revoked += 1
-            if revoked:
-                self._persist_locked()
-            return revoked
+            targets = [
+                record
+                for record in self._invites.values()
+                if record.get("meeting_id") == clean_room_id and not record.get("revoked")
+            ]
+            if targets:
+                with self._persisted_mutation_locked():
+                    for record in targets:
+                        record["revoked"] = True
+            return len(targets)
 
     def list_invites(self) -> list[dict[str, object]]:
         with self._lock:
@@ -178,8 +206,8 @@ class MemoryInviteSessionRepository:
         if not clean_fingerprint:
             raise ValueError("session token fingerprint is required")
         with self._lock:
-            self._sessions[clean_fingerprint] = deepcopy(record)
-            self._persist_locked()
+            with self._persisted_mutation_locked():
+                self._sessions[clean_fingerprint] = deepcopy(record)
 
     def session(self, token_fingerprint: str) -> dict[str, object] | None:
         with self._lock:
@@ -188,13 +216,12 @@ class MemoryInviteSessionRepository:
 
     def revoke_session(self, token_fingerprint: str) -> bool:
         with self._lock:
-            removed = self._sessions.pop(
-                clean_lobby_text(token_fingerprint, limit=128),
-                None,
-            )
-            if removed is not None:
-                self._persist_locked()
-            return removed is not None
+            clean_fingerprint = clean_lobby_text(token_fingerprint, limit=128)
+            if clean_fingerprint not in self._sessions:
+                return False
+            with self._persisted_mutation_locked():
+                del self._sessions[clean_fingerprint]
+            return True
 
     def revoke_participant_sessions(self, room_id: str, participant_id: str) -> int:
         clean_room_id = clean_lobby_text(room_id, limit=128)
@@ -208,10 +235,10 @@ class MemoryInviteSessionRepository:
                 if record.get("agent_id") == clean_participant_id
                 and (not clean_room_id or record.get("meeting_id") == clean_room_id)
             ]
-            for fingerprint in doomed:
-                del self._sessions[fingerprint]
             if doomed:
-                self._persist_locked()
+                with self._persisted_mutation_locked():
+                    for fingerprint in doomed:
+                        del self._sessions[fingerprint]
             return len(doomed)
 
     def revoke_room_sessions(self, room_id: str) -> int:
@@ -222,10 +249,10 @@ class MemoryInviteSessionRepository:
                 for fingerprint, record in self._sessions.items()
                 if record.get("meeting_id") == clean_room_id
             ]
-            for fingerprint in doomed:
-                del self._sessions[fingerprint]
             if doomed:
-                self._persist_locked()
+                with self._persisted_mutation_locked():
+                    for fingerprint in doomed:
+                        del self._sessions[fingerprint]
             return len(doomed)
 
     def list_sessions(self) -> list[tuple[str, dict[str, object]]]:
@@ -240,17 +267,46 @@ class MemoryInviteSessionRepository:
 
     def clear(self) -> None:
         with self._lock:
-            self._invite_secret = ""
-            self._sessions.clear()
-            self._used_nonce_fingerprints.clear()
-            self._invites.clear()
-            self._persist_locked()
+            with self._persisted_mutation_locked():
+                self._invite_secret = ""
+                self._sessions.clear()
+                self._used_nonce_fingerprints.clear()
+                self._invites.clear()
 
     def close(self) -> None:
         return
 
     def _persist_locked(self) -> None:
         return
+
+    @contextmanager
+    def _persisted_mutation_locked(self) -> Iterator[None]:
+        previous = self._state_snapshot_locked()
+        try:
+            yield
+            self._persist_locked()
+        except BaseException:
+            self._restore_state_locked(previous)
+            raise
+
+    def _state_snapshot_locked(self) -> _RepositoryState:
+        return (
+            self._invite_secret,
+            deepcopy(self._sessions),
+            set(self._used_nonce_fingerprints),
+            deepcopy(self._invites),
+        )
+
+    def _restore_state_locked(
+        self,
+        state: _RepositoryState,
+    ) -> None:
+        (
+            self._invite_secret,
+            self._sessions,
+            self._used_nonce_fingerprints,
+            self._invites,
+        ) = state
 
 
 class JsonInviteSessionRepository(MemoryInviteSessionRepository):
@@ -262,44 +318,98 @@ class JsonInviteSessionRepository(MemoryInviteSessionRepository):
         self.reload()
 
     def reload(self) -> None:
-        with self._lock:
-            self._invite_secret = ""
-            self._sessions.clear()
-            self._used_nonce_fingerprints.clear()
-            self._invites.clear()
-            try:
-                payload = json.loads(self.path.read_text(encoding="utf-8"))
-            except FileNotFoundError:
-                return
-            except (OSError, json.JSONDecodeError):
-                return
-            if not isinstance(payload, dict):
-                return
-            self._invite_secret = clean_lobby_text(payload.get("invite_secret"), limit=256)
-            now = datetime.now(UTC)
-            sessions = payload.get("sessions")
-            if isinstance(sessions, dict):
-                for raw_fingerprint, raw_record in sessions.items():
-                    fingerprint = clean_lobby_text(raw_fingerprint, limit=128)
-                    record = _clean_session_record(raw_record)
-                    if not fingerprint or not record or _expired(record, now):
-                        continue
-                    self._sessions[fingerprint] = record
-            invites = payload.get("pending_invites")
-            if isinstance(invites, dict):
-                for raw_invite_id, raw_record in invites.items():
-                    invite_id = clean_lobby_text(raw_invite_id, limit=128)
-                    record = _clean_invite_record(raw_record, invite_id=invite_id)
-                    if invite_id and record:
-                        self._invites[invite_id] = record
-            used_nonces = payload.get("used_nonce_fingerprints")
-            if isinstance(used_nonces, list):
-                self._used_nonce_fingerprints.update(
-                    clean_lobby_text(item, limit=128)
-                    for item in used_nonces
-                    if clean_lobby_text(item, limit=128)
+        try:
+            raw_state = self.path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            with self._lock:
+                self._invite_secret = ""
+                self._sessions.clear()
+                self._used_nonce_fingerprints.clear()
+                self._invites.clear()
+            return
+        except OSError as error:
+            raise InviteRepositoryUnavailable(
+                "Invite repository state could not be read."
+            ) from error
+        try:
+            payload = json.loads(raw_state)
+        except json.JSONDecodeError as error:
+            raise InviteRepositoryCorrupt(
+                "Invite repository state contains invalid JSON."
+            ) from error
+        if not isinstance(payload, dict):
+            raise InviteRepositoryCorrupt("Invite repository state must be an object.")
+        if payload.get("schema") != ROOM_INVITE_STORE_SCHEMA:
+            raise InviteRepositoryCorrupt(
+                "Invite repository state uses an unsupported schema."
+            )
+        sessions = payload.get("sessions")
+        invites = payload.get("pending_invites")
+        used_nonces = payload.get("used_nonce_fingerprints")
+        invite_secret = payload.get("invite_secret")
+        if (
+            not isinstance(invite_secret, str)
+            or not isinstance(sessions, dict)
+            or not isinstance(invites, dict)
+            or not isinstance(used_nonces, list)
+        ):
+            raise InviteRepositoryCorrupt(
+                "Invite repository state has invalid field types."
+            )
+
+        loaded_sessions: dict[str, dict[str, object]] = {}
+        loaded_invites: dict[str, dict[str, object]] = {}
+        loaded_nonces: set[str] = set()
+        now = datetime.now(UTC)
+        for raw_fingerprint, raw_record in sessions.items():
+            fingerprint = clean_lobby_text(raw_fingerprint, limit=128)
+            record = _clean_session_record(raw_record)
+            if not fingerprint or not record:
+                raise InviteRepositoryCorrupt(
+                    "Invite repository state contains an invalid session record."
                 )
-            self._persist_locked()
+            expires_at = _parse_datetime(record.get("expires_at"))
+            if expires_at is None:
+                raise InviteRepositoryCorrupt(
+                    "Invite repository state contains an invalid session expiry."
+                )
+            if expires_at > now:
+                loaded_sessions[fingerprint] = record
+        for raw_invite_id, raw_record in invites.items():
+            invite_id = clean_lobby_text(raw_invite_id, limit=128)
+            try:
+                record = _clean_invite_record(raw_record, invite_id=invite_id)
+            except (TypeError, ValueError, OverflowError) as error:
+                raise InviteRepositoryCorrupt(
+                    "Invite repository state contains an invalid invite record."
+                ) from error
+            if not invite_id or not record:
+                raise InviteRepositoryCorrupt(
+                    "Invite repository state contains an invalid invite record."
+                )
+            if _parse_datetime(record.get("expires_at")) is None:
+                raise InviteRepositoryCorrupt(
+                    "Invite repository state contains an invalid invite expiry."
+                )
+            loaded_invites[invite_id] = record
+        for item in used_nonces:
+            if not isinstance(item, str):
+                raise InviteRepositoryCorrupt(
+                    "Invite repository state contains an invalid nonce fingerprint."
+                )
+            nonce = clean_lobby_text(item, limit=128)
+            if not nonce:
+                raise InviteRepositoryCorrupt(
+                    "Invite repository state contains an invalid nonce fingerprint."
+                )
+            loaded_nonces.add(nonce)
+
+        with self._lock:
+            with self._persisted_mutation_locked():
+                self._invite_secret = clean_lobby_text(invite_secret, limit=256)
+                self._sessions = loaded_sessions
+                self._used_nonce_fingerprints = loaded_nonces
+                self._invites = loaded_invites
 
     def _persist_locked(self) -> None:
         state = {
@@ -310,29 +420,31 @@ class JsonInviteSessionRepository(MemoryInviteSessionRepository):
             "pending_invites": dict(sorted(self._invites.items())),
             "updated_at": datetime.now(UTC).isoformat(),
         }
+        temp_path = self.path.with_name(f"{self.path.name}.tmp")
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            temp_path = self.path.with_name(f"{self.path.name}.tmp")
             temp_path.write_text(
                 json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
+            temp_path.chmod(0o600)
             temp_path.replace(self.path)
+        except OSError as error:
             try:
-                self.path.chmod(0o600)
+                temp_path.unlink(missing_ok=True)
             except OSError:
                 pass
-        except OSError:
-            # Preserve the existing local-mode behavior: memory remains usable
-            # when best-effort durability cannot write the local file.
-            return
+            raise InviteRepositoryWriteFailed(
+                "Invite repository state could not be persisted."
+            ) from error
 
 
-def _expired(record: dict[str, object], now: datetime) -> bool:
+def _parse_datetime(value: object) -> datetime | None:
     try:
-        return datetime.fromisoformat(str(record.get("expires_at") or "")) <= now
+        parsed = datetime.fromisoformat(str(value or ""))
     except ValueError:
-        return True
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 def _clean_session_record(value: object) -> dict[str, object]:
