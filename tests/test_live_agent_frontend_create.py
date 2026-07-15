@@ -679,55 +679,6 @@ class FrontendLiveAgentCreateTests(unittest.TestCase):
                     default_server="http://127.0.0.1:8765",
                 )
 
-    def test_http_create_endpoint_adds_frontend_agent_to_room(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir) / "aa"
-            workspace = Path(temp_dir) / "project"
-            workspace.mkdir()
-            write_meeting(root)
-            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
-            thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
-            thread.start()
-            try:
-                server_url = f"http://127.0.0.1:{server.server_port}"
-                with urlopen(f"{server_url}/api/live-agent-create/options", timeout=4) as response:
-                    options = json.loads(response.read().decode("utf-8"))
-                self.assertIn("codex", [provider["id"] for provider in options["providers"]])
-
-                request = Request(
-                    f"{server_url}/api/live-agent-create",
-                    data=json.dumps(
-                        {
-                            "meeting_id": "room-a",
-                            "provider_id": "codex",
-                            "display_name": "Codex From UI",
-                            "workspace_path": str(workspace),
-                            "start_now": False,
-                        }
-                    ).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                with urlopen(request, timeout=4) as response:
-                    created = json.loads(response.read().decode("utf-8"))
-
-                self.assertEqual(created["status"], "created")
-                self.assertEqual(created["agent"]["display_name"], "Codex From UI")
-                self.assertTrue(Path(created["live_agent_config_path"]).exists())
-
-                with urlopen(f"{server_url}/api/live-agents?safe=1&meeting_id=room-a", timeout=4) as response:
-                    roster = json.loads(response.read().decode("utf-8"))
-                created_agent = next(
-                    agent
-                    for agent in roster["agents"]
-                    if agent["agent_id"] == created["agent"]["agent_id"]
-                )
-                self.assertEqual(created_agent["admission_status"], "bound_to_meeting")
-                self.assertTrue(created_agent["host_approved_binding"])
-            finally:
-                server.shutdown()
-                server.server_close()
-
     def test_http_login_endpoint_is_local_operator_only_and_uses_injected_launcher(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "aa"

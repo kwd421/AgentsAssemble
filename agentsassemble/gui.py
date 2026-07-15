@@ -22,12 +22,6 @@ from agentsassemble.attachments import (
 from agentsassemble.codex_sessions import list_codex_sessions
 from agentsassemble.live_agent_context import live_agent_context_contract
 from agentsassemble.live_agent_flow import FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
-from agentsassemble.live_agent_frontend_create import (
-    frontend_live_agent_check_payload,
-    frontend_live_agent_create_payload,
-    frontend_live_agent_options_payload,
-)
-from agentsassemble.provider_sessions import list_provider_sessions
 from agentsassemble.gui_provider_http import (
     model_catalog_payload,
     provider_catalog_payload,
@@ -119,6 +113,7 @@ from agentsassemble.gui_request_security import (
     _request_trusted,
     _split_authority_host_port,
 )
+from agentsassemble.gui_retired_http import register_retired_legacy_routes
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
 from agentsassemble.gui_ws_http import handle_ws_upgrade, register_ws_ticket_route
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
@@ -131,7 +126,6 @@ from agentsassemble.session_run_monitor import PeriodicSessionRunMonitor, safe_m
 from agentsassemble.live_agent_join_brief import live_agent_join_brief_payload
 from agentsassemble.live_agent_room_admin import (
     LegacyLiveAgentRoomSessionService,
-    expel_live_agent_from_room_payload,
 )
 from agentsassemble.live_agent_self_managed import LegacySelfManagedAgentService
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
@@ -3108,6 +3102,7 @@ def _make_handler(
         is_local_operator=lambda ctx: ctx.handler._request_is_local_operator(),
     )
     register_attachment_routes(route_table)
+    register_retired_legacy_routes(route_table)
     register_room_routes(route_table)
     register_room_settings_routes(route_table)
     register_side_chat_routes(route_table)
@@ -3535,25 +3530,6 @@ def _make_handler(
             if path.startswith("/static/"):
                 self._send_error(HTTPStatus.NOT_FOUND, "Legacy static assets are retired.")
                 return
-            if path == "/api/live-agent-create/options":
-                self._send_json(frontend_live_agent_options_payload(default_workspace=Path.cwd()))
-                return
-            if path == "/api/provider-sessions":
-                # Local sessions for a provider so the create flow can resume one.
-                provider_kind = (query.get("provider_kind") or query.get("provider") or [""])[0]
-                workspace = (query.get("workspace") or query.get("workspace_path") or [""])[0]
-                self._send_json(
-                    {
-                        "sessions": list_provider_sessions(
-                            clean_lobby_text(provider_kind, limit=64),
-                            workspace=clean_lobby_text(workspace, limit=512),
-                        )
-                    }
-                )
-                return
-            if path == "/api/codex-sessions":
-                self._send_json(codex_sessions_payload(limit=self._limit(query, default=20)))
-                return
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")
 
         def do_OPTIONS(self) -> None:
@@ -3580,111 +3556,6 @@ def _make_handler(
                 self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
                 return
             if route_table.dispatch("POST", RequestContext(self, route_deps, parsed, parse_qs(parsed.query))):
-                return
-            if parsed.path == "/api/demo":
-                result = run_demo_meeting(adapter_name="mock", output_root=output_root)
-                self._send_json({"meeting_id": result.meeting_id, "path": str(result.meeting_dir)})
-                return
-            if parsed.path == "/api/live-agent-create/check":
-                payload = self._operation_json_payload(operation="frontend_agent.check")
-                if payload is None:
-                    return
-                try:
-                    checked = frontend_live_agent_check_payload(
-                        output_root,
-                        payload,
-                        default_server=self._request_server_url(),
-                    )
-                except (OSError, ValueError) as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="frontend_agent.check",
-                        status="failed",
-                        target_id=clean_lobby_text(payload.get("meeting_id"), limit=128),
-                        error=str(error),
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="frontend_agent.check",
-                    status=_operation_success_for_result(_operation_result_status(checked.get("status")), success_values={"ok"}),
-                    target_id=clean_lobby_text(payload.get("meeting_id"), limit=128),
-                    summary="checked frontend-created live agent",
-                    details={
-                        "provider_id": clean_lobby_text(payload.get("provider_id"), limit=64),
-                        "result_status": _operation_result_status(checked.get("status")),
-                    },
-                )
-                self._send_json(checked)
-                return
-            if parsed.path == "/api/live-agent-create":
-                payload = self._operation_json_payload(operation="frontend_agent.create")
-                if payload is None:
-                    return
-                try:
-                    created = frontend_live_agent_create_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                        default_server=self._request_server_url(),
-                    )
-                except (OSError, ValueError) as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="frontend_agent.create",
-                        status="failed",
-                        target_id=clean_lobby_text(payload.get("meeting_id"), limit=128),
-                        error=str(error),
-                        details={"provider_id": clean_lobby_text(payload.get("provider_id"), limit=64)},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="frontend_agent.create",
-                    status="success" if str(created.get("status") or "") in {"created", "starting"} else "degraded",
-                    target_id=str((created.get("agent") or {}).get("agent_id") if isinstance(created.get("agent"), dict) else ""),
-                    summary="created frontend live agent",
-                    details={
-                        "meeting_id": clean_lobby_text(created.get("meeting_id"), limit=128),
-                        "provider_id": clean_lobby_text(payload.get("provider_id"), limit=64),
-                        "status": clean_lobby_text(created.get("status"), limit=64),
-                    },
-                )
-                self._send_json(created)
-                return
-            if parsed.path == "/api/live-agent-room/expel":
-                payload = self._operation_json_payload(operation="frontend_agent.expel")
-                if payload is None:
-                    return
-                agent_id = clean_lobby_text(payload.get("agent_id"), limit=128)
-                try:
-                    result = expel_live_agent_from_room_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                    )
-                except (OSError, ValueError) as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="frontend_agent.expel",
-                        status="failed",
-                        target_id=agent_id,
-                        error=str(error),
-                        details={"meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128)},
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error), details={"agent_id": agent_id})
-                    return
-                record_live_agent_operation(
-                    output_root,
-                    operation="frontend_agent.expel",
-                    status="success",
-                    target_id=str(result.get("agent_id") or agent_id),
-                    summary="expelled frontend live agent from room",
-                    details={"meeting_id": str(result.get("meeting_id") or payload.get("meeting_id") or "")},
-                )
-                self._send_json(result)
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")
 

@@ -48,9 +48,6 @@ EXPECTED_RETAINED_HANDLER_EXACT_ROUTES = {
     ("GET", "/"),
     ("GET", "/api"),
     ("GET", "/api/"),
-    ("GET", "/api/codex-sessions"),
-    ("GET", "/api/live-agent-create/options"),
-    ("GET", "/api/provider-sessions"),
     ("GET", "/app"),
     ("GET", "/app/"),
     ("GET", "/join"),
@@ -60,6 +57,12 @@ EXPECTED_RETAINED_HANDLER_EXACT_ROUTES = {
     ("GET", "/pair"),
     ("GET", "/pair/"),
     ("GET", "/ws"),
+}
+
+EXPECTED_RETIRED_EXACT_ROUTES = {
+    ("GET", "/api/codex-sessions"),
+    ("GET", "/api/live-agent-create/options"),
+    ("GET", "/api/provider-sessions"),
     ("POST", "/api/demo"),
     ("POST", "/api/live-agent-create"),
     ("POST", "/api/live-agent-create/check"),
@@ -189,8 +192,11 @@ class GuiRouteOwnershipTests(unittest.TestCase):
         self.assertIn(("GET", "/join"), routes)
         self.assertIn(("GET", "/app"), routes)
 
-    def test_handler_exact_routes_are_limited_to_transport_and_deletion_candidates(self) -> None:
+    def test_handler_exact_routes_are_limited_to_transport_and_static_delivery(self) -> None:
         self.assertEqual(_legacy_exact_routes(), EXPECTED_RETAINED_HANDLER_EXACT_ROUTES)
+
+    def test_retired_exact_routes_are_router_owned_tombstones(self) -> None:
+        self.assertTrue(EXPECTED_RETIRED_EXACT_ROUTES.issubset(_registered_exact_routes()))
 
     def test_dynamic_route_inventory_is_explicit_and_has_one_owner(self) -> None:
         owners = _dynamic_route_owners()

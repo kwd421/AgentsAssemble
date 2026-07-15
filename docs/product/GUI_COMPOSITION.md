@@ -196,30 +196,26 @@ families directly.
 | Family | Classification | Why it remains reachable | Next action |
 | --- | --- | --- | --- |
 | `/ws`, `/`, `/app/*`, `/join`, guarded React assets | Current core composition | Protocol upgrade and static delivery are transport concerns | Keep thin transport branches in the final handler |
-| Remaining `/api/live-agent-create*` and `/api/live-agent-room/expel` | Deletion candidates | No supported current caller remains for check/create/expel; provider login and retained room-session controls are Router-owned | Leave visible in the handler until the separate compatibility deletion decision |
+| Seven retired exact API paths | Compatibility tombstones | No supported frontend or CLI caller remains; each returns `410 legacy_route_retired` from `gui_retired_http.py` | Keep the explicit failure contract while obsolete external callers age out |
 
-## Deletion Candidates
+## Retired Exact Routes
 
-The following exact routes have no production caller outside `gui.py` in the
-2026-07-14 search. They remain implemented until a separate compatibility
-change proves removal is acceptable.
+The 2026-07-15 caller audit found no production frontend or CLI caller for the
+seven routes below. Their implementations and direct handler wiring were
+removed. `gui_retired_http.py` now owns explicit `410 Gone` tombstones so an
+obsolete external caller fails visibly instead of receiving a false success.
 
-| Route | Evidence found | Required before deletion |
-| --- | --- | --- |
-| `POST /api/demo` | Historical `docs/gui-v0-spec.md` reference only | Confirm no packaged CLI, external integration, or fixture depends on demo creation |
-| `GET /api/provider-sessions` | No caller outside the handler/matrix | Confirm canonical snapshot/catalog fully replaces it |
-| `GET /api/codex-sessions` | No caller for the list route; `/invite` and `/join` are separate and still used | Delete only the list route, not the compatibility invite/join family |
-| `GET /api/live-agent-create/options` | Direct backend test only | Replace or retire the test after confirming canonical catalog coverage |
-| `POST /api/live-agent-create/check` | No caller outside the handler/matrix | Confirm canonical `agent.create` validation covers every error contract |
-| `POST /api/live-agent-create` | Direct backend test only; React uses canonical WebSocket creation | Confirm no external local operator client uses the HTTP route |
-| `POST /api/live-agent-room/expel` | Frontend test explicitly requires it to be absent from React API code | Confirm canonical `participant.kick` is the only supported moderation path |
+- `POST /api/demo`
+- `GET /api/provider-sessions`
+- `GET /api/codex-sessions` (the distinct `/invite` and `/join` routes remain)
+- `GET /api/live-agent-create/options`
+- `POST /api/live-agent-create/check`
+- `POST /api/live-agent-create`
+- `POST /api/live-agent-room/expel`
 
-Do not move these candidates into new service modules before the deletion
-decision. Leaving them in the old chain makes their compatibility cost visible.
-`tests/test_gui_route_ownership.py` locks the complete exact-path handler
-inventory to the transport/static paths above plus these seven candidates. A
-new exact API branch in `gui.py` is therefore a test failure; retained API work
-must register on `Router`.
+`tests/test_gui_route_ownership.py` limits the exact paths left in the handler
+chain to transport and static delivery. New API behavior must register on the
+`Router`; retired paths must not regain implementation behind their tombstone.
 
 ## Extraction Order
 

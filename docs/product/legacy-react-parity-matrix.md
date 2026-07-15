@@ -90,10 +90,10 @@ surface rather than silently counted as React parity.
 | --- | --- | --- | --- | --- | --- |
 | `/api/attachments` | POST | exact | `uploadLobbyAttachment()` | yes | React composer uploads attachments before posting lobby messages. |
 | `/api/attachments/{attachment_id}` | GET | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
-| `/api/codex-sessions` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/codex-sessions` | GET | exact | `-` | no | Retired list route; returns explicit `410 legacy_route_retired`. The distinct `/invite` and `/join` compatibility routes remain. |
 | `/api/codex-sessions/invite` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/codex-sessions/join` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
-| `/api/demo` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/demo` | POST | exact | `-` | no | Retired demo HTTP route; returns explicit `410 legacy_route_retired`. |
 | `/api/events/lobby` | GET | sse | `subscribeLobby()` | yes | React lobby subscribes to lobby stream. |
 | `/api/events/side-chat` | GET | sse | `subscribeSideChat()` | yes | React side chat subscribes to separate stream. |
 | `/api/events/roster` | GET | sse | `subscribeRoster()` | yes | React member panel rides a push roster stream on the local console; polling stays as a slow fallback. |
@@ -210,17 +210,17 @@ surface rather than silently counted as React parity.
 | `/api/room-participants/leave` | POST | exact | `-` | no | Agent Session participant leave endpoint with participant-token or moderator authorization; not wrapped by React preview yet. |
 | `/api/room-participants/kick` | POST | exact | `-` | no | Agent Session participant kick endpoint with moderator authorization; not wrapped by React preview yet. |
 | `/api/room-participants/export` | POST | exact | `-` | no | Agent Session participant export endpoint with moderator authorization; not wrapped by React preview yet. |
-| `/api/provider-sessions` | GET | exact | `-` | no | Legacy provider-session discovery; the canonical room snapshot now supplies provider capabilities. |
+| `/api/provider-sessions` | GET | exact | `-` | no | Retired with `410 legacy_route_retired`; the canonical room snapshot supplies Agent Session state. |
 | `/api/provider-credentials/deepseek` | GET | exact | `fetchDeepSeekCredentialStatus()` | yes | Returns only configured/source metadata; never returns the credential value. |
 | `/api/provider-credentials/deepseek` | POST | exact | `setDeepSeekCredential()` | yes | Stores a DeepSeek key in the host secure store; the input is cleared by React after submission. |
 | `/api/provider-credentials/deepseek` | DELETE | exact | `deleteDeepSeekCredential()` | yes | Deletes the DeepSeek key from the host secure store; the response never returns the credential value. |
 | `/api/room-events/stream` | GET | sse | `-` | no | Legacy/read-only SSE compatibility endpoint. React receives canonical RoomStore snapshots and events from `/ws?ticket=...`. |
 | `/api/host/claim` | POST | exact | `claimHostDevice()` | yes | Host-token gated: binds this device's stable identity to the operator account so its sessions moderate from any entrance. |
-| `/api/live-agent-create/options` | GET | exact | `-` | no | Legacy create options; canonical provider controls arrive in the room WebSocket snapshot. |
-| `/api/live-agent-create` | POST | exact | `-` | no | Legacy creation route; React sends `agent.create` over the canonical room WebSocket. |
-| `/api/live-agent-create/check` | POST | exact | `-` | no | Legacy preflight route; canonical command validation returns ACK/NACK. |
+| `/api/live-agent-create/options` | GET | exact | `-` | no | Retired with `410 legacy_route_retired`; canonical provider controls arrive in the room WebSocket snapshot. |
+| `/api/live-agent-create` | POST | exact | `-` | no | Retired with `410 legacy_route_retired`; React sends `agent.create` over the canonical room WebSocket. |
+| `/api/live-agent-create/check` | POST | exact | `-` | no | Retired with `410 legacy_route_retired`; canonical command validation returns ACK/NACK. |
 | `/api/live-agent-create/login` | POST | exact | `startFrontendLiveAgentLogin()` | yes | React agent-create modal starts a provider login flow when required. |
-| `/api/live-agent-room/expel` | POST | exact | `-` | no | Legacy process-admin endpoint. Canonical native CLI participants use `participant.kick` over the room WebSocket. |
+| `/api/live-agent-room/expel` | POST | exact | `-` | no | Retired with `410 legacy_route_retired`; canonical native CLI participants use `participant.kick` over the room WebSocket. |
 | `/api/live-agent-room/delete-session` | POST | exact | `deleteLiveAgentSession()` | yes | Member panel deletes an agent session (room binding, record, and saved config). |
 | `/api/live-agent-room/stop-self-managed` | POST | exact | `stopSelfManagedAgent()` | yes | Member detail panel can stop a self-managed process only when the agent advertised verifiable local stop evidence. |
 | `/api/live-agent-room/resume-self-managed` | POST | exact | `resumeSelfManagedAgent()` | yes | Member detail panel can resume a self-managed process only when the agent advertised verifiable local relaunch evidence. |
