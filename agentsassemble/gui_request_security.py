@@ -65,6 +65,8 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             in {
                 "/join",
                 "/join/",
+                "/pair",
+                "/pair/",
                 "/ws",
                 "/api",
                 "/api/",
@@ -85,6 +87,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
             "/api/ws-ticket",
             "/api/room-invite/admission",
             "/api/room-invite/join",
+            "/api/operator-pairing/redeem",
             "/api/room-invite/leave",
             "/api/room-invite/companion",
             "/api/room/say",

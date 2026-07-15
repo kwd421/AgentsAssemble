@@ -83,6 +83,29 @@ class IdentityBackend(Protocol):
         provider: str = "device",
         display_name: str = "",
     ) -> dict[str, object] | None: ...
+    def create_operator_pairing(
+        self,
+        *,
+        pairing_id: str,
+        token_fingerprint: str,
+        room_id: str,
+        target_origin: str,
+        created_at: str,
+        expires_at: str,
+    ) -> dict[str, object]: ...
+    def operator_pairing_for_fingerprint(
+        self,
+        token_fingerprint: str,
+    ) -> dict[str, object] | None: ...
+    def consume_operator_pairing(
+        self,
+        *,
+        token_fingerprint: str,
+        target_origin: str,
+        auth_key: str,
+        used_at: str,
+    ) -> dict[str, object]: ...
+    def revoke_operator_pairing(self, pairing_id: str, *, revoked_at: str) -> bool: ...
     def participant_is_operator(self, participant_id: str) -> bool: ...
     def operator_user_id(self) -> str: ...
     def list_memberships(self, meeting_id: str = "") -> list[dict[str, object]]: ...
@@ -129,6 +152,20 @@ CREATE TABLE IF NOT EXISTS credentials (
     last_used_at TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_credentials_user ON credentials(user_id);
+
+CREATE TABLE IF NOT EXISTS operator_pairings (
+    pairing_id TEXT PRIMARY KEY,
+    token_fingerprint TEXT NOT NULL UNIQUE,
+    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    room_id TEXT NOT NULL,
+    target_origin TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT NOT NULL DEFAULT '',
+    revoked_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_operator_pairings_expiry
+ON operator_pairings(expires_at);
 
 CREATE TABLE IF NOT EXISTS memberships (
     meeting_id TEXT NOT NULL,
@@ -231,6 +268,18 @@ _ROOM_FIELDS = (
     "origin",
 )
 
+_OPERATOR_PAIRING_FIELDS = (
+    "pairing_id",
+    "token_fingerprint",
+    "user_id",
+    "room_id",
+    "target_origin",
+    "created_at",
+    "expires_at",
+    "used_at",
+    "revoked_at",
+)
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
@@ -289,6 +338,10 @@ class IdentityStore:
         room = {key: row[key] for key in _ROOM_FIELDS}
         room["archived"] = bool(room["archived"])
         return room
+
+    @staticmethod
+    def _operator_pairing_dict(row: sqlite3.Row) -> dict[str, object]:
+        return {key: row[key] for key in _OPERATOR_PAIRING_FIELDS}
 
     def count_users(self) -> int:
         with closing(self._connect()) as connection:
@@ -434,94 +487,238 @@ class IdentityStore:
         clean_display_name = clean_lobby_text(display_name, limit=64)
         now = _now()
         with self._write_lock, closing(self._connect()) as connection, connection:
-            conflicting_user = connection.execute(
-                "SELECT participant_id FROM users WHERE user_id = ?",
-                (LOCAL_OPERATOR_USER_ID,),
-            ).fetchone()
-            if conflicting_user and conflicting_user["participant_id"] != LOCAL_OPERATOR_PARTICIPANT_ID:
-                raise RuntimeError("The canonical operator user id is already assigned to another participant.")
-            conflicting_participant = connection.execute(
-                "SELECT user_id FROM users WHERE participant_id = ?",
-                (LOCAL_OPERATOR_PARTICIPANT_ID,),
-            ).fetchone()
-            if conflicting_participant and conflicting_participant["user_id"] != LOCAL_OPERATOR_USER_ID:
-                raise RuntimeError("The canonical operator participant id is already assigned to another user.")
-
-            credential = connection.execute(
-                "SELECT c.user_id, u.display_name FROM credentials c"
-                " JOIN users u ON u.user_id = c.user_id WHERE c.auth_key = ?",
-                (clean_key,),
-            ).fetchone()
-            legacy_operator_ids = [
-                str(row["user_id"])
-                for row in connection.execute(
-                    "SELECT user_id FROM users WHERE is_operator = 1 AND user_id != ?",
-                    (LOCAL_OPERATOR_USER_ID,),
-                ).fetchall()
-            ]
-            inherited_display_name = clean_display_name or (
-                str(credential["display_name"] or "") if credential else ""
+            refreshed = self._claim_local_operator_credential_in_connection(
+                connection,
+                auth_key=clean_key,
+                provider=clean_provider,
+                display_name=clean_display_name,
+                now=now,
             )
-            canonical = connection.execute(
-                "SELECT * FROM users WHERE user_id = ?",
-                (LOCAL_OPERATOR_USER_ID,),
-            ).fetchone()
-            if canonical is None:
-                connection.execute(
-                    "INSERT INTO users (user_id, participant_id, display_name, avatar_image_url,"
-                    " participant_type, auth_provider, is_operator, created_at, last_seen_at)"
-                    " VALUES (?, ?, ?, '', 'human', ?, 1, ?, ?)",
-                    (
-                        LOCAL_OPERATOR_USER_ID,
-                        LOCAL_OPERATOR_PARTICIPANT_ID,
-                        inherited_display_name,
-                        clean_provider,
-                        now,
-                        now,
-                    ),
-                )
-            else:
-                updates: dict[str, object] = {
-                    "is_operator": 1,
-                    "last_seen_at": now,
-                }
-                if inherited_display_name:
-                    updates["display_name"] = inherited_display_name
-                assignments = ", ".join(f"{column} = ?" for column in updates)
-                connection.execute(
-                    f"UPDATE users SET {assignments} WHERE user_id = ?",
-                    (*updates.values(), LOCAL_OPERATOR_USER_ID),
-                )
-
-            connection.execute(
-                "UPDATE users SET is_operator = 0"
-                " WHERE user_id != ? AND is_operator = 1",
-                (LOCAL_OPERATOR_USER_ID,),
-            )
-            if legacy_operator_ids:
-                placeholders = ", ".join("?" for _ in legacy_operator_ids)
-                connection.execute(
-                    f"UPDATE rooms SET owner_id = ? WHERE owner_id IN ({placeholders})",
-                    (LOCAL_OPERATOR_USER_ID, *legacy_operator_ids),
-                )
-
-            if credential is None:
-                connection.execute(
-                    "INSERT INTO credentials (auth_key, user_id, provider, created_at, last_used_at)"
-                    " VALUES (?, ?, ?, ?, ?)",
-                    (clean_key, LOCAL_OPERATOR_USER_ID, clean_provider, now, now),
-                )
-            else:
-                connection.execute(
-                    "UPDATE credentials SET user_id = ?, provider = ?, last_used_at = ?"
-                    " WHERE auth_key = ?",
-                    (LOCAL_OPERATOR_USER_ID, clean_provider, now, clean_key),
-                )
-            refreshed = connection.execute(
-                "SELECT * FROM users WHERE user_id = ?",
-                (LOCAL_OPERATOR_USER_ID,),
-            ).fetchone()
         return self._user_dict(refreshed) if refreshed else None
+
+    def _claim_local_operator_credential_in_connection(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        auth_key: str,
+        provider: str,
+        display_name: str,
+        now: str,
+    ) -> sqlite3.Row:
+        """Attach a credential inside the caller's identity transaction."""
+        conflicting_user = connection.execute(
+            "SELECT participant_id FROM users WHERE user_id = ?",
+            (LOCAL_OPERATOR_USER_ID,),
+        ).fetchone()
+        if conflicting_user and conflicting_user["participant_id"] != LOCAL_OPERATOR_PARTICIPANT_ID:
+            raise RuntimeError("The canonical operator user id is already assigned to another participant.")
+        conflicting_participant = connection.execute(
+            "SELECT user_id FROM users WHERE participant_id = ?",
+            (LOCAL_OPERATOR_PARTICIPANT_ID,),
+        ).fetchone()
+        if conflicting_participant and conflicting_participant["user_id"] != LOCAL_OPERATOR_USER_ID:
+            raise RuntimeError("The canonical operator participant id is already assigned to another user.")
+
+        credential = connection.execute(
+            "SELECT c.user_id, u.display_name FROM credentials c"
+            " JOIN users u ON u.user_id = c.user_id WHERE c.auth_key = ?",
+            (auth_key,),
+        ).fetchone()
+        legacy_operator_ids = [
+            str(row["user_id"])
+            for row in connection.execute(
+                "SELECT user_id FROM users WHERE is_operator = 1 AND user_id != ?",
+                (LOCAL_OPERATOR_USER_ID,),
+            ).fetchall()
+        ]
+        inherited_display_name = display_name or (
+            str(credential["display_name"] or "") if credential else ""
+        )
+        canonical = connection.execute(
+            "SELECT * FROM users WHERE user_id = ?",
+            (LOCAL_OPERATOR_USER_ID,),
+        ).fetchone()
+        if canonical is None:
+            connection.execute(
+                "INSERT INTO users (user_id, participant_id, display_name, avatar_image_url,"
+                " participant_type, auth_provider, is_operator, created_at, last_seen_at)"
+                " VALUES (?, ?, ?, '', 'human', ?, 1, ?, ?)",
+                (
+                    LOCAL_OPERATOR_USER_ID,
+                    LOCAL_OPERATOR_PARTICIPANT_ID,
+                    inherited_display_name,
+                    provider,
+                    now,
+                    now,
+                ),
+            )
+        else:
+            updates: dict[str, object] = {"is_operator": 1, "last_seen_at": now}
+            if inherited_display_name:
+                updates["display_name"] = inherited_display_name
+            assignments = ", ".join(f"{column} = ?" for column in updates)
+            connection.execute(
+                f"UPDATE users SET {assignments} WHERE user_id = ?",
+                (*updates.values(), LOCAL_OPERATOR_USER_ID),
+            )
+
+        connection.execute(
+            "UPDATE users SET is_operator = 0 WHERE user_id != ? AND is_operator = 1",
+            (LOCAL_OPERATOR_USER_ID,),
+        )
+        if legacy_operator_ids:
+            placeholders = ", ".join("?" for _ in legacy_operator_ids)
+            connection.execute(
+                f"UPDATE rooms SET owner_id = ? WHERE owner_id IN ({placeholders})",
+                (LOCAL_OPERATOR_USER_ID, *legacy_operator_ids),
+            )
+
+        if credential is None:
+            connection.execute(
+                "INSERT INTO credentials (auth_key, user_id, provider, created_at, last_used_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (auth_key, LOCAL_OPERATOR_USER_ID, provider, now, now),
+            )
+        else:
+            connection.execute(
+                "UPDATE credentials SET user_id = ?, provider = ?, last_used_at = ?"
+                " WHERE auth_key = ?",
+                (LOCAL_OPERATOR_USER_ID, provider, now, auth_key),
+            )
+        return connection.execute(
+            "SELECT * FROM users WHERE user_id = ?",
+            (LOCAL_OPERATOR_USER_ID,),
+        ).fetchone()
+
+    def create_operator_pairing(
+        self,
+        *,
+        pairing_id: str,
+        token_fingerprint: str,
+        room_id: str,
+        target_origin: str,
+        created_at: str,
+        expires_at: str,
+    ) -> dict[str, object]:
+        clean_pairing_id = clean_lobby_text(pairing_id, limit=128)
+        clean_fingerprint = clean_lobby_text(token_fingerprint, limit=128)
+        clean_room_id = clean_lobby_text(room_id, limit=128)
+        clean_origin = clean_lobby_text(target_origin, limit=512)
+        if not all((clean_pairing_id, clean_fingerprint, clean_room_id, clean_origin)):
+            raise ValueError("pairing id, token fingerprint, room, and target origin are required")
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            operator = connection.execute(
+                "SELECT user_id FROM users WHERE user_id = ? AND participant_id = ? AND is_operator = 1",
+                (LOCAL_OPERATOR_USER_ID, LOCAL_OPERATOR_PARTICIPANT_ID),
+            ).fetchone()
+            if operator is None:
+                raise ValueError("canonical operator identity is not claimed")
+            connection.execute(
+                "UPDATE operator_pairings SET revoked_at = ?"
+                " WHERE user_id = ? AND room_id = ? AND target_origin = ?"
+                " AND used_at = '' AND revoked_at = ''",
+                (created_at, LOCAL_OPERATOR_USER_ID, clean_room_id, clean_origin),
+            )
+            connection.execute(
+                "INSERT INTO operator_pairings"
+                " (pairing_id, token_fingerprint, user_id, room_id, target_origin, created_at, expires_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    clean_pairing_id,
+                    clean_fingerprint,
+                    LOCAL_OPERATOR_USER_ID,
+                    clean_room_id,
+                    clean_origin,
+                    clean_lobby_text(created_at, limit=64),
+                    clean_lobby_text(expires_at, limit=64),
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM operator_pairings WHERE pairing_id = ?",
+                (clean_pairing_id,),
+            ).fetchone()
+        return self._operator_pairing_dict(row)
+
+    def operator_pairing_for_fingerprint(
+        self,
+        token_fingerprint: str,
+    ) -> dict[str, object] | None:
+        clean_fingerprint = clean_lobby_text(token_fingerprint, limit=128)
+        if not clean_fingerprint:
+            return None
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM operator_pairings WHERE token_fingerprint = ?",
+                (clean_fingerprint,),
+            ).fetchone()
+        return self._operator_pairing_dict(row) if row else None
+
+    def consume_operator_pairing(
+        self,
+        *,
+        token_fingerprint: str,
+        target_origin: str,
+        auth_key: str,
+        used_at: str,
+    ) -> dict[str, object]:
+        clean_fingerprint = clean_lobby_text(token_fingerprint, limit=128)
+        clean_origin = clean_lobby_text(target_origin, limit=512)
+        clean_auth_key = clean_lobby_text(auth_key, limit=128)
+        clean_used_at = clean_lobby_text(used_at, limit=64)
+        if not all((clean_fingerprint, clean_origin, clean_auth_key, clean_used_at)):
+            return {"status": "invalid"}
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                "SELECT * FROM operator_pairings WHERE token_fingerprint = ?",
+                (clean_fingerprint,),
+            ).fetchone()
+            if row is None:
+                return {"status": "invalid"}
+            pairing = self._operator_pairing_dict(row)
+            if pairing["target_origin"] != clean_origin:
+                return {"status": "origin_mismatch"}
+            if pairing["revoked_at"]:
+                return {"status": "revoked"}
+            if pairing["used_at"]:
+                return {"status": "already_used"}
+            try:
+                expires_at = datetime.fromisoformat(str(pairing["expires_at"]))
+                used_at_value = datetime.fromisoformat(clean_used_at)
+            except ValueError:
+                return {"status": "invalid"}
+            if expires_at <= used_at_value:
+                return {"status": "expired"}
+            cursor = connection.execute(
+                "UPDATE operator_pairings SET used_at = ?"
+                " WHERE pairing_id = ? AND used_at = '' AND revoked_at = ''",
+                (clean_used_at, pairing["pairing_id"]),
+            )
+            if cursor.rowcount != 1:
+                return {"status": "already_used"}
+            user = self._claim_local_operator_credential_in_connection(
+                connection,
+                auth_key=clean_auth_key,
+                provider="device",
+                display_name="",
+                now=clean_used_at,
+            )
+        return {
+            "status": "consumed",
+            "pairing": pairing,
+            "user": self._user_dict(user),
+        }
+
+    def revoke_operator_pairing(self, pairing_id: str, *, revoked_at: str) -> bool:
+        clean_pairing_id = clean_lobby_text(pairing_id, limit=128)
+        if not clean_pairing_id:
+            return False
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            cursor = connection.execute(
+                "UPDATE operator_pairings SET revoked_at = ?"
+                " WHERE pairing_id = ? AND used_at = '' AND revoked_at = ''",
+                (clean_lobby_text(revoked_at, limit=64), clean_pairing_id),
+            )
+        return cursor.rowcount == 1
 
     def participant_is_operator(self, participant_id: str) -> bool:
         user = self.user_for_participant(participant_id)

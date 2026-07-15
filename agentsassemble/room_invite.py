@@ -25,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
+from agentsassemble.identity_store import LOCAL_OPERATOR_PARTICIPANT_ID, LOCAL_OPERATOR_USER_ID
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.native_cli_providers import native_cli_provider_definition
 from agentsassemble.room_users import normalize_participant_type, resolve_device_user
@@ -664,6 +665,54 @@ def join_room_with_invite(
             reusable_invite=reusable,
             owner_display_name=clean_owner_display_name,
         ),
+    }
+
+
+def issue_paired_operator_session(
+    *,
+    meeting_id: str,
+    display_name: str,
+) -> dict[str, object]:
+    """Issue a bounded room session after an operator pairing was consumed.
+
+    This path is intentionally separate from invite admission: it never
+    consumes a guest invite and always resolves to the canonical local
+    operator participant. Callers must first validate and atomically consume
+    an operator pairing through the identity authority.
+    """
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    if not clean_meeting_id:
+        raise ValueError("meeting_id is required")
+    clean_display_name = (
+        clean_lobby_text(display_name, limit=128) or LOCAL_OPERATOR_PARTICIPANT_ID
+    )
+    revoke_sessions_for_participant(clean_meeting_id, LOCAL_OPERATOR_PARTICIPANT_ID)
+    session_token = _issue_session_token(
+        agent_id=LOCAL_OPERATOR_PARTICIPANT_ID,
+        display_name=clean_display_name,
+        meeting_id=clean_meeting_id,
+        invite_scope=ROOM_INVITE_SCOPE,
+        participant_type="human",
+        client_type="browser",
+        provider_kind="manual",
+        owner_id=LOCAL_OPERATOR_USER_ID,
+    )
+    session = verify_session_token(session_token) or {}
+    return {
+        "status": "admitted",
+        "session_token": session_token,
+        "agent_id": LOCAL_OPERATOR_PARTICIPANT_ID,
+        "display_name": clean_display_name,
+        "meeting_id": clean_meeting_id,
+        "invite_scope": ROOM_INVITE_SCOPE,
+        "participant_type": "human",
+        "client_type": "browser",
+        "provider_kind": "manual",
+        "owner_id": LOCAL_OPERATOR_USER_ID,
+        "stable_identity": True,
+        "operator": True,
+        "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
+        "expires_at": str(session.get("expires_at") or ""),
     }
 
 

@@ -6,6 +6,7 @@ from http import HTTPStatus
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.live_agents import connect_live_agent
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
+from agentsassemble.operator_pairing import OperatorPairingService, normalize_pairing_origin
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_invite import (
     active_sessions_summary,
@@ -214,6 +215,82 @@ def register_invite_admission_routes(router: Router) -> None:
             session=ctx.session(),
         )
         ctx.send_json(decision)
+
+    @router.post("/api/operator-pairing/create")
+    def operator_pairing_create(ctx: RequestContext) -> None:
+        if not ctx.require_moderator():
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        public_url = get_public_url()
+        if not public_url:
+            ctx.send_error(HTTPStatus.CONFLICT, "public URL is required before pairing")
+            return
+        try:
+            result = OperatorPairingService(
+                identities=ctx.deps.identities,
+                rooms=ctx.deps.rooms,
+            ).create(
+                room_id=str(payload.get("meeting_id") or ""),
+                public_url=public_url,
+                ttl_seconds=int(payload.get("ttl_seconds") or 120),
+            )
+        except (TypeError, ValueError) as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+        ctx.send_json(result)
+
+    @router.post("/api/operator-pairing/redeem")
+    def operator_pairing_redeem(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        declared_origin = str(payload.get("origin") or "").strip()
+        header_origin = str(ctx.headers.get("Origin") or "").strip()
+        if not declared_origin:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "origin is required")
+            return
+        if header_origin:
+            try:
+                if normalize_pairing_origin(header_origin) != normalize_pairing_origin(declared_origin):
+                    ctx.send_error(HTTPStatus.FORBIDDEN, "pairing_origin_mismatch")
+                    return
+            except ValueError:
+                ctx.send_error(HTTPStatus.FORBIDDEN, "pairing_origin_invalid")
+                return
+        result = OperatorPairingService(
+            identities=ctx.deps.identities,
+            rooms=ctx.deps.rooms,
+        ).redeem(
+            pairing_token=str(payload.get("pairing_token") or ""),
+            device_token=str(ctx.headers.get("X-Device-Token") or ""),
+            request_origin=declared_origin,
+        )
+        if result.get("status") != "admitted":
+            ctx.send_error(HTTPStatus.FORBIDDEN, str(result.get("reason") or "pairing_rejected"))
+            return
+        ctx.send_json(result)
+
+    @router.post("/api/operator-pairing/revoke")
+    def operator_pairing_revoke(ctx: RequestContext) -> None:
+        if not ctx.require_moderator():
+            return
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        pairing_id = str(payload.get("pairing_id") or "").strip()
+        if not pairing_id:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "pairing_id is required")
+            return
+        revoked = OperatorPairingService(
+            identities=ctx.deps.identities,
+            rooms=ctx.deps.rooms,
+        ).revoke(pairing_id)
+        if not revoked:
+            ctx.send_error(HTTPStatus.NOT_FOUND, "active pairing was not found")
+            return
+        ctx.send_json({"status": "revoked", "pairing_id": pairing_id})
 
     @router.post("/api/room-invite/companion")
     def room_invite_companion(ctx: RequestContext) -> None:

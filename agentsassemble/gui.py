@@ -3429,6 +3429,9 @@ def _make_handler(
                     return
                 self._send_react_app_index(react_app_root)
                 return
+            if path in {"/pair", "/pair/"}:
+                self._send_react_app_index(react_app_root)
+                return
             if path in {"/api", "/api/"}:
                 self._send_json(_api_catalog_payload(self._request_server_url()))
                 return

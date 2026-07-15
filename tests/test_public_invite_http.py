@@ -138,6 +138,75 @@ class PublicInviteHttpTests(unittest.TestCase):
         self.assertTrue(decision["operator"])
         self.assertNotIn("session_token", decision)
 
+    def test_public_origin_operator_pairing_is_separate_and_single_use(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("friend-room", label="Friend room")
+            set_runtime_host_token("host-secret")
+            set_runtime_public_url("https://shared-room.example.com")
+            server = self._start_server(root)
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                host_headers = {"X-Host-Token": "host-secret"}
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/host/claim",
+                        {"device_token": "local-operator-device"},
+                        host_headers,
+                    ),
+                    timeout=4,
+                ):
+                    pass
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/operator-pairing/create",
+                        {"meeting_id": "friend-room"},
+                        host_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    pairing = json.loads(response.read().decode("utf-8"))
+                pairing_token = pairing["pairing_url"].split("token=", 1)[1]
+                public_headers = {
+                    "Host": "shared-room.example.com",
+                    "Origin": "https://shared-room.example.com",
+                    "X-Device-Token": "public-origin-device",
+                }
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/operator-pairing/redeem",
+                        {
+                            "pairing_token": pairing_token,
+                            "origin": "https://shared-room.example.com",
+                        },
+                        public_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    admitted = json.loads(response.read().decode("utf-8"))
+                with self.assertRaises(HTTPError) as replay_error:
+                    urlopen(
+                        _json_request(
+                            f"{base}/api/operator-pairing/redeem",
+                            {
+                                "pairing_token": pairing_token,
+                                "origin": "https://shared-room.example.com",
+                            },
+                            public_headers,
+                        ),
+                        timeout=4,
+                    )
+                self.addCleanup(replay_error.exception.close)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(pairing["target_origin"], "https://shared-room.example.com")
+        self.assertEqual(admitted["agent_id"], "operator-local")
+        self.assertTrue(admitted["operator"])
+        self.assertEqual(admitted["room_label"], "friend-room")
+        self.assertEqual(replay_error.exception.code, 403)
+
     def test_host_token_bootstrap_rejects_untrusted_public_request(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
