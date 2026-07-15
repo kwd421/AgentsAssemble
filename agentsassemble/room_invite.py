@@ -610,12 +610,8 @@ def join_room_with_invite(
     clean_owner_display_name = clean_lobby_text(owner_display_name, limit=64)
     created_by_user_id = clean_lobby_text((invite_info or {}).get("created_by_user_id"), limit=128)
 
-    # One identity, one live session per room: revoke any session this
-    # participant already holds before issuing the new one.
-    if agent_id:
-        revoke_sessions_for_participant(resolved_meeting_id, agent_id)
-
-    # Issue session token
+    # Session replacement is one repository operation. Do not revoke first:
+    # a failed replacement must leave the currently valid token intact.
     session_token = _issue_session_token(
         agent_id=agent_id,
         display_name=resolved_display_name,
@@ -677,7 +673,6 @@ def issue_paired_operator_session(
     clean_display_name = (
         clean_lobby_text(display_name, limit=128) or LOCAL_OPERATOR_PARTICIPANT_ID
     )
-    revoke_sessions_for_participant(clean_meeting_id, LOCAL_OPERATOR_PARTICIPANT_ID)
     session_token = _issue_session_token(
         agent_id=LOCAL_OPERATOR_PARTICIPANT_ID,
         display_name=clean_display_name,

@@ -169,3 +169,7 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   replace under their persistence lock, existing duplicate local sessions fail
   closed, and PostgreSQL revision `0007_unique_room_access_session` plus a
   conflict upsert enforce one active token per room participant under races.
+- 2026-07-15: Milestone 0.3 follow-up removed the legacy pre-revocation from
+  invite rejoin and operator pairing. A failed replacement now rolls back and
+  leaves the previously valid bearer token usable instead of disconnecting the
+  participant before the new token is durable.

@@ -3,7 +3,10 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime, timedelta
 
-from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
+from agentsassemble.room_invite_repository import (
+    InviteRepositoryWriteFailed,
+    MemoryInviteSessionRepository,
+)
 from agentsassemble.room_session_issuer import RoomSessionIssuer, session_token_fingerprint
 
 
@@ -68,6 +71,40 @@ class RoomSessionIssuerTests(unittest.TestCase):
         self.assertIsNone(self.issuer.verify(first_token))
         self.assertEqual(replacement.verify(second_token), second_session)
         self.assertEqual(len(self.repository.list_sessions()), 1)
+
+    def test_failed_replacement_preserves_prior_participant_token(self) -> None:
+        class FailingRepository(MemoryInviteSessionRepository):
+            fail_writes = False
+
+            def _persist_locked(self) -> None:
+                if self.fail_writes:
+                    raise InviteRepositoryWriteFailed("injected write failure")
+
+        repository = FailingRepository()
+        first = RoomSessionIssuer(
+            repository,
+            token_prefix="aas1",
+            ttl_seconds=60,
+            now=lambda: self.now,
+            token_factory=lambda: "first-token",
+        )
+        first_token, first_session = first.issue(
+            {"agent_id": "guest-a", "meeting_id": "room-a"}
+        )
+        repository.fail_writes = True
+        replacement = RoomSessionIssuer(
+            repository,
+            token_prefix="aas1",
+            ttl_seconds=60,
+            now=lambda: self.now,
+            token_factory=lambda: "replacement-token",
+        )
+
+        with self.assertRaises(InviteRepositoryWriteFailed):
+            replacement.issue({"agent_id": "guest-a", "meeting_id": "room-a"})
+
+        self.assertEqual(first.verify(first_token), first_session)
+        self.assertEqual(len(repository.list_sessions()), 1)
 
     def test_participant_and_room_revocation_are_delegated(self) -> None:
         first = RoomSessionIssuer(
