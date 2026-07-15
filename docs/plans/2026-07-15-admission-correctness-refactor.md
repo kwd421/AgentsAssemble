@@ -194,3 +194,9 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   module functions remain compatibility entry points backed by the same
   service, while direct service instances are isolated and testable without
   changing process-global state.
+- 2026-07-15: Milestone 1.2 implemented. The GUI server now composes one invite
+  service, room-session service, admission preflight, and mutating
+  `RoomAdmissionCoordinator`. The current join route validates the room before
+  consuming admission authority, then resolves identity, issues one session,
+  and commits canonical participant and membership state through that owner.
+  The legacy join facade remains available only to compatibility callers.

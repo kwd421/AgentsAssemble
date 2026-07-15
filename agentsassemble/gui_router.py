@@ -32,7 +32,10 @@ from agentsassemble.gui_request_security import (
     _split_authority_host_port,
 )
 from agentsassemble.identity_store import IdentityBackend, identity_store_for_output_root
-from agentsassemble.room_invite import verify_host_token, verify_session_token
+from agentsassemble.room_admission import RoomAdmissionService
+from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
+from agentsassemble.room_invite import InviteApplicationService, verify_host_token, verify_session_token
+from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_users import device_auth_key, participant_is_operator
 
@@ -49,6 +52,10 @@ class GuiDeps:
     output_root: Path
     room_repository: RoomRepository | None = None
     identity_backend: IdentityBackend | None = None
+    invite_application: InviteApplicationService | None = None
+    room_sessions: RoomSessionService | None = None
+    admission_preflight_service: RoomAdmissionService | None = None
+    admission_coordinator: RoomAdmissionCoordinator | None = None
     attachment_store: FileAttachmentStore | None = None
     process_supervisor: Any = None
     read_lobby: Callable[..., list[dict[str, object]]] | None = None
@@ -72,6 +79,34 @@ class GuiDeps:
             backend = identity_store_for_output_root(self.output_root)
             self.identity_backend = backend
         return backend
+
+    @property
+    def invites(self) -> InviteApplicationService:
+        service = self.invite_application
+        if service is None:
+            raise RuntimeError("GUI invite application service is not configured.")
+        return service
+
+    @property
+    def sessions(self) -> RoomSessionService:
+        service = self.room_sessions
+        if service is None:
+            raise RuntimeError("GUI room session service is not configured.")
+        return service
+
+    @property
+    def admission_preflight(self) -> RoomAdmissionService:
+        service = self.admission_preflight_service
+        if service is None:
+            raise RuntimeError("GUI admission preflight service is not configured.")
+        return service
+
+    @property
+    def admission(self) -> RoomAdmissionCoordinator:
+        service = self.admission_coordinator
+        if service is None:
+            raise RuntimeError("GUI admission coordinator is not configured.")
+        return service
 
     @property
     def media(self) -> FileAttachmentStore:

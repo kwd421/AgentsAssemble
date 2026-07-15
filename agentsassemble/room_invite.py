@@ -20,6 +20,7 @@ import hmac as hmac_mod
 import os
 import secrets
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -56,6 +57,25 @@ _runtime_public_url: str = ""
 ROOM_INVITE_SCOPE = "room"
 READ_ONLY_INVITE_SCOPE = "read_only"
 INVITE_SCOPES = {ROOM_INVITE_SCOPE, READ_ONLY_INVITE_SCOPE}
+
+
+@dataclass(frozen=True)
+class PreparedInviteAdmission:
+    """Validated internal invite evidence consumed by admission coordination."""
+
+    invite_id: str
+    meeting_id: str
+    base_agent_id: str
+    display_name: str
+    invite_scope: str
+    participant_type: str
+    client_type: str
+    provider_kind: str
+    created_by_user_id: str
+    reusable: bool
+    max_uses: int
+    nonce_fingerprint: str
+    room_url: str
 
 # --- Host token gate ---
 # Set AGENTSASSEMBLE_HOST_TOKEN to require auth for invite creation/management.
@@ -203,6 +223,9 @@ class InviteApplicationService:
     def signing_secret(self) -> str:
         return self._repository.signing_secret()
 
+    def public_url(self) -> str:
+        return str(self._public_url() or "").rstrip("/")
+
     def create(
         self,
         *,
@@ -221,7 +244,7 @@ class InviteApplicationService:
     ) -> dict[str, object]:
         return _create_room_invite(
             self._repository,
-            public_url=self._public_url(),
+            public_url=self.public_url(),
             now=self._now(),
             room_url=room_url,
             meeting_id=meeting_id,
@@ -238,11 +261,48 @@ class InviteApplicationService:
         )
 
     def inspect(self, token: str, *, meeting_id: str = "") -> dict[str, object]:
-        return _inspect_room_invite(
+        prepared = self.prepare_admission(token, meeting_id=meeting_id)
+        if isinstance(prepared, dict):
+            return prepared
+        return _invite_inspection_payload(prepared)
+
+    def prepare_admission(
+        self,
+        token: str,
+        *,
+        meeting_id: str = "",
+    ) -> PreparedInviteAdmission | dict[str, object]:
+        return _prepare_invite_admission(
             self._repository,
             token,
             meeting_id=meeting_id,
+            public_url=self.public_url(),
             now=self._now(),
+        )
+
+    def consume(self, prepared: PreparedInviteAdmission) -> str:
+        return self._repository.consume(
+            invite_id=prepared.invite_id,
+            nonce_fingerprint=prepared.nonce_fingerprint,
+            reusable=prepared.reusable,
+            max_uses=prepared.max_uses,
+        )
+
+    def usage_guide(
+        self,
+        prepared: PreparedInviteAdmission,
+        *,
+        participant_id: str,
+        display_name: str,
+        owner_display_name: str = "",
+    ) -> dict[str, object]:
+        return _room_usage_guide(
+            room_url=prepared.room_url,
+            meeting_id=prepared.meeting_id,
+            agent_id=participant_id,
+            display_name=display_name,
+            reusable_invite=prepared.reusable,
+            owner_display_name=owner_display_name,
         )
 
     def revoke(self, invite_id: str) -> bool:
@@ -470,19 +530,15 @@ def inspect_room_invite(token: str, *, meeting_id: str = "") -> dict[str, object
     return _invite_application.inspect(token, meeting_id=meeting_id)
 
 
-def _inspect_room_invite(
+def _prepare_invite_admission(
     repository: InviteSessionRepository,
     token: str,
     *,
     meeting_id: str = "",
+    public_url: str,
     now: datetime,
-) -> dict[str, object]:
-    """Validate an invite without consuming it or issuing identity state.
-
-    This is the admission-preflight primitive. It deliberately returns only
-    invite metadata needed for a decision and never exposes the raw token,
-    nonce, join-code fingerprint, or signing secret.
-    """
+) -> PreparedInviteAdmission | dict[str, object]:
+    """Validate an invite and return internal evidence without consuming it."""
     clean_token = str(token or "").strip()
     if not clean_token:
         return {"status": "rejected", "reason": "invite_required"}
@@ -500,6 +556,7 @@ def _inspect_room_invite(
     if invite and invite.get("revoked"):
         return {"status": "rejected", "reason": "invite_revoked"}
 
+    claims: dict[str, object]
     if join_code:
         if invite is None:
             return {"status": "rejected", "reason": "invite_not_found"}
@@ -512,7 +569,14 @@ def _inspect_room_invite(
         resolved_meeting_id = clean_lobby_text(invite.get("meeting_id"), limit=128)
         if meeting_id and clean_lobby_text(meeting_id, limit=128) != resolved_meeting_id:
             return {"status": "rejected", "reason": "meeting_mismatch"}
-        nonce = str(invite.get("join_nonce") or "")
+        claims = {
+            "meeting_id": resolved_meeting_id,
+            "nonce": invite.get("join_nonce"),
+            "agent": {
+                "agent_id": invite.get("agent_id"),
+                "display_name": invite.get("display_name"),
+            },
+        }
     else:
         invite_secret = repository.existing_signing_secret()
         if not invite_secret:
@@ -528,42 +592,67 @@ def _inspect_room_invite(
                 "reason": verification.get("identity_status", "verification_failed"),
             }
         claims = verification.get("claims", {})
+        if not isinstance(claims, dict):
+            return {"status": "rejected", "reason": "invite_invalid"}
         resolved_meeting_id = clean_lobby_text(
-            claims.get("meeting_id") if isinstance(claims, dict) else "",
+            claims.get("meeting_id"),
             limit=128,
         )
-        nonce = str(claims.get("nonce") or "") if isinstance(claims, dict) else ""
 
     max_uses = int(invite.get("max_uses", 1)) if invite else 1
     use_count = int(invite.get("use_count", 0)) if invite else 0
     reusable = max_uses != 1
     if max_uses and use_count >= max_uses:
         return {"status": "rejected", "reason": "invite_use_limit_reached"}
-    if not reusable and repository.nonce_was_used(_nonce_fingerprint(nonce)):
+    nonce_fingerprint = _nonce_fingerprint(str(claims.get("nonce") or ""))
+    if not reusable and repository.nonce_was_used(nonce_fingerprint):
         return {"status": "rejected", "reason": "token_already_used"}
 
-    agent_info = {}
-    if not join_code:
-        claims = verification.get("claims", {})
-        if isinstance(claims, dict) and isinstance(claims.get("agent"), dict):
-            agent_info = claims["agent"]
-    return {
-        "status": "valid",
-        "invite_id": invite_id,
-        "meeting_id": resolved_meeting_id,
-        "display_name": clean_lobby_text(
+    agent_info = claims.get("agent") if isinstance(claims.get("agent"), dict) else {}
+    return PreparedInviteAdmission(
+        invite_id=invite_id,
+        meeting_id=resolved_meeting_id,
+        base_agent_id=clean_lobby_text(
+            (invite or {}).get("agent_id") or agent_info.get("agent_id"),
+            limit=64,
+        ),
+        display_name=clean_lobby_text(
             (invite or {}).get("display_name") or agent_info.get("display_name"),
             limit=128,
         ),
-        "invite_scope": normalize_invite_scope((invite or {}).get("invite_scope")),
-        "participant_type": _normalize_invite_participant_type(
+        invite_scope=normalize_invite_scope((invite or {}).get("invite_scope")),
+        participant_type=_normalize_invite_participant_type(
             (invite or {}).get("participant_type", "human")
         ),
-        "client_type": _normalize_invite_client_type((invite or {}).get("client_type", "browser")),
-        "provider_kind": clean_lobby_text((invite or {}).get("provider_kind", "manual"), limit=64)
-        or "manual",
-        "created_by_user_id": clean_lobby_text((invite or {}).get("created_by_user_id"), limit=128),
-        "reusable": reusable,
+        client_type=_normalize_invite_client_type((invite or {}).get("client_type", "browser")),
+        provider_kind=(
+            clean_lobby_text((invite or {}).get("provider_kind", "manual"), limit=64)
+            or "manual"
+        ),
+        created_by_user_id=clean_lobby_text(
+            (invite or {}).get("created_by_user_id"),
+            limit=128,
+        ),
+        reusable=reusable,
+        max_uses=max_uses,
+        nonce_fingerprint=nonce_fingerprint,
+        room_url=str(public_url or claims.get("room_url") or ""),
+    )
+
+
+def _invite_inspection_payload(prepared: PreparedInviteAdmission) -> dict[str, object]:
+    """Project validated evidence without exposing replay or signing material."""
+    return {
+        "status": "valid",
+        "invite_id": prepared.invite_id,
+        "meeting_id": prepared.meeting_id,
+        "display_name": prepared.display_name,
+        "invite_scope": prepared.invite_scope,
+        "participant_type": prepared.participant_type,
+        "client_type": prepared.client_type,
+        "provider_kind": prepared.provider_kind,
+        "created_by_user_id": prepared.created_by_user_id,
+        "reusable": prepared.reusable,
     }
 
 

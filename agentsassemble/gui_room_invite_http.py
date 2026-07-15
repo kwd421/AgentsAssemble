@@ -7,17 +7,6 @@ from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.live_agents import connect_live_agent
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.operator_pairing import OperatorPairingService, normalize_pairing_origin
-from agentsassemble.room_admission import RoomAdmissionService
-from agentsassemble.room_invite import (
-    active_sessions_summary,
-    create_room_invite,
-    get_public_url,
-    join_room_with_invite,
-    pending_invites_summary,
-    revoke_invite,
-    revoke_session,
-)
-from agentsassemble.room_members import upsert_room_member
 from agentsassemble.room_users import (
     grant_operator_to_device,
     operator_user_id,
@@ -56,13 +45,13 @@ def register_invite_admission_routes(router: Router) -> None:
     def room_invite_sessions(ctx: RequestContext) -> None:
         if not ctx.require_moderator():
             return
-        ctx.send_json({"sessions": active_sessions_summary()})
+        ctx.send_json({"sessions": ctx.deps.sessions.active_summary()})
 
     @router.get("/api/room-invite/invites")
     def room_invite_invites(ctx: RequestContext) -> None:
         if not ctx.require_moderator():
             return
-        ctx.send_json({"invites": pending_invites_summary()})
+        ctx.send_json({"invites": ctx.deps.invites.pending()})
 
     @router.post("/api/room-invite/create")
     def room_invite_create(ctx: RequestContext) -> None:
@@ -72,7 +61,7 @@ def register_invite_admission_routes(router: Router) -> None:
         if payload is None:
             return
         allow_local_dev_invite = payload.get("local_dev_preview") is True or payload.get("allow_local_dev") is True
-        if not get_public_url() and not allow_local_dev_invite:
+        if not ctx.deps.invites.public_url() and not allow_local_dev_invite:
             ctx.send_error(
                 HTTPStatus.CONFLICT,
                 "public URL is required before creating an external guest invite",
@@ -93,7 +82,7 @@ def register_invite_admission_routes(router: Router) -> None:
             creator_participant_id = str((request_session or {}).get("agent_id") or "")
             creator_user = user_for_participant(creator_participant_id) if creator_participant_id else None
             created_by_user_id = str((creator_user or {}).get("user_id") or operator_user_id())
-            invite = create_room_invite(
+            invite = ctx.deps.invites.create(
                 room_url=ctx.local_server_url(),
                 meeting_id=room_id,
                 agent_id=str(payload.get("agent_id") or ""),
@@ -124,8 +113,8 @@ def register_invite_admission_routes(router: Router) -> None:
         if not token:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "invite_token is required")
             return
-        result = join_room_with_invite(
-            token,
+        result = ctx.deps.admission.admit(
+            invite_token=token,
             meeting_id=str(payload.get("meeting_id") or ""),
             display_name=str(payload.get("display_name") or ""),
             device_token=str(payload.get("device_token") or ""),
@@ -135,59 +124,17 @@ def register_invite_admission_routes(router: Router) -> None:
         if result.get("status") != "admitted":
             ctx.send_error(HTTPStatus.FORBIDDEN, str(result.get("reason", "rejected")))
             return
-        room_id = str(result.get("meeting_id") or "")
-        room = ctx.deps.rooms.room(room_id)
-        if not room:
-            revoke_session(str(result.get("session_token") or ""))
-            ctx.send_error(HTTPStatus.GONE, "room was deleted or does not exist")
-            return
-        try:
-            settings = ctx.deps.rooms.room_settings(room_id)
-        except ValueError:
-            revoke_session(str(result.get("session_token") or ""))
-            ctx.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, "room settings are unavailable")
-            return
-        result["room_label"] = str(settings.get("label") or room.get("label") or room_id)
-        result["room_topic"] = str(settings.get("topic") or room.get("topic") or "")
-        result["room_created_at"] = str(room.get("created_at") or "")
         participant_type = str(result.get("participant_type") or "human")
-        if participant_type == "human":
-            ctx.deps.rooms.upsert_participant(
-                str(result["meeting_id"]),
-                {
-                    "participant_id": result["agent_id"],
-                    "display_name": result["display_name"],
-                    "participant_type": "human",
-                    "role": "human",
-                    "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
-                    "status": "joined",
-                },
-            )
-            try:
-                upsert_room_member(
-                    ctx.deps.output_root,
-                    {
-                        "participant_id": result["agent_id"],
-                        "display_name": result["display_name"],
-                        "meeting_id": result["meeting_id"],
-                        "role": "human",
-                        "participant_type": "human",
-                        "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
-                        "status": "online",
-                        "source": "room_invite",
-                    },
-                )
-            except ValueError:
-                pass
-        else:
+        if participant_type != "human":
             try:
                 connect_live_agent(
                     ctx.deps.output_root,
                     {
                         "agent_id": result["agent_id"],
                         "display_name": result["display_name"],
-                        "provider_kind": "manual",
-                        "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
+                        "provider_kind": result.get("provider_kind") or "manual",
+                        "connection_kind": result.get("connection_kind")
+                        or NATIVE_REMOTE_ROOM_CLIENT_KIND,
                         "meeting_id": result["meeting_id"],
                         "status": "online",
                         "owner_display_name": str(result.get("owner_display_name") or ""),
@@ -206,10 +153,7 @@ def register_invite_admission_routes(router: Router) -> None:
         if not token:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "invite_token is required")
             return
-        decision = RoomAdmissionService(
-            identities=ctx.deps.identities,
-            rooms=ctx.deps.rooms,
-        ).resolve(
+        decision = ctx.deps.admission_preflight.resolve(
             invite_token=token,
             device_token=str(ctx.headers.get("X-Device-Token") or ""),
             session=ctx.session(),
@@ -223,7 +167,7 @@ def register_invite_admission_routes(router: Router) -> None:
         payload = ctx.read_json_body()
         if payload is None:
             return
-        public_url = get_public_url()
+        public_url = ctx.deps.invites.public_url()
         if not public_url:
             ctx.send_error(HTTPStatus.CONFLICT, "public URL is required before pairing")
             return
@@ -297,7 +241,7 @@ def register_invite_admission_routes(router: Router) -> None:
         if payload is None:
             return
         try:
-            invite = create_room_invite(
+            invite = ctx.deps.invites.create(
                 room_url=ctx.local_server_url(),
                 meeting_id=str(session.get("meeting_id") or ""),
                 agent_id=str(payload.get("agent_id") or ""),
@@ -328,7 +272,7 @@ def register_invite_admission_routes(router: Router) -> None:
             )
         except ValueError:
             pass
-        revoke_session(ctx.bearer_token())
+        ctx.deps.sessions.revoke(ctx.bearer_token())
         ctx.send_json({"status": "left", "agent_id": session["agent_id"]})
 
     @router.post("/api/room-invite/revoke")
@@ -341,12 +285,12 @@ def register_invite_admission_routes(router: Router) -> None:
         invite_id = str(payload.get("invite_id") or "").strip()
         session_token_to_revoke = str(payload.get("session_token") or "").strip()
         if invite_id:
-            if revoke_invite(invite_id):
+            if ctx.deps.invites.revoke(invite_id):
                 ctx.send_json({"status": "revoked", "invite_id": invite_id})
             else:
                 ctx.send_error(HTTPStatus.NOT_FOUND, "invite not found")
         elif session_token_to_revoke:
-            if revoke_session(session_token_to_revoke):
+            if ctx.deps.sessions.revoke(session_token_to_revoke):
                 ctx.send_json({"status": "revoked"})
             else:
                 ctx.send_error(HTTPStatus.NOT_FOUND, "session not found")

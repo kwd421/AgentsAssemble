@@ -8,6 +8,9 @@ from typing import Protocol
 
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.identity_store import IdentityBackend
+from agentsassemble.room_admission import RoomAdmissionService
+from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
+from agentsassemble.room_invite import InviteApplicationService
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
 from agentsassemble.public_tunnel import PublicTunnelManager
@@ -15,6 +18,7 @@ from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_realtime import RoomRealtimeController
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_invite_repository import InviteSessionRepository
+from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.ws_room_session import WsTicketStore
 
 
@@ -47,6 +51,10 @@ class GuiApplicationServices:
     output_root: Path
     room_repository: RoomRepository
     invite_repository: InviteSessionRepository
+    invites: InviteApplicationService
+    sessions: RoomSessionService
+    admission_preflight: RoomAdmissionService
+    admission: RoomAdmissionCoordinator
     identity_backend: IdentityBackend
     invite_store_path: Path
     media_store: FileAttachmentStore

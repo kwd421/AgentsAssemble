@@ -8,7 +8,11 @@ from pathlib import Path
 
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.gui_application import GuiApplicationServices
+from agentsassemble.room_admission import RoomAdmissionService
+from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
+from agentsassemble.room_invite import InviteApplicationService
 from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
+from agentsassemble.room_session_service import RoomSessionService
 
 
 class _Repository:
@@ -115,11 +119,35 @@ class GuiApplicationServicesTests(unittest.TestCase):
         fail_session_stop: bool = False,
         owns_resources: bool = True,
     ) -> GuiApplicationServices:
+        room_repository = _Repository(events)
+        invite_repository = _InviteRepository(events)
+        identity_repository = _IdentityRepository(events)
+        invites = InviteApplicationService(invite_repository)
+        sessions = RoomSessionService(
+            invite_repository,
+            token_prefix="aas1",
+            ttl_seconds=3600,
+        )
+        admission_preflight = RoomAdmissionService(
+            identities=identity_repository,  # type: ignore[arg-type]
+            rooms=room_repository,  # type: ignore[arg-type]
+            invite_inspector=invites.inspect,
+        )
+        admission = RoomAdmissionCoordinator(
+            invites=invites,
+            sessions=sessions,
+            identities=identity_repository,  # type: ignore[arg-type]
+            rooms=room_repository,  # type: ignore[arg-type]
+        )
         return GuiApplicationServices(
             output_root=root,
-            room_repository=_Repository(events),  # type: ignore[arg-type]
-            invite_repository=_InviteRepository(events),
-            identity_backend=_IdentityRepository(events),  # type: ignore[arg-type]
+            room_repository=room_repository,  # type: ignore[arg-type]
+            invite_repository=invite_repository,
+            invites=invites,
+            sessions=sessions,
+            admission_preflight=admission_preflight,
+            admission=admission,
+            identity_backend=identity_repository,  # type: ignore[arg-type]
             invite_store_path=root / "room-invites.json",
             media_store=FileAttachmentStore(root),
             process_supervisor=_ProcessSupervisor(  # type: ignore[arg-type]

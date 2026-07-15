@@ -384,6 +384,8 @@ from agentsassemble.frontend_runtime import (
     frontend_dist_status,
 )
 from agentsassemble.room_friend_dms import enqueue_room_friend_direct_dm
+from agentsassemble.room_admission import RoomAdmissionService
+from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
 from agentsassemble.identity_repository_factory import build_identity_repository
 from agentsassemble.identity_store import (
     IdentityBackend,
@@ -424,6 +426,9 @@ from agentsassemble.room_users import (
 )
 from agentsassemble.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
 from agentsassemble.room_invite import (
+    InviteApplicationService,
+    SESSION_TOKEN_PREFIX,
+    SESSION_TOKEN_TTL_SECONDS,
     active_sessions_summary,
     configure_room_invite_repository,
     default_room_invite_store_path,
@@ -434,6 +439,7 @@ from agentsassemble.room_invite import (
     set_runtime_public_url,
     verify_session_token,
 )
+from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.meeting_events import (
     FLOW_METADATA_KEYS,
     ROOM_TOPIC_LIMIT,
@@ -913,6 +919,27 @@ def _build_gui_application_services(
         configure_room_users_backend(identity_backend)
         _backfill_room_registry(output_root)
 
+        invite_application = InviteApplicationService(
+            invite_repository,
+            public_url=get_public_url,
+        )
+        room_session_service = RoomSessionService(
+            invite_repository,
+            token_prefix=SESSION_TOKEN_PREFIX,
+            ttl_seconds=SESSION_TOKEN_TTL_SECONDS,
+        )
+        admission_preflight = RoomAdmissionService(
+            identities=identity_backend,
+            rooms=room_repository,
+            invite_inspector=invite_application.inspect,
+        )
+        admission_coordinator = RoomAdmissionCoordinator(
+            invites=invite_application,
+            sessions=room_session_service,
+            identities=identity_backend,
+            rooms=room_repository,
+        )
+
         live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
         if owns_process_supervisor:
             remember_cleanup("process_supervisor.close", live_agent_process_supervisor.close)
@@ -967,6 +994,10 @@ def _build_gui_application_services(
             output_root=output_root,
             room_repository=room_repository,
             invite_repository=invite_repository,
+            invites=invite_application,
+            sessions=room_session_service,
+            admission_preflight=admission_preflight,
+            admission=admission_coordinator,
             identity_backend=identity_backend,
             invite_store_path=default_room_invite_store_path(output_root),
             media_store=FileAttachmentStore(output_root),
@@ -3080,6 +3111,10 @@ def _make_handler(
         output_root=output_root,
         room_repository=room_repository,
         identity_backend=services.identity_backend,
+        invite_application=services.invites,
+        room_sessions=services.sessions,
+        admission_preflight_service=services.admission_preflight,
+        admission_coordinator=services.admission,
         attachment_store=services.media_store,
         process_supervisor=live_agent_process_supervisor,
         read_lobby=read_lobby,
