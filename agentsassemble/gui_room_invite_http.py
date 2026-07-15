@@ -94,7 +94,7 @@ def register_invite_admission_routes(router: Router) -> None:
             creator_user = user_for_participant(creator_participant_id) if creator_participant_id else None
             created_by_user_id = str((creator_user or {}).get("user_id") or operator_user_id())
             invite = create_room_invite(
-                room_url=ctx.handler._local_server_url(),
+                room_url=ctx.local_server_url(),
                 meeting_id=room_id,
                 agent_id=str(payload.get("agent_id") or ""),
                 display_name=str(payload.get("display_name") or ""),
@@ -302,7 +302,7 @@ def register_invite_admission_routes(router: Router) -> None:
             return
         try:
             invite = create_room_invite(
-                room_url=ctx.handler._local_server_url(),
+                room_url=ctx.local_server_url(),
                 meeting_id=str(session.get("meeting_id") or ""),
                 agent_id=str(payload.get("agent_id") or ""),
                 display_name=str(payload.get("display_name") or ""),

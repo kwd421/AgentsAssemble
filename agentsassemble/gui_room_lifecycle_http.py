@@ -84,11 +84,11 @@ def register_room_history_routes(
         session = ctx.require_session()
         if session is None:
             return
-        ctx.handler._send_sse_stream(
+        ctx.send_sse_stream(
             "lobby",
             "lobby",
             meeting_id=str(session.get("meeting_id") or ""),
-            last_event_id=ctx.handler._last_event_id(ctx.query),
+            last_event_id=ctx.last_event_id(),
         )
 
     @router.get("/api/room-events/stream")
@@ -97,11 +97,10 @@ def register_room_history_routes(
         if not room_id:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
             return
-        if hasattr(ctx.handler, "_send_room_events_sse_stream"):
-            ctx.handler._send_room_events_sse_stream(
-                room_id=room_id,
-                cursor=ctx.query_value("cursor") or ctx.handler._last_event_id(ctx.query),
-            )
+        if ctx.send_room_events_sse_stream(
+            room_id=room_id,
+            cursor=ctx.query_value("cursor") or ctx.last_event_id(),
+        ):
             return
         ctx.send_json(
             room_status_payload(
@@ -207,7 +206,7 @@ def register_room_history_routes(
     def rooms_list(ctx: RequestContext) -> None:
         session = ctx.session()
         operator_view = (
-            ctx.handler._request_uses_loopback_host()
+            ctx.uses_loopback_host()
             or ctx.is_host()
             or ctx.is_operator_session()
         )
@@ -265,12 +264,12 @@ def register_room_lifecycle_routes(router: Router) -> None:
             participant_id = str(session.get("agent_id") or "")
             user = user_for_participant(participant_id)
             return str((user or {}).get("user_id") or participant_id)
-        if ctx.handler._request_uses_loopback_host() or ctx.is_host():
+        if ctx.uses_loopback_host() or ctx.is_host():
             return operator_user_id()
         return ""
 
     def _loopback_or_moderator(ctx: RequestContext) -> bool:
-        if ctx.handler._request_uses_loopback_host():
+        if ctx.uses_loopback_host():
             return True
         return ctx.require_moderator()
 
@@ -292,7 +291,7 @@ def register_room_lifecycle_routes(router: Router) -> None:
         ctx.send_json({"status": "ready", "meeting_id": meeting_dir.name})
 
     def _leave_allowed(ctx: RequestContext, payload: dict[str, object]) -> bool:
-        if ctx.handler._request_uses_loopback_host() or ctx.is_host() or ctx.is_operator_session():
+        if ctx.uses_loopback_host() or ctx.is_host() or ctx.is_operator_session():
             return True
         session = ctx.session()
         if not session:

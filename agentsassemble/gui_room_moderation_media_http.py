@@ -76,7 +76,7 @@ def register_moderation_media_routes(
 
     @router.get("/api/events/roster")
     def roster_events_stream(ctx: RequestContext) -> None:
-        ctx.handler._send_sse_stream(
+        ctx.send_sse_stream(
             "roster",
             "roster",
             meeting_id=ctx.query_value("meeting_id"),
@@ -86,7 +86,7 @@ def register_moderation_media_routes(
     @router.get("/api/room-members")
     def room_members(ctx: RequestContext) -> None:
         if (
-            not ctx.handler._request_uses_loopback_host()
+            not ctx.uses_loopback_host()
             and ctx.session() is None
             and not ctx.is_host()
         ):
@@ -195,7 +195,7 @@ def register_moderation_media_routes(
     @router.get("/api/room-channels")
     def room_channels_list(ctx: RequestContext) -> None:
         if (
-            not ctx.handler._request_uses_loopback_host()
+            not ctx.uses_loopback_host()
             and ctx.session() is None
             and not ctx.is_host()
         ):
@@ -255,7 +255,7 @@ def register_moderation_media_routes(
                 ctx.send_error(HTTPStatus.FORBIDDEN, "read-only invite session cannot post")
                 return None, None
             return str(session.get("meeting_id") or ""), session
-        if ctx.handler._request_uses_loopback_host() or ctx.is_host():
+        if ctx.uses_loopback_host() or ctx.is_host():
             return str(payload_meeting_id or ""), None
         ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
         return None, None

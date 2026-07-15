@@ -7,6 +7,8 @@ provider runner names used by ``gui.py`` and the HTTP tests.
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
+from dataclasses import dataclass
 from http import HTTPStatus
 
 from agentsassemble.agent_sessions import (
@@ -148,65 +150,57 @@ def _local_agent_session_turn_adapter(session: dict[str, object], packet: dict[s
 
 def _agent_session_control_allowed(ctx: RequestContext) -> bool:
     has_host_token = bool(ctx.provided_host_token())
-    return ctx.handler._request_uses_loopback_host() or (has_host_token and ctx.is_host()) or ctx.is_operator_session()
+    return ctx.uses_loopback_host() or (has_host_token and ctx.is_host()) or ctx.is_operator_session()
 
 
-# Resolve public adapter patch points at call time; route registration otherwise
-# captures the original function and breaks existing runtime/test overrides.
-def _late_agent_session_control_allowed(ctx: RequestContext) -> bool:
-    return _agent_session_control_allowed(ctx)
+@dataclass(frozen=True)
+class RoomRouteAdapters:
+    agent_session_control_allowed: Callable[[RequestContext], bool]
+    speech_rejection_status: Callable[[str], HTTPStatus]
+    process_command_runner: Callable[..., object]
+    turn_adapter: Callable[..., object]
+    turn_command_runner: Callable[..., object]
+    turn_command_streamer: Callable[..., object]
 
 
-def _late_speech_rejection_status(category: str) -> HTTPStatus:
-    return _speech_rejection_status(category)
+def _default_room_route_adapters() -> RoomRouteAdapters:
+    return RoomRouteAdapters(
+        agent_session_control_allowed=_agent_session_control_allowed,
+        speech_rejection_status=_speech_rejection_status,
+        process_command_runner=_local_agent_session_command_runner,
+        turn_adapter=_local_agent_session_turn_adapter,
+        turn_command_runner=_local_agent_session_turn_command_runner,
+        turn_command_streamer=_local_agent_session_turn_command_streamer,
+    )
 
 
-def _late_agent_session_command_runner(command: list[str]) -> dict[str, object]:
-    return _local_agent_session_command_runner(command)
-
-
-def _late_agent_session_turn_command_runner(
-    command: list[str],
-    prompt: str,
-    timeout_seconds: float,
-) -> subprocess.CompletedProcess[str]:
-    return _local_agent_session_turn_command_runner(command, prompt, timeout_seconds)
-
-
-def _late_agent_session_turn_command_streamer(
-    command: list[str],
-    prompt: str,
-    timeout_seconds: float,
-):
-    yield from _local_agent_session_turn_command_streamer(command, prompt, timeout_seconds)
-
-
-def _late_agent_session_turn_adapter(session: dict[str, object], packet: dict[str, object]):
-    yield from _local_agent_session_turn_adapter(session, packet)
-
-
-def register_room_routes(router: Router) -> None:
+def register_room_routes(
+    router: Router,
+    *,
+    adapters: RoomRouteAdapters | None = None,
+) -> None:
     """Attach the canonical room route domains to the exact-path router."""
+    resolved = adapters or _default_room_route_adapters()
 
     register_room_history_routes(
         router,
-        agent_session_control_allowed=_late_agent_session_control_allowed,
-        agent_turn_adapter=_late_agent_session_turn_adapter,
-        speech_rejection_status=_late_speech_rejection_status,
+        agent_session_control_allowed=resolved.agent_session_control_allowed,
+        agent_turn_adapter=resolved.turn_adapter,
+        speech_rejection_status=resolved.speech_rejection_status,
     )
     register_agent_session_routes(
         router,
-        agent_session_control_allowed=_late_agent_session_control_allowed,
-        process_command_runner=_late_agent_session_command_runner,
-        turn_adapter=_late_agent_session_turn_adapter,
-        turn_command_runner=_late_agent_session_turn_command_runner,
-        turn_command_streamer=_late_agent_session_turn_command_streamer,
+        agent_session_control_allowed=resolved.agent_session_control_allowed,
+        process_command_runner=resolved.process_command_runner,
+        turn_adapter=resolved.turn_adapter,
+        turn_command_runner=resolved.turn_command_runner,
+        turn_command_streamer=resolved.turn_command_streamer,
     )
     register_room_lifecycle_routes(router)
     register_moderation_media_routes(
         router,
-        agent_session_control_allowed=_late_agent_session_control_allowed,
-        agent_turn_adapter=_late_agent_session_turn_adapter,
-        speech_rejection_status=_late_speech_rejection_status,
+        agent_session_control_allowed=resolved.agent_session_control_allowed,
+        agent_turn_adapter=resolved.turn_adapter,
+        speech_rejection_status=resolved.speech_rejection_status,
     )
     register_invite_admission_routes(router)

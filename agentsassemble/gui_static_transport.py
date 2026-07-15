@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
+from agentsassemble.gui_router import request_server_url
+
 
 REACT_APP_EXACT_PATHS = frozenset(
     {
@@ -98,14 +100,6 @@ class ReactStaticTransport:
             handler._send_error(HTTPStatus.NOT_FOUND, "Legacy static assets are retired.")
             return True
         return False
-
-
-def request_server_url(handler: Any) -> str:
-    host = handler.headers.get("Host")
-    if host:
-        return f"http://{host}"
-    address = handler.server.server_address
-    return f"http://{address[0]}:{address[1]}"
 
 
 def safe_static_path(static_root: Path, relative_path: str) -> Path | None:

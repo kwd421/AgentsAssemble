@@ -25,6 +25,12 @@ from typing import Any
 from urllib.parse import unquote
 
 from agentsassemble.attachments import FileAttachmentStore
+from agentsassemble.gui_request_security import (
+    _LOOPBACK_HOSTNAMES,
+    _is_loopback_host,
+    _origin_is_loopback_or_empty,
+    _split_authority_host_port,
+)
 from agentsassemble.identity_store import IdentityBackend, identity_store_for_output_root
 from agentsassemble.room_invite import verify_host_token, verify_session_token
 from agentsassemble.room_repository import RoomRepository
@@ -99,6 +105,23 @@ class RequestContext:
     def query_value(self, name: str, default: str = "") -> str:
         return str(self.query.get(name, [default])[0] or default)
 
+    def request_server_url(self) -> str:
+        return request_server_url(self.handler)
+
+    def local_server_url(self) -> str:
+        return local_server_url(self.handler.server.server_address)
+
+    def uses_loopback_host(self) -> bool:
+        host_name, _ = _split_authority_host_port(str(self.headers.get("Host") or ""))
+        return host_name in _LOOPBACK_HOSTNAMES
+
+    def is_local_operator(self) -> bool:
+        return (
+            _is_loopback_host(self.handler.server.server_address[0])
+            and self.uses_loopback_host()
+            and _origin_is_loopback_or_empty(self.headers.get("Origin"))
+        )
+
     def send_json(self, payload: dict[str, object]) -> None:
         self.handler._send_json(payload)
 
@@ -135,7 +158,9 @@ class RequestContext:
 
     def last_event_id(self) -> str | None:
         """Return the SSE resume cursor from the header or query string."""
-        return self.handler._last_event_id(self.query)
+        header_value = str(self.headers.get("Last-Event-ID") or "").strip()
+        query_value = str(self.query.get("last_event_id", [""])[0] or "").strip()
+        return header_value or query_value or None
 
     def send_sse_stream(
         self,
@@ -152,6 +177,13 @@ class RequestContext:
             meeting_id=meeting_id,
             last_event_id=last_event_id,
         )
+
+    def send_room_events_sse_stream(self, *, room_id: str, cursor: str | None) -> bool:
+        sender = getattr(self.handler, "_send_room_events_sse_stream", None)
+        if not callable(sender):
+            return False
+        sender(room_id=room_id, cursor=cursor)
+        return True
 
     def send_attachment_file(
         self,
@@ -332,6 +364,26 @@ class Router:
                 dynamic_handler(ctx, path_params)
                 return True
         return False
+
+
+def request_server_url(handler: Any) -> str:
+    host = handler.headers.get("Host")
+    if host:
+        return f"http://{host}"
+    address = handler.server.server_address
+    return f"http://{address[0]}:{address[1]}"
+
+
+def local_server_url(server_address: tuple[object, ...]) -> str:
+    host, port = server_address[:2]
+    host = str(host)
+    if host in {"", "0.0.0.0"}:
+        host = "127.0.0.1"
+    elif host == "::":
+        host = "::1"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    return f"http://{host}:{port}"
 
 
 def match_route_template(template: str, path: str) -> dict[str, str] | None:

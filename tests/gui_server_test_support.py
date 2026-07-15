@@ -6,6 +6,7 @@ import os
 import sys
 import threading
 import time
+from types import SimpleNamespace
 from datetime import UTC, datetime, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -113,6 +114,7 @@ class _RoomsRouteHandler:
         self.path = path
         self.command = method
         self.headers = dict(headers or {})
+        self.headers.setdefault("Host", "127.0.0.1:8765" if loopback else "room.example.com")
         body = b""
         if payload is not None:
             body = json.dumps(payload).encode("utf-8")
@@ -121,17 +123,15 @@ class _RoomsRouteHandler:
         self.rfile = BytesIO(body)
         self.sent_json: dict[str, object] | None = None
         self.sent_error: tuple[HTTPStatus, str] | None = None
-        self._loopback = loopback
+        self.server = SimpleNamespace(
+            server_address=("127.0.0.1", 8765) if loopback else ("0.0.0.0", 8765)
+        )
 
     def _send_json(self, payload: dict[str, object]) -> None:
         self.sent_json = payload
 
     def _send_error(self, status: HTTPStatus, message: str) -> None:
         self.sent_error = (status, message)
-
-    def _request_uses_loopback_host(self) -> bool:
-        return self._loopback
-
 
 def _dispatch_room_route(
     output_root: Path,

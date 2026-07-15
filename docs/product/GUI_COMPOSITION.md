@@ -185,8 +185,13 @@ These families already have a clear module owner and should not move back into
 | `gui_legacy_live_agent_readiness_http.py` | Compatibility | Aggregate readiness orchestration over health, smoke, and bounded resident probes | `tests/test_gui_legacy_live_agent_readiness_http.py`, `tests/test_gui_server_readiness_probes.py` |
 
 `gui_room_http.py` is a compatibility coordinator and re-export surface. It
-registers the room subdomains and retains historical patch points. It is not a
-service catalog for new code.
+registers the room subdomains and retains historical service names. It is not
+a service catalog for new code.
+
+The coordinator's runtime seams are explicit in `RoomRouteAdapters`. Route
+registration captures one adapter bundle instead of resolving `_late_*`
+handler wrappers, so tests and alternate hosts can inject the process/turn
+boundary without depending on generated handler internals.
 
 ## Routes Still In The Handler Chain
 

@@ -95,7 +95,6 @@ from agentsassemble.gui_side_chat_http import register_side_chat_routes
 from agentsassemble.gui_social_http import register_room_friend_profile_routes
 from agentsassemble.gui_static_transport import (
     ReactStaticTransport,
-    request_server_url,
     safe_static_path as _safe_static_path,
 )
 from agentsassemble.gui_response import (
@@ -110,7 +109,6 @@ from agentsassemble.gui_request_security import (
     _PUBLIC_INVITE_CORS_METHODS,
     _host_header_is_trusted,
     _is_loopback_host,
-    _origin_is_loopback_or_empty,
     _origin_is_trusted,
     _origin_matches_public_url,
     _public_invite_route_allowed,
@@ -118,7 +116,12 @@ from agentsassemble.gui_request_security import (
     _split_authority_host_port,
 )
 from agentsassemble.gui_retired_http import register_retired_legacy_routes
-from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.gui_router import (
+    GuiDeps,
+    RequestContext,
+    Router,
+    local_server_url as _local_server_url,
+)
 from agentsassemble.gui_ws_http import handle_ws_upgrade, register_ws_ticket_route
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_realtime import (
@@ -429,7 +432,6 @@ from agentsassemble.room_invite import (
     get_public_url,
     set_runtime_host_token,
     set_runtime_public_url,
-    verify_host_token,
     verify_session_token,
 )
 from agentsassemble.meeting_events import (
@@ -2898,18 +2900,6 @@ def _safe_payload_strings(value: object, *, limit: int) -> list[str]:
     return strings
 
 
-def _local_server_url(server_address: tuple[object, ...]) -> str:
-    host, port = server_address[:2]
-    host = str(host)
-    if host in {"", "0.0.0.0"}:
-        host = "127.0.0.1"
-    elif host == "::":
-        host = "::1"
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
-    return f"http://{host}:{port}"
-
-
 def _print_gui_startup_banner(
     server_url: str,
     *,
@@ -3100,10 +3090,27 @@ def _make_handler(
         history_page_limit=_history_page_limit,
     )
     route_table = Router()
+
+    def _read_operation_payload(
+        ctx: RequestContext,
+        operation_name: str,
+        target_id: str = "",
+    ) -> dict[str, object] | None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            record_live_agent_operation(
+                output_root,
+                operation=operation_name,
+                status="failed",
+                target_id=target_id,
+                error="Invalid JSON",
+            )
+        return payload
+
     register_ws_ticket_route(
         route_table,
         ws_ticket_store=ws_ticket_store,
-        is_local_operator=lambda ctx: ctx.handler._request_is_local_operator(),
+        is_local_operator=lambda ctx: ctx.is_local_operator(),
     )
     register_attachment_routes(route_table)
     register_retired_legacy_routes(route_table)
@@ -3155,23 +3162,35 @@ def _make_handler(
         enqueue_auto_turn=_enqueue_legacy_lobby_auto_turn,
     )
 
-    def _late_room_friend_direct_dm(ctx: RequestContext, payload: dict[str, object]) -> dict[str, object]:
+    def _room_friend_direct_dm(ctx: RequestContext, payload: dict[str, object]) -> dict[str, object]:
         return room_friend_direct_dm_payload(
             ctx.deps.output_root,
             ctx.deps.process_supervisor,
             payload,
-            default_server=ctx.handler._request_server_url(),
+            default_server=ctx.request_server_url(),
         )
 
-    register_room_friend_profile_routes(route_table, post_direct_dm=_late_room_friend_direct_dm)
+    register_room_friend_profile_routes(route_table, post_direct_dm=_room_friend_direct_dm)
 
-    def _late_provider_credentials_allowed(ctx: RequestContext) -> bool:
-        return ctx.handler._provider_credentials_allowed()
+    def _provider_credentials_allowed(ctx: RequestContext) -> bool:
+        if not ctx.is_local_operator() and not ctx.require_moderator():
+            return False
+        if ctx.uses_loopback_host():
+            return True
+        forwarded = str(ctx.headers.get("X-Forwarded-Proto") or "").lower()
+        public_scheme = urlparse(get_public_url()).scheme.lower()
+        if forwarded != "https" and public_scheme != "https":
+            ctx.send_error(
+                HTTPStatus.FORBIDDEN,
+                "HTTPS is required for remote credential management",
+            )
+            return False
+        return True
 
     register_provider_routes(
         route_table,
-        credentials_allowed=_late_provider_credentials_allowed,
-        is_local_operator=lambda ctx: ctx.handler._request_is_local_operator(),
+        credentials_allowed=_provider_credentials_allowed,
+        is_local_operator=lambda ctx: ctx.is_local_operator(),
         login_service=ProviderLoginService(
             output_root=output_root,
             command_launcher=live_agent_login_launcher,
@@ -3182,18 +3201,15 @@ def _make_handler(
     register_public_invite_admin_routes(
         route_table,
         tunnel=invite_tunnel_manager,
-        is_local_operator=lambda ctx: ctx.handler._request_is_local_operator(),
-        local_server_url=lambda ctx: ctx.handler._local_server_url(),
+        is_local_operator=lambda ctx: ctx.is_local_operator(),
+        local_server_url=lambda ctx: ctx.local_server_url(),
     )
 
     register_live_agent_flow_routes(
         route_table,
         flow=live_agent_flow_supervisor,
-        is_loopback_request=lambda ctx: ctx.handler._request_uses_loopback_host(),
-        read_operation_payload=lambda ctx, operation: ctx.handler._operation_json_payload(
-            operation=operation,
-            target_id="",
-        ),
+        is_loopback_request=lambda ctx: ctx.uses_loopback_host(),
+        read_operation_payload=_read_operation_payload,
         record_operation=record_live_agent_operation,
     )
 
@@ -3227,19 +3243,12 @@ def _make_handler(
     )
     register_legacy_live_agent_join_brief_route(
         route_table,
-        request_server_url=lambda ctx: ctx.handler._request_server_url(),
+        request_server_url=lambda ctx: ctx.request_server_url(),
     )
     register_legacy_provider_health_route(
         route_table,
         reporter=lambda *args, **kwargs: provider_health_report(*args, **kwargs),
     )
-
-    def _late_operation_json_payload(
-        ctx: RequestContext,
-        operation_name: str,
-        target_id: str = "",
-    ) -> dict[str, object] | None:
-        return ctx.handler._operation_json_payload(operation=operation_name, target_id=target_id)
 
     register_legacy_codex_session_routes(
         route_table,
@@ -3257,8 +3266,8 @@ def _make_handler(
                 ),
                 record_operation=record_live_agent_operation,
             ),
-            read_operation_payload=_late_operation_json_payload,
-            request_server_url=lambda ctx: ctx.handler._request_server_url(),
+            read_operation_payload=_read_operation_payload,
+            request_server_url=lambda ctx: ctx.request_server_url(),
         ),
     )
 
@@ -3266,7 +3275,7 @@ def _make_handler(
         route_table,
         deps=LegacyLiveAgentOfficialReplyHttpDeps(
             replies=LegacyLiveAgentOfficialReplyService(output_root),
-            read_operation_payload=_late_operation_json_payload,
+            read_operation_payload=_read_operation_payload,
         ),
     )
 
@@ -3277,7 +3286,7 @@ def _make_handler(
                 output_root,
                 probe_runner=lambda *args, **kwargs: run_live_agent_probe(*args, **kwargs),
             ),
-            read_operation_payload=_late_operation_json_payload,
+            read_operation_payload=_read_operation_payload,
         ),
     )
     register_legacy_live_agent_speech_routes(
@@ -3289,18 +3298,18 @@ def _make_handler(
         route_table,
         deps=LegacyLiveAgentPreflightHttpDeps(
             preflight=LegacyLiveAgentPreflightService(),
-            read_operation_payload=_late_operation_json_payload,
+            read_operation_payload=_read_operation_payload,
             record_operation=record_live_agent_operation,
-            request_server_url=lambda ctx: ctx.handler._request_server_url(),
+            request_server_url=lambda ctx: ctx.request_server_url(),
         ),
     )
     register_legacy_live_agent_discovery_route(
         route_table,
         deps=LegacyLiveAgentDiscoveryHttpDeps(
             discovery=LegacyLiveAgentDiscoveryService(output_root),
-            read_operation_payload=_late_operation_json_payload,
+            read_operation_payload=_read_operation_payload,
             record_operation=record_live_agent_operation,
-            request_server_url=lambda ctx: ctx.handler._request_server_url(),
+            request_server_url=lambda ctx: ctx.request_server_url(),
         ),
     )
     legacy_smoke_service = LegacyLiveAgentSmokeService(
@@ -3314,9 +3323,9 @@ def _make_handler(
         route_table,
         deps=LegacyLiveAgentSmokeHttpDeps(
             smoke=legacy_smoke_service,
-            read_operation_payload=_late_operation_json_payload,
+            read_operation_payload=_read_operation_payload,
             record_operation=record_live_agent_operation,
-            local_server_url=lambda ctx: ctx.handler._local_server_url(),
+            local_server_url=lambda ctx: ctx.local_server_url(),
         ),
     )
     register_legacy_live_agent_readiness_route(
@@ -3329,9 +3338,9 @@ def _make_handler(
                 smoke=legacy_smoke_service,
                 probe_runner=lambda *args, **kwargs: run_live_agent_probe(*args, **kwargs),
             ),
-            read_operation_payload=_late_operation_json_payload,
+            read_operation_payload=_read_operation_payload,
             record_operation=record_live_agent_operation,
-            local_server_url=lambda ctx: ctx.handler._local_server_url(),
+            local_server_url=lambda ctx: ctx.local_server_url(),
         ),
     )
 
@@ -3358,8 +3367,8 @@ def _make_handler(
         route_table,
         deps=LegacySessionHttpDeps(
             service=legacy_session_service,
-            read_operation_payload=_late_operation_json_payload,
-            default_server_url=lambda ctx: ctx.handler._request_server_url(),
+            read_operation_payload=_read_operation_payload,
+            default_server_url=lambda ctx: ctx.request_server_url(),
         ),
     )
 
@@ -3379,8 +3388,8 @@ def _make_handler(
         route_table,
         deps=LegacyProcessHttpDeps(
             service=legacy_process_service,
-            read_operation_payload=_late_operation_json_payload,
-            default_server_url=lambda ctx: ctx.handler._request_server_url(),
+            read_operation_payload=_read_operation_payload,
+            default_server_url=lambda ctx: ctx.request_server_url(),
         ),
     )
     register_legacy_session_run_basic_routes(
@@ -3422,8 +3431,8 @@ def _make_handler(
                 ),
                 record_operation=record_live_agent_operation,
             ),
-            read_operation_payload=_late_operation_json_payload,
-            default_server_url=lambda ctx: ctx.handler._request_server_url(),
+            read_operation_payload=_read_operation_payload,
+            default_server_url=lambda ctx: ctx.request_server_url(),
         ),
     )
     register_legacy_self_managed_agent_routes(
@@ -3435,7 +3444,7 @@ def _make_handler(
         service=LegacyLiveAgentRoomSessionService(output_root, live_agent_process_supervisor),
     )
 
-    register_mafia_routes(route_table, read_operation_payload=_late_operation_json_payload)
+    register_mafia_routes(route_table, read_operation_payload=_read_operation_payload)
 
     static_transport = ReactStaticTransport(
         frontend_root=react_app_root,
@@ -3537,53 +3546,6 @@ def _make_handler(
 
         def log_message(self, format: str, *args: object) -> None:
             return
-
-        def _request_server_url(self) -> str:
-            return request_server_url(self)
-
-        def _verify_host_token(self) -> bool:
-            """Check host token from X-Host-Token header or Authorization Bearer.
-
-            Sends 403 and returns False if verification fails.
-            Returns True if allowed (either token matches or no gate configured).
-            """
-            token = (self.headers.get("X-Host-Token") or "").strip()
-            if not token:
-                # Fall back to Authorization header for host endpoints
-                auth = self.headers.get("Authorization") or ""
-                if auth.startswith("Bearer "):
-                    token = auth.removeprefix("Bearer ").strip()
-            if not verify_host_token(token):
-                self._send_error(HTTPStatus.FORBIDDEN, "host token required")
-                return False
-            return True
-
-        def _request_uses_loopback_host(self) -> bool:
-            host_name, _ = _split_authority_host_port(str(self.headers.get("Host") or ""))
-            return host_name in _LOOPBACK_HOSTNAMES
-
-        def _request_is_local_operator(self) -> bool:
-            return (
-                _is_loopback_host(self.server.server_address[0])
-                and self._request_uses_loopback_host()
-                and _origin_is_loopback_or_empty(self.headers.get("Origin"))
-            )
-
-        def _provider_credentials_allowed(self) -> bool:
-            ctx = RequestContext(self, route_deps, urlparse(self.path), parse_qs(urlparse(self.path).query))
-            if not self._request_is_local_operator() and not ctx.require_moderator():
-                return False
-            if self._request_uses_loopback_host():
-                return True
-            forwarded = str(self.headers.get("X-Forwarded-Proto") or "").lower()
-            public_scheme = urlparse(get_public_url()).scheme.lower()
-            if forwarded != "https" and public_scheme != "https":
-                self._send_error(HTTPStatus.FORBIDDEN, "HTTPS is required for remote credential management")
-                return False
-            return True
-
-        def _local_server_url(self) -> str:
-            return _local_server_url(self.server.server_address)
 
         def _handle_ws_upgrade(self, query: dict) -> None:
             """Upgrade the one authenticated room socket used by browsers and bridges."""
@@ -3690,40 +3652,6 @@ def _make_handler(
                 except (BrokenPipeError, ConnectionResetError):
                     return
 
-        def _operation_json_payload(
-            self,
-            *,
-            operation: str,
-            target_id: str = "",
-            details: dict[str, object] | None = None,
-        ) -> dict[str, object] | None:
-            length = int(self.headers.get("Content-Length", "0") or "0")
-            try:
-                payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                record_live_agent_operation(
-                    output_root,
-                    operation=operation,
-                    status="failed",
-                    target_id=target_id,
-                    error="Invalid JSON",
-                    details=details or {},
-                )
-                self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                return None
-            if not isinstance(payload, dict):
-                record_live_agent_operation(
-                    output_root,
-                    operation=operation,
-                    status="failed",
-                    target_id=target_id,
-                    error="Invalid JSON",
-                    details=details or {},
-                )
-                self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                return None
-            return payload
-
         def _send_error(
             self,
             status: HTTPStatus,
@@ -3750,17 +3678,6 @@ def _make_handler(
             self._send_public_invite_cors_headers()
             self.end_headers()
             self.wfile.write(data)
-
-        def _last_event_id(self, query: dict[str, list[str]]) -> str | None:
-            query_value = query.get("last_event_id", [None])[0]
-            header_value = self.headers.get("Last-Event-ID")
-            return _optional_str(header_value) or _optional_str(query_value)
-
-        def _limit(self, query: dict[str, list[str]], default: int) -> int:
-            try:
-                return int(query.get("limit", [str(default)])[0])
-            except (TypeError, ValueError):
-                return default
 
     AgentsAssembleHandler.application_services = services
     AgentsAssembleHandler.room_realtime_controller = room_realtime_controller
