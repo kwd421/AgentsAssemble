@@ -17,6 +17,7 @@ from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import PUBLIC_URL_ENV, set_runtime_host_token
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_realtime import NativeCliProviderSpec, RoomRealtimeController
+from tests.room_realtime_test_support import memory_room_access_services
 
 
 def main() -> int:
@@ -45,11 +46,21 @@ def main() -> int:
             turn_timeout_seconds=5.0,
         )
         manager = NativeCliBridgeProcessManager(output_root)
-        controller = RoomRealtimeController(output_root, providers=[spec], bridge_manager=manager)
+        access = memory_room_access_services()
+        controller = RoomRealtimeController(
+            output_root,
+            **access.controller_kwargs(),
+            providers=[spec],
+            bridge_manager=manager,
+        )
         manager.set_exit_listener(controller.bridge_process_exited)
         server = ThreadingHTTPServer(
             ("127.0.0.1", port),
-            _make_handler(output_root, room_realtime_controller_override=controller),
+            _make_handler(
+                output_root,
+                room_realtime_controller_override=controller,
+                invite_repository_override=access.repository,
+            ),
         )
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()

@@ -17,12 +17,14 @@ def expel_live_agent_from_room_payload(
     output_root: Path,
     process_supervisor: object,
     payload: dict[str, object],
+    *,
+    revoke_participant_sessions: Callable[[str, str], int] = revoke_sessions_for_participant,
 ) -> dict[str, object]:
     meeting_id = _clean_existing_meeting_id(payload.get("meeting_id"))
     agent_id = _clean_existing_agent_id(payload.get("agent_id"))
     requested_group_id = _clean_optional_group_id(payload.get("group_id"))
     agent = _live_agent_entry(output_root, agent_id)
-    revoked_sessions = revoke_sessions_for_participant(meeting_id, agent_id)
+    revoked_sessions = revoke_participant_sessions(meeting_id, agent_id)
     group = _find_agent_process_group(
         process_supervisor,
         meeting_id=meeting_id,

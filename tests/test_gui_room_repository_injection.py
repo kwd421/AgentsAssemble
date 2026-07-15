@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 from agentsassemble.agent_sessions import create_agent_session_payload
 from agentsassemble.gui import _build_gui_application_services, _make_handler, serve_gui
 from agentsassemble.room_realtime import RoomRealtimeController
+from tests.room_realtime_test_support import memory_room_access_services
 from agentsassemble.room_repository_factory import (
     RoomRepositoryConfigurationError,
     RoomRepositorySettings,
@@ -216,11 +217,18 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             repository = RoomStore(root / "repository")
-            controller = RoomRealtimeController(root / "server", providers=[], repository=repository)
+            access = memory_room_access_services()
+            controller = RoomRealtimeController(
+                root / "server",
+                **access.controller_kwargs(),
+                providers=[],
+                repository=repository,
+            )
             try:
                 handler = _make_handler(
                     root / "server",
                     room_realtime_controller_override=controller,
+                    invite_repository_override=access.repository,
                 )
 
                 self.assertIs(handler.room_repository, repository)
@@ -233,8 +241,10 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
             root = Path(temp_dir)
             controller_repository = RoomStore(root / "controller")
             route_repository = RoomStore(root / "routes")
+            access = memory_room_access_services()
             controller = RoomRealtimeController(
                 root / "server",
+                **access.controller_kwargs(),
                 providers=[],
                 repository=controller_repository,
             )
@@ -244,6 +254,7 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
                         root / "server",
                         room_realtime_controller_override=controller,
                         room_repository_override=route_repository,
+                        invite_repository_override=access.repository,
                     )
             finally:
                 controller.close()

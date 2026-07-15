@@ -76,6 +76,21 @@ class TestRoomInviteRepositoryConfiguration(unittest.TestCase):
         self.assertEqual(first.inspect(str(invite["join_code"]))["reason"], "invite_revoked")
         self.assertNotEqual(first.signing_secret(), second.signing_secret())
 
+    def test_application_service_revokes_only_invites_for_one_room(self) -> None:
+        service = InviteApplicationService(MemoryInviteSessionRepository())
+        first = service.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+        )
+        second = service.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-b",
+        )
+
+        self.assertEqual(service.revoke_room("room-a"), 1)
+        self.assertEqual(service.inspect(str(first["join_code"]))["reason"], "invite_revoked")
+        self.assertEqual(service.inspect(str(second["join_code"]))["status"], "valid")
+
 
 
 class TestRoomInviteCreateJoinFlow(unittest.TestCase):

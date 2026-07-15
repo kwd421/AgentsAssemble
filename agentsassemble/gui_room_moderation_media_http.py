@@ -26,10 +26,6 @@ from agentsassemble.room_channels import (
     rename_channel,
     reorder_channels,
 )
-from agentsassemble.room_invite import (
-    active_sessions_summary,
-    revoke_sessions_for_participant,
-)
 from agentsassemble.room_members import (
     is_room_member_muted,
     remove_room_member,
@@ -70,7 +66,7 @@ def register_moderation_media_routes(
             ctx.deps.output_root,
             read_live_agents(ctx.deps.output_root),
             meeting_id=meeting_id,
-            sessions=active_sessions_summary(),
+            sessions=ctx.deps.sessions.active_summary(),
             repository=ctx.deps.rooms,
         )
 
@@ -147,27 +143,41 @@ def register_moderation_media_routes(
         if not kick_participant_id.strip():
             ctx.send_error(HTTPStatus.BAD_REQUEST, "participant_id is required")
             return
-        revoked_sessions = revoke_sessions_for_participant(kick_meeting_id, kick_participant_id)
         removed_member = remove_room_member(ctx.deps.output_root, kick_meeting_id, kick_participant_id)
         leave_all_voice(kick_meeting_id, kick_participant_id)
         expelled_agent = False
-        if any(
+        revoked_sessions = 0
+
+        def revoke_participant_sessions(room_id: str, participant_id: str) -> int:
+            nonlocal revoked_sessions
+            revoked_sessions = ctx.deps.sessions.revoke_participant(room_id, participant_id)
+            return revoked_sessions
+
+        is_live_agent = any(
             clean_lobby_text(agent.get("agent_id"), limit=128) == clean_lobby_text(kick_participant_id, limit=128)
             and (
                 not kick_meeting_id.strip()
                 or clean_lobby_text(agent.get("meeting_id"), limit=128) == clean_lobby_text(kick_meeting_id, limit=128)
             )
             for agent in read_live_agents(ctx.deps.output_root)
-        ):
+        )
+        if is_live_agent:
             try:
-                expel_live_agent_from_room_payload(
+                expel_result = expel_live_agent_from_room_payload(
                     ctx.deps.output_root,
                     ctx.deps.process_supervisor,
                     {"meeting_id": kick_meeting_id, "agent_id": kick_participant_id},
+                    revoke_participant_sessions=revoke_participant_sessions,
                 )
+                revoked_sessions = int(expel_result.get("revoked_sessions") or revoked_sessions)
                 expelled_agent = True
             except (OSError, ValueError):
                 expelled_agent = False
+        else:
+            revoked_sessions = revoke_participant_sessions(
+                kick_meeting_id,
+                kick_participant_id,
+            )
         ctx.send_json(
             {
                 "status": "kicked",

@@ -183,6 +183,11 @@ class InviteApplicationService:
     def revoke(self, invite_id: str) -> bool:
         return self._repository.revoke_invite(invite_id)
 
+    def revoke_room(self, room_id: str) -> int:
+        return self._repository.revoke_room_invites(
+            clean_lobby_text(room_id, limit=128),
+        )
+
     def pending(self) -> list[dict[str, object]]:
         return pending_invites_summary(self._repository, now=self._now())
 

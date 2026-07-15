@@ -37,7 +37,8 @@ from agentsassemble.provider_runtime_config import (
     ProviderRuntimeProfile,
 )
 from agentsassemble.identity_store import identity_store_for_output_root
-from agentsassemble.room_invite import revoke_room_access, revoke_sessions_for_participant
+from agentsassemble.room_invite_application import InviteApplicationService
+from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.room_commands import (
     RoomCommandValidationError,
     capabilities_for_identity,
@@ -131,6 +132,8 @@ class RoomRealtimeController:
         self,
         output_root: str | Path,
         *,
+        invite_application: InviteApplicationService,
+        room_sessions: RoomSessionService,
         providers: list[NativeCliProviderSpec] | None = None,
         bridge_manager: AgentBridgeManager | None = None,
         broker: RoomEventBroker | None = None,
@@ -145,6 +148,8 @@ class RoomRealtimeController:
     ) -> None:
         self.output_root = Path(output_root)
         self.store = repository or RoomStore(self.output_root)
+        self._invite_application = invite_application
+        self._room_sessions = room_sessions
         self.broker = broker or RoomEventBroker()
         self.default_room_id = clean_lobby_text(default_room_id, limit=128) or "general"
         self.max_agent_relay_depth = max(0, int(max_agent_relay_depth))
@@ -197,9 +202,8 @@ class RoomRealtimeController:
             lock=self._lock,
             provider_lookup=self._provider,
             ensure_provider_session=self._ensure_provider_session,
-            revoke_participant_sessions=lambda room_id, participant_id: revoke_sessions_for_participant(
-                room_id,
-                participant_id,
+            revoke_participant_sessions=lambda room_id, participant_id: self._room_sessions.revoke_participant(
+                room_id, participant_id
             ),
             publish_session_state=self._publish_session_state,
             assign_pending=self._turn_coordinator.assign_pending,
@@ -1560,7 +1564,7 @@ class RoomRealtimeController:
                     # Moderation must still revoke room access even when an
                     # external process cannot prove its local cleanup.
                     stop_warning = f"{error.code}: {error}"
-        revoked_sessions = revoke_sessions_for_participant(room_id, participant_id)
+        revoked_sessions = self._room_sessions.revoke_participant(room_id, participant_id)
         self.broker.disconnect_participant(room_id, participant_id)
         removed_member = remove_room_member(self.output_root, room_id, participant_id)
         leave_all_voice(room_id, participant_id)
@@ -1680,7 +1684,7 @@ class RoomRealtimeController:
         leave_all_voice(room_id, participant_id)
         timer = threading.Timer(
             0.1,
-            revoke_sessions_for_participant,
+            self._room_sessions.revoke_participant,
             args=(room_id, participant_id),
         )
         timer.daemon = True
@@ -1719,7 +1723,7 @@ class RoomRealtimeController:
                 "external" if session.get("external_owned") else "server"
             )
             if ownership == "external" and not self.broker.has_bridge(room_id, session_id):
-                revoke_sessions_for_participant(room_id, session_id)
+                self._room_sessions.revoke_participant(room_id, session_id)
                 self.broker.disconnect_participant(room_id, session_id)
                 cleanup_warnings.append(
                     f"{session_id}: external bridge was disconnected; room access was revoked without "
@@ -1823,7 +1827,10 @@ class RoomRealtimeController:
             room_id,
             {"op": "room_deleted", "room_id": room_id, "room_name": room_name},
         )
-        revoked = revoke_room_access(room_id)
+        revoked = {
+            "revoked_invites": self._invite_application.revoke_room(room_id),
+            "revoked_sessions": self._room_sessions.revoke_room(room_id),
+        }
         identity_store_for_output_root(self.output_root).delete_room(room_id)
         remove_listener = self._event_listener_removers.pop(room_id, None)
         if remove_listener is not None:

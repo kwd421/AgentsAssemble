@@ -278,3 +278,13 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   test prevents the already-extracted current modules from importing the
   global facade again. This is a behavior-preserving first slice, not a claim
   that all compatibility ownership has been removed.
+- 2026-07-15: Milestone 3.1 session-authority follow-up removed current roster,
+  flow-status, WebSocket validation, moderation, Agent Session lifecycle, and
+  room deletion calls to the process-global session facade. The canonical
+  realtime controller now requires the application-owned invite and session
+  services, and room deletion revokes both authorities through those exact
+  instances. Test/smoke controller overrides now explicitly share the same
+  invite repository with their HTTP application, preventing false kick/revoke
+  evidence from two unrelated in-memory stores. Legacy frontend-created agent
+  admin and route re-export modules retain compatibility calls for now; public
+  host/tunnel configuration ownership remains the next Milestone 3.1 slice.

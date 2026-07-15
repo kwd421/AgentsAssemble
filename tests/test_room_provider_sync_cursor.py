@@ -9,6 +9,7 @@ from agentsassemble.room_provider_sync_cursor import (
     canonical_provider_sync_seq,
 )
 from agentsassemble.room_realtime import RoomRealtimeController
+from tests.room_realtime_test_support import memory_room_access_services
 from agentsassemble.room_store import RoomStore
 
 
@@ -154,8 +155,10 @@ class ProviderSyncCursorTests(unittest.TestCase):
 
     def test_controller_initializes_new_session_with_cursor_parity(self):
         message = self._message("existing room context")
+        access = memory_room_access_services()
         controller = RoomRealtimeController(
             self.root,
+            **access.controller_kwargs(),
             repository=self.store,
             providers=[
                 NativeCliProviderSpec(
@@ -184,8 +187,10 @@ class ProviderSyncCursorTests(unittest.TestCase):
         message = self._message("delivered by an older build")
         self._session(event_id=str(message["id"]), sequence=int(message["seq"]))
 
+        access = memory_room_access_services()
         controller = RoomRealtimeController(
             self.root,
+            **access.controller_kwargs(),
             repository=self.store,
             providers=[],
         )

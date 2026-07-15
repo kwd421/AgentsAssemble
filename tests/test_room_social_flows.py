@@ -13,6 +13,7 @@ from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import reset_state, set_runtime_host_token, set_runtime_public_url
 from agentsassemble.room_realtime import RoomRealtimeController
 from agentsassemble.ws_room_client import WsRoomClient
+from tests.room_realtime_test_support import memory_room_access_services
 
 
 PUBLIC_HOST = "shared-room.example.com"
@@ -46,12 +47,21 @@ class CanonicalRoomSocialFlowTests(unittest.TestCase):
     def test_friend_add_invite_join_and_canonical_websocket_message(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            controller = RoomRealtimeController(root, providers=[])
+            access = memory_room_access_services()
+            controller = RoomRealtimeController(
+                root,
+                **access.controller_kwargs(),
+                providers=[],
+            )
             set_runtime_host_token("host-secret")
             set_runtime_public_url(PUBLIC_ORIGIN)
             server = ThreadingHTTPServer(
                 ("127.0.0.1", 0),
-                _make_handler(root, room_realtime_controller_override=controller),
+                _make_handler(
+                    root,
+                    room_realtime_controller_override=controller,
+                    invite_repository_override=access.repository,
+                ),
             )
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()

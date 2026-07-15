@@ -75,6 +75,8 @@ from agentsassemble.room_invite import (
     set_runtime_host_token,
     set_runtime_public_url,
 )
+from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
+from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.room_store import RoomStore
 from agentsassemble.side_chat import append_side_chat_event, read_side_chat
 from agentsassemble.room_members import set_room_member_muted
@@ -166,10 +168,7 @@ def _dispatch_room_route(
     ctx = RequestContext(
         handler,
         deps
-        or GuiDeps(
-            output_root=output_root,
-            room_repository=RoomStore(output_root),
-        ),
+        or _default_room_route_dependencies(output_root),
         parsed,
         parse_qs(parsed.query),
     )
@@ -177,6 +176,19 @@ def _dispatch_room_route(
     if not self_handled:
         raise AssertionError(f"route not handled: {method} {path}")
     return handler
+
+
+def _default_room_route_dependencies(output_root: Path) -> GuiDeps:
+    session_repository = MemoryInviteSessionRepository()
+    return GuiDeps(
+        output_root=output_root,
+        room_repository=RoomStore(output_root),
+        room_sessions=RoomSessionService(
+            session_repository,
+            token_prefix="aas1",
+            ttl_seconds=3600,
+        ),
+    )
 
 
 

@@ -8,7 +8,6 @@ from typing import Protocol
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.live_agent_quota import quota_viewer_for_host, quota_viewer_for_session
 from agentsassemble.meeting_events import ROOM_TOPIC_LIMIT, clean_lobby_text
-from agentsassemble.room_invite import verify_session_token
 
 
 class LiveAgentFlowControl(Protocol):
@@ -35,7 +34,7 @@ def register_live_agent_flow_routes(
     @router.get("/api/live-agent-flow")
     def live_agent_flow_status(ctx: RequestContext) -> None:
         session_token = ctx.bearer_token()
-        session = verify_session_token(session_token) if session_token else None
+        session = ctx.session()
         if session_token and not session:
             ctx.send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
             return

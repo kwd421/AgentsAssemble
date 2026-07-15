@@ -18,7 +18,7 @@ from agentsassemble.live_cli import LiveCliRuntime
 from agentsassemble.provider_runtime_config import ProviderRuntimeProfile
 from agentsassemble.room_attendee import AgentAttendee
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
-from agentsassemble.room_invite import reset_state, verify_session_token
+from agentsassemble.room_invite import reset_state
 from agentsassemble.room_native_cli_smoke import NON_ROOM_REPLY, _latency_acceptance, run_room_native_cli_smoke
 from agentsassemble.room_realtime import NativeCliProviderSpec, RoomRealtimeController
 from agentsassemble.ws_room_client import (
@@ -26,6 +26,7 @@ from agentsassemble.ws_room_client import (
     connect_room_ws_with_ticket,
     join_room_session,
 )
+from tests.room_realtime_test_support import memory_room_access_services
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "fake_interactive_cli.py"
@@ -214,11 +215,21 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                 turn_timeout_seconds=5.0,
             )
             manager = NativeCliBridgeProcessManager(root)
-            controller = RoomRealtimeController(root, providers=[spec], bridge_manager=manager)
+            access = memory_room_access_services()
+            controller = RoomRealtimeController(
+                root,
+                **access.controller_kwargs(),
+                providers=[spec],
+                bridge_manager=manager,
+            )
             manager.set_exit_listener(controller.bridge_process_exited)
             server = ThreadingHTTPServer(
                 ("127.0.0.1", 0),
-                _make_handler(root, room_realtime_controller_override=controller),
+                _make_handler(
+                    root,
+                    room_realtime_controller_override=controller,
+                    invite_repository_override=access.repository,
+                ),
             )
             server_thread = threading.Thread(target=server.serve_forever, daemon=True)
             server_thread.start()
@@ -316,14 +327,20 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
             root = Path(temp_dir)
             workspace = root / "external-workspace"
             workspace.mkdir()
+            access = memory_room_access_services()
             controller = RoomRealtimeController(
                 root,
+                **access.controller_kwargs(),
                 providers=[],
                 external_stop_timeout_seconds=2.0,
             )
             server = ThreadingHTTPServer(
                 ("127.0.0.1", 0),
-                _make_handler(root, room_realtime_controller_override=controller),
+                _make_handler(
+                    root,
+                    room_realtime_controller_override=controller,
+                    invite_repository_override=access.repository,
+                ),
             )
             server_thread = threading.Thread(target=server.serve_forever, daemon=True)
             server_thread.start()
@@ -436,7 +453,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                 self.assertEqual(kick_ack["result"]["cleanup_warning"], "")
                 self.assertFalse(runtime.health()["running"])
                 self.assertFalse(self._pid_alive(provider_pid))
-                self.assertIsNone(verify_session_token(str(joined["session_token"])))
+                self.assertIsNone(access.sessions.verify(str(joined["session_token"])))
                 with self.assertRaises(HTTPError) as reused:
                     join_room_session(
                         base,

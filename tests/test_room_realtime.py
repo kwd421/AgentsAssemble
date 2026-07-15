@@ -25,6 +25,7 @@ from agentsassemble.room_settings import update_room_settings as update_legacy_r
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.provider_capabilities import ProviderCapabilityCatalog
 from agentsassemble.native_cli_providers import native_cli_provider_definition
+from tests.room_realtime_test_support import memory_room_access_services
 
 
 HOST = {
@@ -250,8 +251,10 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.ready_count = 0
         self.provider_catalog = _test_provider_catalog()
         self.catalog_revision = str(self.provider_catalog.snapshot()["catalog_revision"])
+        self.room_access = memory_room_access_services()
         self.controller = RoomRealtimeController(
             self.root,
+            **self.room_access.controller_kwargs(),
             providers=[_spec()],
             bridge_manager=self.manager,
             recovery_scheduler=self.recovery_scheduler,
@@ -272,6 +275,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         ):
             controller = RoomRealtimeController(
                 injected_root,
+                **self.room_access.controller_kwargs(),
                 repository=repository,
                 provider_catalog=self.provider_catalog,
             )
@@ -309,6 +313,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
         restarted = RoomRealtimeController(
             profile_root,
+            **self.room_access.controller_kwargs(),
             providers=[],
             bridge_manager=FakeBridgeManager(),
             provider_catalog=self.provider_catalog,
@@ -348,6 +353,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         )
         first = RoomRealtimeController(
             profile_root,
+            **self.room_access.controller_kwargs(),
             providers=[saved],
             bridge_manager=FakeBridgeManager(),
             provider_catalog=self.provider_catalog,
@@ -356,6 +362,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         manager = FakeBridgeManager()
         restarted = RoomRealtimeController(
             profile_root,
+            **self.room_access.controller_kwargs(),
             providers=[default],
             bridge_manager=manager,
             provider_catalog=self.provider_catalog,
@@ -393,6 +400,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         legacy = replace(current, startup_ready_contains="plan mode on")
         first = RoomRealtimeController(
             profile_root,
+            **self.room_access.controller_kwargs(),
             providers=[current],
             bridge_manager=FakeBridgeManager(),
             provider_catalog=self.provider_catalog,
@@ -411,6 +419,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
         restarted = RoomRealtimeController(
             profile_root,
+            **self.room_access.controller_kwargs(),
             providers=[current],
             bridge_manager=FakeBridgeManager(),
             provider_catalog=self.provider_catalog,
@@ -452,6 +461,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
 
         restarted = RoomRealtimeController(
             profile_root,
+            **self.room_access.controller_kwargs(),
             providers=[],
             bridge_manager=FakeBridgeManager(),
             provider_catalog=self.provider_catalog,
@@ -750,7 +760,12 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             definition = native_cli_provider_definition("codex")
             self.assertIsNotNone(definition)
             spec = definition.make_default_spec(cwd=root)
-            seed = RoomRealtimeController(root, providers=[spec], bridge_manager=FakeBridgeManager())
+            seed = RoomRealtimeController(
+                root,
+                **self.room_access.controller_kwargs(),
+                providers=[spec],
+                bridge_manager=FakeBridgeManager(),
+            )
             seed.close()
             RoomStore(root).update_session_fields(
                 "general",
@@ -761,7 +776,12 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 pending_event_ids=["evt-pending"],
                 bridge_handle_id="lost-handle",
             )
-            controller = RoomRealtimeController(root, providers=[spec], bridge_manager=FakeBridgeManager())
+            controller = RoomRealtimeController(
+                root,
+                **self.room_access.controller_kwargs(),
+                providers=[spec],
+                bridge_manager=FakeBridgeManager(),
+            )
             recovered = RoomStore(root).session("general", "codex")
             controller.close()
         self.assertEqual(recovered["runtime_status"], "disconnected")
@@ -786,6 +806,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             manager.stop_errors.append(RuntimeError("first stop failed"))
             controller = RoomRealtimeController(
                 Path(temp_dir),
+                **self.room_access.controller_kwargs(),
                 providers=[_spec("codex"), _spec("grok")],
                 bridge_manager=manager,
             )
@@ -834,8 +855,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(attached["service_tier"], "default")
         self.assertEqual(attached["permission_mode"], "meeting_read_only")
         self.assertTrue(attached["runtime_profile_key"])
-        with patch(
-            "agentsassemble.room_realtime.revoke_sessions_for_participant",
+        with patch.object(
+            self.room_access.sessions,
+            "revoke_participant",
             return_value=1,
         ) as revoke_sessions:
             stopped = self._confirmed_external_stop(identity, channel)["result"]
@@ -857,8 +879,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             identity,
         )
 
-        with patch(
-            "agentsassemble.room_realtime.revoke_sessions_for_participant",
+        with patch.object(
+            self.room_access.sessions,
+            "revoke_participant",
             return_value=1,
         ) as revoke_sessions:
             with self.assertRaises(RoomCommandRejected) as timeout:
@@ -923,7 +946,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             identity,
         )
 
-        with patch("agentsassemble.room_realtime.revoke_sessions_for_participant") as revoke_sessions:
+        with patch.object(self.room_access.sessions, "revoke_participant") as revoke_sessions:
             self.controller.close()
 
         revoke_sessions.assert_not_called()
@@ -1858,8 +1881,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             recovery_required=True,
         )
 
-        with patch(
-            "agentsassemble.room_realtime.revoke_sessions_for_participant",
+        with patch.object(
+            self.room_access.sessions,
+            "revoke_participant",
             return_value=1,
         ) as revoke_sessions:
             deleted = self._command(
@@ -2225,6 +2249,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         restarted_manager = FakeBridgeManager()
         self.controller = RoomRealtimeController(
             self.root,
+            **self.room_access.controller_kwargs(),
             providers=[_spec()],
             bridge_manager=restarted_manager,
             recovery_scheduler=self.recovery_scheduler,
@@ -3260,6 +3285,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.controller.close()
         self.controller = RoomRealtimeController(
             self.root,
+            **self.room_access.controller_kwargs(),
             providers=[_spec()],
             bridge_manager=self.manager,
             recovery_scheduler=self.recovery_scheduler,

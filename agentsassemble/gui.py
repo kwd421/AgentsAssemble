@@ -432,7 +432,6 @@ from agentsassemble.room_invite_application import (
     SESSION_TOKEN_TTL_SECONDS,
 )
 from agentsassemble.room_invite import (
-    active_sessions_summary,
     configure_room_invite_repository,
     default_room_invite_store_path,
     generate_runtime_host_token,
@@ -440,7 +439,6 @@ from agentsassemble.room_invite import (
     get_public_url,
     set_runtime_host_token,
     set_runtime_public_url,
-    verify_session_token,
 )
 from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_session_service import RoomSessionService
@@ -989,6 +987,8 @@ def _build_gui_application_services(
             try:
                 built_controller = RoomRealtimeController(
                     output_root,
+                    invite_application=invite_application,
+                    room_sessions=room_session_service,
                     providers=default_native_cli_provider_specs(workspace=Path.cwd()),
                     bridge_manager=native_cli_bridge_manager,
                     repository=room_repository,
@@ -1586,6 +1586,7 @@ def _stream_snapshot_payload(
     last_event_id: str | None = None,
     *,
     repository: RoomRepository | None = None,
+    sessions: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     if stream == "lobby":
         events = read_lobby_events_after(output_root / "lobby.jsonl", last_event_id)
@@ -1602,7 +1603,7 @@ def _stream_snapshot_payload(
             output_root,
             read_live_agents(output_root),
             meeting_id=meeting_id or "",
-            sessions=active_sessions_summary(),
+            sessions=list(sessions or []),
             repository=repository,
         )
         members = members_payload.get("members") or []
@@ -3023,6 +3024,7 @@ def _make_handler(
     live_agent_login_command_resolver: object | None = None,
     room_realtime_controller_override: RoomRealtimeController | None = None,
     room_repository_override: RoomRepository | None = None,
+    invite_repository_override: InviteSessionRepository | None = None,
     attention_shadow_mode: str = "off",
     legacy_session_run_actions_override: LegacySessionRunActions | None = None,
 ) -> type[BaseHTTPRequestHandler]:
@@ -3036,6 +3038,7 @@ def _make_handler(
         public_tunnel_manager=public_tunnel_manager,
         room_realtime_controller_override=room_realtime_controller_override,
         room_repository_override=room_repository_override,
+        invite_repository_override=invite_repository_override,
         attention_shadow_mode=attention_shadow_mode,
     )
 
@@ -3057,6 +3060,11 @@ def _make_handler(
             services.room_realtime_controller,
         )
         require_same_service("room repository", room_repository_override, services.room_repository)
+        require_same_service(
+            "invite repository",
+            invite_repository_override,
+            services.invite_repository,
+        )
 
     live_agent_process_supervisor = services.process_supervisor
     live_agent_session_run_controller = services.session_run_controller
@@ -3089,6 +3097,7 @@ def _make_handler(
                 meeting_id=meeting_id,
                 last_event_id=None,
                 repository=room_repository,
+                sessions=services.sessions.active_summary(),
             )
             return list(payload.get("members", [])), str(_payload_signature(payload) or "")
 
@@ -3156,7 +3165,7 @@ def _make_handler(
             post_say=post_say,
             is_muted=lambda meeting_id, agent_id: is_room_member_muted(output_root, meeting_id, agent_id),
             set_thinking=set_thinking,
-            is_session_active=lambda session_token: bool(verify_session_token(session_token)),
+            is_session_active=lambda session_token: bool(services.sessions.verify(session_token)),
             room_snapshot=lambda identity, after_seq: room_realtime_controller.snapshot(
                 identity,
                 after_seq=after_seq,
@@ -3678,6 +3687,11 @@ def _make_handler(
                         meeting_id=meeting_id,
                         last_event_id=current_last_event_id,
                         repository=room_repository,
+                        sessions=(
+                            services.sessions.active_summary()
+                            if stream == "roster"
+                            else None
+                        ),
                     )
                     latest_event_id = _last_payload_event_id(payload)
                     wrote_frame = False

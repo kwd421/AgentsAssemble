@@ -65,6 +65,9 @@ class AdminSupervisor(FakeSupervisor):
 
 
 class LiveAgentRoomAdminTests(unittest.TestCase):
+    def setUp(self) -> None:
+        reset_state()
+
     def tearDown(self) -> None:
         reset_state()
 

@@ -26,6 +26,13 @@ from agentsassemble.native_cli_providers import (
     native_cli_provider_spec_from_config,
 )
 from agentsassemble.room_realtime import RoomRealtimeController
+from agentsassemble.room_invite_application import (
+    SESSION_TOKEN_PREFIX,
+    SESSION_TOKEN_TTL_SECONDS,
+    InviteApplicationService,
+)
+from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
+from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
 
 
@@ -112,12 +119,30 @@ def run_room_native_cli_smoke(
                 tempfile.TemporaryDirectory(prefix="agentsassemble-native-smoke-")
             )
             server_root = Path(temp_dir) / "state"
+        invite_repository = MemoryInviteSessionRepository()
+        invite_application = InviteApplicationService(invite_repository)
+        room_sessions = RoomSessionService(
+            invite_repository,
+            token_prefix=SESSION_TOKEN_PREFIX,
+            ttl_seconds=SESSION_TOKEN_TTL_SECONDS,
+            token_key=invite_application.signing_secret,
+        )
         manager = NativeCliBridgeProcessManager(server_root)
-        controller = RoomRealtimeController(server_root, providers=specs, bridge_manager=manager)
+        controller = RoomRealtimeController(
+            server_root,
+            invite_application=invite_application,
+            room_sessions=room_sessions,
+            providers=specs,
+            bridge_manager=manager,
+        )
         manager.set_exit_listener(controller.bridge_process_exited)
         server = ThreadingHTTPServer(
             ("127.0.0.1", max(0, int(observe_gui_port))),
-            _make_handler(server_root, room_realtime_controller_override=controller),
+            _make_handler(
+                server_root,
+                room_realtime_controller_override=controller,
+                invite_repository_override=invite_repository,
+            ),
         )
         server_thread = threading.Thread(target=server.serve_forever, daemon=True)
         server_thread.start()
