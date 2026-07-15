@@ -1,12 +1,28 @@
 # Browser Identity And Invite Admission
 
-Status: implementation in progress
+Status: implemented and verified
 
 Created: 2026-07-15
 
 Starting branch: `codex/risuai-character-personas`
 
 Starting commit: `37b26d4`
+
+Completed: 2026-07-15
+
+Implementation commits:
+
+- `fe1ad53` Canonicalize local operator identity
+- `5eb17cf` Add side-effect-free invite admission
+- `4ad75e5` Preserve browser identity during invite admission
+- `6fa1c61` Add one-time operator origin pairing
+- `2bb0c8f` Connect public browsers through operator pairing
+- `12107b3` Verify cross-origin operator pairing
+- `f4e943b` Document browser admission routes
+- `b1b19a9` Stabilize room settings hook test
+
+Completion evidence and intentional deviations are recorded in
+`docs/reports/2026-07-15-browser-identity-admission.md`.
 
 ## Immediate Goal
 
@@ -191,9 +207,11 @@ Behavior tests and Playwright must cover:
 9. ordinary guest invite: never operator;
 10. expired/reused/revoked pairing: explicit rejection.
 
-Use two real origins (`127.0.0.1` and `localhost`) for cross-origin browser
-coverage. Direct backend calls are supporting evidence, not a substitute for
-the frontend flow.
+Use two real origins (`127.0.0.1` and `public.localhost`) for cross-origin
+browser coverage. Exact `localhost` is deliberately rejected by the external
+invite URL guard, so the E2E fixture uses the loopback-resolving
+`public.localhost` host without weakening that production rule. Direct backend
+calls are supporting evidence, not a substitute for the frontend flow.
 
 ### Commit 7 - Review report
 

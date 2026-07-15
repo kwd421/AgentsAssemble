@@ -2,7 +2,7 @@
 
 Status: current starting point
 
-Updated: 2026-07-14
+Updated: 2026-07-15
 
 Read this file before changing rooms, Agent Sessions, providers, invites,
 moderation, media, or the React room UI. It is intentionally short. Follow its
@@ -55,6 +55,31 @@ Do not add a provider-specific browser socket, parallel room event store,
 polling-based live UI, or a second participant registry.
 
 Detailed current implementation: `docs/live-cli-room-current-architecture.md`.
+
+## Current Browser Identity And Admission
+
+The local server operator is one canonical identity:
+`operator-local-user` / `operator-local`. A host-authorized device claim binds
+that browser credential to the canonical user instead of creating another
+operator participant. Ordinary guest admission cannot reach that privileged
+claim path.
+
+Opening `/join?token=...` first performs a side-effect-free admission check. A
+valid existing room session is preserved, a known same-origin device reuses its
+server profile, and an unknown device sees the explicit guest profile form.
+Preflight does not consume the invite, create a user, change membership, or
+issue a session.
+
+Cross-origin operator continuity uses a separate moderator-created `/pair`
+link. It is room- and target-origin-bound, expires after at most two minutes,
+is one-use, and stores only a token fingerprint. Successful redemption binds
+the new origin's device credential to the canonical operator and issues a
+bounded room bearer session; it never sends the host token to the public
+origin. This is not account login and does not identify a user across different
+AgentsAssemble servers.
+
+Detailed implementation and verification:
+`docs/reports/2026-07-15-browser-identity-admission.md`.
 
 ## Current Provider Contract
 
@@ -227,7 +252,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Provider catalog/credential HTTP | `gui_provider_http.py`; secret storage in `provider_secrets.py` |
 | Codex app-server lifecycle | `codex_app_server_runtime.py`; compatibility exports in `agent_sessions.py` |
 | Other provider process lifecycle | `room_bridge_process.py`, `live_cli.py`, provider adapter module |
-| Invites and attendance | `room_invite.py`, `room_attendee.py` |
+| Invites, browser admission, and operator-origin pairing | `room_invite.py`, `room_admission.py`, `operator_pairing.py`, `gui_room_invite_http.py`, `room_attendee.py`; browser flow in `frontend/src/app/useRoomAdmission.ts` |
 | Provider credentials | `provider_secrets.py`, provider credential routes |
 | Canonical attachment upload/download HTTP | `gui_attachment_http.py`; storage in `attachments.py`, room media in `room_store.py` |
 | GUI HTTP response/WebSocket transport | `gui_response.py`, `gui_ws_http.py`; composition in `gui.py` |
