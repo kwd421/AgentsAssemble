@@ -1,0 +1,33 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import { persistRoomGuestSession, type RoomGuestSession } from "./roomGuestSession";
+import { createStartupRoute } from "./roomDockModel";
+
+const SESSION: RoomGuestSession = {
+  inviteToken: "older-invite",
+  sessionToken: "session-1",
+  meetingId: "room-1",
+  agentId: "guest-1",
+  displayName: "Guest",
+  inviteScope: "room",
+  expiresAt: "2099-01-01T00:00:00Z",
+  joinedAt: "2026-07-15T00:00:00Z",
+  roomLabel: "Room One",
+};
+
+describe("createStartupRoute", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("keeps a stored room session while a new invite is preflighted", () => {
+    persistRoomGuestSession(SESSION);
+    window.history.replaceState({}, "", "/join?token=new-invite");
+
+    const route = createStartupRoute();
+
+    expect(route.guestJoinToken).toBe("new-invite");
+    expect(route.guestSession).toEqual(expect.objectContaining(SESSION));
+    expect(route.guestInvite?.meetingId).toBe("pending-join");
+  });
+});

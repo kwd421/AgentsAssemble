@@ -289,9 +289,14 @@ function activeRoomIdForStartup(rooms: RoomDockItem[], routeRoom?: RoomDockItem 
 
 export function createStartupRoute(): StartupRoute {
   const guestJoinToken = joinInviteTokenFromUrl(window.location.href);
-  const guestSession = guestJoinToken ? null : loadRoomGuestSession();
+  const guestSession = loadRoomGuestSession();
   const guestInvite =
-    roomFromInviteParams() || (guestSession ? roomFromGuestSession(guestSession) : roomFromPendingJoinToken(guestJoinToken));
+    roomFromInviteParams() ||
+    (guestJoinToken
+      ? roomFromPendingJoinToken(guestJoinToken)
+      : guestSession
+        ? roomFromGuestSession(guestSession)
+        : null);
   const directRoom = guestInvite ? null : roomFromDirectParams();
   const mafiaRoom = guestInvite || directRoom ? null : roomFromMafiaParams();
   const routeRoom = directRoom || mafiaRoom;

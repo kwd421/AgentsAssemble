@@ -386,6 +386,7 @@ export default function App() {
     pendingGuestDisplayName,
     pendingGuestAvatarImage,
     guestJoinStatus,
+    guestAdmissionBusy,
     guestLocked,
     guestMeetingId,
     guestJoinPending,
@@ -1479,7 +1480,7 @@ export default function App() {
           displayName={pendingGuestDisplayName}
           avatarImage={pendingGuestAvatarImage || undefined}
           status={guestJoinStatus}
-          busy={guestJoinRequested}
+          busy={guestAdmissionBusy || guestJoinRequested}
           onDisplayNameChange={setPendingGuestDisplayName}
           onAvatarImageChange={setPendingGuestAvatarImage}
           onJoin={requestGuestJoin}

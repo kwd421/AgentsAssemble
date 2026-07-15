@@ -16,6 +16,7 @@ const deviceMocks = vi.hoisted(() => ({
 
 const apiMocks = vi.hoisted(() => ({
   joinRoomInvite: vi.fn(),
+  preflightRoomInvite: vi.fn(),
 }));
 
 const guestSessionStore = vi.hoisted(() => ({
@@ -25,6 +26,7 @@ const guestSessionStore = vi.hoisted(() => ({
 vi.mock("../api", async () => ({
   ...(await vi.importActual<typeof import("../api")>("../api")),
   joinRoomInvite: apiMocks.joinRoomInvite,
+  preflightRoomInvite: apiMocks.preflightRoomInvite,
 }));
 
 vi.mock("../lib/deviceIdentity", () => deviceMocks);
@@ -57,19 +59,34 @@ describe("useRoomAdmission", () => {
     deviceMocks.loadRememberedGuestProfile.mockReturnValue(null);
     guestSessionStore.current = null;
     persistRoomGuestSession(null);
+    apiMocks.preflightRoomInvite.mockResolvedValue({
+      status: "profile_required",
+      can_auto_join: false,
+      room_id: "room-2",
+      room_label: "Room Two",
+      invite_scope: "room",
+    });
     window.history.replaceState({}, "", "/join?token=invite-1");
   });
 
-  it("auto-joins with a remembered profile and persists the canonical session", async () => {
-    deviceMocks.loadRememberedGuestProfile.mockReturnValue({
-      displayName: "Remembered Guest",
-      avatarImage: "data:image/png;base64,avatar",
+  it("auto-joins only when preflight recognizes the server-side identity", async () => {
+    apiMocks.preflightRoomInvite.mockResolvedValue({
+      status: "known_user",
+      can_auto_join: true,
+      room_id: "room-2",
+      room_label: "Room Two",
+      invite_scope: "room",
+      participant: {
+        participant_id: "guest-2",
+        display_name: "Known Guest",
+        avatar_image_url: "data:image/png;base64,avatar",
+      },
     });
     apiMocks.joinRoomInvite.mockResolvedValue({
       status: "joined",
       session_token: "session-2",
       agent_id: "guest-2",
-      display_name: "Remembered Guest",
+      display_name: "Known Guest",
       meeting_id: "room-2",
       invite_scope: "room",
       connection_kind: "browser",
@@ -91,14 +108,14 @@ describe("useRoomAdmission", () => {
     await waitFor(() => expect(result.current.guestSession?.sessionToken).toBe("session-2"));
     expect(apiMocks.joinRoomInvite).toHaveBeenCalledWith({
       inviteToken: "invite-1",
-      displayName: "Remembered Guest",
+      displayName: "Known Guest",
       avatarImage: "data:image/png;base64,avatar",
       deviceToken: "device-1",
       participantType: "human",
     });
     expect(loadRoomGuestSession()?.sessionToken).toBe("session-2");
     expect(deviceMocks.rememberGuestProfile).toHaveBeenCalledWith({
-      displayName: "Remembered Guest",
+      displayName: "Known Guest",
       avatarImage: "data:image/png;base64,avatar",
     });
     expect(onRoomJoined).toHaveBeenCalledWith(expect.objectContaining({ meetingId: "room-2" }));
@@ -106,9 +123,71 @@ describe("useRoomAdmission", () => {
     expect(window.location.search).toBe("");
   });
 
+  it("uses a remembered profile only to prefill an unknown-device form", async () => {
+    deviceMocks.loadRememberedGuestProfile.mockReturnValue({
+      displayName: "Remembered Guest",
+      avatarImage: "data:image/png;base64,remembered",
+    });
+    const onRoomJoined = vi.fn();
+    const onResetToLobby = vi.fn();
+
+    const { result } = renderHook(() =>
+      useRoomAdmission({
+        guestInvite: null,
+        guestJoinToken: "invite-1",
+        initialSession: null,
+        onRoomJoined,
+        onResetToLobby,
+      })
+    );
+
+    await waitFor(() => expect(result.current.guestAdmissionBusy).toBe(false));
+    expect(result.current.pendingGuestDisplayName).toBe("Remembered Guest");
+    expect(result.current.pendingGuestAvatarImage).toBe("data:image/png;base64,remembered");
+    expect(apiMocks.joinRoomInvite).not.toHaveBeenCalled();
+  });
+
+  it("keeps a matching valid session without consuming the invite again", async () => {
+    apiMocks.preflightRoomInvite.mockResolvedValue({
+      status: "existing_session",
+      can_auto_join: true,
+      room_id: "room-1",
+      room_label: "Room One",
+      invite_scope: "room",
+      participant: { participant_id: "guest-1", display_name: "Guest" },
+    });
+    const onRoomJoined = vi.fn();
+
+    const { result } = renderHook(() =>
+      useRoomAdmission({
+        guestInvite: null,
+        guestJoinToken: "invite-2",
+        initialSession: SESSION,
+        onRoomJoined,
+        onResetToLobby: vi.fn(),
+      })
+    );
+
+    await waitFor(() => expect(result.current.guestAdmissionBusy).toBe(false));
+    expect(result.current.guestSession?.sessionToken).toBe("session-1");
+    expect(result.current.guestSession?.roomLabel).toBe("Room One");
+    expect(apiMocks.preflightRoomInvite).toHaveBeenCalledWith({
+      inviteToken: "invite-2",
+      deviceToken: "device-1",
+      sessionToken: "session-1",
+    });
+    expect(apiMocks.joinRoomInvite).not.toHaveBeenCalled();
+    expect(onRoomJoined).toHaveBeenCalledOnce();
+    expect(window.location.search).toBe("");
+  });
+
   it("restores a persisted session when the matching invite join request fails", async () => {
     persistRoomGuestSession(SESSION);
-    deviceMocks.loadRememberedGuestProfile.mockReturnValue({ displayName: "Guest" });
+    apiMocks.preflightRoomInvite.mockResolvedValue({
+      status: "known_user",
+      can_auto_join: true,
+      participant: { participant_id: "guest-1", display_name: "Guest" },
+    });
     apiMocks.joinRoomInvite.mockRejectedValue(new Error("network unavailable"));
     const onRoomJoined = vi.fn();
 
@@ -129,7 +208,11 @@ describe("useRoomAdmission", () => {
   });
 
   it("does not loop automatic join attempts after a failure", async () => {
-    deviceMocks.loadRememberedGuestProfile.mockReturnValue({ displayName: "Guest" });
+    apiMocks.preflightRoomInvite.mockResolvedValue({
+      status: "known_user",
+      can_auto_join: true,
+      participant: { participant_id: "guest-1", display_name: "Guest" },
+    });
     apiMocks.joinRoomInvite.mockRejectedValue(new Error("network unavailable"));
     const onRoomJoined = vi.fn();
     const onResetToLobby = vi.fn();
@@ -152,6 +235,14 @@ describe("useRoomAdmission", () => {
 
   it("keeps a stored guest session independent from legacy surface errors", async () => {
     persistRoomGuestSession(SESSION);
+    apiMocks.preflightRoomInvite.mockResolvedValue({
+      status: "existing_session",
+      can_auto_join: true,
+      room_id: "room-1",
+      room_label: "Room One",
+      invite_scope: "room",
+      participant: { participant_id: "guest-1", display_name: "Guest" },
+    });
     const onResetToLobby = vi.fn();
     const onRoomJoined = vi.fn();
     const { result, rerender } = renderHook(
@@ -168,15 +259,17 @@ describe("useRoomAdmission", () => {
       { initialProps: { unrelatedError: null as Error | null } }
     );
 
+    await waitFor(() => expect(result.current.guestAdmissionBusy).toBe(false));
     expect(result.current.guestExpired).toBe(false);
     await act(async () => {
       rerender({ unrelatedError: new ApiError(401, "legacy flow unavailable") });
     });
 
     expect(result.current.guestExpired).toBe(false);
-    expect(result.current.guestSession).toEqual(SESSION);
+    expect(result.current.guestSession).toEqual(expect.objectContaining(SESSION));
+    expect(result.current.guestSession?.roomLabel).toBe("Room One");
     expect(loadRoomGuestSession()).toEqual(SESSION);
     expect(onResetToLobby).not.toHaveBeenCalled();
-    expect(onRoomJoined).not.toHaveBeenCalled();
+    expect(onRoomJoined).toHaveBeenCalledOnce();
   });
 });

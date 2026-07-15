@@ -3,6 +3,7 @@ import {
   fetchJson,
   postJson,
   postJsonHost,
+  postJsonWithIdentity,
   postJsonWithToken,
 } from "./http";
 
@@ -35,6 +36,28 @@ export interface RoomInviteJoinResponse {
   room_label?: string;
   room_topic?: string;
   room_created_at?: string;
+}
+
+export interface RoomInviteAdmissionResponse {
+  status:
+    | "existing_session"
+    | "existing_member"
+    | "known_user"
+    | "profile_required"
+    | "pairing_required"
+    | "invite_invalid"
+    | "invite_expired";
+  reason?: string;
+  can_auto_join: boolean;
+  room_id?: string;
+  room_label?: string;
+  invite_scope?: RoomAppearance["inviteScope"];
+  participant?: {
+    participant_id: string;
+    display_name: string;
+    avatar_image_url?: string;
+  };
+  operator?: boolean;
 }
 
 export interface PublicInviteStatus {
@@ -136,6 +159,22 @@ export function joinRoomInvite({
     device_token: deviceToken,
     participant_type: participantType,
   });
+}
+
+export function preflightRoomInvite({
+  inviteToken,
+  deviceToken,
+  sessionToken = "",
+}: {
+  inviteToken: string;
+  deviceToken: string;
+  sessionToken?: string;
+}) {
+  return postJsonWithIdentity<RoomInviteAdmissionResponse>(
+    "/api/room-invite/admission",
+    { invite_token: inviteToken },
+    { deviceToken, sessionToken }
+  );
 }
 
 export function createCompanionRoomInvite({

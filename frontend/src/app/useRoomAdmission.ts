@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { joinRoomInvite, type RoomInviteJoinResponse } from "../api";
+import { joinRoomInvite, preflightRoomInvite, type RoomInviteJoinResponse } from "../api";
 import { GUEST_SESSION_EXPIRED_MESSAGE } from "../lib/apiErrors";
 import { getOrCreateDeviceToken, loadRememberedGuestProfile, rememberGuestProfile } from "../lib/deviceIdentity";
 import { roomFromGuestSession, type RoomDockItem } from "../lib/roomDockModel";
@@ -32,7 +32,9 @@ export function useRoomAdmission({
   const [pendingGuestDisplayName, setPendingGuestDisplayName] = useState("Guest");
   const [pendingGuestAvatarImage, setPendingGuestAvatarImage] = useState("");
   const [guestJoinStatus, setGuestJoinStatus] = useState("");
-  const autoJoinAttemptedTokenRef = useRef("");
+  const [guestAdmissionResolved, setGuestAdmissionResolved] = useState(!guestJoinToken);
+  const [guestAdmissionBusy, setGuestAdmissionBusy] = useState(Boolean(guestJoinToken));
+  const preflightAttemptedTokenRef = useRef("");
 
   const guestLocked = Boolean(guestInvite || guestSession || guestJoinToken || guestExpired);
   const guestMeetingId = guestSession?.meetingId || guestInvite?.meetingId || "";
@@ -82,8 +84,17 @@ export function useRoomAdmission({
   }, []);
 
   const requestGuestJoin = useCallback(() => {
+    if (!guestAdmissionResolved) return;
     setGuestJoinStatus("");
     setGuestJoinRequested(true);
+  }, [guestAdmissionResolved]);
+
+  const clearInviteUrl = useCallback(() => {
+    try {
+      window.history.replaceState({}, "", window.location.pathname || "/join");
+    } catch {
+      // URL cleanup is best-effort; verified session state remains authoritative.
+    }
   }, []);
 
   const applyJoinedSession = useCallback(
@@ -100,33 +111,92 @@ export function useRoomAdmission({
       setGuestSession(nextSession);
       setGuestExpired(false);
       setGuestJoinRequested(false);
+      setGuestAdmissionBusy(false);
+      setGuestAdmissionResolved(true);
       onRoomJoined(roomFromGuestSession(nextSession));
       setGuestJoinStatus("");
-      try {
-        window.history.replaceState({}, "", window.location.pathname || "/join");
-      } catch {
-        // URL cleanup is best-effort; the session is already stored in memory.
-      }
+      clearInviteUrl();
     },
-    [onRoomJoined, pendingGuestDisplayName]
+    [clearInviteUrl, onRoomJoined, pendingGuestDisplayName]
   );
 
   useEffect(() => {
-    if (!guestJoinToken || guestAlreadyJoinedThisInvite) return;
-    if (guestJoinRequested || guestExpired) return;
-    const remembered = loadRememberedGuestProfile();
-    if (!remembered) return;
-    if (autoJoinAttemptedTokenRef.current === guestJoinToken) return;
-    autoJoinAttemptedTokenRef.current = guestJoinToken;
-    setPendingGuestDisplayName(remembered.displayName);
-    setPendingGuestAvatarImage(remembered.avatarImage || "");
-    setGuestJoinRequested(true);
-  }, [guestAlreadyJoinedThisInvite, guestExpired, guestJoinRequested, guestJoinToken]);
+    if (!guestJoinToken || guestExpired) return;
+    if (preflightAttemptedTokenRef.current === guestJoinToken) return;
+    preflightAttemptedTokenRef.current = guestJoinToken;
+    let cancelled = false;
+    setGuestAdmissionBusy(true);
+    setGuestAdmissionResolved(false);
+    setGuestJoinStatus("초대와 기존 신원을 확인하는 중...");
+    preflightRoomInvite({
+      inviteToken: guestJoinToken,
+      deviceToken: getOrCreateDeviceToken(),
+      sessionToken: guestSession?.sessionToken || "",
+    })
+      .then((decision) => {
+        if (cancelled) return;
+        if (decision.status === "existing_session" && guestSession) {
+          const preservedSession = {
+            ...guestSession,
+            roomLabel: decision.room_label || guestSession.roomLabel,
+            inviteScope: decision.invite_scope || guestSession.inviteScope,
+          };
+          setGuestSession(preservedSession);
+          setGuestAdmissionResolved(true);
+          setGuestAdmissionBusy(false);
+          setGuestJoinStatus("");
+          onRoomJoined(roomFromGuestSession(preservedSession));
+          clearInviteUrl();
+          return;
+        }
+        if (
+          decision.can_auto_join &&
+          (decision.status === "known_user" || decision.status === "existing_member") &&
+          decision.participant
+        ) {
+          setPendingGuestDisplayName(decision.participant.display_name || "Guest");
+          setPendingGuestAvatarImage(decision.participant.avatar_image_url || "");
+          setGuestAdmissionResolved(true);
+          setGuestAdmissionBusy(false);
+          setGuestJoinStatus("");
+          setGuestJoinRequested(true);
+          return;
+        }
+        if (decision.status === "profile_required") {
+          const remembered = loadRememberedGuestProfile();
+          if (remembered) {
+            setPendingGuestDisplayName(remembered.displayName);
+            setPendingGuestAvatarImage(remembered.avatarImage || "");
+          }
+          setGuestAdmissionResolved(true);
+          setGuestAdmissionBusy(false);
+          setGuestJoinStatus("");
+          return;
+        }
+        setGuestAdmissionResolved(false);
+        setGuestAdmissionBusy(false);
+        setGuestJoinStatus(
+          decision.status === "invite_expired"
+            ? "초대 링크가 만료되었습니다."
+            : decision.reason || "유효하지 않은 초대 링크입니다."
+        );
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setGuestAdmissionResolved(false);
+        setGuestAdmissionBusy(false);
+        setGuestJoinStatus(error instanceof Error ? error.message : "초대 확인 실패");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clearInviteUrl, guestExpired, guestJoinToken, guestSession, onRoomJoined]);
 
   useEffect(() => {
     if (!guestJoinToken || guestAlreadyJoinedThisInvite) return;
-    if (!guestJoinRequested) return;
+    if (!guestAdmissionResolved || !guestJoinRequested) return;
     let cancelled = false;
+    setGuestAdmissionBusy(true);
     setGuestJoinStatus("초대 링크로 방에 입장 중...");
     joinRoomInvite({
       inviteToken: guestJoinToken,
@@ -144,16 +214,14 @@ export function useRoomAdmission({
         if (restoredSession?.inviteToken === guestJoinToken) {
           setGuestSession(restoredSession);
           setGuestExpired(false);
+          setGuestAdmissionBusy(false);
           onRoomJoined(roomFromGuestSession(restoredSession));
           setGuestJoinStatus("");
-          try {
-            window.history.replaceState({}, "", window.location.pathname || "/join");
-          } catch {
-            // URL cleanup is best-effort; the restored session remains in memory.
-          }
+          clearInviteUrl();
           return;
         }
         setGuestJoinStatus(error instanceof Error ? error.message : "초대 링크 입장 실패");
+        setGuestAdmissionBusy(false);
         setGuestJoinRequested(false);
       });
     return () => {
@@ -161,6 +229,8 @@ export function useRoomAdmission({
     };
   }, [
     applyJoinedSession,
+    clearInviteUrl,
+    guestAdmissionResolved,
     guestAlreadyJoinedThisInvite,
     guestJoinRequested,
     guestJoinToken,
@@ -176,6 +246,7 @@ export function useRoomAdmission({
     pendingGuestDisplayName,
     pendingGuestAvatarImage,
     guestJoinStatus,
+    guestAdmissionBusy,
     guestLocked,
     guestMeetingId,
     guestJoinPending,
