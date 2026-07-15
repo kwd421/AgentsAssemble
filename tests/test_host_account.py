@@ -6,7 +6,9 @@ from urllib.parse import parse_qs, urlparse
 
 from agentsassemble import room_invite, room_users
 from agentsassemble.gui_router import GuiDeps, RequestContext
-from agentsassemble.identity_store import reset_identity_store_registry
+from agentsassemble.identity_store import identity_store_at, reset_identity_store_registry
+from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
+from agentsassemble.room_session_service import RoomSessionService
 
 DEVICE_TOKEN = "phone-device-token-1234"
 
@@ -24,9 +26,9 @@ class FakeHandler:
         self.sent_error = (status, message)
 
 
-def _context(handler):
+def _context(handler, deps):
     parsed = urlparse("/api/test")
-    return RequestContext(handler, GuiDeps(output_root=Path(".")), parsed, parse_qs(parsed.query))
+    return RequestContext(handler, deps, parsed, parse_qs(parsed.query))
 
 
 class HostAccountTests(unittest.TestCase):
@@ -41,8 +43,21 @@ class HostAccountTests(unittest.TestCase):
         self.addCleanup(room_invite.reset_state)
         self.addCleanup(room_users.reset_state)
         self.addCleanup(reset_identity_store_registry)
-        room_users.configure_room_users_store(Path(self._tmp.name) / "identity.db")
+        self.identities = identity_store_at(Path(self._tmp.name) / "identity.db")
+        room_users.configure_room_users_backend(self.identities)
+        self.invite_repository = MemoryInviteSessionRepository()
+        room_invite.configure_room_invite_repository(self.invite_repository)
         room_invite.set_runtime_host_token("host-secret")
+        self.deps = GuiDeps(
+            output_root=Path(self._tmp.name),
+            identity_backend=self.identities,
+            room_sessions=RoomSessionService(
+                self.invite_repository,
+                token_prefix=room_invite.SESSION_TOKEN_PREFIX,
+                ttl_seconds=room_invite.SESSION_TOKEN_TTL_SECONDS,
+            ),
+            public_invite_runtime=room_invite.compatibility_public_invite_runtime(),
+        )
 
     def _join(self, device_token=""):
         invite = room_invite.create_room_invite(
@@ -85,18 +100,18 @@ class HostAccountTests(unittest.TestCase):
         room_users.grant_operator_to_device(DEVICE_TOKEN)
         result = self._join(device_token=DEVICE_TOKEN)
         handler = FakeHandler(headers={"Authorization": f"Bearer {result['session_token']}"})
-        self.assertTrue(_context(handler).require_moderator())
+        self.assertTrue(_context(handler, self.deps).require_moderator())
         self.assertIsNone(handler.sent_error)
 
     def test_regular_guest_session_fails_require_moderator(self):
         result = self._join(device_token="ordinary-guest-device")
         handler = FakeHandler(headers={"Authorization": f"Bearer {result['session_token']}"})
-        self.assertFalse(_context(handler).require_moderator())
+        self.assertFalse(_context(handler, self.deps).require_moderator())
         self.assertEqual(handler.sent_error[0], HTTPStatus.FORBIDDEN)
 
     def test_host_token_still_passes_require_moderator(self):
         handler = FakeHandler(headers={"X-Host-Token": "host-secret"})
-        self.assertTrue(_context(handler).require_moderator())
+        self.assertTrue(_context(handler, self.deps).require_moderator())
 
     def test_grant_requires_meaningful_device_token(self):
         self.assertIsNone(room_users.grant_operator_to_device("short"))
@@ -108,7 +123,7 @@ class HostAccountTests(unittest.TestCase):
         self.assertEqual(first["agent_id"], second["agent_id"])
         self.assertTrue(second["operator"])
         handler = FakeHandler(headers={"Authorization": f"Bearer {second['session_token']}"})
-        self.assertTrue(_context(handler).require_moderator())
+        self.assertTrue(_context(handler, self.deps).require_moderator())
 
 
 if __name__ == "__main__":

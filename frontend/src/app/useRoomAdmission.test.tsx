@@ -247,6 +247,31 @@ describe("useRoomAdmission", () => {
     await waitFor(() => expect(result.current.admittedSessionToken).toBe("session-1"));
   });
 
+  it("expires a rejected session without unlocking host-only room access", () => {
+    guestSessionStore.current = SESSION;
+    const onResetToLobby = vi.fn();
+
+    const { result } = renderHook(() =>
+      useRoomAdmission({
+        guestInvite: null,
+        guestJoinToken: "",
+        operatorPairingToken: "",
+        onPairingTokenConsumed: vi.fn(),
+        initialSession: SESSION,
+        onRoomJoined: vi.fn(),
+        onResetToLobby,
+      })
+    );
+
+    act(() => result.current.expireGuestSession());
+
+    expect(guestSessionStore.current).toBeNull();
+    expect(result.current.admissionState).toMatchObject({ kind: "expired" });
+    expect(result.current.admittedSessionToken).toBe("");
+    expect(result.current.guestLocked).toBe(true);
+    expect(onResetToLobby).toHaveBeenCalledOnce();
+  });
+
   it("redeems a dedicated pairing into the canonical operator session", async () => {
     apiMocks.redeemOperatorPairing.mockResolvedValue({
       status: "admitted",

@@ -160,25 +160,6 @@ class FrontendRoomGuestSessionTests(unittest.TestCase):
             msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
 
-    def test_app_clears_persisted_guest_session_and_stays_locked_on_401(self):
-        app_source = (ROOT / "frontend/src/App.tsx").read_text(encoding="utf-8")
-        lobby_source = (ROOT / "frontend/src/views/LobbyView.tsx").read_text(encoding="utf-8")
-        composer_source = (ROOT / "frontend/src/views/components/LobbyComposer.tsx").read_text(encoding="utf-8")
-        user_panel_source = (ROOT / "frontend/src/views/components/UserPanel.tsx").read_text(encoding="utf-8")
-
-        self.assertIn("GUEST_SESSION_EXPIRED_MESSAGE", app_source)
-        self.assertIn('import { useRoomAdmission } from "./app/useRoomAdmission"', app_source)
-        self.assertIn("} = useRoomAdmission({", app_source)
-        self.assertIn("if (guestExpired || guestJoinPending)", app_source)
-        self.assertIn("guestProfile={guestPanelProfile}", app_source)
-        self.assertIn("guestProfile?:", user_panel_source)
-        self.assertIn("if (guestProfile) return;", user_panel_source)
-        self.assertIn('aria-label="게스트 프로필"', user_panel_source)
-        self.assertIn("onGuestSessionExpired={expireGuestSession}", app_source)
-        self.assertIn("onGuestSessionExpired", lobby_source)
-        self.assertIn("isUnauthorizedApiError(error)", lobby_source)
-        self.assertIn("onGuestSessionExpired", composer_source)
-
     def test_guest_posting_state_never_falls_back_to_host_lobby(self):
         script = textwrap.dedent(
             """

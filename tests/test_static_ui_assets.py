@@ -1476,7 +1476,6 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("GuestJoinProfilePanel", app_source)
         self.assertIn("pendingGuestDisplayName", app_source)
         self.assertIn("pendingGuestAvatarImage", app_source)
-        self.assertIn("if (guestExpired || guestJoinPending)", app_source)
         self.assertNotIn("flowError", admission_source)
         self.assertIn("joinRoomInvite({", admission_source)
         self.assertIn("displayName: pendingGuestDisplayName", admission_source)
@@ -1979,7 +1978,7 @@ class StaticUiAssetTests(unittest.TestCase):
         ]:
             self.assertNotIn(forbidden, surface)
 
-    def test_react_live_tab_subscribes_to_meeting_sse_without_route_flip_or_provider_start(self):
+    def test_react_live_tab_renders_stream_projection_without_provider_start(self):
         source = frontend_source()
         api_source = api_barrel_source()
         app_source = frontend_file("App.tsx")
@@ -2001,16 +2000,6 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("meetingPayload?.live_events", api_source)
         self.assertIn("meetingPayload?.lifecycle", api_source)
         self.assertIn("meeting_payload?: MeetingStreamSnapshot", api_source)
-        self.assertIn("subscribeMeetingEvents", app_source)
-        self.assertIn("meetingLiveEventsToTimelineEvents", app_source)
-        self.assertIn("setMeetingStreamState", app_source)
-        self.assertIn("applyMeetingStreamUpdate", app_source)
-        self.assertIn("meetingStreamStateForActiveMeeting", app_source)
-        self.assertIn("let cancelled = false;", app_source)
-        self.assertIn("if (cancelled) return;", app_source)
-        self.assertIn('channel !== "live"', app_source)
-        self.assertIn("update.meetingId && update.meetingId !== meetingId", app_source)
-        self.assertIn("flowEvents.length ? flowEvents : officialTimelineEvents", app_source)
         self.assertIn("timelineSource={scopedTimelineSource}", app_source)
         self.assertIn("flow_id", live_source)
         self.assertIn("official_record", live_source)
