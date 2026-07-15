@@ -387,6 +387,7 @@ export default function App() {
   }, []);
   const {
     guestSession,
+    admittedSessionToken,
     guestExpired,
     guestJoinRequested,
     pendingGuestDisplayName,
@@ -442,9 +443,9 @@ export default function App() {
       roomPostingState({
         guestLocked,
         guestReadOnly,
-        sessionToken: guestSession?.sessionToken || "",
+        sessionToken: admittedSessionToken,
       }),
-    [guestLocked, guestReadOnly, guestSession?.sessionToken]
+    [admittedSessionToken, guestLocked, guestReadOnly]
   );
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? EMPTY_ROOM;
   const {
@@ -465,11 +466,11 @@ export default function App() {
     guestJoinPending,
     guestLocked,
     guestMeetingId,
-    sessionToken: guestSession?.sessionToken || "",
+    sessionToken: admittedSessionToken,
   });
   const roomChannels = useRoomChannels({
     activeRoom,
-    sessionToken: guestSession?.sessionToken || "",
+    sessionToken: admittedSessionToken,
   });
   const activeSideChatMeetingId = activeRoom.meetingId || "";
   const {
@@ -505,8 +506,8 @@ export default function App() {
     };
   }, []);
   const canonicalRoomAuth = guestLocked
-    ? guestSession?.sessionToken
-      ? ({ kind: "session" as const, sessionToken: guestSession.sessionToken })
+    ? admittedSessionToken
+      ? ({ kind: "session" as const, sessionToken: admittedSessionToken })
       : undefined
     : activeRoom.meetingId
       ? ({ kind: "host" as const, meetingId: activeRoom.meetingId })
@@ -517,19 +518,19 @@ export default function App() {
     viewerParticipantId: guestSession?.agentId || "operator-local",
     onSideChat: handleSideChatRealtimeEvents,
     onError: handleSideChatError,
-    onUnauthorized: guestLocked ? expireGuestSession : undefined,
+    onUnauthorized: admittedSessionToken ? expireGuestSession : undefined,
   });
   const roomMembers = useRoomMembers({
     activeRoom,
     canonicalParticipants: canonicalRoom.participants,
     membershipRevision: canonicalRoom.membershipRevision,
-    sessionToken: guestSession?.sessionToken || "",
+    sessionToken: admittedSessionToken,
   });
   const activeRoomMembers = roomMembers.activeMembers;
   const refreshMembers = roomMembers.refresh;
   const roomSettings = useRoomSettingsController({
     activeRoom,
-    sessionToken: guestSession?.sessionToken || "",
+    sessionToken: admittedSessionToken,
     deviceToken,
     onRoomMetadataLoaded: updateRoomByMeetingId,
     onMembersChanged: roomMembers.replaceMembers,
@@ -537,7 +538,7 @@ export default function App() {
   const roomAppearances = roomSettings.appearances;
   const roomInvite = useRoomInviteController({
     guestLocked,
-    sessionToken: guestSession?.sessionToken || "",
+    sessionToken: admittedSessionToken,
     availableProviders: canonicalRoom.availableProviders,
     onMembersChanged: roomMembers.replaceMembers,
   });
@@ -1082,11 +1083,11 @@ export default function App() {
   }
 
   async function createCompanionAiPacket() {
-    if (!guestSession?.sessionToken) return;
+    if (!admittedSessionToken || !guestSession) return;
     setGuestAiPacketStatus("AI 입장 패킷 생성 중...");
     try {
       const invite = await createCompanionRoomInvite({
-        sessionToken: guestSession.sessionToken,
+        sessionToken: admittedSessionToken,
         agentId: `${guestSession.agentId || "friend"}-ai`,
         displayName: `${guestSession.displayName || "Friend"} AI`,
       });
@@ -1790,7 +1791,7 @@ export default function App() {
               key={activeCustomChannel.id}
               channel={activeCustomChannel}
               meetingId={activeRoom.meetingId}
-              sessionToken={guestSession?.sessionToken || ""}
+              sessionToken={admittedSessionToken}
               localDisplayName={guestSession?.displayName || ""}
               canPost={lobbyPostingState.canPost}
               membersOpen={membersOpen}

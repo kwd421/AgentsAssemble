@@ -200,6 +200,53 @@ describe("useRoomAdmission", () => {
     expect(window.location.search).toBe("");
   });
 
+  it("withholds a stored session token until invite preflight confirms it", async () => {
+    let resolvePreflight!: (value: {
+      status: string;
+      can_auto_join: boolean;
+      room_id: string;
+      room_label: string;
+      invite_scope: string;
+      participant: { participant_id: string; display_name: string };
+    }) => void;
+    apiMocks.preflightRoomInvite.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePreflight = resolve;
+      })
+    );
+    const onRoomJoined = vi.fn();
+    const onResetToLobby = vi.fn();
+
+    const { result } = renderHook(() =>
+      useRoomAdmission({
+        guestInvite: null,
+        guestJoinToken: "invite-2",
+        operatorPairingToken: "",
+        onPairingTokenConsumed: vi.fn(),
+        initialSession: SESSION,
+        onRoomJoined,
+        onResetToLobby,
+      })
+    );
+
+    expect(result.current.admittedSessionToken).toBe("");
+    await waitFor(() => expect(apiMocks.preflightRoomInvite).toHaveBeenCalledOnce());
+    await act(async () => {
+      resolvePreflight({
+        status: "existing_session",
+        can_auto_join: true,
+        room_id: "room-1",
+        room_label: "Room One",
+        invite_scope: "room",
+        participant: { participant_id: "guest-1", display_name: "Guest" },
+      });
+    });
+    await waitFor(() =>
+      expect(result.current.admissionState).toMatchObject({ kind: "joined" })
+    );
+    await waitFor(() => expect(result.current.admittedSessionToken).toBe("session-1"));
+  });
+
   it("redeems a dedicated pairing into the canonical operator session", async () => {
     apiMocks.redeemOperatorPairing.mockResolvedValue({
       status: "admitted",

@@ -404,3 +404,16 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   with no skips. The system Python lacked the optional PostgreSQL packages, so
   the evidence used an isolated temporary virtual environment rather than
   weakening the skip gate or changing project dependencies.
+- 2026-07-15: Milestone 5.3 expanded the production-browser identity matrix to
+  same-origin active session, known membership, expired bearer recovery,
+  cross-origin unpaired admission, exact-origin operator pairing, replay,
+  wrong-origin rejection, incognito identity separation, equal display names,
+  and failed-join recovery. The first expired-session run found a release
+  defect: canonical room connections used a stale stored bearer while invite
+  preflight was still running, and the unauthorized callback erased the
+  admission before it could recover. `useRoomAdmission` now exposes only a
+  reducer-confirmed, non-expired `admittedSessionToken` to authenticated room
+  consumers. This is an admission correctness fix, not a polling, scheduling,
+  autonomous-conversation, sequence, or media change. All 125 frontend unit
+  tests and four Playwright scenarios passed; the production build emitted a
+  459.62 kB main JavaScript chunk with no size warning.

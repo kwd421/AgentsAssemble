@@ -118,9 +118,9 @@ Creation requires moderator authority and a configured public URL. A pairing:
 - supersedes an older unused pairing for the same operator, room, and origin;
 - persists only SHA-256 token fingerprints, never the raw token.
 
-Redemption requires the browser device credential and exact target origin. If
-an `Origin` header is present, the server compares it with the origin declared
-in the body before redemption. Successful consumption atomically binds the
+Redemption requires the browser device credential and the exact normalized
+HTTP `Origin` header. The body cannot nominate or override its origin.
+Successful consumption atomically binds the
 credential to `operator-local-user`, upserts canonical participant state, and
 issues a bounded room bearer session for participant `operator-local`.
 
@@ -284,8 +284,9 @@ not ignored or retried away.
 npm --prefix frontend run build
 ```
 
-Result: passed. Vite reports the existing minified chunk-size warning for the
-approximately 708KB main JS chunk.
+Historical result for this slice: passed. Later composition work reduced the
+main JavaScript chunk below Vite's 500KB warning threshold; see the Milestone 5
+addendum below for the current build evidence.
 
 ### Browser E2E
 
@@ -330,7 +331,6 @@ Result: passed before each implementation commit and at final verification.
 - The paired bearer session is room-bounded; it is not a reusable global host
   credential.
 - A real public tunnel/mobile-network smoke was not run in this slice.
-- The main frontend bundle still exceeds Vite's 500KB warning threshold.
 - Existing Python test cleanup warnings should be handled in a separate test
   hygiene change rather than mixed into identity authority code.
 
@@ -349,3 +349,48 @@ link opens:
 - replay/expiry/revocation are explicit failures with no fallback guest or
   operator session;
 - login remains explicitly deferred.
+
+## 10. Milestone 5 Browser Matrix Addendum
+
+The final admission-correctness release gate expanded the browser suite from
+two scenarios to four scenarios covering the complete requested identity
+matrix through the production React bundle and real HTTP/WebSocket fixture.
+
+The added assertions cover:
+
+1. a fresh cross-origin ordinary invite shows the profile form;
+2. wrong-origin pairing is rejected without consuming the token;
+3. the correct origin then pairs as the canonical operator;
+4. pairing replay is rejected without a stored room session;
+5. revisiting on the same origin with an active session shows no profile form;
+6. removing only the room bearer re-joins the existing member with the same
+   participant identity;
+7. an expired/unusable stored bearer is replaced automatically while the
+   device keeps the same participant identity;
+8. an injected join failure leaves the profile form and retry action usable;
+9. retry completes instead of leaving the admission UI locked;
+10. a fresh/incognito context using the same display name receives a different
+    participant and bearer because its device credential is different.
+
+The first expired-session run exposed a real ordering defect. While invite
+preflight was still validating the stored identity, `App.tsx` opened canonical
+room connections with the stale bearer. The resulting unauthorized callback
+cleared browser admission state before automatic rejoin could complete. The
+admission hook now exposes `admittedSessionToken`: a stored token is withheld
+from room WebSocket and authenticated room APIs until the reducer reaches a
+non-expired `joined` state. This preserves the stored profile as preflight
+input without treating it as authenticated authority. No retry fallback or
+conversation-policy change was added.
+
+Current verification:
+
+```text
+npm --prefix frontend test
+22 files, 125 tests passed
+
+npm --prefix frontend run test:e2e
+4 Playwright tests passed in 6.6 seconds
+
+npm --prefix frontend run build
+passed; main JavaScript 459.62 kB (137.00 kB gzip), no 500 kB warning
+```

@@ -189,6 +189,10 @@ export function useRoomAdmission({
   }, [onPairingTokenConsumed]);
 
   const guestSession = admissionState.session;
+  const admittedSessionToken =
+    admissionState.kind === "joined" && !roomGuestSessionExpired(admissionState.session)
+      ? admissionState.session.sessionToken
+      : "";
   const guestExpired = admissionState.kind === "expired";
   const guestJoinRequested = admissionState.kind === "joining";
   const guestAdmissionBusy =
@@ -540,6 +544,7 @@ export function useRoomAdmission({
   return {
     admissionState,
     guestSession,
+    admittedSessionToken,
     guestExpired,
     guestJoinRequested,
     pendingGuestDisplayName,

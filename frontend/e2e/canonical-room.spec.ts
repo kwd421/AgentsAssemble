@@ -8,6 +8,7 @@ const PROFILE_PNG = Buffer.from(
 
 const HOST_TOKEN_STORAGE_KEY = "agentsassemble.hostToken.v1";
 const E2E_HOST_TOKEN = "e2e-host-token";
+const GUEST_SESSION_STORAGE_KEY = "agentsassemble.roomGuestSession.v1";
 
 async function installHostCredential(page: import("@playwright/test").Page) {
   await page.addInitScript(
@@ -16,15 +17,48 @@ async function installHostCredential(page: import("@playwright/test").Page) {
   );
 }
 
-test("keeps ordinary invites separate from one-time cross-origin operator pairing", async ({
-  browser,
-  page,
-}) => {
+async function openHostInviteDialog(page: import("@playwright/test").Page) {
   await installHostCredential(page);
   await page.goto("/");
   await page.getByRole("button", { name: "#general", exact: true }).click();
   await page.getByRole("button", { name: "서버에 초대하기" }).first().click();
-  const inviteDialog = page.getByRole("dialog", { name: /친구를 .*초대하기/ });
+  return page.getByRole("dialog", { name: /친구를 .*초대하기/ });
+}
+
+async function createGuestInviteUrl(page: import("@playwright/test").Page) {
+  const inviteDialog = await openHostInviteDialog(page);
+  await inviteDialog.getByRole("button", { name: "친구 초대 링크 생성" }).click();
+  const guestInviteInput = inviteDialog.getByPlaceholder(
+    "공개 URL을 먼저 설정하면 /join?token=... 링크가 여기에 표시됩니다"
+  );
+  await expect(guestInviteInput).toHaveValue(/^http:\/\/public\.localhost:\d+\/join\?token=/);
+  return guestInviteInput.inputValue();
+}
+
+async function readGuestSession(page: import("@playwright/test").Page) {
+  return page.evaluate((key) => JSON.parse(window.localStorage.getItem(key) || "null"), GUEST_SESSION_STORAGE_KEY);
+}
+
+async function joinGuest(
+  page: import("@playwright/test").Page,
+  inviteUrl: string,
+  displayName: string
+) {
+  await page.goto(inviteUrl);
+  const profile = page.getByRole("region", { name: "입장 프로필" });
+  await expect(profile).toBeVisible();
+  await profile.getByRole("textbox", { name: "이름" }).fill(displayName);
+  await profile.getByRole("button", { name: "입장", exact: true }).click();
+  await expect(profile).toHaveCount(0);
+  await expect.poll(() => readGuestSession(page)).not.toBeNull();
+  return readGuestSession(page);
+}
+
+test("keeps ordinary invites separate from one-time cross-origin operator pairing", async ({
+  browser,
+  page,
+}) => {
+  const inviteDialog = await openHostInviteDialog(page);
 
   await inviteDialog.getByRole("button", { name: "친구 초대 링크 생성" }).click();
   const guestInviteInput = inviteDialog.getByPlaceholder(
@@ -44,14 +78,22 @@ test("keeps ordinary invites separate from one-time cross-origin operator pairin
   await expect(unknownPage.getByRole("region", { name: "입장 프로필" })).toBeVisible();
   await expect(unknownPage.getByRole("textbox", { name: "이름" })).toBeVisible();
 
+  const wrongOriginContext = await browser.newContext();
+  const wrongOriginPage = await wrongOriginContext.newPage();
+  const wrongOriginUrl = new URL(pairingUrl);
+  wrongOriginUrl.hostname = "127.0.0.1";
+  await wrongOriginPage.goto(wrongOriginUrl.toString());
+  await expect(wrongOriginPage.getByRole("region", { name: "운영자 기기 연결" })).toContainText(
+    "pairing_origin_mismatch"
+  );
+  expect(await readGuestSession(wrongOriginPage)).toBeNull();
+
   const pairedContext = await browser.newContext();
   const pairedPage = await pairedContext.newPage();
   await pairedPage.goto(pairingUrl);
   await expect.poll(() => new URL(pairedPage.url()).search).toBe("");
   await expect(pairedPage.getByRole("button", { name: "#general", exact: true })).toBeVisible();
-  const pairedSession = await pairedPage.evaluate(() =>
-    JSON.parse(window.localStorage.getItem("agentsassemble.roomGuestSession.v1") || "null")
-  );
+  const pairedSession = await readGuestSession(pairedPage);
   expect(pairedSession).toMatchObject({
     agentId: "operator-local",
     operator: true,
@@ -71,8 +113,98 @@ test("keeps ordinary invites separate from one-time cross-origin operator pairin
   expect(replaySession).toBeNull();
 
   await unknownContext.close();
+  await wrongOriginContext.close();
   await pairedContext.close();
   await replayContext.close();
+});
+
+test("rejoins a same-origin browser without changing its participant identity", async ({
+  browser,
+  page,
+}) => {
+  const guestInviteUrl = await createGuestInviteUrl(page);
+  const guestContext = await browser.newContext();
+  const guestPage = await guestContext.newPage();
+
+  const first = await joinGuest(guestPage, guestInviteUrl, "Returning Guest");
+
+  await guestPage.goto(guestInviteUrl);
+  await expect(guestPage.getByRole("region", { name: "입장 프로필" })).toHaveCount(0);
+  await expect.poll(() => new URL(guestPage.url()).search).toBe("");
+  const existingSession = await readGuestSession(guestPage);
+  expect(existingSession.agentId).toBe(first.agentId);
+  expect(existingSession.sessionToken).toBe(first.sessionToken);
+
+  await guestPage.evaluate((key) => window.localStorage.setItem(key, "null"), GUEST_SESSION_STORAGE_KEY);
+  await guestPage.goto(guestInviteUrl);
+  await expect(guestPage.getByRole("region", { name: "입장 프로필" })).toHaveCount(0);
+  await expect.poll(() => readGuestSession(guestPage)).not.toBeNull();
+  const existingMember = await readGuestSession(guestPage);
+  expect(existingMember.agentId).toBe(first.agentId);
+
+  await guestPage.evaluate((key) => {
+    const session = JSON.parse(window.localStorage.getItem(key) || "null");
+    session.sessionToken = "aas1.expired-browser-session";
+    session.expiresAt = "2000-01-01T00:00:00+00:00";
+    window.localStorage.setItem(key, JSON.stringify(session));
+  }, GUEST_SESSION_STORAGE_KEY);
+  await guestPage.goto(guestInviteUrl);
+  await expect(guestPage.getByRole("region", { name: "입장 프로필" })).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const session = await readGuestSession(guestPage);
+      return Boolean(
+        session &&
+          session.agentId === first.agentId &&
+          session.sessionToken !== "aas1.expired-browser-session"
+      );
+    })
+    .toBe(true);
+  const recovered = await readGuestSession(guestPage);
+  expect(recovered.sessionToken).not.toBe("aas1.expired-browser-session");
+  expect(recovered.agentId).toBe(first.agentId);
+
+  await guestContext.close();
+});
+
+test("recovers a failed join and keeps incognito credentials distinct", async ({ browser, page }) => {
+  const guestInviteUrl = await createGuestInviteUrl(page);
+  const recoveringContext = await browser.newContext();
+  const recoveringPage = await recoveringContext.newPage();
+  let failedOnce = false;
+  await recoveringPage.route("**/api/room-invite/join", async (route) => {
+    if (!failedOnce) {
+      failedOnce = true;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "injected_join_failure" }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await recoveringPage.goto(guestInviteUrl);
+  const recoveringProfile = recoveringPage.getByRole("region", { name: "입장 프로필" });
+  await recoveringProfile.getByRole("textbox", { name: "이름" }).fill("Same Display Name");
+  const joinButton = recoveringProfile.getByRole("button", { name: "입장", exact: true });
+  await joinButton.click();
+  await expect(recoveringProfile).toContainText("injected_join_failure");
+  await expect(joinButton).toBeEnabled();
+  await joinButton.click();
+  await expect(recoveringProfile).toHaveCount(0);
+  const recoveredSession = await readGuestSession(recoveringPage);
+
+  const incognitoContext = await browser.newContext();
+  const incognitoPage = await incognitoContext.newPage();
+  const incognitoSession = await joinGuest(incognitoPage, guestInviteUrl, "Same Display Name");
+
+  expect(incognitoSession.displayName).toBe(recoveredSession.displayName);
+  expect(incognitoSession.agentId).not.toBe(recoveredSession.agentId);
+  expect(incognitoSession.sessionToken).not.toBe(recoveredSession.sessionToken);
+
+  await recoveringContext.close();
+  await incognitoContext.close();
 });
 
 test("streams on desktop and controls the same canonical session on mobile", async ({ page }) => {
