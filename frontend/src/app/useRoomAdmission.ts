@@ -5,7 +5,7 @@ import {
   redeemOperatorPairing,
   type RoomInviteJoinResponse,
 } from "../api";
-import { GUEST_SESSION_EXPIRED_MESSAGE } from "../lib/apiErrors";
+import { ApiError, GUEST_SESSION_EXPIRED_MESSAGE } from "../lib/apiErrors";
 import { getOrCreateDeviceToken, loadRememberedGuestProfile, rememberGuestProfile } from "../lib/deviceIdentity";
 import { roomFromGuestSession, type RoomDockItem } from "../lib/roomDockModel";
 import {
@@ -25,6 +25,18 @@ type RoomAdmissionOptions = {
   onRoomJoined: (room: RoomDockItem) => void;
   onResetToLobby: () => void;
 };
+
+export type OperatorPairingState =
+  | "idle"
+  | "pairing"
+  | "pairing_failed_retryable"
+  | "pairing_failed_terminal"
+  | "paired";
+
+function pairingFailureIsRetryable(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true;
+  return error.status === 408 || error.status === 429 || error.status >= 500;
+}
 
 export function useRoomAdmission({
   guestInvite,
@@ -47,9 +59,10 @@ export function useRoomAdmission({
   const [guestAdmissionBusy, setGuestAdmissionBusy] = useState(
     Boolean(guestJoinToken || operatorPairingToken)
   );
-  const [operatorPairingActive, setOperatorPairingActive] = useState(
-    Boolean(operatorPairingToken)
+  const [operatorPairingState, setOperatorPairingState] = useState<OperatorPairingState>(
+    operatorPairingToken ? "pairing" : "idle"
   );
+  const [operatorPairingAttempt, setOperatorPairingAttempt] = useState(0);
   const preflightAttemptedTokenRef = useRef("");
   const pairingAttemptedTokenRef = useRef("");
   const onPairingTokenConsumedRef = useRef(onPairingTokenConsumed);
@@ -58,11 +71,19 @@ export function useRoomAdmission({
   }, [onPairingTokenConsumed]);
 
   const guestLocked = Boolean(
-    guestInvite || guestSession || guestJoinToken || operatorPairingActive || guestExpired
+    guestInvite ||
+      guestSession ||
+      guestJoinToken ||
+      (operatorPairingState !== "idle" && operatorPairingState !== "paired") ||
+      guestExpired
   );
   const guestMeetingId = guestSession?.meetingId || guestInvite?.meetingId || "";
   const guestJoinPending = Boolean(guestJoinToken && guestSession?.inviteToken !== guestJoinToken);
-  const operatorPairingPending = Boolean(operatorPairingActive && !guestSession?.operator);
+  const operatorPairingPending = Boolean(
+    operatorPairingState !== "idle" &&
+      operatorPairingState !== "paired" &&
+      !guestSession?.operator
+  );
   const guestReadOnly =
     guestInvite?.inviteScope === "read_only" || guestSession?.inviteScope === "read_only";
   const guestAlreadyJoinedThisInvite = Boolean(
@@ -85,6 +106,10 @@ export function useRoomAdmission({
               ? "세션 만료"
               : guestSession?.operator
               ? "운영자로 접속"
+              : operatorPairingState === "pairing_failed_retryable"
+              ? "운영자 연결 재시도 가능"
+              : operatorPairingState === "pairing_failed_terminal"
+              ? "운영자 연결 실패"
               : operatorPairingPending
               ? "운영자 기기 연결 중"
               : guestJoinPending
@@ -95,7 +120,14 @@ export function useRoomAdmission({
             expired: guestExpired,
           }
         : undefined,
-    [guestExpired, guestJoinPending, guestLocked, guestSession, operatorPairingPending]
+    [
+      guestExpired,
+      guestJoinPending,
+      guestLocked,
+      guestSession,
+      operatorPairingPending,
+      operatorPairingState,
+    ]
   );
 
   const expireGuestSession = useCallback(() => {
@@ -116,6 +148,13 @@ export function useRoomAdmission({
     setGuestJoinStatus("");
     setGuestJoinRequested(true);
   }, [guestAdmissionResolved]);
+
+  const retryOperatorPairing = useCallback(() => {
+    if (operatorPairingState !== "pairing_failed_retryable") return;
+    pairingAttemptedTokenRef.current = "";
+    setOperatorPairingState("pairing");
+    setOperatorPairingAttempt((attempt) => attempt + 1);
+  }, [operatorPairingState]);
 
   const clearInviteUrl = useCallback(() => {
     try {
@@ -149,7 +188,7 @@ export function useRoomAdmission({
   );
 
   useEffect(() => {
-    if (!operatorPairingToken || guestExpired) return;
+    if (!operatorPairingToken || guestExpired || operatorPairingState !== "pairing") return;
     if (pairingAttemptedTokenRef.current === operatorPairingToken) return;
     pairingAttemptedTokenRef.current = operatorPairingToken;
     let cancelled = false;
@@ -163,20 +202,35 @@ export function useRoomAdmission({
       .then((payload) => {
         if (cancelled) return;
         onPairingTokenConsumedRef.current();
-        setOperatorPairingActive(false);
+        setOperatorPairingState("paired");
         applyJoinedSession("", payload, payload.avatar_image_url || "");
       })
       .catch((error) => {
         if (cancelled) return;
-        onPairingTokenConsumedRef.current();
+        const retryable = pairingFailureIsRetryable(error);
+        if (!retryable) onPairingTokenConsumedRef.current();
+        setOperatorPairingState(
+          retryable ? "pairing_failed_retryable" : "pairing_failed_terminal"
+        );
         setGuestAdmissionResolved(false);
         setGuestAdmissionBusy(false);
-        setGuestJoinStatus(error instanceof Error ? error.message : "운영자 기기 연결 실패");
+        const message = error instanceof Error ? error.message : "운영자 기기 연결 실패";
+        setGuestJoinStatus(
+          retryable
+            ? `${message} 다시 시도할 수 있습니다.`
+            : `${message} 이 연결 링크는 사용할 수 없습니다. 호스트에게 새 링크를 요청하세요.`
+        );
       });
     return () => {
       cancelled = true;
     };
-  }, [applyJoinedSession, guestExpired, operatorPairingToken]);
+  }, [
+    applyJoinedSession,
+    guestExpired,
+    operatorPairingAttempt,
+    operatorPairingState,
+    operatorPairingToken,
+  ]);
 
   useEffect(() => {
     if (!guestJoinToken || operatorPairingToken || guestExpired) return;
@@ -309,11 +363,13 @@ export function useRoomAdmission({
     guestMeetingId,
     guestJoinPending,
     operatorPairingPending,
+    operatorPairingState,
     guestReadOnly,
     guestPanelProfile,
     setPendingGuestDisplayName,
     setPendingGuestAvatarImage,
     requestGuestJoin,
+    retryOperatorPairing,
     expireGuestSession,
     clearGuestSession,
   };

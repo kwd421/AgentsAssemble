@@ -417,11 +417,13 @@ export default function App() {
     guestMeetingId,
     guestJoinPending,
     operatorPairingPending,
+    operatorPairingState,
     guestReadOnly,
     guestPanelProfile,
     setPendingGuestDisplayName,
     setPendingGuestAvatarImage,
     requestGuestJoin,
+    retryOperatorPairing,
     expireGuestSession,
     clearGuestSession,
   } = useRoomAdmission({
@@ -1514,6 +1516,7 @@ export default function App() {
       {(guestJoinToken || operatorPairingPending) && !guestSession && !guestExpired && (
         <GuestJoinProfilePanel
           pairing={operatorPairingPending}
+          pairingState={operatorPairingState}
           displayName={pendingGuestDisplayName}
           avatarImage={pendingGuestAvatarImage || undefined}
           status={guestJoinStatus}
@@ -1521,6 +1524,7 @@ export default function App() {
           onDisplayNameChange={setPendingGuestDisplayName}
           onAvatarImageChange={setPendingGuestAvatarImage}
           onJoin={requestGuestJoin}
+          onPairingRetry={retryOperatorPairing}
         />
       )}
 

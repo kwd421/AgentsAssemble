@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { ImagePlus, LogIn } from "lucide-react";
+import { ImagePlus, LogIn, RotateCcw } from "lucide-react";
 import { uploadLobbyAttachment } from "../../api";
+import type { OperatorPairingState } from "../../app/useRoomAdmission";
 import ImageCropper from "./ImageCropper";
 
 type GuestJoinProfilePanelProps = {
@@ -9,9 +10,11 @@ type GuestJoinProfilePanelProps = {
   status?: string;
   busy?: boolean;
   pairing?: boolean;
+  pairingState?: OperatorPairingState;
   onDisplayNameChange: (value: string) => void;
   onAvatarImageChange: (value: string) => void;
   onJoin: () => void;
+  onPairingRetry?: () => void;
 };
 
 export default function GuestJoinProfilePanel({
@@ -20,9 +23,11 @@ export default function GuestJoinProfilePanel({
   status = "",
   busy = false,
   pairing = false,
+  pairingState = "idle",
   onDisplayNameChange,
   onAvatarImageChange,
   onJoin,
+  onPairingRetry,
 }: GuestJoinProfilePanelProps) {
   const [cropFile, setCropFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState("");
@@ -67,6 +72,22 @@ export default function GuestJoinProfilePanel({
             />
           </label>
           </div>
+        )}
+        {pairing && pairingState === "pairing_failed_retryable" && (
+          <button
+            type="button"
+            className="dc-guest-join-button"
+            disabled={busy}
+            onClick={onPairingRetry}
+          >
+            <RotateCcw size={16} />
+            다시 시도
+          </button>
+        )}
+        {pairing && pairingState === "pairing_failed_terminal" && (
+          <a className="dc-guest-join-button" href="/">
+            새 연결 링크 받기
+          </a>
         )}
         {!pairing && cropFile && (
           <ImageCropper

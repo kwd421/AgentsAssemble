@@ -219,6 +219,7 @@ describe("useRoomAdmission", () => {
     await waitFor(() => expect(result.current.guestSession?.sessionToken).toBe("operator-session"));
     expect(result.current.guestSession?.agentId).toBe("operator-local");
     expect(result.current.guestSession?.operator).toBe(true);
+    expect(result.current.operatorPairingState).toBe("paired");
     expect(apiMocks.joinRoomInvite).not.toHaveBeenCalled();
     expect(apiMocks.redeemOperatorPairing).toHaveBeenCalledWith({
       pairingToken: "aap1_pairing-token",
@@ -226,6 +227,77 @@ describe("useRoomAdmission", () => {
     });
     expect(loadRoomGuestSession()?.operator).toBe(true);
     expect(onRoomJoined).toHaveBeenCalledWith(expect.objectContaining({ meetingId: "room-1" }));
+  });
+
+  it("lets the user retry a transient pairing failure without losing the token", async () => {
+    apiMocks.redeemOperatorPairing
+      .mockRejectedValueOnce(new TypeError("network unavailable"))
+      .mockResolvedValueOnce({
+        status: "admitted",
+        session_token: "operator-session",
+        agent_id: "operator-local",
+        display_name: "SeiNel",
+        meeting_id: "room-1",
+        invite_scope: "room",
+        connection_kind: "native_remote_room_client",
+        expires_at: "2099-01-01T00:00:00Z",
+        operator: true,
+    });
+    const onPairingTokenConsumed = vi.fn();
+    const onRoomJoined = vi.fn();
+
+    const { result } = renderHook(() =>
+      useRoomAdmission({
+        guestInvite: null,
+        guestJoinToken: "",
+        operatorPairingToken: "aap1_pairing-token",
+        onPairingTokenConsumed,
+        initialSession: null,
+        onRoomJoined,
+        onResetToLobby: vi.fn(),
+      })
+    );
+
+    await waitFor(() =>
+      expect(result.current.operatorPairingState).toBe("pairing_failed_retryable")
+    );
+    expect(result.current.guestJoinStatus).toContain("다시 시도");
+    expect(onPairingTokenConsumed).not.toHaveBeenCalled();
+
+    act(() => result.current.retryOperatorPairing());
+
+    await waitFor(() => expect(result.current.operatorPairingState).toBe("paired"));
+    expect(apiMocks.redeemOperatorPairing).toHaveBeenCalledTimes(2);
+    expect(onPairingTokenConsumed).toHaveBeenCalledOnce();
+  });
+
+  it("ends terminal pairing failures and requires a new link", async () => {
+    apiMocks.redeemOperatorPairing.mockRejectedValue(
+      new ApiError(403, "pairing_expired")
+    );
+    const onPairingTokenConsumed = vi.fn();
+    const onRoomJoined = vi.fn();
+
+    const { result } = renderHook(() =>
+      useRoomAdmission({
+        guestInvite: null,
+        guestJoinToken: "",
+        operatorPairingToken: "aap1_pairing-token",
+        onPairingTokenConsumed,
+        initialSession: null,
+        onRoomJoined,
+        onResetToLobby: vi.fn(),
+      })
+    );
+
+    await waitFor(() =>
+      expect(result.current.operatorPairingState).toBe("pairing_failed_terminal")
+    );
+    expect(result.current.guestAdmissionBusy).toBe(false);
+    expect(result.current.operatorPairingPending).toBe(true);
+    expect(result.current.guestJoinStatus).toContain("새 링크");
+    expect(onPairingTokenConsumed).toHaveBeenCalledOnce();
+    expect(apiMocks.redeemOperatorPairing).toHaveBeenCalledOnce();
   });
 
   it("restores a persisted session when the matching invite join request fails", async () => {

@@ -182,3 +182,9 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   ignored. Default ports and IPv6 normalize consistently. React bootstrap HTML
   sends and declares `Referrer-Policy: no-referrer`, while the existing
   one-time URL consumer removes the token from browser history immediately.
+- 2026-07-15: Milestone 0.6 implemented. Pairing UI state now distinguishes
+  active redemption, retryable transport/server failure, terminal token or
+  authorization failure, and successful pairing. Retryable failures retain the
+  in-memory token behind an explicit retry button; terminal failures discard it
+  and direct the user to obtain a new link instead of remaining in a false
+  pending state.
