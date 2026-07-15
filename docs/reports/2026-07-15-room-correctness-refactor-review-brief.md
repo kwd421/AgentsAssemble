@@ -419,8 +419,13 @@ git diff --check
   passed
 ```
 
-Hosted Ubuntu and Windows confirmation remains pending until this follow-up is
-pushed and the workflow reruns.
+Follow-up run
+[`29382941178`](https://github.com/kwd421/AgentsAssemble/actions/runs/29382941178)
+for `fa091535` completed successfully. Ubuntu and Windows runtime-platform jobs,
+Python 3.11 and 3.13 full suites, PostgreSQL contracts, frontend build, and
+frontend unit/E2E jobs all passed. The only hosted annotations were GitHub's
+non-blocking Node.js 20 action-runtime deprecation notices for current
+`actions/checkout@v4` and setup action versions.
 
 ## Intentionally Unchanged Or Out Of Scope
 
