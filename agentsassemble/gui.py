@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import math
-import mimetypes
 import re
 import threading
 import time
@@ -12,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, urlparse
 
 from agentsassemble.attachments import (
     AttachmentError,
@@ -94,6 +93,11 @@ from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, regi
 from agentsassemble.gui_room_settings_http import register_room_settings_routes
 from agentsassemble.gui_side_chat_http import register_side_chat_routes
 from agentsassemble.gui_social_http import register_room_friend_profile_routes
+from agentsassemble.gui_static_transport import (
+    ReactStaticTransport,
+    request_server_url,
+    safe_static_path as _safe_static_path,
+)
 from agentsassemble.gui_response import (
     GuiResponseMethods,
     _last_payload_event_id,
@@ -3433,6 +3437,12 @@ def _make_handler(
 
     register_mafia_routes(route_table, read_operation_payload=_late_operation_json_payload)
 
+    static_transport = ReactStaticTransport(
+        frontend_root=react_app_root,
+        pre_join_guide_payload=_pre_join_guide_payload,
+        api_catalog_payload=_api_catalog_payload,
+    )
+
     class AgentsAssembleHandler(GuiResponseMethods, BaseHTTPRequestHandler):
         def _request_is_trusted(self, *, path: str, method: str) -> bool:
             return _request_trusted(
@@ -3484,51 +3494,7 @@ def _make_handler(
                 return
             if route_table.dispatch("GET", RequestContext(self, route_deps, parsed, query)):
                 return
-            if path == "/":
-                self._send_react_app_index(react_app_root)
-                return
-            if path in {"/legacy", "/legacy/"}:
-                self._send_error(HTTPStatus.NOT_FOUND, "Legacy console is retired. Use the Discord-style React room client at /.")
-                return
-            if path in {"/app", "/app/"}:
-                self._send_react_app_index(react_app_root)
-                return
-            if path in {"/join", "/join/"}:
-                # AI clients negotiate JSON to get the pre-join manual instead
-                # of reverse-engineering the SPA bundle (friend feedback #1).
-                accepts_json = "application/json" in str(self.headers.get("Accept") or "")
-                wants_json = accepts_json or str(query.get("format", [""])[0]).lower() == "json"
-                if wants_json:
-                    self._send_json(_pre_join_guide_payload(self._request_server_url()))
-                    return
-                self._send_react_app_index(react_app_root)
-                return
-            if path in {"/pair", "/pair/"}:
-                self._send_react_app_index(react_app_root)
-                return
-            if path in {"/api", "/api/"}:
-                self._send_json(_api_catalog_payload(self._request_server_url()))
-                return
-            if path.startswith("/app/"):
-                rel = unquote(path.removeprefix("/app/"))
-                app_path = _safe_static_path(react_app_root, rel)
-                if app_path is None:
-                    self._send_error(HTTPStatus.NOT_FOUND, "File not found")
-                    return
-                if app_path.name == "index.html":
-                    self._send_react_app_index(react_app_root)
-                    return
-                self._send_file(
-                    app_path,
-                    _react_app_content_type(app_path),
-                    cache_control=_react_app_cache_control(app_path),
-                )
-                return
-            if path.startswith("/legacy/static/"):
-                self._send_error(HTTPStatus.NOT_FOUND, "Legacy static assets are retired.")
-                return
-            if path.startswith("/static/"):
-                self._send_error(HTTPStatus.NOT_FOUND, "Legacy static assets are retired.")
+            if static_transport.dispatch_get(self, path=path, query=query):
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")
 
@@ -3573,11 +3539,7 @@ def _make_handler(
             return
 
         def _request_server_url(self) -> str:
-            host = self.headers.get("Host")
-            if host:
-                return f"http://{host}"
-            address = self.server.server_address
-            return f"http://{address[0]}:{address[1]}"
+            return request_server_url(self)
 
         def _verify_host_token(self) -> bool:
             """Check host token from X-Host-Token header or Authorization Bearer.
@@ -3817,36 +3779,3 @@ def _sse_frame_id(frame: str) -> str:
 def _payload_signature(payload: dict[str, object]) -> str | None:
     signature = payload.get("payload_signature")
     return signature if isinstance(signature, str) and signature else None
-
-
-def _safe_static_path(static_root: Path, relative_path: str) -> Path | None:
-    root = static_root.resolve()
-    candidate = (root / relative_path).resolve()
-    try:
-        candidate.relative_to(root)
-    except ValueError:
-        return None
-    return candidate
-
-
-_REACT_APP_CONTENT_TYPES = {
-    ".css": "text/css; charset=utf-8",
-    ".html": "text/html; charset=utf-8",
-    ".ico": "image/x-icon",
-    ".js": "text/javascript; charset=utf-8",
-    ".json": "application/json; charset=utf-8",
-    ".map": "application/json; charset=utf-8",
-    ".mjs": "text/javascript; charset=utf-8",
-    ".png": "image/png",
-    ".svg": "image/svg+xml",
-    ".webp": "image/webp",
-    ".woff2": "font/woff2",
-}
-
-
-def _react_app_content_type(path: Path) -> str:
-    return _REACT_APP_CONTENT_TYPES.get(path.suffix.lower()) or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-
-
-def _react_app_cache_control(path: Path) -> str:
-    return "no-cache"

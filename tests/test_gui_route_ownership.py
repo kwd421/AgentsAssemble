@@ -4,6 +4,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from agentsassemble.gui_router import match_route_template
+from agentsassemble.gui_static_transport import REACT_APP_EXACT_PATHS
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -45,17 +46,6 @@ EXPECTED_DYNAMIC_ROUTES = {
 }
 
 EXPECTED_RETAINED_HANDLER_EXACT_ROUTES = {
-    ("GET", "/"),
-    ("GET", "/api"),
-    ("GET", "/api/"),
-    ("GET", "/app"),
-    ("GET", "/app/"),
-    ("GET", "/join"),
-    ("GET", "/join/"),
-    ("GET", "/legacy"),
-    ("GET", "/legacy/"),
-    ("GET", "/pair"),
-    ("GET", "/pair/"),
     ("GET", "/ws"),
 }
 
@@ -186,11 +176,9 @@ class GuiRouteOwnershipTests(unittest.TestCase):
             "Move an exact route to the Router or retain it in the legacy chain, never both.",
         )
 
-    def test_legacy_exact_inventory_detects_literal_membership_routes(self) -> None:
-        routes = _legacy_exact_routes()
-
-        self.assertIn(("GET", "/join"), routes)
-        self.assertIn(("GET", "/app"), routes)
+    def test_static_transport_owns_the_react_bootstrap_routes(self) -> None:
+        self.assertIn("/join", REACT_APP_EXACT_PATHS)
+        self.assertIn("/app", REACT_APP_EXACT_PATHS)
 
     def test_handler_exact_routes_are_limited_to_transport_and_static_delivery(self) -> None:
         self.assertEqual(_legacy_exact_routes(), EXPECTED_RETAINED_HANDLER_EXACT_ROUTES)

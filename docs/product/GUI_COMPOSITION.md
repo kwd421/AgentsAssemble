@@ -195,7 +195,8 @@ families directly.
 
 | Family | Classification | Why it remains reachable | Next action |
 | --- | --- | --- | --- |
-| `/ws`, `/`, `/app/*`, `/join`, guarded React assets | Current core composition | Protocol upgrade and static delivery are transport concerns | Keep thin transport branches in the final handler |
+| `/ws` | Current core composition | Authenticated protocol upgrade is a transport concern | Keep the thin upgrade branch in the final handler |
+| `/`, `/app/*`, `/join`, `/pair`, guarded React assets | Current core composition | `ReactStaticTransport` owns SPA/bootstrap delivery as one side-effect boundary | Keep static behavior out of domain route registrars |
 | Seven retired exact API paths | Compatibility tombstones | No supported frontend or CLI caller remains; each returns `410 legacy_route_retired` from `gui_retired_http.py` | Keep the explicit failure contract while obsolete external callers age out |
 
 ## Retired Exact Routes
