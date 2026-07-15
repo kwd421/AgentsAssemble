@@ -65,6 +65,8 @@ class InviteSessionRepository(InviteRepository, SessionRepository, Protocol):
 
     def clear(self) -> None: ...
 
+    def close(self) -> None: ...
+
 
 class MemoryInviteSessionRepository:
     """Thread-safe repository used when local persistence is not configured."""
@@ -243,6 +245,9 @@ class MemoryInviteSessionRepository:
             self._used_nonce_fingerprints.clear()
             self._invites.clear()
             self._persist_locked()
+
+    def close(self) -> None:
+        return
 
     def _persist_locked(self) -> None:
         return

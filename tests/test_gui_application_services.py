@@ -8,6 +8,7 @@ from pathlib import Path
 
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.gui_application import GuiApplicationServices
+from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
 
 
 class _Repository:
@@ -16,6 +17,15 @@ class _Repository:
 
     def close(self) -> None:
         self.events.append("repository.close")
+
+
+class _InviteRepository(MemoryInviteSessionRepository):
+    def __init__(self, events: list[str]) -> None:
+        super().__init__()
+        self.events = events
+
+    def close(self) -> None:
+        self.events.append("invite.close")
 
 
 class _ProcessSupervisor:
@@ -100,6 +110,7 @@ class GuiApplicationServicesTests(unittest.TestCase):
         return GuiApplicationServices(
             output_root=root,
             room_repository=_Repository(events),  # type: ignore[arg-type]
+            invite_repository=_InviteRepository(events),
             identity_backend=object(),  # type: ignore[arg-type]
             invite_store_path=root / "room-invites.json",
             media_store=FileAttachmentStore(root),
@@ -115,6 +126,7 @@ class GuiApplicationServicesTests(unittest.TestCase):
             native_cli_bridge_manager=None,
             room_realtime_controller=_RealtimeController(events),  # type: ignore[arg-type]
             owns_room_repository=owns_resources,
+            owns_invite_repository=owns_resources,
             owns_process_supervisor=owns_resources,
             owns_session_run_monitor=owns_resources,
             owns_public_tunnel_manager=owns_resources,
@@ -160,6 +172,7 @@ class GuiApplicationServicesTests(unittest.TestCase):
                 "process.close",
                 "realtime.close",
                 "transport.close",
+                "invite.close",
                 "repository.close",
             ],
         )
@@ -189,6 +202,7 @@ class GuiApplicationServicesTests(unittest.TestCase):
                 "process.close",
                 "realtime.close",
                 "transport.close",
+                "invite.close",
                 "repository.close",
             ],
         )
@@ -212,6 +226,7 @@ class GuiApplicationServicesTests(unittest.TestCase):
                 "tunnel.stop",
                 "process.close",
                 "realtime.close",
+                "invite.close",
                 "repository.close",
             ],
         )
@@ -237,7 +252,7 @@ class GuiApplicationServicesTests(unittest.TestCase):
         self.assertFalse(starter.is_alive())
         self.assertFalse(stopper.is_alive())
         self.assertLess(events.index("session.start"), events.index("session.stop"))
-        self.assertEqual(events[-1], "repository.close")
+        self.assertEqual(events[-2:], ["invite.close", "repository.close"])
 
 
 if __name__ == "__main__":

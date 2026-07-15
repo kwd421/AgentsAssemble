@@ -16,6 +16,7 @@ from agentsassemble.room_repository_factory import (
     RoomRepositorySettings,
 )
 from agentsassemble.room_store import RoomStore
+from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
 
 
 class GuiRoomRepositoryInjectionTests(unittest.TestCase):
@@ -46,6 +47,7 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
         server.server_address = ("127.0.0.1", 48765)
         server.serve_forever.side_effect = KeyboardInterrupt
         stdout = StringIO()
+        invite_repository = MemoryInviteSessionRepository()
 
         with patch(
             "agentsassemble.gui.RoomRepositorySettings.from_environment",
@@ -54,6 +56,9 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
             "agentsassemble.gui.build_room_repository",
             return_value=repository,
         ) as build_repository, patch(
+            "agentsassemble.gui.build_invite_session_repository",
+            return_value=invite_repository,
+        ) as build_invites, patch(
             "agentsassemble.gui._make_handler",
             return_value=handler,
         ) as make_handler, patch(
@@ -89,6 +94,10 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
             Path("/tmp/gui-room-repository-test"),
             settings,
         )
+        build_invites.assert_called_once_with(
+            Path("/tmp/gui-room-repository-test"),
+            settings,
+        )
         self.assertIs(
             make_handler.call_args.kwargs["room_repository_override"],
             repository,
@@ -100,6 +109,8 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
 
     def test_gui_closes_repository_when_later_startup_fails(self) -> None:
         repository = MagicMock()
+        invite_repository = MemoryInviteSessionRepository()
+        invite_repository.close = MagicMock()  # type: ignore[method-assign]
         settings = RoomRepositorySettings(backend="sqlite")
 
         with patch(
@@ -109,6 +120,9 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
             "agentsassemble.gui.build_room_repository",
             return_value=repository,
         ), patch(
+            "agentsassemble.gui.build_invite_session_repository",
+            return_value=invite_repository,
+        ), patch(
             "agentsassemble.gui.LiveAgentProcessSupervisor",
             side_effect=RuntimeError("startup failed"),
         ):
@@ -116,6 +130,7 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
                 serve_gui(output_root=Path("/tmp/gui-room-repository-startup-failure"))
 
         repository.close.assert_called_once_with()
+        invite_repository.close.assert_called_once_with()
 
     def test_service_build_failure_does_not_close_borrowed_resources(self) -> None:
         repository = MagicMock()

@@ -13,6 +13,7 @@ POSTGRES_CONTRACT_MODULES = (
     "tests.test_postgres_connection_pool",
     "tests.test_postgres_room_schema",
     "tests.test_postgres_room_repository",
+    "tests.test_postgres_invite_repository",
     "tests.test_room_repository_migration",
 )
 POSTGRES_REQUIRED_MODULES = (

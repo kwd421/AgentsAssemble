@@ -15,7 +15,7 @@ promise to migrate every legacy file into the canonical repository.
 | Rooms, room-global settings, participants, Agent Sessions, events, command dedupe | `RoomRepository` (`RoomStore` SQLite by default) | `RoomRepository` | Canonical; SQLite and PostgreSQL share one contract. |
 | Deleted-room tombstones | `RoomStore.deleted_rooms` | `RoomRepository` | Canonical; must prevent stale clients from recreating deleted rooms. |
 | Human identity, credentials, room membership compatibility, usage | `identity_store.py` SQLite | Separate identity repository | Keep the security boundary separate initially; migrate deliberately after room parity. |
-| Browser and Agent Bridge invite claims | `room_invite.py` plus `room-invite-state.json` | Invite repository | Compatibility state; replace with durable single-use claims, not room events. |
+| Browser and Agent Bridge invite claims and room bearer sessions | `InviteSessionRepository` (`JsonInviteSessionRepository` locally, PostgreSQL with the hosted room backend) | Invite/session repository | Raw invite/session tokens are never stored; use limits, nonce replay protection, and revocation are repository operations, not room events. |
 | Room-member moderation compatibility | `room_members.py` and identity DB | Canonical participant/membership commands | Reconcile with canonical participants; do not create a third roster. Ephemeral typing/thinking stays out of durable room state. |
 | Side chat | `side_chat.py` JSONL | Legacy or a future explicit channel model | Do not migrate into `RoomRepository` merely because the file exists. |
 | Media metadata | Safe IDs in canonical room events | `RoomRepository` | Canonical metadata only; no local path in a public event. |
@@ -103,6 +103,15 @@ from public diagnostics and object representations. Selecting PostgreSQL without
 that value or without the optional driver is a startup error, never a request to
 open a local SQLite database instead.
 
+Invite/session persistence follows the selected room backend through
+`room_invite_repository_factory.py`. SQLite room mode preserves the existing
+`room-invite-state.json` format through `JsonInviteSessionRepository`.
+PostgreSQL room mode selects `PostgresInviteSessionRepository` with the same
+DSN and never falls back to JSON. `room_invite.py` remains a compatibility
+facade for token policy while repository implementations own locking,
+persistence, atomic invite consumption, replay protection, and session
+revocation.
+
 PostgreSQL schema changes use the packaged Alembic lineage under
 `agentsassemble/migrations` and explicit SQL. Runtime repository queries use
 `psycopg3`, not an ORM. Revision `0001_room_repository` represents the original
@@ -112,7 +121,9 @@ activation marker written only by a verified authority transfer. Revision
 retains the deleting principal, request identity, payload hash, ACK, and cleanup
 status in the deleted-room tombstone. This lets the same delete command finish
 post-delete cleanup without re-running provider process effects while rejecting
-conflicting retries. Runtime repository construction never runs Alembic and
+conflicting retries. Revision `0004_room_global_settings` adds canonical
+room-global settings, and revision `0005_invite_sessions` adds the hosted invite
+and bearer-session authority. Runtime repository construction never runs Alembic and
 refuses PostgreSQL until both the head revision and the authority marker are
 present. The existing SQLite migrator remains responsible for upgrading
 pre-repository local files and old SQLite versions.

@@ -391,6 +391,11 @@ from agentsassemble.room_repository_factory import (
     RoomRepositorySettings,
     build_room_repository,
 )
+from agentsassemble.room_invite_repository import (
+    InviteSessionRepository,
+    JsonInviteSessionRepository,
+)
+from agentsassemble.room_invite_repository_factory import build_invite_session_repository
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room_speech import (
     ActorIdentity,
@@ -412,7 +417,7 @@ from agentsassemble.room_users import (
 from agentsassemble.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
 from agentsassemble.room_invite import (
     active_sessions_summary,
-    configure_room_invite_store,
+    configure_room_invite_repository,
     default_room_invite_store_path,
     generate_runtime_host_token,
     get_host_token,
@@ -839,6 +844,8 @@ def _build_gui_application_services(
     room_realtime_controller_override: RoomRealtimeController | None = None,
     room_repository_override: RoomRepository | None = None,
     owns_room_repository_override: bool = False,
+    invite_repository_override: InviteSessionRepository | None = None,
+    owns_invite_repository_override: bool = False,
     attention_shadow_mode: str = "off",
 ) -> GuiApplicationServices:
     """Build one ownership graph for the GUI server and handler factory."""
@@ -862,13 +869,22 @@ def _build_gui_application_services(
     if owns_room_repository:
         remember_cleanup("room_repository.close", room_repository.close)
 
+    invite_repository = invite_repository_override or JsonInviteSessionRepository(
+        default_room_invite_store_path(output_root)
+    )
+    owns_invite_repository = bool(
+        invite_repository_override is None or owns_invite_repository_override
+    )
+
     owns_process_supervisor = process_supervisor is None
     owns_session_run_monitor = session_run_monitor is None
     owns_public_tunnel_manager = public_tunnel_manager is None
     owns_room_realtime_controller = room_realtime_controller_override is None
 
     try:
-        configure_room_invite_store(default_room_invite_store_path(output_root))
+        configure_room_invite_repository(invite_repository)
+        if owns_invite_repository:
+            remember_cleanup("invite_repository.close", invite_repository.close)
         configure_room_users_store(default_identity_db_path(output_root))
         _backfill_room_registry(output_root)
         identity_backend = identity_store_for_output_root(output_root)
@@ -926,6 +942,7 @@ def _build_gui_application_services(
         services = GuiApplicationServices(
             output_root=output_root,
             room_repository=room_repository,
+            invite_repository=invite_repository,
             identity_backend=identity_backend,
             invite_store_path=default_room_invite_store_path(output_root),
             media_store=FileAttachmentStore(output_root),
@@ -938,6 +955,7 @@ def _build_gui_application_services(
             native_cli_bridge_manager=native_cli_bridge_manager,
             room_realtime_controller=room_realtime_controller,
             owns_room_repository=owns_room_repository,
+            owns_invite_repository=owns_invite_repository,
             owns_process_supervisor=owns_process_supervisor,
             owns_session_run_monitor=owns_session_run_monitor,
             owns_public_tunnel_manager=owns_public_tunnel_manager,
@@ -986,13 +1004,19 @@ def serve_gui(
         postgres_dsn_env=room_postgres_dsn_env,
     )
     room_repository = build_room_repository(root, room_repository_settings)
+    invite_repository: InviteSessionRepository | None = None
+    repositories_transferred = False
     services: GuiApplicationServices | None = None
     server: ThreadingHTTPServer | None = None
     try:
+        invite_repository = build_invite_session_repository(root, room_repository_settings)
+        repositories_transferred = True
         services = _build_gui_application_services(
             root,
             room_repository_override=room_repository,
             owns_room_repository_override=True,
+            invite_repository_override=invite_repository,
+            owns_invite_repository_override=True,
             attention_shadow_mode=attention_shadow_mode,
         )
         handler = _make_handler(
@@ -1014,6 +1038,20 @@ def serve_gui(
                 services.close()
             except BaseException as cleanup_error:
                 error.add_note(f"GUI service cleanup after startup failure failed: {cleanup_error}")
+        elif not repositories_transferred:
+            if invite_repository is not None:
+                try:
+                    invite_repository.close()
+                except BaseException as cleanup_error:
+                    error.add_note(
+                        f"Invite repository cleanup after startup failure failed: {cleanup_error}"
+                    )
+            try:
+                room_repository.close()
+            except BaseException as cleanup_error:
+                error.add_note(
+                    f"Room repository cleanup after startup failure failed: {cleanup_error}"
+                )
         raise
     if not _is_loopback_host(host):
         print(

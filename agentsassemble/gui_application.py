@@ -14,6 +14,7 @@ from agentsassemble.public_tunnel import PublicTunnelManager
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_realtime import RoomRealtimeController
 from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room_invite_repository import InviteSessionRepository
 from agentsassemble.ws_room_session import WsTicketStore
 
 
@@ -45,6 +46,7 @@ class GuiApplicationServices:
 
     output_root: Path
     room_repository: RoomRepository
+    invite_repository: InviteSessionRepository
     identity_backend: IdentityBackend
     invite_store_path: Path
     media_store: FileAttachmentStore
@@ -57,6 +59,7 @@ class GuiApplicationServices:
     native_cli_bridge_manager: NativeCliBridgeProcessManager | None
     room_realtime_controller: RoomRealtimeController
     owns_room_repository: bool = True
+    owns_invite_repository: bool = True
     owns_process_supervisor: bool = True
     owns_session_run_monitor: bool = True
     owns_public_tunnel_manager: bool = True
@@ -124,6 +127,8 @@ class GuiApplicationServices:
             attempt(self.room_realtime_controller.close)
         if transport_close is not None:
             attempt(transport_close)
+        if self.owns_invite_repository:
+            attempt(self.invite_repository.close)
         if self.owns_room_repository:
             attempt(self.room_repository.close)
 

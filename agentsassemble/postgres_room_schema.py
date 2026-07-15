@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-POSTGRES_ROOM_SCHEMA_REVISION = "0004_room_global_settings"
+POSTGRES_ROOM_SCHEMA_REVISION = "0005_invite_sessions"
 POSTGRES_ROOM_AUTHORITY_ID = "canonical-room-repository"
 POSTGRES_ROOM_REQUIRED_TABLES = (
     "rooms",
@@ -19,6 +19,10 @@ POSTGRES_ROOM_REQUIRED_TABLES = (
     "scheduled_wakeups",
     "conversation_obligations",
     "room_repository_authority",
+    "room_invite_authority",
+    "room_invites",
+    "room_invite_used_nonces",
+    "room_access_sessions",
 )
 
 
