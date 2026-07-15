@@ -79,8 +79,14 @@ class RoomRepositorySettings:
 def build_room_repository(
     output_root: Path,
     settings: RoomRepositorySettings,
+    *,
+    postgres_database: Any | None = None,
 ) -> RoomRepository:
     if settings.backend == "sqlite":
+        if postgres_database is not None:
+            raise RoomRepositoryConfigurationError(
+                "A PostgreSQL application database cannot be used with SQLite room storage."
+            )
         return RoomStore(output_root)
     if not settings.postgres_dsn:
         raise RoomRepositoryConfigurationError(
@@ -88,15 +94,39 @@ def build_room_repository(
         )
 
     repository_type = _postgres_repository_type()
-    try:
-        require_postgres_room_schema(settings.postgres_dsn)
-    except PostgresRoomSchemaNotReady as error:
-        raise RoomRepositoryUnavailable(str(error)) from error
+    if postgres_database is None:
+        try:
+            require_postgres_room_schema(settings.postgres_dsn)
+        except PostgresRoomSchemaNotReady as error:
+            raise RoomRepositoryUnavailable(str(error)) from error
+        return repository_type(
+            settings.postgres_dsn,
+            output_root=Path(output_root),
+            migrate=False,
+        )
     return repository_type(
-        settings.postgres_dsn,
+        database=postgres_database,
         output_root=Path(output_root),
         migrate=False,
     )
+
+
+def build_postgres_application_database(settings: RoomRepositorySettings) -> Any:
+    """Build the one application-owned PostgreSQL connection boundary."""
+
+    if settings.backend != "postgresql":
+        raise RoomRepositoryConfigurationError(
+            "A PostgreSQL application database requires the PostgreSQL backend."
+        )
+    if not settings.postgres_dsn:
+        raise RoomRepositoryConfigurationError(
+            f"PostgreSQL room storage requires {settings.postgres_dsn_env} to be set."
+        )
+    database_type = _postgres_application_database_type()
+    try:
+        return database_type(settings.postgres_dsn)
+    except PostgresRoomSchemaNotReady as error:
+        raise RoomRepositoryUnavailable(str(error)) from error
 
 
 def _postgres_repository_type() -> Any:
@@ -115,3 +145,21 @@ def _postgres_repository_type() -> Any:
             "PostgreSQL room storage is unavailable because its repository adapter is missing."
         )
     return repository_type
+
+
+def _postgres_application_database_type() -> Any:
+    try:
+        module = importlib.import_module("agentsassemble.postgres_application_database")
+    except ModuleNotFoundError as error:
+        if error.name in {"psycopg", "psycopg_pool"}:
+            raise RoomRepositoryUnavailable(
+                "PostgreSQL room storage requires the optional 'postgres' dependencies. "
+                "Install AgentsAssemble with the postgres extra."
+            ) from error
+        raise
+    database_type = getattr(module, "PostgresApplicationDatabase", None)
+    if database_type is None:
+        raise RoomRepositoryUnavailable(
+            "PostgreSQL room storage is unavailable because its application database adapter is missing."
+        )
+    return database_type

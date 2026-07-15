@@ -10,6 +10,7 @@ from agentsassemble.room_repository_factory import (
     RoomRepositoryConfigurationError,
     RoomRepositorySettings,
     RoomRepositoryUnavailable,
+    build_postgres_application_database,
     build_room_repository,
 )
 from agentsassemble.room_store import RoomStore
@@ -82,6 +83,52 @@ class RoomRepositorySettingsTests(unittest.TestCase):
 
         require_schema.assert_called_once_with("postgresql://hidden@example/rooms")
         self.assertFalse(repository.migrate)
+
+    def test_injected_postgres_database_owns_schema_and_connection_setup(self) -> None:
+        database = object()
+
+        class FakePostgresRepository:
+            def __init__(self, *, database, output_root, migrate):
+                self.database = database
+                self.output_root = output_root
+                self.migrate = migrate
+
+        settings = RoomRepositorySettings(
+            backend="postgresql",
+            postgres_dsn="postgresql://hidden@example/rooms",
+        )
+        with patch(
+            "agentsassemble.room_repository_factory._postgres_repository_type",
+            return_value=FakePostgresRepository,
+        ), patch(
+            "agentsassemble.room_repository_factory.require_postgres_room_schema"
+        ) as require_schema:
+            repository = build_room_repository(
+                Path("/tmp/output"),
+                settings,
+                postgres_database=database,
+            )
+
+        require_schema.assert_not_called()
+        self.assertIs(repository.database, database)
+        self.assertFalse(repository.migrate)
+
+    def test_application_database_factory_checks_schema_through_one_owner(self) -> None:
+        class FakeApplicationDatabase:
+            def __init__(self, dsn: str) -> None:
+                self.dsn = dsn
+
+        settings = RoomRepositorySettings(
+            backend="postgresql",
+            postgres_dsn="postgresql://hidden@example/rooms",
+        )
+        with patch(
+            "agentsassemble.room_repository_factory._postgres_application_database_type",
+            return_value=FakeApplicationDatabase,
+        ):
+            database = build_postgres_application_database(settings)
+
+        self.assertEqual(database.dsn, settings.postgres_dsn)
 
     def test_unready_postgres_schema_is_an_explicit_backend_error(self) -> None:
         from agentsassemble.postgres_room_schema import PostgresRoomSchemaNotReady

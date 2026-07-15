@@ -19,8 +19,14 @@ from agentsassemble.room_repository_factory import (
 def build_invite_session_repository(
     output_root: Path,
     settings: RoomRepositorySettings,
+    *,
+    postgres_database: Any | None = None,
 ) -> InviteSessionRepository:
     if settings.backend == "sqlite":
+        if postgres_database is not None:
+            raise RoomRepositoryConfigurationError(
+                "A PostgreSQL application database cannot be used with SQLite invite storage."
+            )
         path = Path(output_root) / ".agentsassemble" / "room-invite-state.json"
         return JsonInviteSessionRepository(path)
     if not settings.postgres_dsn:
@@ -28,6 +34,8 @@ def build_invite_session_repository(
             f"PostgreSQL invite storage requires {settings.postgres_dsn_env} to be set."
         )
     repository_type = _postgres_repository_type()
+    if postgres_database is not None:
+        return repository_type(database=postgres_database)
     return repository_type(settings.postgres_dsn)
 
 

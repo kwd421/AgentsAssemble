@@ -16,14 +16,22 @@ from agentsassemble.room_repository_factory import (
 def build_identity_repository(
     output_root: Path,
     settings: RoomRepositorySettings,
+    *,
+    postgres_database: Any | None = None,
 ) -> IdentityBackend:
     if settings.backend == "sqlite":
+        if postgres_database is not None:
+            raise RoomRepositoryConfigurationError(
+                "A PostgreSQL application database cannot be used with SQLite identity storage."
+            )
         return identity_store_for_output_root(output_root)
     if not settings.postgres_dsn:
         raise RoomRepositoryConfigurationError(
             f"PostgreSQL identity storage requires {settings.postgres_dsn_env} to be set."
         )
     repository_type = _postgres_repository_type()
+    if postgres_database is not None:
+        return repository_type(database=postgres_database)
     return repository_type(settings.postgres_dsn)
 
 

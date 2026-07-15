@@ -5,6 +5,7 @@ import os
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
+from unittest.mock import MagicMock
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -48,6 +49,15 @@ class _FakePool:
 
 @unittest.skipUnless(_PSYCOPG_AVAILABLE, "the postgres extra is required")
 class PostgresIdentityRepositoryPoolTests(unittest.TestCase):
+    def test_borrowed_application_database_is_not_closed_by_repository(self) -> None:
+        database = MagicMock()
+        repository = PostgresIdentityRepository(database=database)
+
+        repository.close()
+
+        self.assertIs(repository._connections, database)
+        database.close.assert_not_called()
+
     def test_repository_diagnostics_do_not_disclose_dsn(self) -> None:
         pools: list[_FakePool] = []
 

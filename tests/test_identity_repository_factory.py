@@ -64,6 +64,29 @@ class IdentityRepositoryFactoryTests(unittest.TestCase):
 
         self.assertEqual(repository.dsn, settings.postgres_dsn)
 
+    def test_postgres_factory_injects_application_database_without_a_second_dsn_owner(self) -> None:
+        database = object()
+
+        class FakePostgresRepository:
+            def __init__(self, *, database) -> None:
+                self.database = database
+
+        settings = RoomRepositorySettings(
+            backend="postgresql",
+            postgres_dsn="postgresql://user:secret@example.invalid/rooms",
+        )
+        with patch(
+            "agentsassemble.identity_repository_factory._postgres_repository_type",
+            return_value=FakePostgresRepository,
+        ):
+            repository = build_identity_repository(
+                Path("/tmp/unused"),
+                settings,
+                postgres_database=database,
+            )
+
+        self.assertIs(repository.database, database)
+
 
 if __name__ == "__main__":
     unittest.main()

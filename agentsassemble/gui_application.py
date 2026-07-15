@@ -40,6 +40,10 @@ class FlowSupervisor(Protocol):
     ) -> dict[str, object]: ...
 
 
+class ApplicationDatabase(Protocol):
+    def close(self) -> None: ...
+
+
 @dataclass
 class GuiApplicationServices:
     """Server-scoped services and their explicit lifecycle.
@@ -68,6 +72,7 @@ class GuiApplicationServices:
     ws_ticket_store: WsTicketStore
     native_cli_bridge_manager: NativeCliBridgeProcessManager | None
     room_realtime_controller: RoomRealtimeController
+    application_database: ApplicationDatabase | None = None
     identity_registry_cleanup: Callable[[], object] | None = None
     owns_room_repository: bool = True
     owns_invite_repository: bool = True
@@ -76,6 +81,7 @@ class GuiApplicationServices:
     owns_session_run_monitor: bool = True
     owns_public_tunnel_manager: bool = True
     owns_room_realtime_controller: bool = True
+    owns_application_database: bool = False
     _state: str = field(default="new", init=False, repr=False)
     _state_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
@@ -149,6 +155,8 @@ class GuiApplicationServices:
                 attempt(close_identity)
         if self.owns_room_repository:
             attempt(self.room_repository.close)
+        if self.owns_application_database and self.application_database is not None:
+            attempt(self.application_database.close)
 
         if errors:
             first = errors[0]

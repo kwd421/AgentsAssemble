@@ -41,6 +41,14 @@ class _IdentityRepository:
         self.events.append("identity.close")
 
 
+class _ApplicationDatabase:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    def close(self) -> None:
+        self.events.append("database.close")
+
+
 class _ProcessSupervisor:
     def __init__(self, events: list[str], *, fail_start: bool = False) -> None:
         self.events = events
@@ -119,6 +127,7 @@ class GuiApplicationServicesTests(unittest.TestCase):
         fail_process_start: bool = False,
         fail_session_stop: bool = False,
         owns_resources: bool = True,
+        owns_database: bool = False,
     ) -> GuiApplicationServices:
         room_repository = _Repository(events)
         invite_repository = _InviteRepository(events)
@@ -169,6 +178,7 @@ class GuiApplicationServicesTests(unittest.TestCase):
             ws_ticket_store=object(),  # type: ignore[arg-type]
             native_cli_bridge_manager=None,
             room_realtime_controller=_RealtimeController(events),  # type: ignore[arg-type]
+            application_database=_ApplicationDatabase(events) if owns_database else None,
             identity_registry_cleanup=lambda: events.append("identity.unregister"),
             owns_room_repository=owns_resources,
             owns_invite_repository=owns_resources,
@@ -177,6 +187,7 @@ class GuiApplicationServicesTests(unittest.TestCase):
             owns_session_run_monitor=owns_resources,
             owns_public_tunnel_manager=owns_resources,
             owns_room_realtime_controller=owns_resources,
+            owns_application_database=owns_database,
         )
 
     def test_start_preserves_post_bind_order_and_is_idempotent(self) -> None:
@@ -233,6 +244,25 @@ class GuiApplicationServicesTests(unittest.TestCase):
             services.shutdown(transport_close=lambda: events.append("transport.close"))
 
         self.assertEqual(events, ["transport.close", "identity.unregister"])
+
+    def test_shutdown_closes_shared_database_once_after_repository_adapters(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events: list[str] = []
+            services = self._services(
+                Path(temp_dir),
+                events,
+                owns_database=True,
+            )
+
+            services.shutdown()
+            services.shutdown()
+
+        self.assertEqual(events[-4:], [
+            "invite.close",
+            "identity.close",
+            "repository.close",
+            "database.close",
+        ])
 
     def test_shutdown_attempts_all_cleanup_after_one_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

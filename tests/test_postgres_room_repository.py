@@ -7,7 +7,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -82,6 +82,15 @@ def _fake_repository() -> tuple[object, _FakeRepositoryPool]:
 
 @unittest.skipUnless(_PSYCOPG_AVAILABLE, "the postgres extra is required")
 class PostgresRoomRepositoryPoolIntegrationTests(unittest.TestCase):
+    def test_borrowed_application_database_is_not_closed_by_repository(self) -> None:
+        database = MagicMock()
+        repository = PostgresRoomRepository(database=database)
+
+        repository.close()
+
+        self.assertIs(repository._connections, database)
+        database.close.assert_not_called()
+
     def test_repository_borrows_from_one_pool_and_exposes_safe_diagnostics(self) -> None:
         repository, pool = _fake_repository()
         try:

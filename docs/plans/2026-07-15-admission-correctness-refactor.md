@@ -235,3 +235,12 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   deliberately does not wire repositories yet; ownership transfer and removal
   of repository-level pool closes are Milestone 2.2. Fake-pool lifecycle,
   transaction reuse, schema-failure, secret-redaction, and close tests passed.
+- 2026-07-15: Milestone 2.2 injected the same application database into the
+  room, identity, and invite/session PostgreSQL repositories. Borrowing
+  repositories no longer close the shared pool; standalone repository
+  construction still owns and closes only its private test/migration pool. GUI
+  startup now creates one verified database owner and shutdown closes it once,
+  after all repository adapters. Factory, ownership, startup-failure, GUI
+  lifecycle, and optional-driver tests passed. Real PostgreSQL transaction
+  integration remains gated on `AGENTSASSEMBLE_TEST_POSTGRES_DSN` and is part of
+  Milestones 2.3 and 5; no frozen conversation or media policy changed.

@@ -4,6 +4,7 @@ import importlib.util
 import os
 import unittest
 from contextlib import nullcontext
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 from tests.test_room_invite_repository import InviteSessionRepositoryContract
@@ -44,6 +45,15 @@ class _FakePool:
 
 @unittest.skipUnless(_PSYCOPG_AVAILABLE, "the postgres extra is required")
 class PostgresInviteSessionRepositoryPoolTests(unittest.TestCase):
+    def test_borrowed_application_database_is_not_closed_by_repository(self) -> None:
+        database = MagicMock()
+        repository = PostgresInviteSessionRepository(database=database)
+
+        repository.close()
+
+        self.assertIs(repository._connections, database)
+        database.close.assert_not_called()
+
     def test_repository_diagnostics_do_not_disclose_dsn(self) -> None:
         pools: list[_FakePool] = []
 

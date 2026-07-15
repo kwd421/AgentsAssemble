@@ -49,6 +49,7 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
         stdout = StringIO()
         invite_repository = MemoryInviteSessionRepository()
         identity_repository = MagicMock()
+        application_database = MagicMock()
         identity_repository.list_rooms.return_value = []
         identity_repository.operator_user_id.return_value = ""
 
@@ -56,6 +57,9 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
             "agentsassemble.gui.RoomRepositorySettings.from_environment",
             return_value=settings,
         ) as from_environment, patch(
+            "agentsassemble.gui.build_postgres_application_database",
+            return_value=application_database,
+        ) as build_database, patch(
             "agentsassemble.gui.build_room_repository",
             return_value=repository,
         ) as build_repository, patch(
@@ -96,17 +100,21 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
             backend="postgresql",
             postgres_dsn_env="ROOM_DATABASE_SECRET",
         )
+        build_database.assert_called_once_with(settings)
         build_repository.assert_called_once_with(
             Path("/tmp/gui-room-repository-test"),
             settings,
+            postgres_database=application_database,
         )
         build_invites.assert_called_once_with(
             Path("/tmp/gui-room-repository-test"),
             settings,
+            postgres_database=application_database,
         )
         build_identities.assert_called_once_with(
             Path("/tmp/gui-room-repository-test"),
             settings,
+            postgres_database=application_database,
         )
         self.assertIs(
             make_handler.call_args.kwargs["room_repository_override"],
@@ -117,6 +125,7 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
         self.assertNotIn("secret-pass", stdout.getvalue())
         repository.close.assert_called_once_with()
         identity_repository.close.assert_called_once_with()
+        application_database.close.assert_called_once_with()
 
     def test_gui_closes_repository_when_later_startup_fails(self) -> None:
         repository = MagicMock()

@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, Protocol
 
 from agentsassemble.postgres_connection_pool import (
     BoundedPostgresConnectionPool,
@@ -18,6 +18,14 @@ from agentsassemble.postgres_room_schema import (
 
 
 SchemaChecker = Callable[[str], None]
+
+
+class PostgresConnectionProvider(Protocol):
+    """Connection surface shared by application-owned and standalone pools."""
+
+    def connection(self) -> AbstractContextManager[Any]: ...
+
+    def public_diagnostics(self) -> dict[str, object]: ...
 
 
 class PostgresApplicationDatabase:

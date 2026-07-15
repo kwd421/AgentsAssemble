@@ -13,6 +13,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.postgres_application_database import PostgresConnectionProvider
 from agentsassemble.postgres_connection_pool import (
     BoundedPostgresConnectionPool,
     PoolFactory,
@@ -253,15 +254,24 @@ class PostgresRoomRepository:
 
     def __init__(
         self,
-        dsn: str,
+        dsn: str = "",
         *,
+        database: PostgresConnectionProvider | None = None,
         output_root: Path | None = None,
         migrate: bool = False,
         pool_settings: PostgresPoolSettings | None = None,
         pool_factory: PoolFactory | None = None,
     ) -> None:
         clean_dsn = str(dsn or "").strip()
-        if not clean_dsn:
+        if database is not None and clean_dsn:
+            raise ValueError(
+                "PostgreSQL room repository accepts either a database owner or a DSN, not both."
+            )
+        if database is not None and (migrate or pool_settings is not None or pool_factory is not None):
+            raise ValueError(
+                "PostgreSQL room repository pool and migration options belong to its database owner."
+            )
+        if database is None and not clean_dsn:
             raise ValueError("PostgreSQL room repository requires a database DSN.")
         self.output_root = Path(output_root) if output_root is not None else None
         self._listener_lock = threading.RLock()
@@ -270,25 +280,32 @@ class PostgresRoomRepository:
             f"postgres_room_transaction_connection_{id(self)}",
             default=None,
         )
-        if migrate:
+        if migrate and database is None:
             upgrade_postgres_room_schema(clean_dsn)
-        self._pool = BoundedPostgresConnectionPool(
-            clean_dsn,
-            connection_kwargs={"row_factory": dict_row},
-            settings=pool_settings,
-            pool_factory=pool_factory,
-        )
+        self._owned_pool: BoundedPostgresConnectionPool | None = None
+        if database is None:
+            self._owned_pool = BoundedPostgresConnectionPool(
+                clean_dsn,
+                connection_kwargs={"row_factory": dict_row},
+                settings=pool_settings,
+                pool_factory=pool_factory,
+            )
+            self._connections: PostgresConnectionProvider = self._owned_pool
+        else:
+            self._connections = database
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(configured=True)"
 
     def close(self) -> None:
-        self._pool.close()
+        if self._owned_pool is not None:
+            self._owned_pool.close()
 
     def public_diagnostics(self) -> dict[str, object]:
+        provider_diagnostics = self._connections.public_diagnostics()
         return {
             "backend": "postgresql",
-            "pool": self._pool.public_diagnostics(),
+            "pool": provider_diagnostics.get("pool", provider_diagnostics),
         }
 
     def create_room(self, room_id: str, *, label: str = "", status: str = "active") -> dict[str, object]:
@@ -875,7 +892,7 @@ class PostgresRoomRepository:
 
     @contextmanager
     def _connection(self) -> Iterator[Connection]:
-        with self._pool.connection() as connection:
+        with self._connections.connection() as connection:
             yield connection
 
     @contextmanager

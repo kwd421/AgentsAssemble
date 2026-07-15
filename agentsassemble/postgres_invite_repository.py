@@ -8,6 +8,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.postgres_application_database import PostgresConnectionProvider
 from agentsassemble.postgres_connection_pool import (
     BoundedPostgresConnectionPool,
     PoolFactory,
@@ -21,24 +22,41 @@ _AUTHORITY_ID = "default"
 class PostgresInviteSessionRepository:
     def __init__(
         self,
-        dsn: str,
+        dsn: str = "",
         *,
+        database: PostgresConnectionProvider | None = None,
         pool_settings: PostgresPoolSettings | None = None,
         pool_factory: PoolFactory | None = None,
     ) -> None:
-        self._pool = BoundedPostgresConnectionPool(
-            dsn,
-            connection_kwargs={"row_factory": dict_row},
-            settings=pool_settings,
-            pool_factory=pool_factory,
-        )
+        clean_dsn = str(dsn or "").strip()
+        if database is not None and clean_dsn:
+            raise ValueError(
+                "PostgreSQL invite repository accepts either a database owner or a DSN, not both."
+            )
+        if database is not None and (pool_settings is not None or pool_factory is not None):
+            raise ValueError(
+                "PostgreSQL invite repository pool options belong to its database owner."
+            )
+        if database is None and not clean_dsn:
+            raise ValueError("PostgreSQL invite repository requires a database DSN.")
+        self._owned_pool: BoundedPostgresConnectionPool | None = None
+        if database is None:
+            self._owned_pool = BoundedPostgresConnectionPool(
+                clean_dsn,
+                connection_kwargs={"row_factory": dict_row},
+                settings=pool_settings,
+                pool_factory=pool_factory,
+            )
+            self._connections: PostgresConnectionProvider = self._owned_pool
+        else:
+            self._connections = database
 
     def __repr__(self) -> str:
         return "PostgresInviteSessionRepository(configured=True)"
 
     def signing_secret(self) -> str:
         candidate = secrets.token_urlsafe(32)
-        with self._pool.connection() as connection, connection.transaction():
+        with self._connections.connection() as connection, connection.transaction():
             connection.execute(
                 """INSERT INTO room_invite_authority(
                        authority_id, signing_secret, created_at
@@ -54,7 +72,7 @@ class PostgresInviteSessionRepository:
         return str(row["signing_secret"])
 
     def existing_signing_secret(self) -> str:
-        with self._pool.connection() as connection:
+        with self._connections.connection() as connection:
             row = connection.execute(
                 """SELECT signing_secret FROM room_invite_authority
                    WHERE authority_id = %s""",
@@ -63,7 +81,7 @@ class PostgresInviteSessionRepository:
         return str(row["signing_secret"]) if row else ""
 
     def save_invite(self, record: dict[str, object]) -> None:
-        with self._pool.connection() as connection, connection.transaction():
+        with self._connections.connection() as connection, connection.transaction():
             connection.execute(
                 """INSERT INTO room_invites(
                        invite_id, room_id, agent_id, display_name, invite_scope,
@@ -96,7 +114,7 @@ class PostgresInviteSessionRepository:
             )
 
     def invite(self, invite_id: str) -> dict[str, object] | None:
-        with self._pool.connection() as connection:
+        with self._connections.connection() as connection:
             row = connection.execute(
                 "SELECT * FROM room_invites WHERE invite_id = %s",
                 (clean_lobby_text(invite_id, limit=128),),
@@ -104,7 +122,7 @@ class PostgresInviteSessionRepository:
         return _invite_from_row(row) if row else None
 
     def invite_for_join_code(self, join_code_fingerprint: str) -> dict[str, object] | None:
-        with self._pool.connection() as connection:
+        with self._connections.connection() as connection:
             row = connection.execute(
                 "SELECT * FROM room_invites WHERE join_code_fingerprint = %s",
                 (clean_lobby_text(join_code_fingerprint, limit=128),),
@@ -112,7 +130,7 @@ class PostgresInviteSessionRepository:
         return _invite_from_row(row) if row else None
 
     def nonce_was_used(self, nonce_fingerprint: str) -> bool:
-        with self._pool.connection() as connection:
+        with self._connections.connection() as connection:
             row = connection.execute(
                 """SELECT 1 FROM room_invite_used_nonces
                    WHERE nonce_fingerprint = %s""",
@@ -128,7 +146,7 @@ class PostgresInviteSessionRepository:
         reusable: bool,
         max_uses: int,
     ) -> str:
-        with self._pool.connection() as connection, connection.transaction():
+        with self._connections.connection() as connection, connection.transaction():
             if reusable:
                 row = connection.execute(
                     """SELECT use_count, max_uses FROM room_invites
@@ -159,7 +177,7 @@ class PostgresInviteSessionRepository:
             return "" if inserted else "token_already_used"
 
     def revoke_invite(self, invite_id: str) -> bool:
-        with self._pool.connection() as connection, connection.transaction():
+        with self._connections.connection() as connection, connection.transaction():
             row = connection.execute(
                 """UPDATE room_invites SET revoked = TRUE
                    WHERE invite_id = %s RETURNING invite_id""",
@@ -168,7 +186,7 @@ class PostgresInviteSessionRepository:
         return row is not None
 
     def revoke_room_invites(self, room_id: str) -> int:
-        with self._pool.connection() as connection, connection.transaction():
+        with self._connections.connection() as connection, connection.transaction():
             cursor = connection.execute(
                 """UPDATE room_invites SET revoked = TRUE
                    WHERE room_id = %s AND revoked = FALSE""",
@@ -177,7 +195,7 @@ class PostgresInviteSessionRepository:
             return int(cursor.rowcount)
 
     def list_invites(self) -> list[dict[str, object]]:
-        with self._pool.connection() as connection:
+        with self._connections.connection() as connection:
             rows = connection.execute(
                 "SELECT * FROM room_invites ORDER BY created_at, invite_id"
             ).fetchall()
@@ -194,7 +212,7 @@ class PostgresInviteSessionRepository:
         parameters = _session_parameters(token_fingerprint, record)
         if not parameters[0] or not parameters[1] or not parameters[2]:
             raise ValueError("session token, room, and participant are required")
-        with self._pool.connection() as connection, connection.transaction():
+        with self._connections.connection() as connection, connection.transaction():
             connection.execute(
                 "DELETE FROM room_access_sessions WHERE token_fingerprint = %s",
                 (parameters[0],),
@@ -220,7 +238,7 @@ class PostgresInviteSessionRepository:
             )
 
     def session(self, token_fingerprint: str) -> dict[str, object] | None:
-        with self._pool.connection() as connection:
+        with self._connections.connection() as connection:
             row = connection.execute(
                 """SELECT * FROM room_access_sessions
                    WHERE token_fingerprint = %s""",
@@ -229,7 +247,7 @@ class PostgresInviteSessionRepository:
         return _session_from_row(row) if row else None
 
     def revoke_session(self, token_fingerprint: str) -> bool:
-        with self._pool.connection() as connection, connection.transaction():
+        with self._connections.connection() as connection, connection.transaction():
             row = connection.execute(
                 """DELETE FROM room_access_sessions WHERE token_fingerprint = %s
                    RETURNING token_fingerprint""",
@@ -244,7 +262,7 @@ class PostgresInviteSessionRepository:
         if clean_room_id:
             clauses.append("room_id = %s")
             parameters.append(clean_room_id)
-        with self._pool.connection() as connection, connection.transaction():
+        with self._connections.connection() as connection, connection.transaction():
             cursor = connection.execute(
                 f"DELETE FROM room_access_sessions WHERE {' AND '.join(clauses)}",
                 tuple(parameters),
@@ -252,7 +270,7 @@ class PostgresInviteSessionRepository:
             return int(cursor.rowcount)
 
     def revoke_room_sessions(self, room_id: str) -> int:
-        with self._pool.connection() as connection, connection.transaction():
+        with self._connections.connection() as connection, connection.transaction():
             cursor = connection.execute(
                 "DELETE FROM room_access_sessions WHERE room_id = %s",
                 (clean_lobby_text(room_id, limit=128),),
@@ -260,7 +278,7 @@ class PostgresInviteSessionRepository:
             return int(cursor.rowcount)
 
     def list_sessions(self) -> list[tuple[str, dict[str, object]]]:
-        with self._pool.connection() as connection:
+        with self._connections.connection() as connection:
             rows = connection.execute(
                 """SELECT * FROM room_access_sessions
                    ORDER BY joined_at, token_fingerprint"""
@@ -282,7 +300,7 @@ class PostgresInviteSessionRepository:
             {**record, "workflow_id": clean_id},
             workflow_id=clean_id,
         )
-        with self._pool.connection() as connection, connection.transaction():
+        with self._connections.connection() as connection, connection.transaction():
             connection.execute(
                 """INSERT INTO room_admission_workflows(
                        workflow_id, room_id, status, record_json, created_at, updated_at
@@ -297,7 +315,7 @@ class PostgresInviteSessionRepository:
         return _workflow_from_row(row)
 
     def admission_workflow(self, workflow_id: str) -> dict[str, object] | None:
-        with self._pool.connection() as connection:
+        with self._connections.connection() as connection:
             row = connection.execute(
                 "SELECT record_json FROM room_admission_workflows WHERE workflow_id = %s",
                 (clean_lobby_text(workflow_id, limit=128),),
@@ -310,7 +328,7 @@ class PostgresInviteSessionRepository:
         updates: dict[str, object],
     ) -> dict[str, object]:
         clean_id = clean_lobby_text(workflow_id, limit=128)
-        with self._pool.connection() as connection, connection.transaction():
+        with self._connections.connection() as connection, connection.transaction():
             existing = connection.execute(
                 """SELECT record_json FROM room_admission_workflows
                    WHERE workflow_id = %s FOR UPDATE""",
@@ -349,7 +367,7 @@ class PostgresInviteSessionRepository:
         clean_workflow_id = clean_lobby_text(workflow_id, limit=128)
         clean_invite_id = clean_lobby_text(invite_id, limit=128)
         clean_nonce = clean_lobby_text(nonce_fingerprint, limit=128)
-        with self._pool.connection() as connection, connection.transaction():
+        with self._connections.connection() as connection, connection.transaction():
             row = connection.execute(
                 """SELECT record_json FROM room_admission_workflows
                    WHERE workflow_id = %s FOR UPDATE""",
@@ -414,7 +432,7 @@ class PostgresInviteSessionRepository:
         return
 
     def clear(self) -> None:
-        with self._pool.connection() as connection, connection.transaction():
+        with self._connections.connection() as connection, connection.transaction():
             connection.execute(
                 """TRUNCATE TABLE room_admission_workflows,
                        room_access_sessions,
@@ -423,10 +441,15 @@ class PostgresInviteSessionRepository:
             )
 
     def close(self) -> None:
-        self._pool.close()
+        if self._owned_pool is not None:
+            self._owned_pool.close()
 
     def public_diagnostics(self) -> dict[str, object]:
-        return {"backend": "postgresql", "pool": self._pool.public_diagnostics()}
+        provider_diagnostics = self._connections.public_diagnostics()
+        return {
+            "backend": "postgresql",
+            "pool": provider_diagnostics.get("pool", provider_diagnostics),
+        }
 
 
 def _invite_parameters(record: dict[str, object]) -> tuple[object, ...]:

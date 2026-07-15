@@ -123,8 +123,9 @@ selects `PostgresIdentityRepository` with the room DSN. The GUI registers that
 single backend for its output root so lower-level membership and realtime
 helpers cannot silently open SQLite. PostgreSQL identity operations are split
 by ownership: users/operator pairing, memberships/compatibility room registry,
-user preferences, and usage accounting. The repository facade alone owns the
-pool and transaction lifetime.
+user preferences, and usage accounting. In the GUI server, room, identity, and
+invite/session repositories borrow one application-owned connection provider;
+none of those repository facades can close the shared pool.
 
 PostgreSQL schema changes use the packaged Alembic lineage under
 `agentsassemble/migrations` and explicit SQL. Runtime repository queries use
@@ -164,16 +165,17 @@ attention contract as `RoomStore`. PostgreSQL-specific reads, mutations, and
 attention persistence are separate modules; the repository facade owns
 connections, transaction locks, listeners, and filesystem side effects.
 
-The optional PostgreSQL installation includes `psycopg_pool`. One
-server-scoped `PostgresRoomRepository` opens one bounded pool at startup and
-waits at most 10 seconds for its minimum connection. The current conservative
-limits are 1 minimum connection, 8 maximum connections, 32 queued borrowers,
-and a 5-second acquisition timeout. Every operation borrows from that pool;
-normal repository methods do not call `psycopg.connect()` directly. GUI
-shutdown closes the realtime controller and HTTP server before closing the
-repository-owned pool, while a startup failure after repository construction
-also closes it. SQLite implements the same repository lifecycle with a no-op
-close because its connections remain operation-scoped.
+The optional PostgreSQL installation includes `psycopg_pool`.
+`PostgresApplicationDatabase` verifies the activated schema and opens one
+bounded pool for the GUI server before constructing repositories. The current
+conservative limits are 1 minimum connection, 8 maximum connections, 32 queued
+borrowers, a 10-second startup wait, and a 5-second acquisition timeout. Room,
+identity, and invite/session operations all borrow from that provider; normal
+repository methods do not call `psycopg.connect()` directly. Standalone
+repository construction remains available for migration and contract tests and
+owns only the pool it creates itself. GUI shutdown closes repository adapters
+before closing the application database once; startup failure follows the same
+ownership order. SQLite keeps its existing operation-scoped lifecycle.
 
 PostgreSQL pool diagnostics are an explicit numeric allowlist. They report
 bounded configuration and pool counters such as size, available connections,

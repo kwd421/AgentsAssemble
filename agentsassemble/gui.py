@@ -26,7 +26,7 @@ from agentsassemble.gui_provider_http import (
     provider_catalog_payload,
     register_provider_routes,
 )
-from agentsassemble.gui_application import GuiApplicationServices
+from agentsassemble.gui_application import ApplicationDatabase, GuiApplicationServices
 from agentsassemble.gui_attachment_http import register_attachment_routes
 from agentsassemble.gui_mafia_http import register_mafia_routes
 from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
@@ -398,6 +398,7 @@ from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_repository_factory import (
     DEFAULT_POSTGRES_DSN_ENV,
     RoomRepositorySettings,
+    build_postgres_application_database,
     build_room_repository,
 )
 from agentsassemble.room_invite_repository import (
@@ -862,6 +863,8 @@ def _build_gui_application_services(
     owns_invite_repository_override: bool = False,
     identity_backend_override: IdentityBackend | None = None,
     owns_identity_backend_override: bool = False,
+    application_database_override: ApplicationDatabase | None = None,
+    owns_application_database_override: bool = False,
     attention_shadow_mode: str = "off",
 ) -> GuiApplicationServices:
     """Build one ownership graph for the GUI server and handler factory."""
@@ -881,6 +884,12 @@ def _build_gui_application_services(
 
     def remember_cleanup(name: str, callback: Callable[[], object]) -> None:
         cleanup_actions.append((name, callback))
+
+    owns_application_database = bool(
+        application_database_override is not None and owns_application_database_override
+    )
+    if owns_application_database:
+        remember_cleanup("application_database.close", application_database_override.close)
 
     if owns_room_repository:
         remember_cleanup("room_repository.close", room_repository.close)
@@ -1017,6 +1026,7 @@ def _build_gui_application_services(
             ws_ticket_store=ws_ticket_store,
             native_cli_bridge_manager=native_cli_bridge_manager,
             room_realtime_controller=room_realtime_controller,
+            application_database=application_database_override,
             identity_registry_cleanup=release_identity_registration,
             owns_room_repository=owns_room_repository,
             owns_invite_repository=owns_invite_repository,
@@ -1025,6 +1035,7 @@ def _build_gui_application_services(
             owns_session_run_monitor=owns_session_run_monitor,
             owns_public_tunnel_manager=owns_public_tunnel_manager,
             owns_room_realtime_controller=owns_room_realtime_controller,
+            owns_application_database=owns_application_database,
         )
     except BaseException as error:
         for name, callback in reversed(cleanup_actions):
@@ -1068,7 +1079,8 @@ def serve_gui(
         backend=room_repository_backend,
         postgres_dsn_env=room_postgres_dsn_env,
     )
-    room_repository = build_room_repository(root, room_repository_settings)
+    application_database: ApplicationDatabase | None = None
+    room_repository: RoomRepository | None = None
     invite_repository: InviteSessionRepository | None = None
     identity_backend: IdentityBackend | None = None
     owns_identity_backend = room_repository_settings.backend == "postgresql"
@@ -1076,8 +1088,32 @@ def serve_gui(
     services: GuiApplicationServices | None = None
     server: ThreadingHTTPServer | None = None
     try:
-        invite_repository = build_invite_session_repository(root, room_repository_settings)
-        identity_backend = build_identity_repository(root, room_repository_settings)
+        if room_repository_settings.backend == "postgresql":
+            application_database = build_postgres_application_database(
+                room_repository_settings
+            )
+            room_repository = build_room_repository(
+                root,
+                room_repository_settings,
+                postgres_database=application_database,
+            )
+            invite_repository = build_invite_session_repository(
+                root,
+                room_repository_settings,
+                postgres_database=application_database,
+            )
+            identity_backend = build_identity_repository(
+                root,
+                room_repository_settings,
+                postgres_database=application_database,
+            )
+        else:
+            room_repository = build_room_repository(root, room_repository_settings)
+            invite_repository = build_invite_session_repository(root, room_repository_settings)
+            identity_backend = build_identity_repository(root, room_repository_settings)
+        assert room_repository is not None
+        assert invite_repository is not None
+        assert identity_backend is not None
         repositories_transferred = True
         services = _build_gui_application_services(
             root,
@@ -1087,6 +1123,8 @@ def serve_gui(
             owns_invite_repository_override=True,
             identity_backend_override=identity_backend,
             owns_identity_backend_override=owns_identity_backend,
+            application_database_override=application_database,
+            owns_application_database_override=application_database is not None,
             attention_shadow_mode=attention_shadow_mode,
         )
         handler = _make_handler(
@@ -1126,12 +1164,21 @@ def serve_gui(
                     error.add_note(
                         f"Invite repository cleanup after startup failure failed: {cleanup_error}"
                     )
-            try:
-                room_repository.close()
-            except BaseException as cleanup_error:
-                error.add_note(
-                    f"Room repository cleanup after startup failure failed: {cleanup_error}"
-                )
+            if room_repository is not None:
+                try:
+                    room_repository.close()
+                except BaseException as cleanup_error:
+                    error.add_note(
+                        f"Room repository cleanup after startup failure failed: {cleanup_error}"
+                    )
+            if application_database is not None:
+                try:
+                    application_database.close()
+                except BaseException as cleanup_error:
+                    error.add_note(
+                        "PostgreSQL application database cleanup after startup failure failed: "
+                        f"{cleanup_error}"
+                    )
         raise
     if not _is_loopback_host(host):
         print(
