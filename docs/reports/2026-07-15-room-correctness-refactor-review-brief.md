@@ -4,7 +4,7 @@ Status: ready for external review
 
 Branch: `codex/risuai-character-personas`
 
-Implementation range: `cbdfca1a5961b5befc33cb575af540d63eb130f2..50ec92f7c507cabfe1dafe77b963d41fb7ffe1ec`
+Implementation range: `cbdfca1a5961b5befc33cb575af540d63eb130f2..a4b8234abfded263d80232d633aed35373114a37`
 
 Plan: `docs/plans/2026-07-14-room-correctness-refactor.md`
 
@@ -22,12 +22,15 @@ new autonomous-conversation feature release. In particular, inspect:
    moving dead code into more files;
 5. whether the remaining compatibility wrappers and seven deletion candidates
    are justified;
-6. the explicitly unclosed real-provider UI smoke gap described below.
+6. whether invited-browser roster identity and ownership are projected from
+   canonical participant identity without conflating membership authority with
+   participant type;
+7. the explicitly unclosed real-provider UI smoke gap described below.
 
 ## Executive Summary
 
-This range contains 60 deliberately small commits. It changes 213 files with
-26,736 insertions and 7,616 deletions. The size comes from adding repository
+This range contains 64 deliberately small commits. It changes 217 files with
+27,293 insertions and 7,627 deletions. The size comes from adding repository
 contracts, failure-injection coverage, migration tooling, focused legacy
 services, and behavioral tests while removing 5,617 lines from the former GUI
 monolith (`agentsassemble/gui.py`: 9,516 to 3,899 lines).
@@ -238,6 +241,34 @@ production caller but did not establish sufficient compatibility evidence for
 a breaking removal. The AST firewall prevents new API ownership from drifting
 back into `gui.py` while this decision remains open.
 
+### Post-review follow-up: invited-browser roster identity
+
+Implemented:
+
+- `a4b8234 Fix invited roster identity grouping`
+
+An actual Safari invite exposed two frontend identity-projection defects that
+were not covered by the earlier current-name/avatar repair:
+
+- the canonical room participant for the host was correctly stored as
+  `participant_type=human`, with the room-authority role `host`; the roster
+  treated any display role other than `human` as an agent role, so the invited
+  browser showed the host under `다른 사람의 에이전트` with an `에이전트`
+  label;
+- agent ownership used a hard-coded comparison with `operator-local`, so an
+  invited viewer could see the host's agents under `내 에이전트`.
+
+The fix keeps room authority and display classification separate. A canonical
+human remains a human regardless of a `host` membership role or stale display
+override. Explicit `owner_id` is now compared with the current
+`viewerParticipantId`; the older quota/host inference is used only when no
+owner is present. Desktop and mobile roster paths share the same member-role
+normalization.
+
+This did not rewrite room roles, promote a guest, create a provider-specific
+identity path, or add a fallback identity. The backend's canonical host role
+and capabilities remain authoritative.
+
 ## Where Implementation Differed From The Plan
 
 ### 1. Identity work required a second corrective commit
@@ -350,6 +381,31 @@ Recommended release-gate smoke:
 This should be run only with explicit provider approval and must continue to
 forbid `claude -p` and `codex exec resume --last`.
 
+### Invited-browser roster smoke: performed
+
+The follow-up used the production frontend and its visible controls:
+
+1. opened `#general` as the host and confirmed the host and existing Guest were
+   both in `사람`;
+2. created a new one-time human invite through the invite modal;
+3. opened the public invite in a separate browser tab, completed the visible
+   join form, and reloaded the same invite session;
+4. confirmed the invited view grouped the host and both browser participants
+   under `사람`, while the seven host-owned Agent Sessions appeared under
+   `다른 사람의 에이전트`;
+5. confirmed reload did not create another participant;
+6. used the guest frontend's `서버 나가기` action and confirmed the validation
+   participant became `left` while the original Safari participant remained
+   `joined`.
+
+This smoke also established an important remaining product gap: opening a
+human invite in a different browser creates a new `guest-*` identity because
+the browser has a different device credential. Current deduplication covers
+reconnect of the admitted browser session; it does not prove that Safari and a
+different host browser belong to the same person. A normal invite must not
+silently grant host identity, so cross-browser same-user continuity requires a
+separate authenticated device-pairing/account flow.
+
 ## Automated Verification
 
 Final local checks on `50ec92f7`:
@@ -427,6 +483,28 @@ frontend unit/E2E jobs all passed. The only hosted annotations were GitHub's
 non-blocking Node.js 20 action-runtime deprecation notices for current
 `actions/checkout@v4` and setup action versions.
 
+Local verification for the invited-browser roster follow-up on `a4b8234`:
+
+```text
+npm --prefix frontend test -- --run src/views/components/MemberList.test.tsx
+  1 file; 5 tests passed
+
+npm --prefix frontend test -- --run
+  20 files; 107 tests passed
+
+npm --prefix frontend run build
+  passed
+
+git diff --check
+  passed
+```
+
+GitHub Actions run
+[`29388053399`](https://github.com/kwd421/AgentsAssemble/actions/runs/29388053399)
+for `a4b8234` completed successfully. Ubuntu and Windows runtime-platform jobs,
+Python 3.11 and 3.13 full suites, PostgreSQL contracts, frontend build, and
+frontend unit/E2E jobs all passed.
+
 ## Intentionally Unchanged Or Out Of Scope
 
 - No semantic provider silence or model-decided refusal protocol was added.
@@ -457,6 +535,10 @@ non-blocking Node.js 20 action-runtime deprecation notices for current
 6. Keep autonomous conversation feature work frozen until silence, media
    observation, wake policy, and cost boundaries receive a separate product
    decision.
+7. Design an authenticated same-user browser/device pairing flow if the same
+   human must retain one participant identity across host Chrome, Safari,
+   mobile, and other browsers. Do not infer this from IP address and do not turn
+   a normal guest invite into host authority.
 
 ## Commit Map
 
@@ -479,6 +561,10 @@ non-blocking Node.js 20 action-runtime deprecation notices for current
 ### GUI composition and compatibility extraction
 
 `59c7db1` through `50ec92f`
+
+### Review evidence, hosted CI repair, and invited identity follow-up
+
+`aec29ca` through `a4b8234`
 
 The detailed per-commit rationale and verification history is retained in the
 plan's progress log rather than duplicated in this review brief.
