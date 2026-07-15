@@ -1,6 +1,6 @@
 # Admission Correctness And Remaining Composition Refactor
 
-Status: in progress
+Status: implementation and local verification complete; remote CI pending
 
 Started: 2026-07-15
 
@@ -417,3 +417,27 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   autonomous-conversation, sequence, or media change. All 125 frontend unit
   tests and four Playwright scenarios passed; the production build emitted a
   459.62 kB main JavaScript chunk with no size warning.
+- 2026-07-15: Milestone 5.4 exercised the actual browser controls against
+  server-owned Codex, interactive Claude Code, and Grok sessions. Requested
+  and observed models matched exactly: `gpt-5.6-luna`,
+  `claude-sonnet-4-6`, and `grok-4.5`, all at low reasoning effort. Each
+  session answered a memory marker once, remained silent while paused,
+  answered the queued recall once after resume, reused its running provider
+  process across pause/resume, and stopped without leaving that process alive.
+  Codex and Claude used PTY transports; Claude was interactive and never used
+  `-p`; Grok used ACP stdio. Visible smoke messages contained no TUI debris,
+  project path, bearer/API-key pattern, invite token, or tunnel URL. Starting
+  Codex also consumed one old `@opencode` backlog item. That is a pre-existing,
+  non-critical speaker/backlog policy defect inside the frozen conversation
+  area, so it is documented rather than changed in this refactor.
+- 2026-07-15: Milestone 5.5 local gates completed. Normal and strict
+  `ResourceWarning` Python discovery each passed 3,524 tests with 69 skips;
+  frontend Vitest passed 126 tests; the production build passed; four
+  Playwright browser scenarios passed; and a live temporary PostgreSQL 17
+  instance passed all 84 PostgreSQL contracts with no skips. The initial full
+  gate exposed four obsolete source-location tests and four host-account tests
+  that still relied on implicit global dependencies. Commit `7aaf289` replaced
+  the meaningful admission case with a reducer behavior test, removed the
+  stale implementation-presence assertions, and made host-account dependencies
+  explicit. Focused and full gates then passed. Remote CI remains to be
+  observed after the report commit is pushed.
