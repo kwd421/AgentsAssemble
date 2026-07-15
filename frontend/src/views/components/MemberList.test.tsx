@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { LiveAgent, RoomAgentSession } from "../../api";
+import type { LiveAgent, RoomAgentSession, RoomMember } from "../../api";
 import MemberList from "./MemberList";
 
 
@@ -75,6 +75,62 @@ describe("MemberList component wiring", () => {
     const dialog = screen.getByRole("dialog", { name: "나's Agent One" });
     expect(within(dialog).getByRole("button", { name: "추방" })).toBeTruthy();
     expect(within(dialog).queryByRole("button", { name: "세션 삭제" })).toBeNull();
+  });
+
+  it("keeps the canonical host in the people group for an invited browser viewer", () => {
+    const members: RoomMember[] = [
+      {
+        meeting_id: "room-1",
+        participant_id: "operator-local",
+        display_name: "호스트",
+        role: "host" as RoomMember["role"],
+        participant_type: "human",
+        provider_kind: "",
+        connection_kind: "browser",
+        status: "joined",
+        source: "room",
+        created_at: "",
+        updated_at: "",
+      },
+      {
+        meeting_id: "room-1",
+        participant_id: "guest-1",
+        display_name: "Guest",
+        role: "human",
+        participant_type: "human",
+        provider_kind: "",
+        connection_kind: "browser",
+        status: "joined",
+        source: "invite",
+        created_at: "",
+        updated_at: "",
+      },
+    ];
+
+    render(
+      <MemberList
+        agents={[AGENT]}
+        members={members}
+        viewerParticipantId="guest-1"
+        roleOverrides={{
+          "operator-local": "host",
+          "guest-1": "human",
+          "agent-1": "agent",
+        }}
+        roomId="room-1"
+        roomName="Room One"
+        canEditRoles={false}
+      />
+    );
+
+    const peopleGroup = screen.getByText("사람 — 2").closest("details");
+    const otherAgentGroup = screen.getByText("다른 사람의 에이전트 — 1").closest("details");
+    expect(peopleGroup).not.toBeNull();
+    expect(otherAgentGroup).not.toBeNull();
+    expect(within(peopleGroup as HTMLElement).getByText("호스트")).toBeTruthy();
+    expect(within(otherAgentGroup as HTMLElement).queryByText("호스트")).toBeNull();
+    expect(screen.getByText("다른 사람's Agent One")).toBeTruthy();
+    expect(screen.queryByText("내 에이전트 — 1")).toBeNull();
   });
 
   it("does not let a legacy local profile override canonical room identity", () => {

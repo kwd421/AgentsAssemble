@@ -123,7 +123,9 @@ export default function MemberList({
       displayName: "나",
       detail: "사람",
       statusLabel: viewerMember ? memberStatusLabel(viewerMember) : undefined,
-      role: effectiveRoleOverrides[viewerEntryId] || "human",
+      role: viewerMember
+        ? memberRole(viewerMember, effectiveRoleOverrides[viewerEntryId])
+        : "human",
       owner: true,
       active: viewerMember ? memberActive(viewerMember) : true,
       muted: Boolean(viewerMember?.muted),
@@ -139,7 +141,10 @@ export default function MemberList({
       const role = effectiveRoleOverrides[agent.agent_id] || inferredRole;
       const profile = agentProfileSettings[agent.agent_id] || {};
       const canViewQuotaForAgent = canViewAgentQuota(agent, quotaViewer);
-      const ownedByViewer = canViewQuotaForAgent || String(agent.owner_id || "") === "operator-local" || (!agent.owner_id && canEditRoles);
+      const ownerId = String(member?.owner_id || agent.owner_id || "").trim();
+      const ownedByViewer = ownerId
+        ? ownerId === viewerParticipantId
+        : canViewQuotaForAgent || canEditRoles;
       const ownerDisplayName = String(agent.owner_display_name || (ownedByViewer ? "나" : "다른 사람")).trim();
       const canonicalIdentity = member || agentSession;
       const agentDisplayName = String(
@@ -191,8 +196,7 @@ export default function MemberList({
       )
       .map((member) => {
         const agentSession = sessionByParticipantId.get(member.participant_id);
-        const fallbackRole = memberRole(member);
-        const role = effectiveRoleOverrides[member.participant_id] || fallbackRole;
+        const role = memberRole(member, effectiveRoleOverrides[member.participant_id]);
         const typeMeta = participantTypeMeta(member.participant_type);
         const fullDetail = [
           typeMeta.label,

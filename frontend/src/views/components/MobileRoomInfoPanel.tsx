@@ -23,6 +23,7 @@ import { isActivePresence, presenceStatusLabel } from "../../lib/presenceStatus"
 import { participantTypeMeta } from "../../lib/participantTypes";
 import type { NativeCliProviderAvailability } from "../../roomSocketClient";
 import AgentSessionDetails, { type AgentSessionControlAction } from "./AgentSessionDetails";
+import { memberRole } from "./member/memberHelpers";
 
 type MobileRoomSummary = {
   id: string;
@@ -113,7 +114,7 @@ function buildMobileMembers({
     )
     .map((member) => {
       const typeMeta = participantTypeMeta(member.participant_type);
-      const role = roleOverrides?.[member.participant_id] || member.role || "agent";
+      const role = memberRole(member, roleOverrides?.[member.participant_id]);
       return {
         id: member.participant_id,
         displayName: member.display_name || member.participant_id,
