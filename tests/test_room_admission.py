@@ -37,6 +37,7 @@ class RoomAdmissionServiceTests(unittest.TestCase):
         self.service = RoomAdmissionService(
             identities=self.identities,
             rooms=self.rooms,
+            invite_inspector=inspect_room_invite,
         )
 
     def test_unknown_device_requires_profile_without_creating_identity_or_session(self) -> None:

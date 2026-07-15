@@ -32,7 +32,7 @@ if _POSTGRES_AVAILABLE:
         upgrade_postgres_room_schema,
     )
     from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
-    from agentsassemble.room_invite import InviteApplicationService
+    from agentsassemble.room_invite_application import InviteApplicationService
     from agentsassemble.room_session_service import RoomSessionService
     from agentsassemble.room_users import device_auth_key
 

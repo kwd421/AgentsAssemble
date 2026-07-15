@@ -267,3 +267,14 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   suite passed 156 tests, and a temporary UTF-8 PostgreSQL 17 instance passed
   all 80 strict contracts with zero skips. No frozen conversation, scheduling,
   or media policy changed.
+- 2026-07-15: Milestone 3.1 began by moving repository-injected invite policy,
+  validation, workflow persistence, and safe usage-guide projection into
+  `room_invite_application.py`. Admission, compensation, and GUI application
+  composition now import that owned service directly; request session
+  verification uses the injected `RoomSessionService` instead of silently
+  consulting facade state. The old `room_invite.py` API remains as an explicit
+  compatibility facade, and host/public runtime configuration plus remaining
+  legacy session callers are intentionally still outstanding. An AST boundary
+  test prevents the already-extracted current modules from importing the
+  global facade again. This is a behavior-preserving first slice, not a claim
+  that all compatibility ownership has been removed.

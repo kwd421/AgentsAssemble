@@ -13,7 +13,7 @@ from agentsassemble.room_admission_coordinator import (
     AdmissionIdempotencyConflict,
     RoomAdmissionCoordinator,
 )
-from agentsassemble.room_invite import InviteApplicationService
+from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.room_invite_repository import (
     JsonInviteSessionRepository,
     MemoryInviteSessionRepository,

@@ -11,7 +11,7 @@ from agentsassemble.gui_application import GuiApplicationServices
 from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
-from agentsassemble.room_invite import InviteApplicationService
+from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
 from agentsassemble.room_session_service import RoomSessionService
 

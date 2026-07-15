@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentsassemble.room_invite import (
-    InviteApplicationService,
     active_sessions_summary,
     configure_room_invite_store,
     create_room_invite,
@@ -23,6 +22,7 @@ from agentsassemble.room_invite import (
     set_runtime_public_url,
     verify_session_token,
 )
+from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.room_invite_repository import (
     InviteRepositoryNotConfigured,
     MemoryInviteSessionRepository,

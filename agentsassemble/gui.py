@@ -426,10 +426,12 @@ from agentsassemble.room_users import (
     upsert_room,
 )
 from agentsassemble.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
-from agentsassemble.room_invite import (
+from agentsassemble.room_invite_application import (
     InviteApplicationService,
     SESSION_TOKEN_PREFIX,
     SESSION_TOKEN_TTL_SECONDS,
+)
+from agentsassemble.room_invite import (
     active_sessions_summary,
     configure_room_invite_repository,
     default_room_invite_store_path,

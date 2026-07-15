@@ -5,7 +5,6 @@ from collections.abc import Callable
 
 from agentsassemble.identity_store import IdentityBackend, LOCAL_OPERATOR_PARTICIPANT_ID
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.room_invite import inspect_room_invite
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_users import device_auth_key
 
@@ -20,7 +19,7 @@ class RoomAdmissionService:
         *,
         identities: IdentityBackend,
         rooms: RoomRepository,
-        invite_inspector: Callable[..., dict[str, object]] = inspect_room_invite,
+        invite_inspector: Callable[..., dict[str, object]],
     ) -> None:
         self._identities = identities
         self._rooms = rooms

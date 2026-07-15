@@ -27,9 +27,14 @@ class FakeHandler:
         self.sent_error = (status, message)
 
 
+class FakeRoomSessions:
+    def verify(self, _token):
+        return None
+
+
 def _context(handler, path="/api/test"):
     parsed = urlparse(path)
-    deps = GuiDeps(output_root=Path("."))
+    deps = GuiDeps(output_root=Path("."), room_sessions=FakeRoomSessions())
     return RequestContext(handler, deps, parsed, parse_qs(parsed.query))
 
 

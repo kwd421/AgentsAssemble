@@ -35,7 +35,8 @@ from agentsassemble.identity_store import IdentityBackend, identity_store_for_ou
 from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
-from agentsassemble.room_invite import InviteApplicationService, verify_host_token, verify_session_token
+from agentsassemble.room_invite import verify_host_token
+from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_users import device_auth_key, participant_is_operator
@@ -282,7 +283,7 @@ class RequestContext:
         if not self._session_resolved:
             self._session_resolved = True
             token = self.bearer_token()
-            self._session = verify_session_token(token) if token else None
+            self._session = self.deps.sessions.verify(token) if token else None
         return self._session
 
     def preference_user_id(self) -> str:

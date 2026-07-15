@@ -38,7 +38,8 @@ from agentsassemble.identity_store import IdentityStore
 from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
-from agentsassemble.room_invite import InviteApplicationService
+from agentsassemble.room_invite import verify_session_token
+from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
 from agentsassemble.room_session_service import RoomSessionService
 
@@ -76,6 +77,21 @@ def _invite_route_dependencies(root: Path) -> GuiDeps:
             rooms=rooms,
             sessions=sessions,
         ),
+    )
+
+
+class _LegacyFacadeSessionVerifier:
+    """Make legacy invite-token state an explicit dependency in facade tests."""
+
+    def verify(self, token: str) -> dict[str, object] | None:
+        return verify_session_token(token)
+
+
+def _legacy_facade_route_dependencies(root: Path) -> GuiDeps:
+    return GuiDeps(
+        output_root=root,
+        room_repository=RoomStore(root),
+        room_sessions=_LegacyFacadeSessionVerifier(),  # type: ignore[arg-type]
     )
 
 
@@ -332,6 +348,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 payload={"room_id": "session-room", "participant_id": "agent-1"},
                 headers={"Authorization": f"Bearer {session['session_token']}"},
                 loopback=False,
+                deps=_legacy_facade_route_dependencies(root),
             )
 
             self.assertEqual(denied.sent_error, (HTTPStatus.FORBIDDEN, "participant session token required"))
@@ -829,6 +846,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                         "Origin": "https://room.example.com",
                     },
                     loopback=False,
+                    deps=_legacy_facade_route_dependencies(root),
                 )
                 payload = handler.sent_json
             finally:

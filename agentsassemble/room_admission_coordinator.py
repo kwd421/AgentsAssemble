@@ -16,7 +16,10 @@ from agentsassemble.room_admission_saga import (
     RoomAdmissionCompensationFailed,
     RoomAdmissionSaga,
 )
-from agentsassemble.room_invite import InviteApplicationService, PreparedInviteAdmission
+from agentsassemble.room_invite_application import (
+    InviteApplicationService,
+    PreparedInviteAdmission,
+)
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.room_users import device_auth_key, normalize_participant_type
