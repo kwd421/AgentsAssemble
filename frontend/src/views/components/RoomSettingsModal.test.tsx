@@ -20,16 +20,20 @@ const room = {
 };
 
 function renderSettings(
-  conversationMode: "ordered" | "ambient" | "continuous",
-  onConversationModeChange = vi.fn()
+  conversationMode: "ordered" | "ambient" | "continuous" | null,
+  onConversationModeChange = vi.fn(),
+  settingsStatus: "loading" | "ready" | "saving" | "stale" | "error" = "ready",
+  onRetrySettings = vi.fn()
 ) {
   render(
     <RoomSettingsModal
       room={room}
       appearance={DEFAULT_ROOM_APPEARANCE}
       channelSettings={{}}
+      settingsStatus={settingsStatus}
+      settingsError={settingsStatus === "error" ? "offline" : ""}
       conversationMode={conversationMode}
-      maxRelayTurns={6}
+      maxRelayTurns={conversationMode ? 6 : null}
       canInvite
       onClose={() => undefined}
       onInvite={() => undefined}
@@ -38,6 +42,7 @@ function renderSettings(
       onChannelSettingChange={() => undefined}
       onConversationModeChange={onConversationModeChange}
       onMaxRelayTurnsChange={() => undefined}
+      onRetrySettings={onRetrySettings}
       onDeleteRoom={async () => undefined}
     />
   );
@@ -62,6 +67,8 @@ describe("RoomSettingsModal conversation mode", () => {
         room={room}
         appearance={DEFAULT_ROOM_APPEARANCE}
         channelSettings={{}}
+        settingsStatus="ready"
+        settingsError=""
         conversationMode="ordered"
         maxRelayTurns={6}
         canInvite
@@ -72,6 +79,7 @@ describe("RoomSettingsModal conversation mode", () => {
         onChannelSettingChange={() => undefined}
         onConversationModeChange={() => undefined}
         onMaxRelayTurnsChange={() => undefined}
+        onRetrySettings={() => undefined}
         onDeleteRoom={async () => undefined}
       />
     );
@@ -83,6 +91,8 @@ describe("RoomSettingsModal conversation mode", () => {
         room={room}
         appearance={DEFAULT_ROOM_APPEARANCE}
         channelSettings={{}}
+        settingsStatus="ready"
+        settingsError=""
         conversationMode="continuous"
         maxRelayTurns={6}
         canInvite
@@ -93,6 +103,7 @@ describe("RoomSettingsModal conversation mode", () => {
         onChannelSettingChange={() => undefined}
         onConversationModeChange={() => undefined}
         onMaxRelayTurnsChange={() => undefined}
+        onRetrySettings={() => undefined}
         onDeleteRoom={async () => undefined}
       />
     );
@@ -100,5 +111,21 @@ describe("RoomSettingsModal conversation mode", () => {
     expect(
       (screen.getByRole("radio", { name: /기존 연쇄 대화/ }) as HTMLInputElement).checked
     ).toBe(true);
+  });
+
+  it("does not guess routing settings when the server read fails", async () => {
+    const onConversationModeChange = vi.fn();
+    const onRetrySettings = vi.fn();
+    renderSettings(null, onConversationModeChange, "error", onRetrySettings);
+
+    const ordered = screen.getByRole("radio", { name: /순서/ }) as HTMLInputElement;
+    expect(ordered.checked).toBe(false);
+    expect(ordered.disabled).toBe(true);
+    expect(screen.getByRole("alert").textContent).toContain("확인할 수 없어");
+
+    await userEvent.click(screen.getByRole("button", { name: "다시 불러오기" }));
+
+    expect(onRetrySettings).toHaveBeenCalledTimes(1);
+    expect(onConversationModeChange).not.toHaveBeenCalled();
   });
 });

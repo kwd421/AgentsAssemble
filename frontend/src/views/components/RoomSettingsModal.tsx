@@ -41,6 +41,8 @@ export default function RoomSettingsModal({
   initialSectionId,
   appearance,
   channelSettings,
+  settingsStatus,
+  settingsError,
   conversationMode,
   maxRelayTurns,
   canInvite,
@@ -51,14 +53,17 @@ export default function RoomSettingsModal({
   onChannelSettingChange,
   onConversationModeChange,
   onMaxRelayTurnsChange,
+  onRetrySettings,
   onDeleteRoom,
 }: {
   room: RoomDockItem;
   initialSectionId?: RoomSettingsSectionId;
   appearance: RoomAppearance;
   channelSettings: Record<string, ChannelSettings>;
-  conversationMode: ConversationMode;
-  maxRelayTurns: number;
+  settingsStatus: "loading" | "ready" | "saving" | "stale" | "error";
+  settingsError: string;
+  conversationMode: ConversationMode | null;
+  maxRelayTurns: number | null;
   canInvite: boolean;
   onClose: () => void;
   onInvite: () => void;
@@ -67,6 +72,7 @@ export default function RoomSettingsModal({
   onChannelSettingChange: (channelId: string, updates: Partial<ChannelSettings>) => void;
   onConversationModeChange: (mode: ConversationMode) => void;
   onMaxRelayTurnsChange: (turns: number) => void;
+  onRetrySettings: () => void;
   onDeleteRoom: (confirmationName: string) => Promise<void>;
 }) {
   const [uploadStatus, setUploadStatus] = useState("");
@@ -74,6 +80,17 @@ export default function RoomSettingsModal({
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  const routingSettingsReady = settingsStatus === "ready";
+  const routingSettingsMessage =
+    settingsStatus === "loading"
+      ? "서버 대화 설정을 불러오는 중입니다."
+      : settingsStatus === "saving"
+        ? "서버 대화 설정을 저장하는 중입니다."
+        : settingsStatus === "stale"
+          ? "서버 설정 동기화에 실패했습니다. 확인된 이전 값은 읽기 전용으로 표시됩니다."
+          : settingsStatus === "error"
+            ? "서버 대화 설정을 확인할 수 없어 변경할 수 없습니다."
+            : "";
 
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
@@ -177,12 +194,27 @@ export default function RoomSettingsModal({
             </label>
             <div className="dc-settings-field">
               <p className="dc-settings-field-label">대화 모드</p>
+              {routingSettingsMessage && (
+                <div
+                  className="mb-3 flex items-center justify-between gap-3 text-[13px] text-text-muted"
+                  role={settingsStatus === "error" || settingsStatus === "stale" ? "alert" : "status"}
+                  title={settingsError || undefined}
+                >
+                  <span className="preserve-words">{routingSettingsMessage}</span>
+                  {(settingsStatus === "error" || settingsStatus === "stale") && (
+                    <button type="button" className="dc-upload-button shrink-0" onClick={onRetrySettings}>
+                      다시 불러오기
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="dc-radio-stack">
                 <label>
                   <input
                     type="radio"
                     name="conversation-mode"
                     checked={conversationMode === "ordered"}
+                    disabled={!routingSettingsReady}
                     onChange={() => onConversationModeChange("ordered")}
                   />
                   <span className="preserve-words">
@@ -194,6 +226,7 @@ export default function RoomSettingsModal({
                     type="radio"
                     name="conversation-mode"
                     checked={conversationMode === "ambient"}
+                    disabled={!routingSettingsReady}
                     onChange={() => onConversationModeChange("ambient")}
                   />
                   <span className="preserve-words">
@@ -206,6 +239,7 @@ export default function RoomSettingsModal({
                       type="radio"
                       name="conversation-mode"
                       checked
+                      disabled={!routingSettingsReady}
                       onChange={() => onConversationModeChange("continuous")}
                     />
                     <span className="preserve-words">
@@ -222,7 +256,8 @@ export default function RoomSettingsModal({
                     type="number"
                     min={2}
                     max={20}
-                    value={maxRelayTurns}
+                    value={maxRelayTurns ?? ""}
+                    disabled={!routingSettingsReady}
                     onChange={(event) =>
                       onMaxRelayTurnsChange(Math.min(20, Math.max(2, Number(event.target.value) || 2)))
                     }

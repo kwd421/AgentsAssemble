@@ -356,3 +356,18 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   disconnect reporting, and unsubscription. All 120 frontend tests and the
   production TypeScript/Vite build passed. No polling interval, conversation,
   sequence, autonomous-attention, or media behavior changed.
+- 2026-07-15: Milestone 4.3 replaced frontend routing guesses with explicit
+  per-room settings authority states: `loading`, `ready`, `saving`, `stale`,
+  and `error`. Conversation mode and relay limits are now unknown until the
+  server returns them; failed reads leave those controls unselected and
+  disabled. Saves expose their pending state, retain a visibly stale known
+  value on failure, and immediately reconcile from the server. Room-local
+  appearance caching remains available, and metadata/appearance saves no
+  longer rewrite conversation routing fields unless the user explicitly
+  changed those fields. Per-room operation generations prevent an older fetch
+  or save failure from replacing a newer result. Focused tests also exposed a
+  callback-identity render loop; metadata callbacks are now read through a
+  current ref so settings fetch lifetime depends on room and credentials, not
+  incidental parent function identity. Six controller tests, three settings UI
+  tests, all 124 frontend tests, and the production TypeScript/Vite build
+  passed. Conversation modes and their scheduling semantics were not changed.

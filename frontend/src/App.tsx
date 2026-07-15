@@ -1336,6 +1336,8 @@ export default function App() {
           initialSectionId={settingsModalInitialSectionId}
           appearance={roomSettings.appearanceFor(settingsModalRoom)}
           channelSettings={roomSettings.channelSettingsFor(settingsModalRoom)}
+          settingsStatus={roomSettings.settingsStateFor(settingsModalRoom).status}
+          settingsError={roomSettings.settingsStateFor(settingsModalRoom).error?.message || ""}
           conversationMode={roomSettings.conversationModeFor(settingsModalRoom)}
           maxRelayTurns={roomSettings.maxRelayTurnsFor(settingsModalRoom)}
           canInvite={!guestLocked}
@@ -1359,6 +1361,7 @@ export default function App() {
           onMaxRelayTurnsChange={(turns) =>
             roomSettings.updateMaxRelayTurns(settingsModalRoom, turns)
           }
+          onRetrySettings={() => roomSettings.refresh(settingsModalRoom)}
           onDeleteRoom={(confirmationName) => deleteRoom(settingsModalRoom.id, confirmationName)}
         />
       )}
