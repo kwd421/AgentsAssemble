@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -15,6 +15,7 @@ import {
   Hash,
   Home,
   LayoutDashboard,
+  LoaderCircle,
   Plus,
   Radio,
   Search,
@@ -61,15 +62,9 @@ import { useRoomMembers } from "./app/useRoomMembers";
 import { useRoomSettingsController } from "./app/useRoomSettingsController";
 import type { HomeFilter } from "./app/friendsDirectoryTypes";
 import { useCanonicalRoom } from "./useCanonicalRoom";
-import AdminPanel from "./views/AdminPanel";
-import BoardView from "./views/BoardView";
-import FriendsView from "./views/FriendsView";
-import LiveView from "./views/LiveView";
-import CustomChannelView from "./views/CustomChannelView";
 import CreateChannelModal from "./views/components/CreateChannelModal";
 import LobbyView from "./views/LobbyView";
 import { RoomSocketProvider } from "./RoomSocketContext";
-import RecordsView from "./views/RecordsView";
 import ChannelContextMenu from "./views/components/ChannelContextMenu";
 import type { ChannelHeaderActions } from "./views/components/ChannelHeader";
 import AgentCreateModal from "./views/components/AgentCreateModal";
@@ -115,6 +110,13 @@ import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
 import { isActivePresence } from "./lib/presenceStatus";
 import { roomTypingNames } from "./lib/roomTypingIndicators";
 
+const AdminPanel = lazy(() => import("./views/AdminPanel"));
+const BoardView = lazy(() => import("./views/BoardView"));
+const FriendsView = lazy(() => import("./views/FriendsView"));
+const LiveView = lazy(() => import("./views/LiveView"));
+const CustomChannelView = lazy(() => import("./views/CustomChannelView"));
+const RecordsView = lazy(() => import("./views/RecordsView"));
+
 type Channel = "friends" | "lobby" | "live" | "board" | "records";
 type MobileRoomInfoInitialMode = "info" | "side-chat";
 
@@ -141,6 +143,18 @@ type MobilePanelDragState = {
   startY: number;
   sidebarOpen: boolean;
 };
+
+function DeferredViewFallback() {
+  return (
+    <div
+      className="flex min-h-0 flex-1 items-center justify-center text-text-muted"
+      role="status"
+      aria-label="화면 불러오는 중"
+    >
+      <LoaderCircle className="animate-spin" size={22} aria-hidden="true" />
+    </div>
+  );
+}
 
 type RoomSettingsSectionId =
   | "settings-overview"
@@ -1786,107 +1800,111 @@ export default function App() {
 
       {/* Central channel column */}
       <main className="dc-chat flex min-w-0 flex-1 flex-col" aria-label="채널 내용">
-        {channel === "friends" && !guestLocked ? (
-          <FriendsView
-            typeFilter={homeFilter === "friends" ? null : homeFilter}
-            filter={friendListFilter}
-            payload={homeFriendsPayload}
-            loading={friendsLoading}
-            status={friendsStatus}
-            busyId={friendsBusyId}
-            addDraftName={friendAddDraftName}
-            onShowDirectory={showFriendsDirectory}
-            selectedFriendId={selectedHomeFriendId}
-            activeDmFriendId={activeHomeDmFriendId}
-            onSelectFriend={selectDirectoryFriend}
-            onOpenFriendDm={openDirectoryFriendDm}
-            onShowFriendProfile={showDirectoryFriendProfile}
-            onAddCandidate={addFriendsCandidate}
-            onAddManual={addFriendsManual}
-            onDeleteFriend={deleteDirectoryFriend}
-            processGroups={processData?.groups || []}
-            onSessionActionComplete={refreshSessionAndMembersWithFriends}
-            onStartAddAgent={openAgentCreate}
-          />
-        ) : adminOpen ? (
-          <AdminPanel onClose={() => setAdminOpen(false)} activeMeetingId={activeRoom.meetingId} />
-        ) : channel === "lobby" ? (
-          <LobbyView
-            activeRoom={activeRoom}
-            agents={scopedAgents}
-            mentionables={scopedMentionables}
-            bindLobbyStream={bindLobbyStream}
-            roomSessionToken={lobbyPostingState.sessionToken}
-            localDisplayName={guestSession?.displayName || ""}
-            canManageRoom={!guestLocked}
-            canPostMessages={lobbyPostingState.canPost}
-            postingMode={lobbyPostingState.mode}
-            composerDisabledReason={guestExpired ? GUEST_SESSION_EXPIRED_MESSAGE : lobbyPostingState.disabledReason}
-            membersOpen={membersOpen}
-            onToggleMembers={toggleMembers}
-            headerActions={channelHeaderActions("lobby")}
-            onOpenMobileSidebar={openMobileSidebar}
-            onOpenMobileInfo={openMobileRoomInfo}
-            appearance={activeAppearance}
-            onOpenSideThread={openSideChatThread}
-            onGuestSessionExpired={expireGuestSession}
-            threadSummaries={sideChatThreadSummaries}
-            typingNames={typingNames}
-            canonicalEvents={visibleRoomTimelineEvents}
-            canonicalOldestSeq={activeRoomHistory.oldestSeq}
-            canonicalHasMoreHistory={activeRoomHistory.hasMoreBefore}
-            loadCanonicalHistory={loadCanonicalRoomHistory}
-          />
-        ) : channel === "live" ? (
-          <LiveView
-            flow={scopedFlow}
-            flowEvents={scopedLiveTimelineEvents}
-            timelineSource={scopedTimelineSource}
-            agents={scopedAgents}
-            mafiaGame={scopedMafiaGame}
-            refreshMafia={refreshMafia}
-            streamError={activeRoomFlowVisible ? meetingStreamError : null}
-            agentSessionProgress={activeAgentSessionProgress}
-            bindFlowLobbyStream={bindFlowLobbyStream}
-            membersOpen={membersOpen}
-            onToggleMembers={toggleMembers}
-            headerActions={channelHeaderActions("live")}
-            onOpenMobileSidebar={openMobileSidebar}
-            onOpenMobileInfo={openMobileRoomInfo}
-          />
-        ) : channel === "board" ? (
-          <BoardView
-            flow={scopedFlow}
-            agents={scopedAgents}
-            events={activeRoomFlowVisible ? flowEvents : []}
-            lifecycle={lifecycle}
-            workroomQueueEvidence={activeRoomFlowVisible ? scopedWorkroomQueueEvidence : null}
-            membersOpen={membersOpen}
-            onToggleMembers={toggleMembers}
-            headerActions={channelHeaderActions("board")}
-            onOpenMobileSidebar={openMobileSidebar}
-            onOpenMobileInfo={openMobileRoomInfo}
-          />
-        ) : activeCustomChannel ? (
-          <CustomChannelView
-            key={activeCustomChannel.id}
-            channel={activeCustomChannel}
-            meetingId={activeRoom.meetingId}
-            sessionToken={guestSession?.sessionToken || ""}
-            localDisplayName={guestSession?.displayName || ""}
-            canPost={lobbyPostingState.canPost}
-            membersOpen={membersOpen}
-            onToggleMembers={toggleMembers}
-            onOpenMobileSidebar={openMobileSidebar}
-            onOpenMobileInfo={openMobileRoomInfo}
-          />
-        ) : (
-          <RecordsView
-            headerActions={channelHeaderActions("records")}
-            onOpenMobileSidebar={openMobileSidebar}
-            onOpenMobileInfo={openMobileRoomInfo}
-          />
-        )}
+        <Suspense fallback={<DeferredViewFallback />}>
+          {channel === "friends" && !guestLocked ? (
+            <FriendsView
+              typeFilter={homeFilter === "friends" ? null : homeFilter}
+              filter={friendListFilter}
+              payload={homeFriendsPayload}
+              loading={friendsLoading}
+              status={friendsStatus}
+              busyId={friendsBusyId}
+              addDraftName={friendAddDraftName}
+              onShowDirectory={showFriendsDirectory}
+              selectedFriendId={selectedHomeFriendId}
+              activeDmFriendId={activeHomeDmFriendId}
+              onSelectFriend={selectDirectoryFriend}
+              onOpenFriendDm={openDirectoryFriendDm}
+              onShowFriendProfile={showDirectoryFriendProfile}
+              onAddCandidate={addFriendsCandidate}
+              onAddManual={addFriendsManual}
+              onDeleteFriend={deleteDirectoryFriend}
+              processGroups={processData?.groups || []}
+              onSessionActionComplete={refreshSessionAndMembersWithFriends}
+              onStartAddAgent={openAgentCreate}
+            />
+          ) : adminOpen ? (
+            <AdminPanel onClose={() => setAdminOpen(false)} activeMeetingId={activeRoom.meetingId} />
+          ) : channel === "lobby" ? (
+            <LobbyView
+              activeRoom={activeRoom}
+              agents={scopedAgents}
+              mentionables={scopedMentionables}
+              bindLobbyStream={bindLobbyStream}
+              roomSessionToken={lobbyPostingState.sessionToken}
+              localDisplayName={guestSession?.displayName || ""}
+              canManageRoom={!guestLocked}
+              canPostMessages={lobbyPostingState.canPost}
+              postingMode={lobbyPostingState.mode}
+              composerDisabledReason={
+                guestExpired ? GUEST_SESSION_EXPIRED_MESSAGE : lobbyPostingState.disabledReason
+              }
+              membersOpen={membersOpen}
+              onToggleMembers={toggleMembers}
+              headerActions={channelHeaderActions("lobby")}
+              onOpenMobileSidebar={openMobileSidebar}
+              onOpenMobileInfo={openMobileRoomInfo}
+              appearance={activeAppearance}
+              onOpenSideThread={openSideChatThread}
+              onGuestSessionExpired={expireGuestSession}
+              threadSummaries={sideChatThreadSummaries}
+              typingNames={typingNames}
+              canonicalEvents={visibleRoomTimelineEvents}
+              canonicalOldestSeq={activeRoomHistory.oldestSeq}
+              canonicalHasMoreHistory={activeRoomHistory.hasMoreBefore}
+              loadCanonicalHistory={loadCanonicalRoomHistory}
+            />
+          ) : channel === "live" ? (
+            <LiveView
+              flow={scopedFlow}
+              flowEvents={scopedLiveTimelineEvents}
+              timelineSource={scopedTimelineSource}
+              agents={scopedAgents}
+              mafiaGame={scopedMafiaGame}
+              refreshMafia={refreshMafia}
+              streamError={activeRoomFlowVisible ? meetingStreamError : null}
+              agentSessionProgress={activeAgentSessionProgress}
+              bindFlowLobbyStream={bindFlowLobbyStream}
+              membersOpen={membersOpen}
+              onToggleMembers={toggleMembers}
+              headerActions={channelHeaderActions("live")}
+              onOpenMobileSidebar={openMobileSidebar}
+              onOpenMobileInfo={openMobileRoomInfo}
+            />
+          ) : channel === "board" ? (
+            <BoardView
+              flow={scopedFlow}
+              agents={scopedAgents}
+              events={activeRoomFlowVisible ? flowEvents : []}
+              lifecycle={lifecycle}
+              workroomQueueEvidence={activeRoomFlowVisible ? scopedWorkroomQueueEvidence : null}
+              membersOpen={membersOpen}
+              onToggleMembers={toggleMembers}
+              headerActions={channelHeaderActions("board")}
+              onOpenMobileSidebar={openMobileSidebar}
+              onOpenMobileInfo={openMobileRoomInfo}
+            />
+          ) : activeCustomChannel ? (
+            <CustomChannelView
+              key={activeCustomChannel.id}
+              channel={activeCustomChannel}
+              meetingId={activeRoom.meetingId}
+              sessionToken={guestSession?.sessionToken || ""}
+              localDisplayName={guestSession?.displayName || ""}
+              canPost={lobbyPostingState.canPost}
+              membersOpen={membersOpen}
+              onToggleMembers={toggleMembers}
+              onOpenMobileSidebar={openMobileSidebar}
+              onOpenMobileInfo={openMobileRoomInfo}
+            />
+          ) : (
+            <RecordsView
+              headerActions={channelHeaderActions("records")}
+              onOpenMobileSidebar={openMobileSidebar}
+              onOpenMobileInfo={openMobileRoomInfo}
+            />
+          )}
+        </Suspense>
       </main>
 
       {mobileRoomInfoOpen && (
