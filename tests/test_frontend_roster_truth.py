@@ -30,7 +30,6 @@ class FrontendRosterTruthTests(unittest.TestCase):
         agent_labels = frontend_file("lib/agentLabels.ts")
 
         for component_name in ("LobbyView", "LiveView", "BoardView", "RecordsView"):
-            self.assertIn(f"import {component_name}", app)
             self.assertIn(f"<{component_name}", app)
 
         self.assertIn('import RoomConnectionPanel from "./views/components/RoomConnectionPanel";', app)

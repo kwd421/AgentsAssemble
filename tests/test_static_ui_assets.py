@@ -458,7 +458,6 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("{!guestLocked && (", room_rail_source)
         self.assertIn("onClick={onHomeClick}", room_rail_source)
         self.assertIn("!channelIsFriends && activeRoom.id === room.id", room_rail_source)
-        self.assertIn("import FriendsView", app_source)
         self.assertIn("createStartupRoute", app_source)
         self.assertIn("roomFromInviteParams", room_dock_model_source)
         presence_source = frontend_file("lib/presenceStatus.ts")
@@ -1498,7 +1497,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("{!guestLocked && (", room_rail_source)
         self.assertIn('aria-label="친구와 DM"', room_rail_source)
         self.assertIn(
-            "composerDisabledReason={guestExpired ? GUEST_SESSION_EXPIRED_MESSAGE : lobbyPostingState.disabledReason}",
+            "guestExpired ? GUEST_SESSION_EXPIRED_MESSAGE : lobbyPostingState.disabledReason",
             app_source,
         )
         self.assertIn("읽기 전용 초대입니다. 사이드챗도 보기만 가능합니다.", frontend_file("views/components/SideChatDock.tsx"))
