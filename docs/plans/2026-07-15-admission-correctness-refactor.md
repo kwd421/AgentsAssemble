@@ -381,3 +381,15 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   because the production build is the direct evidence and the repository is
   deliberately reducing low-value implementation-presence tests. No UI,
   routing, conversation, or media behavior changed.
+- 2026-07-15: Milestone 5.1 added failure-injection contracts for identity
+  creation, invite consumption, session persistence, participant upsert,
+  membership upsert, and operator-pairing consumption/completion. Every local
+  retry converged on one participant, one membership, one active room session,
+  and one invite use; an unrelated pairing device remained unbound and an
+  ordinary invite credential never gained operator authority. The review's
+  proposed `old session revoke` checkpoint no longer exists as an independent
+  side effect: replacement is atomic. A dedicated admission test proves a
+  failed replacement leaves the old bearer valid and a later retry replaces it
+  with exactly one new bearer. The focused admission, pairing, session, and
+  repository suite passed 84 tests. No frozen conversation or media behavior
+  changed.

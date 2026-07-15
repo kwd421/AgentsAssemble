@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.identity_store import IdentityStore
+from agentsassemble.identity_store import IdentityStore, device_auth_key
 from agentsassemble.room_admission_coordinator import (
     AdmissionIdempotencyConflict,
     RoomAdmissionCoordinator,
@@ -223,6 +223,124 @@ class RoomAdmissionCoordinatorTests(unittest.TestCase):
         self.assertEqual(
             self.identities.get_membership("room-a", str(resumed["agent_id"]))["status"],
             "online",
+        )
+
+    def test_each_admission_phase_failure_converges_without_duplicate_state(self) -> None:
+        cases = (
+            "identity_created",
+            "invite_consumed",
+            "session_saved",
+            "participant_upserted",
+            "membership_upserted",
+        )
+
+        for index, phase in enumerate(cases, start=1):
+            with self.subTest(phase=phase):
+                room_id = f"phase-room-{index}"
+                request_id = f"phase-request-{index}"
+                device_token = f"phase-device-{index}"
+                self.rooms.create_room(room_id, label=f"Phase Room {index}")
+                invite = self.invites.create(
+                    room_url="http://127.0.0.1:8765",
+                    meeting_id=room_id,
+                    display_name="Phase Guest",
+                    max_uses=2,
+                )
+                arguments = {
+                    "invite_token": str(invite["join_code"]),
+                    "request_id": request_id,
+                    "display_name": "Phase Guest",
+                    "device_token": device_token,
+                }
+
+                with self._fail_admission_once(phase):
+                    with self.assertRaisesRegex(RuntimeError, f"{phase} failure"):
+                        self.coordinator.admit(**arguments)
+
+                result = self.coordinator.admit(**arguments)
+                participant_id = str(result["agent_id"])
+                stable_user = self.identities.user_for_credential(
+                    device_auth_key(device_token)
+                )
+                room_sessions = [
+                    session
+                    for _, session in self.repository.list_sessions()
+                    if session.get("meeting_id") == room_id
+                ]
+
+                self.assertEqual(result["status"], "admitted")
+                self.assertFalse(result["operator"])
+                self.assertIsNotNone(stable_user)
+                self.assertFalse(stable_user["is_operator"])
+                self.assertEqual(
+                    self.repository.invite(str(invite["invite_id"]))["use_count"],
+                    1,
+                )
+                self.assertEqual(
+                    [row["participant_id"] for row in self.rooms.participants(room_id)],
+                    [participant_id],
+                )
+                self.assertEqual(
+                    [
+                        row["participant_id"]
+                        for row in self.identities.list_memberships(room_id)
+                    ],
+                    [participant_id],
+                )
+                self.assertEqual(len(room_sessions), 1)
+                self.assertEqual(room_sessions[0]["agent_id"], participant_id)
+
+    def test_failed_atomic_session_replacement_preserves_old_session_until_retry(self) -> None:
+        self.rooms.create_room("room-a", label="Room A")
+        device_token = "replacement-device"
+        stable_user = self.identities.resolve_credential_user(
+            device_auth_key(device_token),
+            provider="device",
+            display_name="Replacement Guest",
+            participant_type="human",
+        )
+        participant_id = str(stable_user["participant_id"])
+        old_token, old_session = self.sessions.issue(
+            {
+                "agent_id": participant_id,
+                "display_name": "Replacement Guest",
+                "meeting_id": "room-a",
+                "participant_type": "human",
+                "client_type": "browser",
+            }
+        )
+        invite = self.invites.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            display_name="Replacement Guest",
+            max_uses=2,
+        )
+        arguments = {
+            "invite_token": str(invite["join_code"]),
+            "request_id": "atomic-session-replacement",
+            "display_name": "Replacement Guest",
+            "device_token": device_token,
+        }
+
+        with patch.object(
+            self.repository,
+            "replace_participant_session",
+            side_effect=RuntimeError("atomic replacement failure"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "atomic replacement failure"):
+                self.coordinator.admit(**arguments)
+
+        self.assertEqual(self.sessions.verify(old_token), old_session)
+        self.assertEqual(len(self.repository.list_sessions()), 1)
+
+        result = self.coordinator.admit(**arguments)
+
+        self.assertEqual(result["status"], "admitted")
+        self.assertIsNone(self.sessions.verify(old_token))
+        self.assertEqual(len(self.repository.list_sessions()), 1)
+        self.assertEqual(
+            self.sessions.verify(str(result["session_token"]))["agent_id"],
+            participant_id,
         )
 
     def test_deleted_room_compensates_partial_local_admission(self) -> None:
@@ -635,6 +753,44 @@ class RoomAdmissionCoordinatorTests(unittest.TestCase):
             session_token,
             str(session["agent_id"]),
         )
+
+    @contextmanager
+    def _fail_admission_once(self, phase: str):
+        if phase == "invite_consumed":
+            with patch.object(
+                self.sessions,
+                "ensure_for_request",
+                side_effect=RuntimeError(f"{phase} failure"),
+            ):
+                yield
+            return
+        if phase == "participant_upserted":
+            with patch.object(
+                self.identities,
+                "upsert_membership",
+                side_effect=RuntimeError(f"{phase} failure"),
+            ):
+                yield
+            return
+
+        target_status = {
+            "identity_created": "identity_resolved",
+            "session_saved": "session_issued",
+            "membership_upserted": "membership_committed",
+        }[phase]
+        update = self.repository.update_admission_workflow
+
+        def fail_phase_update(workflow_id: str, updates: dict[str, object]):
+            if updates.get("status") == target_status:
+                raise RuntimeError(f"{phase} failure")
+            return update(workflow_id, updates)
+
+        with patch.object(
+            self.repository,
+            "update_admission_workflow",
+            side_effect=fail_phase_update,
+        ):
+            yield
 
     def _json_admission_runtime(
         self,

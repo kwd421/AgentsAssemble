@@ -269,6 +269,76 @@ class OperatorPairingServiceTests(unittest.TestCase):
             restarted_sessions.token_for_request(f"operator-pairing:{created['pairing_id']}"),
         )
 
+    def test_each_pairing_phase_failure_converges_for_only_the_claiming_device(self) -> None:
+        phases = (
+            "pairing_consumed",
+            "participant_upserted",
+            "membership_upserted",
+            "session_saved",
+        )
+
+        for index, phase in enumerate(phases, start=1):
+            with self.subTest(phase=phase):
+                room_id = f"pairing-phase-room-{index}"
+                self.rooms.create_room(room_id, label=f"Pairing Phase {index}")
+                created = self.service.create(
+                    room_id=room_id,
+                    public_url="https://public.example",
+                )
+                token = self._token(created)
+                device_token = f"pairing-device-{index}"
+
+                with self._fail_pairing_once(phase):
+                    with self.assertRaisesRegex(RuntimeError, f"{phase} failure"):
+                        self.service.redeem(
+                            pairing_token=token,
+                            device_token=device_token,
+                            request_origin="https://public.example",
+                        )
+
+                rejected = self.service.redeem(
+                    pairing_token=token,
+                    device_token=f"other-device-{index}",
+                    request_origin="https://public.example",
+                )
+                result = self.service.redeem(
+                    pairing_token=token,
+                    device_token=device_token,
+                    request_origin="https://public.example",
+                )
+                room_sessions = [
+                    session
+                    for _, session in self.session_repository.list_sessions()
+                    if session.get("meeting_id") == room_id
+                ]
+
+                self.assertEqual(rejected["reason"], "pairing_already_used")
+                self.assertIsNone(
+                    self.identities.user_for_credential(
+                        device_auth_key(f"other-device-{index}")
+                    )
+                )
+                self.assertEqual(result["status"], "admitted")
+                self.assertEqual(result["agent_id"], LOCAL_OPERATOR_PARTICIPANT_ID)
+                self.assertEqual(
+                    [row["participant_id"] for row in self.rooms.participants(room_id)],
+                    [LOCAL_OPERATOR_PARTICIPANT_ID],
+                )
+                self.assertEqual(
+                    [
+                        row["participant_id"]
+                        for row in self.identities.list_memberships(room_id)
+                    ],
+                    [LOCAL_OPERATOR_PARTICIPANT_ID],
+                )
+                self.assertEqual(len(room_sessions), 1)
+                self.assertEqual(
+                    self.identities.user_for_credential(device_auth_key(device_token))[
+                        "user_id"
+                    ],
+                    LOCAL_OPERATOR_USER_ID,
+                )
+
     def test_hosted_boundary_starts_after_device_claim_and_commits_completion(self) -> None:
         created = self._create()
         token = self._token(created)
@@ -353,6 +423,47 @@ class OperatorPairingServiceTests(unittest.TestCase):
             now=lambda: self.now,
             token_key=lambda: "operator-pairing-test-key",
         )
+
+    @contextmanager
+    def _fail_pairing_once(self, phase: str):
+        if phase == "pairing_consumed":
+            with patch.object(
+                self.rooms,
+                "upsert_participant",
+                side_effect=RuntimeError(f"{phase} failure"),
+            ):
+                yield
+            return
+        if phase == "participant_upserted":
+            with patch.object(
+                self.identities,
+                "upsert_membership",
+                side_effect=RuntimeError(f"{phase} failure"),
+            ):
+                yield
+            return
+        if phase == "membership_upserted":
+            with patch.object(
+                self.sessions,
+                "ensure_for_request",
+                side_effect=RuntimeError(f"{phase} failure"),
+            ):
+                yield
+            return
+
+        update = self.identities.update_operator_pairing_redemption
+
+        def fail_completion(**kwargs: object):
+            if kwargs.get("status") == "completed":
+                raise RuntimeError(f"{phase} failure")
+            return update(**kwargs)
+
+        with patch.object(
+            self.identities,
+            "update_operator_pairing_redemption",
+            side_effect=fail_completion,
+        ):
+            yield
 
     def test_expired_and_revoked_pairings_are_rejected(self) -> None:
         expired = self._create()
