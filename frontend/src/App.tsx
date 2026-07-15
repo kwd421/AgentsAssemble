@@ -95,6 +95,8 @@ import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
 import { isActivePresence } from "./lib/presenceStatus";
 import { roomTypingNames } from "./lib/roomTypingIndicators";
 
+// Keep room chat, roster, composer, admission, and Agent Session controls eager.
+// Only infrequently opened, non-core views belong behind this loading boundary.
 const AdminPanel = lazy(() => import("./views/AdminPanel"));
 const BoardView = lazy(() => import("./views/BoardView"));
 const FriendsView = lazy(() => import("./views/FriendsView"));

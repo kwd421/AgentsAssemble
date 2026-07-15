@@ -371,3 +371,13 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   incidental parent function identity. Six controller tests, three settings UI
   tests, all 124 frontend tests, and the production TypeScript/Vite build
   passed. Conversation modes and their scheduling semantics were not changed.
+- 2026-07-15: Milestone 4.4 retained the established frontend loading boundary
+  rather than splitting core room behavior further. Admin, Board, Friends,
+  Live, Records, and Custom Channel remain lazy views; room chat, roster,
+  composer, admission, and Agent Session controls remain eager. The production
+  build emitted separate chunks for all six non-core views, with a 459.69 kB
+  main JavaScript chunk (136.98 kB gzip) and no Vite 500 kB warning. A short
+  source comment records the ownership rule; no source-string test was added
+  because the production build is the direct evidence and the repository is
+  deliberately reducing low-value implementation-presence tests. No UI,
+  routing, conversation, or media behavior changed.
