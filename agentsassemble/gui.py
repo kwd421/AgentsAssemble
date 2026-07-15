@@ -58,6 +58,10 @@ from agentsassemble.gui_legacy_live_agent_read_http import (
 )
 from agentsassemble.gui_legacy_live_agent_presence_http import register_legacy_live_agent_presence_routes
 from agentsassemble.gui_legacy_live_agent_engagement_http import register_legacy_live_agent_engagement_route
+from agentsassemble.gui_legacy_live_agent_probe_http import (
+    LegacyLiveAgentProbeHttpDeps,
+    register_legacy_live_agent_probe_route,
+)
 from agentsassemble.gui_legacy_live_agent_process_http import (
     LegacyProcessHttpDeps,
     register_legacy_process_mutation_routes,
@@ -323,6 +327,10 @@ from agentsassemble.legacy_live_agent_presence import (
 from agentsassemble.legacy_live_agent_engagement import (
     LegacyLiveAgentEngagementService,
     update_live_agent_engagement_payload,
+)
+from agentsassemble.legacy_live_agent_probe import (
+    LegacyLiveAgentProbeService,
+    live_agent_probe_payload,
 )
 from agentsassemble.legacy_meeting_queries import (
     LegacyMeetingQueryService,
@@ -2852,15 +2860,6 @@ def _refresh_live_meeting_memory_after_official_reply(
     return _shared_memory_operation_details(memory)
 
 
-def live_agent_probe_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
-    timeout_seconds = safe_probe_timeout(_payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 12.0))
-    return run_live_agent_probe(
-        output_root,
-        agent_id,
-        timeout_seconds=timeout_seconds,
-    )
-
-
 def live_agent_smoke_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
     """Compatibility seam used by aggregate readiness until that route moves."""
     return run_live_agent_smoke(
@@ -3784,6 +3783,17 @@ def _make_handler(
     ) -> dict[str, object] | None:
         return ctx.handler._operation_json_payload(operation=operation_name, target_id=target_id)
 
+    register_legacy_live_agent_probe_route(
+        route_table,
+        deps=LegacyLiveAgentProbeHttpDeps(
+            probe=LegacyLiveAgentProbeService(
+                output_root,
+                probe_runner=lambda *args, **kwargs: run_live_agent_probe(*args, **kwargs),
+            ),
+            read_operation_payload=_late_operation_json_payload,
+        ),
+    )
+
     register_legacy_live_agent_preflight_route(
         route_table,
         deps=LegacyLiveAgentPreflightHttpDeps(
@@ -4212,44 +4222,6 @@ def _make_handler(
                     self._send_json(_safe_diagnostic_report_payload(provider_health_payload(payload)))
                 except ValueError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                return
-            live_agent_probe_id = _live_agent_action_path(parsed.path, "probe")
-            if live_agent_probe_id is not None:
-                payload = self._operation_json_payload(operation="probe.run", target_id=live_agent_probe_id)
-                if payload is None:
-                    return
-                timeout_seconds = safe_probe_timeout(
-                    _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 12.0)
-                )
-                try:
-                    probe = live_agent_probe_payload(output_root, live_agent_probe_id, payload)
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="probe.run",
-                        status="failed",
-                        target_id=live_agent_probe_id,
-                        error=str(error),
-                        details={"result_status": "failed", "timeout_seconds": timeout_seconds},
-                    )
-                    status = HTTPStatus.NOT_FOUND if "was not found" in str(error) else HTTPStatus.BAD_REQUEST
-                    self._send_error(status, str(error))
-                    return
-                result_status = _operation_result_status(probe.get("status"))
-                record_live_agent_operation(
-                    output_root,
-                    operation="probe.run",
-                    status=_operation_success_for_result(result_status, success_values={"ok"}),
-                    target_id=live_agent_probe_id,
-                    summary="ran live-agent reply probe",
-                    details={
-                        "result_status": result_status,
-                        "timeout_seconds": timeout_seconds,
-                        "source_event_id": str(probe.get("source_event_id") or ""),
-                        "reply_event_id": str(probe.get("reply_event_id") or ""),
-                    },
-                )
-                self._send_json(probe)
                 return
             live_agent_official_turn_id = _live_agent_action_path(parsed.path, "official-turn")
             if live_agent_official_turn_id is not None:

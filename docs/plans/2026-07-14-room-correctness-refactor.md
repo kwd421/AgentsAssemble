@@ -1123,3 +1123,14 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   keep the existing fail-closed error and do not mutate the resident record.
   The next slices are probe diagnostics and resident speech. The seven deletion
   candidates and canonical name/avatar history reprojection remain unchanged.
+- 2026-07-15: Resident reply probes are now a focused diagnostic boundary.
+  `LegacyLiveAgentProbeService` owns finite/default/capped timeout
+  normalization, probe execution, and prompt-free success/failure auditing;
+  its Router owns the dynamic endpoint and preserves missing-agent `404` versus
+  other-domain `400` behavior. Focused service/Router/ownership tests passed 12,
+  the real HTTP health-probe suite passed 4, and CLI timeout diagnostics passed
+  57. Existing tests can still patch `agentsassemble.gui.run_live_agent_probe`
+  because composition uses a late-bound runner. The next slices are resident
+  lobby/DM speech and official-record replies, kept separate by persistence and
+  artifact side effects. The seven deletion candidates and canonical
+  name/avatar history reprojection remain unchanged.

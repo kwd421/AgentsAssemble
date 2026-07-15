@@ -31,6 +31,7 @@ EXPECTED_DYNAMIC_ROUTES = {
     ("POST", "/api/live-agents/{agent_id}/engagement"),
     ("POST", "/api/live-agents/{agent_id}/heartbeat"),
     ("POST", "/api/live-agents/{agent_id}/leave"),
+    ("POST", "/api/live-agents/{agent_id}/probe"),
     ("POST", "/api/live-agent-processes/{group_id}/stop"),
     ("POST", "/api/live-agent-processes/{group_id}/restart"),
     ("POST", "/api/live-agent-processes/{group_id}/recover"),
