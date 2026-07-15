@@ -184,6 +184,20 @@ def register_moderation_media_routes(
         channels = settings.get("channels")
         return list(channels) if isinstance(channels, list) else []
 
+    def _require_room(ctx: RequestContext, meeting_id: str) -> bool:
+        if not meeting_id.strip():
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "meeting_id is required")
+            return False
+        try:
+            room = ctx.deps.rooms.room(meeting_id)
+        except ValueError as error:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return False
+        if room:
+            return True
+        ctx.send_error(HTTPStatus.NOT_FOUND, f"Room {meeting_id} was not found.")
+        return False
+
     def _channel_error(ctx: RequestContext, error: ChannelError) -> None:
         status = {
             "not_found": HTTPStatus.NOT_FOUND,
@@ -202,6 +216,8 @@ def register_moderation_media_routes(
             ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
             return
         meeting_id = ctx.query_value("meeting_id") or ctx.query_value("room_id")
+        if not _require_room(ctx, meeting_id):
+            return
         ctx.send_json({"room_id": meeting_id, "channels": _channels_for(ctx.deps.rooms, meeting_id)})
 
     @router.post("/api/room-channels")
@@ -212,8 +228,7 @@ def register_moderation_media_routes(
         if payload is None:
             return
         meeting_id = str(payload.get("meeting_id") or payload.get("room_id") or "")
-        if not meeting_id.strip():
-            ctx.send_error(HTTPStatus.BAD_REQUEST, "meeting_id is required")
+        if not _require_room(ctx, meeting_id):
             return
         action = str(payload.get("action") or "").strip().lower()
         current = _channels_for(ctx.deps.rooms, meeting_id)

@@ -284,6 +284,20 @@ class RoomSettingsHttpTests(unittest.TestCase):
                     response = self._dispatch(root, "/api/room-settings", "POST", body=body)
                     self.assertEqual(response.sent_error, (HTTPStatus.BAD_REQUEST, "room_id is required"))
 
+    def test_get_missing_room_returns_not_found(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            response = self._dispatch(
+                Path(temp_dir),
+                "/api/room-settings?room_id=missing-room",
+                "GET",
+            )
+
+        self.assertIsNone(response.sent_json)
+        self.assertEqual(
+            response.sent_error,
+            (HTTPStatus.NOT_FOUND, "Room missing-room was not found."),
+        )
+
 
 class RoomSettingsHandlerDispatchTests(unittest.TestCase):
     def test_live_http_roundtrip_reaches_registered_routes(self) -> None:

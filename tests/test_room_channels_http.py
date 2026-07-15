@@ -95,6 +95,17 @@ class RoomChannelsHttpTests(unittest.TestCase):
             self.assertEqual(ctx.exception.code, 403)
             ctx.exception.close()
 
+    def test_missing_room_read_returns_not_found(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            base = self._start(root)
+
+            with self.assertRaises(HTTPError) as ctx:
+                self._list(base, "missing-room")
+
+            self.assertEqual(ctx.exception.code, 404)
+            ctx.exception.close()
+
     def test_error_categories_map_to_status(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             set_runtime_host_token("host-secret")

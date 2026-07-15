@@ -12,12 +12,22 @@ def register_room_settings_routes(router: Router) -> None:
 
     @router.get("/api/room-settings")
     def room_settings(ctx: RequestContext) -> None:
+        room_id = ctx.query_value("room_id")
+        if room_id:
+            try:
+                room = ctx.deps.rooms.room(room_id)
+            except ValueError as error:
+                ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
+                return
+            if not room:
+                ctx.send_error(HTTPStatus.NOT_FOUND, f"Room {room_id} was not found.")
+                return
         ctx.send_json(
             room_settings_payload(
                 ctx.deps.rooms,
                 ctx.deps.identities,
                 user_id=ctx.preference_user_id(),
-                room_id=ctx.query_value("room_id"),
+                room_id=room_id,
             )
         )
 
