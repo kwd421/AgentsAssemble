@@ -26,23 +26,8 @@ import {
 } from "lucide-react";
 import {
   createCompanionRoomInvite,
-  fetchLiveAgentFlow,
-  fetchLiveAgentProcesses,
   ensureRoomMeeting,
-  fetchMeetingLifecycle,
-  fetchWorkroomQueueEvidence,
-  applyMeetingStreamUpdate,
-  initialMeetingStreamState,
-  meetingLiveEventsToTimelineEvents,
-  meetingStreamStateForActiveMeeting,
-  subscribeMeetingEvents,
-  type FlowResponse,
-  type MeetingStreamState,
-  type MeetingLifecycleResponse,
   type LiveAgent,
-  type LiveAgentProcessesResponse,
-  type LifecycleProjection,
-  type WorkroomQueueEvidence,
   type MafiaGame,
   type LobbyEvent,
   type ChannelNotificationSetting,
@@ -50,9 +35,9 @@ import {
   type RoomFriend,
   type RoomMember,
 } from "./api";
-import { usePoll } from "./hooks";
 import { useRoomAdmission } from "./app/useRoomAdmission";
 import { useFriendsDirectory } from "./app/useFriendsDirectory";
+import { useLegacyMeetingSurfaces } from "./app/useLegacyMeetingSurfaces";
 import { useRoomDirectory } from "./app/useRoomDirectory";
 import { useActiveMafiaGame } from "./app/useActiveMafiaGame";
 import { useRoomSideChat } from "./app/useRoomSideChat";
@@ -369,8 +354,6 @@ export default function App() {
   const [agentCreateOpen, setAgentCreateOpen] = useState(false);
   const [guestAiPacketPreview, setGuestAiPacketPreview] = useState("");
   const [guestAiPacketStatus, setGuestAiPacketStatus] = useState("");
-  const [flowData, setFlowData] = useState<FlowResponse | null>(null);
-  const [flowError, setFlowError] = useState<Error | null>(null);
   const [agentActivityVisibility, setAgentActivityVisibility] = useState(
     loadAgentActivityVisibility
   );
@@ -387,11 +370,6 @@ export default function App() {
   const [channelSidebarWidth, setChannelSidebarWidth] = useState(loadSidebarWidth);
   const sidebarResizeRef = useRef<SidebarResizeState | null>(null);
   const mobilePanelDragRef = useRef<MobilePanelDragState | null>(null);
-  const [meetingStreamState, setMeetingStreamState] = useState<MeetingStreamState>(() =>
-    initialMeetingStreamState("")
-  );
-  const [meetingStreamError, setMeetingStreamError] = useState<Error | null>(null);
-
   const onGuestRoomJoined = useCallback((room: RoomDockItem) => {
     replaceRooms([room]);
     setActiveRoomId(room.id);
@@ -466,57 +444,27 @@ export default function App() {
       }),
     [guestLocked, guestReadOnly, guestSession?.sessionToken]
   );
-  const flowFetcher = useCallback(
-    () => {
-      if (guestExpired || guestJoinPending) {
-        return Promise.resolve({
-          flow: { status: "idle" },
-          agents: [],
-          events: [],
-          flow_events: [],
-        } as FlowResponse);
-      }
-      return fetchLiveAgentFlow(guestMeetingId, guestSession?.sessionToken || "");
-    },
-    [guestExpired, guestJoinPending, guestMeetingId, guestSession?.sessionToken]
-  );
-  const refreshFlow = useCallback(() => {
-    flowFetcher()
-      .then((payload) => {
-        setFlowData(payload);
-        setFlowError(null);
-      })
-      .catch((errorValue) => {
-        setFlowError(errorValue instanceof Error ? errorValue : new Error("Flow unavailable"));
-      });
-  }, [flowFetcher]);
-  const flow = flowData?.flow ?? { status: "idle" };
-  const processFetcher = useCallback((): Promise<LiveAgentProcessesResponse> => {
-    if (guestLocked) return Promise.resolve({ groups: [] });
-    return fetchLiveAgentProcesses();
-  }, [guestLocked]);
-  const [processData, setProcessData] = useState<LiveAgentProcessesResponse | null>(null);
-  const refreshProcesses = useCallback(() => {
-    processFetcher()
-      .then((payload) => setProcessData(payload))
-      .catch(() => {
-        // Process status is best-effort for the connection panel.
-      });
-  }, [processFetcher]);
-  const lifecycleFetcher = useCallback((): Promise<MeetingLifecycleResponse> => {
-    if (!flow.meeting_id) return Promise.resolve({ meeting_id: "", lifecycle: null });
-    return fetchMeetingLifecycle(flow.meeting_id);
-  }, [flow.meeting_id]);
-  const [lifecycleData] = usePoll<MeetingLifecycleResponse>(lifecycleFetcher, 5000);
-  const workroomQueueFetcher = useCallback((): Promise<WorkroomQueueEvidence | null> => {
-    if (!flow.meeting_id || adminOpen || channel !== "board") return Promise.resolve(null);
-    return fetchWorkroomQueueEvidence(flow.meeting_id);
-  }, [adminOpen, channel, flow.meeting_id]);
-  const [workroomQueueEvidence] = usePoll<WorkroomQueueEvidence | null>(
-    workroomQueueFetcher,
-    8000
-  );
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? EMPTY_ROOM;
+  const {
+    flow,
+    flowError,
+    processGroups,
+    lifecycle,
+    workroomQueueEvidence: scopedWorkroomQueueEvidence,
+    flowEvents,
+    liveTimelineEvents,
+    meetingStreamError,
+    refresh: refreshSessionSurfaces,
+  } = useLegacyMeetingSurfaces({
+    activeMeetingId: activeRoom.meetingId,
+    adminOpen,
+    channel,
+    guestExpired,
+    guestJoinPending,
+    guestLocked,
+    guestMeetingId,
+    sessionToken: guestSession?.sessionToken || "",
+  });
   const roomChannels = useRoomChannels({
     activeRoom,
     sessionToken: guestSession?.sessionToken || "",
@@ -657,10 +605,10 @@ export default function App() {
     .map(agentSessionMemberToLiveAgent);
   const activeProcessGroups = useMemo(
     () =>
-      (processData?.groups || []).filter(
+      processGroups.filter(
         (group) => group.meeting_id && group.meeting_id === activeRoom.meetingId
       ),
-    [activeRoom.meetingId, processData?.groups]
+    [activeRoom.meetingId, processGroups]
   );
   const activeProcessGroup = activeProcessGroups[0];
   const guestOwnedAgentIds = useMemo(() => {
@@ -771,32 +719,6 @@ export default function App() {
     };
   }, [mobileRoomInfoOpen, mobileSidebarOpen]);
 
-  useEffect(() => {
-    const meetingId = flow.meeting_id || "";
-    setMeetingStreamState(initialMeetingStreamState(meetingId));
-    setMeetingStreamError(null);
-    if (!meetingId || adminOpen || channel !== "live") return;
-    let cancelled = false;
-    const unsubscribe = subscribeMeetingEvents(
-      meetingId,
-      (update) => {
-        if (cancelled) return;
-        if (update.meetingId && update.meetingId !== meetingId) return;
-        setMeetingStreamError(null);
-        setMeetingStreamState((previous) =>
-          applyMeetingStreamUpdate(previous, meetingId, update)
-        );
-      },
-      () => {
-        if (!cancelled) setMeetingStreamError(new Error("Meeting stream disconnected"));
-      }
-    );
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [adminOpen, channel, flow.meeting_id]);
-
   function openSideChatThread(event: LobbyEvent) {
     selectSideChatThread(event, LOBBY_CHANNEL_LABEL);
     if (mobileViewportIsActive()) {
@@ -813,23 +735,6 @@ export default function App() {
     clearSideChatThread();
     setRightPanelMode("side-chat");
   }
-
-  const activeMeetingStreamState = meetingStreamStateForActiveMeeting(
-    meetingStreamState,
-    flow.meeting_id || ""
-  );
-  const lifecycle: LifecycleProjection | null =
-    activeMeetingStreamState.lifecycle ??
-    (lifecycleData?.meeting_id === flow.meeting_id ? lifecycleData?.lifecycle ?? null : null);
-  const scopedWorkroomQueueEvidence =
-    workroomQueueEvidence?.meeting_id === flow.meeting_id ? workroomQueueEvidence : null;
-  const flowEvents = Array.isArray(flowData?.flow_events)
-    ? flowData.flow_events
-    : Array.isArray(flowData?.events)
-      ? flowData.events
-      : [];
-  const officialTimelineEvents = meetingLiveEventsToTimelineEvents(activeMeetingStreamState.events);
-  const liveTimelineEvents = flowEvents.length ? flowEvents : officialTimelineEvents;
 
   const flowRunning = flow.status === "running";
   const activeRoomFlowVisible = Boolean(flow.meeting_id && flow.meeting_id === activeRoom.meetingId);
@@ -870,10 +775,6 @@ export default function App() {
     },
     []
   );
-  const refreshSessionSurfaces = useCallback(() => {
-    refreshProcesses();
-    refreshFlow();
-  }, [refreshFlow, refreshProcesses]);
   const refreshSessionAndMembers = useCallback(() => {
     refreshSessionSurfaces();
     refreshMembers();
@@ -1307,15 +1208,6 @@ export default function App() {
       delete document.body.dataset.sidebarResizing;
     };
   }, []);
-
-  useEffect(() => {
-    refreshFlow();
-  }, [refreshFlow, activeRoom.meetingId]);
-
-  useEffect(() => {
-    if (guestLocked) return;
-    refreshProcesses();
-  }, [guestLocked, refreshProcesses, activeRoom.meetingId]);
 
   function updateMemberRole(memberId: string, role: RoomMember["role"]) {
     roomSettings.updateMemberRole(activeRoom, activeRoomMembers, memberId, role);
@@ -1823,7 +1715,7 @@ export default function App() {
               onAddCandidate={addFriendsCandidate}
               onAddManual={addFriendsManual}
               onDeleteFriend={deleteDirectoryFriend}
-              processGroups={processData?.groups || []}
+              processGroups={processGroups}
               onSessionActionComplete={refreshSessionAndMembersWithFriends}
               onStartAddAgent={openAgentCreate}
             />

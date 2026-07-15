@@ -344,3 +344,15 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   retain their prior behavior and copy. The focused 10 admission tests, all 116
   frontend tests, and the production TypeScript/Vite build passed. No room
   conversation, sequence, autonomous-attention, or media behavior changed.
+- 2026-07-15: Milestone 4.2 moved the retained flow snapshot, local process
+  status, lifecycle/workroom polling, and legacy meeting SSE subscription out
+  of `App.tsx` into `useLegacyMeetingSurfaces`. The hook owns only those legacy
+  fetch and subscription lifetimes and returns their projected display state
+  plus one explicit refresh command. Canonical room selection, canonical
+  WebSocket ownership, canonical event visibility, and the rule that canonical
+  room events take precedence over legacy timeline data remain in `App.tsx`.
+  Four behavior tests cover host fetches, unresolved guest admission, board
+  evidence and flow-event precedence, room-switch refresh, stream updates,
+  disconnect reporting, and unsubscription. All 120 frontend tests and the
+  production TypeScript/Vite build passed. No polling interval, conversation,
+  sequence, autonomous-attention, or media behavior changed.
