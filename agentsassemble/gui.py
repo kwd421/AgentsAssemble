@@ -420,11 +420,7 @@ from agentsassemble.ws_room_session import (
 )
 from agentsassemble.room_users import (
     configure_room_users_backend,
-    list_rooms,
-    operator_user_id,
     release_room_users_backend,
-    touch_room,
-    upsert_room,
 )
 from agentsassemble.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
 from agentsassemble.room_invite_application import (
@@ -819,7 +815,10 @@ SESSION_ENSURE_REASONS = {
 }
 
 
-def _backfill_room_registry(output_root: Path) -> None:
+def _backfill_room_registry(
+    output_root: Path,
+    identity_backend: IdentityBackend,
+) -> None:
     """Register pre-existing meeting dirs into the rooms table.
 
     The rooms registry only fills going forward (on ensure), so rooms created
@@ -829,13 +828,16 @@ def _backfill_room_registry(output_root: Path) -> None:
     failure here must never block server startup.
     """
     try:
-        known = {str(room.get("room_id")) for room in list_rooms(include_archived=True)}
-        owner = operator_user_id()
+        known = {
+            str(room.get("room_id"))
+            for room in identity_backend.list_rooms(include_archived=True)
+        }
+        owner = identity_backend.operator_user_id()
         for meeting in list_meetings(output_root):
             meeting_id = str(meeting.get("meeting_id") or "")
             if not meeting_id or meeting_id in known:
                 continue
-            upsert_room(
+            identity_backend.upsert_room(
                 room_id=meeting_id,
                 owner_id=owner,
                 label=str(meeting.get("topic") or ""),
@@ -925,7 +927,7 @@ def _build_gui_application_services(
 
         remember_cleanup("identity_backend.unregister", release_identity_registration)
         configure_room_users_backend(identity_backend)
-        _backfill_room_registry(output_root)
+        _backfill_room_registry(output_root, identity_backend)
 
         public_invite_runtime = public_invite_runtime_override or PublicInviteRuntime()
         invite_application = InviteApplicationService(
@@ -1521,6 +1523,7 @@ def append_lobby_event(
     *,
     live_agent_endpoint: bool = False,
     allow_flow_metadata: bool = False,
+    identity_backend: IdentityBackend | None = None,
 ) -> dict[str, object]:
     with LIVE_AGENT_LOBBY_LOCK:
         appended = append_lobby_event_to_file(
@@ -1532,7 +1535,9 @@ def append_lobby_event(
     room_id = clean_lobby_text(appended.get("flow_meeting_id"), limit=128)
     if room_id:
         try:
-            touch_room(room_id)
+            (identity_backend or identity_store_for_output_root(output_root)).touch_room(
+                room_id
+            )
         except Exception:
             pass
     return appended
@@ -3097,6 +3102,21 @@ def _make_handler(
     room_realtime_controller = services.room_realtime_controller
     room_repository = services.room_repository
 
+    def append_server_lobby_event(
+        event_output_root: Path,
+        event: dict[str, object],
+        *,
+        live_agent_endpoint: bool = False,
+        allow_flow_metadata: bool = False,
+    ) -> dict[str, object]:
+        return append_lobby_event(
+            event_output_root,
+            event,
+            live_agent_endpoint=live_agent_endpoint,
+            allow_flow_metadata=allow_flow_metadata,
+            identity_backend=services.identity_backend,
+        )
+
     def _ws_room_deps(channel, handler) -> WsRoomDeps:
         # Reuse the proven SSE snapshot machinery + the governed say append path,
         # so the WS transport behaves exactly like the HTTP/SSE one (no pub/sub yet).
@@ -3143,7 +3163,7 @@ def _make_handler(
                     output_root,
                     identity=ActorIdentity.from_mapping(identity),
                     payload=resolved,
-                    append_lobby_event=append_lobby_event,
+                    append_lobby_event=append_server_lobby_event,
                     public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
                     is_muted=is_room_member_muted,
                 )
@@ -3210,7 +3230,7 @@ def _make_handler(
         process_supervisor=live_agent_process_supervisor,
         read_lobby=read_lobby,
         read_lobby_before=read_lobby_before,
-        append_lobby_event=append_lobby_event,
+        append_lobby_event=append_server_lobby_event,
         lobby_payload_with_attachments=lobby_payload_with_attachments,
         public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
         history_page_limit=_history_page_limit,
@@ -3281,7 +3301,7 @@ def _make_handler(
         route_table,
         commands=LegacyLobbyCommandService(
             output_root=output_root,
-            append_lobby_event=append_lobby_event,
+            append_lobby_event=append_server_lobby_event,
             public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
             is_muted=is_room_member_muted,
             requester=lambda: REMOTE_LOBBY_REQUESTER,

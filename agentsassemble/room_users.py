@@ -17,7 +17,6 @@ users.json next to the configured path is imported once into an empty DB.
 """
 from __future__ import annotations
 
-import hashlib
 import os
 import tempfile
 import threading
@@ -27,12 +26,12 @@ from agentsassemble.identity_store import (
     IDENTITY_DB_FILENAME,
     IdentityBackend,
     LOCAL_OPERATOR_PARTICIPANT_ID,
+    PARTICIPANT_TYPES,
+    device_auth_key,
     identity_store_at,
     migrate_legacy_users_json,
+    normalize_participant_type,
 )
-from agentsassemble.meeting_events import clean_lobby_text
-
-PARTICIPANT_TYPES = {"human", "subscription_ai", "api", "local", "remote", "unknown"}
 
 _state_lock = threading.Lock()
 _store: IdentityBackend | None = None
@@ -108,20 +107,6 @@ def _active_store() -> IdentityBackend:
         _ephemeral_dir = tempfile.TemporaryDirectory(prefix="agentsassemble-users-")
         _store = identity_store_at(Path(_ephemeral_dir.name) / IDENTITY_DB_FILENAME)
     return _store
-
-
-def normalize_participant_type(value: object, default: str = "human") -> str:
-    cleaned = clean_lobby_text(value, limit=32).lower()
-    aliases = {"agent": "remote", "ai": "remote", "bot": "remote", "person": "human", "user": "human"}
-    cleaned = aliases.get(cleaned, cleaned)
-    return cleaned if cleaned in PARTICIPANT_TYPES else default
-
-
-def device_auth_key(device_token: str) -> str:
-    token = str(device_token or "").strip()
-    if len(token) < 8:
-        return ""
-    return "device:" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:24]
 
 
 def resolve_device_user(

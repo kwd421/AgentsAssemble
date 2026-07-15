@@ -136,6 +136,12 @@ class RequestContextIdentityTests(unittest.TestCase):
         room_invite.reset_state()
         self.addCleanup(room_invite.reset_state)
 
+    def test_identity_backend_must_be_injected(self):
+        deps = GuiDeps(output_root=Path("."))
+
+        with self.assertRaisesRegex(RuntimeError, "identity backend is not configured"):
+            _ = deps.identities
+
     def test_require_host_rejects_without_token_when_gate_configured(self):
         room_invite.set_runtime_host_token("host-secret")
         handler = FakeHandler()

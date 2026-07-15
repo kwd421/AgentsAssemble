@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from agentsassemble.identity_store import IdentityBackend, LOCAL_OPERATOR_PARTICIPANT_ID
+from agentsassemble.identity_store import (
+    IdentityBackend,
+    LOCAL_OPERATOR_PARTICIPANT_ID,
+    device_auth_key,
+)
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_repository import RoomRepository
-from agentsassemble.room_users import device_auth_key
 
 _INACTIVE_MEMBERSHIP_STATUSES = {"kicked", "left", "exported", "removed"}
 

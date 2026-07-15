@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 from agentsassemble.gui import _make_handler
 from agentsassemble.gui_room_settings_http import register_room_settings_routes
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.identity_store import IdentityStore
 from agentsassemble.room_store import RoomStore
 
 
@@ -60,7 +61,11 @@ class RoomSettingsHttpTests(unittest.TestCase):
         repository = RoomStore(output_root)
         context = RequestContext(
             handler,
-            GuiDeps(output_root=output_root, room_repository=repository),
+            GuiDeps(
+                output_root=output_root,
+                room_repository=repository,
+                identity_backend=IdentityStore(output_root / "identity.db"),
+            ),
             parsed,
             parse_qs(parsed.query),
         )

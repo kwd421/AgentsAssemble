@@ -20,6 +20,17 @@ CURRENT_INVITE_APPLICATION_MODULES = (
     "agentsassemble/room_invite_application.py",
     "agentsassemble/room_realtime.py",
 )
+CURRENT_IDENTITY_APPLICATION_MODULES = (
+    "agentsassemble/gui_room_agent_http.py",
+    "agentsassemble/gui_room_invite_http.py",
+    "agentsassemble/gui_room_lifecycle_http.py",
+    "agentsassemble/gui_router.py",
+    "agentsassemble/operator_pairing.py",
+    "agentsassemble/room_admission.py",
+    "agentsassemble/room_admission_coordinator.py",
+    "agentsassemble/room_admission_saga.py",
+    "agentsassemble/room_realtime.py",
+)
 
 
 def _imported_modules(relative_path: str) -> set[str]:
@@ -39,6 +50,15 @@ class InviteCompatibilityBoundaryTests(unittest.TestCase):
             relative_path: "agentsassemble.room_invite"
             for relative_path in CURRENT_INVITE_APPLICATION_MODULES
             if "agentsassemble.room_invite" in _imported_modules(relative_path)
+        }
+
+        self.assertEqual(offenders, {})
+
+    def test_current_identity_application_does_not_depend_on_global_registry(self) -> None:
+        offenders = {
+            relative_path: "agentsassemble.room_users"
+            for relative_path in CURRENT_IDENTITY_APPLICATION_MODULES
+            if "agentsassemble.room_users" in _imported_modules(relative_path)
         }
 
         self.assertEqual(offenders, {})

@@ -4,11 +4,11 @@ from __future__ import annotations
 from http import HTTPStatus
 
 from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.identity_store import device_auth_key
 from agentsassemble.live_agents import connect_live_agent
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.operator_pairing import normalize_pairing_origin
 from agentsassemble.room_admission_coordinator import AdmissionIdempotencyConflict
-from agentsassemble.room_users import device_auth_key
 from agentsassemble.stable_entry import stable_entry_url
 
 

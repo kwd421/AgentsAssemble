@@ -31,7 +31,7 @@ from agentsassemble.gui_request_security import (
     _origin_is_loopback_or_empty,
     _split_authority_host_port,
 )
-from agentsassemble.identity_store import IdentityBackend, identity_store_for_output_root
+from agentsassemble.identity_store import IdentityBackend, device_auth_key
 from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room_admission import RoomAdmissionService
@@ -39,7 +39,6 @@ from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
 from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.room_repository import RoomRepository
-from agentsassemble.room_users import device_auth_key, participant_is_operator
 
 
 @dataclass
@@ -80,8 +79,7 @@ class GuiDeps:
     def identities(self) -> IdentityBackend:
         backend = self.identity_backend
         if backend is None:
-            backend = identity_store_for_output_root(self.output_root)
-            self.identity_backend = backend
+            raise RuntimeError("GUI identity backend is not configured.")
         return backend
 
     @property
@@ -277,7 +275,12 @@ class RequestContext:
         host-grade privileges without the raw host token leaving the machine.
         """
         session = self.session()
-        return bool(session and participant_is_operator(str(session.get("agent_id") or "")))
+        return bool(
+            session
+            and self.deps.identities.participant_is_operator(
+                str(session.get("agent_id") or "")
+            )
+        )
 
     def require_moderator(self) -> bool:
         """Gate moderation endpoints: host token OR operator session (403 otherwise)."""

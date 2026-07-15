@@ -20,6 +20,7 @@ writers out of each other's way.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -48,6 +49,29 @@ OPERATOR_PAIRING_REDEMPTION_STATUSES = {
     "completed",
     "failed_retryable",
 }
+PARTICIPANT_TYPES = {"human", "subscription_ai", "api", "local", "remote", "unknown"}
+
+
+def normalize_participant_type(value: object, default: str = "human") -> str:
+    cleaned = clean_lobby_text(value, limit=32).lower()
+    aliases = {
+        "agent": "remote",
+        "ai": "remote",
+        "bot": "remote",
+        "person": "human",
+        "user": "human",
+    }
+    cleaned = aliases.get(cleaned, cleaned)
+    return cleaned if cleaned in PARTICIPANT_TYPES else default
+
+
+def device_auth_key(device_token: str) -> str:
+    """Fingerprint a client-held device credential without persisting it raw."""
+
+    token = str(device_token or "").strip()
+    if len(token) < 8:
+        return ""
+    return "device:" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:24]
 
 
 @runtime_checkable

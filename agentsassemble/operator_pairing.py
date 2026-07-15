@@ -12,13 +12,13 @@ from agentsassemble.identity_store import (
     IdentityBackend,
     LOCAL_OPERATOR_PARTICIPANT_ID,
     LOCAL_OPERATOR_USER_ID,
+    device_auth_key,
 )
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_session_issuer import session_token_fingerprint
 from agentsassemble.room_session_service import RoomSessionService
-from agentsassemble.room_users import device_auth_key
 
 OPERATOR_PAIRING_TOKEN_PREFIX = "aap1_"
 OPERATOR_PAIRING_MAX_TTL_SECONDS = 120

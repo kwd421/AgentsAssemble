@@ -299,3 +299,14 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   fresh runtime. `gui.py` still installs the invite repository facade so
   retained legacy routes use the same durable authority; moving that bundle is
   Milestone 3.3 rather than hiding it in this slice.
+- 2026-07-15: Milestone 3.2 moved current room routes, admission, pairing, and
+  request identity checks onto the injected `IdentityBackend`. Stateless
+  device-credential and participant-type normalization now belongs to the
+  identity domain rather than the mutable `room_users` facade. The server
+  binds its lobby writes and frontend-room registration to the same identity
+  backend, while `room_users.py` remains available only to verified legacy and
+  compatibility callers. An AST boundary test prevents current modules from
+  importing that registry again, and an isolation test proves `/api/rooms`
+  ignores a separately configured compatibility store. The related GUI, WS,
+  realtime, and native-CLI suites passed 578 tests. Conversation scheduling,
+  autonomous participation, and media policy remained unchanged.

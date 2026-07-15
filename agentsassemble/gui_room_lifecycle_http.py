@@ -19,12 +19,6 @@ from agentsassemble.room_speech import (
     ensure_lobby_say_allowed,
     governed_lobby_say,
 )
-from agentsassemble.room_users import (
-    list_rooms,
-    operator_user_id,
-    set_room_archived,
-    user_for_participant,
-)
 from agentsassemble.room_votes import vote_summary
 from agentsassemble.room_members import is_room_member_muted
 
@@ -45,11 +39,14 @@ def register_room_history_routes(
             "invite_scope": session.get("invite_scope", "room"),
         }
 
-    def _owner_id_for_session(session: dict[str, object] | None) -> str:
+    def _owner_id_for_session(
+        ctx: RequestContext,
+        session: dict[str, object] | None,
+    ) -> str:
         if session is None:
-            return operator_user_id()
+            return ctx.deps.identities.operator_user_id()
         participant_id = str(session.get("agent_id") or "")
-        user = user_for_participant(participant_id)
+        user = ctx.deps.identities.user_for_participant(participant_id)
         return str((user or {}).get("user_id") or participant_id)
 
     def _room_payload(room: dict[str, object]) -> dict[str, object]:
@@ -214,10 +211,13 @@ def register_room_history_routes(
             ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
             return
         include_archived = ctx.query_value("include_archived").lower() in {"1", "true", "yes", "on"}
-        owner_id = "" if operator_view else _owner_id_for_session(session)
+        owner_id = "" if operator_view else _owner_id_for_session(ctx, session)
         rooms_by_id = {
             str(room.get("room_id") or ""): _room_payload(room)
-            for room in list_rooms(owner_id=owner_id, include_archived=include_archived)
+            for room in ctx.deps.identities.list_rooms(
+                owner_id=owner_id,
+                include_archived=include_archived,
+            )
         }
         for room in ctx.deps.rooms.list_rooms(include_archived=include_archived):
             room_id = str(room.get("room_id") or "")
@@ -262,10 +262,10 @@ def register_room_lifecycle_routes(router: Router) -> None:
         session = ctx.session()
         if session is not None:
             participant_id = str(session.get("agent_id") or "")
-            user = user_for_participant(participant_id)
+            user = ctx.deps.identities.user_for_participant(participant_id)
             return str((user or {}).get("user_id") or participant_id)
         if ctx.uses_loopback_host() or ctx.is_host():
-            return operator_user_id()
+            return ctx.deps.identities.operator_user_id()
         return ""
 
     def _loopback_or_moderator(ctx: RequestContext) -> bool:
@@ -284,6 +284,7 @@ def register_room_lifecycle_routes(router: Router) -> None:
                 clean_lobby_text(payload.get("meeting_id"), limit=128),
                 label=clean_lobby_text(payload.get("label"), limit=128),
                 owner_id=_room_owner_id(ctx),
+                identity_backend=ctx.deps.identities,
             )
         except (OSError, ValueError) as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
@@ -366,7 +367,7 @@ def register_room_lifecycle_routes(router: Router) -> None:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "room_id is required")
             return
         archived = bool(payload.get("archived"))
-        updated = set_room_archived(room_id, archived)
+        updated = ctx.deps.identities.set_room_archived(room_id, archived)
         store_updated = False
         try:
             if ctx.deps.rooms.room(room_id):

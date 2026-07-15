@@ -9,7 +9,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from agentsassemble.application_transaction import ApplicationTransactionBoundary
-from agentsassemble.identity_store import IdentityBackend
+from agentsassemble.identity_store import (
+    IdentityBackend,
+    device_auth_key,
+    normalize_participant_type,
+)
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.room_admission_saga import (
@@ -22,7 +26,6 @@ from agentsassemble.room_invite_application import (
 )
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_session_service import RoomSessionService
-from agentsassemble.room_users import device_auth_key, normalize_participant_type
 
 
 class AdmissionIdempotencyConflict(ValueError):

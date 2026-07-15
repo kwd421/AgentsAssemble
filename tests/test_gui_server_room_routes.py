@@ -34,7 +34,7 @@ from tests.gui_server_test_support import (
     user_for_participant,
 )
 from agentsassemble.gui_router import GuiDeps
-from agentsassemble.identity_store import IdentityStore
+from agentsassemble.identity_store import IdentityStore, device_auth_key
 from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
@@ -93,6 +93,7 @@ def _legacy_facade_route_dependencies(root: Path) -> GuiDeps:
     return GuiDeps(
         output_root=root,
         room_repository=RoomStore(root),
+        identity_backend=IdentityStore(root / "identity.db"),
         public_invite_runtime=compatibility_public_invite_runtime(),
         room_sessions=_LegacyFacadeSessionVerifier(),  # type: ignore[arg-type]
     )
@@ -196,11 +197,13 @@ class GuiServerRoomRouteTests(unittest.TestCase):
     def test_rooms_endpoint_lists_room_created_by_ensure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            configure_room_users_store(root / "identity.db")
-            from agentsassemble.room_users import upsert_room
-
-            upsert_room(room_id="db-room", label="DB 방", origin="frontend_room")
-            handler = _dispatch_room_route(root, path="/api/rooms")
+            deps = _invite_route_dependencies(root)
+            deps.identities.upsert_room(
+                room_id="db-room",
+                label="DB 방",
+                origin="frontend_room",
+            )
+            handler = _dispatch_room_route(root, path="/api/rooms", deps=deps)
             payload = handler.sent_json
 
             rooms = payload["rooms"]
@@ -210,25 +213,62 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             self.assertFalse(room["archived"])
             self.assertNotIn("owner_id", room)
 
-    def test_room_ensure_route_materializes_server_room_for_local_operator(self):
+    def test_rooms_endpoint_uses_injected_identity_backend_not_global_registry(self):
         reset_room_users_state()
+        self.addCleanup(reset_room_users_state)
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            configure_room_users_store(root / "identity.db")
+            deps = _invite_route_dependencies(root)
+            deps.identities.upsert_room(
+                room_id="injected-room",
+                label="Injected",
+                origin="frontend_room",
+            )
+            configure_room_users_store(root / "compatibility-identity.db")
+            from agentsassemble.room_users import upsert_room
+
+            upsert_room(
+                room_id="compatibility-room",
+                label="Compatibility",
+                origin="frontend_room",
+            )
+
+            payload = _dispatch_room_route(
+                root,
+                path="/api/rooms",
+                deps=deps,
+            ).sent_json
+
+        self.assertEqual(
+            [room["room_id"] for room in payload["rooms"]],
+            ["injected-room"],
+        )
+
+    def test_room_ensure_route_materializes_server_room_for_local_operator(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _invite_route_dependencies(root)
+            operator = deps.identities.claim_local_operator_credential(
+                device_auth_key("local-operator-device"),
+                display_name="Operator",
+            )
 
             response = _dispatch_room_route(
                 root,
                 path="/api/room/ensure",
                 method="POST",
                 payload={"meeting_id": "new-room", "label": "New Room"},
+                deps=deps,
             ).sent_json
 
-            from agentsassemble.room_users import list_rooms, operator_user_id
-
-            room = next(item for item in list_rooms() if item["room_id"] == "new-room")
+            room = next(
+                item
+                for item in deps.identities.list_rooms()
+                if item["room_id"] == "new-room"
+            )
             state = json.loads((root / "meetings" / "new-room" / "live_state.json").read_text(encoding="utf-8"))
             self.assertEqual(response, {"status": "ready", "meeting_id": "new-room"})
-            self.assertEqual(room["owner_id"], operator_user_id())
+            self.assertEqual(room["owner_id"], operator["user_id"])
             self.assertEqual(room["label"], "New Room")
             self.assertEqual(state["origin"], "frontend_room")
 

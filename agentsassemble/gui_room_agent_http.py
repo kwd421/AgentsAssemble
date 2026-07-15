@@ -12,7 +12,6 @@ from agentsassemble.agent_sessions import (
     run_next_agent_session_turn_payload,
 )
 from agentsassemble.gui_router import RequestContext, Router
-from agentsassemble.room_users import operator_user_id
 
 
 def register_agent_session_routes(
@@ -64,14 +63,15 @@ def register_agent_session_routes(
         if not agent_session_control_allowed(ctx):
             ctx.send_error(HTTPStatus.FORBIDDEN, "Agent Session control requires local operator or host authorization")
             return
+        operator_user_id = ctx.deps.identities.operator_user_id()
         try:
             ctx.send_json(
                 create_agent_session_payload(
                     ctx.deps.output_root,
                     {
                         **payload,
-                        "owner_id": payload.get("owner_id") or operator_user_id(),
-                        "created_by": payload.get("created_by") or operator_user_id(),
+                        "owner_id": payload.get("owner_id") or operator_user_id,
+                        "created_by": payload.get("created_by") or operator_user_id,
                     },
                     process_service=_agent_session_process_service(ctx, payload),
                     repository=ctx.deps.rooms,
