@@ -123,6 +123,7 @@ class _RoomsRouteHandler:
         self.rfile = BytesIO(body)
         self.sent_json: dict[str, object] | None = None
         self.sent_error: tuple[HTTPStatus, str] | None = None
+        self.sent_error_code = ""
         self.server = SimpleNamespace(
             server_address=("127.0.0.1", 8765) if loopback else ("0.0.0.0", 8765)
         )
@@ -130,8 +131,17 @@ class _RoomsRouteHandler:
     def _send_json(self, payload: dict[str, object]) -> None:
         self.sent_json = payload
 
-    def _send_error(self, status: HTTPStatus, message: str) -> None:
+    def _send_error(
+        self,
+        status: HTTPStatus,
+        message: str,
+        *,
+        code: str = "",
+        details: dict[str, object] | None = None,
+    ) -> None:
+        del details
         self.sent_error = (status, message)
+        self.sent_error_code = code
 
 def _dispatch_room_route(
     output_root: Path,
@@ -141,6 +151,7 @@ def _dispatch_room_route(
     payload: dict[str, object] | None = None,
     headers: dict[str, str] | None = None,
     loopback: bool = True,
+    deps: GuiDeps | None = None,
 ) -> _RoomsRouteHandler:
     parsed = urlparse(path)
     handler = _RoomsRouteHandler(
@@ -154,7 +165,8 @@ def _dispatch_room_route(
     register_room_routes(router)
     ctx = RequestContext(
         handler,
-        GuiDeps(
+        deps
+        or GuiDeps(
             output_root=output_root,
             room_repository=RoomStore(output_root),
         ),

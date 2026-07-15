@@ -33,6 +33,44 @@ from tests.gui_server_test_support import (
     urlopen,
     user_for_participant,
 )
+from agentsassemble.gui_router import GuiDeps
+from agentsassemble.identity_store import IdentityStore
+from agentsassemble.room_admission import RoomAdmissionService
+from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
+from agentsassemble.room_invite import InviteApplicationService
+from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
+from agentsassemble.room_session_service import RoomSessionService
+
+
+def _invite_route_dependencies(root: Path) -> GuiDeps:
+    rooms = RoomStore(root)
+    identities = IdentityStore(root / "identity.db")
+    repository = MemoryInviteSessionRepository()
+    invites = InviteApplicationService(repository)
+    sessions = RoomSessionService(
+        repository,
+        token_prefix="aas1",
+        ttl_seconds=3600,
+        token_key=invites.signing_secret,
+    )
+    return GuiDeps(
+        output_root=root,
+        room_repository=rooms,
+        identity_backend=identities,
+        invite_application=invites,
+        room_sessions=sessions,
+        admission_preflight_service=RoomAdmissionService(
+            identities=identities,
+            rooms=rooms,
+            invite_inspector=invites.inspect,
+        ),
+        admission_coordinator=RoomAdmissionCoordinator(
+            invites=invites,
+            sessions=sessions,
+            identities=identities,
+            rooms=rooms,
+        ),
+    )
 
 
 class GuiServerRoomRouteTests(unittest.TestCase):
@@ -41,6 +79,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
         reset_room_invite_state()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            deps = _invite_route_dependencies(root)
 
             response = _dispatch_room_route(
                 root,
@@ -51,6 +90,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                     "display_name": "Guest",
                     "local_dev_preview": True,
                 },
+                deps=deps,
             )
 
         self.assertEqual(response.sent_error, (HTTPStatus.NOT_FOUND, "room was not found"))
@@ -59,7 +99,8 @@ class GuiServerRoomRouteTests(unittest.TestCase):
         reset_room_invite_state()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            invite = create_room_invite(
+            deps = _invite_route_dependencies(root)
+            invite = deps.invites.create(
                 room_url="http://127.0.0.1:8765",
                 meeting_id="deleted-room",
                 display_name="Guest",
@@ -69,13 +110,49 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 root,
                 path="/api/room-invite/join",
                 method="POST",
-                payload={"invite_token": invite["invite_token"]},
+                payload={"invite_token": invite["join_code"]},
+                deps=deps,
             )
 
         self.assertEqual(
             response.sent_error,
             (HTTPStatus.GONE, "room was deleted or does not exist"),
         )
+
+    def test_room_invite_join_returns_conflict_for_changed_idempotent_request(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _invite_route_dependencies(root)
+            deps.rooms.create_room("room-a", label="Room A")
+            invite = deps.invites.create(
+                room_url="http://127.0.0.1:8765",
+                meeting_id="room-a",
+                display_name="Guest",
+                max_uses=2,
+            )
+            base_payload = {
+                "invite_token": invite["join_code"],
+                "request_id": "browser-request-1",
+                "device_token": "known-device-token",
+            }
+            first = _dispatch_room_route(
+                root,
+                path="/api/room-invite/join",
+                method="POST",
+                payload={**base_payload, "display_name": "First Name"},
+                deps=deps,
+            )
+            conflict = _dispatch_room_route(
+                root,
+                path="/api/room-invite/join",
+                method="POST",
+                payload={**base_payload, "display_name": "Changed Name"},
+                deps=deps,
+            )
+
+        self.assertEqual(first.sent_json["status"], "admitted")
+        self.assertEqual(conflict.sent_error[0], HTTPStatus.CONFLICT)
+        self.assertEqual(conflict.sent_error_code, "idempotency_conflict")
 
     def test_room_route_split_preserves_historical_service_imports(self):
         from agentsassemble import gui_room_http

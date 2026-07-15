@@ -1,8 +1,11 @@
 """Server-scoped application service for bounded room access sessions."""
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_invite_repository import SessionRepository
@@ -20,17 +23,55 @@ class RoomSessionService:
         ttl_seconds: int,
         now: Callable[[], datetime] | None = None,
         token_factory: Callable[[], str] | None = None,
+        token_key: Callable[[], str] | None = None,
     ) -> None:
+        self._token_prefix = str(token_prefix or "").strip()
+        self._ttl_seconds = int(ttl_seconds)
+        self._now = now or (lambda: datetime.now(UTC))
+        self._token_key = token_key
         self._issuer = RoomSessionIssuer(
             repository,
-            token_prefix=token_prefix,
+            token_prefix=self._token_prefix,
             ttl_seconds=ttl_seconds,
-            now=now,
+            now=self._now,
             token_factory=token_factory,
         )
 
     def issue(self, record: dict[str, object]) -> tuple[str, dict[str, object]]:
         return self._issuer.issue(record)
+
+    def token_for_request(self, request_key: str) -> str:
+        if self._token_key is None:
+            raise RuntimeError("idempotent room session key is not configured")
+        key = self._token_key().encode("utf-8")
+        digest = hmac.new(
+            key,
+            f"room-session:{request_key}".encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+        encoded = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+        return f"{self._token_prefix}.{encoded}"
+
+    def ensure_for_request(
+        self,
+        request_key: str,
+        record: dict[str, object],
+        *,
+        joined_at: str = "",
+        expires_at: str = "",
+    ) -> tuple[str, dict[str, object]]:
+        token = self.token_for_request(request_key)
+        existing = self._issuer.verify(token)
+        if existing is not None:
+            return token, existing
+        now = self._now()
+        return self._issuer.issue_with_token(
+            token,
+            record,
+            joined_at=joined_at or now.isoformat(),
+            expires_at=expires_at
+            or (now + timedelta(seconds=self._ttl_seconds)).isoformat(),
+        )
 
     def verify(self, token: str) -> dict[str, object] | None:
         return self._issuer.verify(token)

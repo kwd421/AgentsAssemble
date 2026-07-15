@@ -61,6 +61,33 @@ def _session() -> dict[str, object]:
     }
 
 
+def _workflow(*, workflow_id: str = "workflow-1") -> dict[str, object]:
+    now = datetime.now(UTC).isoformat()
+    return {
+        "workflow_id": workflow_id,
+        "request_id": "request-1",
+        "token_fingerprint": "invite-token-fingerprint",
+        "device_auth_key": "device:device-fingerprint",
+        "payload_hash": "payload-fingerprint",
+        "status": "started",
+        "resume_phase": "started",
+        "invite_id": "invite-1",
+        "room_id": "room-a",
+        "base_agent_id": "guest",
+        "invite_display_name": "Guest",
+        "invite_scope": "room",
+        "participant_type": "human",
+        "client_type": "browser",
+        "provider_kind": "manual",
+        "owner_id": "owner-a",
+        "reusable": True,
+        "max_uses": 2,
+        "nonce_fingerprint": "nonce-fingerprint",
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
 class UnconfiguredInviteSessionRepositoryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repository = UnconfiguredInviteSessionRepository()
@@ -92,6 +119,19 @@ class UnconfiguredInviteSessionRepositoryTests(unittest.TestCase):
             lambda: self.repository.revoke_participant_sessions("room-a", "guest-a"),
             lambda: self.repository.revoke_room_sessions("room-a"),
             self.repository.list_sessions,
+            lambda: self.repository.create_admission_workflow("workflow-1", _workflow()),
+            lambda: self.repository.admission_workflow("workflow-1"),
+            lambda: self.repository.update_admission_workflow(
+                "workflow-1", {"status": "done"}
+            ),
+            lambda: self.repository.consume_for_admission(
+                "workflow-1",
+                invite_id="invite-1",
+                nonce_fingerprint="nonce-1",
+                reusable=True,
+                max_uses=2,
+                updates={"status": "invite_consumed"},
+            ),
             self.repository.reload,
             self.repository.clear,
         ]
@@ -244,6 +284,62 @@ class InviteSessionRepositoryContract:
         self.assertTrue(self.repository.invite("invite-a")["revoked"])
         self.assertFalse(self.repository.invite("invite-b")["revoked"])
 
+    def test_admission_workflow_create_update_and_lookup_return_copies(self) -> None:
+        created = self.repository.create_admission_workflow("workflow-1", _workflow())
+        created["status"] = "mutated"
+
+        updated = self.repository.update_admission_workflow(
+            "workflow-1",
+            {"status": "identity_resolved"},
+        )
+        updated["status"] = "mutated-again"
+
+        self.assertEqual(
+            self.repository.admission_workflow("workflow-1")["status"],
+            "identity_resolved",
+        )
+
+    def test_admission_consume_is_idempotent_for_one_workflow(self) -> None:
+        self.repository.save_invite(_invite(max_uses=2))
+        self.repository.create_admission_workflow("workflow-1", _workflow())
+
+        first_error, first = self.repository.consume_for_admission(
+            "workflow-1",
+            invite_id="invite-1",
+            nonce_fingerprint="nonce-fingerprint",
+            reusable=True,
+            max_uses=2,
+            updates={"status": "invite_consumed", "resume_phase": "invite_consumed"},
+        )
+        second_error, second = self.repository.consume_for_admission(
+            "workflow-1",
+            invite_id="invite-1",
+            nonce_fingerprint="nonce-fingerprint",
+            reusable=True,
+            max_uses=2,
+            updates={"status": "invite_consumed", "resume_phase": "invite_consumed"},
+        )
+
+        self.assertEqual((first_error, second_error), ("", ""))
+        self.assertTrue(first["invite_consumed"])
+        self.assertEqual(second, first)
+        self.assertEqual(self.repository.invite("invite-1")["use_count"], 1)
+
+    def test_admission_workflow_drops_unrecognized_secret_fields(self) -> None:
+        created = self.repository.create_admission_workflow(
+            "workflow-1",
+            {
+                **_workflow(),
+                "invite_token": "raw-invite-secret",
+                "session_token": "raw-session-secret",
+                "device_token": "raw-device-secret",
+            },
+        )
+
+        self.assertNotIn("invite_token", created)
+        self.assertNotIn("session_token", created)
+        self.assertNotIn("device_token", created)
+
 
 class MemoryInviteSessionRepositoryTests(
     InviteSessionRepositoryContract,
@@ -287,15 +383,57 @@ class JsonInviteSessionRepositoryTests(
         self.assertTrue(reloaded.nonce_was_used("used-nonce"))
         self.assertEqual(reloaded.session("session-fingerprint")["agent_id"], "guest-a")
 
+    def test_reload_preserves_admission_workflow(self) -> None:
+        self.repository.create_admission_workflow("workflow-1", _workflow())
+        self.repository.update_admission_workflow(
+            "workflow-1",
+            {"status": "identity_resolved", "resume_phase": "identity_resolved"},
+        )
+
+        reloaded = JsonInviteSessionRepository(self.path)
+
+        self.assertEqual(
+            reloaded.admission_workflow("workflow-1")["status"],
+            "identity_resolved",
+        )
+
     def test_persistence_contains_only_fingerprints_not_raw_tokens(self) -> None:
         self.repository.save_invite(_invite())
         self.repository.save_session("sha256-session-fingerprint", _session())
+        self.repository.create_admission_workflow(
+            "workflow-1",
+            {
+                **_workflow(),
+                "invite_token": "aai1.raw-invite-token",
+                "session_token": "aas1.raw-session-token",
+                "device_token": "raw-device-token",
+            },
+        )
 
         persisted = self.path.read_text(encoding="utf-8")
         payload = json.loads(persisted)
         self.assertIn("sha256-session-fingerprint", payload["sessions"])
         self.assertNotIn("aas1.raw-session-token", persisted)
         self.assertNotIn("aai1.raw-invite-token", persisted)
+        self.assertNotIn("raw-device-token", persisted)
+
+    def test_failed_admission_consume_rolls_back_invite_and_workflow(self) -> None:
+        self.repository.save_invite(_invite(max_uses=2))
+        self.repository.create_admission_workflow("workflow-1", _workflow())
+
+        with patch.object(Path, "replace", side_effect=OSError("replace failed")):
+            with self.assertRaises(InviteRepositoryWriteFailed):
+                self.repository.consume_for_admission(
+                    "workflow-1",
+                    invite_id="invite-1",
+                    nonce_fingerprint="nonce-fingerprint",
+                    reusable=True,
+                    max_uses=2,
+                    updates={"status": "invite_consumed"},
+                )
+
+        self.assertEqual(self.repository.invite("invite-1")["use_count"], 0)
+        self.assertFalse(self.repository.admission_workflow("workflow-1")["invite_consumed"])
 
     def test_reading_an_uninitialized_secret_has_no_persistence_side_effect(self) -> None:
         self.assertEqual(self.repository.existing_signing_secret(), "")

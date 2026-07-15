@@ -40,6 +40,7 @@ _RepositoryState = tuple[
     dict[str, dict[str, object]],
     set[str],
     dict[str, dict[str, object]],
+    dict[str, dict[str, object]],
 ]
 
 
@@ -96,6 +97,30 @@ class SessionRepository(Protocol):
 
 @runtime_checkable
 class InviteSessionRepository(InviteRepository, SessionRepository, Protocol):
+    def create_admission_workflow(
+        self,
+        workflow_id: str,
+        record: dict[str, object],
+    ) -> dict[str, object]: ...
+
+    def admission_workflow(self, workflow_id: str) -> dict[str, object] | None: ...
+
+    def update_admission_workflow(
+        self,
+        workflow_id: str,
+        updates: dict[str, object],
+    ) -> dict[str, object]: ...
+
+    def consume_for_admission(
+        self,
+        workflow_id: str,
+        *,
+        invite_id: str,
+        nonce_fingerprint: str,
+        reusable: bool,
+        max_uses: int,
+        updates: dict[str, object],
+    ) -> tuple[str, dict[str, object]]: ...
     def reload(self) -> None: ...
 
     def clear(self) -> None: ...
@@ -186,6 +211,39 @@ class UnconfiguredInviteSessionRepository:
     def list_sessions(self) -> list[tuple[str, dict[str, object]]]:
         self._raise()
 
+    def create_admission_workflow(
+        self,
+        workflow_id: str,
+        record: dict[str, object],
+    ) -> dict[str, object]:
+        del workflow_id, record
+        self._raise()
+
+    def admission_workflow(self, workflow_id: str) -> dict[str, object] | None:
+        del workflow_id
+        self._raise()
+
+    def update_admission_workflow(
+        self,
+        workflow_id: str,
+        updates: dict[str, object],
+    ) -> dict[str, object]:
+        del workflow_id, updates
+        self._raise()
+
+    def consume_for_admission(
+        self,
+        workflow_id: str,
+        *,
+        invite_id: str,
+        nonce_fingerprint: str,
+        reusable: bool,
+        max_uses: int,
+        updates: dict[str, object],
+    ) -> tuple[str, dict[str, object]]:
+        del workflow_id, invite_id, nonce_fingerprint, reusable, max_uses, updates
+        self._raise()
+
     def reload(self) -> None:
         self._raise()
 
@@ -205,6 +263,7 @@ class MemoryInviteSessionRepository:
         self._sessions: dict[str, dict[str, object]] = {}
         self._used_nonce_fingerprints: set[str] = set()
         self._invites: dict[str, dict[str, object]] = {}
+        self._admission_workflows: dict[str, dict[str, object]] = {}
 
     def signing_secret(self) -> str:
         with self._lock:
@@ -383,6 +442,97 @@ class MemoryInviteSessionRepository:
                 for fingerprint, record in self._sessions.items()
             ]
 
+    def create_admission_workflow(
+        self,
+        workflow_id: str,
+        record: dict[str, object],
+    ) -> dict[str, object]:
+        clean_workflow_id = clean_lobby_text(workflow_id, limit=128)
+        if not clean_workflow_id:
+            raise ValueError("admission workflow_id is required")
+        with self._lock:
+            existing = self._admission_workflows.get(clean_workflow_id)
+            if existing is not None:
+                return deepcopy(existing)
+            created = validate_admission_workflow_record(
+                {**deepcopy(record), "workflow_id": clean_workflow_id},
+                workflow_id=clean_workflow_id,
+            )
+            with self._persisted_mutation_locked():
+                self._admission_workflows[clean_workflow_id] = created
+            return deepcopy(created)
+
+    def admission_workflow(self, workflow_id: str) -> dict[str, object] | None:
+        clean_workflow_id = clean_lobby_text(workflow_id, limit=128)
+        with self._lock:
+            record = self._admission_workflows.get(clean_workflow_id)
+            return deepcopy(record) if record is not None else None
+
+    def update_admission_workflow(
+        self,
+        workflow_id: str,
+        updates: dict[str, object],
+    ) -> dict[str, object]:
+        clean_workflow_id = clean_lobby_text(workflow_id, limit=128)
+        with self._lock:
+            existing = self._admission_workflows.get(clean_workflow_id)
+            if existing is None:
+                raise ValueError("admission workflow was not found")
+            updated = validate_admission_workflow_record(
+                {**existing, **deepcopy(updates), "workflow_id": clean_workflow_id},
+                workflow_id=clean_workflow_id,
+            )
+            with self._persisted_mutation_locked():
+                self._admission_workflows[clean_workflow_id] = updated
+            return deepcopy(updated)
+
+    def consume_for_admission(
+        self,
+        workflow_id: str,
+        *,
+        invite_id: str,
+        nonce_fingerprint: str,
+        reusable: bool,
+        max_uses: int,
+        updates: dict[str, object],
+    ) -> tuple[str, dict[str, object]]:
+        clean_workflow_id = clean_lobby_text(workflow_id, limit=128)
+        clean_invite_id = clean_lobby_text(invite_id, limit=128)
+        clean_nonce = clean_lobby_text(nonce_fingerprint, limit=128)
+        with self._lock:
+            workflow = self._admission_workflows.get(clean_workflow_id)
+            if workflow is None:
+                raise ValueError("admission workflow was not found")
+            if workflow.get("invite_consumed"):
+                return "", deepcopy(workflow)
+            invite = self._invites.get(clean_invite_id)
+            if reusable:
+                if invite is None:
+                    return "invite_not_found", deepcopy(workflow)
+                current_uses = int(invite.get("use_count", 0))
+                if max_uses and current_uses >= max_uses:
+                    return "invite_use_limit_reached", deepcopy(workflow)
+            elif clean_nonce in self._used_nonce_fingerprints:
+                return "token_already_used", deepcopy(workflow)
+
+            updated = validate_admission_workflow_record(
+                {
+                    **workflow,
+                    **deepcopy(updates),
+                    "workflow_id": clean_workflow_id,
+                    "invite_consumed": True,
+                },
+                workflow_id=clean_workflow_id,
+            )
+            with self._persisted_mutation_locked():
+                if reusable:
+                    assert invite is not None
+                    invite["use_count"] = int(invite.get("use_count", 0)) + 1
+                else:
+                    self._used_nonce_fingerprints.add(clean_nonce)
+                self._admission_workflows[clean_workflow_id] = updated
+            return "", deepcopy(updated)
+
     def reload(self) -> None:
         return
 
@@ -393,6 +543,7 @@ class MemoryInviteSessionRepository:
                 self._sessions.clear()
                 self._used_nonce_fingerprints.clear()
                 self._invites.clear()
+                self._admission_workflows.clear()
 
     def close(self) -> None:
         return
@@ -416,6 +567,7 @@ class MemoryInviteSessionRepository:
             deepcopy(self._sessions),
             set(self._used_nonce_fingerprints),
             deepcopy(self._invites),
+            deepcopy(self._admission_workflows),
         )
 
     def _restore_state_locked(
@@ -427,6 +579,7 @@ class MemoryInviteSessionRepository:
             self._sessions,
             self._used_nonce_fingerprints,
             self._invites,
+            self._admission_workflows,
         ) = state
 
 
@@ -447,6 +600,7 @@ class JsonInviteSessionRepository(MemoryInviteSessionRepository):
                 self._sessions.clear()
                 self._used_nonce_fingerprints.clear()
                 self._invites.clear()
+                self._admission_workflows.clear()
             return
         except OSError as error:
             raise InviteRepositoryUnavailable(
@@ -467,12 +621,14 @@ class JsonInviteSessionRepository(MemoryInviteSessionRepository):
         sessions = payload.get("sessions")
         invites = payload.get("pending_invites")
         used_nonces = payload.get("used_nonce_fingerprints")
+        admission_workflows = payload.get("admission_workflows", {})
         invite_secret = payload.get("invite_secret")
         if (
             not isinstance(invite_secret, str)
             or not isinstance(sessions, dict)
             or not isinstance(invites, dict)
             or not isinstance(used_nonces, list)
+            or not isinstance(admission_workflows, dict)
         ):
             raise InviteRepositoryCorrupt(
                 "Invite repository state has invalid field types."
@@ -482,6 +638,7 @@ class JsonInviteSessionRepository(MemoryInviteSessionRepository):
         loaded_session_identities: set[tuple[str, str]] = set()
         loaded_invites: dict[str, dict[str, object]] = {}
         loaded_nonces: set[str] = set()
+        loaded_workflows: dict[str, dict[str, object]] = {}
         now = datetime.now(UTC)
         for raw_fingerprint, raw_record in sessions.items():
             fingerprint = clean_lobby_text(raw_fingerprint, limit=128)
@@ -531,6 +688,22 @@ class JsonInviteSessionRepository(MemoryInviteSessionRepository):
                     "Invite repository state contains an invalid nonce fingerprint."
                 )
             loaded_nonces.add(nonce)
+        for raw_workflow_id, raw_record in admission_workflows.items():
+            workflow_id = clean_lobby_text(raw_workflow_id, limit=128)
+            try:
+                record = validate_admission_workflow_record(
+                    raw_record,
+                    workflow_id=workflow_id,
+                )
+            except (TypeError, ValueError, OverflowError) as error:
+                raise InviteRepositoryCorrupt(
+                    "Invite repository state contains an invalid admission workflow."
+                ) from error
+            if not workflow_id or not record:
+                raise InviteRepositoryCorrupt(
+                    "Invite repository state contains an invalid admission workflow."
+                )
+            loaded_workflows[workflow_id] = record
 
         with self._lock:
             with self._persisted_mutation_locked():
@@ -538,6 +711,7 @@ class JsonInviteSessionRepository(MemoryInviteSessionRepository):
                 self._sessions = loaded_sessions
                 self._used_nonce_fingerprints = loaded_nonces
                 self._invites = loaded_invites
+                self._admission_workflows = loaded_workflows
 
     def _persist_locked(self) -> None:
         state = {
@@ -546,6 +720,7 @@ class JsonInviteSessionRepository(MemoryInviteSessionRepository):
             "sessions": dict(sorted(self._sessions.items())),
             "used_nonce_fingerprints": sorted(self._used_nonce_fingerprints),
             "pending_invites": dict(sorted(self._invites.items())),
+            "admission_workflows": dict(sorted(self._admission_workflows.items())),
             "updated_at": datetime.now(UTC).isoformat(),
         }
         temp_path = self.path.with_name(f"{self.path.name}.tmp")
@@ -626,4 +801,63 @@ def _clean_invite_record(value: object, *, invite_id: str) -> dict[str, object]:
     }
     if not record["invite_id"] or not record["meeting_id"] or not record["expires_at"]:
         return {}
+    return record
+
+
+def validate_admission_workflow_record(
+    value: object,
+    *,
+    workflow_id: str,
+) -> dict[str, object]:
+    """Return the bounded durable admission record or reject it.
+
+    Keeping this allowlist at the repository boundary prevents callers from
+    accidentally persisting raw invite, device, or room bearer credentials.
+    """
+
+    source = value if isinstance(value, dict) else {}
+    record: dict[str, object] = {
+        "workflow_id": clean_lobby_text(source.get("workflow_id") or workflow_id, limit=128),
+        "request_id": clean_lobby_text(source.get("request_id"), limit=128),
+        "token_fingerprint": clean_lobby_text(source.get("token_fingerprint"), limit=128),
+        "device_auth_key": clean_lobby_text(source.get("device_auth_key"), limit=128),
+        "payload_hash": clean_lobby_text(source.get("payload_hash"), limit=128),
+        "status": clean_lobby_text(source.get("status"), limit=64),
+        "resume_phase": clean_lobby_text(source.get("resume_phase"), limit=64),
+        "invite_id": clean_lobby_text(source.get("invite_id"), limit=128),
+        "room_id": clean_lobby_text(source.get("room_id"), limit=128),
+        "base_agent_id": clean_lobby_text(source.get("base_agent_id"), limit=64),
+        "invite_display_name": clean_lobby_text(source.get("invite_display_name"), limit=128),
+        "invite_scope": clean_lobby_text(source.get("invite_scope"), limit=32),
+        "participant_type": clean_lobby_text(source.get("participant_type"), limit=32),
+        "client_type": clean_lobby_text(source.get("client_type"), limit=32),
+        "provider_kind": clean_lobby_text(source.get("provider_kind"), limit=64),
+        "owner_id": clean_lobby_text(source.get("owner_id"), limit=128),
+        "reusable": bool(source.get("reusable")),
+        "max_uses": max(0, int(source.get("max_uses", 1) or 0)),
+        "nonce_fingerprint": clean_lobby_text(source.get("nonce_fingerprint"), limit=128),
+        "invite_consumed": bool(source.get("invite_consumed")),
+        "participant_id": clean_lobby_text(source.get("participant_id"), limit=128),
+        "display_name": clean_lobby_text(source.get("display_name"), limit=128),
+        "owner_display_name": clean_lobby_text(source.get("owner_display_name"), limit=64),
+        "connection_kind": clean_lobby_text(source.get("connection_kind"), limit=64),
+        "stable_identity": bool(source.get("stable_identity")),
+        "operator": bool(source.get("operator")),
+        "session_joined_at": clean_lobby_text(source.get("session_joined_at"), limit=64),
+        "session_expires_at": clean_lobby_text(source.get("session_expires_at"), limit=64),
+        "room_label": clean_lobby_text(source.get("room_label"), limit=128),
+        "room_topic": clean_lobby_text(source.get("room_topic"), limit=160),
+        "room_created_at": clean_lobby_text(source.get("room_created_at"), limit=64),
+        "failure_code": clean_lobby_text(source.get("failure_code"), limit=128),
+        "created_at": clean_lobby_text(source.get("created_at"), limit=64),
+        "updated_at": clean_lobby_text(source.get("updated_at"), limit=64),
+    }
+    if (
+        not record["workflow_id"]
+        or not record["request_id"]
+        or not record["token_fingerprint"]
+        or not record["payload_hash"]
+        or not record["status"]
+    ):
+        raise ValueError("admission workflow is missing required fields")
     return record

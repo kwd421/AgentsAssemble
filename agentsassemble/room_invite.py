@@ -288,6 +288,39 @@ class InviteApplicationService:
             max_uses=prepared.max_uses,
         )
 
+    def admission_workflow(self, workflow_id: str) -> dict[str, object] | None:
+        return self._repository.admission_workflow(workflow_id)
+
+    def create_admission_workflow(
+        self,
+        workflow_id: str,
+        record: dict[str, object],
+    ) -> dict[str, object]:
+        return self._repository.create_admission_workflow(workflow_id, record)
+
+    def update_admission_workflow(
+        self,
+        workflow_id: str,
+        updates: dict[str, object],
+    ) -> dict[str, object]:
+        return self._repository.update_admission_workflow(workflow_id, updates)
+
+    def consume_for_admission(
+        self,
+        workflow_id: str,
+        prepared: PreparedInviteAdmission,
+        *,
+        updates: dict[str, object],
+    ) -> tuple[str, dict[str, object]]:
+        return self._repository.consume_for_admission(
+            workflow_id,
+            invite_id=prepared.invite_id,
+            nonce_fingerprint=prepared.nonce_fingerprint,
+            reusable=prepared.reusable,
+            max_uses=prepared.max_uses,
+            updates=updates,
+        )
+
     def usage_guide(
         self,
         prepared: PreparedInviteAdmission,

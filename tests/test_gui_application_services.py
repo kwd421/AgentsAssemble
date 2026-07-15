@@ -127,6 +127,7 @@ class GuiApplicationServicesTests(unittest.TestCase):
             invite_repository,
             token_prefix="aas1",
             ttl_seconds=3600,
+            token_key=invites.signing_secret,
         )
         admission_preflight = RoomAdmissionService(
             identities=identity_repository,  # type: ignore[arg-type]

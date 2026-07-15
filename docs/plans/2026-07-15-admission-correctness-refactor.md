@@ -200,3 +200,14 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   consuming admission authority, then resolves identity, issues one session,
   and commits canonical participant and membership state through that owner.
   The legacy join facade remains available only to compatibility callers.
+- 2026-07-15: Milestone 1.3 implemented. Browser joins now carry a secure UUID
+  that survives a retry in session storage. The repository persists a bounded
+  fingerprint-only workflow, atomically couples invite consumption to its
+  consumed phase, reconstructs the same HMAC-derived bounded session bearer,
+  and resumes idempotent participant/membership writes after failure or
+  restart. Same-request payload changes return `idempotency_conflict`; raw
+  invite, device, and session credentials are rejected by the workflow storage
+  allowlist. Failure injection, restart, concurrency, route compatibility, and
+  frontend retry coverage passed. The refactor also restored the pre-existing
+  `410 Gone` response for an invite targeting a deleted room; this was a
+  Milestone 1.2 compatibility regression, not a conversation-policy change.

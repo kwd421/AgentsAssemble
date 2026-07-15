@@ -34,12 +34,25 @@ class RoomSessionIssuer:
             raise ValueError("session token prefix is required")
 
     def issue(self, record: dict[str, object]) -> tuple[str, dict[str, object]]:
-        now = self._now()
         token = f"{self._token_prefix}.{self._token_factory()}"
+        return self.issue_with_token(token, record)
+
+    def issue_with_token(
+        self,
+        token: str,
+        record: dict[str, object],
+        *,
+        joined_at: str = "",
+        expires_at: str = "",
+    ) -> tuple[str, dict[str, object]]:
+        if not token.startswith(f"{self._token_prefix}."):
+            raise ValueError("session token prefix does not match issuer")
+        now = self._now()
         session = {
             **record,
-            "joined_at": now.isoformat(),
-            "expires_at": (now + timedelta(seconds=self._ttl_seconds)).isoformat(),
+            "joined_at": joined_at or now.isoformat(),
+            "expires_at": expires_at
+            or (now + timedelta(seconds=self._ttl_seconds)).isoformat(),
         }
         self._repository.replace_participant_session(
             session_token_fingerprint(token),

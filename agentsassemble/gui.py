@@ -927,6 +927,7 @@ def _build_gui_application_services(
             invite_repository,
             token_prefix=SESSION_TOKEN_PREFIX,
             ttl_seconds=SESSION_TOKEN_TTL_SECONDS,
+            token_key=invite_application.signing_secret,
         )
         admission_preflight = RoomAdmissionService(
             identities=identity_backend,

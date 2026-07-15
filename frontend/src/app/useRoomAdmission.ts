@@ -33,6 +33,27 @@ export type OperatorPairingState =
   | "pairing_failed_terminal"
   | "paired";
 
+const ADMISSION_REQUEST_ID_STORAGE_KEY = "agentsassemble.roomAdmissionRequestId.v1";
+
+function loadOrCreateAdmissionRequestId(): string {
+  const existing = String(window.sessionStorage.getItem(ADMISSION_REQUEST_ID_STORAGE_KEY) || "").trim();
+  if (existing) return existing;
+  if (typeof crypto === "undefined" || typeof crypto.randomUUID !== "function") {
+    throw new Error("이 브라우저에서는 안전한 입장 요청 ID를 만들 수 없습니다.");
+  }
+  const requestId = crypto.randomUUID();
+  window.sessionStorage.setItem(ADMISSION_REQUEST_ID_STORAGE_KEY, requestId);
+  return requestId;
+}
+
+function clearAdmissionRequestId(): void {
+  try {
+    window.sessionStorage.removeItem(ADMISSION_REQUEST_ID_STORAGE_KEY);
+  } catch {
+    // The completed room session is authoritative even if storage cleanup fails.
+  }
+}
+
 function pairingFailureIsRetryable(error: unknown): boolean {
   if (!(error instanceof ApiError)) return true;
   return error.status === 408 || error.status === 429 || error.status >= 500;
@@ -258,6 +279,7 @@ export function useRoomAdmission({
           setGuestAdmissionBusy(false);
           setGuestJoinStatus("");
           onRoomJoined(roomFromGuestSession(preservedSession));
+          clearAdmissionRequestId();
           clearInviteUrl();
           return;
         }
@@ -310,15 +332,30 @@ export function useRoomAdmission({
     let cancelled = false;
     setGuestAdmissionBusy(true);
     setGuestJoinStatus("초대 링크로 방에 입장 중...");
+    let requestId = "";
+    try {
+      requestId = loadOrCreateAdmissionRequestId();
+    } catch (error) {
+      setGuestAdmissionBusy(false);
+      setGuestJoinRequested(false);
+      setGuestJoinStatus(
+        error instanceof Error ? error.message : "안전한 입장 요청을 만들 수 없습니다."
+      );
+      return;
+    }
     joinRoomInvite({
       inviteToken: guestJoinToken,
+      requestId,
       displayName: pendingGuestDisplayName,
       avatarImage: pendingGuestAvatarImage,
       deviceToken: getOrCreateDeviceToken(),
       participantType: "human",
     })
       .then((payload) => {
-        if (!cancelled) applyJoinedSession(guestJoinToken, payload, pendingGuestAvatarImage);
+        if (!cancelled) {
+          clearAdmissionRequestId();
+          applyJoinedSession(guestJoinToken, payload, pendingGuestAvatarImage);
+        }
       })
       .catch((error) => {
         if (cancelled) return;
@@ -329,6 +366,7 @@ export function useRoomAdmission({
           setGuestAdmissionBusy(false);
           onRoomJoined(roomFromGuestSession(restoredSession));
           setGuestJoinStatus("");
+          clearAdmissionRequestId();
           clearInviteUrl();
           return;
         }

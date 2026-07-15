@@ -7,6 +7,7 @@ from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.live_agents import connect_live_agent
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.operator_pairing import OperatorPairingService, normalize_pairing_origin
+from agentsassemble.room_admission_coordinator import AdmissionIdempotencyConflict
 from agentsassemble.room_users import (
     grant_operator_to_device,
     operator_user_id,
@@ -113,16 +114,29 @@ def register_invite_admission_routes(router: Router) -> None:
         if not token:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "invite_token is required")
             return
-        result = ctx.deps.admission.admit(
-            invite_token=token,
-            meeting_id=str(payload.get("meeting_id") or ""),
-            display_name=str(payload.get("display_name") or ""),
-            device_token=str(payload.get("device_token") or ""),
-            participant_type=str(payload.get("participant_type") or ""),
-            owner_display_name=str(payload.get("owner_display_name") or ""),
-        )
+        try:
+            result = ctx.deps.admission.admit(
+                invite_token=token,
+                request_id=str(payload.get("request_id") or ""),
+                meeting_id=str(payload.get("meeting_id") or ""),
+                display_name=str(payload.get("display_name") or ""),
+                device_token=str(payload.get("device_token") or ""),
+                participant_type=str(payload.get("participant_type") or ""),
+                owner_display_name=str(payload.get("owner_display_name") or ""),
+            )
+        except AdmissionIdempotencyConflict as error:
+            ctx.send_error(
+                HTTPStatus.CONFLICT,
+                str(error),
+                code="idempotency_conflict",
+            )
+            return
         if result.get("status") != "admitted":
-            ctx.send_error(HTTPStatus.FORBIDDEN, str(result.get("reason", "rejected")))
+            reason = str(result.get("reason", "rejected"))
+            if reason == "room_unavailable":
+                ctx.send_error(HTTPStatus.GONE, "room was deleted or does not exist")
+                return
+            ctx.send_error(HTTPStatus.FORBIDDEN, reason)
             return
         participant_type = str(result.get("participant_type") or "human")
         if participant_type != "human":

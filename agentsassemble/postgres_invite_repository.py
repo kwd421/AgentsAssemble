@@ -5,6 +5,7 @@ import secrets
 from datetime import UTC, datetime
 
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.postgres_connection_pool import (
@@ -12,6 +13,7 @@ from agentsassemble.postgres_connection_pool import (
     PoolFactory,
     PostgresPoolSettings,
 )
+from agentsassemble.room_invite_repository import validate_admission_workflow_record
 
 _AUTHORITY_ID = "default"
 
@@ -268,13 +270,154 @@ class PostgresInviteSessionRepository:
             for row in rows
         ]
 
+    def create_admission_workflow(
+        self,
+        workflow_id: str,
+        record: dict[str, object],
+    ) -> dict[str, object]:
+        clean_id = clean_lobby_text(workflow_id, limit=128)
+        if not clean_id:
+            raise ValueError("admission workflow_id is required")
+        created = validate_admission_workflow_record(
+            {**record, "workflow_id": clean_id},
+            workflow_id=clean_id,
+        )
+        with self._pool.connection() as connection, connection.transaction():
+            connection.execute(
+                """INSERT INTO room_admission_workflows(
+                       workflow_id, room_id, status, record_json, created_at, updated_at
+                   ) VALUES(%s, %s, %s, %s, %s, %s)
+                   ON CONFLICT(workflow_id) DO NOTHING""",
+                _workflow_parameters(created),
+            )
+            row = connection.execute(
+                "SELECT record_json FROM room_admission_workflows WHERE workflow_id = %s",
+                (clean_id,),
+            ).fetchone()
+        return _workflow_from_row(row)
+
+    def admission_workflow(self, workflow_id: str) -> dict[str, object] | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT record_json FROM room_admission_workflows WHERE workflow_id = %s",
+                (clean_lobby_text(workflow_id, limit=128),),
+            ).fetchone()
+        return _workflow_from_row(row) if row else None
+
+    def update_admission_workflow(
+        self,
+        workflow_id: str,
+        updates: dict[str, object],
+    ) -> dict[str, object]:
+        clean_id = clean_lobby_text(workflow_id, limit=128)
+        with self._pool.connection() as connection, connection.transaction():
+            existing = connection.execute(
+                """SELECT record_json FROM room_admission_workflows
+                   WHERE workflow_id = %s FOR UPDATE""",
+                (clean_id,),
+            ).fetchone()
+            if existing is None:
+                raise ValueError("admission workflow was not found")
+            updated = validate_admission_workflow_record(
+                {**_workflow_from_row(existing), **updates, "workflow_id": clean_id},
+                workflow_id=clean_id,
+            )
+            connection.execute(
+                """UPDATE room_admission_workflows
+                   SET room_id = %s, status = %s, record_json = %s, updated_at = %s
+                   WHERE workflow_id = %s""",
+                (
+                    clean_lobby_text(updated.get("room_id"), limit=128),
+                    clean_lobby_text(updated.get("status"), limit=64),
+                    Jsonb(updated),
+                    _as_datetime(updated.get("updated_at")),
+                    clean_id,
+                ),
+            )
+        return updated
+
+    def consume_for_admission(
+        self,
+        workflow_id: str,
+        *,
+        invite_id: str,
+        nonce_fingerprint: str,
+        reusable: bool,
+        max_uses: int,
+        updates: dict[str, object],
+    ) -> tuple[str, dict[str, object]]:
+        clean_workflow_id = clean_lobby_text(workflow_id, limit=128)
+        clean_invite_id = clean_lobby_text(invite_id, limit=128)
+        clean_nonce = clean_lobby_text(nonce_fingerprint, limit=128)
+        with self._pool.connection() as connection, connection.transaction():
+            row = connection.execute(
+                """SELECT record_json FROM room_admission_workflows
+                   WHERE workflow_id = %s FOR UPDATE""",
+                (clean_workflow_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("admission workflow was not found")
+            workflow = _workflow_from_row(row)
+            if workflow.get("invite_consumed"):
+                return "", workflow
+
+            if reusable:
+                invite = connection.execute(
+                    """SELECT use_count, max_uses FROM room_invites
+                       WHERE invite_id = %s FOR UPDATE""",
+                    (clean_invite_id,),
+                ).fetchone()
+                if invite is None:
+                    return "invite_not_found", workflow
+                stored_max = int(invite["max_uses"])
+                effective_max = stored_max if stored_max >= 0 else max(0, int(max_uses))
+                if effective_max and int(invite["use_count"]) >= effective_max:
+                    return "invite_use_limit_reached", workflow
+                connection.execute(
+                    "UPDATE room_invites SET use_count = use_count + 1 WHERE invite_id = %s",
+                    (clean_invite_id,),
+                )
+            else:
+                inserted = connection.execute(
+                    """INSERT INTO room_invite_used_nonces(nonce_fingerprint, consumed_at)
+                       VALUES(%s, %s) ON CONFLICT(nonce_fingerprint) DO NOTHING
+                       RETURNING nonce_fingerprint""",
+                    (clean_nonce, datetime.now(UTC)),
+                ).fetchone()
+                if inserted is None:
+                    return "token_already_used", workflow
+
+            updated = validate_admission_workflow_record(
+                {
+                    **workflow,
+                    **updates,
+                    "workflow_id": clean_workflow_id,
+                    "invite_consumed": True,
+                },
+                workflow_id=clean_workflow_id,
+            )
+            connection.execute(
+                """UPDATE room_admission_workflows
+                   SET room_id = %s, status = %s, record_json = %s, updated_at = %s
+                   WHERE workflow_id = %s""",
+                (
+                    clean_lobby_text(updated.get("room_id"), limit=128),
+                    clean_lobby_text(updated.get("status"), limit=64),
+                    Jsonb(updated),
+                    _as_datetime(updated.get("updated_at")),
+                    clean_workflow_id,
+                ),
+            )
+            return "", updated
+
     def reload(self) -> None:
         return
 
     def clear(self) -> None:
         with self._pool.connection() as connection, connection.transaction():
             connection.execute(
-                """TRUNCATE TABLE room_access_sessions,
+                """TRUNCATE TABLE room_admission_workflows,
+                       room_access_sessions,
                        room_invite_used_nonces, room_invites,
                        room_invite_authority"""
             )
@@ -326,6 +469,22 @@ def _session_parameters(
         _as_datetime(record.get("joined_at")),
         _as_datetime(record.get("expires_at")),
     )
+
+
+def _workflow_parameters(record: dict[str, object]) -> tuple[object, ...]:
+    return (
+        clean_lobby_text(record.get("workflow_id"), limit=128),
+        clean_lobby_text(record.get("room_id"), limit=128),
+        clean_lobby_text(record.get("status"), limit=64),
+        Jsonb(record),
+        _as_datetime(record.get("created_at")),
+        _as_datetime(record.get("updated_at")),
+    )
+
+
+def _workflow_from_row(row: dict[str, object]) -> dict[str, object]:
+    value = row.get("record_json") if row else {}
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _invite_from_row(row: dict[str, object]) -> dict[str, object]:

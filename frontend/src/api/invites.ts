@@ -25,6 +25,7 @@ export interface RoomInviteCreateResponse {
 
 export interface RoomInviteJoinResponse {
   status: string;
+  request_id?: string;
   session_token: string;
   agent_id: string;
   display_name: string;
@@ -157,12 +158,14 @@ export function stopPublicInviteTunnel() {
 
 export function joinRoomInvite({
   inviteToken,
+  requestId,
   displayName,
   avatarImage,
   deviceToken,
   participantType = "human",
 }: {
   inviteToken: string;
+  requestId: string;
   displayName?: string;
   avatarImage?: string;
   deviceToken?: string;
@@ -170,6 +173,7 @@ export function joinRoomInvite({
 }) {
   return postJson<RoomInviteJoinResponse>("/api/room-invite/join", {
     invite_token: inviteToken,
+    request_id: requestId,
     display_name: displayName,
     avatar_image_url: avatarImage,
     device_token: deviceToken,

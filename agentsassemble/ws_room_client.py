@@ -241,6 +241,7 @@ def join_room_session(
     display_name: str = "",
     participant_type: str = "agent",
     device_token: str = "",
+    request_id: str = "",
     timeout: float = 5.0,
 ) -> dict[str, object]:
     """POST /api/room-invite/join and return the server-admitted session.
@@ -254,6 +255,7 @@ def join_room_session(
         "display_name": display_name,
         "participant_type": participant_type,
         "device_token": device_token,
+        "request_id": request_id or str(uuid4()),
     }
     request = urllib.request.Request(
         f"{server_url.rstrip('/')}/api/room-invite/join",

@@ -70,6 +70,15 @@ server profile, and an unknown device sees the explicit guest profile form.
 Preflight does not consume the invite, create a user, change membership, or
 issue a session.
 
+The mutating join uses one browser-generated request ID and a durable admission
+workflow. Invite consumption and the workflow's consumed phase commit together;
+identity, bounded session, participant, and membership phases can then resume
+after a lost response or process restart without consuming the invite twice.
+The workflow stores only invite/device/payload fingerprints and bounded public
+metadata. Raw invite tokens, device credentials, and room bearer tokens are not
+persisted. Reusing a request ID with different admission inputs is an explicit
+`idempotency_conflict`, not a second join.
+
 Cross-origin operator continuity uses a separate moderator-created `/pair`
 link. It is room- and target-origin-bound, expires after at most two minutes,
 is one-use, and stores only a token fingerprint. Successful redemption binds
@@ -253,7 +262,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Provider catalog/credential HTTP | `gui_provider_http.py`; secret storage in `provider_secrets.py` |
 | Codex app-server lifecycle | `codex_app_server_runtime.py`; compatibility exports in `agent_sessions.py` |
 | Other provider process lifecycle | `room_bridge_process.py`, `live_cli.py`, provider adapter module |
-| Invites, browser admission, and operator-origin pairing | `room_invite.py`, `room_admission.py`, `operator_pairing.py`, `gui_room_invite_http.py`, `room_attendee.py`; browser flow in `frontend/src/app/useRoomAdmission.ts` |
+| Invites, browser admission, and operator-origin pairing | invite policy/application service in `room_invite.py`; preflight in `room_admission.py`; durable mutation owner in `room_admission_coordinator.py`; pairing in `operator_pairing.py`; HTTP in `gui_room_invite_http.py`; native attendee in `room_attendee.py`; browser flow in `frontend/src/app/useRoomAdmission.ts` |
 | Invite/session persistence | contract and local JSON adapter in `room_invite_repository.py`; hosted adapter in `postgres_invite_repository.py`; selection in `room_invite_repository_factory.py` |
 | Identity, credential, membership compatibility, preference, and usage persistence | contract/local SQLite in `identity_store.py`; hosted facade in `postgres_identity_repository.py`; selection in `identity_repository_factory.py` |
 | Provider credentials | `provider_secrets.py`, provider credential routes |
