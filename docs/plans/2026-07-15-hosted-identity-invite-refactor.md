@@ -1,6 +1,28 @@
 # Hosted Identity, Invite, And Release-Hygiene Refactor
 
-Status: active implementation plan
+Status: implemented and verified
+
+Completed: 2026-07-15
+
+Starting commit: `cf4c47c`
+
+Completion report:
+`docs/reports/2026-07-15-hosted-identity-invite-refactor.md`
+
+Implementation commits:
+
+- `f438c19` Extract room invite and session repositories
+- `0213135` Separate room session issuance
+- `9c2ce1f` Add PostgreSQL invite and session storage
+- `d91cad6` Add PostgreSQL identity authority
+- `d570f38` Close SQLite test connections
+- `b4b8567` Retire unused legacy GUI routes
+- `393573b` Extract React static transport
+- `ca8010a` Clarify GUI request boundaries
+- `2552c25` Split non-core frontend views
+- `d92b19f` Relax brittle frontend source assertions
+- `2929938` Preserve GUI operation error details
+- `6470096` Return not found for stale room reads
 
 ## Goal
 
