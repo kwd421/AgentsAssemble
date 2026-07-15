@@ -25,7 +25,7 @@ from pathlib import Path
 
 from agentsassemble.identity_store import (
     IDENTITY_DB_FILENAME,
-    IdentityStore,
+    IdentityBackend,
     LOCAL_OPERATOR_PARTICIPANT_ID,
     identity_store_at,
     migrate_legacy_users_json,
@@ -35,7 +35,7 @@ from agentsassemble.meeting_events import clean_lobby_text
 PARTICIPANT_TYPES = {"human", "subscription_ai", "api", "local", "remote", "unknown"}
 
 _state_lock = threading.Lock()
-_store: IdentityStore | None = None
+_store: IdentityBackend | None = None
 _ephemeral_dir: tempfile.TemporaryDirectory | None = None
 
 
@@ -77,11 +77,31 @@ def configure_room_users_store(path: str | os.PathLike[str] | None) -> None:
                     break
 
 
+def configure_room_users_backend(store: IdentityBackend | None) -> None:
+    """Use the server-selected identity authority for module-level helpers."""
+
+    global _store
+    with _state_lock:
+        _clear_store_locked()
+        _store = store
+
+
+def release_room_users_backend(store: IdentityBackend) -> bool:
+    """Release only the backend owned by the stopping server instance."""
+
+    global _store
+    with _state_lock:
+        if _store is not store:
+            return False
+        _store = None
+        return True
+
+
 def default_room_users_store_path(output_root: Path) -> Path:
     return output_root / IDENTITY_DB_FILENAME
 
 
-def _active_store() -> IdentityStore:
+def _active_store() -> IdentityBackend:
     """The configured store, or an ephemeral one (unconfigured = no persistence)."""
     global _store, _ephemeral_dir
     if _store is None:

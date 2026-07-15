@@ -102,8 +102,9 @@ server validates every selected control against it.
 Room-global settings are repository-owned. The strict record contains label,
 topic, appearance, conversation mode, bounded relay count, and custom channels.
 Room notification mode, per-channel notification mode, and read cursors are
-strict user-owned rows in `identity.db`; two users in the same room never share
-them. Runtime settings reads do not consult `room_settings.json`. Existing
+strict user-owned identity rows (`identity.db` locally or PostgreSQL in hosted
+mode); two users in the same room never share them. Runtime settings reads do
+not consult `room_settings.json`. Existing
 legacy globals and user preferences each require their separate explicit
 migration described in `docs/product/ROOM_REPOSITORY.md`.
 
@@ -253,6 +254,8 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Codex app-server lifecycle | `codex_app_server_runtime.py`; compatibility exports in `agent_sessions.py` |
 | Other provider process lifecycle | `room_bridge_process.py`, `live_cli.py`, provider adapter module |
 | Invites, browser admission, and operator-origin pairing | `room_invite.py`, `room_admission.py`, `operator_pairing.py`, `gui_room_invite_http.py`, `room_attendee.py`; browser flow in `frontend/src/app/useRoomAdmission.ts` |
+| Invite/session persistence | contract and local JSON adapter in `room_invite_repository.py`; hosted adapter in `postgres_invite_repository.py`; selection in `room_invite_repository_factory.py` |
+| Identity, credential, membership compatibility, preference, and usage persistence | contract/local SQLite in `identity_store.py`; hosted facade in `postgres_identity_repository.py`; selection in `identity_repository_factory.py` |
 | Provider credentials | `provider_secrets.py`, provider credential routes |
 | Canonical attachment upload/download HTTP | `gui_attachment_http.py`; storage in `attachments.py`, room media in `room_store.py` |
 | GUI HTTP response/WebSocket transport | `gui_response.py`, `gui_ws_http.py`; composition in `gui.py` |
@@ -271,7 +274,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Legacy resident local CLI discovery | `legacy_live_agent_discovery.py`, HTTP in `gui_legacy_live_agent_discovery_http.py` |
 | Remaining legacy resident smoke compatibility | `gui.py`; classify and extract one verified family at a time |
 | Room-global settings | `room_global_settings.py`, `room_settings_service.py`, repository methods; HTTP in `gui_room_settings_http.py` |
-| User-owned room notification/read preferences | validation in `room_user_preferences.py`; SQLite persistence in `identity_room_preferences.py`; composition in `room_settings_service.py` |
+| User-owned room notification/read preferences | validation in `room_user_preferences.py`; local persistence in `identity_room_preferences.py`; hosted persistence in `postgres_identity_preferences.py`; composition in `room_settings_service.py` |
 | Legacy room-global settings migration | source inspection in `legacy_room_settings_source.py`; atomic SQLite migration in `room_settings_migration.py` |
 | Legacy user preference migration | source inspection in `legacy_room_preferences_source.py`; explicit target-user migration in `room_preferences_migration.py` |
 | Friends, direct-message and local-profile HTTP | `gui_social_http.py`; direct-message process callback wired in `gui.py` |

@@ -16,8 +16,10 @@ from agentsassemble.identity_store import (
     make_identity_backend,
     migrate_legacy_members_json,
     migrate_legacy_users_json,
+    register_identity_store_for_output_root,
     register_identity_backend,
     reset_identity_store_registry,
+    unregister_identity_store_for_output_root,
 )
 
 ROOM = "room-db-test"
@@ -415,6 +417,17 @@ class BackendAbstractionTests(IdentityStoreTestCase):
             # don't leak the test backend into the global registry
             from agentsassemble import identity_store as mod
             mod._BACKEND_FACTORIES.pop("memory-test", None)
+
+    def test_output_root_binding_prevents_an_implicit_sqlite_fallback(self):
+        hosted_root = self.root / "hosted"
+        register_identity_store_for_output_root(hosted_root, self.store)
+        try:
+            self.assertIs(identity_store_for_output_root(hosted_root), self.store)
+            self.assertFalse((hosted_root / "identity.db").exists())
+        finally:
+            self.assertTrue(
+                unregister_identity_store_for_output_root(hosted_root, self.store)
+            )
 
 
 if __name__ == "__main__":

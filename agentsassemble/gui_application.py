@@ -58,8 +58,10 @@ class GuiApplicationServices:
     ws_ticket_store: WsTicketStore
     native_cli_bridge_manager: NativeCliBridgeProcessManager | None
     room_realtime_controller: RoomRealtimeController
+    identity_registry_cleanup: Callable[[], object] | None = None
     owns_room_repository: bool = True
     owns_invite_repository: bool = True
+    owns_identity_backend: bool = False
     owns_process_supervisor: bool = True
     owns_session_run_monitor: bool = True
     owns_public_tunnel_manager: bool = True
@@ -127,8 +129,14 @@ class GuiApplicationServices:
             attempt(self.room_realtime_controller.close)
         if transport_close is not None:
             attempt(transport_close)
+        if self.identity_registry_cleanup is not None:
+            attempt(self.identity_registry_cleanup)
         if self.owns_invite_repository:
             attempt(self.invite_repository.close)
+        if self.owns_identity_backend:
+            close_identity = getattr(self.identity_backend, "close", None)
+            if callable(close_identity):
+                attempt(close_identity)
         if self.owns_room_repository:
             attempt(self.room_repository.close)
 

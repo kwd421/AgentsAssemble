@@ -383,7 +383,13 @@ from agentsassemble.frontend_runtime import (
     frontend_dist_status,
 )
 from agentsassemble.room_friend_dms import enqueue_room_friend_direct_dm
-from agentsassemble.identity_store import default_identity_db_path, identity_store_for_output_root
+from agentsassemble.identity_repository_factory import build_identity_repository
+from agentsassemble.identity_store import (
+    IdentityBackend,
+    identity_store_for_output_root,
+    register_identity_store_for_output_root,
+    unregister_identity_store_for_output_root,
+)
 from agentsassemble.room_members import is_room_member_muted, mark_thinking, room_members_payload
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_repository_factory import (
@@ -408,9 +414,10 @@ from agentsassemble.ws_room_session import (
     WsTicketStore,
 )
 from agentsassemble.room_users import (
-    configure_room_users_store,
+    configure_room_users_backend,
     list_rooms,
     operator_user_id,
+    release_room_users_backend,
     touch_room,
     upsert_room,
 )
@@ -846,6 +853,8 @@ def _build_gui_application_services(
     owns_room_repository_override: bool = False,
     invite_repository_override: InviteSessionRepository | None = None,
     owns_invite_repository_override: bool = False,
+    identity_backend_override: IdentityBackend | None = None,
+    owns_identity_backend_override: bool = False,
     attention_shadow_mode: str = "off",
 ) -> GuiApplicationServices:
     """Build one ownership graph for the GUI server and handler factory."""
@@ -875,6 +884,10 @@ def _build_gui_application_services(
     owns_invite_repository = bool(
         invite_repository_override is None or owns_invite_repository_override
     )
+    identity_backend = identity_backend_override or identity_store_for_output_root(output_root)
+    owns_identity_backend = bool(
+        identity_backend_override is not None and owns_identity_backend_override
+    )
 
     owns_process_supervisor = process_supervisor is None
     owns_session_run_monitor = session_run_monitor is None
@@ -885,9 +898,20 @@ def _build_gui_application_services(
         configure_room_invite_repository(invite_repository)
         if owns_invite_repository:
             remember_cleanup("invite_repository.close", invite_repository.close)
-        configure_room_users_store(default_identity_db_path(output_root))
+        if owns_identity_backend:
+            close_identity = getattr(identity_backend, "close", None)
+            if callable(close_identity):
+                remember_cleanup("identity_backend.close", close_identity)
+
+        register_identity_store_for_output_root(output_root, identity_backend)
+
+        def release_identity_registration() -> None:
+            release_room_users_backend(identity_backend)
+            unregister_identity_store_for_output_root(output_root, identity_backend)
+
+        remember_cleanup("identity_backend.unregister", release_identity_registration)
+        configure_room_users_backend(identity_backend)
         _backfill_room_registry(output_root)
-        identity_backend = identity_store_for_output_root(output_root)
 
         live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
         if owns_process_supervisor:
@@ -954,8 +978,10 @@ def _build_gui_application_services(
             ws_ticket_store=ws_ticket_store,
             native_cli_bridge_manager=native_cli_bridge_manager,
             room_realtime_controller=room_realtime_controller,
+            identity_registry_cleanup=release_identity_registration,
             owns_room_repository=owns_room_repository,
             owns_invite_repository=owns_invite_repository,
+            owns_identity_backend=owns_identity_backend,
             owns_process_supervisor=owns_process_supervisor,
             owns_session_run_monitor=owns_session_run_monitor,
             owns_public_tunnel_manager=owns_public_tunnel_manager,
@@ -1005,11 +1031,14 @@ def serve_gui(
     )
     room_repository = build_room_repository(root, room_repository_settings)
     invite_repository: InviteSessionRepository | None = None
+    identity_backend: IdentityBackend | None = None
+    owns_identity_backend = room_repository_settings.backend == "postgresql"
     repositories_transferred = False
     services: GuiApplicationServices | None = None
     server: ThreadingHTTPServer | None = None
     try:
         invite_repository = build_invite_session_repository(root, room_repository_settings)
+        identity_backend = build_identity_repository(root, room_repository_settings)
         repositories_transferred = True
         services = _build_gui_application_services(
             root,
@@ -1017,6 +1046,8 @@ def serve_gui(
             owns_room_repository_override=True,
             invite_repository_override=invite_repository,
             owns_invite_repository_override=True,
+            identity_backend_override=identity_backend,
+            owns_identity_backend_override=owns_identity_backend,
             attention_shadow_mode=attention_shadow_mode,
         )
         handler = _make_handler(
@@ -1039,6 +1070,16 @@ def serve_gui(
             except BaseException as cleanup_error:
                 error.add_note(f"GUI service cleanup after startup failure failed: {cleanup_error}")
         elif not repositories_transferred:
+            if identity_backend is not None and owns_identity_backend:
+                close_identity = getattr(identity_backend, "close", None)
+                if callable(close_identity):
+                    try:
+                        close_identity()
+                    except BaseException as cleanup_error:
+                        error.add_note(
+                            "Identity repository cleanup after startup failure failed: "
+                            f"{cleanup_error}"
+                        )
             if invite_repository is not None:
                 try:
                     invite_repository.close()

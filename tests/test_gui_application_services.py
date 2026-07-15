@@ -28,6 +28,14 @@ class _InviteRepository(MemoryInviteSessionRepository):
         self.events.append("invite.close")
 
 
+class _IdentityRepository:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    def close(self) -> None:
+        self.events.append("identity.close")
+
+
 class _ProcessSupervisor:
     def __init__(self, events: list[str], *, fail_start: bool = False) -> None:
         self.events = events
@@ -111,7 +119,7 @@ class GuiApplicationServicesTests(unittest.TestCase):
             output_root=root,
             room_repository=_Repository(events),  # type: ignore[arg-type]
             invite_repository=_InviteRepository(events),
-            identity_backend=object(),  # type: ignore[arg-type]
+            identity_backend=_IdentityRepository(events),  # type: ignore[arg-type]
             invite_store_path=root / "room-invites.json",
             media_store=FileAttachmentStore(root),
             process_supervisor=_ProcessSupervisor(  # type: ignore[arg-type]
@@ -125,8 +133,10 @@ class GuiApplicationServicesTests(unittest.TestCase):
             ws_ticket_store=object(),  # type: ignore[arg-type]
             native_cli_bridge_manager=None,
             room_realtime_controller=_RealtimeController(events),  # type: ignore[arg-type]
+            identity_registry_cleanup=lambda: events.append("identity.unregister"),
             owns_room_repository=owns_resources,
             owns_invite_repository=owns_resources,
+            owns_identity_backend=owns_resources,
             owns_process_supervisor=owns_resources,
             owns_session_run_monitor=owns_resources,
             owns_public_tunnel_manager=owns_resources,
@@ -172,7 +182,9 @@ class GuiApplicationServicesTests(unittest.TestCase):
                 "process.close",
                 "realtime.close",
                 "transport.close",
+                "identity.unregister",
                 "invite.close",
+                "identity.close",
                 "repository.close",
             ],
         )
@@ -184,7 +196,7 @@ class GuiApplicationServicesTests(unittest.TestCase):
 
             services.shutdown(transport_close=lambda: events.append("transport.close"))
 
-        self.assertEqual(events, ["transport.close"])
+        self.assertEqual(events, ["transport.close", "identity.unregister"])
 
     def test_shutdown_attempts_all_cleanup_after_one_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -202,7 +214,9 @@ class GuiApplicationServicesTests(unittest.TestCase):
                 "process.close",
                 "realtime.close",
                 "transport.close",
+                "identity.unregister",
                 "invite.close",
+                "identity.close",
                 "repository.close",
             ],
         )
@@ -226,7 +240,9 @@ class GuiApplicationServicesTests(unittest.TestCase):
                 "tunnel.stop",
                 "process.close",
                 "realtime.close",
+                "identity.unregister",
                 "invite.close",
+                "identity.close",
                 "repository.close",
             ],
         )
@@ -252,7 +268,10 @@ class GuiApplicationServicesTests(unittest.TestCase):
         self.assertFalse(starter.is_alive())
         self.assertFalse(stopper.is_alive())
         self.assertLess(events.index("session.start"), events.index("session.stop"))
-        self.assertEqual(events[-2:], ["invite.close", "repository.close"])
+        self.assertEqual(
+            events[-4:],
+            ["identity.unregister", "invite.close", "identity.close", "repository.close"],
+        )
 
 
 if __name__ == "__main__":

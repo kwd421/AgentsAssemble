@@ -1,4 +1,4 @@
-"""SQLite-backed identity + roster storage (the DB phase of the rebuild).
+"""Identity contract and local SQLite identity/roster implementation.
 
 One file (identity.db) holds the relational core that scattered JSON files
 couldn't keep consistent:
@@ -9,9 +9,10 @@ couldn't keep consistent:
                  PRIMARY KEY (meeting_id, participant_id) makes ghost
                  duplicates structurally impossible
 
-Invite/session token state intentionally stays in room_invite.py's JSON store:
-its on-disk format is a tested security contract (no raw tokens at rest) and
-sessions are TTL-bound runtime state, not identity.
+Invite/session token state has its own repository contract because token use,
+replay prevention, and revocation have a different lifetime from identity.
+Hosted mode selects a PostgreSQL implementation of both contracts through the
+same room repository settings; local mode keeps this SQLite database.
 
 Concurrency: ThreadingHTTPServer calls from many threads; each operation opens
 a short-lived connection (cheap for this size) and WAL mode keeps readers and
@@ -1091,6 +1092,7 @@ def make_identity_backend(kind: str = "sqlite", **config: object) -> IdentityBac
 # -- sqlite store registry (one instance per db file) ---------------------------
 _registry_lock = threading.Lock()
 _stores: dict[str, IdentityBackend] = {}
+_output_root_stores: dict[str, IdentityBackend] = {}
 
 
 def default_identity_db_path(output_root: Path) -> Path:
@@ -1107,6 +1109,42 @@ def identity_store_at(db_path: Path) -> IdentityBackend:
         return store
 
 
+def register_identity_store_for_output_root(
+    output_root: Path,
+    store: IdentityBackend,
+) -> None:
+    """Bind one server data root to its selected identity authority.
+
+    Hosted mode must not let lower-level room helpers silently reopen the local
+    SQLite identity database. The GUI application owns this binding for the
+    same lifetime as its room and invite repositories.
+    """
+
+    key = str(Path(output_root).resolve())
+    with _registry_lock:
+        current = _output_root_stores.get(key)
+        if current is not None and current is not store:
+            raise RuntimeError(
+                f"An identity backend is already registered for output root {key!r}."
+            )
+        _output_root_stores[key] = store
+
+
+def unregister_identity_store_for_output_root(
+    output_root: Path,
+    store: IdentityBackend | None = None,
+) -> bool:
+    """Release an application-owned root binding without closing the backend."""
+
+    key = str(Path(output_root).resolve())
+    with _registry_lock:
+        current = _output_root_stores.get(key)
+        if current is None or (store is not None and current is not store):
+            return False
+        del _output_root_stores[key]
+        return True
+
+
 _migrated_member_roots: set[str] = set()
 
 
@@ -1118,8 +1156,13 @@ def identity_store_for_output_root(output_root: Path) -> IdentityBackend:
     The legacy import runs at most ONCE per root — not on every call — so a busy
     room (many concurrent WS connections each resolving the store) doesn't
     re-count + re-attempt the migration on every request."""
-    store = identity_store_at(default_identity_db_path(output_root))
     key = str(Path(output_root).resolve())
+    with _registry_lock:
+        configured = _output_root_stores.get(key)
+    if configured is not None:
+        return configured
+
+    store = identity_store_at(default_identity_db_path(output_root))
     if key not in _migrated_member_roots:
         with _registry_lock:
             if key not in _migrated_member_roots:
@@ -1133,6 +1176,7 @@ def reset_identity_store_registry() -> None:
     """Testing only: drop cached store instances (files stay on disk)."""
     with _registry_lock:
         _stores.clear()
+        _output_root_stores.clear()
         _migrated_member_roots.clear()
 
 

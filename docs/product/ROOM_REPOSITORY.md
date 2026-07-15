@@ -2,7 +2,7 @@
 
 Status: current storage authority and migration contract
 
-Updated: 2026-07-14
+Updated: 2026-07-15
 
 Read this document when changing canonical room persistence, transactions,
 attention state, or the SQLite/PostgreSQL boundary. It records ownership, not a
@@ -14,7 +14,7 @@ promise to migrate every legacy file into the canonical repository.
 | --- | --- | --- | --- |
 | Rooms, room-global settings, participants, Agent Sessions, events, command dedupe | `RoomRepository` (`RoomStore` SQLite by default) | `RoomRepository` | Canonical; SQLite and PostgreSQL share one contract. |
 | Deleted-room tombstones | `RoomStore.deleted_rooms` | `RoomRepository` | Canonical; must prevent stale clients from recreating deleted rooms. |
-| Human identity, credentials, room membership compatibility, usage | `identity_store.py` SQLite | Separate identity repository | Keep the security boundary separate initially; migrate deliberately after room parity. |
+| Human identity, credentials, room membership compatibility, preferences, usage | `IdentityBackend` (`IdentityStore` locally, `PostgresIdentityRepository` with the hosted room backend) | Separate identity repository | Hosted identity uses the same PostgreSQL DSN as the canonical room authority and never falls back to local SQLite. |
 | Browser and Agent Bridge invite claims and room bearer sessions | `InviteSessionRepository` (`JsonInviteSessionRepository` locally, PostgreSQL with the hosted room backend) | Invite/session repository | Raw invite/session tokens are never stored; use limits, nonce replay protection, and revocation are repository operations, not room events. |
 | Room-member moderation compatibility | `room_members.py` and identity DB | Canonical participant/membership commands | Reconcile with canonical participants; do not create a third roster. Ephemeral typing/thinking stays out of durable room state. |
 | Side chat | `side_chat.py` JSONL | Legacy or a future explicit channel model | Do not migrate into `RoomRepository` merely because the file exists. |
@@ -112,6 +112,15 @@ facade for token policy while repository implementations own locking,
 persistence, atomic invite consumption, replay protection, and session
 revocation.
 
+Identity persistence follows the same backend choice through
+`identity_repository_factory.py`. Local mode keeps `identity.db`; hosted mode
+selects `PostgresIdentityRepository` with the room DSN. The GUI registers that
+single backend for its output root so lower-level membership and realtime
+helpers cannot silently open SQLite. PostgreSQL identity operations are split
+by ownership: users/operator pairing, memberships/compatibility room registry,
+user preferences, and usage accounting. The repository facade alone owns the
+pool and transaction lifetime.
+
 PostgreSQL schema changes use the packaged Alembic lineage under
 `agentsassemble/migrations` and explicit SQL. Runtime repository queries use
 `psycopg3`, not an ORM. Revision `0001_room_repository` represents the original
@@ -122,8 +131,10 @@ retains the deleting principal, request identity, payload hash, ACK, and cleanup
 status in the deleted-room tombstone. This lets the same delete command finish
 post-delete cleanup without re-running provider process effects while rejecting
 conflicting retries. Revision `0004_room_global_settings` adds canonical
-room-global settings, and revision `0005_invite_sessions` adds the hosted invite
-and bearer-session authority. Runtime repository construction never runs Alembic and
+room-global settings, revision `0005_invite_sessions` adds the hosted invite
+and bearer-session authority, and revision `0006_identity_authority` adds
+hosted users, credentials, operator pairing, membership compatibility,
+preferences, and usage. Runtime repository construction never runs Alembic and
 refuses PostgreSQL until both the head revision and the authority marker are
 present. The existing SQLite migrator remains responsible for upgrading
 pre-repository local files and old SQLite versions.
