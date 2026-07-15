@@ -1,12 +1,12 @@
 # Admission Correctness Refactor Release Evidence
 
-Status: local release evidence complete; remote CI pending
+Status: release evidence complete
 
 Date: 2026-07-15
 
 Branch: `codex/risuai-character-personas`
 
-Range: `b2cccf11..7aaf289`
+Range: `b2cccf11..a096210`
 
 Plan: `docs/plans/2026-07-15-admission-correctness-refactor.md`
 
@@ -15,8 +15,8 @@ External review source: `review.md` supplied outside the repository
 ## 1. Scope And Verdict
 
 This range completes the planned identity, invite, admission, pairing,
-persistence, and application-composition correctness refactor. Local release
-gates pass.
+persistence, and application-composition correctness refactor. Local and
+remote release gates pass.
 
 The result is:
 
@@ -287,9 +287,33 @@ unsettled, changing candidate/backlog semantics here would silently make a
 product decision. The defect is therefore reported for the future
 conversation-policy work rather than patched with another filter or fallback.
 
-## 10. Remaining Verification
+## 10. Remote GitHub Actions
 
-Remote GitHub Actions is intentionally not claimed yet. This report must be
-committed and pushed before that evidence exists. The branch workflow will be
-observed after push, and any branch-related failure will be investigated rather
-than ignored or covered by a fallback.
+The first post-report workflow, run
+[`29448660921`](https://github.com/kwd421/AgentsAssemble/actions/runs/29448660921),
+found one frontend E2E test defect. The paused-session assertion searched the
+whole session region for `일시정지`, so Playwright strict mode correctly rejected
+the two matches: the visible session status and the pause button. Product state
+and pause behavior were correct; the selector was ambiguous.
+
+Commit `a096210` scoped the assertion to
+`.dc-member-session-location-head`, the status field the test intended to
+verify. It did not add a timeout, retry, fallback, or weaker text match. Two
+independent fresh-server local Playwright runs passed after the correction.
+
+Replacement workflow
+[`29449003915`](https://github.com/kwd421/AgentsAssemble/actions/runs/29449003915)
+then passed every required job:
+
+- Python 3.11 full unit suite;
+- Python 3.13 full unit suite;
+- PostgreSQL contracts;
+- Ubuntu runtime/platform contracts;
+- Windows runtime/platform contracts;
+- frontend Vitest and canonical-room Playwright E2E;
+- production frontend build.
+
+GitHub emitted non-failing Node 20 deprecation annotations for the current
+official `actions/checkout`, `actions/setup-python`, and `actions/setup-node`
+versions, which GitHub ran on Node 24. These are dependency-maintenance notices,
+not a product test failure or a suppressed warning.

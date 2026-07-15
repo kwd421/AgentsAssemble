@@ -1,6 +1,6 @@
 # Admission Correctness And Remaining Composition Refactor
 
-Status: implementation and local verification complete; remote CI pending
+Status: implementation and release verification complete
 
 Started: 2026-07-15
 
@@ -439,5 +439,14 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   that still relied on implicit global dependencies. Commit `7aaf289` replaced
   the meaningful admission case with a reducer behavior test, removed the
   stale implementation-presence assertions, and made host-account dependencies
-  explicit. Focused and full gates then passed. Remote CI remains to be
-  observed after the report commit is pushed.
+  explicit. Focused and full gates then passed.
+- 2026-07-15: Milestone 5.6 completed remote release verification. The first
+  pushed workflow (`29448660921`) exposed a Playwright strict-locator failure:
+  the paused-session assertion matched both the session status label and the
+  pause control. The underlying browser state was correct. Commit `a096210`
+  scoped the assertion to the session-location header rather than weakening
+  the check or adding a retry. The replacement workflow (`29449003915`) passed
+  Python 3.11, Python 3.13, PostgreSQL contracts, Ubuntu and Windows runtime
+  contracts, frontend unit/E2E tests, and the production frontend build. The
+  only annotations were GitHub's non-failing Node 20 deprecation notices for
+  official action versions. No frozen conversation or media policy changed.
