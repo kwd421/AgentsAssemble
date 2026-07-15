@@ -1199,3 +1199,15 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   closes the planned retained-route extraction without disguising deletion
   candidates as new abstractions. Final full Python/frontend/build/browser
   verification remains the next gate before declaring the phase complete.
+- 2026-07-15: Phase 5 final verification is complete. Full Python discovery
+  passed all 3,359 tests with 39 environment-dependent skips; frontend Vitest
+  passed all 106 tests across 20 files; the TypeScript/Vite production build
+  completed; and the canonical-room Playwright scenario passed against the
+  real fixture server, covering desktop streaming and mobile control of the
+  same session. `compileall` and `git diff --check` also passed. Existing
+  SQLite `ResourceWarning` output in the Python suite and the Vite 500 kB chunk
+  warning remain visible follow-up signals, not hidden failures introduced by
+  this refactor. Phase 5 is complete. The seven handler deletion candidates
+  still require their separately documented compatibility decision; no real
+  provider runtime behavior changed, so no paid/provider smoke was run for
+  this behavior-preserving composition slice.
