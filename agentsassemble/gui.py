@@ -19,16 +19,7 @@ from agentsassemble.attachments import (
     FileAttachmentStore,
     normalize_attachment_references,
 )
-from agentsassemble.codex_sessions import (
-    CODEX_LIVE_PROVIDER_ID,
-    DEFAULT_LIVE_AGENT_CONFIG_PATH,
-    build_codex_live_agent_config,
-    build_codex_live_invite_config,
-    list_codex_sessions,
-    read_agent_config,
-    write_agent_config,
-)
-from agentsassemble.config import load_council_config
+from agentsassemble.codex_sessions import list_codex_sessions
 from agentsassemble.live_agent_context import live_agent_context_contract
 from agentsassemble.live_agent_flow import FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
 from agentsassemble.live_agent_frontend_create import (
@@ -63,6 +54,10 @@ from agentsassemble.gui_legacy_live_agent_read_http import (
 from agentsassemble.gui_legacy_live_agent_presence_http import register_legacy_live_agent_presence_routes
 from agentsassemble.gui_legacy_live_agent_engagement_http import register_legacy_live_agent_engagement_route
 from agentsassemble.gui_legacy_live_agent_join_brief_http import register_legacy_live_agent_join_brief_route
+from agentsassemble.gui_legacy_codex_session_http import (
+    LegacyCodexSessionHttpDeps,
+    register_legacy_codex_session_routes,
+)
 from agentsassemble.gui_legacy_live_agent_probe_http import (
     LegacyLiveAgentProbeHttpDeps,
     register_legacy_live_agent_probe_route,
@@ -192,7 +187,6 @@ from agentsassemble.legacy_live_agent_session_control import (
     session_resume_operation_summary as _session_resume_operation_summary,
     session_start_error_details as _session_start_error_details,
     session_start_error_message as _session_start_error_message,
-    session_start_operation_status as _session_start_operation_status,
     session_start_operation_summary as _session_start_operation_summary,
     session_stop_error_message as _session_stop_error_message,
     session_stop_operation_status as _session_stop_operation_status,
@@ -226,7 +220,6 @@ from agentsassemble.live_agents import (
 from agentsassemble.live_agent_operations import append_live_agent_operation
 from agentsassemble.live_agent_processes import (
     LiveAgentProcessSupervisor,
-    clean_live_agent_group_id,
 )
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_sessions import (
@@ -374,7 +367,11 @@ from agentsassemble.legacy_review_checkpoint import (
     LegacyReviewCheckpointService,
     create_review_checkpoint as _create_review_checkpoint,
 )
-from agentsassemble.legacy_turn_scheduler import meeting_turn_lock as _live_agent_round_scheduler_lock
+from agentsassemble.legacy_codex_session_compat import (
+    LegacyCodexSessionCompatibilityService,
+    codex_session_invite_payload,
+    codex_session_join_payload as _legacy_codex_session_join_payload,
+)
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_payload, provider_health_report
 from agentsassemble.provider_login import ProviderLoginService
@@ -431,11 +428,9 @@ from agentsassemble.meeting_events import (
     append_live_event,
     append_lobby_event_to_file,
     clean_lobby_text,
-    read_live_events,
     read_live_events_after,
     read_lobby_events_after,
     read_side_chat_events_after,
-    write_live_state,
 )
 from agentsassemble.side_chat import (
     _filter_side_chat_events_for_meeting,
@@ -2718,26 +2713,6 @@ def record_live_agent_operation(
     )
 
 
-def codex_session_invite_payload(
-    output_root: Path,
-    *,
-    session_id: str,
-    role_id: str,
-    meeting_id: str | None = None,
-) -> dict[str, object]:
-    config_path = output_root / "codex-live-session.local.json"
-    role_ids = _codex_invite_role_ids(output_root, meeting_id)
-    config = build_codex_live_invite_config(
-        session_id=session_id,
-        role_id=role_id,
-        role_ids=role_ids,
-        existing=read_agent_config(config_path),
-    )
-    write_agent_config(config_path, config)
-    binding = _binding_for_role(config.get("agent_bindings", []), role_id)
-    return {"config_path": str(config_path), "binding": binding}
-
-
 def codex_session_join_payload(
     output_root: Path,
     process_supervisor: LiveAgentProcessSupervisor,
@@ -2745,230 +2720,14 @@ def codex_session_join_payload(
     *,
     default_server: str,
 ) -> dict[str, object]:
-    meeting_id = _clean_codex_join_meeting_id(payload.get("meeting_id"))
-    role_id = str(payload.get("role_id") or "")
-    session_id = str(payload.get("session_id") or "")
-    with _live_agent_round_scheduler_lock(meeting_id):
-        meeting_dir = _codex_join_meeting_dir(output_root, meeting_id)
-        meeting = _read_meeting_record(meeting_dir)
-        _validate_codex_join_pre_round(meeting_dir, meeting)
-
-        config_path = output_root / "codex-live-session.local.json"
-        live_agent_config_path = output_root / DEFAULT_LIVE_AGENT_CONFIG_PATH.name
-        effective_server = str(payload.get("server") or default_server)
-        role_ids = _codex_invite_role_ids(output_root, meeting_id)
-        config = build_codex_live_invite_config(
-            session_id=session_id,
-            role_id=role_id,
-            role_ids=role_ids,
-            existing=_codex_join_agent_config_from_meeting(meeting),
-        )
-        resident_config = build_codex_live_agent_config(
-            config,
-            server=effective_server,
-            meeting_id=meeting_id,
-            engagement_mode=str(payload.get("engagement_mode") or "moderator_called"),
-        )
-        write_agent_config(config_path, config)
-        write_agent_config(live_agent_config_path, resident_config)
-        write_live_state(meeting_dir, _meeting_with_codex_live_config(meeting, config, config_path=config_path))
-
-        group_id = clean_live_agent_group_id(live_agent_config_path.stem)
-        session_payload = {
-            "server": effective_server,
-            "meeting_id": meeting_id,
-            "group_id": group_id,
-            "live_agent_config_path": str(live_agent_config_path),
-            "connect_timeout_seconds": _payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
-            "auto_restart": _payload_bool(payload.get("auto_restart")),
-            "max_restarts": _payload_nonnegative_int(payload.get("max_restarts"), 0),
-            "restart_backoff_seconds": _payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
-            "stale_restart_after_seconds": _payload_nonnegative_float(payload.get("stale_restart_after_seconds"), 0.0),
-        }
-        binding = _binding_for_role(config.get("agent_bindings", []), role_id)
-        if _codex_join_needs_session_restart(output_root, process_supervisor, group_id=group_id, binding=binding):
-            session = live_agent_session_restart_payload(output_root, process_supervisor, session_payload)
-            session["action"] = "restart"
-        else:
-            session = live_agent_session_ensure_payload(
-                output_root,
-                process_supervisor,
-                session_payload,
-                default_server=effective_server,
-            )
-        session["config_path"] = str(config_path)
-        session["live_agent_config_path"] = str(live_agent_config_path)
-        session["invite"] = {
-            "config_path": str(config_path),
-            "live_agent_config_path": str(live_agent_config_path),
-            "group_id": group_id,
-            "binding": binding,
-        }
-        return session
-
-
-def _clean_codex_join_meeting_id(value: object) -> str:
-    meeting_id = clean_lobby_text(value, limit=128)
-    if not meeting_id or meeting_id in {".", ".."}:
-        raise ValueError("Meeting was not found.")
-    if "/" in meeting_id or "\\" in meeting_id or Path(meeting_id).name != meeting_id:
-        raise ValueError(f"Meeting {meeting_id} was not found.")
-    return meeting_id
-
-
-def _codex_join_meeting_dir(output_root: Path, meeting_id: str) -> Path:
-    meetings_root = (output_root / "meetings").resolve()
-    meeting_dir = (meetings_root / meeting_id).resolve()
-    try:
-        meeting_dir.relative_to(meetings_root)
-    except ValueError as error:
-        raise ValueError(f"Meeting {meeting_id} was not found.") from error
-    if not meeting_dir.exists() or not meeting_dir.is_dir():
-        raise ValueError(f"Meeting {meeting_id} was not found.")
-    if not (meeting_dir / "live_state.json").exists():
-        raise ValueError("Codex live session join requires a live pre-round meeting.")
-    return meeting_dir
-
-
-def _validate_codex_join_pre_round(meeting_dir: Path, meeting: dict[str, object]) -> None:
-    if clean_lobby_text(meeting.get("live_status"), limit=64) not in {"running", "stalled"}:
-        raise ValueError("Codex live session join requires a live pre-round meeting.")
-    if _as_dict_list(meeting.get("debate_rounds")):
-        raise ValueError("Codex live session join is only available before official rounds begin.")
-    for event in read_live_events(meeting_dir, limit=None):
-        if event.get("official_record") is True or event.get("channel") == "official" or event.get("kind") == "live_agent_turn_request":
-            raise ValueError("Codex live session join is only available before official rounds begin.")
-
-
-def _codex_join_agent_config_from_meeting(meeting: dict[str, object]) -> dict[str, object]:
-    return {
-        "providers": _config_map_values(meeting.get("provider_configs")),
-        "permission_profiles": _config_map_values(meeting.get("permission_profiles")),
-        "agent_bindings": [
-            binding
-            for binding in _as_dict_list(meeting.get("agent_bindings"))
-            if binding.get("provider_id") == CODEX_LIVE_PROVIDER_ID
-        ],
-    }
-
-
-def _codex_join_needs_session_restart(
-    output_root: Path,
-    process_supervisor: LiveAgentProcessSupervisor,
-    *,
-    group_id: str,
-    binding: dict[str, object],
-) -> bool:
-    group = _find_session_process_group(_session_process_groups_snapshot(process_supervisor), group_id)
-    if str(group.get("status") or "") not in {"running", "restarting"}:
-        return False
-    agent_id = str(binding.get("agent_id") or "").strip()
-    requested_session_id = str(binding.get("session_id") or "").strip()
-    if not agent_id or not requested_session_id:
-        return False
-    for agent in read_live_agents(output_root):
-        if str(agent.get("agent_id") or "") != agent_id:
-            continue
-        return str(agent.get("session_id") or "").strip() != requested_session_id
-    return False
-
-
-def _meeting_with_codex_live_config(
-    meeting: dict[str, object],
-    config: dict[str, object],
-    *,
-    config_path: Path,
-) -> dict[str, object]:
-    updated = dict(meeting)
-    updated["provider_configs"] = _dicts_by_id(config.get("providers"))
-    updated["permission_profiles"] = _dicts_by_id(config.get("permission_profiles"))
-    updated["agent_bindings"] = _as_dict_list(config.get("agent_bindings"))
-    updated["agent_config_source"] = str(config_path)
-    return updated
-
-
-def _config_map_values(value: object) -> list[dict[str, object]]:
-    if isinstance(value, dict):
-        return [dict(item) for item in value.values() if isinstance(item, dict)]
-    return _as_dict_list(value)
-
-
-def _dicts_by_id(value: object) -> dict[str, dict[str, object]]:
-    result: dict[str, dict[str, object]] = {}
-    for item in _as_dict_list(value):
-        item_id = str(item.get("id") or "").strip()
-        if item_id:
-            result[item_id] = item
-    return result
-
-
-def _codex_invite_role_ids(output_root: Path, meeting_id: str | None) -> list[str]:
-    if meeting_id:
-        meeting_dir = output_root / "meetings" / meeting_id
-        if not meeting_dir.exists():
-            raise ValueError(f"Meeting {meeting_id} was not found.")
-        meeting = _read_meeting_record(meeting_dir)
-        role_ids = [str(role["id"]) for role in _as_dict_list(meeting.get("roles", [])) if role.get("id")]
-        if role_ids:
-            return role_ids
-    return [role.id for role in load_council_config().roles]
-
-
-def _binding_for_role(bindings: object, role_id: str) -> dict[str, object]:
-    for binding in _as_dict_list(bindings):
-        if binding.get("role_id") == role_id:
-            return binding
-    raise ValueError(f"No Codex live binding was written for role {role_id}.")
-
-
-def _codex_session_invite_operation_details(invite: dict[str, object]) -> dict[str, object]:
-    binding = invite.get("binding") if isinstance(invite.get("binding"), dict) else {}
-    return {
-        "role_id": clean_lobby_text(binding.get("role_id"), limit=128),
-        "agent_id": clean_lobby_text(binding.get("agent_id"), limit=128),
-        "join_mode": clean_lobby_text(binding.get("join_mode"), limit=64),
-        "provider_id": clean_lobby_text(binding.get("provider_id"), limit=128),
-    }
-
-
-def _codex_session_invite_error_details(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
-    role_id = clean_lobby_text(payload.get("role_id"), limit=128)
-    meeting_id = _optional_str(payload.get("meeting_id"))
-    try:
-        known_role_ids = set(_codex_invite_role_ids(output_root, meeting_id))
-    except ValueError:
-        known_role_ids = set()
-    return {"role_id": role_id} if role_id in known_role_ids else {}
-
-
-def _codex_session_join_operation_details(join: dict[str, object]) -> dict[str, object]:
-    invite = join.get("invite") if isinstance(join.get("invite"), dict) else {}
-    details = _codex_session_invite_operation_details(invite)
-    details.update(
-        {
-            "meeting_id": clean_lobby_text(join.get("meeting_id"), limit=128),
-            "group_id": clean_lobby_text(join.get("group_id"), limit=128),
-            "result_status": _operation_result_status(join.get("status")),
-        }
+    return _legacy_codex_session_join_payload(
+        output_root,
+        process_supervisor,
+        payload,
+        default_server=default_server,
+        ensure_session=live_agent_session_ensure_payload,
+        restart_session=live_agent_session_restart_payload,
     )
-    ensure_action = clean_lobby_text(join.get("action"), limit=64)
-    if ensure_action:
-        details["ensure_action"] = ensure_action
-    return details
-
-
-def _codex_session_join_error_details(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
-    details: dict[str, object] = {}
-    meeting_id = clean_lobby_text(payload.get("meeting_id"), limit=128)
-    role_id = clean_lobby_text(payload.get("role_id"), limit=128)
-    try:
-        _codex_join_meeting_dir(output_root, meeting_id)
-        details["meeting_id"] = meeting_id
-        if role_id in set(_codex_invite_role_ids(output_root, meeting_id)):
-            details["role_id"] = role_id
-    except ValueError:
-        pass
-    return details
 
 
 def _index_by_id(items: object) -> dict[str, dict[str, object]]:
@@ -3404,6 +3163,27 @@ def _make_handler(
     ) -> dict[str, object] | None:
         return ctx.handler._operation_json_payload(operation=operation_name, target_id=target_id)
 
+    register_legacy_codex_session_routes(
+        route_table,
+        deps=LegacyCodexSessionHttpDeps(
+            sessions=LegacyCodexSessionCompatibilityService(
+                output_root=output_root,
+                processes=live_agent_process_supervisor,
+                ensure_session=lambda *args, **kwargs: live_agent_session_ensure_payload(
+                    *args,
+                    **kwargs,
+                ),
+                restart_session=lambda *args, **kwargs: live_agent_session_restart_payload(
+                    *args,
+                    **kwargs,
+                ),
+                record_operation=record_live_agent_operation,
+            ),
+            read_operation_payload=_late_operation_json_payload,
+            request_server_url=lambda ctx: ctx.handler._request_server_url(),
+        ),
+    )
+
     register_legacy_live_agent_official_reply_route(
         route_table,
         deps=LegacyLiveAgentOfficialReplyHttpDeps(
@@ -3823,84 +3603,6 @@ def _make_handler(
                     details={"meeting_id": str(result.get("meeting_id") or payload.get("meeting_id") or "")},
                 )
                 self._send_json(result)
-                return
-            if parsed.path == "/api/codex-sessions/invite":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                try:
-                    invite = codex_session_invite_payload(
-                        output_root,
-                        session_id=str(payload.get("session_id") or ""),
-                        role_id=str(payload.get("role_id") or ""),
-                        meeting_id=_optional_str(payload.get("meeting_id")),
-                    )
-                except ValueError:
-                    safe_error = "Codex live session invite failed."
-                    safe_details = _codex_session_invite_error_details(output_root, payload)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="codex_session.invite",
-                        status="failed",
-                        target_id=safe_details.get("role_id", ""),
-                        summary="Codex live session invite failed",
-                        error=safe_error,
-                        details=safe_details,
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
-                    return
-                operation_details = _codex_session_invite_operation_details(invite)
-                record_live_agent_operation(
-                    output_root,
-                    operation="codex_session.invite",
-                    status="success",
-                    target_id=operation_details.get("role_id", ""),
-                    summary="wrote Codex live session invite",
-                    details=operation_details,
-                )
-                self._send_json(invite)
-                return
-            if parsed.path == "/api/codex-sessions/join":
-                payload = self._operation_json_payload(operation="codex_session.join")
-                if payload is None:
-                    return
-                try:
-                    join = codex_session_join_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                        default_server=self._request_server_url(),
-                    )
-                except (OSError, ValueError):
-                    safe_error = "Codex live session join failed."
-                    safe_details = _codex_session_join_error_details(output_root, payload)
-                    record_live_agent_operation(
-                        output_root,
-                        operation="codex_session.join",
-                        status="failed",
-                        target_id=str(safe_details.get("role_id") or safe_details.get("meeting_id") or ""),
-                        summary="Codex live session join failed",
-                        error=safe_error,
-                        details=safe_details,
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
-                    return
-                operation_details = _codex_session_join_operation_details(join)
-                record_live_agent_operation(
-                    output_root,
-                    operation="codex_session.join",
-                    status=_session_start_operation_status(join),
-                    target_id=str(operation_details.get("role_id") or join.get("meeting_id") or ""),
-                    summary="joined Codex live session",
-                    details=operation_details,
-                )
-                self._send_json(join)
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")
 

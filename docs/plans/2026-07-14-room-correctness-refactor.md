@@ -1179,3 +1179,15 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   redaction. The remaining retained fixed compatibility family is Codex
   invite/join. The seven deletion candidates and canonical name/avatar history
   reprojection remain unchanged.
+- 2026-07-15: Retained Codex meeting-session invite/join is now Router-owned
+  through `LegacyCodexSessionCompatibilityService`. The service owns invite
+  config writes, pre-round validation under the shared meeting turn lock,
+  resident config projection, session ensure/restart selection, and bounded
+  success/failure audit that excludes provider session ids and local config
+  paths. `gui.py` keeps only a direct-call compatibility wrapper and late-bound
+  session callbacks, preserving existing tests and integration patch points.
+  Focused route/service/ownership tests passed 14, the complete meeting-payload
+  HTTP suite passed 20, and CLI/document/parity checks passed 53. The generated
+  POST handler now contains only explicit deletion candidates; do not migrate
+  those candidates before a separate compatibility decision. Canonical
+  name/avatar history reprojection remains unchanged.
