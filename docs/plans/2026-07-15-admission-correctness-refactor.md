@@ -188,3 +188,9 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   in-memory token behind an explicit retry button; terminal failures discard it
   and direct the user to obtain a new link instead of remaining in a false
   pending state.
+- 2026-07-15: Milestone 1.1 implemented. `InviteApplicationService` now owns
+  invite creation, side-effect-free inspection, pending summaries, revocation,
+  and repository signing-secret access for one injected repository. The old
+  module functions remain compatibility entry points backed by the same
+  service, while direct service instances are isolated and testable without
+  changing process-global state.

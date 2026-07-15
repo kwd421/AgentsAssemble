@@ -19,6 +19,7 @@ import hashlib
 import hmac as hmac_mod
 import os
 import secrets
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -177,9 +178,89 @@ def clear_runtime_public_url(expected_url: str = "") -> None:
     _runtime_public_url = ""
 
 
+class InviteApplicationService:
+    """Own invite creation and validation for one repository instance.
+
+    Session issuance and admission mutations deliberately remain outside this
+    boundary until the admission coordinator owns their multi-store workflow.
+    The module-level functions below are compatibility entry points that use
+    one process-default instance of this service.
+    """
+
+    def __init__(
+        self,
+        repository: InviteSessionRepository,
+        *,
+        public_url: Callable[[], str] | None = None,
+        now: Callable[[], datetime] | None = None,
+    ) -> None:
+        if not isinstance(repository, InviteSessionRepository):
+            raise TypeError("repository must implement InviteSessionRepository")
+        self._repository = repository
+        self._public_url = public_url or (lambda: "")
+        self._now = now or (lambda: datetime.now(UTC))
+
+    def signing_secret(self) -> str:
+        return self._repository.signing_secret()
+
+    def create(
+        self,
+        *,
+        room_url: str,
+        meeting_id: str,
+        agent_id: str = "",
+        display_name: str = "",
+        ttl_seconds: int = 600,
+        invite_scope: str = ROOM_INVITE_SCOPE,
+        participant_type: str = "human",
+        permission_mode: str = "",
+        max_uses: int = 0,
+        client_type: str = "browser",
+        provider_kind: str = "manual",
+        created_by_user_id: str = "",
+    ) -> dict[str, object]:
+        return _create_room_invite(
+            self._repository,
+            public_url=self._public_url(),
+            now=self._now(),
+            room_url=room_url,
+            meeting_id=meeting_id,
+            agent_id=agent_id,
+            display_name=display_name,
+            ttl_seconds=ttl_seconds,
+            invite_scope=invite_scope,
+            participant_type=participant_type,
+            permission_mode=permission_mode,
+            max_uses=max_uses,
+            client_type=client_type,
+            provider_kind=provider_kind,
+            created_by_user_id=created_by_user_id,
+        )
+
+    def inspect(self, token: str, *, meeting_id: str = "") -> dict[str, object]:
+        return _inspect_room_invite(
+            self._repository,
+            token,
+            meeting_id=meeting_id,
+            now=self._now(),
+        )
+
+    def revoke(self, invite_id: str) -> bool:
+        return self._repository.revoke_invite(invite_id)
+
+    def pending(self) -> list[dict[str, object]]:
+        return _pending_invites_summary(self._repository, now=self._now())
+
+
+_invite_application = InviteApplicationService(
+    _repository,
+    public_url=get_public_url,
+)
+
+
 def _get_invite_secret() -> str:
     """Return the repository-owned signing secret."""
-    return _repository.signing_secret()
+    return _invite_application.signing_secret()
 
 
 def _session_issuer() -> RoomSessionIssuer:
@@ -204,10 +285,14 @@ def configure_room_invite_store(path: str | os.PathLike[str] | None) -> None:
 
 def configure_room_invite_repository(repository: InviteSessionRepository) -> None:
     """Install the server-scoped invite/session repository."""
-    global _repository
+    global _repository, _invite_application
     if not isinstance(repository, InviteSessionRepository):
         raise TypeError("repository must implement InviteSessionRepository")
     _repository = repository
+    _invite_application = InviteApplicationService(
+        repository,
+        public_url=get_public_url,
+    )
 
 
 def reload_room_invite_store() -> None:
@@ -230,6 +315,41 @@ def create_room_invite(
     provider_kind: str = "manual",
     created_by_user_id: str = "",
 ) -> dict[str, object]:
+    """Compatibility facade for the process-default invite service."""
+    return _invite_application.create(
+        room_url=room_url,
+        meeting_id=meeting_id,
+        agent_id=agent_id,
+        display_name=display_name,
+        ttl_seconds=ttl_seconds,
+        invite_scope=invite_scope,
+        participant_type=participant_type,
+        permission_mode=permission_mode,
+        max_uses=max_uses,
+        client_type=client_type,
+        provider_kind=provider_kind,
+        created_by_user_id=created_by_user_id,
+    )
+
+
+def _create_room_invite(
+    repository: InviteSessionRepository,
+    *,
+    public_url: str,
+    now: datetime,
+    room_url: str,
+    meeting_id: str,
+    agent_id: str = "",
+    display_name: str = "",
+    ttl_seconds: int = 600,
+    invite_scope: str = ROOM_INVITE_SCOPE,
+    participant_type: str = "human",
+    permission_mode: str = "",
+    max_uses: int = 0,
+    client_type: str = "browser",
+    provider_kind: str = "manual",
+    created_by_user_id: str = "",
+) -> dict[str, object]:
     """Create an invite token for a remote client to join the room.
 
     Called by the host from the web UI. Uses the server-lifetime secret
@@ -237,7 +357,7 @@ def create_room_invite(
 
     Returns invite info including join_url when a public base URL is configured.
     """
-    secret = _get_invite_secret()
+    secret = repository.signing_secret()
     clean_agent_id = clean_lobby_text(agent_id, limit=64) or f"guest-{secrets.token_hex(4)}"
     clean_display_name = clean_lobby_text(display_name, limit=128) or clean_agent_id
     clean_invite_scope = normalize_invite_scope(invite_scope)
@@ -268,7 +388,7 @@ def create_room_invite(
         secret=secret,
         ttl_seconds=ttl_seconds,
         permission_mode=resolved_permission_mode,
-        public_room_url=get_public_url(),
+        public_room_url=public_url,
     )
 
     invite_token = packet["token"]
@@ -278,7 +398,7 @@ def create_room_invite(
 
     # Track pending invite for revocation and atomic use accounting.
     invite_id = _invite_fingerprint(str(invite_token))
-    _repository.save_invite(
+    repository.save_invite(
         {
             "invite_id": invite_id,
             "agent_id": clean_agent_id,
@@ -295,13 +415,12 @@ def create_room_invite(
             "max_uses": clean_max_uses,
             "use_count": 0,
             "expires_at": packet["expires_at"],
-            "created_at": datetime.now(UTC).isoformat(),
+            "created_at": now.isoformat(),
             "revoked": False,
         }
     )
 
     # Build join_url from public base URL if configured
-    public_url = get_public_url()
     join_url = ""
     if public_url:
         join_url = f"{public_url}/join?token={join_code}"
@@ -347,6 +466,17 @@ def _invite_fingerprint(token: str) -> str:
 
 
 def inspect_room_invite(token: str, *, meeting_id: str = "") -> dict[str, object]:
+    """Compatibility facade for side-effect-free invite inspection."""
+    return _invite_application.inspect(token, meeting_id=meeting_id)
+
+
+def _inspect_room_invite(
+    repository: InviteSessionRepository,
+    token: str,
+    *,
+    meeting_id: str = "",
+    now: datetime,
+) -> dict[str, object]:
     """Validate an invite without consuming it or issuing identity state.
 
     This is the admission-preflight primitive. It deliberately returns only
@@ -360,9 +490,9 @@ def inspect_room_invite(token: str, *, meeting_id: str = "") -> dict[str, object
     join_code_fingerprint = hashlib.sha256(join_code.encode("utf-8")).hexdigest() if join_code else ""
     invite_id = _invite_fingerprint(clean_token)
     invite = (
-        _repository.invite_for_join_code(join_code_fingerprint)
+        repository.invite_for_join_code(join_code_fingerprint)
         if join_code_fingerprint
-        else _repository.invite(invite_id)
+        else repository.invite(invite_id)
     )
     if join_code_fingerprint:
         invite_id = str((invite or {}).get("invite_id") or "")
@@ -377,14 +507,14 @@ def inspect_room_invite(token: str, *, meeting_id: str = "") -> dict[str, object
             expires_at = datetime.fromisoformat(str(invite.get("expires_at") or ""))
         except ValueError:
             return {"status": "rejected", "reason": "invite_invalid"}
-        if expires_at <= datetime.now(UTC):
+        if expires_at <= now:
             return {"status": "rejected", "reason": "token_expired"}
         resolved_meeting_id = clean_lobby_text(invite.get("meeting_id"), limit=128)
         if meeting_id and clean_lobby_text(meeting_id, limit=128) != resolved_meeting_id:
             return {"status": "rejected", "reason": "meeting_mismatch"}
         nonce = str(invite.get("join_nonce") or "")
     else:
-        invite_secret = _repository.existing_signing_secret()
+        invite_secret = repository.existing_signing_secret()
         if not invite_secret:
             return {"status": "rejected", "reason": "invite_not_found"}
         verification = verify_lan_invite_token(
@@ -409,7 +539,7 @@ def inspect_room_invite(token: str, *, meeting_id: str = "") -> dict[str, object
     reusable = max_uses != 1
     if max_uses and use_count >= max_uses:
         return {"status": "rejected", "reason": "invite_use_limit_reached"}
-    if not reusable and _repository.nonce_was_used(_nonce_fingerprint(nonce)):
+    if not reusable and repository.nonce_was_used(_nonce_fingerprint(nonce)):
         return {"status": "rejected", "reason": "token_already_used"}
 
     agent_info = {}
@@ -745,8 +875,8 @@ def active_sessions_summary() -> list[dict[str, object]]:
 
 
 def revoke_invite(invite_id: str) -> bool:
-    """Revoke a pending invite by its invite_id. Returns True if found."""
-    return _repository.revoke_invite(invite_id)
+    """Compatibility facade for revoking a pending invite."""
+    return _invite_application.revoke(invite_id)
 
 
 def revoke_room_access(meeting_id: str) -> dict[str, int]:
@@ -758,10 +888,18 @@ def revoke_room_access(meeting_id: str) -> dict[str, int]:
 
 
 def pending_invites_summary() -> list[dict[str, object]]:
+    """Compatibility facade for safe pending-invite summaries."""
+    return _invite_application.pending()
+
+
+def _pending_invites_summary(
+    repository: InviteSessionRepository,
+    *,
+    now: datetime,
+) -> list[dict[str, object]]:
     """Return summary of pending (non-consumed, non-expired) invites."""
-    now = datetime.now(UTC)
     result = []
-    for info in _repository.list_invites():
+    for info in repository.list_invites():
         expires = datetime.fromisoformat(str(info["expires_at"]))
         if expires <= now:
             continue
@@ -813,8 +951,12 @@ def _issue_session_token(
 
 def reset_state() -> None:
     """Reset all in-memory state. For testing only."""
-    global _repository, _runtime_host_token, _runtime_public_url
+    global _repository, _invite_application, _runtime_host_token, _runtime_public_url
     _repository = MemoryInviteSessionRepository()
+    _invite_application = InviteApplicationService(
+        _repository,
+        public_url=get_public_url,
+    )
     _runtime_host_token = ""
     _runtime_public_url = ""
 

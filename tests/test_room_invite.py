@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentsassemble.room_invite import (
+    InviteApplicationService,
     active_sessions_summary,
     configure_room_invite_store,
     create_room_invite,
@@ -24,6 +25,7 @@ from agentsassemble.room_invite import (
 )
 from agentsassemble.room_invite_repository import (
     InviteRepositoryNotConfigured,
+    MemoryInviteSessionRepository,
     UnconfiguredInviteSessionRepository,
 )
 
@@ -31,8 +33,8 @@ from agentsassemble.room_invite_repository import (
 class TestRoomInviteRepositoryConfiguration(unittest.TestCase):
     def test_facade_fails_closed_before_repository_configuration(self) -> None:
         with patch(
-            "agentsassemble.room_invite._repository",
-            UnconfiguredInviteSessionRepository(),
+            "agentsassemble.room_invite._invite_application",
+            InviteApplicationService(UnconfiguredInviteSessionRepository()),
         ):
             with self.assertRaises(InviteRepositoryNotConfigured):
                 create_room_invite(
@@ -50,6 +52,29 @@ class TestRoomInviteRepositoryConfiguration(unittest.TestCase):
         )
 
         self.assertTrue(str(invite["invite_token"]).startswith("aai1."))
+
+    def test_application_services_do_not_share_repository_state(self) -> None:
+        first = InviteApplicationService(
+            MemoryInviteSessionRepository(),
+            public_url=lambda: "https://first.example",
+        )
+        second = InviteApplicationService(
+            MemoryInviteSessionRepository(),
+            public_url=lambda: "https://second.example",
+        )
+
+        invite = first.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            display_name="First Guest",
+        )
+
+        self.assertEqual(first.inspect(str(invite["join_code"]))["status"], "valid")
+        self.assertEqual(second.inspect(str(invite["join_code"]))["reason"], "invite_not_found")
+        self.assertEqual(first.pending()[0]["display_name"], "First Guest")
+        self.assertEqual(first.revoke(str(invite["invite_id"])), True)
+        self.assertEqual(first.inspect(str(invite["join_code"]))["reason"], "invite_revoked")
+        self.assertNotEqual(first.signing_secret(), second.signing_secret())
 
 
 
