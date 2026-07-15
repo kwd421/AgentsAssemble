@@ -846,7 +846,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("로컬 미리보기 복사", invite_modal_source)
         self.assertNotIn("보안 링크 복사", invite_modal_source)
         self.assertIn("외부 공유에는 공개 URL 기반 보안 초대 링크가 필요합니다.", invite_modal_source)
-        self.assertIn("postJsonHost<RoomInviteCreateResponse>", invite_api_source)
+        self.assertIn("postJsonModerator<RoomInviteCreateResponse>", invite_api_source)
         self.assertIn("fetchPublicInviteStatus", invite_api_source)
         self.assertIn('import { inviteFriendButtonLabel, isExternalInviteUrl } from "../../lib/roomInviteCopy";', invite_modal_source)
         self.assertIn("inviteFriendButtonLabel({ status, isAiFriend, readOnlyInvite })", invite_modal_source)

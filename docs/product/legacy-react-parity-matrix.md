@@ -226,8 +226,12 @@ surface rather than silently counted as React parity.
 | `/api/live-agent-room/resume-self-managed` | POST | exact | `resumeSelfManagedAgent()` | yes | Member detail panel can resume a self-managed process only when the agent advertised verifiable local relaunch evidence. |
 | `/api/live-agent-sessions/agent-timing` | POST | exact | `updateLiveAgentSessionAgentTiming()` | yes | Member detail modal saves per-agent poll interval and cooldown. |
 | `/api/live-agent-sessions/agent-options` | POST | exact | `updateLiveAgentSessionAgentOptions()` | yes | Member detail modal saves provider-native permission and fast-mode preferences for future starts/restarts. |
+| `/api/operator-pairing/create` | POST | exact | `createOperatorPairing()` | yes | A moderator creates a room- and origin-bound, one-use operator pairing link with a two-minute maximum lifetime. |
+| `/api/operator-pairing/redeem` | POST | exact | `redeemOperatorPairing()` | yes | The target browser binds its device credential to the canonical operator and receives a bounded room session. |
+| `/api/operator-pairing/revoke` | POST | exact | `-` | no | Internal/admin cancellation endpoint; the current React flow relies on expiry or successful one-use redemption. |
 | `/api/side-chat` | GET | exact | `fetchSideChat()` | yes | React side-chat read/write. |
 | `/api/side-chat` | POST | exact | `postSideChatMessage()` | yes | React side-chat read/write. |
+| `/api/room-invite/admission` | POST | exact | `preflightRoomInvite()` | yes | Side-effect-free preflight distinguishes an existing session or known device from a genuinely new guest before invite consumption. |
 | `/api/room-invite/create` | POST | exact | `createRoomInvite()` | yes | React invite modal creates scoped browser/remote-client invite links and AI entry packets without starting providers. |
 | `/api/room-invite/join` | POST | exact | `joinRoomInvite()` | yes | React `/join?token=` route exchanges an invite token for a single-room guest session. |
 | `/api/room-invite/leave` | POST | exact | `leaveRoomInvite()` | yes | React guest leave clears local guest state and best-effort revokes the room session. |

@@ -57,6 +57,8 @@ EXPECTED_RETAINED_HANDLER_EXACT_ROUTES = {
     ("GET", "/join/"),
     ("GET", "/legacy"),
     ("GET", "/legacy/"),
+    ("GET", "/pair"),
+    ("GET", "/pair/"),
     ("GET", "/ws"),
     ("POST", "/api/demo"),
     ("POST", "/api/live-agent-create"),
