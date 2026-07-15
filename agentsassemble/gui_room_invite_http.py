@@ -189,6 +189,7 @@ def register_invite_admission_routes(router: Router) -> None:
             result = OperatorPairingService(
                 identities=ctx.deps.identities,
                 rooms=ctx.deps.rooms,
+                sessions=ctx.deps.sessions,
             ).create(
                 room_id=str(payload.get("meeting_id") or ""),
                 public_url=public_url,
@@ -216,6 +217,7 @@ def register_invite_admission_routes(router: Router) -> None:
         result = OperatorPairingService(
             identities=ctx.deps.identities,
             rooms=ctx.deps.rooms,
+            sessions=ctx.deps.sessions,
         ).redeem(
             pairing_token=str(payload.get("pairing_token") or ""),
             device_token=str(ctx.headers.get("X-Device-Token") or ""),
@@ -240,6 +242,7 @@ def register_invite_admission_routes(router: Router) -> None:
         revoked = OperatorPairingService(
             identities=ctx.deps.identities,
             rooms=ctx.deps.rooms,
+            sessions=ctx.deps.sessions,
         ).revoke(pairing_id)
         if not revoked:
             ctx.send_error(HTTPStatus.NOT_FOUND, "active pairing was not found")

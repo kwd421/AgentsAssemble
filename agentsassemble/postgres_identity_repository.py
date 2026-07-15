@@ -40,6 +40,7 @@ from agentsassemble.postgres_identity_users import (
     resolve_credential_user,
     revoke_operator_pairing,
     set_user_operator,
+    update_operator_pairing_redemption,
     user_for_credential,
     user_for_participant,
 )
@@ -173,6 +174,27 @@ class PostgresIdentityRepository:
                 target_origin=target_origin,
                 auth_key=auth_key,
                 used_at=used_at,
+            )
+
+    def update_operator_pairing_redemption(
+        self,
+        *,
+        pairing_id: str,
+        auth_key: str,
+        status: str,
+        completed_at: str = "",
+        session_fingerprint: str = "",
+        failure_code: str = "",
+    ) -> dict[str, object] | None:
+        with self._pool.connection() as connection, connection.transaction():
+            return update_operator_pairing_redemption(
+                connection,
+                pairing_id=pairing_id,
+                auth_key=auth_key,
+                status=status,
+                completed_at=completed_at,
+                session_fingerprint=session_fingerprint,
+                failure_code=failure_code,
             )
 
     def revoke_operator_pairing(self, pairing_id: str, *, revoked_at: str) -> bool:

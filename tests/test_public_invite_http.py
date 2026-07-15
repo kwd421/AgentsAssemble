@@ -138,7 +138,7 @@ class PublicInviteHttpTests(unittest.TestCase):
         self.assertTrue(decision["operator"])
         self.assertNotIn("session_token", decision)
 
-    def test_public_origin_operator_pairing_is_separate_and_single_use(self):
+    def test_public_origin_operator_pairing_resumes_only_for_the_bound_device(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             RoomStore(root).create_room("friend-room", label="Friend room")
@@ -212,7 +212,19 @@ class PublicInviteHttpTests(unittest.TestCase):
                     timeout=4,
                 ) as response:
                     moderator_invite = json.loads(response.read().decode("utf-8"))
-                with self.assertRaises(HTTPError) as replay_error:
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/operator-pairing/redeem",
+                        {
+                            "pairing_token": pairing_token,
+                            "origin": "https://shared-room.example.com",
+                        },
+                        public_headers,
+                    ),
+                    timeout=4,
+                ) as response:
+                    resumed = json.loads(response.read().decode("utf-8"))
+                with self.assertRaises(HTTPError) as other_device_error:
                     urlopen(
                         _json_request(
                             f"{base}/api/operator-pairing/redeem",
@@ -220,11 +232,14 @@ class PublicInviteHttpTests(unittest.TestCase):
                                 "pairing_token": pairing_token,
                                 "origin": "https://shared-room.example.com",
                             },
-                            public_headers,
+                            {
+                                **public_headers,
+                                "X-Device-Token": "different-public-device",
+                            },
                         ),
                         timeout=4,
                     )
-                self.addCleanup(replay_error.exception.close)
+                self.addCleanup(other_device_error.exception.close)
             finally:
                 server.shutdown()
                 server.server_close()
@@ -237,9 +252,10 @@ class PublicInviteHttpTests(unittest.TestCase):
         )
         self.assertEqual(admitted["agent_id"], "operator-local")
         self.assertTrue(admitted["operator"])
+        self.assertEqual(resumed["session_token"], admitted["session_token"])
         self.assertEqual(admitted["room_label"], "friend-room")
         self.assertEqual(moderator_invite["meeting_id"], "friend-room")
-        self.assertEqual(replay_error.exception.code, 403)
+        self.assertEqual(other_device_error.exception.code, 403)
 
     def test_host_token_bootstrap_rejects_untrusted_public_request(self):
         with tempfile.TemporaryDirectory() as temp_dir:

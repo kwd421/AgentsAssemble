@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-POSTGRES_ROOM_SCHEMA_REVISION = "0008_admission_workflows"
+POSTGRES_ROOM_SCHEMA_REVISION = "0009_resumable_operator_pairing"
 POSTGRES_ROOM_AUTHORITY_ID = "canonical-room-repository"
 POSTGRES_ROOM_REQUIRED_TABLES = (
     "rooms",

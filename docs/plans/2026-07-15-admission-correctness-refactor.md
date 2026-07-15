@@ -211,3 +211,12 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   frontend retry coverage passed. The refactor also restored the pre-existing
   `410 Gone` response for an invite targeting a deleted room; this was a
   Milestone 1.2 compatibility regression, not a conversation-policy change.
+- 2026-07-15: Milestone 1.4 implemented. Operator pairing redemption now
+  persists its consuming credential fingerprint, claiming/retryable/completed
+  phase, and completed session fingerprint. The bound device resumes after a
+  participant write failure, process/service reconstruction, or a lost
+  completion response and receives the same still-active bearer; another
+  device remains rejected. Local SQLite/JSON failure injection, HTTP behavior,
+  identity contracts, and schema checks passed. PostgreSQL integration cases
+  remained environment-skipped because no test DSN was configured, so real
+  hosted concurrency evidence remains part of Milestone 5.

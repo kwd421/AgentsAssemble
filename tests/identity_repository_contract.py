@@ -58,11 +58,29 @@ class IdentityRepositoryContractMixin:
             self.repository.consume_operator_pairing(
                 token_fingerprint="fingerprint-contract",
                 target_origin="https://room.example",
+                auth_key="device:operator-bravo",
+                used_at="2026-07-15T00:35:00+00:00",
+            )["status"],
+            "resumed",
+        )
+        self.assertEqual(
+            self.repository.consume_operator_pairing(
+                token_fingerprint="fingerprint-contract",
+                target_origin="https://room.example",
                 auth_key="device:operator-charlie",
                 used_at="2026-07-15T00:40:00+00:00",
             )["status"],
             "already_used",
         )
+        completed = self.repository.update_operator_pairing_redemption(
+            pairing_id="pairing-contract",
+            auth_key="device:operator-bravo",
+            status="completed",
+            completed_at="2026-07-15T00:36:00+00:00",
+            session_fingerprint="session-fingerprint-contract",
+        )
+        self.assertEqual(completed["redemption_status"], "completed")
+        self.assertEqual(completed["session_fingerprint"], "session-fingerprint-contract")
 
     def test_membership_merge_mute_and_remove(self) -> None:
         self.repository.upsert_membership(

@@ -43,6 +43,11 @@ from agentsassemble.room_user_preferences import (
 IDENTITY_DB_FILENAME = "identity.db"
 LOCAL_OPERATOR_USER_ID = "operator-local-user"
 LOCAL_OPERATOR_PARTICIPANT_ID = "operator-local"
+OPERATOR_PAIRING_REDEMPTION_STATUSES = {
+    "claiming",
+    "completed",
+    "failed_retryable",
+}
 
 
 @runtime_checkable
@@ -106,6 +111,16 @@ class IdentityBackend(Protocol):
         auth_key: str,
         used_at: str,
     ) -> dict[str, object]: ...
+    def update_operator_pairing_redemption(
+        self,
+        *,
+        pairing_id: str,
+        auth_key: str,
+        status: str,
+        completed_at: str = "",
+        session_fingerprint: str = "",
+        failure_code: str = "",
+    ) -> dict[str, object] | None: ...
     def revoke_operator_pairing(self, pairing_id: str, *, revoked_at: str) -> bool: ...
     def participant_is_operator(self, participant_id: str) -> bool: ...
     def operator_user_id(self) -> str: ...
@@ -163,6 +178,11 @@ CREATE TABLE IF NOT EXISTS operator_pairings (
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL,
     used_at TEXT NOT NULL DEFAULT '',
+    consumed_auth_key TEXT NOT NULL DEFAULT '',
+    redemption_status TEXT NOT NULL DEFAULT 'ready',
+    completed_at TEXT NOT NULL DEFAULT '',
+    session_fingerprint TEXT NOT NULL DEFAULT '',
+    failure_code TEXT NOT NULL DEFAULT '',
     revoked_at TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_operator_pairings_expiry
@@ -278,6 +298,11 @@ _OPERATOR_PAIRING_FIELDS = (
     "created_at",
     "expires_at",
     "used_at",
+    "consumed_auth_key",
+    "redemption_status",
+    "completed_at",
+    "session_fingerprint",
+    "failure_code",
     "revoked_at",
 )
 
@@ -314,6 +339,36 @@ class IdentityStore:
             self._ensure_column(connection, "rooms", "last_active_at", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(connection, "rooms", "archived", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(connection, "rooms", "origin", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(
+                connection,
+                "operator_pairings",
+                "consumed_auth_key",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "operator_pairings",
+                "redemption_status",
+                "TEXT NOT NULL DEFAULT 'ready'",
+            )
+            self._ensure_column(
+                connection,
+                "operator_pairings",
+                "completed_at",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "operator_pairings",
+                "session_fingerprint",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                connection,
+                "operator_pairings",
+                "failure_code",
+                "TEXT NOT NULL DEFAULT ''",
+            )
 
     @staticmethod
     def _ensure_column(connection: sqlite3.Connection, table: str, column: str, decl: str) -> None:
@@ -681,7 +736,19 @@ class IdentityStore:
             if pairing["revoked_at"]:
                 return {"status": "revoked"}
             if pairing["used_at"]:
-                return {"status": "already_used"}
+                if pairing["consumed_auth_key"] != clean_auth_key:
+                    return {"status": "already_used"}
+                user = connection.execute(
+                    "SELECT * FROM users WHERE user_id = ?",
+                    (LOCAL_OPERATOR_USER_ID,),
+                ).fetchone()
+                if user is None:
+                    return {"status": "invalid"}
+                return {
+                    "status": "resumed",
+                    "pairing": pairing,
+                    "user": self._user_dict(user),
+                }
             try:
                 expires_at = datetime.fromisoformat(str(pairing["expires_at"]))
                 used_at_value = datetime.fromisoformat(clean_used_at)
@@ -690,9 +757,10 @@ class IdentityStore:
             if expires_at <= used_at_value:
                 return {"status": "expired"}
             cursor = connection.execute(
-                "UPDATE operator_pairings SET used_at = ?"
+                "UPDATE operator_pairings SET used_at = ?, consumed_auth_key = ?,"
+                " redemption_status = 'claiming', failure_code = ''"
                 " WHERE pairing_id = ? AND used_at = '' AND revoked_at = ''",
-                (clean_used_at, pairing["pairing_id"]),
+                (clean_used_at, clean_auth_key, pairing["pairing_id"]),
             )
             if cursor.rowcount != 1:
                 return {"status": "already_used"}
@@ -703,11 +771,62 @@ class IdentityStore:
                 display_name="",
                 now=clean_used_at,
             )
+            updated = connection.execute(
+                "SELECT * FROM operator_pairings WHERE pairing_id = ?",
+                (pairing["pairing_id"],),
+            ).fetchone()
         return {
             "status": "consumed",
-            "pairing": pairing,
+            "pairing": self._operator_pairing_dict(updated),
             "user": self._user_dict(user),
         }
+
+    def update_operator_pairing_redemption(
+        self,
+        *,
+        pairing_id: str,
+        auth_key: str,
+        status: str,
+        completed_at: str = "",
+        session_fingerprint: str = "",
+        failure_code: str = "",
+    ) -> dict[str, object] | None:
+        clean_pairing_id = clean_lobby_text(pairing_id, limit=128)
+        clean_auth_key = clean_lobby_text(auth_key, limit=128)
+        clean_status = clean_lobby_text(status, limit=32)
+        if (
+            not clean_pairing_id
+            or not clean_auth_key
+            or clean_status not in OPERATOR_PAIRING_REDEMPTION_STATUSES
+        ):
+            raise ValueError("valid pairing id, credential, and redemption status are required")
+        with self._write_lock, closing(self._connect()) as connection, connection:
+            pairing = connection.execute(
+                "SELECT * FROM operator_pairings WHERE pairing_id = ?",
+                (clean_pairing_id,),
+            ).fetchone()
+            if pairing is None or str(pairing["consumed_auth_key"] or "") != clean_auth_key:
+                return None
+            if pairing["redemption_status"] == "completed" and clean_status != "completed":
+                return self._operator_pairing_dict(pairing)
+            connection.execute(
+                "UPDATE operator_pairings SET redemption_status = ?, completed_at = ?,"
+                " session_fingerprint = ?, failure_code = ? WHERE pairing_id = ?"
+                " AND consumed_auth_key = ?",
+                (
+                    clean_status,
+                    clean_lobby_text(completed_at, limit=64),
+                    clean_lobby_text(session_fingerprint, limit=128),
+                    clean_lobby_text(failure_code, limit=128),
+                    clean_pairing_id,
+                    clean_auth_key,
+                ),
+            )
+            updated = connection.execute(
+                "SELECT * FROM operator_pairings WHERE pairing_id = ?",
+                (clean_pairing_id,),
+            ).fetchone()
+        return self._operator_pairing_dict(updated) if updated else None
 
     def revoke_operator_pairing(self, pairing_id: str, *, revoked_at: str) -> bool:
         clean_pairing_id = clean_lobby_text(pairing_id, limit=128)

@@ -8,6 +8,7 @@ from psycopg import Connection
 from agentsassemble.identity_store import (
     LOCAL_OPERATOR_PARTICIPANT_ID,
     LOCAL_OPERATOR_USER_ID,
+    OPERATOR_PAIRING_REDEMPTION_STATUSES,
 )
 from agentsassemble.meeting_events import clean_lobby_text
 
@@ -330,16 +331,30 @@ def consume_operator_pairing(
     if pairing["revoked_at"]:
         return {"status": "revoked"}
     if pairing["used_at"]:
-        return {"status": "already_used"}
+        if pairing["consumed_auth_key"] != clean_auth_key:
+            return {"status": "already_used"}
+        user = connection.execute(
+            "SELECT * FROM identity_users WHERE user_id = %s",
+            (LOCAL_OPERATOR_USER_ID,),
+        ).fetchone()
+        if user is None:
+            return {"status": "invalid"}
+        return {
+            "status": "resumed",
+            "pairing": pairing,
+            "user": user_from_row(user),
+        }
     try:
         if datetime.fromisoformat(str(pairing["expires_at"])) <= datetime.fromisoformat(clean_used_at):
             return {"status": "expired"}
     except ValueError:
         return {"status": "invalid"}
     cursor = connection.execute(
-        """UPDATE identity_operator_pairings SET used_at = %s
+        """UPDATE identity_operator_pairings
+           SET used_at = %s, consumed_auth_key = %s,
+               redemption_status = 'claiming', failure_code = ''
            WHERE pairing_id = %s AND used_at = '' AND revoked_at = ''""",
-        (clean_used_at, pairing["pairing_id"]),
+        (clean_used_at, clean_auth_key, pairing["pairing_id"]),
     )
     if cursor.rowcount != 1:
         return {"status": "already_used"}
@@ -350,7 +365,63 @@ def consume_operator_pairing(
         display_name="",
         now=clean_used_at,
     )
-    return {"status": "consumed", "pairing": pairing, "user": user}
+    updated = connection.execute(
+        "SELECT * FROM identity_operator_pairings WHERE pairing_id = %s",
+        (pairing["pairing_id"],),
+    ).fetchone()
+    return {
+        "status": "consumed",
+        "pairing": pairing_from_row(updated),
+        "user": user,
+    }
+
+
+def update_operator_pairing_redemption(
+    connection: Connection,
+    *,
+    pairing_id: str,
+    auth_key: str,
+    status: str,
+    completed_at: str = "",
+    session_fingerprint: str = "",
+    failure_code: str = "",
+) -> dict[str, object] | None:
+    clean_pairing_id = clean_lobby_text(pairing_id, limit=128)
+    clean_auth_key = clean_lobby_text(auth_key, limit=128)
+    clean_status = clean_lobby_text(status, limit=32)
+    if (
+        not clean_pairing_id
+        or not clean_auth_key
+        or clean_status not in OPERATOR_PAIRING_REDEMPTION_STATUSES
+    ):
+        raise ValueError("valid pairing id, credential, and redemption status are required")
+    pairing = connection.execute(
+        "SELECT * FROM identity_operator_pairings WHERE pairing_id = %s FOR UPDATE",
+        (clean_pairing_id,),
+    ).fetchone()
+    if pairing is None or str(pairing["consumed_auth_key"] or "") != clean_auth_key:
+        return None
+    if pairing["redemption_status"] == "completed" and clean_status != "completed":
+        return pairing_from_row(pairing)
+    connection.execute(
+        """UPDATE identity_operator_pairings
+           SET redemption_status = %s, completed_at = %s,
+               session_fingerprint = %s, failure_code = %s
+           WHERE pairing_id = %s AND consumed_auth_key = %s""",
+        (
+            clean_status,
+            clean_lobby_text(completed_at, limit=64),
+            clean_lobby_text(session_fingerprint, limit=128),
+            clean_lobby_text(failure_code, limit=128),
+            clean_pairing_id,
+            clean_auth_key,
+        ),
+    )
+    updated = connection.execute(
+        "SELECT * FROM identity_operator_pairings WHERE pairing_id = %s",
+        (clean_pairing_id,),
+    ).fetchone()
+    return pairing_from_row(updated) if updated else None
 
 
 def revoke_operator_pairing(
@@ -408,5 +479,10 @@ def pairing_from_row(row: dict[str, object]) -> dict[str, object]:
         "created_at": str(row["created_at"]),
         "expires_at": str(row["expires_at"]),
         "used_at": str(row["used_at"] or ""),
+        "consumed_auth_key": str(row["consumed_auth_key"] or ""),
+        "redemption_status": str(row["redemption_status"] or "ready"),
+        "completed_at": str(row["completed_at"] or ""),
+        "session_fingerprint": str(row["session_fingerprint"] or ""),
+        "failure_code": str(row["failure_code"] or ""),
         "revoked_at": str(row["revoked_at"] or ""),
     }

@@ -142,7 +142,10 @@ preferences, and usage. Revision `0007_unique_room_access_session` enforces one
 active room bearer session for each `(room_id, participant_id)`. Revision
 `0008_admission_workflows` stores bounded, fingerprint-only admission phase
 records so a lost join response can be resumed without consuming an invite or
-issuing a second bearer. Runtime
+issuing a second bearer. Revision `0009_resumable_operator_pairing` binds a
+consumed operator pairing to one credential fingerprint and stores bounded
+redemption phase plus session-fingerprint evidence, allowing only that device
+to finish a partial redemption or recover its existing bearer. Runtime
 repository construction never runs Alembic and
 refuses PostgreSQL until both the head revision and the authority marker are
 present. The existing SQLite migrator remains responsible for upgrading

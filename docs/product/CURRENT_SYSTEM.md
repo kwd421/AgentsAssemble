@@ -81,11 +81,13 @@ persisted. Reusing a request ID with different admission inputs is an explicit
 
 Cross-origin operator continuity uses a separate moderator-created `/pair`
 link. It is room- and target-origin-bound, expires after at most two minutes,
-is one-use, and stores only a token fingerprint. Successful redemption binds
-the new origin's device credential to the canonical operator and issues a
-bounded room bearer session; it never sends the host token to the public
-origin. This is not account login and does not identify a user across different
-AgentsAssemble servers.
+and is one-use across devices. Redemption durably binds the pairing to the
+consuming credential fingerprint and records claiming, retryable-failure, and
+completed phases. The same device can therefore resume a partial redemption or
+recover the same still-active bounded bearer after a lost response; another
+device is rejected. Raw pairing, device, host, and room bearer tokens are never
+stored in the pairing record or sent to the public origin. This is not account
+login and does not identify a user across different AgentsAssemble servers.
 
 Detailed implementation and verification:
 `docs/reports/2026-07-15-browser-identity-admission.md`.
