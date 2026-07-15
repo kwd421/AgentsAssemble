@@ -1147,3 +1147,16 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   which remains separate because it mutates meeting events, official artifacts,
   and shared memory. The seven deletion candidates and canonical name/avatar
   history reprojection remain unchanged.
+- 2026-07-15: Resident official and review replies are now a separate
+  official-record boundary. `LegacyLiveAgentOfficialReplyService` owns request
+  validation, cancellation, reply idempotency, governed official append,
+  official artifact/shared-memory refresh, heartbeat, and prompt-free audit.
+  The audit projection allowlists shared-memory summary keys and never records
+  reply content. Its Router owns the dynamic POST path while `gui.py` keeps the
+  historical payload import. Focused service/Router/ownership tests passed 10;
+  real moderation/official-turn/CLI coverage passed 71; review/MCP coverage
+  passed 30. The generated handler now has no retained dynamic resident speech,
+  presence, settings, or diagnostic route. Before the next extraction, refresh
+  the fixed-path inventory for join brief, provider health, Codex invite/join,
+  and the seven deletion candidates. Canonical name/avatar history reprojection
+  remains unchanged.

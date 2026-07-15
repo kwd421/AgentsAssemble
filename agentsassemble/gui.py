@@ -51,6 +51,10 @@ from agentsassemble.gui_legacy_meeting_http import register_legacy_meeting_route
 from agentsassemble.gui_legacy_meeting_lifecycle_http import register_legacy_meeting_lifecycle_routes
 from agentsassemble.gui_legacy_official_round_http import register_legacy_official_round_routes
 from agentsassemble.gui_legacy_official_turn_http import register_legacy_official_turn_routes
+from agentsassemble.gui_legacy_live_agent_official_reply_http import (
+    LegacyLiveAgentOfficialReplyHttpDeps,
+    register_legacy_live_agent_official_reply_route,
+)
 from agentsassemble.gui_legacy_review_checkpoint_http import register_legacy_review_checkpoint_route
 from agentsassemble.gui_legacy_live_agent_read_http import (
     LegacyLiveAgentReadDeps,
@@ -245,11 +249,6 @@ from agentsassemble.live_agent_smoke import (
     run_live_agent_session_smoke,
     run_live_agent_smoke,
 )
-from agentsassemble.live_agent_turns import (
-    is_official_turn_reply_event,
-    is_review_checkpoint_reply_event,
-    official_turn_cancellation,
-)
 from agentsassemble.lobby_queries import (
     LOBBY_HISTORY_MAX_PAGE_LIMIT,
     LOBBY_HISTORY_PAGE_LIMIT,
@@ -260,15 +259,11 @@ from agentsassemble.legacy_lobby_commands import (
     LegacyLobbyCommandService,
     send_lobby_message_to_remote_bridge as _send_legacy_lobby_message_to_remote_bridge,
 )
-from agentsassemble.live_meeting_memory import (
-    write_live_meeting_memory_artifacts,
-)
 from agentsassemble.legacy_live_agent_queries import (
     LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT,
     LegacyLiveAgentQueryService,
     live_agent_return_packet_payload,
     live_agent_room_payload,
-    live_events_visible_to_agent as _live_events_visible_to_agent,
     require_live_agent as _live_agent_for_id,
 )
 from agentsassemble.legacy_live_agent_diagnostics import (
@@ -333,6 +328,10 @@ from agentsassemble.legacy_live_agent_probe import (
     LegacyLiveAgentProbeService,
     live_agent_probe_payload,
 )
+from agentsassemble.legacy_live_agent_official_reply import (
+    LegacyLiveAgentOfficialReplyService,
+    live_agent_official_turn_payload,
+)
 from agentsassemble.legacy_live_agent_speech import (
     LegacyLiveAgentLobbySpeechDeps,
     LegacyLiveAgentSpeechService,
@@ -351,9 +350,6 @@ from agentsassemble.legacy_meeting_lifecycle import (
     LegacyMeetingLifecycleService,
     live_agent_finalize_meeting_payload,
     live_agent_meeting_start_payload,
-)
-from agentsassemble.legacy_meeting_operation_projection import (
-    shared_memory_operation_details as _shared_memory_operation_details,
 )
 from agentsassemble.legacy_meeting_records import (
     live_agent_admission_details as _live_agent_admission_details_from_meeting,
@@ -404,7 +400,6 @@ from agentsassemble.room_store import RoomStore
 from agentsassemble.room_speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
-    governed_official_reply,
     governed_lobby_say,
 )
 from agentsassemble.ws_room_session import (
@@ -801,7 +796,6 @@ def _parse_iso_datetime(value: object) -> datetime | None:
         return parsed.replace(tzinfo=UTC)
     return parsed
 REAL_SESSION_SMOKE_REPLY_REDACTION = "[redacted real session smoke reply]"
-LIVE_AGENT_TURN_LOCK = threading.Lock()
 LIVE_AGENT_LOBBY_LOCK = threading.RLock()
 REAL_SESSION_SMOKE_REDACTED_SOURCE_EVENT_IDS: set[str] = set()
 SESSION_RUN_MONITOR_ERROR = "Live-agent session run monitor failed."
@@ -2584,99 +2578,6 @@ def live_agent_review_checkpoint_payload(
     )
 
 
-def live_agent_official_turn_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
-    agent = _live_agent_for_id(output_root, agent_id)
-    meeting_id = clean_lobby_text(payload.get("meeting_id") or agent.get("meeting_id"), limit=128)
-    agent_meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
-    if not agent_meeting_id or meeting_id != agent_meeting_id:
-        raise ValueError(f"Live agent {agent_id} is not attached to meeting {meeting_id or '(blank)'}.")
-    meeting_dir = _safe_meeting_dir(output_root, meeting_id)
-    if not meeting_id or not meeting_dir.exists():
-        raise ValueError(f"Meeting {meeting_id or '(blank)'} was not found.")
-    content = clean_lobby_text(payload.get("content") or payload.get("message"), limit=4000)
-    if not content:
-        raise ValueError("Official turn content is required.")
-    source_event_id = clean_lobby_text(payload.get("source_event_id"), limit=128)
-    if not source_event_id:
-        raise ValueError("Official turn source_event_id is required.")
-    with LIVE_AGENT_TURN_LOCK:
-        request_event = _matching_live_agent_turn_request(meeting_dir, agent_id, source_event_id)
-        if request_event is None:
-            raise ValueError("Matching official turn request was not found.")
-        if official_turn_cancellation(read_live_events(meeting_dir, limit=None), agent_id=agent_id, source_event_id=source_event_id):
-            raise ValueError("Official turn request was cancelled.")
-        existing_reply = _live_agent_reply_for_request(meeting_dir, agent_id, source_event_id, request_event)
-        if existing_reply is not None:
-            event = existing_reply
-        else:
-            role_id = clean_lobby_text(request_event.get("role_id"), limit=128) or agent_id
-            display_name = (
-                clean_lobby_text(request_event.get("display_name"), limit=64)
-                or clean_lobby_text(agent.get("display_name"), limit=64)
-                or agent_id
-            )
-            request_turn_index = request_event.get("turn_index")
-            turn_index = request_turn_index if isinstance(request_turn_index, int) and not isinstance(request_turn_index, bool) else None
-            review_checkpoint_id = clean_lobby_text(request_event.get("review_checkpoint_id"), limit=128)
-            event = governed_official_reply(
-                meeting_dir,
-                identity=ActorIdentity(
-                    agent_id=agent_id,
-                    display_name=display_name,
-                    participant_type="live_session",
-                    meeting_id=meeting_id,
-                ),
-                meeting_id=meeting_id,
-                source_event_id=source_event_id,
-                role_id=role_id,
-                display_name=display_name,
-                content=content,
-                turn_id=clean_lobby_text(request_event.get("turn_id"), limit=128),
-                turn_index=turn_index,
-                review_checkpoint_id=review_checkpoint_id,
-                append_live_event=append_live_event,
-            )
-        shared_memory = _refresh_live_meeting_memory_after_official_reply(meeting_dir, event)
-    updated_agent = heartbeat_live_agent(
-        output_root,
-        agent_id,
-        status="online",
-        metadata={
-            "last_error": "",
-            "last_reply_at": datetime.now(UTC).isoformat(),
-            "last_observed_live_event_id": source_event_id,
-        },
-    )
-    return {
-        "agent": updated_agent,
-        "event": event,
-        "shared_memory": shared_memory,
-        "live_events": _live_events_visible_to_agent(read_live_events(meeting_dir), agent_id),
-    }
-
-
-def _refresh_live_meeting_memory_after_official_reply(
-    meeting_dir: Path,
-    event: dict[str, object],
-) -> dict[str, object]:
-    if event.get("official_record") is not True or event.get("channel") != "official":
-        return {}
-    try:
-        meeting = _read_meeting_record(meeting_dir)
-        can_update_live_state = True
-    except (ValueError, OSError, json.JSONDecodeError):
-        meeting = {
-            "meeting_id": clean_lobby_text(event.get("meeting_id"), limit=128),
-            "topic": clean_lobby_text(event.get("meeting_id"), limit=240),
-        }
-        can_update_live_state = False
-    memory = write_live_meeting_memory_artifacts(meeting_dir, meeting=meeting)
-    if can_update_live_state:
-        meeting["shared_memory"] = memory
-        write_live_state(meeting_dir, meeting)
-    return _shared_memory_operation_details(memory)
-
-
 def live_agent_smoke_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
     """Compatibility seam used by aggregate readiness until that route moves."""
     return run_live_agent_smoke(
@@ -3106,75 +3007,6 @@ def _codex_session_join_error_details(output_root: Path, payload: dict[str, obje
     return details
 
 
-def _matching_live_agent_turn_request(meeting_dir: Path, agent_id: str, source_event_id: str) -> dict[str, object] | None:
-    for event in read_live_events(meeting_dir, limit=None):
-        if event.get("id") != source_event_id:
-            continue
-        if event.get("kind") != "live_agent_turn_request":
-            return None
-        if str(event.get("target_agent_id") or "") != agent_id:
-            return None
-        return event
-    return None
-
-
-def _official_turn_reply_for_request(meeting_dir: Path, agent_id: str, source_event_id: str) -> dict[str, object] | None:
-    for event in read_live_events(meeting_dir, limit=None):
-        if not is_official_turn_reply_event(event):
-            continue
-        if str(event.get("actor_id") or "") != agent_id:
-            continue
-        if str(event.get("source_event_id") or "") != source_event_id:
-            continue
-        return event
-    return None
-
-
-def _live_agent_reply_for_request(
-    meeting_dir: Path,
-    agent_id: str,
-    source_event_id: str,
-    request_event: dict[str, object],
-) -> dict[str, object] | None:
-    checkpoint_id = clean_lobby_text(request_event.get("review_checkpoint_id"), limit=128)
-    if checkpoint_id:
-        return _review_checkpoint_reply_for_request(meeting_dir, agent_id, source_event_id, checkpoint_id)
-    return _official_turn_reply_for_request(meeting_dir, agent_id, source_event_id)
-
-
-def _review_checkpoint_reply_for_request(
-    meeting_dir: Path,
-    agent_id: str,
-    source_event_id: str,
-    checkpoint_id: str,
-) -> dict[str, object] | None:
-    for event in read_live_events(meeting_dir, limit=None):
-        if not is_review_checkpoint_reply_event(event):
-            continue
-        if str(event.get("actor_id") or "") != agent_id:
-            continue
-        if str(event.get("source_event_id") or "") != source_event_id:
-            continue
-        if clean_lobby_text(event.get("review_checkpoint_id"), limit=128) != checkpoint_id:
-            continue
-        return event
-    return None
-
-
-def _live_agent_action_path(path: str, action: str) -> str | None:
-    parts = path.strip("/").split("/")
-    if len(parts) == 4 and parts[0] == "api" and parts[1] == "live-agents" and parts[3] == action:
-        return unquote(parts[2])
-    return None
-
-
-def _live_agent_process_action_path(path: str, action: str) -> str | None:
-    parts = path.strip("/").split("/")
-    if len(parts) == 4 and parts[0] == "api" and parts[1] == "live-agent-processes" and parts[3] == action:
-        return unquote(parts[2])
-    return None
-
-
 def _index_by_id(items: object) -> dict[str, dict[str, object]]:
     return {str(item["id"]): item for item in _as_dict_list(items) if item.get("id")}
 
@@ -3599,6 +3431,14 @@ def _make_handler(
         target_id: str = "",
     ) -> dict[str, object] | None:
         return ctx.handler._operation_json_payload(operation=operation_name, target_id=target_id)
+
+    register_legacy_live_agent_official_reply_route(
+        route_table,
+        deps=LegacyLiveAgentOfficialReplyHttpDeps(
+            replies=LegacyLiveAgentOfficialReplyService(output_root),
+            read_operation_payload=_late_operation_json_payload,
+        ),
+    )
 
     register_legacy_live_agent_probe_route(
         route_table,
@@ -4043,62 +3883,6 @@ def _make_handler(
                     self._send_json(_safe_diagnostic_report_payload(provider_health_payload(payload)))
                 except ValueError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                return
-            live_agent_official_turn_id = _live_agent_action_path(parsed.path, "official-turn")
-            if live_agent_official_turn_id is not None:
-                payload = self._operation_json_payload(
-                    operation="official_turn.reply",
-                    target_id=live_agent_official_turn_id,
-                )
-                if payload is None:
-                    return
-                try:
-                    official_turn = live_agent_official_turn_payload(output_root, live_agent_official_turn_id, payload)
-                except ValueError as error:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="official_turn.reply",
-                        status="failed",
-                        target_id=live_agent_official_turn_id,
-                        error=str(error),
-                        details={
-                            "meeting_id": str(payload.get("meeting_id") or ""),
-                            "source_event_id": str(payload.get("source_event_id") or ""),
-                            "role_id": str(payload.get("role_id") or ""),
-                            "turn_id": str(payload.get("turn_id") or ""),
-                            "turn_index": _payload_optional_int(payload.get("turn_index")),
-                        },
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
-                    return
-                event = official_turn.get("event") if isinstance(official_turn.get("event"), dict) else {}
-                review_checkpoint_id = clean_lobby_text(event.get("review_checkpoint_id"), limit=128)
-                reply_operation = "review.reply" if review_checkpoint_id else "official_turn.reply"
-                reply_details = {
-                    "meeting_id": str(event.get("meeting_id") or payload.get("meeting_id") or ""),
-                    "source_event_id": str(event.get("source_event_id") or ""),
-                    "role_id": str(event.get("role_id") or ""),
-                    "turn_id": str(event.get("turn_id") or ""),
-                    "turn_index": _payload_optional_int(event.get("turn_index")),
-                }
-                if review_checkpoint_id:
-                    reply_details["review_checkpoint_id"] = review_checkpoint_id
-                shared_memory = official_turn.get("shared_memory") if isinstance(official_turn.get("shared_memory"), dict) else {}
-                if shared_memory:
-                    reply_details.update(shared_memory)
-                record_live_agent_operation(
-                    output_root,
-                    operation=reply_operation,
-                    status="success",
-                    target_id=live_agent_official_turn_id,
-                    summary=(
-                        "recorded live-agent review checkpoint reply"
-                        if review_checkpoint_id
-                        else "recorded live-agent official turn"
-                    ),
-                    details=reply_details,
-                )
-                self._send_json(official_turn)
                 return
             if parsed.path == "/api/codex-sessions/invite":
                 length = int(self.headers.get("Content-Length", "0") or "0")

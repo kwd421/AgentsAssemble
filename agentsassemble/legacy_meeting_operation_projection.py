@@ -7,6 +7,15 @@ from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.meeting_events import clean_lobby_text
 
 
+SHARED_MEMORY_OPERATION_DETAIL_KEYS = (
+    "shared_memory_official_event_count",
+    "shared_memory_last_event_id",
+    "shared_memory_decision_count",
+    "shared_memory_open_question_count",
+    "shared_memory_action_item_count",
+)
+
+
 def meeting_finalize_operation_details(result: dict[str, object], meeting_id: str) -> dict[str, object]:
     details = {
         "result_status": _operation_result_status(result.get("status")),
@@ -40,6 +49,46 @@ def shared_memory_operation_details(memory: dict[str, object]) -> dict[str, obje
             _item_count(memory.get("action_items")),
         ),
     }
+
+
+def official_reply_request_operation_details(
+    payload: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
+        "source_event_id": clean_lobby_text(payload.get("source_event_id"), limit=128),
+        "role_id": clean_lobby_text(payload.get("role_id"), limit=128),
+        "turn_id": clean_lobby_text(payload.get("turn_id"), limit=128),
+        "turn_index": _optional_int(payload.get("turn_index")),
+    }
+
+
+def official_reply_operation_details(
+    event: dict[str, object],
+    payload: dict[str, object],
+    shared_memory: dict[str, object],
+) -> dict[str, object]:
+    details = {
+        "meeting_id": clean_lobby_text(
+            event.get("meeting_id") or payload.get("meeting_id"),
+            limit=128,
+        ),
+        "source_event_id": clean_lobby_text(event.get("source_event_id"), limit=128),
+        "role_id": clean_lobby_text(event.get("role_id"), limit=128),
+        "turn_id": clean_lobby_text(event.get("turn_id"), limit=128),
+        "turn_index": _optional_int(event.get("turn_index")),
+    }
+    review_checkpoint_id = clean_lobby_text(event.get("review_checkpoint_id"), limit=128)
+    if review_checkpoint_id:
+        details["review_checkpoint_id"] = review_checkpoint_id
+    details.update(
+        {
+            key: shared_memory[key]
+            for key in SHARED_MEMORY_OPERATION_DETAIL_KEYS
+            if key in shared_memory
+        }
+    )
+    return details
 
 
 def turn_sequence_operation_details(sequence: dict[str, object], meeting_id: str) -> dict[str, object]:

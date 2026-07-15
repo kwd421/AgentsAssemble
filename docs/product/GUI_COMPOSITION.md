@@ -170,6 +170,7 @@ These families already have a clear module owner and should not move back into
 | `gui_legacy_live_agent_engagement_http.py` | Compatibility | Resident engagement-mode mutation and bounded operation audit; policy lives in `legacy_live_agent_engagement.py` | `tests/test_gui_legacy_live_agent_engagement_http.py`, `tests/test_legacy_live_agent_engagement.py`, `tests/test_gui_server_room_payload.py`, `tests/test_cli_timeout_presence.py` |
 | `gui_legacy_live_agent_probe_http.py` | Compatibility | Bounded resident reply probe with timeout normalization and prompt-free operation audit; execution policy lives in `legacy_live_agent_probe.py` | `tests/test_gui_legacy_live_agent_probe_http.py`, `tests/test_legacy_live_agent_probe.py`, `tests/test_gui_server_health_probes.py`, `tests/test_cli_timeout_diagnostics.py` |
 | `gui_legacy_live_agent_speech_http.py` | Compatibility | Resident lobby and friend-DM replies; idempotency, flow conflict, governed append, heartbeat, and smoke redaction behavior lives in `legacy_live_agent_speech.py` | `tests/test_gui_legacy_live_agent_speech_http.py`, `tests/test_legacy_live_agent_speech.py`, `tests/test_gui_server_lobby_social.py`, `tests/test_gui_server_real_session_smoke.py`, `tests/test_turn_serialization.py` |
+| `gui_legacy_live_agent_official_reply_http.py` | Compatibility | Verified resident official/review replies, idempotent append, official artifact/shared-memory refresh, heartbeat, and bounded audit; policy lives in `legacy_live_agent_official_reply.py` | `tests/test_gui_legacy_live_agent_official_reply_http.py`, `tests/test_legacy_live_agent_official_reply.py`, `tests/test_gui_server_moderation_finalization.py`, `tests/test_gui_server_turns.py` |
 | `gui_legacy_live_agent_session_http.py` | Compatibility | Legacy resident-session mutations | `tests/test_gui_legacy_live_agent_session_http.py`, `tests/test_legacy_live_agent_session_service.py` |
 | `gui_legacy_live_agent_process_http.py` | Compatibility | Legacy process-group mutations | `tests/test_gui_legacy_live_agent_process_http.py`, `tests/test_legacy_live_agent_process_service.py` |
 | `gui_legacy_live_agent_session_run_http.py` | Compatibility | Durable legacy session-run controls | `tests/test_gui_legacy_live_agent_session_run_http.py`, `tests/test_legacy_live_agent_session_run_service.py` |
@@ -192,7 +193,6 @@ families directly.
 | Family | Classification | Why it remains reachable | Next action |
 | --- | --- | --- | --- |
 | `/ws`, `/`, `/app/*`, `/join`, guarded React assets | Current core composition | Protocol upgrade and static delivery are transport concerns | Keep thin transport branches in the final handler |
-| `/api/live-agents/{agent_id}/official-turn` | Compatibility | CLI, MCP, resident runner, and smoke clients still post verified official/review replies | Move official-record reply execution and artifact refresh as a separate boundary; ordinary lobby/DM speech is already Router-owned |
 | Remaining `/api/live-agent-create*` and `/api/live-agent-room/expel` | Deletion candidates | No supported current caller remains for check/create/expel; provider login and retained room-session controls are Router-owned | Leave visible in the handler until the separate compatibility deletion decision |
 | `/api/codex-sessions/invite` and `/join` | Compatibility | CLI still calls the Codex meeting-session compatibility workflow | Move with legacy meeting/session service, never into the canonical provider adapter |
 
@@ -349,13 +349,17 @@ finalization, and prompt-free auditing are Router-owned through
 meeting mutation route. Resident registration, heartbeat, and graceful leave
 are also Router-owned through `LegacyLiveAgentPresenceService`; heartbeat keeps
 its existing no-operation-audit policy while registration and leave retain
-bounded audits. Phase 5.4 continues with official-record replies and Codex
-compatibility families. Engagement-mode mutation is Router-owned
-separately through `LegacyLiveAgentEngagementService`, preserving its
-previous/current-mode audit. Bounded reply probes are Router-owned through
+bounded audits. Phase 5.4 continues with a fresh inventory of the remaining
+fixed compatibility paths and Codex compatibility families. Engagement-mode
+mutation is Router-owned separately through
+`LegacyLiveAgentEngagementService`, preserving its previous/current-mode audit.
+Bounded reply probes are Router-owned through
 `LegacyLiveAgentProbeService`, preserving timeout caps, result-only auditing,
 and the existing `404/400` contract. Ordinary lobby and friend-DM replies are
 Router-owned through `LegacyLiveAgentSpeechService`; its explicit dependencies
 preserve the shared lobby lock, governed append, mute policy, and real-session
-smoke redaction without importing `gui.py`. Do not push unless the user
-explicitly asks.
+smoke redaction without importing `gui.py`. Official/review replies are
+Router-owned through `LegacyLiveAgentOfficialReplyService`; reply verification,
+idempotency, official artifact refresh, shared-memory projection, heartbeat,
+and bounded audit no longer live in the generated handler. Do not push unless
+the user explicitly asks.
