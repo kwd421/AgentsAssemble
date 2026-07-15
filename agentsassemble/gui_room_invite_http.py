@@ -6,6 +6,7 @@ from http import HTTPStatus
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.live_agents import connect_live_agent
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
+from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_invite import (
     active_sessions_summary,
     create_room_invite,
@@ -194,6 +195,25 @@ def register_invite_admission_routes(router: Router) -> None:
             except ValueError:
                 pass
         ctx.send_json(result)
+
+    @router.post("/api/room-invite/admission")
+    def room_invite_admission(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
+            return
+        token = str(payload.get("invite_token") or "").strip()
+        if not token:
+            ctx.send_error(HTTPStatus.BAD_REQUEST, "invite_token is required")
+            return
+        decision = RoomAdmissionService(
+            identities=ctx.deps.identities,
+            rooms=ctx.deps.rooms,
+        ).resolve(
+            invite_token=token,
+            device_token=str(ctx.headers.get("X-Device-Token") or ""),
+            session=ctx.session(),
+        )
+        ctx.send_json(decision)
 
     @router.post("/api/room-invite/companion")
     def room_invite_companion(ctx: RequestContext) -> None:

@@ -337,6 +337,104 @@ def _invite_fingerprint(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
+def inspect_room_invite(token: str, *, meeting_id: str = "") -> dict[str, object]:
+    """Validate an invite without consuming it or issuing identity state.
+
+    This is the admission-preflight primitive. It deliberately returns only
+    invite metadata needed for a decision and never exposes the raw token,
+    nonce, join-code fingerprint, or signing secret.
+    """
+    clean_token = str(token or "").strip()
+    if not clean_token:
+        return {"status": "rejected", "reason": "invite_required"}
+    join_code = clean_token if clean_token.startswith("aaj1_") else ""
+    join_code_fingerprint = hashlib.sha256(join_code.encode("utf-8")).hexdigest() if join_code else ""
+    invite_id = _invite_fingerprint(clean_token)
+    with _state_lock:
+        invite_info = _pending_invites.get(invite_id)
+        if join_code_fingerprint:
+            invite_info = next(
+                (
+                    candidate
+                    for candidate in _pending_invites.values()
+                    if candidate.get("join_code_fingerprint") == join_code_fingerprint
+                ),
+                None,
+            )
+            invite_id = str((invite_info or {}).get("invite_id") or "")
+        invite = dict(invite_info) if invite_info else None
+        invite_secret = _invite_secret
+        used_nonces = set(_used_nonce_fingerprints)
+
+    if invite and invite.get("revoked"):
+        return {"status": "rejected", "reason": "invite_revoked"}
+
+    if join_code:
+        if invite is None:
+            return {"status": "rejected", "reason": "invite_not_found"}
+        try:
+            expires_at = datetime.fromisoformat(str(invite.get("expires_at") or ""))
+        except ValueError:
+            return {"status": "rejected", "reason": "invite_invalid"}
+        if expires_at <= datetime.now(UTC):
+            return {"status": "rejected", "reason": "token_expired"}
+        resolved_meeting_id = clean_lobby_text(invite.get("meeting_id"), limit=128)
+        if meeting_id and clean_lobby_text(meeting_id, limit=128) != resolved_meeting_id:
+            return {"status": "rejected", "reason": "meeting_mismatch"}
+        nonce = str(invite.get("join_nonce") or "")
+    else:
+        if not invite_secret:
+            return {"status": "rejected", "reason": "invite_not_found"}
+        verification = verify_lan_invite_token(
+            clean_token,
+            secret=invite_secret,
+            expected_meeting_id=meeting_id,
+        )
+        if verification.get("status") != "ok":
+            return {
+                "status": "rejected",
+                "reason": verification.get("identity_status", "verification_failed"),
+            }
+        claims = verification.get("claims", {})
+        resolved_meeting_id = clean_lobby_text(
+            claims.get("meeting_id") if isinstance(claims, dict) else "",
+            limit=128,
+        )
+        nonce = str(claims.get("nonce") or "") if isinstance(claims, dict) else ""
+
+    max_uses = int(invite.get("max_uses", 1)) if invite else 1
+    use_count = int(invite.get("use_count", 0)) if invite else 0
+    reusable = max_uses != 1
+    if max_uses and use_count >= max_uses:
+        return {"status": "rejected", "reason": "invite_use_limit_reached"}
+    if not reusable and _nonce_fingerprint(nonce) in used_nonces:
+        return {"status": "rejected", "reason": "token_already_used"}
+
+    agent_info = {}
+    if not join_code:
+        claims = verification.get("claims", {})
+        if isinstance(claims, dict) and isinstance(claims.get("agent"), dict):
+            agent_info = claims["agent"]
+    return {
+        "status": "valid",
+        "invite_id": invite_id,
+        "meeting_id": resolved_meeting_id,
+        "display_name": clean_lobby_text(
+            (invite or {}).get("display_name") or agent_info.get("display_name"),
+            limit=128,
+        ),
+        "invite_scope": normalize_invite_scope((invite or {}).get("invite_scope")),
+        "participant_type": _normalize_invite_participant_type(
+            (invite or {}).get("participant_type", "human")
+        ),
+        "client_type": _normalize_invite_client_type((invite or {}).get("client_type", "browser")),
+        "provider_kind": clean_lobby_text((invite or {}).get("provider_kind", "manual"), limit=64)
+        or "manual",
+        "created_by_user_id": clean_lobby_text((invite or {}).get("created_by_user_id"), limit=128),
+        "reusable": reusable,
+    }
+
+
 def _room_usage_guide(
     *,
     room_url: str,

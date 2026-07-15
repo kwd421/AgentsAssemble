@@ -7,7 +7,7 @@ from agentsassemble.room_invite import get_public_url
 
 _LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
 _PUBLIC_INVITE_CORS_METHODS = "GET, POST, DELETE, OPTIONS"
-_PUBLIC_INVITE_CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID"
+_PUBLIC_INVITE_CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID, X-Device-Token"
 
 
 def _is_loopback_host(host: object) -> bool:
@@ -83,6 +83,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
     if method == "POST":
         return path in {
             "/api/ws-ticket",
+            "/api/room-invite/admission",
             "/api/room-invite/join",
             "/api/room-invite/leave",
             "/api/room-invite/companion",

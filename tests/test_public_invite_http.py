@@ -93,6 +93,51 @@ class PublicInviteHttpTests(unittest.TestCase):
         self.assertNotIn("env", invite["remote_client_packet"])
         self.assertEqual(invite["remote_client_packet"]["attend"]["live_transport"], "websocket_push")
 
+    def test_invite_admission_recognizes_claimed_device_without_issuing_session(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            RoomStore(root).create_room("friend-room", label="Friend room")
+            set_runtime_host_token("host-secret")
+            set_runtime_public_url("https://shared-room.example.com")
+            server = self._start_server(root)
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/host/claim",
+                        {"device_token": "same-origin-host-device"},
+                        {"X-Host-Token": "host-secret"},
+                    ),
+                    timeout=4,
+                ):
+                    pass
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/create",
+                        {"meeting_id": "friend-room", "display_name": "Friend"},
+                        {"X-Host-Token": "host-secret"},
+                    ),
+                    timeout=4,
+                ) as response:
+                    invite = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/admission",
+                        {"invite_token": invite["join_url"].split("token=", 1)[1]},
+                        {"X-Device-Token": "same-origin-host-device"},
+                    ),
+                    timeout=4,
+                ) as response:
+                    decision = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(decision["status"], "known_user")
+        self.assertEqual(decision["participant"]["participant_id"], "operator-local")
+        self.assertTrue(decision["operator"])
+        self.assertNotIn("session_token", decision)
+
     def test_host_token_bootstrap_rejects_untrusted_public_request(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
