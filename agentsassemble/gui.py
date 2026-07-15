@@ -80,6 +80,7 @@ from agentsassemble.gui_legacy_live_agent_preflight_http import (
     LegacyLiveAgentPreflightHttpDeps,
     register_legacy_live_agent_preflight_route,
 )
+from agentsassemble.gui_legacy_provider_health_http import register_legacy_provider_health_route
 from agentsassemble.gui_legacy_live_agent_readiness_http import (
     LegacyLiveAgentReadinessHttpDeps,
     register_legacy_live_agent_readiness_route,
@@ -172,9 +173,6 @@ from agentsassemble.legacy_live_agent_process_control import (
     process_stop_error_message as _process_stop_error_message,
     process_stop_running_error_message as _process_stop_running_error_message,
     process_stop_running_operation_status as _process_stop_running_operation_status,
-)
-from agentsassemble.diagnostic_report_projection import (
-    safe_diagnostic_report_payload as _safe_diagnostic_report_payload,
 )
 from agentsassemble.legacy_live_agent_process_service import (
     LegacyLiveAgentProcessMutationService,
@@ -378,7 +376,7 @@ from agentsassemble.legacy_review_checkpoint import (
 )
 from agentsassemble.legacy_turn_scheduler import meeting_turn_lock as _live_agent_round_scheduler_lock
 from agentsassemble.meeting import run_demo_meeting
-from agentsassemble.provider_health import provider_health_report
+from agentsassemble.provider_health import provider_health_payload, provider_health_report
 from agentsassemble.provider_login import ProviderLoginService
 from agentsassemble.public_tunnel import PublicTunnelManager
 from agentsassemble.frontend_runtime import (
@@ -1500,25 +1498,6 @@ def send_lobby_message_to_remote_bridge(
         append_lobby_event=append_lobby_event,
         public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
         is_muted=is_room_member_muted,
-    )
-
-
-def provider_health_payload(payload: dict[str, object]) -> dict[str, object]:
-    config_path = str(payload.get("config_path") or "").strip()
-    if not config_path:
-        raise ValueError("Provider health requires config_path.")
-    probe_mode = str(payload.get("probe_mode") or "none").strip() or "none"
-    probe_timeout_value = payload.get("probe_timeout_seconds", payload.get("probe_timeout", 2.0))
-    try:
-        probe_timeout = float(probe_timeout_value)
-    except (TypeError, ValueError) as error:
-        raise ValueError("Provider health probe_timeout_seconds must be a finite non-negative number.") from error
-    if not math.isfinite(probe_timeout) or probe_timeout < 0:
-        raise ValueError("Provider health probe_timeout_seconds must be a finite non-negative number.")
-    return provider_health_report(
-        Path(config_path),
-        probe_mode=probe_mode,
-        probe_timeout_seconds=probe_timeout,
     )
 
 
@@ -3413,6 +3392,10 @@ def _make_handler(
         route_table,
         request_server_url=lambda ctx: ctx.handler._request_server_url(),
     )
+    register_legacy_provider_health_route(
+        route_table,
+        reporter=lambda *args, **kwargs: provider_health_report(*args, **kwargs),
+    )
 
     def _late_operation_json_payload(
         ctx: RequestContext,
@@ -3840,21 +3823,6 @@ def _make_handler(
                     details={"meeting_id": str(result.get("meeting_id") or payload.get("meeting_id") or "")},
                 )
                 self._send_json(result)
-                return
-            if parsed.path == "/api/provider-health":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                try:
-                    self._send_json(_safe_diagnostic_report_payload(provider_health_payload(payload)))
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                 return
             if parsed.path == "/api/codex-sessions/invite":
                 length = int(self.headers.get("Content-Length", "0") or "0")

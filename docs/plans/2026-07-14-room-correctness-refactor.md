@@ -1170,3 +1170,12 @@ same-session/PID evidence, TTFO, total time, error count, and cleanup.
   retained fixed path is provider-health; Codex invite/join remain a separate
   meeting-session compatibility family. The seven deletion candidates and
   canonical name/avatar history reprojection remain unchanged.
+- 2026-07-15: Provider-health is now Router-owned without changing its
+  diagnostic contract. Request normalization moved beside
+  `provider_health_report`; the route injects the late-bound reporter so real
+  HTTP tests and integrations can still replace the GUI report runner without
+  executing provider commands accidentally. Public-safe projection remains at
+  the HTTP response boundary, including config-path and loader-detail
+  redaction. The remaining retained fixed compatibility family is Codex
+  invite/join. The seven deletion candidates and canonical name/avatar history
+  reprojection remain unchanged.

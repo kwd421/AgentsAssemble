@@ -35,6 +35,7 @@ LOOPBACK_HOSTS = {"localhost"}
 ProbeRequester = Callable[[str, float], dict[str, object]]
 BridgeProbeRequester = Callable[[str, dict[str, str], float], dict[str, object]]
 ApiProbeRequester = Callable[[str, dict[str, str], float], dict[str, object]]
+ProviderHealthReporter = Callable[..., dict[str, object]]
 
 
 class BridgeProbeError(Exception):
@@ -116,6 +117,30 @@ def provider_health_report(
         "providers": provider_reports,
         "bindings": binding_reports,
     }
+
+
+def provider_health_payload(
+    payload: dict[str, object],
+    *,
+    report_builder: ProviderHealthReporter = provider_health_report,
+) -> dict[str, object]:
+    """Normalize the operator request before running the health report."""
+    config_path = str(payload.get("config_path") or "").strip()
+    if not config_path:
+        raise ValueError("Provider health requires config_path.")
+    probe_mode = str(payload.get("probe_mode") or "none").strip() or "none"
+    probe_timeout_value = payload.get("probe_timeout_seconds", payload.get("probe_timeout", 2.0))
+    try:
+        probe_timeout = float(probe_timeout_value)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Provider health probe_timeout_seconds must be a finite non-negative number.") from error
+    if not math.isfinite(probe_timeout) or probe_timeout < 0:
+        raise ValueError("Provider health probe_timeout_seconds must be a finite non-negative number.")
+    return report_builder(
+        Path(config_path),
+        probe_mode=probe_mode,
+        probe_timeout_seconds=probe_timeout,
+    )
 
 
 def _failed_config_report(*, probe_mode: str = "none") -> dict[str, object]:
