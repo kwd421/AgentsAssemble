@@ -3,6 +3,7 @@ import {
   claimHostDevice,
   clearHostToken,
   configurePublicInvitePublicUrl,
+  createOperatorPairing,
   createRoomInvite,
   fetchPublicInviteStatus,
   generatePublicInviteHostToken,
@@ -36,6 +37,7 @@ type InviteRemoteClientPacketState = {
 
 type UseRoomInviteControllerOptions = {
   guestLocked: boolean;
+  sessionToken?: string;
   availableProviders: NativeCliProviderAvailability[];
   onMembersChanged: (room: RoomDockItem, members: RoomMember[]) => void;
 };
@@ -72,6 +74,7 @@ function inviteErrorLooksLikeHostToken(error: unknown) {
 
 export function useRoomInviteController({
   guestLocked,
+  sessionToken = "",
   availableProviders,
   onMembersChanged,
 }: UseRoomInviteControllerOptions) {
@@ -79,6 +82,7 @@ export function useRoomInviteController({
   const [copyStatus, setCopyStatus] = useState("");
   const [secureInviteUrl, setSecureInviteUrl] = useState("");
   const [agentInviteUrl, setAgentInviteUrl] = useState("");
+  const [operatorPairingUrl, setOperatorPairingUrl] = useState("");
   const [agentInviteProviderId, setAgentInviteProviderId] = useState("codex");
   const [publicInviteStatus, setPublicInviteStatus] = useState<PublicInviteStatus | null>(null);
   const [publicUrlDraft, setPublicUrlDraft] = useState("");
@@ -92,6 +96,7 @@ export function useRoomInviteController({
     setCopyStatus("");
     setSecureInviteUrl("");
     setAgentInviteUrl("");
+    setOperatorPairingUrl("");
     setHostTokenDraft(loadHostToken());
     setFriendStatuses({});
     setRemoteClientPacket({ friendName: "", preview: "" });
@@ -204,8 +209,11 @@ export function useRoomInviteController({
 
   async function preparePublicInvite() {
     let status = await refreshPublicInviteState();
-    await ensureHostToken(status);
+    if (!sessionToken) await ensureHostToken(status);
     if (status.public_url) return status;
+    if (sessionToken) {
+      throw new Error("공개 주소 세션에서는 로컬 터널을 시작할 수 없습니다.");
+    }
     if (!status.tunnel?.available) {
       throw new Error("공개 URL을 만들 수 없습니다. cloudflared를 설치하거나 공개 URL을 입력하세요.");
     }
@@ -239,7 +247,7 @@ export function useRoomInviteController({
     if (status.tunnel?.phase === "starting" && !status.tunnel.public_url) {
       throw new Error("터널 시작 중입니다. 공개 URL이 표시될 때까지 기다려 주세요.");
     }
-    await ensureHostToken(status);
+    if (!sessionToken) await ensureHostToken(status);
     return status;
   }
 
@@ -258,11 +266,23 @@ export function useRoomInviteController({
     const localPreviewUrl = localPreviewInviteUrlForRoom(room);
     let invite;
     try {
-      invite = await createRoomInvite({ meetingId: room.meetingId, agentId, displayName, inviteScope });
+      invite = await createRoomInvite({
+        meetingId: room.meetingId,
+        agentId,
+        displayName,
+        inviteScope,
+        sessionToken,
+      });
     } catch (error) {
       if (!inviteErrorLooksLikeHostToken(error)) throw error;
       await regenerateHostToken();
-      invite = await createRoomInvite({ meetingId: room.meetingId, agentId, displayName, inviteScope });
+      invite = await createRoomInvite({
+        meetingId: room.meetingId,
+        agentId,
+        displayName,
+        inviteScope,
+        sessionToken,
+      });
     }
     const target = secureInviteCopyTarget({ joinUrl: invite.join_url || "", localPreviewUrl });
     if (!target.copyUrl) throw new Error(target.status);
@@ -385,6 +405,7 @@ export function useRoomInviteController({
         clientType: "agent_bridge",
         providerKind: provider.provider_kind,
         maxUses: 1,
+        sessionToken,
       });
       const target = secureInviteCopyTarget({
         joinUrl: invite.join_url || "",
@@ -402,6 +423,27 @@ export function useRoomInviteController({
     if (!agentInviteUrl) return;
     const copied = await copyText(agentInviteUrl);
     setCopyStatus(copied ? "Agent Session 초대 링크 복사됨" : "초대 링크 복사 실패");
+  }
+
+  async function generateOperatorPairing(room: RoomDockItem) {
+    setCopyStatus("공개 주소용 운영자 연결 링크 생성 중...");
+    try {
+      await requirePublicInviteReady();
+      const pairing = await createOperatorPairing({
+        meetingId: room.meetingId,
+        sessionToken,
+      });
+      setOperatorPairingUrl(pairing.pairing_url);
+      setCopyStatus("운영자 연결 링크 생성됨 · 2분 안에 한 번만 사용할 수 있습니다.");
+    } catch (error) {
+      setCopyStatus(error instanceof Error ? error.message : "운영자 연결 링크 생성 실패");
+    }
+  }
+
+  async function copyOperatorPairing() {
+    if (!operatorPairingUrl) return;
+    const copied = await copyText(operatorPairingUrl);
+    setCopyStatus(copied ? "운영자 연결 링크 복사됨" : "운영자 연결 링크 복사 실패");
   }
 
   async function copySecureInvite(room: RoomDockItem) {
@@ -506,6 +548,7 @@ export function useRoomInviteController({
     copyStatus,
     secureInviteUrl,
     agentInviteUrl,
+    operatorPairingUrl,
     agentInviteProviderId,
     publicInviteStatus,
     publicUrlDraft,
@@ -526,7 +569,9 @@ export function useRoomInviteController({
     stopTunnel,
     generateSecureInvite,
     generateAgentInvite,
+    generateOperatorPairing,
     copyAgentInvite,
+    copyOperatorPairing,
     copySecureInvite,
     copyLocalPreview,
     copyRemoteClientPacket,

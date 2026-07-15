@@ -17,6 +17,7 @@ const deviceMocks = vi.hoisted(() => ({
 const apiMocks = vi.hoisted(() => ({
   joinRoomInvite: vi.fn(),
   preflightRoomInvite: vi.fn(),
+  redeemOperatorPairing: vi.fn(),
 }));
 
 const guestSessionStore = vi.hoisted(() => ({
@@ -27,6 +28,7 @@ vi.mock("../api", async () => ({
   ...(await vi.importActual<typeof import("../api")>("../api")),
   joinRoomInvite: apiMocks.joinRoomInvite,
   preflightRoomInvite: apiMocks.preflightRoomInvite,
+  redeemOperatorPairing: apiMocks.redeemOperatorPairing,
 }));
 
 vi.mock("../lib/deviceIdentity", () => deviceMocks);
@@ -99,6 +101,8 @@ describe("useRoomAdmission", () => {
       useRoomAdmission({
         guestInvite: null,
         guestJoinToken: "invite-1",
+        operatorPairingToken: "",
+        onPairingTokenConsumed: vi.fn(),
         initialSession: null,
         onRoomJoined,
         onResetToLobby: vi.fn(),
@@ -135,6 +139,8 @@ describe("useRoomAdmission", () => {
       useRoomAdmission({
         guestInvite: null,
         guestJoinToken: "invite-1",
+        operatorPairingToken: "",
+        onPairingTokenConsumed: vi.fn(),
         initialSession: null,
         onRoomJoined,
         onResetToLobby,
@@ -162,6 +168,8 @@ describe("useRoomAdmission", () => {
       useRoomAdmission({
         guestInvite: null,
         guestJoinToken: "invite-2",
+        operatorPairingToken: "",
+        onPairingTokenConsumed: vi.fn(),
         initialSession: SESSION,
         onRoomJoined,
         onResetToLobby: vi.fn(),
@@ -181,6 +189,46 @@ describe("useRoomAdmission", () => {
     expect(window.location.search).toBe("");
   });
 
+  it("redeems a dedicated pairing into the canonical operator session", async () => {
+    apiMocks.redeemOperatorPairing.mockResolvedValue({
+      status: "admitted",
+      session_token: "operator-session",
+      agent_id: "operator-local",
+      display_name: "SeiNel",
+      meeting_id: "room-1",
+      invite_scope: "room",
+      connection_kind: "native_remote_room_client",
+      expires_at: "2099-01-01T00:00:00Z",
+      operator: true,
+      room_label: "Room One",
+    });
+    const onRoomJoined = vi.fn();
+
+    const { result } = renderHook(() =>
+      useRoomAdmission({
+        guestInvite: null,
+        guestJoinToken: "",
+        operatorPairingToken: "aap1_pairing-token",
+        onPairingTokenConsumed: vi.fn(),
+        initialSession: null,
+        onRoomJoined,
+        onResetToLobby: vi.fn(),
+      })
+    );
+
+    await waitFor(() => expect(result.current.guestSession?.sessionToken).toBe("operator-session"));
+    expect(result.current.guestSession?.agentId).toBe("operator-local");
+    expect(result.current.guestSession?.operator).toBe(true);
+    expect(apiMocks.joinRoomInvite).not.toHaveBeenCalled();
+    expect(apiMocks.redeemOperatorPairing).toHaveBeenCalledWith({
+      pairingToken: "aap1_pairing-token",
+      deviceToken: "device-1",
+      origin: window.location.origin,
+    });
+    expect(loadRoomGuestSession()?.operator).toBe(true);
+    expect(onRoomJoined).toHaveBeenCalledWith(expect.objectContaining({ meetingId: "room-1" }));
+  });
+
   it("restores a persisted session when the matching invite join request fails", async () => {
     persistRoomGuestSession(SESSION);
     apiMocks.preflightRoomInvite.mockResolvedValue({
@@ -195,6 +243,8 @@ describe("useRoomAdmission", () => {
       useRoomAdmission({
         guestInvite: null,
         guestJoinToken: "invite-1",
+        operatorPairingToken: "",
+        onPairingTokenConsumed: vi.fn(),
         initialSession: null,
         onRoomJoined,
         onResetToLobby: vi.fn(),
@@ -221,6 +271,8 @@ describe("useRoomAdmission", () => {
       useRoomAdmission({
         guestInvite: null,
         guestJoinToken: "invite-1",
+        operatorPairingToken: "",
+        onPairingTokenConsumed: vi.fn(),
         initialSession: null,
         onRoomJoined,
         onResetToLobby,
@@ -251,6 +303,8 @@ describe("useRoomAdmission", () => {
         return useRoomAdmission({
           guestInvite: null,
           guestJoinToken: "invite-1",
+          operatorPairingToken: "",
+          onPairingTokenConsumed: vi.fn(),
           initialSession: SESSION,
           onRoomJoined,
           onResetToLobby,

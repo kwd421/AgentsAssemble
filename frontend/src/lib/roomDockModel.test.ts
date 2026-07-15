@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { persistRoomGuestSession, type RoomGuestSession } from "./roomGuestSession";
+import { consumeOperatorPairingTokenFromUrl } from "./roomGuestSession";
 import { createStartupRoute } from "./roomDockModel";
 
 const SESSION: RoomGuestSession = {
@@ -29,5 +30,18 @@ describe("createStartupRoute", () => {
     expect(route.guestJoinToken).toBe("new-invite");
     expect(route.guestSession).toEqual(expect.objectContaining(SESSION));
     expect(route.guestInvite?.meetingId).toBe("pending-join");
+  });
+
+  it("captures and immediately removes a one-time pairing token from the URL", () => {
+    window.history.replaceState({}, "", "/pair?token=aap1_secret-token");
+
+    const pairingToken = consumeOperatorPairingTokenFromUrl();
+    const route = createStartupRoute({ operatorPairingPending: Boolean(pairingToken) });
+
+    expect(pairingToken).toBe("aap1_secret-token");
+    expect(route.guestJoinToken).toBe("");
+    expect(route.guestInvite?.meetingId).toBe("pending-pairing");
+    expect(window.location.pathname).toBe("/pair");
+    expect(window.location.search).toBe("");
   });
 });

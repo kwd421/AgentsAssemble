@@ -212,13 +212,13 @@ export function roomFromGuestSession(session: RoomGuestSession): RoomDockItem {
   };
 }
 
-function roomFromPendingJoinToken(token: string): RoomDockItem | null {
-  if (!token) return null;
+function roomFromPendingAdmission(kind: "invite" | "pairing"): RoomDockItem {
+  const pairing = kind === "pairing";
   return {
-    id: "guest-join-pending",
-    label: "초대 확인 중",
-    meetingId: "pending-join",
-    topic: "카톡 초대 링크로 방에 입장하는 중",
+    id: pairing ? "operator-pairing-pending" : "guest-join-pending",
+    label: pairing ? "운영자 기기 연결 중" : "초대 확인 중",
+    meetingId: pairing ? "pending-pairing" : "pending-join",
+    topic: pairing ? "공개 주소의 브라우저 신원을 연결하는 중" : "초대 링크로 방에 입장하는 중",
     shortLabel: "G",
     inviteScope: "room",
     icon: Users,
@@ -287,13 +287,15 @@ function activeRoomIdForStartup(rooms: RoomDockItem[], routeRoom?: RoomDockItem 
   );
 }
 
-export function createStartupRoute(): StartupRoute {
-  const guestJoinToken = joinInviteTokenFromUrl(window.location.href);
+export function createStartupRoute({ operatorPairingPending = false } = {}): StartupRoute {
+  const guestJoinToken = operatorPairingPending ? "" : joinInviteTokenFromUrl(window.location.href);
   const guestSession = loadRoomGuestSession();
   const guestInvite =
     roomFromInviteParams() ||
-    (guestJoinToken
-      ? roomFromPendingJoinToken(guestJoinToken)
+    (operatorPairingPending
+      ? roomFromPendingAdmission("pairing")
+      : guestJoinToken
+      ? roomFromPendingAdmission("invite")
       : guestSession
         ? roomFromGuestSession(guestSession)
         : null);

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { joinRoomInvite, preflightRoomInvite, type RoomInviteJoinResponse } from "../api";
+import {
+  joinRoomInvite,
+  preflightRoomInvite,
+  redeemOperatorPairing,
+  type RoomInviteJoinResponse,
+} from "../api";
 import { GUEST_SESSION_EXPIRED_MESSAGE } from "../lib/apiErrors";
 import { getOrCreateDeviceToken, loadRememberedGuestProfile, rememberGuestProfile } from "../lib/deviceIdentity";
 import { roomFromGuestSession, type RoomDockItem } from "../lib/roomDockModel";
@@ -14,6 +19,8 @@ import {
 type RoomAdmissionOptions = {
   guestInvite: RoomDockItem | null;
   guestJoinToken: string;
+  operatorPairingToken: string;
+  onPairingTokenConsumed: () => void;
   initialSession: RoomGuestSession | null;
   onRoomJoined: (room: RoomDockItem) => void;
   onResetToLobby: () => void;
@@ -22,6 +29,8 @@ type RoomAdmissionOptions = {
 export function useRoomAdmission({
   guestInvite,
   guestJoinToken,
+  operatorPairingToken,
+  onPairingTokenConsumed,
   initialSession,
   onRoomJoined,
   onResetToLobby,
@@ -32,13 +41,28 @@ export function useRoomAdmission({
   const [pendingGuestDisplayName, setPendingGuestDisplayName] = useState("Guest");
   const [pendingGuestAvatarImage, setPendingGuestAvatarImage] = useState("");
   const [guestJoinStatus, setGuestJoinStatus] = useState("");
-  const [guestAdmissionResolved, setGuestAdmissionResolved] = useState(!guestJoinToken);
-  const [guestAdmissionBusy, setGuestAdmissionBusy] = useState(Boolean(guestJoinToken));
+  const [guestAdmissionResolved, setGuestAdmissionResolved] = useState(
+    !guestJoinToken && !operatorPairingToken
+  );
+  const [guestAdmissionBusy, setGuestAdmissionBusy] = useState(
+    Boolean(guestJoinToken || operatorPairingToken)
+  );
+  const [operatorPairingActive, setOperatorPairingActive] = useState(
+    Boolean(operatorPairingToken)
+  );
   const preflightAttemptedTokenRef = useRef("");
+  const pairingAttemptedTokenRef = useRef("");
+  const onPairingTokenConsumedRef = useRef(onPairingTokenConsumed);
+  useEffect(() => {
+    onPairingTokenConsumedRef.current = onPairingTokenConsumed;
+  }, [onPairingTokenConsumed]);
 
-  const guestLocked = Boolean(guestInvite || guestSession || guestJoinToken || guestExpired);
+  const guestLocked = Boolean(
+    guestInvite || guestSession || guestJoinToken || operatorPairingActive || guestExpired
+  );
   const guestMeetingId = guestSession?.meetingId || guestInvite?.meetingId || "";
   const guestJoinPending = Boolean(guestJoinToken && guestSession?.inviteToken !== guestJoinToken);
+  const operatorPairingPending = Boolean(operatorPairingActive && !guestSession?.operator);
   const guestReadOnly =
     guestInvite?.inviteScope === "read_only" || guestSession?.inviteScope === "read_only";
   const guestAlreadyJoinedThisInvite = Boolean(
@@ -59,6 +83,10 @@ export function useRoomAdmission({
             avatarImage: guestSession?.avatarImage,
             statusLabel: guestExpired
               ? "세션 만료"
+              : guestSession?.operator
+              ? "운영자로 접속"
+              : operatorPairingPending
+              ? "운영자 기기 연결 중"
               : guestJoinPending
               ? "초대 확인 중"
               : guestSession?.sessionToken
@@ -67,7 +95,7 @@ export function useRoomAdmission({
             expired: guestExpired,
           }
         : undefined,
-    [guestExpired, guestJoinPending, guestLocked, guestSession]
+    [guestExpired, guestJoinPending, guestLocked, guestSession, operatorPairingPending]
   );
 
   const expireGuestSession = useCallback(() => {
@@ -121,7 +149,38 @@ export function useRoomAdmission({
   );
 
   useEffect(() => {
-    if (!guestJoinToken || guestExpired) return;
+    if (!operatorPairingToken || guestExpired) return;
+    if (pairingAttemptedTokenRef.current === operatorPairingToken) return;
+    pairingAttemptedTokenRef.current = operatorPairingToken;
+    let cancelled = false;
+    setGuestAdmissionBusy(true);
+    setGuestAdmissionResolved(false);
+    setGuestJoinStatus("공개 주소의 운영자 신원을 연결하는 중...");
+    redeemOperatorPairing({
+      pairingToken: operatorPairingToken,
+      deviceToken: getOrCreateDeviceToken(),
+      origin: window.location.origin,
+    })
+      .then((payload) => {
+        if (cancelled) return;
+        onPairingTokenConsumedRef.current();
+        setOperatorPairingActive(false);
+        applyJoinedSession("", payload, payload.avatar_image_url || "");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        onPairingTokenConsumedRef.current();
+        setGuestAdmissionResolved(false);
+        setGuestAdmissionBusy(false);
+        setGuestJoinStatus(error instanceof Error ? error.message : "운영자 기기 연결 실패");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applyJoinedSession, guestExpired, operatorPairingToken]);
+
+  useEffect(() => {
+    if (!guestJoinToken || operatorPairingToken || guestExpired) return;
     if (preflightAttemptedTokenRef.current === guestJoinToken) return;
     preflightAttemptedTokenRef.current = guestJoinToken;
     let cancelled = false;
@@ -190,7 +249,7 @@ export function useRoomAdmission({
     return () => {
       cancelled = true;
     };
-  }, [clearInviteUrl, guestExpired, guestJoinToken, guestSession, onRoomJoined]);
+  }, [clearInviteUrl, guestExpired, guestJoinToken, guestSession, onRoomJoined, operatorPairingToken]);
 
   useEffect(() => {
     if (!guestJoinToken || guestAlreadyJoinedThisInvite) return;
@@ -250,6 +309,7 @@ export function useRoomAdmission({
     guestLocked,
     guestMeetingId,
     guestJoinPending,
+    operatorPairingPending,
     guestReadOnly,
     guestPanelProfile,
     setPendingGuestDisplayName,

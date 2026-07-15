@@ -9,6 +9,7 @@ const apiMocks = vi.hoisted(() => ({
   claimHostDevice: vi.fn(),
   clearHostToken: vi.fn(),
   configurePublicInvitePublicUrl: vi.fn(),
+  createOperatorPairing: vi.fn(),
   createRoomInvite: vi.fn(),
   fetchPublicInviteStatus: vi.fn(),
   generatePublicInviteHostToken: vi.fn(),
@@ -149,6 +150,32 @@ describe("useRoomInviteController", () => {
     expect(hook.result.current.friendStatuses).toEqual({});
     expect(hook.result.current.secureInviteUrl).toBe("");
     expect(hook.result.current.agentInviteUrl).toBe("");
+    expect(hook.result.current.operatorPairingUrl).toBe("");
+  });
+
+  it("creates a dedicated short-lived operator pairing link", async () => {
+    apiMocks.createOperatorPairing.mockResolvedValue({
+      status: "created",
+      pairing_id: "pair-1",
+      room_id: room.meetingId,
+      target_origin: "https://room.example.com",
+      expires_at: "2026-07-15T12:02:00Z",
+      pairing_url: "https://room.example.com/pair?token=aap1_secret",
+    });
+    const hook = renderInviteController();
+
+    await act(async () => {
+      await hook.result.current.generateOperatorPairing(room);
+    });
+
+    expect(apiMocks.createOperatorPairing).toHaveBeenCalledWith({
+      meetingId: room.meetingId,
+      sessionToken: "",
+    });
+    expect(hook.result.current.operatorPairingUrl).toBe(
+      "https://room.example.com/pair?token=aap1_secret"
+    );
+    expect(hook.result.current.copyStatus).toContain("2분");
   });
 
   it("regenerates a stale host token and retries secure invite creation once", async () => {

@@ -3,6 +3,7 @@ import {
   fetchJson,
   postJson,
   postJsonHost,
+  postJsonModerator,
   postJsonWithIdentity,
   postJsonWithToken,
 } from "./http";
@@ -86,6 +87,15 @@ export interface PublicInviteActionResponse {
   public_invite?: PublicInviteStatus;
 }
 
+export interface OperatorPairingCreateResponse {
+  status: "created";
+  pairing_id: string;
+  room_id: string;
+  target_origin: string;
+  expires_at: string;
+  pairing_url: string;
+}
+
 export function createRoomInvite({
   meetingId,
   agentId,
@@ -95,6 +105,7 @@ export function createRoomInvite({
   clientType = "browser",
   providerKind = "manual",
   maxUses = 0,
+  sessionToken = "",
 }: {
   meetingId: string;
   agentId: string;
@@ -104,17 +115,22 @@ export function createRoomInvite({
   clientType?: "browser" | "agent_bridge";
   providerKind?: string;
   maxUses?: number;
+  sessionToken?: string;
 }) {
-  return postJsonHost<RoomInviteCreateResponse>("/api/room-invite/create", {
-    meeting_id: meetingId,
-    agent_id: agentId,
-    display_name: displayName,
-    invite_scope: inviteScope,
-    ttl_seconds: ttlSeconds,
-    client_type: clientType,
-    provider_kind: providerKind,
-    max_uses: maxUses,
-  });
+  return postJsonModerator<RoomInviteCreateResponse>(
+    "/api/room-invite/create",
+    {
+      meeting_id: meetingId,
+      agent_id: agentId,
+      display_name: displayName,
+      invite_scope: inviteScope,
+      ttl_seconds: ttlSeconds,
+      client_type: clientType,
+      provider_kind: providerKind,
+      max_uses: maxUses,
+    },
+    sessionToken
+  );
 }
 
 export function fetchPublicInviteStatus() {
@@ -174,6 +190,36 @@ export function preflightRoomInvite({
     "/api/room-invite/admission",
     { invite_token: inviteToken },
     { deviceToken, sessionToken }
+  );
+}
+
+export function createOperatorPairing({
+  meetingId,
+  sessionToken = "",
+}: {
+  meetingId: string;
+  sessionToken?: string;
+}) {
+  return postJsonModerator<OperatorPairingCreateResponse>(
+    "/api/operator-pairing/create",
+    { meeting_id: meetingId, ttl_seconds: 120 },
+    sessionToken
+  );
+}
+
+export function redeemOperatorPairing({
+  pairingToken,
+  deviceToken,
+  origin,
+}: {
+  pairingToken: string;
+  deviceToken: string;
+  origin: string;
+}) {
+  return postJsonWithIdentity<RoomInviteJoinResponse>(
+    "/api/operator-pairing/redeem",
+    { pairing_token: pairingToken, origin },
+    { deviceToken }
   );
 }
 

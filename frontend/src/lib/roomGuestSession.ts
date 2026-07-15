@@ -43,6 +43,24 @@ export function joinInviteTokenFromUrl(url: string): string {
   }
 }
 
+export function operatorPairingTokenFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const pairPath = parsed.pathname.replace(/\/+$/, "") || "/";
+    if (pairPath !== "/pair") return "";
+    return cleanText(parsed.searchParams.get("token"), 4096);
+  } catch {
+    return "";
+  }
+}
+
+export function consumeOperatorPairingTokenFromUrl(): string {
+  const token = operatorPairingTokenFromUrl(window.location.href);
+  if (!token) return "";
+  window.history.replaceState({}, "", window.location.pathname || "/pair");
+  return token;
+}
+
 export function roomGuestSessionFromJoinPayload(
   inviteToken: string,
   payload: object,

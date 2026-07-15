@@ -8,6 +8,7 @@ type GuestJoinProfilePanelProps = {
   avatarImage?: string;
   status?: string;
   busy?: boolean;
+  pairing?: boolean;
   onDisplayNameChange: (value: string) => void;
   onAvatarImageChange: (value: string) => void;
   onJoin: () => void;
@@ -18,6 +19,7 @@ export default function GuestJoinProfilePanel({
   avatarImage,
   status = "",
   busy = false,
+  pairing = false,
   onDisplayNameChange,
   onAvatarImageChange,
   onJoin,
@@ -40,9 +42,13 @@ export default function GuestJoinProfilePanel({
 
   return (
     <div className="dc-guest-join-panel">
-      <section className="dc-guest-join-card" aria-label="입장 프로필">
-        <h1>입장 프로필</h1>
-        <div className="dc-guest-avatar-row">
+      <section
+        className="dc-guest-join-card"
+        aria-label={pairing ? "운영자 기기 연결" : "입장 프로필"}
+      >
+        <h1>{pairing ? "운영자 기기 연결" : "입장 프로필"}</h1>
+        {!pairing && (
+          <div className="dc-guest-avatar-row">
           <span className="dc-guest-avatar" data-has-image={Boolean(avatarImage)}>
             {avatarImage ? <img src={avatarImage} alt="" /> : avatarLabel}
           </span>
@@ -60,33 +66,38 @@ export default function GuestJoinProfilePanel({
               }}
             />
           </label>
-        </div>
-        {cropFile && (
+          </div>
+        )}
+        {!pairing && cropFile && (
           <ImageCropper
             file={cropFile}
             onCancel={() => setCropFile(null)}
             onCropped={(file) => void handleCropped(file)}
           />
         )}
-        <label className="dc-guest-name-field">
-          이름
-          <input
-            type="text"
-            maxLength={80}
-            value={displayName}
-            onChange={(event) => onDisplayNameChange(event.currentTarget.value)}
-            placeholder="방에서 보일 이름"
-          />
-        </label>
-        <button
-          type="button"
-          className="dc-guest-join-button"
-          disabled={busy || !displayName.trim()}
-          onClick={onJoin}
-        >
-          <LogIn size={16} />
-          입장
-        </button>
+        {!pairing && (
+          <>
+            <label className="dc-guest-name-field">
+              이름
+              <input
+                type="text"
+                maxLength={80}
+                value={displayName}
+                onChange={(event) => onDisplayNameChange(event.currentTarget.value)}
+                placeholder="방에서 보일 이름"
+              />
+            </label>
+            <button
+              type="button"
+              className="dc-guest-join-button"
+              disabled={busy || !displayName.trim()}
+              onClick={onJoin}
+            >
+              <LogIn size={16} />
+              입장
+            </button>
+          </>
+        )}
         {(status || uploadStatus) && (
           <p className="dc-member-session-status preserve-words">{uploadStatus || status}</p>
         )}

@@ -184,6 +184,18 @@ class PublicInviteHttpTests(unittest.TestCase):
                     timeout=4,
                 ) as response:
                     admitted = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    _json_request(
+                        f"{base}/api/room-invite/create",
+                        {"meeting_id": "friend-room", "display_name": "Paired moderator invite"},
+                        {
+                            **public_headers,
+                            "Authorization": f"Bearer {admitted['session_token']}",
+                        },
+                    ),
+                    timeout=4,
+                ) as response:
+                    moderator_invite = json.loads(response.read().decode("utf-8"))
                 with self.assertRaises(HTTPError) as replay_error:
                     urlopen(
                         _json_request(
@@ -205,6 +217,7 @@ class PublicInviteHttpTests(unittest.TestCase):
         self.assertEqual(admitted["agent_id"], "operator-local")
         self.assertTrue(admitted["operator"])
         self.assertEqual(admitted["room_label"], "friend-room")
+        self.assertEqual(moderator_invite["meeting_id"], "friend-room")
         self.assertEqual(replay_error.exception.code, 403)
 
     def test_host_token_bootstrap_rejects_untrusted_public_request(self):

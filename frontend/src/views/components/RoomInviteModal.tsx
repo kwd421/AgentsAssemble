@@ -39,6 +39,7 @@ export default function RoomInviteModal({
   roomLabel,
   secureInviteUrl,
   agentInviteUrl,
+  operatorPairingUrl,
   agentInviteProviderId,
   availableProviders,
   localPreviewUrl,
@@ -60,6 +61,8 @@ export default function RoomInviteModal({
   onAgentInviteProviderChange,
   onGenerateAgentInvite,
   onCopyAgentInvite,
+  onGenerateOperatorPairing,
+  onCopyOperatorPairing,
   onCopyLocalPreview,
   onPublicUrlDraftChange,
   onConfigurePublicUrl,
@@ -73,6 +76,7 @@ export default function RoomInviteModal({
   roomLabel: string;
   secureInviteUrl: string;
   agentInviteUrl: string;
+  operatorPairingUrl: string;
   agentInviteProviderId: string;
   availableProviders: NativeCliProviderAvailability[];
   localPreviewUrl: string;
@@ -100,6 +104,8 @@ export default function RoomInviteModal({
   onAgentInviteProviderChange: (providerId: string) => void;
   onGenerateAgentInvite: () => void;
   onCopyAgentInvite: () => void;
+  onGenerateOperatorPairing: () => void;
+  onCopyOperatorPairing: () => void;
   onCopyLocalPreview: () => void;
   onPublicUrlDraftChange: (value: string) => void;
   onConfigurePublicUrl: () => void;
@@ -267,6 +273,33 @@ export default function RoomInviteModal({
               링크 생성
             </button>
             <button type="button" className="dc-invite-copy-button" disabled={!secureInviteReady} onClick={onCopy}>
+              <Copy size={15} />
+              복사
+            </button>
+          </div>
+        </label>
+        <label className="dc-invite-link-label">
+          공개 주소에서 나로 열기
+          <span className="text-[12px] font-bold text-text-muted preserve-words">
+            현재 운영자 본인만 사용하세요. 링크는 2분 뒤 만료되고 한 번 사용하면 즉시 폐기됩니다.
+          </span>
+          <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px_112px]">
+            <input
+              className="dc-invite-link-input"
+              value={operatorPairingUrl}
+              placeholder="일회용 운영자 기기 연결 링크"
+              readOnly
+              onFocus={(event) => event.currentTarget.select()}
+            />
+            <button type="button" className="dc-invite-copy-button" onClick={onGenerateOperatorPairing}>
+              링크 생성
+            </button>
+            <button
+              type="button"
+              className="dc-invite-copy-button"
+              disabled={!operatorPairingUrl}
+              onClick={onCopyOperatorPairing}
+            >
               <Copy size={15} />
               복사
             </button>

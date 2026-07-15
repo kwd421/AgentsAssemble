@@ -109,6 +109,7 @@ import {
 import { remoteClientPacketPreview } from "./lib/roomInviteCopy";
 import { GUEST_SESSION_EXPIRED_MESSAGE } from "./lib/apiErrors";
 import { getOrCreateDeviceToken } from "./lib/deviceIdentity";
+import { consumeOperatorPairingTokenFromUrl } from "./lib/roomGuestSession";
 import { roomPostingState } from "./lib/roomGuestPosting";
 import type { AgentQuotaVisibilityViewer } from "./lib/agentQuotaVisibility";
 import { isActivePresence } from "./lib/presenceStatus";
@@ -307,7 +308,12 @@ function mobileViewportMatches() {
 }
 
 export default function App() {
-  const [startupRoute] = useState(createStartupRoute);
+  const [operatorPairingToken, setOperatorPairingToken] = useState(
+    consumeOperatorPairingTokenFromUrl
+  );
+  const [startupRoute] = useState(() =>
+    createStartupRoute({ operatorPairingPending: Boolean(operatorPairingToken) })
+  );
   const [deviceToken] = useState(getOrCreateDeviceToken);
   const guestInvite = startupRoute.guestInvite;
   const guestJoinToken = startupRoute.guestJoinToken;
@@ -325,7 +331,10 @@ export default function App() {
   const [membersOpen, setMembersOpen] = useState(true);
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>("room-info");
   const startupHostEnabled =
-    !startupRoute.guestInvite && !startupRoute.guestSession && !startupRoute.guestJoinToken;
+    !startupRoute.guestInvite &&
+    !startupRoute.guestSession &&
+    !startupRoute.guestJoinToken &&
+    !operatorPairingToken;
   const {
     rooms,
     replaceRooms,
@@ -379,6 +388,9 @@ export default function App() {
     setGuestAiPacketPreview("");
     setGuestAiPacketStatus("");
   }, []);
+  const clearOperatorPairingToken = useCallback(() => {
+    setOperatorPairingToken("");
+  }, []);
   const {
     guestSession,
     guestExpired,
@@ -390,6 +402,7 @@ export default function App() {
     guestLocked,
     guestMeetingId,
     guestJoinPending,
+    operatorPairingPending,
     guestReadOnly,
     guestPanelProfile,
     setPendingGuestDisplayName,
@@ -400,6 +413,8 @@ export default function App() {
   } = useRoomAdmission({
     guestInvite,
     guestJoinToken,
+    operatorPairingToken,
+    onPairingTokenConsumed: clearOperatorPairingToken,
     initialSession: startupRoute.guestSession,
     onRoomJoined: onGuestRoomJoined,
     onResetToLobby: onGuestAdmissionReset,
@@ -556,6 +571,7 @@ export default function App() {
   const roomAppearances = roomSettings.appearances;
   const roomInvite = useRoomInviteController({
     guestLocked,
+    sessionToken: guestSession?.sessionToken || "",
     availableProviders: canonicalRoom.availableProviders,
     onMembersChanged: roomMembers.replaceMembers,
   });
@@ -564,6 +580,7 @@ export default function App() {
     copyStatus: inviteCopyStatus,
     secureInviteUrl,
     agentInviteUrl,
+    operatorPairingUrl,
     agentInviteProviderId,
     publicInviteStatus,
     publicUrlDraft: publicInviteUrlDraft,
@@ -583,7 +600,9 @@ export default function App() {
     stopTunnel: stopInviteTunnel,
     generateSecureInvite: generateInviteLink,
     generateAgentInvite: generateAgentInviteLink,
+    generateOperatorPairing: generateOperatorPairingLink,
     copyAgentInvite: copyAgentInviteLink,
+    copyOperatorPairing: copyOperatorPairingLink,
     copySecureInvite: copyInviteLink,
     copyLocalPreview: copyLocalPreviewLink,
     copyRemoteClientPacket,
@@ -1356,6 +1375,7 @@ export default function App() {
           roomLabel={inviteModalRoom.label}
           secureInviteUrl={secureInviteUrl}
           agentInviteUrl={agentInviteUrl}
+          operatorPairingUrl={operatorPairingUrl}
           agentInviteProviderId={agentInviteProviderId}
           availableProviders={canonicalRoom.availableProviders}
           localPreviewUrl={localPreviewUrl}
@@ -1382,6 +1402,8 @@ export default function App() {
           onAgentInviteProviderChange={setAgentInviteProviderId}
           onGenerateAgentInvite={() => void generateAgentInviteLink(inviteModalRoom)}
           onCopyAgentInvite={() => void copyAgentInviteLink()}
+          onGenerateOperatorPairing={() => void generateOperatorPairingLink(inviteModalRoom)}
+          onCopyOperatorPairing={() => void copyOperatorPairingLink()}
           onCopyLocalPreview={() => void copyLocalPreviewLink(inviteModalRoom)}
           onPublicUrlDraftChange={setPublicInviteUrlDraft}
           onConfigurePublicUrl={() => void configureInvitePublicUrl()}
@@ -1475,8 +1497,9 @@ export default function App() {
         />
       )}
 
-      {guestJoinToken && !guestSession && !guestExpired && (
+      {(guestJoinToken || operatorPairingToken) && !guestSession && !guestExpired && (
         <GuestJoinProfilePanel
+          pairing={operatorPairingPending}
           displayName={pendingGuestDisplayName}
           avatarImage={pendingGuestAvatarImage || undefined}
           status={guestJoinStatus}
