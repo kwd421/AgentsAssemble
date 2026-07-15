@@ -269,7 +269,12 @@ export default function RoomInviteModal({
               readOnly
               onFocus={(event) => event.currentTarget.select()}
             />
-            <button type="button" className="dc-invite-copy-button" onClick={onGenerateSecureInvite}>
+            <button
+              type="button"
+              className="dc-invite-copy-button"
+              aria-label="친구 초대 링크 생성"
+              onClick={onGenerateSecureInvite}
+            >
               링크 생성
             </button>
             <button type="button" className="dc-invite-copy-button" disabled={!secureInviteReady} onClick={onCopy}>
@@ -291,7 +296,12 @@ export default function RoomInviteModal({
               readOnly
               onFocus={(event) => event.currentTarget.select()}
             />
-            <button type="button" className="dc-invite-copy-button" onClick={onGenerateOperatorPairing}>
+            <button
+              type="button"
+              className="dc-invite-copy-button"
+              aria-label="운영자 기기 연결 링크 생성"
+              onClick={onGenerateOperatorPairing}
+            >
               링크 생성
             </button>
             <button

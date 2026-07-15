@@ -6,7 +6,77 @@ const PROFILE_PNG = Buffer.from(
   "base64"
 );
 
+const HOST_TOKEN_STORAGE_KEY = "agentsassemble.hostToken.v1";
+const E2E_HOST_TOKEN = "e2e-host-token";
+
+async function installHostCredential(page: import("@playwright/test").Page) {
+  await page.addInitScript(
+    ([key, token]) => window.sessionStorage.setItem(key, token),
+    [HOST_TOKEN_STORAGE_KEY, E2E_HOST_TOKEN]
+  );
+}
+
+test("keeps ordinary invites separate from one-time cross-origin operator pairing", async ({
+  browser,
+  page,
+}) => {
+  await installHostCredential(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "#general", exact: true }).click();
+  await page.getByRole("button", { name: "서버에 초대하기" }).first().click();
+  const inviteDialog = page.getByRole("dialog", { name: /친구를 .*초대하기/ });
+
+  await inviteDialog.getByRole("button", { name: "친구 초대 링크 생성" }).click();
+  const guestInviteInput = inviteDialog.getByPlaceholder(
+    "공개 URL을 먼저 설정하면 /join?token=... 링크가 여기에 표시됩니다"
+  );
+  await expect(guestInviteInput).toHaveValue(/^http:\/\/public\.localhost:\d+\/join\?token=/);
+  const guestInviteUrl = await guestInviteInput.inputValue();
+
+  await inviteDialog.getByRole("button", { name: "운영자 기기 연결 링크 생성" }).click();
+  const pairingInput = inviteDialog.getByPlaceholder("일회용 운영자 기기 연결 링크");
+  await expect(pairingInput).toHaveValue(/^http:\/\/public\.localhost:\d+\/pair\?token=aap1_/);
+  const pairingUrl = await pairingInput.inputValue();
+
+  const unknownContext = await browser.newContext();
+  const unknownPage = await unknownContext.newPage();
+  await unknownPage.goto(guestInviteUrl);
+  await expect(unknownPage.getByRole("region", { name: "입장 프로필" })).toBeVisible();
+  await expect(unknownPage.getByRole("textbox", { name: "이름" })).toBeVisible();
+
+  const pairedContext = await browser.newContext();
+  const pairedPage = await pairedContext.newPage();
+  await pairedPage.goto(pairingUrl);
+  await expect.poll(() => new URL(pairedPage.url()).search).toBe("");
+  await expect(pairedPage.getByRole("button", { name: "#general", exact: true })).toBeVisible();
+  const pairedSession = await pairedPage.evaluate(() =>
+    JSON.parse(window.localStorage.getItem("agentsassemble.roomGuestSession.v1") || "null")
+  );
+  expect(pairedSession).toMatchObject({
+    agentId: "operator-local",
+    operator: true,
+    meetingId: "general",
+  });
+  await expect(pairedPage.getByRole("region", { name: "입장 프로필" })).toHaveCount(0);
+
+  const replayContext = await browser.newContext();
+  const replayPage = await replayContext.newPage();
+  await replayPage.goto(pairingUrl);
+  await expect(replayPage.getByRole("region", { name: "운영자 기기 연결" })).toContainText(
+    "pairing_already_used"
+  );
+  const replaySession = await replayPage.evaluate(() =>
+    window.localStorage.getItem("agentsassemble.roomGuestSession.v1")
+  );
+  expect(replaySession).toBeNull();
+
+  await unknownContext.close();
+  await pairedContext.close();
+  await replayContext.close();
+});
+
 test("streams on desktop and controls the same canonical session on mobile", async ({ page }) => {
+  await installHostCredential(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
 

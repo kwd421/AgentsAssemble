@@ -1497,7 +1497,7 @@ export default function App() {
         />
       )}
 
-      {(guestJoinToken || operatorPairingToken) && !guestSession && !guestExpired && (
+      {(guestJoinToken || operatorPairingPending) && !guestSession && !guestExpired && (
         <GuestJoinProfilePanel
           pairing={operatorPairingPending}
           displayName={pendingGuestDisplayName}

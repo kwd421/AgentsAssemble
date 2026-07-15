@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from http.server import ThreadingHTTPServer
 
 from agentsassemble.gui import _make_handler
+from agentsassemble.room_invite import PUBLIC_URL_ENV, set_runtime_host_token
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_realtime import NativeCliProviderSpec, RoomRealtimeController
 
@@ -21,6 +22,8 @@ from agentsassemble.room_realtime import NativeCliProviderSpec, RoomRealtimeCont
 def main() -> int:
     stop = threading.Event()
     port = int(os.environ.get("AGENTSASSEMBLE_E2E_PORT", "8898"))
+    os.environ[PUBLIC_URL_ENV] = f"http://public.localhost:{port}"
+    set_runtime_host_token("e2e-host-token")
     fixture = Path(__file__).with_name("fake_interactive_cli.py")
     with tempfile.TemporaryDirectory(prefix="agentsassemble-ui-e2e-") as temp_dir:
         output_root = Path(temp_dir)
