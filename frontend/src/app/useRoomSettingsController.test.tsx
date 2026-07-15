@@ -147,13 +147,15 @@ describe("useRoomSettingsController", () => {
 
   it("persists channel preferences without rewriting room-global settings", async () => {
     apiMocks.fetchRoomSettings.mockResolvedValue(settings(roomA, "forest"));
+    const onRoomMetadataLoaded = vi.fn();
+    const onMembersChanged = vi.fn();
     const hook = renderHook(() =>
       useRoomSettingsController({
         activeRoom: roomA,
         sessionToken: "session-a",
         deviceToken: "device-test",
-        onRoomMetadataLoaded: vi.fn(),
-        onMembersChanged: vi.fn(),
+        onRoomMetadataLoaded,
+        onMembersChanged,
       })
     );
     await waitFor(() => expect(hook.result.current.appearanceFor(roomA).bannerPreset).toBe("forest"));
