@@ -19,7 +19,7 @@ import hashlib
 import hmac as hmac_mod
 import os
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -40,6 +40,7 @@ from agentsassemble.room_invite_repository import (
     JsonInviteSessionRepository,
     MemoryInviteSessionRepository,
 )
+from agentsassemble.room_session_issuer import RoomSessionIssuer, session_token_fingerprint
 
 # Session token config
 SESSION_TOKEN_TTL_SECONDS = 3600  # 1 hour
@@ -178,6 +179,14 @@ def clear_runtime_public_url(expected_url: str = "") -> None:
 def _get_invite_secret() -> str:
     """Return the repository-owned signing secret."""
     return _repository.signing_secret()
+
+
+def _session_issuer() -> RoomSessionIssuer:
+    return RoomSessionIssuer(
+        _repository,
+        token_prefix=SESSION_TOKEN_PREFIX,
+        ttl_seconds=SESSION_TOKEN_TTL_SECONDS,
+    )
 
 
 def default_room_invite_store_path(output_root: Path) -> Path:
@@ -699,22 +708,12 @@ def issue_paired_operator_session(
 
 def verify_session_token(token: str) -> dict[str, object] | None:
     """Verify a session token. Returns session info or None if invalid/expired."""
-    if not token or not token.startswith(SESSION_TOKEN_PREFIX):
-        return None
-    token_fingerprint = _session_fingerprint(token)
-    session = _repository.session(token_fingerprint)
-    if session is None:
-        return None
-    expires = datetime.fromisoformat(str(session["expires_at"]))
-    if expires <= datetime.now(UTC):
-        _repository.revoke_session(token_fingerprint)
-        return None
-    return session
+    return _session_issuer().verify(token)
 
 
 def revoke_session(token: str) -> bool:
     """Revoke a session token (e.g., on leave). Returns True if found."""
-    return _repository.revoke_session(_session_fingerprint(token))
+    return _session_issuer().revoke(token)
 
 
 def revoke_sessions_for_participant(meeting_id: str, participant_id: str) -> int:
@@ -728,18 +727,13 @@ def revoke_sessions_for_participant(meeting_id: str, participant_id: str) -> int
     clean_participant_id = clean_lobby_text(participant_id, limit=128)
     if not clean_participant_id:
         return 0
-    return _repository.revoke_participant_sessions(clean_meeting_id, clean_participant_id)
+    return _session_issuer().revoke_participant(clean_meeting_id, clean_participant_id)
 
 
 def active_sessions_summary() -> list[dict[str, object]]:
     """Return safe summary of active sessions (no tokens exposed)."""
-    now = datetime.now(UTC)
     result = []
-    for fingerprint, session in _repository.list_sessions():
-        expires = datetime.fromisoformat(str(session["expires_at"]))
-        if expires <= now:
-            _repository.revoke_session(fingerprint)
-            continue
+    for session in _session_issuer().active():
         result.append({
             "agent_id": session["agent_id"],
             "display_name": session["display_name"],
@@ -763,7 +757,7 @@ def revoke_room_access(meeting_id: str) -> dict[str, int]:
     clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
     return {
         "revoked_invites": _repository.revoke_room_invites(clean_meeting_id),
-        "revoked_sessions": _repository.revoke_room_sessions(clean_meeting_id),
+        "revoked_sessions": _session_issuer().revoke_room(clean_meeting_id),
     }
 
 
@@ -803,10 +797,7 @@ def _issue_session_token(
     owner_id: str = "",
 ) -> str:
     """Generate and store a session token."""
-    now = datetime.now(UTC)
-    raw = secrets.token_urlsafe(24)
-    token = f"{SESSION_TOKEN_PREFIX}.{raw}"
-    session = {
+    token, _session = _session_issuer().issue({
         "agent_id": agent_id,
         "display_name": display_name,
         "meeting_id": meeting_id,
@@ -820,10 +811,7 @@ def _issue_session_token(
             if _normalize_invite_client_type(client_type) == "agent_bridge"
             else NATIVE_REMOTE_ROOM_CLIENT_KIND
         ),
-        "joined_at": now.isoformat(),
-        "expires_at": (now + timedelta(seconds=SESSION_TOKEN_TTL_SECONDS)).isoformat(),
-    }
-    _repository.save_session(_session_fingerprint(token), session)
+    })
     return token
 
 
@@ -836,7 +824,7 @@ def reset_state() -> None:
 
 
 def _session_fingerprint(token: str) -> str:
-    return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
+    return session_token_fingerprint(token)
 
 
 def _nonce_fingerprint(nonce: str) -> str:
