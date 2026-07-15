@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from agentsassemble.room_attention import AttentionEvaluation
@@ -137,7 +138,7 @@ class RoomAttentionReconciliationTests(unittest.TestCase):
             pending_attention_lease_id=lease["lease_id"],
             pending_attention_source_event_id=source["id"],
         )
-        with open_room_database(self.store.database_path) as connection:
+        with closing(open_room_database(self.store.database_path)) as connection:
             connection.execute(
                 "UPDATE attention_leases SET expires_at = ? WHERE lease_id = ?",
                 ("2000-01-01T00:00:00+00:00", lease["lease_id"]),

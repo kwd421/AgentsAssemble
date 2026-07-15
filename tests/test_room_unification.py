@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from agentsassemble.room_database import (
@@ -19,7 +20,7 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
             root = Path(temp_dir)
             store = RoomStore(root)
             store.create_room("general")
-            with open_room_database(store.database_path) as connection:
+            with closing(open_room_database(store.database_path)) as connection:
                 for table in (
                     "conversation_obligations",
                     "scheduled_wakeups",
@@ -49,7 +50,7 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
 
             initialize_room_database(store.rooms_root, store.database_path)
 
-            with open_room_database(store.database_path) as connection:
+            with closing(open_room_database(store.database_path)) as connection:
                 version = int(
                     connection.execute(
                         "SELECT value FROM schema_meta WHERE key = 'schema_version'"
@@ -77,7 +78,7 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
                 "attention_jobs",
                 "agent_attention_state",
             )
-            with open_room_database(store.database_path) as connection:
+            with closing(open_room_database(store.database_path)) as connection:
                 for table in attention_tables:
                     connection.execute(f"DROP TABLE {table}")
                 connection.execute(
@@ -86,7 +87,7 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
 
             initialize_room_database(store.rooms_root, store.database_path)
 
-            with open_room_database(store.database_path) as connection:
+            with closing(open_room_database(store.database_path)) as connection:
                 version = int(
                     connection.execute(
                         "SELECT value FROM schema_meta WHERE key = 'schema_version'"
@@ -111,7 +112,7 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
             store = RoomStore(root)
             store.create_room("deleted-room")
             store.delete_room("deleted-room", reason="preserve tombstone")
-            with open_room_database(store.database_path) as connection:
+            with closing(open_room_database(store.database_path)) as connection:
                 connection.execute("ALTER TABLE deleted_rooms RENAME TO deleted_rooms_v4")
                 connection.execute(
                     """CREATE TABLE deleted_rooms (
@@ -131,7 +132,7 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
 
             initialize_room_database(store.rooms_root, store.database_path)
 
-            with open_room_database(store.database_path) as connection:
+            with closing(open_room_database(store.database_path)) as connection:
                 version = int(
                     connection.execute(
                         "SELECT value FROM schema_meta WHERE key = 'schema_version'"
@@ -164,7 +165,7 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
             root = Path(temp_dir)
             store = RoomStore(root)
             store.create_room("general", label="General")
-            with open_room_database(store.database_path) as connection:
+            with closing(open_room_database(store.database_path)) as connection:
                 connection.execute("DROP TABLE room_settings")
                 connection.execute(
                     "UPDATE schema_meta SET value = '4' WHERE key = 'schema_version'"
@@ -172,7 +173,7 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
 
             initialize_room_database(store.rooms_root, store.database_path)
 
-            with open_room_database(store.database_path) as connection:
+            with closing(open_room_database(store.database_path)) as connection:
                 version = int(
                     connection.execute(
                         "SELECT value FROM schema_meta WHERE key = 'schema_version'"
@@ -195,7 +196,7 @@ class CanonicalRoomEventStoreTests(unittest.TestCase):
             root = Path(temp_dir)
             store = RoomStore(root)
             store.create_room("general", label="General")
-            with open_room_database(store.database_path) as connection:
+            with closing(open_room_database(store.database_path)) as connection:
                 connection.execute("DELETE FROM room_settings WHERE room_id = 'general'")
 
             with self.assertRaisesRegex(ValueError, "settings.*missing"):

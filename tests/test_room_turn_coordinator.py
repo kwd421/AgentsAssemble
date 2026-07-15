@@ -1,6 +1,7 @@
 import tempfile
 import threading
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from agentsassemble.native_cli_providers import NativeCliProviderSpec
@@ -230,7 +231,7 @@ class RoomTurnCoordinatorTests(unittest.TestCase):
                 active_attention_lease_id=old_lease["lease_id"],
                 active_attention_source_event_id=source["id"],
             )
-        with open_room_database(self.store.database_path) as connection:
+        with closing(open_room_database(self.store.database_path)) as connection:
             connection.execute(
                 "UPDATE attention_leases SET expires_at = ? WHERE lease_id = ?",
                 ("2000-01-01T00:00:00+00:00", old_lease["lease_id"]),
