@@ -381,7 +381,46 @@ Visible non-blocking signals:
   threshold;
 - the portable suite's 39 skips are environment-dependent and are not treated
   as PostgreSQL proof;
-- the pushed GitHub Actions run for `50ec92f7` was in progress at report time.
+
+### Hosted CI follow-up
+
+GitHub Actions run
+[`29381719149`](https://github.com/kwd421/AgentsAssemble/actions/runs/29381719149)
+for `aec29ca2` completed with the main Python 3.11/3.13 suites, PostgreSQL
+contracts, frontend build, frontend unit/E2E tests all passing. Both
+`runtime-platforms` jobs failed for an obsolete workflow reference to the
+already-removed `tests.test_room_prune` module.
+
+The Ubuntu platform job also exposed a deterministic test-fixture error in
+`test_expired_catalog_is_visible_but_not_startable_during_refresh`. The test
+assigned `catalog._cached_at = 0.0` and assumed that represented an expired
+monotonic timestamp. On a newly booted GitHub runner with uptime below the
+five-minute catalog TTL, zero was still within the valid interval, so no
+background refresh started. The slower full-suite job crossed that uptime
+threshold before executing the same test and passed by accident; Windows and
+local developer machines also had longer uptime.
+
+The follow-up removes the deleted module from the targeted workflow and sets
+the fixture timestamp relative to the current monotonic clock, one TTL plus one
+second in the past. No provider catalog production behavior or fallback was
+changed. Local verification after the fix:
+
+```text
+python3 -m unittest tests.test_provider_runtime_controls
+  24 passed
+
+expired-catalog regression repeated five times
+  5/5 passed
+
+python3 -m unittest tests.test_provider_runtime_controls tests.test_native_cli_providers
+  38 passed
+
+git diff --check
+  passed
+```
+
+Hosted Ubuntu and Windows confirmation remains pending until this follow-up is
+pushed and the workflow reruns.
 
 ## Intentionally Unchanged Or Out Of Scope
 

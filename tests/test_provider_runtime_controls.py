@@ -289,7 +289,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         ready = catalog.snapshot(refresh=True)
         revision = str(ready["catalog_revision"])
         block_refresh[0] = True
-        catalog._cached_at = 0.0
+        catalog._cached_at = time.monotonic() - catalog._ttl_seconds - 1.0
         stale = catalog.snapshot()
         try:
             self.assertTrue(refresh_started.wait(1))
