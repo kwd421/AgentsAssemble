@@ -16,6 +16,18 @@ from agentsassemble.live_cli_transcripts import (
 )
 
 
+MARKDOWN_REPLY = (
+    "First paragraph.\n\n"
+    "Second paragraph.\n\n"
+    "| Item | Status | Note |\n"
+    "| --- | --- | --- |\n"
+    "| Table | OK | Three columns |\n\n"
+    "- first item\n"
+    "- second item\n\n"
+    "Inline `ok`."
+)
+
+
 class _StaticMessageSource:
     strict = True
     fail_on_quiet_without_message = True
@@ -99,7 +111,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                                     "content": [
                                         {"type": "thinking", "thinking": "private reasoning"},
                                         {"type": "tool_use", "name": "Read", "input": {"path": "/tmp/noise"}},
-                                        {"type": "text", "text": "clean claude answer"},
+                                        {"type": "text", "text": MARKDOWN_REPLY},
                                     ],
                                 },
                             }
@@ -113,7 +125,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
             snapshot = source.poll(b"Claude TUI chrome", quiet=True)
 
         self.assertTrue(snapshot.complete)
-        self.assertEqual(snapshot.content, "clean claude answer")
+        self.assertEqual(snapshot.content, MARKDOWN_REPLY)
         self.assertEqual(snapshot.source_kind, "claude_session_jsonl")
         self.assertEqual(snapshot.observed_model_id, "claude-sonnet-4-6")
 
@@ -178,7 +190,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                         json.dumps(
                             {
                                 "type": "event_msg",
-                                "payload": {"type": "agent_message", "message": "clean codex answer"},
+                                "payload": {"type": "agent_message", "message": MARKDOWN_REPLY},
                             }
                         ),
                     ]
@@ -190,7 +202,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
             snapshot = source.poll(b"Working... raw TUI", quiet=True)
 
         self.assertTrue(snapshot.complete)
-        self.assertEqual(snapshot.content, "clean codex answer")
+        self.assertEqual(snapshot.content, MARKDOWN_REPLY)
 
     def test_codex_source_preserves_observed_model_seen_before_turn_input(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -587,7 +599,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                     [
                         json.dumps({"type": "user", "content": "hello"}),
                         json.dumps({"type": "reasoning", "summary": [{"text": "do not show as message"}]}),
-                        json.dumps({"type": "assistant", "content": "clean grok answer"}),
+                        json.dumps({"type": "assistant", "content": MARKDOWN_REPLY}),
                     ]
                 )
                 + "\n",
@@ -597,7 +609,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
             snapshot = source.poll(b"Thinking... raw TUI", quiet=True)
 
         self.assertTrue(snapshot.complete)
-        self.assertEqual(snapshot.content, "clean grok answer")
+        self.assertEqual(snapshot.content, MARKDOWN_REPLY)
 
     def test_grok_source_matches_delivered_input_inside_structured_user_query(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -678,14 +690,25 @@ class TranscriptMessageSourceTests(unittest.TestCase):
             transcript.write_text(
                 "\n".join(
                     [
-                        json.dumps({"source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "hi"}),
+                        json.dumps(
+                            {
+                                "source": "USER_EXPLICIT",
+                                "type": "USER_INPUT",
+                                "content": (
+                                    "<USER_REQUEST>hi</USER_REQUEST>\n"
+                                    "<USER_SETTINGS_CHANGE>"
+                                    "The user changed setting `Model Selection` from None to "
+                                    "Gemini 3.5 Flash (Medium). No need to comment on this change."
+                                    "</USER_SETTINGS_CHANGE>"
+                                ),
+                            }
+                        ),
                         json.dumps(
                             {
                                 "source": "MODEL",
                                 "type": "PLANNER_RESPONSE",
                                 "status": "DONE",
-                                "model": "Gemini 3.5 Flash (Medium)",
-                                "content": "clean antigravity answer",
+                                "content": MARKDOWN_REPLY,
                                 "thinking": "do not show as message",
                             }
                         ),
@@ -698,7 +721,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
             snapshot = source.poll(b"Gemini status raw TUI", quiet=True)
 
         self.assertTrue(snapshot.complete)
-        self.assertEqual(snapshot.content, "clean antigravity answer")
+        self.assertEqual(snapshot.content, MARKDOWN_REPLY)
         self.assertEqual(snapshot.observed_model_id, "Gemini 3.5 Flash (Medium)")
 
     def test_antigravity_source_matches_delivered_input_inside_provider_metadata_wrapper(self):

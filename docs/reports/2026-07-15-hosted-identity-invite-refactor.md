@@ -4,6 +4,8 @@ Status: implemented and verified
 
 Date: 2026-07-15
 
+Last verification update: 2026-07-15 cross-provider Markdown rendering smoke
+
 Branch: `codex/risuai-character-personas`
 
 Starting commit: `cf4c47c`
@@ -34,6 +36,9 @@ The result is:
   admission, composer, and Agent Session controls stay in the initial bundle;
 - current-HEAD Codex Luna and Claude Code Haiku sessions were exercised through
   the actual browser UI, including pause, queued backlog, resume, and stop;
+- Codex Luna, Antigravity Gemini 3.5 Flash, Grok 4.5, Claude Sonnet 4.6, and
+  OpenCode GLM-5.2 output were exercised through the actual browser UI for
+  multiline Markdown preservation and rendering;
 - a stale-room read discovered during that browser smoke now returns a normal
   `404` instead of printing an uncaught request-thread traceback.
 
@@ -311,6 +316,71 @@ A malformed room identifier remains `400`; a valid but absent room is now
 `404`. This preserves the canonical repository behavior and gives the browser a
 normal stale-state signal.
 
+### 8.7 Cross-provider Markdown rendering follow-up
+
+A second frontend-driven smoke checked whether provider-authored paragraphs,
+GFM tables, lists, and inline code survive the provider transcript boundary and
+render through the shared room UI. It found that the Codex, Claude,
+Antigravity, and legacy Grok transcript adapters passed provider output through
+`clean_lobby_text()`. That helper is correct for single-line lobby metadata but
+replaces carriage returns and newlines with spaces, flattening valid Markdown
+before it reaches the canonical room event.
+
+The transcript adapters now use a provider-message-specific cleaner that:
+
+- removes NUL characters;
+- normalizes CRLF and CR to LF;
+- preserves Markdown newlines;
+- retains the existing bounded text limit.
+
+Grok's current ACP path already preserved multiline content, which explains why
+its output appeared correct before the common defect was isolated. No renderer
+special case or provider-output reconstruction was added.
+
+The real frontend smoke used the following provider-native selections:
+
+| Provider | Requested model/profile | Result |
+| --- | --- | --- |
+| Codex | `gpt-5.6-luna`, low/default | passed |
+| Antigravity | `Gemini 3.5 Flash (Medium)` | passed |
+| Grok | `grok-4.5` | passed |
+| Claude Code | `claude-sonnet-4-6`, low | passed |
+| OpenCode | `opencode-go/glm-5.2`, default | passed |
+
+For each final response, the browser DOM contained one real table with three
+headers and two body rows, two list items, separated paragraphs, and one inline
+code element. Canonical visible-message inspection found zero known TUI footer,
+spinner, or ANSI-control residues. Claude remained an interactive CLI session;
+no `claude -p` path was used.
+
+The Antigravity run exposed a separate exact-model observation defect. Current
+Antigravity transcripts do not put a `model` field on `PLANNER_RESPONSE`; the
+provider reports the active model in a generated `<USER_SETTINGS_CHANGE>`
+record. The adapter now observes that provider-generated settings evidence.
+Before the correction, a valid final was rejected as unverified and recovery
+could produce a duplicate message. After the correction, the same frontend
+smoke produced one verified final, one completed turn, and no recovery
+duplicate. No model fallback was introduced.
+
+Discord-style same-speaker grouping was verified through the canonical room
+E2E: a consecutive message from the same stable `actor_id` within the grouping
+window renders without another avatar/name header. A speaker change, date
+change, or expired grouping window restores the header. This is a shared
+actor-based renderer rule rather than a provider-specific branch.
+
+The final shared smoke room contains the Antigravity, Grok, Claude, and OpenCode
+records. Codex was verified in an earlier clean isolated state root, so its
+record is not falsely represented as part of that same room. DeepSeek was not
+run because no credential was configured; this report does not count a missing
+credential as a passing provider smoke.
+
+One product-policy issue remains visible in the smoke: in `sequence` mode, a
+message addressed to one provider can still cause later scheduled turns for
+other active providers. Those providers may post a "not my turn" response,
+adding latency and token use. This is not a Markdown rendering failure and was
+not hidden with output filtering; it remains follow-up conversation-policy
+work.
+
 ## 9. Plan Deviations And Their Intent
 
 ### Legacy routes use tombstones before deletion
@@ -364,6 +434,19 @@ npm --prefix frontend run build
 npm --prefix frontend run test:e2e
   2 Playwright tests passed
 
+python3 -m unittest tests.test_live_cli_transcripts
+  21 passed
+
+python3 -m unittest \
+  tests.test_live_cli_transcripts tests.test_room_agent_bridge tests.test_room_realtime
+  149 passed
+
+npm --prefix frontend test -- DiscordText.test.tsx
+  2 passed
+
+npm --prefix frontend run test:e2e -- canonical-room.spec.ts
+  build passed; 2 Playwright tests passed
+
 python3 -m tests.run_postgres_contracts
   68 passed against temporary PostgreSQL 17
 
@@ -398,8 +481,11 @@ until the final branch push starts a new workflow run.
 - Account login, OAuth, account recovery, and cross-server identity are not
   implemented.
 - Ambient/autonomous room participation remains intentionally frozen.
-- This smoke covered Codex and Claude as required by this plan; it was not a
-  multi-provider free-discussion run.
+- The rendering follow-up covered five configured interactive providers but was
+  a deterministic formatting smoke, not a multi-provider free-discussion run.
+- DeepSeek remains unverified without an explicitly configured API credential.
+- Sequence mode can still schedule non-addressed active agents after an
+  addressed turn; conversation-policy work remains separate from rendering.
 - Claude context retention was observed through its own refusal text, but its
   policy prevented the requested marker-format success.
 - Remote CI results after the final push remain to be observed.

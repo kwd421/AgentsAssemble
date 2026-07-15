@@ -219,9 +219,12 @@ class CodexSessionMessageSource(_JsonlOffsetMessageSource):
             entry_type = str(entry.get("type") or "")
             payload_type = str(payload.get("type") or "")
             if entry_type == "event_msg" and payload_type == "agent_message":
-                latest = clean_lobby_text(payload.get("message"), limit=12000)
+                latest = _clean_provider_message_text(payload.get("message"), limit=12000)
             elif entry_type == "event_msg" and payload_type == "task_complete":
-                latest = clean_lobby_text(payload.get("last_agent_message"), limit=12000) or latest
+                latest = _clean_provider_message_text(
+                    payload.get("last_agent_message"),
+                    limit=12000,
+                ) or latest
                 turn_completed_without_message = not bool(latest)
             elif entry_type == "response_item":
                 latest = _codex_response_item_text(payload) or latest
@@ -332,6 +335,14 @@ class GrokSessionMessageSource(_JsonlOffsetMessageSource):
 class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
     source_kind = "antigravity_transcript_jsonl"
 
+    def __init__(self, *, home: Path | None = None, cwd: str | Path | None = None) -> None:
+        super().__init__(home=home, cwd=cwd)
+        self._observed_model_id = ""
+
+    def prepare_start(self) -> None:
+        super().prepare_start()
+        self._observed_model_id = ""
+
     def _candidate_paths(self) -> list[Path]:
         root = self.home / ".gemini" / "antigravity-cli" / "brain"
         if not root.exists():
@@ -359,7 +370,7 @@ class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
 
     def _extract_from_text(self, text: str, *, source: str) -> LiveCliMessageSnapshot:
         latest = ""
-        observed_model_id = ""
+        observed_model_id = self._observed_model_id
         for entry in _jsonl_objects(text):
             if str(entry.get("source") or "") != "MODEL":
                 continue
@@ -367,7 +378,7 @@ class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
                 continue
             if str(entry.get("status") or "") and str(entry.get("status") or "") != "DONE":
                 continue
-            content = clean_lobby_text(entry.get("content"), limit=12000)
+            content = _clean_provider_message_text(entry.get("content"), limit=12000)
             if content:
                 latest = content
                 observed_model_id = clean_lobby_text(
@@ -381,6 +392,13 @@ class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
             source_kind=self.source_kind,
             observed_model_id=observed_model_id,
         )
+
+    def _observe_text(self, text: str, *, source: str) -> None:
+        del source
+        for entry in _jsonl_objects(text):
+            candidate = _antigravity_selected_model(entry.get("content"))
+            if candidate:
+                self._observed_model_id = candidate
 
     def _turn_input_texts(self, text: str) -> list[str]:
         return [
@@ -425,7 +443,7 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
             ) or observed_model_id
             content = message.get("content")
             if isinstance(content, str):
-                piece = clean_lobby_text(content, limit=12000)
+                piece = _clean_provider_message_text(content, limit=12000)
                 if piece:
                     messages.append(piece)
                 continue
@@ -434,7 +452,7 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
             for block in content:
                 if not isinstance(block, dict) or str(block.get("type") or "") != "text":
                     continue
-                piece = clean_lobby_text(block.get("text"), limit=12000)
+                piece = _clean_provider_message_text(block.get("text"), limit=12000)
                 if piece:
                     messages.append(piece)
         result = "\n".join(messages).strip()
@@ -471,14 +489,14 @@ def _claude_project_directory_name(cwd: Path) -> str:
 def _claude_message_text(message: dict[str, object]) -> str:
     content = message.get("content")
     if isinstance(content, str):
-        return clean_lobby_text(content, limit=1000)
+        return _clean_provider_message_text(content, limit=1000)
     if not isinstance(content, list):
         return ""
     return "\n".join(
         piece
         for block in content
         if isinstance(block, dict) and str(block.get("type") or "") == "text"
-        if (piece := clean_lobby_text(block.get("text"), limit=1000))
+        if (piece := _clean_provider_message_text(block.get("text"), limit=1000))
     ).strip()
 
 
@@ -525,7 +543,7 @@ def _codex_response_item_text(payload: dict[str, object]) -> str:
         return ""
     for item in content:
         if isinstance(item, dict) and str(item.get("type") or "") == "output_text":
-            piece = clean_lobby_text(item.get("text"), limit=12000)
+            piece = _clean_provider_message_text(item.get("text"), limit=12000)
             if piece:
                 parts.append(piece)
     return "\n".join(parts).strip()
@@ -574,10 +592,32 @@ def _normalize_turn_input(value: object) -> str:
     return str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
+def _clean_provider_message_text(value: object, *, limit: int) -> str:
+    """Bound provider-visible prose without destroying its Markdown structure."""
+    normalized = (
+        str(value or "")
+        .replace("\x00", "")
+        .replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .strip()
+    )
+    return normalized[: max(0, int(limit))].strip()
+
+
 def _antigravity_user_request(value: object) -> str:
     request = _tagged_body(str(value or ""), "USER_REQUEST")
     request = re.sub(r"^\s*/plan\s+", "", request, count=1, flags=re.IGNORECASE)
     return re.sub(r"\s*/plan\s*$", "", request, count=1, flags=re.IGNORECASE).strip()
+
+
+def _antigravity_selected_model(value: object) -> str:
+    settings = _tagged_body(str(value or ""), "USER_SETTINGS_CHANGE")
+    match = re.search(
+        r"changed setting `Model Selection` from .*? to (.+?)\.\s+No need to comment",
+        settings,
+        flags=re.DOTALL,
+    )
+    return clean_lobby_text(match.group(1), limit=128) if match else ""
 
 
 def _grok_user_inputs(value: object) -> list[str]:
@@ -596,7 +636,7 @@ def _grok_user_inputs(value: object) -> list[str]:
 
 def _clean_grok_assistant_content(value: str) -> str:
     content = re.sub(r"(?:<\|eos\|>)+\s*$", "", str(value or ""), flags=re.IGNORECASE)
-    return clean_lobby_text(content, limit=12000)
+    return _clean_provider_message_text(content, limit=12000)
 
 
 def _tagged_body(content: str, tag: str) -> str:

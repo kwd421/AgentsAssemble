@@ -4,14 +4,32 @@ import { describe, expect, it } from "vitest";
 import DiscordText from "./DiscordText";
 
 describe("DiscordText", () => {
-  it("renders GitHub-flavored markdown tables", () => {
+  it("preserves structured provider replies as GitHub-flavored markdown", () => {
     const { container } = render(
-      <DiscordText text={"| 이름 | 상태 |\n| --- | --- |\n| Codex | 대기 |"} />
+      <DiscordText
+        text={[
+          "First paragraph.",
+          "",
+          "Second paragraph.",
+          "",
+          "| Item | Status | Note |",
+          "| --- | --- | --- |",
+          "| Table | OK | Three columns |",
+          "",
+          "- first item",
+          "- second item",
+          "",
+          "Inline `ok`.",
+        ].join("\n")}
+      />
     );
 
+    expect(container.querySelectorAll("p")).toHaveLength(3);
     expect(container.querySelector("table")).not.toBeNull();
-    expect(screen.getByRole("columnheader", { name: "이름" })).toBeTruthy();
-    expect(screen.getByRole("cell", { name: "대기" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Item" })).toBeTruthy();
+    expect(screen.getByRole("cell", { name: "Three columns" })).toBeTruthy();
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(container.querySelector("code")?.textContent).toBe("ok");
   });
 
   it("preserves room mentions while blocking raw html", () => {
