@@ -340,6 +340,32 @@ class InviteSessionRepositoryContract:
         self.assertNotIn("session_token", created)
         self.assertNotIn("device_token", created)
 
+    def test_admission_workflow_preserves_bounded_compensation_state(self) -> None:
+        self.repository.create_admission_workflow("workflow-1", _workflow())
+
+        updated = self.repository.update_admission_workflow(
+            "workflow-1",
+            {
+                "status": "failed_retryable",
+                "resume_phase": "compensating",
+                "compensation_status": "failed_retryable",
+                "compensation_failure_code": "RuntimeError",
+                "session_compensated": True,
+                "membership_compensated": False,
+                "invite_consumption_retained": True,
+                "compensated_at": "2026-07-15T00:00:00+00:00",
+                "compensation_debug_token": "must-not-persist",
+            },
+        )
+
+        self.assertEqual(updated["compensation_status"], "failed_retryable")
+        self.assertEqual(updated["compensation_failure_code"], "RuntimeError")
+        self.assertTrue(updated["session_compensated"])
+        self.assertFalse(updated["membership_compensated"])
+        self.assertTrue(updated["invite_consumption_retained"])
+        self.assertEqual(updated["compensated_at"], "2026-07-15T00:00:00+00:00")
+        self.assertNotIn("compensation_debug_token", updated)
+
 
 class MemoryInviteSessionRepositoryTests(
     InviteSessionRepositoryContract,

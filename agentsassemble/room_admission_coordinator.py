@@ -12,6 +12,10 @@ from agentsassemble.application_transaction import ApplicationTransactionBoundar
 from agentsassemble.identity_store import IdentityBackend
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
+from agentsassemble.room_admission_saga import (
+    RoomAdmissionCompensationFailed,
+    RoomAdmissionSaga,
+)
 from agentsassemble.room_invite import InviteApplicationService, PreparedInviteAdmission
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_session_service import RoomSessionService
@@ -48,6 +52,12 @@ class RoomAdmissionCoordinator:
         self._rooms = rooms
         self._transaction_boundary = transaction_boundary
         self._now = now or (lambda: datetime.now(UTC))
+        self._saga = RoomAdmissionSaga(
+            invites=invites,
+            sessions=sessions,
+            identities=identities,
+            now=self._now,
+        )
         self._lock = threading.RLock()
 
     def admit(
@@ -147,6 +157,15 @@ class RoomAdmissionCoordinator:
                 )
         except AdmissionIdempotencyConflict:
             raise
+        except RoomAdmissionCompensationFailed as failure:
+            try:
+                self._saga.record_failure(failure.workflow_id, failure.cause)
+            except Exception as persistence_error:
+                failure.cause.add_note(
+                    "Admission compensation failure state could not be persisted: "
+                    f"{type(persistence_error).__name__}."
+                )
+            raise failure.cause.with_traceback(failure.cause.__traceback__) from None
         except Exception as error:
             try:
                 persisted = self._invites.admission_workflow(workflow_id) or workflow
@@ -192,7 +211,11 @@ class RoomAdmissionCoordinator:
 
         room, settings = self._room_context(prepared.meeting_id)
         if not room:
-            return {"status": "rejected", "reason": "room_unavailable"}
+            workflow = self._saga.compensate_room_unavailable(workflow)
+            return {
+                "status": "rejected",
+                "reason": str(workflow.get("failure_code") or "room_unavailable"),
+            }
 
         if not workflow.get("participant_id"):
             workflow = self._resolve_identity(

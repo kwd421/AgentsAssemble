@@ -225,6 +225,115 @@ class RoomAdmissionCoordinatorTests(unittest.TestCase):
             "online",
         )
 
+    def test_deleted_room_compensates_partial_local_admission(self) -> None:
+        invite, arguments, workflow_id, session_token, participant_id = (
+            self._leave_partial_admission(request_id="deleted-room-compensation")
+        )
+        self.assertIsNotNone(self.sessions.verify(session_token))
+        self.assertIsNotNone(self.identities.get_membership("room-a", participant_id))
+        self.assertTrue(self.rooms.delete_room("room-a"))
+
+        rejected = self.coordinator.admit(**arguments)
+        repeated = self.coordinator.admit(**arguments)
+        workflow = self.repository.admission_workflow(workflow_id)
+
+        self.assertEqual(rejected, {"status": "rejected", "reason": "room_unavailable"})
+        self.assertEqual(repeated, rejected)
+        self.assertIsNone(self.sessions.verify(session_token))
+        self.assertIsNone(self.identities.get_membership("room-a", participant_id))
+        self.assertEqual(workflow["status"], "failed_terminal")
+        self.assertEqual(workflow["resume_phase"], "compensated")
+        self.assertEqual(workflow["compensation_status"], "completed")
+        self.assertTrue(workflow["session_compensated"])
+        self.assertTrue(workflow["membership_compensated"])
+        self.assertTrue(workflow["invite_consumption_retained"])
+        self.assertEqual(
+            self.repository.invite(str(invite["invite_id"]))["use_count"],
+            1,
+        )
+
+    def test_failed_local_compensation_resumes_at_remaining_side_effect(self) -> None:
+        _, arguments, workflow_id, session_token, participant_id = (
+            self._leave_partial_admission(request_id="retry-compensation")
+        )
+        self.assertTrue(self.rooms.delete_room("room-a"))
+        remove_membership = self.identities.remove_membership
+        attempts = 0
+
+        def fail_first_membership_removal(room_id: str, member_id: str) -> bool:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RuntimeError("membership compensation failed")
+            return remove_membership(room_id, member_id)
+
+        with patch.object(
+            self.identities,
+            "remove_membership",
+            side_effect=fail_first_membership_removal,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "membership compensation failed"):
+                self.coordinator.admit(**arguments)
+
+        failed = self.repository.admission_workflow(workflow_id)
+        self.assertEqual(failed["status"], "failed_retryable")
+        self.assertEqual(failed["resume_phase"], "compensating")
+        self.assertEqual(failed["compensation_status"], "failed_retryable")
+        self.assertEqual(failed["compensation_failure_code"], "RuntimeError")
+        self.assertTrue(failed["session_compensated"])
+        self.assertFalse(failed["membership_compensated"])
+        self.assertIsNone(self.sessions.verify(session_token))
+        self.assertIsNotNone(self.identities.get_membership("room-a", participant_id))
+
+        rejected = self.coordinator.admit(**arguments)
+        completed = self.repository.admission_workflow(workflow_id)
+
+        self.assertEqual(rejected, {"status": "rejected", "reason": "room_unavailable"})
+        self.assertEqual(completed["status"], "failed_terminal")
+        self.assertEqual(completed["compensation_status"], "completed")
+        self.assertTrue(completed["session_compensated"])
+        self.assertTrue(completed["membership_compensated"])
+        self.assertIsNone(self.identities.get_membership("room-a", participant_id))
+
+    def test_failed_compensation_completion_record_is_retryable(self) -> None:
+        _, arguments, workflow_id, session_token, participant_id = (
+            self._leave_partial_admission(request_id="retry-compensation-record")
+        )
+        self.assertTrue(self.rooms.delete_room("room-a"))
+        update_workflow = self.repository.update_admission_workflow
+
+        def fail_terminal_record(workflow: str, updates: dict[str, object]):
+            if updates.get("status") == "failed_terminal":
+                raise RuntimeError("compensation completion write failed")
+            return update_workflow(workflow, updates)
+
+        with patch.object(
+            self.repository,
+            "update_admission_workflow",
+            side_effect=fail_terminal_record,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "compensation completion write failed",
+            ):
+                self.coordinator.admit(**arguments)
+
+        failed = self.repository.admission_workflow(workflow_id)
+        self.assertEqual(failed["status"], "failed_retryable")
+        self.assertEqual(failed["compensation_status"], "failed_retryable")
+        self.assertTrue(failed["session_compensated"])
+        self.assertTrue(failed["membership_compensated"])
+        self.assertIsNone(self.sessions.verify(session_token))
+        self.assertIsNone(self.identities.get_membership("room-a", participant_id))
+
+        rejected = self.coordinator.admit(**arguments)
+
+        self.assertEqual(rejected, {"status": "rejected", "reason": "room_unavailable"})
+        self.assertEqual(
+            self.repository.admission_workflow(workflow_id)["status"],
+            "failed_terminal",
+        )
+
     def test_hosted_boundary_surrounds_cross_authority_success_writes(self) -> None:
         self.rooms.create_room("room-a", label="Room A")
         invite = self.invites.create(
@@ -314,23 +423,7 @@ class RoomAdmissionCoordinatorTests(unittest.TestCase):
     def test_incomplete_json_workflow_resumes_after_repository_restart(self) -> None:
         self.rooms.create_room("room-a", label="Room A")
         path = self.root / "invite-state.json"
-        repository = JsonInviteSessionRepository(path)
-        invites = InviteApplicationService(
-            repository,
-            public_url=lambda: "https://room.example",
-        )
-        sessions = RoomSessionService(
-            repository,
-            token_prefix="aas1",
-            ttl_seconds=3600,
-            token_key=invites.signing_secret,
-        )
-        coordinator = RoomAdmissionCoordinator(
-            invites=invites,
-            sessions=sessions,
-            identities=self.identities,
-            rooms=self.rooms,
-        )
+        repository, invites, _, coordinator = self._json_admission_runtime(path)
         invite = invites.create(
             room_url="http://127.0.0.1:8765",
             meeting_id="room-a",
@@ -351,23 +444,7 @@ class RoomAdmissionCoordinatorTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 coordinator.admit(**arguments)
 
-        restarted_repository = JsonInviteSessionRepository(path)
-        restarted_invites = InviteApplicationService(
-            restarted_repository,
-            public_url=lambda: "https://room.example",
-        )
-        restarted_sessions = RoomSessionService(
-            restarted_repository,
-            token_prefix="aas1",
-            ttl_seconds=3600,
-            token_key=restarted_invites.signing_secret,
-        )
-        restarted = RoomAdmissionCoordinator(
-            invites=restarted_invites,
-            sessions=restarted_sessions,
-            identities=self.identities,
-            rooms=self.rooms,
-        )
+        restarted_repository, _, _, restarted = self._json_admission_runtime(path)
 
         result = restarted.admit(**arguments)
         persisted = path.read_text(encoding="utf-8")
@@ -381,6 +458,73 @@ class RoomAdmissionCoordinatorTests(unittest.TestCase):
         self.assertNotIn("restart-device-secret", persisted)
         self.assertNotIn(str(result["session_token"]), persisted)
         self.assertIn("admission_workflows", json.loads(persisted))
+
+    def test_json_compensation_resumes_after_repository_restart(self) -> None:
+        self.rooms.create_room("room-a", label="Room A")
+        path = self.root / "invite-state.json"
+        repository, invites, sessions, coordinator = self._json_admission_runtime(path)
+        invite = invites.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            display_name="Guest",
+            max_uses=2,
+        )
+        arguments = {
+            "invite_token": str(invite["join_code"]),
+            "request_id": "restart-compensation",
+            "display_name": "Restart Compensation Guest",
+            "device_token": "restart-compensation-device",
+        }
+        update_workflow = repository.update_admission_workflow
+        workflow_ids: list[str] = []
+
+        def fail_completion(workflow_id: str, updates: dict[str, object]):
+            if updates.get("status") == "completed":
+                workflow_ids.append(workflow_id)
+                raise RuntimeError("completion write failed")
+            return update_workflow(workflow_id, updates)
+
+        with patch.object(
+            repository,
+            "update_admission_workflow",
+            side_effect=fail_completion,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "completion write failed"):
+                coordinator.admit(**arguments)
+
+        workflow_id = workflow_ids[0]
+        session_token = sessions.token_for_request(workflow_id)
+        session = sessions.verify(session_token)
+        participant_id = str(session["agent_id"])
+        self.assertTrue(self.rooms.delete_room("room-a"))
+        with patch.object(
+            self.identities,
+            "remove_membership",
+            side_effect=RuntimeError("membership compensation failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "membership compensation failed"):
+                coordinator.admit(**arguments)
+
+        persisted_failure = repository.admission_workflow(workflow_id)
+        self.assertEqual(persisted_failure["compensation_status"], "failed_retryable")
+        self.assertTrue(persisted_failure["session_compensated"])
+        self.assertFalse(persisted_failure["membership_compensated"])
+
+        restarted_repository, _, restarted_sessions, restarted = (
+            self._json_admission_runtime(path)
+        )
+        rejected = restarted.admit(**arguments)
+        completed = restarted_repository.admission_workflow(workflow_id)
+
+        self.assertEqual(rejected, {"status": "rejected", "reason": "room_unavailable"})
+        self.assertEqual(completed["status"], "failed_terminal")
+        self.assertEqual(completed["compensation_status"], "completed")
+        self.assertIsNone(restarted_sessions.verify(session_token))
+        self.assertIsNone(self.identities.get_membership("room-a", participant_id))
+        persisted = path.read_text(encoding="utf-8")
+        self.assertNotIn(str(invite["join_code"]), persisted)
+        self.assertNotIn("restart-compensation-device", persisted)
+        self.assertNotIn(session_token, persisted)
 
     def test_completed_workflow_does_not_resurrect_a_replaced_session(self) -> None:
         self.rooms.create_room("room-a", label="Room A")
@@ -444,6 +588,81 @@ class RoomAdmissionCoordinatorTests(unittest.TestCase):
             self.repository.invite(str(invite["invite_id"]))["use_count"],
             1,
         )
+
+    def _leave_partial_admission(
+        self,
+        *,
+        request_id: str,
+    ) -> tuple[dict[str, object], dict[str, str], str, str, str]:
+        self.rooms.create_room("room-a", label="Room A")
+        invite = self.invites.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            display_name="Guest",
+            max_uses=2,
+        )
+        arguments = {
+            "invite_token": str(invite["join_code"]),
+            "request_id": request_id,
+            "display_name": "Partial Guest",
+            "device_token": "partial-device-token",
+        }
+        update_workflow = self.repository.update_admission_workflow
+        workflow_ids: list[str] = []
+
+        def fail_completion(workflow_id: str, updates: dict[str, object]):
+            if updates.get("status") == "completed":
+                workflow_ids.append(workflow_id)
+                raise RuntimeError("completion write failed")
+            return update_workflow(workflow_id, updates)
+
+        with patch.object(
+            self.repository,
+            "update_admission_workflow",
+            side_effect=fail_completion,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "completion write failed"):
+                self.coordinator.admit(**arguments)
+
+        workflow_id = workflow_ids[0]
+        session_token = self.sessions.token_for_request(workflow_id)
+        session = self.sessions.verify(session_token)
+        self.assertIsNotNone(session)
+        return (
+            invite,
+            arguments,
+            workflow_id,
+            session_token,
+            str(session["agent_id"]),
+        )
+
+    def _json_admission_runtime(
+        self,
+        path: Path,
+    ) -> tuple[
+        JsonInviteSessionRepository,
+        InviteApplicationService,
+        RoomSessionService,
+        RoomAdmissionCoordinator,
+    ]:
+        repository = JsonInviteSessionRepository(path)
+        invites = InviteApplicationService(
+            repository,
+            public_url=lambda: "https://room.example",
+        )
+        sessions = RoomSessionService(
+            repository,
+            token_prefix="aas1",
+            ttl_seconds=3600,
+            token_key=invites.signing_secret,
+        )
+        coordinator = RoomAdmissionCoordinator(
+            invites=invites,
+            sessions=sessions,
+            identities=self.identities,
+            rooms=self.rooms,
+        )
+        return repository, invites, sessions, coordinator
 
 
 if __name__ == "__main__":

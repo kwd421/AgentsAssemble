@@ -849,6 +849,18 @@ def validate_admission_workflow_record(
         "room_topic": clean_lobby_text(source.get("room_topic"), limit=160),
         "room_created_at": clean_lobby_text(source.get("room_created_at"), limit=64),
         "failure_code": clean_lobby_text(source.get("failure_code"), limit=128),
+        "compensation_status": clean_lobby_text(
+            source.get("compensation_status"),
+            limit=64,
+        ),
+        "compensation_failure_code": clean_lobby_text(
+            source.get("compensation_failure_code"),
+            limit=128,
+        ),
+        "session_compensated": bool(source.get("session_compensated")),
+        "membership_compensated": bool(source.get("membership_compensated")),
+        "invite_consumption_retained": bool(source.get("invite_consumption_retained")),
+        "compensated_at": clean_lobby_text(source.get("compensated_at"), limit=64),
         "created_at": clean_lobby_text(source.get("created_at"), limit=64),
         "updated_at": clean_lobby_text(source.get("updated_at"), limit=64),
     }

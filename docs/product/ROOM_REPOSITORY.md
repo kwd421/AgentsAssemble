@@ -115,7 +115,13 @@ revocation. Local and hosted implementations also persist an admission workflow
 keyed by invite fingerprint, device credential fingerprint, and caller request
 ID. Invite use and the `invite_consumed` workflow phase are one repository
 mutation. Later identity/room writes are retry-safe upserts; this is explicit
-local saga behavior, not a claim that JSON and SQLite share a transaction.
+local saga behavior, not a claim that JSON and SQLite share a transaction. If
+the room is deleted before an incomplete local admission can finish, the saga
+durably enters compensation, revokes its deterministic room bearer, removes
+the identity membership, and records each completed step before terminalizing
+the workflow. A failed compensation remains retryable across restart. Consumed
+invite authority is deliberately not restored because doing so would weaken
+replay protection.
 
 Identity persistence follows the same backend choice through
 `identity_repository_factory.py`. Local mode keeps `identity.db`; hosted mode
@@ -203,7 +209,10 @@ same-device claim as the resumable security lease, then wraps participant,
 membership, bearer, and pairing completion writes in the same cross-authority
 boundary. This keeps another device rejected after a failed completion while
 preventing partial room or session state. Local JSON plus SQLite does not use
-this boundary and remains an explicit durable saga.
+this boundary and remains an explicit durable saga with the compensation
+behavior described above. The same coordinator can run compensation inside the
+hosted boundary; compensation failure state is written only after that outer
+transaction has rolled back.
 
 GitHub Actions runs the PostgreSQL repository, migration, schema, and pool
 contracts against a real PostgreSQL 16 service. The dedicated

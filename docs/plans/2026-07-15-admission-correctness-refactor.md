@@ -255,3 +255,15 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   zero skips, including injected failures proving rollback and same-device
   recovery. Local JSON/SQLite behavior remained the existing saga and frozen
   conversation/media policy was not changed.
+- 2026-07-15: Milestone 2.4 made local admission compensation explicit. If a
+  room disappears after a workflow has issued a bearer or committed identity
+  membership, the workflow now records `compensating`, revokes only its
+  deterministic bearer, removes only its matching identity membership, and
+  persists each completed step. Invite consumption remains retained for replay
+  safety. A failed side effect or final compensation record remains
+  `failed_retryable` and resumes after process/repository reconstruction; a
+  completed cleanup becomes terminal `room_unavailable`. Memory and real JSON
+  restart failure injection passed, the adjacent local admission/invite/session
+  suite passed 156 tests, and a temporary UTF-8 PostgreSQL 17 instance passed
+  all 80 strict contracts with zero skips. No frozen conversation, scheduling,
+  or media policy changed.
