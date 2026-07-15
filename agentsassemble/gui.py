@@ -30,62 +30,13 @@ from agentsassemble.gui_application import ApplicationDatabase, GuiApplicationSe
 from agentsassemble.gui_attachment_http import register_attachment_routes
 from agentsassemble.gui_mafia_http import register_mafia_routes
 from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
-from agentsassemble.gui_legacy_lobby_http import register_legacy_lobby_routes
-from agentsassemble.gui_legacy_meeting_http import register_legacy_meeting_routes
-from agentsassemble.gui_legacy_meeting_lifecycle_http import register_legacy_meeting_lifecycle_routes
-from agentsassemble.gui_legacy_official_round_http import register_legacy_official_round_routes
-from agentsassemble.gui_legacy_official_turn_http import register_legacy_official_turn_routes
-from agentsassemble.gui_legacy_live_agent_official_reply_http import (
-    LegacyLiveAgentOfficialReplyHttpDeps,
-    register_legacy_live_agent_official_reply_route,
-)
-from agentsassemble.gui_legacy_review_checkpoint_http import register_legacy_review_checkpoint_route
-from agentsassemble.gui_legacy_live_agent_read_http import (
-    LegacyLiveAgentReadDeps,
-    register_legacy_live_agent_read_routes,
-)
-from agentsassemble.gui_legacy_live_agent_presence_http import register_legacy_live_agent_presence_routes
-from agentsassemble.gui_legacy_live_agent_engagement_http import register_legacy_live_agent_engagement_route
-from agentsassemble.gui_legacy_live_agent_join_brief_http import register_legacy_live_agent_join_brief_route
-from agentsassemble.gui_legacy_codex_session_http import (
-    LegacyCodexSessionHttpDeps,
-    register_legacy_codex_session_routes,
-)
-from agentsassemble.gui_legacy_live_agent_probe_http import (
-    LegacyLiveAgentProbeHttpDeps,
-    register_legacy_live_agent_probe_route,
-)
-from agentsassemble.gui_legacy_live_agent_speech_http import register_legacy_live_agent_speech_routes
-from agentsassemble.gui_legacy_live_agent_process_http import (
-    LegacyProcessHttpDeps,
-    register_legacy_process_mutation_routes,
-)
-from agentsassemble.gui_legacy_live_agent_discovery_http import (
-    LegacyLiveAgentDiscoveryHttpDeps,
-    register_legacy_live_agent_discovery_route,
-)
-from agentsassemble.gui_legacy_live_agent_preflight_http import (
-    LegacyLiveAgentPreflightHttpDeps,
-    register_legacy_live_agent_preflight_route,
-)
-from agentsassemble.gui_legacy_provider_health_http import register_legacy_provider_health_route
-from agentsassemble.gui_legacy_live_agent_readiness_http import (
-    LegacyLiveAgentReadinessHttpDeps,
-    register_legacy_live_agent_readiness_route,
-)
-from agentsassemble.gui_legacy_live_agent_room_session_http import register_legacy_room_session_route
-from agentsassemble.gui_legacy_live_agent_self_managed_http import register_legacy_self_managed_agent_routes
-from agentsassemble.gui_legacy_live_agent_smoke_http import (
-    LegacyLiveAgentSmokeHttpDeps,
-    register_legacy_live_agent_smoke_routes,
-)
-from agentsassemble.gui_legacy_live_agent_session_http import (
-    LegacySessionHttpDeps,
-    register_legacy_session_mutation_routes,
-)
-from agentsassemble.gui_legacy_live_agent_session_run_http import (
-    LegacySessionRunHttpDeps,
-    register_legacy_session_run_basic_routes,
+from agentsassemble.gui_legacy_application import (
+    LegacyGuiApplication,
+    LegacyGuiPatchHooks,
+    LegacyProcessHooks,
+    LegacySessionHooks,
+    LegacySessionRunHooks,
+    LegacySmokeHooks,
 )
 from agentsassemble.gui_observability_http import register_observability_routes
 from agentsassemble.gui_public_invite_http import register_public_invite_admin_routes
@@ -131,10 +82,6 @@ from agentsassemble.room_realtime import (
 )
 from agentsassemble.session_run_monitor import PeriodicSessionRunMonitor, safe_monitor_error_type
 from agentsassemble.live_agent_join_brief import live_agent_join_brief_payload
-from agentsassemble.live_agent_room_admin import (
-    LegacyLiveAgentRoomSessionService,
-)
-from agentsassemble.live_agent_self_managed import LegacySelfManagedAgentService
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
@@ -144,12 +91,8 @@ from agentsassemble.legacy_live_agent_health import (
     safe_health_identity as _safe_session_run_health_identity,
     safe_process_group_id as _safe_process_group_id,
 )
-from agentsassemble.legacy_live_agent_health_queries import (
-    LegacyLiveAgentHealthQueryService,
-    live_agent_health_payload,
-)
+from agentsassemble.legacy_live_agent_health_queries import live_agent_health_payload
 from agentsassemble.legacy_live_agent_discovery import (
-    LegacyLiveAgentDiscoveryService,
     discovery_operation_details as _discovery_operation_details,
     live_agent_discovery_payload,
 )
@@ -170,12 +113,7 @@ from agentsassemble.legacy_live_agent_process_control import (
     process_stop_running_error_message as _process_stop_running_error_message,
     process_stop_running_operation_status as _process_stop_running_operation_status,
 )
-from agentsassemble.legacy_live_agent_process_service import (
-    LegacyLiveAgentProcessMutationService,
-    LegacyProcessMutationActions,
-)
 from agentsassemble.legacy_live_agent_session_control import (
-    session_check_error_message as _session_check_error_message,
     session_check_operation_status as _session_check_operation_status,
     session_check_operation_summary as _session_check_operation_summary,
     session_ensure_error_message as _session_ensure_error_message,
@@ -198,14 +136,7 @@ from agentsassemble.legacy_live_agent_session_projection import (
     session_start_operation_details as _session_start_operation_details,
     session_stop_operation_details as _session_stop_operation_details,
 )
-from agentsassemble.legacy_live_agent_session_service import (
-    LegacyLiveAgentSessionMutationService,
-    LegacySessionMutationActions,
-)
-from agentsassemble.legacy_live_agent_session_run_service import (
-    LegacyLiveAgentSessionRunMutationService,
-    LegacySessionRunActions,
-)
+from agentsassemble.legacy_live_agent_session_run_service import LegacySessionRunActions
 from agentsassemble.live_agent_settings import (
     update_live_agent_config_options,
     update_live_agent_config_poll_interval,
@@ -248,18 +179,15 @@ from agentsassemble.lobby_queries import (
     read_lobby_before,
 )
 from agentsassemble.legacy_lobby_commands import (
-    LegacyLobbyCommandService,
     send_lobby_message_to_remote_bridge as _send_legacy_lobby_message_to_remote_bridge,
 )
 from agentsassemble.legacy_live_agent_queries import (
     LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT,
-    LegacyLiveAgentQueryService,
     live_agent_return_packet_payload,
     live_agent_room_payload,
     require_live_agent as _live_agent_for_id,
 )
 from agentsassemble.legacy_live_agent_diagnostics import (
-    LegacyLiveAgentDiagnosticQueryService,
     live_agent_operations_payload,
     live_agent_process_events_payload,
     live_agent_session_check_payload,
@@ -273,11 +201,9 @@ from agentsassemble.legacy_live_agent_process_projection import (
     process_payload_with_agent_connection_evidence as _process_payload_with_agent_connection_evidence,
 )
 from agentsassemble.legacy_live_agent_preflight import (
-    LegacyLiveAgentPreflightService,
     live_agent_preflight_payload,
 )
 from agentsassemble.legacy_live_agent_readiness import (
-    LegacyLiveAgentReadinessService,
     live_agent_readiness_payload as _resident_live_agent_readiness_payload,
 )
 from agentsassemble.legacy_live_agent_readiness_projection import (
@@ -300,28 +226,23 @@ from agentsassemble.legacy_live_agent_smoke import (
     session_smoke_soak_interval_seconds as _payload_session_smoke_soak_interval_seconds,
 )
 from agentsassemble.legacy_live_agent_roster_queries import (
-    LegacyLiveAgentRosterQueryService,
     live_agent_roster_admission_details as _live_agent_roster_admission_details,
     live_agent_roster_with_admission_evidence as _live_agent_roster_with_admission_evidence,
     live_agent_without_quota_fields as _live_agent_without_quota_fields,
     live_agents_payload,
 )
 from agentsassemble.legacy_live_agent_presence import (
-    LegacyLiveAgentPresenceService,
     connect_live_agent_payload,
     live_agent_heartbeat_payload,
     live_agent_leave_payload,
 )
 from agentsassemble.legacy_live_agent_engagement import (
-    LegacyLiveAgentEngagementService,
     update_live_agent_engagement_payload,
 )
 from agentsassemble.legacy_live_agent_probe import (
-    LegacyLiveAgentProbeService,
     live_agent_probe_payload,
 )
 from agentsassemble.legacy_live_agent_official_reply import (
-    LegacyLiveAgentOfficialReplyService,
     live_agent_official_turn_payload,
 )
 from agentsassemble.legacy_live_agent_speech import (
@@ -331,7 +252,6 @@ from agentsassemble.legacy_live_agent_speech import (
     live_agent_lobby_flow_metadata as _live_agent_lobby_flow_metadata,
 )
 from agentsassemble.legacy_meeting_queries import (
-    LegacyMeetingQueryService,
     build_meeting_payload,
     build_meeting_stream_payload,
     build_workroom_queue_payload,
@@ -339,7 +259,6 @@ from agentsassemble.legacy_meeting_queries import (
     project_meeting_stream_events,
 )
 from agentsassemble.legacy_meeting_lifecycle import (
-    LegacyMeetingLifecycleService,
     live_agent_finalize_meeting_payload,
     live_agent_meeting_start_payload,
 )
@@ -349,13 +268,11 @@ from agentsassemble.legacy_meeting_records import (
     safe_meeting_dir as _safe_meeting_dir,
 )
 from agentsassemble.legacy_official_turns import (
-    LegacyOfficialTurnService,
     live_agent_turn_call_payload,
     live_agent_turn_request_payload,
     live_agent_turn_sequence_payload,
 )
 from agentsassemble.legacy_official_rounds import (
-    LegacyOfficialRoundService,
     _live_agent_turn_rounds_payload_locked,
     _payload_bounded_round_count,
     live_agent_turn_preset_payload,
@@ -364,12 +281,8 @@ from agentsassemble.legacy_official_rounds import (
     rounds_finalization_result_if_requested as _rounds_finalization_result_if_requested,
     skipped_rounds_finalization_result as _skipped_rounds_finalization_result,
 )
-from agentsassemble.legacy_review_checkpoint import (
-    LegacyReviewCheckpointService,
-    create_review_checkpoint as _create_review_checkpoint,
-)
+from agentsassemble.legacy_review_checkpoint import create_review_checkpoint as _create_review_checkpoint
 from agentsassemble.legacy_codex_session_compat import (
-    LegacyCodexSessionCompatibilityService,
     codex_session_invite_payload,
     codex_session_join_payload as _legacy_codex_session_join_payload,
 )
@@ -3254,6 +3167,164 @@ def _make_handler(
             )
         return payload
 
+    def _legacy_session_run_should_reconcile(
+        run: dict[str, object],
+        *,
+        target_run_id: str,
+    ) -> bool:
+        return _session_run_monitor_should_reconcile(
+            output_root,
+            live_agent_process_supervisor,
+            run,
+            target_run_id=target_run_id,
+        )
+
+    def _legacy_session_run_reconcile(
+        *,
+        default_server: str,
+        target_run_id: str,
+        approve_real_providers: bool,
+    ) -> list[dict[str, object]]:
+        return _reconcile_live_agent_session_runs(
+            output_root,
+            live_agent_process_supervisor,
+            live_agent_session_run_controller,
+            default_server=default_server,
+            summary="retried durable live-agent session run immediately",
+            target_run_id=target_run_id,
+            request_overrides={"approve_real_providers": approve_real_providers},
+        )
+
+    def _legacy_session_run_assert_launch_approved(
+        payload: dict[str, object],
+        *,
+        default_server: str,
+    ) -> None:
+        _assert_session_run_launch_approved(
+            live_agent_process_supervisor,
+            payload,
+            default_server,
+        )
+
+    legacy_application = LegacyGuiApplication(
+        output_root=output_root,
+        processes=live_agent_process_supervisor,
+        session_runs=live_agent_session_run_controller,
+        session_run_monitor=session_run_monitor,
+        room_repository=room_repository,
+        append_lobby_event=append_server_lobby_event,
+        public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
+        is_muted=is_room_member_muted,
+        remote_lobby_requester=lambda: REMOTE_LOBBY_REQUESTER,
+        turn_adapter=lambda: _local_agent_session_turn_adapter,
+        read_operation_payload=_read_operation_payload,
+        record_operation=record_live_agent_operation,
+        speech=_legacy_live_agent_speech_service(output_root),
+        hooks=LegacyGuiPatchHooks(
+            turn_request=live_agent_turn_request_payload,
+            provider_health_report=lambda *args, **kwargs: provider_health_report(
+                *args,
+                **kwargs,
+            ),
+            smoke=LegacySmokeHooks(
+                probe=lambda *args, **kwargs: run_live_agent_probe(*args, **kwargs),
+                basic=lambda *args, **kwargs: run_live_agent_smoke(*args, **kwargs),
+                official_round=lambda *args, **kwargs: run_live_agent_official_round_smoke(
+                    *args,
+                    **kwargs,
+                ),
+                session=lambda *args, **kwargs: run_live_agent_session_smoke(
+                    *args,
+                    **kwargs,
+                ),
+                real_session=lambda *args, **kwargs: run_live_agent_real_session_smoke(
+                    *args,
+                    **kwargs,
+                ),
+            ),
+            session=LegacySessionHooks(
+                start=lambda *args, **kwargs: live_agent_session_start_payload(
+                    *args,
+                    **kwargs,
+                ),
+                ensure=lambda *args, **kwargs: live_agent_session_ensure_payload(
+                    *args,
+                    **kwargs,
+                ),
+                resume=lambda *args, **kwargs: live_agent_session_resume_payload(
+                    *args,
+                    **kwargs,
+                ),
+                resume_agent=lambda *args, **kwargs: live_agent_session_resume_agent_payload(
+                    *args,
+                    **kwargs,
+                ),
+                agent_timing=lambda *args, **kwargs: live_agent_session_agent_timing_payload(
+                    *args,
+                    **kwargs,
+                ),
+                agent_options=lambda *args, **kwargs: live_agent_session_agent_options_payload(
+                    *args,
+                    **kwargs,
+                ),
+                check=lambda *args, **kwargs: live_agent_session_check_payload(
+                    *args,
+                    **kwargs,
+                ),
+                restart=lambda *args, **kwargs: live_agent_session_restart_payload(
+                    *args,
+                    **kwargs,
+                ),
+                recover=lambda *args, **kwargs: live_agent_session_recover_payload(
+                    *args,
+                    **kwargs,
+                ),
+                stop=lambda *args, **kwargs: live_agent_session_stop_payload(
+                    *args,
+                    **kwargs,
+                ),
+                stop_agent=lambda *args, **kwargs: live_agent_session_stop_agent_payload(
+                    *args,
+                    **kwargs,
+                ),
+            ),
+            process=LegacyProcessHooks(
+                start=lambda *args, **kwargs: start_live_agent_process_payload(
+                    *args,
+                    **kwargs,
+                ),
+                stop_running=lambda *args, **kwargs: stop_running_live_agent_processes_payload(
+                    *args,
+                    **kwargs,
+                ),
+                stop=lambda *args, **kwargs: stop_live_agent_process_payload(
+                    *args,
+                    **kwargs,
+                ),
+                restart=lambda *args, **kwargs: restart_live_agent_process_payload(
+                    *args,
+                    **kwargs,
+                ),
+                recover=lambda *args, **kwargs: recover_live_agent_process_payload(
+                    *args,
+                    **kwargs,
+                ),
+            ),
+            session_run=LegacySessionRunHooks(
+                should_reconcile=_legacy_session_run_should_reconcile,
+                reconcile=_legacy_session_run_reconcile,
+                assert_launch_approved=_legacy_session_run_assert_launch_approved,
+                ensure=lambda payload, *, default_server: live_agent_session_ensure_payload(
+                    output_root,
+                    live_agent_process_supervisor,
+                    payload,
+                    default_server=default_server,
+                ),
+            ),
+        ),
+        session_run_actions_override=legacy_session_run_actions_override,
+    )
+
     register_ws_ticket_route(
         route_table,
         ws_ticket_store=ws_ticket_store,
@@ -3264,50 +3335,7 @@ def _make_handler(
     register_room_routes(route_table)
     register_room_settings_routes(route_table)
     register_side_chat_routes(route_table)
-    register_legacy_meeting_routes(
-        route_table,
-        queries=LegacyMeetingQueryService(output_root),
-    )
-    register_legacy_meeting_lifecycle_routes(
-        route_table,
-        service=LegacyMeetingLifecycleService(output_root),
-    )
-    register_legacy_review_checkpoint_route(
-        route_table,
-        service=LegacyReviewCheckpointService(
-            output_root=output_root,
-            process_supervisor=live_agent_process_supervisor,
-            turn_requester=live_agent_turn_request_payload,
-        ),
-    )
-    register_legacy_official_turn_routes(
-        route_table,
-        service=LegacyOfficialTurnService(output_root),
-    )
-    register_legacy_official_round_routes(
-        route_table,
-        service=LegacyOfficialRoundService(output_root),
-    )
-
-    def _enqueue_legacy_lobby_auto_turn(event: dict[str, object]) -> None:
-        enqueue_agent_session_auto_turn_for_lobby_event(
-            output_root,
-            event,
-            turn_adapter=_local_agent_session_turn_adapter,
-            repository=room_repository,
-        )
-
-    register_legacy_lobby_routes(
-        route_table,
-        commands=LegacyLobbyCommandService(
-            output_root=output_root,
-            append_lobby_event=append_server_lobby_event,
-            public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
-            is_muted=is_room_member_muted,
-            requester=lambda: REMOTE_LOBBY_REQUESTER,
-        ),
-        enqueue_auto_turn=_enqueue_legacy_lobby_auto_turn,
-    )
+    legacy_application.register_meeting_routes(route_table)
 
     def _room_friend_direct_dm(ctx: RequestContext, payload: dict[str, object]) -> dict[str, object]:
         return room_friend_direct_dm_payload(
@@ -3361,235 +3389,7 @@ def _make_handler(
     )
 
     register_observability_routes(route_table, processes=live_agent_process_supervisor)
-    legacy_health_queries = LegacyLiveAgentHealthQueryService(
-        output_root=output_root,
-        processes=live_agent_process_supervisor,
-        session_run_monitor=session_run_monitor,
-    )
-    register_legacy_live_agent_read_routes(
-        route_table,
-        deps=LegacyLiveAgentReadDeps(
-            queries=LegacyLiveAgentQueryService.build(output_root),
-            roster=LegacyLiveAgentRosterQueryService(output_root),
-            health=legacy_health_queries,
-            diagnostics=LegacyLiveAgentDiagnosticQueryService(
-                output_root=output_root,
-                processes=live_agent_process_supervisor,
-                session_run_controller=live_agent_session_run_controller,
-            ),
-            readiness_error_message=_session_check_error_message,
-        ),
-    )
-    register_legacy_live_agent_presence_routes(
-        route_table,
-        service=LegacyLiveAgentPresenceService(output_root),
-    )
-    register_legacy_live_agent_engagement_route(
-        route_table,
-        service=LegacyLiveAgentEngagementService(output_root),
-    )
-    register_legacy_live_agent_join_brief_route(
-        route_table,
-        request_server_url=lambda ctx: ctx.request_server_url(),
-    )
-    register_legacy_provider_health_route(
-        route_table,
-        reporter=lambda *args, **kwargs: provider_health_report(*args, **kwargs),
-    )
-
-    register_legacy_codex_session_routes(
-        route_table,
-        deps=LegacyCodexSessionHttpDeps(
-            sessions=LegacyCodexSessionCompatibilityService(
-                output_root=output_root,
-                processes=live_agent_process_supervisor,
-                ensure_session=lambda *args, **kwargs: live_agent_session_ensure_payload(
-                    *args,
-                    **kwargs,
-                ),
-                restart_session=lambda *args, **kwargs: live_agent_session_restart_payload(
-                    *args,
-                    **kwargs,
-                ),
-                record_operation=record_live_agent_operation,
-            ),
-            read_operation_payload=_read_operation_payload,
-            request_server_url=lambda ctx: ctx.request_server_url(),
-        ),
-    )
-
-    register_legacy_live_agent_official_reply_route(
-        route_table,
-        deps=LegacyLiveAgentOfficialReplyHttpDeps(
-            replies=LegacyLiveAgentOfficialReplyService(output_root),
-            read_operation_payload=_read_operation_payload,
-        ),
-    )
-
-    register_legacy_live_agent_probe_route(
-        route_table,
-        deps=LegacyLiveAgentProbeHttpDeps(
-            probe=LegacyLiveAgentProbeService(
-                output_root,
-                probe_runner=lambda *args, **kwargs: run_live_agent_probe(*args, **kwargs),
-            ),
-            read_operation_payload=_read_operation_payload,
-        ),
-    )
-    register_legacy_live_agent_speech_routes(
-        route_table,
-        service=_legacy_live_agent_speech_service(output_root),
-    )
-
-    register_legacy_live_agent_preflight_route(
-        route_table,
-        deps=LegacyLiveAgentPreflightHttpDeps(
-            preflight=LegacyLiveAgentPreflightService(),
-            read_operation_payload=_read_operation_payload,
-            record_operation=record_live_agent_operation,
-            request_server_url=lambda ctx: ctx.request_server_url(),
-        ),
-    )
-    register_legacy_live_agent_discovery_route(
-        route_table,
-        deps=LegacyLiveAgentDiscoveryHttpDeps(
-            discovery=LegacyLiveAgentDiscoveryService(output_root),
-            read_operation_payload=_read_operation_payload,
-            record_operation=record_live_agent_operation,
-            request_server_url=lambda ctx: ctx.request_server_url(),
-        ),
-    )
-    legacy_smoke_service = LegacyLiveAgentSmokeService(
-        output_root,
-        basic_smoke_runner=lambda **kwargs: run_live_agent_smoke(**kwargs),
-        official_round_smoke_runner=lambda **kwargs: run_live_agent_official_round_smoke(**kwargs),
-        session_smoke_runner=lambda **kwargs: run_live_agent_session_smoke(**kwargs),
-        real_session_smoke_runner=lambda **kwargs: run_live_agent_real_session_smoke(**kwargs),
-    )
-    register_legacy_live_agent_smoke_routes(
-        route_table,
-        deps=LegacyLiveAgentSmokeHttpDeps(
-            smoke=legacy_smoke_service,
-            read_operation_payload=_read_operation_payload,
-            record_operation=record_live_agent_operation,
-            local_server_url=lambda ctx: ctx.local_server_url(),
-        ),
-    )
-    register_legacy_live_agent_readiness_route(
-        route_table,
-        deps=LegacyLiveAgentReadinessHttpDeps(
-            readiness=LegacyLiveAgentReadinessService(
-                output_root=output_root,
-                processes=live_agent_process_supervisor,
-                health=legacy_health_queries,
-                smoke=legacy_smoke_service,
-                probe_runner=lambda *args, **kwargs: run_live_agent_probe(*args, **kwargs),
-            ),
-            read_operation_payload=_read_operation_payload,
-            record_operation=record_live_agent_operation,
-            local_server_url=lambda ctx: ctx.local_server_url(),
-        ),
-    )
-
-    legacy_session_service = LegacyLiveAgentSessionMutationService(
-        output_root,
-        processes=live_agent_process_supervisor,
-        session_runs=live_agent_session_run_controller,
-        actions=LegacySessionMutationActions(
-            start=live_agent_session_start_payload,
-            ensure=live_agent_session_ensure_payload,
-            resume=live_agent_session_resume_payload,
-            resume_agent=live_agent_session_resume_agent_payload,
-            agent_timing=live_agent_session_agent_timing_payload,
-            agent_options=live_agent_session_agent_options_payload,
-            check=live_agent_session_check_payload,
-            restart=live_agent_session_restart_payload,
-            recover=live_agent_session_recover_payload,
-            stop=live_agent_session_stop_payload,
-            stop_agent=live_agent_session_stop_agent_payload,
-        ),
-        record_operation=record_live_agent_operation,
-    )
-    register_legacy_session_mutation_routes(
-        route_table,
-        deps=LegacySessionHttpDeps(
-            service=legacy_session_service,
-            read_operation_payload=_read_operation_payload,
-            default_server_url=lambda ctx: ctx.request_server_url(),
-        ),
-    )
-
-    legacy_process_service = LegacyLiveAgentProcessMutationService(
-        output_root,
-        processes=live_agent_process_supervisor,
-        actions=LegacyProcessMutationActions(
-            start=start_live_agent_process_payload,
-            stop_running=stop_running_live_agent_processes_payload,
-            stop=stop_live_agent_process_payload,
-            restart=restart_live_agent_process_payload,
-            recover=recover_live_agent_process_payload,
-        ),
-        record_operation=record_live_agent_operation,
-    )
-    register_legacy_process_mutation_routes(
-        route_table,
-        deps=LegacyProcessHttpDeps(
-            service=legacy_process_service,
-            read_operation_payload=_read_operation_payload,
-            default_server_url=lambda ctx: ctx.request_server_url(),
-        ),
-    )
-    register_legacy_session_run_basic_routes(
-        route_table,
-        deps=LegacySessionRunHttpDeps(
-            service=LegacyLiveAgentSessionRunMutationService(
-                output_root,
-                session_runs=live_agent_session_run_controller,
-                actions=legacy_session_run_actions_override
-                or LegacySessionRunActions(
-                    should_reconcile=lambda run, *, target_run_id: _session_run_monitor_should_reconcile(
-                        output_root,
-                        live_agent_process_supervisor,
-                        run,
-                        target_run_id=target_run_id,
-                    ),
-                    reconcile=lambda *, default_server, target_run_id, approve_real_providers: (
-                        _reconcile_live_agent_session_runs(
-                            output_root,
-                            live_agent_process_supervisor,
-                            live_agent_session_run_controller,
-                            default_server=default_server,
-                            summary="retried durable live-agent session run immediately",
-                            target_run_id=target_run_id,
-                            request_overrides={"approve_real_providers": approve_real_providers},
-                        )
-                    ),
-                    assert_launch_approved=lambda payload, *, default_server: _assert_session_run_launch_approved(
-                        live_agent_process_supervisor,
-                        payload,
-                        default_server,
-                    ),
-                    ensure=lambda payload, *, default_server: live_agent_session_ensure_payload(
-                        output_root,
-                        live_agent_process_supervisor,
-                        payload,
-                        default_server=default_server,
-                    ),
-                ),
-                record_operation=record_live_agent_operation,
-            ),
-            read_operation_payload=_read_operation_payload,
-            default_server_url=lambda ctx: ctx.request_server_url(),
-        ),
-    )
-    register_legacy_self_managed_agent_routes(
-        route_table,
-        service=LegacySelfManagedAgentService(output_root),
-    )
-    register_legacy_room_session_route(
-        route_table,
-        service=LegacyLiveAgentRoomSessionService(output_root, live_agent_process_supervisor),
-    )
+    legacy_application.register_live_agent_routes(route_table)
 
     register_mafia_routes(route_table, read_operation_payload=_read_operation_payload)
 

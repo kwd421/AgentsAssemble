@@ -60,6 +60,17 @@ EXPECTED_RETIRED_EXACT_ROUTES = {
 }
 
 
+def _imported_modules(source_path: Path) -> set[str]:
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+        elif isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+    return modules
+
+
 def _registered_exact_routes() -> set[tuple[str, str]]:
     routes: set[tuple[str, str]] = set()
     for source_path in GUI_ROUTE_MODULES:
@@ -167,6 +178,20 @@ def _dynamic_route_owners() -> dict[tuple[str, str], set[Path]]:
 
 
 class GuiRouteOwnershipTests(unittest.TestCase):
+    def test_main_gui_composes_legacy_routes_through_owned_application(self) -> None:
+        imported_modules = _imported_modules(GUI_SOURCE)
+
+        self.assertIn("agentsassemble.gui_legacy_application", imported_modules)
+        self.assertEqual(
+            {
+                module
+                for module in imported_modules
+                if module.startswith("agentsassemble.gui_legacy_")
+                and module != "agentsassemble.gui_legacy_application"
+            },
+            set(),
+        )
+
     def test_registered_routes_do_not_shadow_retained_legacy_exact_routes(self) -> None:
         overlap = _registered_exact_routes().intersection(_legacy_exact_routes())
 

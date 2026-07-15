@@ -310,3 +310,18 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   ignores a separately configured compatibility store. The related GUI, WS,
   realtime, and native-CLI suites passed 578 tests. Conversation scheduling,
   autonomous participation, and media policy remained unchanged.
+- 2026-07-15: Milestone 3.3 moved retained meeting, lobby, resident-agent,
+  smoke, process, and session-run route composition into one owned
+  `LegacyGuiApplication`. `gui.py` now supplies explicit compatibility hooks
+  and registers the bundle at the prior route-order boundaries instead of
+  constructing each legacy service itself. An AST ownership test prevents the
+  main GUI module from importing the individual legacy HTTP route modules
+  again. Initial integrated verification exposed a refactor regression where
+  the local Agent Session turn adapter was captured at handler construction
+  instead of resolved when the lobby event arrived; that bypassed the verified
+  patch seam and left a background turn running after its test workspace was
+  removed. The bundle now resolves that adapter at delivery time, restoring
+  the prior behavior without adding a fallback. Focused route tests passed 64
+  cases, patch/session/process tests passed 162 cases, and the full GUI server
+  suite passed 433 cases. Frozen conversation, autonomous-attention, sequence,
+  and media behavior was not changed.
