@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
-from agentsassemble.room_invite import reset_state, set_runtime_host_token, set_runtime_public_url
+from agentsassemble.room_invite import reset_state
 from agentsassemble.room_realtime import RoomRealtimeController
 from agentsassemble.ws_room_client import WsRoomClient
 from tests.room_realtime_test_support import memory_room_access_services
@@ -53,14 +53,15 @@ class CanonicalRoomSocialFlowTests(unittest.TestCase):
                 **access.controller_kwargs(),
                 providers=[],
             )
-            set_runtime_host_token("host-secret")
-            set_runtime_public_url(PUBLIC_ORIGIN)
+            access.public_invite.set_host_token("host-secret")
+            access.public_invite.set_public_url(PUBLIC_ORIGIN)
             server = ThreadingHTTPServer(
                 ("127.0.0.1", 0),
                 _make_handler(
                     root,
                     room_realtime_controller_override=controller,
                     invite_repository_override=access.repository,
+                    public_invite_runtime_override=access.public_invite,
                 ),
             )
             thread = threading.Thread(target=server.serve_forever, daemon=True)

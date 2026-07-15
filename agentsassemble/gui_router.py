@@ -33,9 +33,9 @@ from agentsassemble.gui_request_security import (
 )
 from agentsassemble.identity_store import IdentityBackend, identity_store_for_output_root
 from agentsassemble.operator_pairing import OperatorPairingService
+from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
-from agentsassemble.room_invite import verify_host_token
 from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.room_repository import RoomRepository
@@ -59,6 +59,7 @@ class GuiDeps:
     admission_preflight_service: RoomAdmissionService | None = None
     admission_coordinator: RoomAdmissionCoordinator | None = None
     operator_pairing_service: OperatorPairingService | None = None
+    public_invite_runtime: PublicInviteRuntime | None = None
     attachment_store: FileAttachmentStore | None = None
     process_supervisor: Any = None
     read_lobby: Callable[..., list[dict[str, object]]] | None = None
@@ -117,6 +118,13 @@ class GuiDeps:
         if service is None:
             raise RuntimeError("GUI operator pairing service is not configured.")
         return service
+
+    @property
+    def public_invite(self) -> PublicInviteRuntime:
+        runtime = self.public_invite_runtime
+        if runtime is None:
+            raise RuntimeError("GUI public invite runtime is not configured.")
+        return runtime
 
     @property
     def media(self) -> FileAttachmentStore:
@@ -252,7 +260,7 @@ class RequestContext:
 
     def is_host(self) -> bool:
         """True when the caller presents the host credential (no response sent)."""
-        return verify_host_token(self.provided_host_token())
+        return self.deps.public_invite.verify_host_token(self.provided_host_token())
 
     def require_host(self) -> bool:
         """Gate a moderation/admin endpoint; sends 403 when not the host."""

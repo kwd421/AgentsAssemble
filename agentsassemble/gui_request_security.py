@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from agentsassemble.room_invite import get_public_url
-
-
 _LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
 _PUBLIC_INVITE_CORS_METHODS = "GET, POST, DELETE, OPTIONS"
 _PUBLIC_INVITE_CORS_HEADERS = "Authorization, Content-Type, Last-Event-ID, X-Device-Token"
@@ -25,11 +22,10 @@ def _split_authority_host_port(authority: str) -> tuple[str, str]:
     return authority.lower(), ""
 
 
-def _host_header_is_trusted(host_header: object) -> bool:
+def _host_header_is_trusted(host_header: object, *, public_url: str = "") -> bool:
     hostname, _ = _split_authority_host_port(str(host_header or ""))
     if hostname in _LOOPBACK_HOSTNAMES:
         return True
-    public_url = get_public_url()
     if not public_url:
         return False
     return hostname == (urlparse(public_url).hostname or "").lower()
@@ -43,12 +39,11 @@ def _origin_is_trusted(origin: str) -> bool:
     return hostname in _LOOPBACK_HOSTNAMES
 
 
-def _origin_matches_public_url(origin: str) -> bool:
+def _origin_matches_public_url(origin: str, *, public_url: str = "") -> bool:
     parsed = urlparse(origin)
     if parsed.scheme not in {"http", "https"}:
         return False
     hostname = (parsed.hostname or "").lower()
-    public_url = get_public_url()
     return bool(public_url) and hostname == (urlparse(public_url).hostname or "").lower()
 
 
@@ -113,12 +108,13 @@ def _request_trusted(
     *,
     path: str = "",
     method: str = "GET",
+    public_url: str = "",
 ) -> bool:
     # Non-loopback binding is possible only through the explicit unsafe server
     # option. Loopback remains the DNS-rebinding and CSRF boundary by default.
     if not _is_loopback_host(bound_host):
         return True
-    host_trusted = _host_header_is_trusted(host_header)
+    host_trusted = _host_header_is_trusted(host_header, public_url=public_url)
     host_name, _ = _split_authority_host_port(str(host_header or ""))
     host_is_loopback = host_name in _LOOPBACK_HOSTNAMES
     host_is_public = host_trusted and not host_is_loopback
@@ -133,4 +129,4 @@ def _request_trusted(
         return _origin_is_trusted(origin_text)
     if origin_text == "null":
         return True
-    return _origin_matches_public_url(origin_text)
+    return _origin_matches_public_url(origin_text, public_url=public_url)

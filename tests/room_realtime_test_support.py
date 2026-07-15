@@ -5,11 +5,13 @@ from dataclasses import dataclass
 from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
 from agentsassemble.room_session_service import RoomSessionService
+from agentsassemble.public_invite_runtime import PublicInviteRuntime
 
 
 @dataclass(frozen=True)
 class MemoryRoomAccessServices:
     repository: MemoryInviteSessionRepository
+    public_invite: PublicInviteRuntime
     invites: InviteApplicationService
     sessions: RoomSessionService
 
@@ -22,7 +24,11 @@ class MemoryRoomAccessServices:
 
 def memory_room_access_services() -> MemoryRoomAccessServices:
     repository = MemoryInviteSessionRepository()
-    invites = InviteApplicationService(repository)
+    public_invite = PublicInviteRuntime(environ={})
+    invites = InviteApplicationService(
+        repository,
+        public_url=public_invite.public_url,
+    )
     sessions = RoomSessionService(
         repository,
         token_prefix="aas1",
@@ -31,6 +37,7 @@ def memory_room_access_services() -> MemoryRoomAccessServices:
     )
     return MemoryRoomAccessServices(
         repository=repository,
+        public_invite=public_invite,
         invites=invites,
         sessions=sessions,
     )

@@ -377,6 +377,7 @@ from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_payload, provider_health_report
 from agentsassemble.provider_login import ProviderLoginService
 from agentsassemble.public_tunnel import PublicTunnelManager
+from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.frontend_runtime import (
     REACT_APP_BUILD_COMMAND,
     REACT_APP_MISSING_BUILD_MESSAGE,
@@ -432,13 +433,9 @@ from agentsassemble.room_invite_application import (
     SESSION_TOKEN_TTL_SECONDS,
 )
 from agentsassemble.room_invite import (
+    compatibility_public_invite_runtime,
     configure_room_invite_repository,
     default_room_invite_store_path,
-    generate_runtime_host_token,
-    get_host_token,
-    get_public_url,
-    set_runtime_host_token,
-    set_runtime_public_url,
 )
 from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_session_service import RoomSessionService
@@ -865,6 +862,7 @@ def _build_gui_application_services(
     owns_identity_backend_override: bool = False,
     application_database_override: ApplicationDatabase | None = None,
     owns_application_database_override: bool = False,
+    public_invite_runtime_override: PublicInviteRuntime | None = None,
     attention_shadow_mode: str = "off",
 ) -> GuiApplicationServices:
     """Build one ownership graph for the GUI server and handler factory."""
@@ -929,9 +927,10 @@ def _build_gui_application_services(
         configure_room_users_backend(identity_backend)
         _backfill_room_registry(output_root)
 
+        public_invite_runtime = public_invite_runtime_override or PublicInviteRuntime()
         invite_application = InviteApplicationService(
             invite_repository,
-            public_url=get_public_url,
+            public_url=public_invite_runtime.public_url,
         )
         room_session_service = RoomSessionService(
             invite_repository,
@@ -964,7 +963,9 @@ def _build_gui_application_services(
 
         live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
         live_agent_flow_supervisor = flow_supervisor or LiveAgentFlowSupervisor(output_root)
-        invite_tunnel_manager = public_tunnel_manager or PublicTunnelManager()
+        invite_tunnel_manager = public_tunnel_manager or PublicTunnelManager(
+            public_invite_runtime=public_invite_runtime,
+        )
         if owns_public_tunnel_manager:
             remember_cleanup("public_tunnel_manager.stop", invite_tunnel_manager.stop)
 
@@ -1019,6 +1020,7 @@ def _build_gui_application_services(
             admission_preflight=admission_preflight,
             admission=admission_coordinator,
             pairing=operator_pairing_service,
+            public_invite=public_invite_runtime,
             identity_backend=identity_backend,
             invite_store_path=default_room_invite_store_path(output_root),
             media_store=FileAttachmentStore(output_root),
@@ -1190,14 +1192,15 @@ def serve_gui(
             "plane is unauthenticated and can launch local processes. This unsafe mode is for isolated networks only."
         )
     try:
-        if host_token:
-            set_runtime_host_token(host_token)
-        if public_url:
-            set_runtime_public_url(public_url)
-        if (public_url or start_public_tunnel) and not get_host_token():
-            generated_token = generate_runtime_host_token()
-            print(f"AgentsAssemble host token: {generated_token}")
         assert services is not None
+        public_invite_runtime = services.public_invite
+        if host_token:
+            public_invite_runtime.set_host_token(host_token)
+        if public_url:
+            public_invite_runtime.set_public_url(public_url)
+        if (public_url or start_public_tunnel) and not public_invite_runtime.host_token():
+            generated_token = public_invite_runtime.generate_host_token()
+            print(f"AgentsAssemble host token: {generated_token}")
         assert server is not None
         server_url = _local_server_url(server.server_address)
 
@@ -2627,13 +2630,17 @@ def _history_page_limit(query: dict[str, list[str]]) -> int:
         return LOBBY_HISTORY_PAGE_LIMIT
 
 
-def _pre_join_guide_payload(server_url: str) -> dict[str, object]:
+def _pre_join_guide_payload(
+    server_url: str,
+    *,
+    public_url: str = "",
+) -> dict[str, object]:
     """Machine-readable join manual served from GET /join (Accept: application/json).
 
     Lets an AI client go from invite link to participation without downloading
     or reverse-engineering the SPA bundle.
     """
-    base = (get_public_url() or server_url).rstrip("/")
+    base = (public_url or server_url).rstrip("/")
     return {
         "service": "AgentsAssemble room",
         "how_to_join": {
@@ -2657,10 +2664,14 @@ def _pre_join_guide_payload(server_url: str) -> dict[str, object]:
     }
 
 
-def _api_catalog_payload(server_url: str) -> dict[str, object]:
+def _api_catalog_payload(
+    server_url: str,
+    *,
+    public_url: str = "",
+) -> dict[str, object]:
     """Minimal API self-description (friend feedback #2: 403s everywhere told
     a new client nothing)."""
-    base = (get_public_url() or server_url).rstrip("/")
+    base = (public_url or server_url).rstrip("/")
     return {
         "service": "AgentsAssemble room API",
         "auth": {
@@ -3025,10 +3036,14 @@ def _make_handler(
     room_realtime_controller_override: RoomRealtimeController | None = None,
     room_repository_override: RoomRepository | None = None,
     invite_repository_override: InviteSessionRepository | None = None,
+    public_invite_runtime_override: PublicInviteRuntime | None = None,
     attention_shadow_mode: str = "off",
     legacy_session_run_actions_override: LegacySessionRunActions | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     react_app_root = (frontend_dist_root or default_frontend_dist_root()).resolve()
+    resolved_public_invite_runtime = public_invite_runtime_override
+    if application_services is None and resolved_public_invite_runtime is None:
+        resolved_public_invite_runtime = compatibility_public_invite_runtime()
     services = application_services or _build_gui_application_services(
         output_root,
         process_supervisor=process_supervisor,
@@ -3039,6 +3054,7 @@ def _make_handler(
         room_realtime_controller_override=room_realtime_controller_override,
         room_repository_override=room_repository_override,
         invite_repository_override=invite_repository_override,
+        public_invite_runtime_override=resolved_public_invite_runtime,
         attention_shadow_mode=attention_shadow_mode,
     )
 
@@ -3064,6 +3080,11 @@ def _make_handler(
             "invite repository",
             invite_repository_override,
             services.invite_repository,
+        )
+        require_same_service(
+            "public invite runtime",
+            public_invite_runtime_override,
+            services.public_invite,
         )
 
     live_agent_process_supervisor = services.process_supervisor
@@ -3184,6 +3205,7 @@ def _make_handler(
         admission_preflight_service=services.admission_preflight,
         admission_coordinator=services.admission,
         operator_pairing_service=services.pairing,
+        public_invite_runtime=services.public_invite,
         attachment_store=services.media_store,
         process_supervisor=live_agent_process_supervisor,
         read_lobby=read_lobby,
@@ -3283,7 +3305,7 @@ def _make_handler(
         if ctx.uses_loopback_host():
             return True
         forwarded = str(ctx.headers.get("X-Forwarded-Proto") or "").lower()
-        public_scheme = urlparse(get_public_url()).scheme.lower()
+        public_scheme = urlparse(services.public_invite.public_url()).scheme.lower()
         if forwarded != "https" and public_scheme != "https":
             ctx.send_error(
                 HTTPStatus.FORBIDDEN,
@@ -3553,8 +3575,14 @@ def _make_handler(
 
     static_transport = ReactStaticTransport(
         frontend_root=react_app_root,
-        pre_join_guide_payload=_pre_join_guide_payload,
-        api_catalog_payload=_api_catalog_payload,
+        pre_join_guide_payload=lambda server_url: _pre_join_guide_payload(
+            server_url,
+            public_url=services.public_invite.public_url(),
+        ),
+        api_catalog_payload=lambda server_url: _api_catalog_payload(
+            server_url,
+            public_url=services.public_invite.public_url(),
+        ),
     )
 
     class AgentsAssembleHandler(GuiResponseMethods, BaseHTTPRequestHandler):
@@ -3565,6 +3593,7 @@ def _make_handler(
                 self.headers.get("Origin"),
                 path=path,
                 method=method,
+                public_url=services.public_invite.public_url(),
             )
 
         def _public_invite_cors_origin(self, *, requested_method: str = "") -> str:
@@ -3572,7 +3601,10 @@ def _make_handler(
             if not origin:
                 return ""
             host_name, _ = _split_authority_host_port(str(self.headers.get("Host") or ""))
-            if host_name in _LOOPBACK_HOSTNAMES or not _host_header_is_trusted(self.headers.get("Host")):
+            if host_name in _LOOPBACK_HOSTNAMES or not _host_header_is_trusted(
+                self.headers.get("Host"),
+                public_url=services.public_invite.public_url(),
+            ):
                 return ""
             path = urlparse(self.path).path
             method = (requested_method or self.command or "").upper()
@@ -3582,7 +3614,10 @@ def _make_handler(
                 return ""
             if origin == "null":
                 return "null"
-            if _origin_matches_public_url(origin):
+            if _origin_matches_public_url(
+                origin,
+                public_url=services.public_invite.public_url(),
+            ):
                 return origin
             return ""
 

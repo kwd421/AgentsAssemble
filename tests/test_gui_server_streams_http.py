@@ -899,7 +899,8 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
         self.assertFalse(_request_trusted("127.0.0.1", "127.0.0.1:8765", "http://evil.example.com"))
         self.assertTrue(_request_trusted("127.0.0.1", "localhost:1", "http://127.0.0.1:8765"))
         self.assertTrue(_request_trusted("127.0.0.1", "127.0.0.1:8765", None))
-        with patch.dict(os.environ, {"AGENTSASSEMBLE_PUBLIC_URL": "https://room.example.com"}):
+        public_url = "https://room.example.com"
+        with patch.dict(os.environ, {"AGENTSASSEMBLE_PUBLIC_URL": public_url}):
             self.assertTrue(
                 _request_trusted(
                     "127.0.0.1",
@@ -907,6 +908,7 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                     "https://room.example.com",
                     path="/join",
                     method="GET",
+                    public_url=public_url,
                 )
             )
             self.assertTrue(
@@ -916,6 +918,7 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                     "https://room.example.com",
                     path="/api/room-invite/join",
                     method="POST",
+                    public_url=public_url,
                 )
             )
             self.assertFalse(
@@ -925,6 +928,7 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                     "https://room.example.com",
                     path="/api/lobby",
                     method="GET",
+                    public_url=public_url,
                 )
             )
             self.assertFalse(
@@ -934,9 +938,18 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
                     "https://evil.example.com",
                     path="/join",
                     method="GET",
+                    public_url=public_url,
                 )
             )
-            self.assertFalse(_request_trusted("127.0.0.1", "other.example.com", "https://room.example.com", path="/join"))
+            self.assertFalse(
+                _request_trusted(
+                    "127.0.0.1",
+                    "other.example.com",
+                    "https://room.example.com",
+                    path="/join",
+                    public_url=public_url,
+                )
+            )
         # Non-loopback bind (operator-exposed): LAN/Tailscale Host/Origin allowed.
         self.assertTrue(_request_trusted("0.0.0.0", "192.168.0.2:8765", "http://192.168.0.2:8765"))
         self.assertTrue(_request_trusted("192.168.0.2", "192.168.0.2:8765", "http://192.168.0.2:8765"))

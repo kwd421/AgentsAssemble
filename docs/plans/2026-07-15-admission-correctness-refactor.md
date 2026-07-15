@@ -288,3 +288,14 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   evidence from two unrelated in-memory stores. Legacy frontend-created agent
   admin and route re-export modules retain compatibility calls for now; public
   host/tunnel configuration ownership remains the next Milestone 3.1 slice.
+- 2026-07-15: Milestone 3.1 public-runtime follow-up introduced one
+  server-scoped `PublicInviteRuntime` for host-token comparison, generated
+  credentials, validated public URLs, request trust, CORS, and tunnel URL
+  rotation. `GuiDeps`, public invite routes, and `PublicTunnelManager` now use
+  that injected instance; separate server/runtime instances no longer share
+  mutable host or URL state. The module-level `room_invite` functions delegate
+  to a compatibility runtime for retained callers and `_make_handler`'s direct
+  compatibility/test construction only. Normal `serve_gui` composition owns a
+  fresh runtime. `gui.py` still installs the invite repository facade so
+  retained legacy routes use the same durable authority; moving that bundle is
+  Milestone 3.3 rather than hiding it in this slice.

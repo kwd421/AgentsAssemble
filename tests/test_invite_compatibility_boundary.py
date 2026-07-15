@@ -9,7 +9,11 @@ ROOT = Path(__file__).resolve().parents[1]
 CURRENT_INVITE_APPLICATION_MODULES = (
     "agentsassemble/gui_application.py",
     "agentsassemble/gui_live_agent_flow_http.py",
+    "agentsassemble/gui_public_invite_http.py",
+    "agentsassemble/gui_request_security.py",
     "agentsassemble/gui_room_moderation_media_http.py",
+    "agentsassemble/gui_router.py",
+    "agentsassemble/public_tunnel.py",
     "agentsassemble/room_admission.py",
     "agentsassemble/room_admission_coordinator.py",
     "agentsassemble/room_admission_saga.py",

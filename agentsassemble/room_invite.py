@@ -16,12 +16,10 @@ surface. Security boundaries:
 from __future__ import annotations
 
 import hashlib
-import hmac as hmac_mod
 import os
 import secrets
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
 
 from agentsassemble.identity_store import LOCAL_OPERATOR_PARTICIPANT_ID, LOCAL_OPERATOR_USER_ID
 from agentsassemble.meeting_events import clean_lobby_text
@@ -45,6 +43,12 @@ from agentsassemble.room_invite_application import (
     normalize_invite_scope,
     room_usage_guide as _room_usage_guide,
 )
+from agentsassemble.public_invite_runtime import (
+    HOST_TOKEN_ENV,
+    PUBLIC_URL_ENV,
+    PublicInviteRuntime,
+    normalize_public_room_url,
+)
 from agentsassemble.room_invite_repository import (
     ROOM_INVITE_STORE_SCHEMA,
     InviteSessionRepository,
@@ -57,8 +61,7 @@ from agentsassemble.room_session_issuer import RoomSessionIssuer, session_token_
 # Compatibility facade state. Persistence and synchronization live in the
 # injected repository; only process-local host/public configuration remains.
 _repository: InviteSessionRepository = UnconfiguredInviteSessionRepository()
-_runtime_host_token: str = ""
-_runtime_public_url: str = ""
+_public_invite_runtime = PublicInviteRuntime()
 
 # --- Host token gate ---
 # Set AGENTSASSEMBLE_HOST_TOKEN to require auth for invite creation/management.
@@ -66,34 +69,24 @@ _runtime_public_url: str = ""
 # When AGENTSASSEMBLE_PUBLIC_URL is set, host token is required; public URL
 # mode refuses host operations until a token is configured.
 
-HOST_TOKEN_ENV = "AGENTSASSEMBLE_HOST_TOKEN"
-PUBLIC_URL_ENV = "AGENTSASSEMBLE_PUBLIC_URL"
-PUBLIC_URL_BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
-
-
 def get_host_token() -> str:
     """Return configured host token, or empty string if not set."""
-    return _runtime_host_token or os.environ.get(HOST_TOKEN_ENV, "")
+    return _public_invite_runtime.host_token()
 
 
 def has_runtime_host_token() -> bool:
     """Return True when the active host token was generated for this server run."""
-    return bool(_runtime_host_token)
+    return _public_invite_runtime.has_runtime_host_token()
 
 
 def set_runtime_host_token(token: str) -> str:
     """Set the server-lifetime host token used by GUI bootstrap flows."""
-    global _runtime_host_token
-    clean_token = str(token or "").strip()
-    if not clean_token:
-        raise ValueError("host token is required")
-    _runtime_host_token = clean_token
-    return _runtime_host_token
+    return _public_invite_runtime.set_host_token(token)
 
 
 def generate_runtime_host_token() -> str:
     """Generate and store a server-lifetime host token."""
-    return set_runtime_host_token(secrets.token_urlsafe(32))
+    return _public_invite_runtime.generate_host_token()
 
 
 def host_gate_required() -> bool:
@@ -103,7 +96,7 @@ def host_gate_required() -> bool:
     room is reachable from the internet and must not allow unauthenticated
     host operations.
     """
-    return bool(get_public_url())
+    return _public_invite_runtime.host_gate_required()
 
 
 def verify_host_token(provided: str) -> bool:
@@ -113,66 +106,28 @@ def verify_host_token(provided: str) -> bool:
     are allowed (local/LAN backward-compatible mode). If a public URL is
     set but no host token is configured, all requests are rejected.
     """
-    expected = get_host_token()
-    if not expected:
-        if host_gate_required():
-            return False  # public URL mode requires a host token
-        return True  # local mode, no gate configured
-    if not provided:
-        return False
-    return hmac_mod.compare_digest(expected, provided)
+    return _public_invite_runtime.verify_host_token(provided)
 
 
 def get_public_url() -> str:
     """Return configured public base URL for join links, or empty string."""
-    return (_runtime_public_url or os.environ.get(PUBLIC_URL_ENV) or "").rstrip("/")
+    return _public_invite_runtime.public_url()
 
 
 def set_runtime_public_url(url: str) -> str:
     """Set the server-lifetime public URL used for invite join links."""
-    global _runtime_public_url
-    parsed_url = normalize_public_room_url(str(url or "").strip())
-    _runtime_public_url = parsed_url.rstrip("/")
-    return _runtime_public_url
-
-
-def normalize_public_room_url(room_url: str) -> str:
-    """Normalize an operator-supplied public room URL for join links.
-
-    Unlike LAN invite room URLs, public invite URLs intentionally allow
-    internet tunnel hosts such as ``*.trycloudflare.com``. They still reject
-    userinfo, query strings, and fragments so generated join links own the
-    query parameters.
-    """
-    value = str(room_url or "").strip().rstrip("/")
-    if not value:
-        raise ValueError("public invite URL is required.")
-    try:
-        parsed = urlsplit(value)
-    except ValueError:
-        raise ValueError("public invite URL must be an HTTP(S) URL.") from None
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError("public invite URL must be an HTTP(S) URL.")
-    try:
-        hostname = parsed.hostname
-        parsed.port
-    except ValueError:
-        raise ValueError("public invite URL must be an HTTP(S) URL with a valid host and port.") from None
-    if not hostname:
-        raise ValueError("public invite URL must be an HTTP(S) URL with a valid host and port.")
-    if hostname.lower().strip("[]") in PUBLIC_URL_BLOCKED_HOSTS:
-        raise ValueError("public invite URL must not use a local or loopback host.")
-    if parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise ValueError("public invite URL must be HTTP(S) without userinfo, query, or fragment.")
-    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
+    return _public_invite_runtime.set_public_url(url)
 
 
 def clear_runtime_public_url(expected_url: str = "") -> None:
     """Clear the runtime public URL, optionally only when it matches a value."""
-    global _runtime_public_url
-    if expected_url and _runtime_public_url != expected_url.rstrip("/"):
-        return
-    _runtime_public_url = ""
+    _public_invite_runtime.clear_public_url(expected_url)
+
+
+def compatibility_public_invite_runtime() -> PublicInviteRuntime:
+    """Return the process-default runtime used only by compatibility callers."""
+
+    return _public_invite_runtime
 
 
 _invite_application = InviteApplicationService(
@@ -566,14 +521,13 @@ def _issue_session_token(
 
 def reset_state() -> None:
     """Reset all in-memory state. For testing only."""
-    global _repository, _invite_application, _runtime_host_token, _runtime_public_url
+    global _repository, _invite_application, _public_invite_runtime
     _repository = MemoryInviteSessionRepository()
     _invite_application = InviteApplicationService(
         _repository,
         public_url=get_public_url,
     )
-    _runtime_host_token = ""
-    _runtime_public_url = ""
+    _public_invite_runtime = PublicInviteRuntime()
 
 
 def _session_fingerprint(token: str) -> str:

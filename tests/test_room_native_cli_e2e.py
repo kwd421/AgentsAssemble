@@ -229,6 +229,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                     root,
                     room_realtime_controller_override=controller,
                     invite_repository_override=access.repository,
+                    public_invite_runtime_override=access.public_invite,
                 ),
             )
             server_thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -340,6 +341,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                     root,
                     room_realtime_controller_override=controller,
                     invite_repository_override=access.repository,
+                    public_invite_runtime_override=access.public_invite,
                 ),
             )
             server_thread = threading.Thread(target=server.serve_forever, daemon=True)

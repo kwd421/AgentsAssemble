@@ -34,7 +34,11 @@ class FakeRoomSessions:
 
 def _context(handler, path="/api/test"):
     parsed = urlparse(path)
-    deps = GuiDeps(output_root=Path("."), room_sessions=FakeRoomSessions())
+    deps = GuiDeps(
+        output_root=Path("."),
+        room_sessions=FakeRoomSessions(),
+        public_invite_runtime=room_invite.compatibility_public_invite_runtime(),
+    )
     return RequestContext(handler, deps, parsed, parse_qs(parsed.query))
 
 

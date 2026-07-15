@@ -6,16 +6,6 @@ from http import HTTPStatus
 from typing import Protocol
 
 from agentsassemble.gui_router import RequestContext, Router
-from agentsassemble.room_invite import (
-    generate_runtime_host_token,
-    get_host_token,
-    get_public_url,
-    has_runtime_host_token,
-    host_gate_required,
-    normalize_public_room_url,
-    set_runtime_public_url,
-    verify_host_token,
-)
 
 
 class PublicTunnelControl(Protocol):
@@ -42,15 +32,16 @@ def register_public_invite_admin_routes(
         tunnel_status: dict[str, object] | None = None,
     ) -> dict[str, object]:
         current_tunnel = tunnel_status or tunnel.status()
-        token_configured = bool(get_host_token())
+        runtime = ctx.deps.public_invite
+        token_configured = bool(runtime.host_token())
         return {
             "host_token_configured": token_configured,
-            "host_gate_required": host_gate_required(),
-            "public_url": get_public_url(),
+            "host_gate_required": runtime.host_gate_required(),
+            "public_url": runtime.public_url(),
             "tunnel": current_tunnel,
             "can_generate_host_token": (
-                (not token_configured and not bool(get_public_url()))
-                or (has_runtime_host_token() and is_local_operator(ctx))
+                (not token_configured and not bool(runtime.public_url()))
+                or (runtime.has_runtime_host_token() and is_local_operator(ctx))
             ),
         }
 
@@ -60,10 +51,11 @@ def register_public_invite_admin_routes(
 
     @router.post("/api/public-invite/host-token")
     def public_invite_host_token(ctx: RequestContext) -> None:
-        if get_host_token():
-            if not verify_host_token(ctx.provided_host_token()):
-                if has_runtime_host_token() and is_local_operator(ctx):
-                    token = generate_runtime_host_token()
+        runtime = ctx.deps.public_invite
+        if runtime.host_token():
+            if not runtime.verify_host_token(ctx.provided_host_token()):
+                if runtime.has_runtime_host_token() and is_local_operator(ctx):
+                    token = runtime.generate_host_token()
                     ctx.send_json(
                         {
                             "status": "regenerated",
@@ -83,13 +75,13 @@ def register_public_invite_admin_routes(
                 "host token can only be generated from the local operator UI",
             )
             return
-        if get_public_url():
+        if runtime.public_url():
             ctx.send_error(
                 HTTPStatus.FORBIDDEN,
                 "host token must be configured before public URL mode",
             )
             return
-        token = generate_runtime_host_token()
+        token = runtime.generate_host_token()
         ctx.send_json(
             {
                 "status": "generated",
@@ -101,7 +93,8 @@ def register_public_invite_admin_routes(
 
     @router.post("/api/public-invite/public-url")
     def public_invite_public_url(ctx: RequestContext) -> None:
-        if not get_host_token():
+        runtime = ctx.deps.public_invite
+        if not runtime.host_token():
             ctx.send_error(HTTPStatus.FORBIDDEN, "host token must be configured before public URL")
             return
         if not ctx.require_host():
@@ -110,9 +103,7 @@ def register_public_invite_admin_routes(
         if payload is None:
             return
         try:
-            public_url = set_runtime_public_url(
-                normalize_public_room_url(str(payload.get("public_url") or ""))
-            )
+            public_url = runtime.set_public_url(str(payload.get("public_url") or ""))
         except ValueError as error:
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
@@ -126,15 +117,16 @@ def register_public_invite_admin_routes(
 
     @router.post("/api/public-invite/tunnel/start")
     def public_invite_tunnel_start(ctx: RequestContext) -> None:
+        runtime = ctx.deps.public_invite
         generated_host_token = ""
-        if not get_host_token():
+        if not runtime.host_token():
             if not is_local_operator(ctx):
                 ctx.send_error(
                     HTTPStatus.FORBIDDEN,
                     "host token must be configured before starting a public tunnel",
                 )
                 return
-            generated_host_token = generate_runtime_host_token()
+            generated_host_token = runtime.generate_host_token()
         if not generated_host_token and not ctx.require_host():
             return
         tunnel.set_local_url(local_server_url(ctx))

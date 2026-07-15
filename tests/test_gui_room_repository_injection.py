@@ -229,6 +229,7 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
                     root / "server",
                     room_realtime_controller_override=controller,
                     invite_repository_override=access.repository,
+                    public_invite_runtime_override=access.public_invite,
                 )
 
                 self.assertIs(handler.room_repository, repository)
@@ -255,6 +256,7 @@ class GuiRoomRepositoryInjectionTests(unittest.TestCase):
                         room_realtime_controller_override=controller,
                         room_repository_override=route_repository,
                         invite_repository_override=access.repository,
+                        public_invite_runtime_override=access.public_invite,
                     )
             finally:
                 controller.close()

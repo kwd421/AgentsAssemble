@@ -10,6 +10,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
+from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.public_tunnel import PublicTunnelManager
 from agentsassemble.room_invite import get_public_url, reset_state, set_runtime_host_token, set_runtime_public_url
 from agentsassemble.room_store import RoomStore
@@ -355,10 +356,15 @@ class PublicInviteHttpTests(unittest.TestCase):
         from agentsassemble.gui import serve_gui
 
         with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = PublicInviteRuntime(environ={})
+
             def stop_after_bind() -> None:
                 raise KeyboardInterrupt()
 
-            with patch("agentsassemble.gui.ThreadingHTTPServer.serve_forever", side_effect=stop_after_bind):
+            with (
+                patch("agentsassemble.gui.PublicInviteRuntime", return_value=runtime),
+                patch("agentsassemble.gui.ThreadingHTTPServer.serve_forever", side_effect=stop_after_bind),
+            ):
                 serve_gui(
                     host="127.0.0.1",
                     port=0,
@@ -367,7 +373,7 @@ class PublicInviteHttpTests(unittest.TestCase):
                     host_token="host-secret",
                 )
 
-        self.assertEqual(get_public_url(), "https://shared-room.example.com")
+        self.assertEqual(runtime.public_url(), "https://shared-room.example.com")
 
     def test_gui_can_bootstrap_host_token_public_url_and_join_link(self):
         with patch.dict(os.environ, {}, clear=False):
@@ -384,10 +390,19 @@ class PublicInviteHttpTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 (assets / "app.js").write_text("console.log('join');", encoding="utf-8")
-                tunnel = PublicTunnelManager(which=lambda _name: None)
+                runtime = PublicInviteRuntime(environ={})
+                tunnel = PublicTunnelManager(
+                    public_invite_runtime=runtime,
+                    which=lambda _name: None,
+                )
                 server = ThreadingHTTPServer(
                     ("127.0.0.1", 0),
-                    _make_handler(root, frontend_dist_root=dist, public_tunnel_manager=tunnel),
+                    _make_handler(
+                        root,
+                        frontend_dist_root=dist,
+                        public_tunnel_manager=tunnel,
+                        public_invite_runtime_override=runtime,
+                    ),
                 )
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
@@ -832,10 +847,18 @@ class PublicInviteHttpTests(unittest.TestCase):
             os.environ.pop("AGENTSASSEMBLE_PUBLIC_URL", None)
             with tempfile.TemporaryDirectory() as temp_dir:
                 root = Path(temp_dir)
-                tunnel = PublicTunnelManager(which=lambda _name: None)
+                runtime = PublicInviteRuntime(environ={})
+                tunnel = PublicTunnelManager(
+                    public_invite_runtime=runtime,
+                    which=lambda _name: None,
+                )
                 server = ThreadingHTTPServer(
                     ("127.0.0.1", 0),
-                    _make_handler(root, public_tunnel_manager=tunnel),
+                    _make_handler(
+                        root,
+                        public_tunnel_manager=tunnel,
+                        public_invite_runtime_override=runtime,
+                    ),
                 )
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()

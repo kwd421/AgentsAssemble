@@ -8,7 +8,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 
-from agentsassemble.room_invite import clear_runtime_public_url, set_runtime_public_url
+from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.stable_entry import announce_stable_entry
 
 
@@ -26,11 +26,13 @@ class PublicTunnelManager:
     def __init__(
         self,
         *,
+        public_invite_runtime: PublicInviteRuntime,
         local_url: str = "",
         which: Callable[[str], str | None] | None = None,
         popen: Callable[..., subprocess.Popen[str]] | None = None,
     ) -> None:
         self.local_url = local_url
+        self._public_invite_runtime = public_invite_runtime
         self._which = which or shutil.which
         self._popen = popen or subprocess.Popen
         self._lock = threading.Lock()
@@ -98,7 +100,7 @@ class PublicTunnelManager:
                 process.kill()
                 process.wait(timeout=5)
         if owned_url:
-            clear_runtime_public_url(owned_url)
+            self._public_invite_runtime.clear_public_url(owned_url)
         return self.status()
 
     def _read_output(self, process: subprocess.Popen[str], generation: int) -> None:
@@ -121,8 +123,8 @@ class PublicTunnelManager:
                         previous = self._public_url
                         self._public_url = url
                         if previous:
-                            clear_runtime_public_url(previous)
-                        set_runtime_public_url(url)
+                            self._public_invite_runtime.clear_public_url(previous)
+                        self._public_invite_runtime.set_public_url(url)
                         # Re-point the permanent workers.dev entrypoint at the
                         # fresh tunnel hostname (async, best-effort).
                         announce_stable_entry(url)
@@ -137,7 +139,7 @@ class PublicTunnelManager:
         if process is not None and exit_code is not None and not self._last_error:
             self._last_error = f"cloudflared exited with code {exit_code}"
         if process is not None and exit_code is not None and self._public_url:
-            clear_runtime_public_url(self._public_url)
+            self._public_invite_runtime.clear_public_url(self._public_url)
             self._public_url = ""
         phase = "running" if running and self._public_url else "starting" if running else "stopped"
         return {

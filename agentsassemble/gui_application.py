@@ -16,6 +16,7 @@ from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
 from agentsassemble.public_tunnel import PublicTunnelManager
+from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_realtime import RoomRealtimeController
 from agentsassemble.room_repository import RoomRepository
@@ -62,6 +63,7 @@ class GuiApplicationServices:
     admission_preflight: RoomAdmissionService
     admission: RoomAdmissionCoordinator
     pairing: OperatorPairingService
+    public_invite: PublicInviteRuntime
     identity_backend: IdentityBackend
     invite_store_path: Path
     media_store: FileAttachmentStore

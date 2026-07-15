@@ -21,6 +21,7 @@ from agentsassemble.gui import _make_handler
 from agentsassemble.live_cli_smoke import _marker_recalled
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
+from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.native_cli_providers import (
     NativeCliProviderSpec,
     native_cli_provider_spec_from_config,
@@ -120,7 +121,11 @@ def run_room_native_cli_smoke(
             )
             server_root = Path(temp_dir) / "state"
         invite_repository = MemoryInviteSessionRepository()
-        invite_application = InviteApplicationService(invite_repository)
+        public_invite_runtime = PublicInviteRuntime(environ={})
+        invite_application = InviteApplicationService(
+            invite_repository,
+            public_url=public_invite_runtime.public_url,
+        )
         room_sessions = RoomSessionService(
             invite_repository,
             token_prefix=SESSION_TOKEN_PREFIX,
@@ -142,6 +147,7 @@ def run_room_native_cli_smoke(
                 server_root,
                 room_realtime_controller_override=controller,
                 invite_repository_override=invite_repository,
+                public_invite_runtime_override=public_invite_runtime,
             ),
         )
         server_thread = threading.Thread(target=server.serve_forever, daemon=True)

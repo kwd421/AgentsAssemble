@@ -69,6 +69,7 @@ from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 from agentsassemble.live_session_transport import terminal_sessions_supported
 from agentsassemble.room_invite import (
+    compatibility_public_invite_runtime,
     create_room_invite,
     join_room_with_invite,
     reset_state as reset_room_invite_state,
@@ -183,6 +184,7 @@ def _default_room_route_dependencies(output_root: Path) -> GuiDeps:
     return GuiDeps(
         output_root=output_root,
         room_repository=RoomStore(output_root),
+        public_invite_runtime=compatibility_public_invite_runtime(),
         room_sessions=RoomSessionService(
             session_repository,
             token_prefix="aas1",

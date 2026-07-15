@@ -39,6 +39,7 @@ from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
 from agentsassemble.room_invite import verify_session_token
+from agentsassemble.room_invite import compatibility_public_invite_runtime
 from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
 from agentsassemble.room_session_service import RoomSessionService
@@ -77,6 +78,7 @@ def _invite_route_dependencies(root: Path) -> GuiDeps:
             rooms=rooms,
             sessions=sessions,
         ),
+        public_invite_runtime=compatibility_public_invite_runtime(),
     )
 
 
@@ -91,6 +93,7 @@ def _legacy_facade_route_dependencies(root: Path) -> GuiDeps:
     return GuiDeps(
         output_root=root,
         room_repository=RoomStore(root),
+        public_invite_runtime=compatibility_public_invite_runtime(),
         room_sessions=_LegacyFacadeSessionVerifier(),  # type: ignore[arg-type]
     )
 
