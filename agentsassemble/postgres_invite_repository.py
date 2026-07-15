@@ -134,7 +134,7 @@ class PostgresInviteSessionRepository:
                     (clean_lobby_text(invite_id, limit=128),),
                 ).fetchone()
                 if row is None:
-                    return ""
+                    return "invite_not_found"
                 stored_max_uses = int(row["max_uses"])
                 effective_max = stored_max_uses if stored_max_uses >= 0 else max(0, int(max_uses))
                 if effective_max and int(row["use_count"]) >= effective_max:

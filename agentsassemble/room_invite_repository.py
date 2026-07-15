@@ -264,12 +264,13 @@ class MemoryInviteSessionRepository:
         with self._lock:
             record = self._invites.get(clean_invite_id)
             if reusable:
-                current_uses = int(record.get("use_count", 0)) if record else 0
+                if record is None:
+                    return "invite_not_found"
+                current_uses = int(record.get("use_count", 0))
                 if max_uses and current_uses >= max_uses:
                     return "invite_use_limit_reached"
                 with self._persisted_mutation_locked():
-                    if record is not None:
-                        record["use_count"] = current_uses + 1
+                    record["use_count"] = current_uses + 1
             else:
                 if clean_nonce in self._used_nonce_fingerprints:
                     return "token_already_used"

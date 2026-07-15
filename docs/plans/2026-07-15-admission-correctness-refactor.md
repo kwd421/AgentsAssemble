@@ -173,3 +173,7 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   invite rejoin and operator pairing. A failed replacement now rolls back and
   leaves the previously valid bearer token usable instead of disconnecting the
   participant before the new token is durable.
+- 2026-07-15: Milestone 0.4 implemented. Reusable invite consumption now
+  returns `invite_not_found` when its durable policy row is absent in memory,
+  JSON, and PostgreSQL implementations. The code no longer invents an
+  unlimited use count after losing the authority needed to enforce it.

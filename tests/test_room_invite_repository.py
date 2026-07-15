@@ -166,6 +166,16 @@ class InviteSessionRepositoryContract:
         self.assertEqual(second, "token_already_used")
         self.assertTrue(self.repository.nonce_was_used("nonce-fingerprint"))
 
+    def test_reusable_invite_requires_its_durable_record(self) -> None:
+        result = self.repository.consume(
+            invite_id="missing-record",
+            nonce_fingerprint="unused-for-reusable",
+            reusable=True,
+            max_uses=0,
+        )
+
+        self.assertEqual(result, "invite_not_found")
+
     def test_session_revocation_is_scoped(self) -> None:
         first = _session()
         second = {**_session(), "agent_id": "guest-b"}
