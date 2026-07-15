@@ -228,3 +228,10 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   The generic `RequestContext` host/session compatibility facade remains for
   legacy routes and is explicitly deferred to Milestone 3 rather than mixed
   into this current-route change.
+- 2026-07-15: Milestone 2.1 introduced `PostgresApplicationDatabase`. It checks
+  the activated schema head before opening one bounded pool, owns redacted
+  readiness/diagnostics and idempotent shutdown, and exposes a context-local
+  transaction connection that nested repository calls can share. This commit
+  deliberately does not wire repositories yet; ownership transfer and removal
+  of repository-level pool closes are Milestone 2.2. Fake-pool lifecycle,
+  transaction reuse, schema-failure, secret-redaction, and close tests passed.
