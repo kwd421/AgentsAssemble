@@ -311,7 +311,9 @@ test("streams on desktop and controls the same canonical session on mobile", asy
   await expect(session.getByText(/input \d+ chars · \d+ events/)).toBeVisible();
   await expect(session.getByText(/stderr \d+ bytes · warnings \d+/)).toBeVisible();
   await session.getByRole("button", { name: "일시정지", exact: true }).click();
-  await expect(session.getByText("일시정지", { exact: true })).toBeVisible();
+  await expect(
+    session.locator(".dc-member-session-location-head").getByText("일시정지", { exact: true })
+  ).toBeVisible();
   await closeMobileSession();
 
   await composer.fill("@fake AGENTSASSEMBLE_SESSION_MARKER=ui-e2e-paused 재개 뒤에만 답해.");
