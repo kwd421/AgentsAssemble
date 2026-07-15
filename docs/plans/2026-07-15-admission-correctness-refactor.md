@@ -159,3 +159,8 @@ be fixed in a separate corrective commit or the causing change must be reverted.
   raise a typed durability error. Repository, invite, admission, HTTP, session,
   and GUI composition verification passed 111 tests; a copy of the current
   local store loaded with all 88 invite records under the stricter validator.
+- 2026-07-15: Milestone 0.2 implemented. The compatibility facade now starts
+  with a fail-closed unconfigured repository rather than silently accepting
+  process-local invite and session state. Memory storage remains available
+  only through explicit ephemeral/test configuration; normal GUI composition
+  continues to install its JSON or PostgreSQL repository before serving.

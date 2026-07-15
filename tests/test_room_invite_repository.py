@@ -10,11 +10,14 @@ from unittest.mock import patch
 
 from agentsassemble.room_invite_repository import (
     InviteRepositoryCorrupt,
+    InviteRepositoryNotConfigured,
     InviteRepositoryUnavailable,
     InviteRepositoryWriteFailed,
+    InviteSessionRepository,
     JsonInviteSessionRepository,
     MemoryInviteSessionRepository,
     ROOM_INVITE_STORE_SCHEMA,
+    UnconfiguredInviteSessionRepository,
 )
 
 
@@ -56,6 +59,52 @@ def _session() -> dict[str, object]:
         "joined_at": now.isoformat(),
         "expires_at": (now + timedelta(hours=1)).isoformat(),
     }
+
+
+class UnconfiguredInviteSessionRepositoryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.repository = UnconfiguredInviteSessionRepository()
+
+    def test_implements_repository_contract(self) -> None:
+        self.assertIsInstance(self.repository, InviteSessionRepository)
+
+    def test_all_storage_operations_fail_with_configuration_error(self) -> None:
+        operations = [
+            self.repository.signing_secret,
+            self.repository.existing_signing_secret,
+            lambda: self.repository.save_invite(_invite()),
+            lambda: self.repository.invite("invite-1"),
+            lambda: self.repository.invite_for_join_code("join-invite-1"),
+            lambda: self.repository.nonce_was_used("nonce-1"),
+            lambda: self.repository.consume(
+                invite_id="invite-1",
+                nonce_fingerprint="nonce-1",
+                reusable=False,
+                max_uses=1,
+            ),
+            lambda: self.repository.revoke_invite("invite-1"),
+            lambda: self.repository.revoke_room_invites("room-a"),
+            self.repository.list_invites,
+            lambda: self.repository.save_session("session-1", _session()),
+            lambda: self.repository.session("session-1"),
+            lambda: self.repository.revoke_session("session-1"),
+            lambda: self.repository.revoke_participant_sessions("room-a", "guest-a"),
+            lambda: self.repository.revoke_room_sessions("room-a"),
+            self.repository.list_sessions,
+            self.repository.reload,
+            self.repository.clear,
+        ]
+
+        for operation in operations:
+            with self.subTest(operation=operation):
+                with self.assertRaisesRegex(
+                    InviteRepositoryNotConfigured,
+                    "repository is not configured",
+                ):
+                    operation()
+
+    def test_close_is_safe_before_configuration(self) -> None:
+        self.assertIsNone(self.repository.close())
 
 
 class InviteSessionRepositoryContract:

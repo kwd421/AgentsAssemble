@@ -22,6 +22,35 @@ from agentsassemble.room_invite import (
     set_runtime_public_url,
     verify_session_token,
 )
+from agentsassemble.room_invite_repository import (
+    InviteRepositoryNotConfigured,
+    UnconfiguredInviteSessionRepository,
+)
+
+
+class TestRoomInviteRepositoryConfiguration(unittest.TestCase):
+    def test_facade_fails_closed_before_repository_configuration(self) -> None:
+        with patch(
+            "agentsassemble.room_invite._repository",
+            UnconfiguredInviteSessionRepository(),
+        ):
+            with self.assertRaises(InviteRepositoryNotConfigured):
+                create_room_invite(
+                    room_url="http://127.0.0.1:8765",
+                    meeting_id="room-a",
+                )
+
+    def test_explicit_ephemeral_configuration_remains_available(self) -> None:
+        configure_room_invite_store(None)
+        self.addCleanup(reset_state)
+
+        invite = create_room_invite(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+        )
+
+        self.assertTrue(str(invite["invite_token"]).startswith("aai1."))
+
 
 
 class TestRoomInviteCreateJoinFlow(unittest.TestCase):

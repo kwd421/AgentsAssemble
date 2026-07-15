@@ -31,6 +31,10 @@ class InviteRepositoryWriteFailed(InviteRepositoryError):
     """A repository mutation could not be durably persisted."""
 
 
+class InviteRepositoryNotConfigured(InviteRepositoryError):
+    """Invite/session persistence has not been selected for this process."""
+
+
 _RepositoryState = tuple[
     str,
     dict[str, dict[str, object]],
@@ -93,8 +97,93 @@ class InviteSessionRepository(InviteRepository, SessionRepository, Protocol):
     def close(self) -> None: ...
 
 
+class UnconfiguredInviteSessionRepository:
+    """Fail-closed placeholder used until application composition selects storage."""
+
+    _MESSAGE = "Invite/session repository is not configured."
+
+    def _raise(self) -> None:
+        raise InviteRepositoryNotConfigured(self._MESSAGE)
+
+    def signing_secret(self) -> str:
+        self._raise()
+
+    def existing_signing_secret(self) -> str:
+        self._raise()
+
+    def save_invite(self, record: dict[str, object]) -> None:
+        del record
+        self._raise()
+
+    def invite(self, invite_id: str) -> dict[str, object] | None:
+        del invite_id
+        self._raise()
+
+    def invite_for_join_code(self, join_code_fingerprint: str) -> dict[str, object] | None:
+        del join_code_fingerprint
+        self._raise()
+
+    def nonce_was_used(self, nonce_fingerprint: str) -> bool:
+        del nonce_fingerprint
+        self._raise()
+
+    def consume(
+        self,
+        *,
+        invite_id: str,
+        nonce_fingerprint: str,
+        reusable: bool,
+        max_uses: int,
+    ) -> str:
+        del invite_id, nonce_fingerprint, reusable, max_uses
+        self._raise()
+
+    def revoke_invite(self, invite_id: str) -> bool:
+        del invite_id
+        self._raise()
+
+    def revoke_room_invites(self, room_id: str) -> int:
+        del room_id
+        self._raise()
+
+    def list_invites(self) -> list[dict[str, object]]:
+        self._raise()
+
+    def save_session(self, token_fingerprint: str, record: dict[str, object]) -> None:
+        del token_fingerprint, record
+        self._raise()
+
+    def session(self, token_fingerprint: str) -> dict[str, object] | None:
+        del token_fingerprint
+        self._raise()
+
+    def revoke_session(self, token_fingerprint: str) -> bool:
+        del token_fingerprint
+        self._raise()
+
+    def revoke_participant_sessions(self, room_id: str, participant_id: str) -> int:
+        del room_id, participant_id
+        self._raise()
+
+    def revoke_room_sessions(self, room_id: str) -> int:
+        del room_id
+        self._raise()
+
+    def list_sessions(self) -> list[tuple[str, dict[str, object]]]:
+        self._raise()
+
+    def reload(self) -> None:
+        self._raise()
+
+    def clear(self) -> None:
+        self._raise()
+
+    def close(self) -> None:
+        return
+
+
 class MemoryInviteSessionRepository:
-    """Thread-safe repository used when local persistence is not configured."""
+    """Thread-safe repository for explicitly selected ephemeral operation."""
 
     def __init__(self) -> None:
         self._lock = threading.RLock()

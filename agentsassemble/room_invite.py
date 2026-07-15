@@ -39,6 +39,7 @@ from agentsassemble.room_invite_repository import (
     InviteSessionRepository,
     JsonInviteSessionRepository,
     MemoryInviteSessionRepository,
+    UnconfiguredInviteSessionRepository,
 )
 from agentsassemble.room_session_issuer import RoomSessionIssuer, session_token_fingerprint
 
@@ -47,7 +48,7 @@ SESSION_TOKEN_TTL_SECONDS = 3600  # 1 hour
 SESSION_TOKEN_PREFIX = "aas1"  # AgentsAssemble Session v1
 # Compatibility facade state. Persistence and synchronization live in the
 # injected repository; only process-local host/public configuration remains.
-_repository: InviteSessionRepository = MemoryInviteSessionRepository()
+_repository: InviteSessionRepository = UnconfiguredInviteSessionRepository()
 _runtime_host_token: str = ""
 _runtime_public_url: str = ""
 
