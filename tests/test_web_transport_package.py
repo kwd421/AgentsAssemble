@@ -6,10 +6,12 @@ import agentsassemble.gui_response as compatibility_response
 import agentsassemble.gui_request_security as compatibility_security
 import agentsassemble.gui_router as compatibility_router
 import agentsassemble.gui_static_transport as compatibility_static
+import agentsassemble.gui_ws_http as compatibility_websocket
 from agentsassemble.web import response as owned_response
 from agentsassemble.web import router as owned_router
 from agentsassemble.web import security as owned_security
 from agentsassemble.web import static as owned_static
+from agentsassemble.web import websocket as owned_websocket
 
 
 class WebTransportPackageTests(unittest.TestCase):
@@ -55,6 +57,16 @@ class WebTransportPackageTests(unittest.TestCase):
         self.assertIs(
             compatibility_router.Router,
             owned_router.Router,
+        )
+
+    def test_websocket_root_module_exports_owned_transport(self) -> None:
+        self.assertIs(
+            compatibility_websocket.handle_ws_upgrade,
+            owned_websocket.handle_ws_upgrade,
+        )
+        self.assertIs(
+            compatibility_websocket.register_ws_ticket_route,
+            owned_websocket.register_ws_ticket_route,
         )
 
 

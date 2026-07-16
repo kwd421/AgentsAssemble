@@ -154,6 +154,12 @@ compatibility export. Current route modules and behavior tests import the owned
 path directly; route registration, path matching, authentication, and request
 parsing behavior are unchanged.
 
+WebSocket ticket registration, authenticated HTTP upgrade, frame pumping, and
+connection cleanup now belong to `agentsassemble/web/websocket.py`.
+`gui_ws_http.py` remains a temporary compatibility export. `/api/ws-ticket`,
+`/ws?ticket=...`, single-use tickets, room-channel delivery, protocol-error
+close behavior, and disconnect cleanup are unchanged.
+
 ## Router-Owned Route Families
 
 These families already have a clear module owner and should not move back into
@@ -161,7 +167,7 @@ These families already have a clear module owner and should not move back into
 
 | Owner module | Classification | Responsibility | Primary evidence |
 | --- | --- | --- | --- |
-| `gui_ws_http.py` | Current core | Single-use WebSocket ticket issue | `tests/test_ws_room_session.py`, `tests/test_ws_room_client.py` |
+| `web/websocket.py` | Current core | Single-use WebSocket ticket issue and authenticated upgrade lifecycle | `tests/test_ws_endpoint.py`, `tests/test_ws_room_session.py`, `tests/test_ws_room_client.py` |
 | `gui_attachment_http.py` | Current core | Safe attachment upload/download and room media reference | `tests/test_gui_server_room_routes.py` |
 | `gui_provider_http.py` | Current core | Provider catalog, local provider-login command, and redacted DeepSeek credential status/mutation; login execution/audit lives in `provider_login.py` | `tests/test_gui_server_provider_http.py`, `tests/test_live_agent_frontend_create.py` |
 | `gui_public_invite_http.py` | Current core | Host-gated public URL and tunnel control | `tests/test_public_invite_http.py` |

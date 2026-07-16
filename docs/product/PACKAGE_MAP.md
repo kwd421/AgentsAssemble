@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `ac801f19b6af52c5`
+Source fingerprint: `869cffb5e45898e2`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 386
+- Python modules: 387
 - Top-level package modules: 303
-- Domains: admission=28, application=59, diagnostics=12, features=7, identity=9, legacy=79, persistence=58, providers=45, room=43, web=46
-- Classifications: compatibility=35, current=266, legacy=78, optional=7
+- Domains: admission=28, application=59, diagnostics=12, features=7, identity=9, legacy=79, persistence=58, providers=45, room=43, web=47
+- Classifications: compatibility=36, current=266, legacy=78, optional=7
 
 ## Classification Rules
 
@@ -146,7 +146,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.gui_side_chat_http` | `agentsassemble/gui_side_chat_http.py` | 45 | features | optional | `agentsassemble.side_chat`, `agentsassemble.web.router` | 1 | - | monkeypatch:1 | `tests/test_gui_server_lobby_social.py` | `features/side_chat/` | planned-move |
 | `agentsassemble.gui_social_http` | `agentsassemble/gui_social_http.py` | 87 | features | optional | `agentsassemble.live_agents`, `agentsassemble.room_friend_dms`, `agentsassemble.room_friends`, `agentsassemble.user_profile`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_server_social_http.py` | `features/social/` | planned-move |
 | `agentsassemble.gui_static_transport` | `agentsassemble/gui_static_transport.py` | 16 | web | compatibility | `agentsassemble.web.static` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
-| `agentsassemble.gui_ws_http` | `agentsassemble/gui_ws_http.py` | 145 | web | current | `agentsassemble.room_websocket`, `agentsassemble.sse_cadence`, `agentsassemble.web.router`, `agentsassemble.ws_room_session` | 1 | - | - | - | `web/` | planned-move |
+| `agentsassemble.gui_ws_http` | `agentsassemble/gui_ws_http.py` | 10 | web | compatibility | `agentsassemble.web.websocket` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.hermes_resident` | `agentsassemble/hermes_resident.py` | 230 | application | current | `agentsassemble.live_agent_runner` | 4 | `call:compile@13`, `call:compile@14` | test-import:1 | `tests/test_hermes_resident.py` | `application/` | planned-move |
 | `agentsassemble.identity` | `agentsassemble/identity/__init__.py` | 1 | identity | current | - | 0 | - | test-import:4 | `tests/test_identity_pairing_package.py`, `tests/test_identity_repository_factory.py`, `tests/test_identity_repository_package.py`, `+1` | `identity/` | in-target-package |
 | `agentsassemble.identity.factory` | `agentsassemble/identity/factory.py` | 58 | identity | current | `agentsassemble.identity.repository`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.room_repository_factory` | 2 | - | test-import:1, monkeypatch:1 | `tests/test_identity_repository_factory.py` | `identity/` | in-target-package |
@@ -412,6 +412,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.web.router` | `agentsassemble/web/router.py` | 495 | web | current | `agentsassemble.admission.coordinator`, `agentsassemble.admission.invite_service`, `agentsassemble.admission.preflight`, `agentsassemble.admission.projection`, `agentsassemble.admission.session_service`, `agentsassemble.attachments`, `agentsassemble.identity.pairing`, `agentsassemble.identity.repository`, +3 | 44 | - | test-import:32 | `tests/gui_server_test_support.py`, `tests/test_gui_legacy_codex_session_http.py`, `tests/test_gui_legacy_live_agent_discovery_http.py`, `+29` | `web/` | in-target-package |
 | `agentsassemble.web.security` | `agentsassemble/web/security.py` | 137 | web | current | - | 3 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.static` | `agentsassemble/web/static.py` | 136 | web | current | `agentsassemble.web.router` | 2 | `call:frozenset@15` | test-import:2 | `tests/test_gui_route_ownership.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
+| `agentsassemble.web.websocket` | `agentsassemble/web/websocket.py` | 145 | web | current | `agentsassemble.room_websocket`, `agentsassemble.sse_cadence`, `agentsassemble.web.router`, `agentsassemble.ws_room_session` | 2 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.windows_conpty` | `agentsassemble/windows_conpty.py` | 315 | web | current | `agentsassemble.live_cli_output`, `agentsassemble.live_cli_transcripts`, `agentsassemble.meeting_events`, `agentsassemble.process_environment` | 1 | - | test-import:1 | `tests/test_provider_runtime_controls.py` | `web/` | planned-move |
 | `agentsassemble.ws_resident` | `agentsassemble/ws_resident.py` | 259 | web | current | `agentsassemble.live_agent_runner`, `agentsassemble.room_engagement`, `agentsassemble.ws_room_client` | 1 | - | test-import:1, monkeypatch:1 | `tests/test_ws_resident.py` | `web/` | planned-move |
 | `agentsassemble.ws_room_client` | `agentsassemble/ws_room_client.py` | 347 | web | current | `agentsassemble.room_websocket` | 5 | - | test-import:3, monkeypatch:2 | `tests/test_room_native_cli_e2e.py`, `tests/test_room_social_flows.py`, `tests/test_ws_resident.py`, `+1` | `web/` | planned-move |

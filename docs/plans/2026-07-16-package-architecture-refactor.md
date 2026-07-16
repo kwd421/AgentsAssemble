@@ -534,3 +534,8 @@ module churn were deliberately avoided rather than forgotten.
   moved to `admission/projection.py`, while
   `legacy/admission_projection.py` retains the actual roster mirror and
   compatibility exports.
+- 2026-07-16: WebSocket ticket registration and HTTP upgrade lifecycle moved
+  intact to `web/websocket.py`; `gui_ws_http.py` remains an explicit
+  compatibility export. Route parity and ownership inventories now inspect
+  both retained root route modules and owned `web/` modules rather than
+  depending on the old filename location.

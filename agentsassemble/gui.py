@@ -74,7 +74,7 @@ from agentsassemble.web.router import (
     Router,
     local_server_url as _local_server_url,
 )
-from agentsassemble.gui_ws_http import handle_ws_upgrade, register_ws_ticket_route
+from agentsassemble.web.websocket import handle_ws_upgrade, register_ws_ticket_route
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_realtime import (
     RoomCommandRejected,

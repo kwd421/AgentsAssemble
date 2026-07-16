@@ -9,7 +9,10 @@ from agentsassemble.web.static import REACT_APP_EXACT_PATHS
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 GUI_SOURCE = REPOSITORY_ROOT / "agentsassemble" / "gui.py"
-GUI_ROUTE_MODULES = tuple(sorted((REPOSITORY_ROOT / "agentsassemble").glob("gui*_http.py")))
+GUI_ROUTE_MODULES = (
+    *sorted((REPOSITORY_ROOT / "agentsassemble").glob("gui*_http.py")),
+    REPOSITORY_ROOT / "agentsassemble" / "web" / "websocket.py",
+)
 DYNAMIC_ROUTE_HELPERS = {
     "_live_agent_process_action_path": ("POST", "/api/live-agent-processes/{group_id}/{action}"),
 }

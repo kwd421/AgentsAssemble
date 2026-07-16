@@ -111,7 +111,11 @@ def _parse_gui_routes(path: Path) -> set[Route]:
     # The if-chain in gui.py is being replaced by route-table modules (R2);
     # the inventory is the union of both registration styles.
     routes: set[Route] = set()
-    for module_path in sorted(path.parent.glob("gui_*_http.py")):
+    route_modules = (
+        *sorted(path.parent.glob("gui_*_http.py")),
+        path.parent / "web" / "websocket.py",
+    )
+    for module_path in route_modules:
         routes |= _parse_router_module_routes(module_path)
     text = path.read_text(encoding="utf-8")
     current_method = ""
