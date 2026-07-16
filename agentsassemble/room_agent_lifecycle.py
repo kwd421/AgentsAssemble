@@ -4,7 +4,7 @@ import threading
 from typing import Callable, Iterable, Protocol
 from uuid import uuid4
 
-from agentsassemble.bridge_stop_confirmation import (
+from agentsassemble.room.bridge_stop_confirmation import (
     BridgeStopConfirmationError,
     ExternalBridgeStopCoordinator,
 )

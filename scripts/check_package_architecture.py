@@ -64,6 +64,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.5 provider bridge protocol move",
     ),
+    "bridge_stop_confirmation.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.bridge_stop_confirmation",
+        removal_gate=(
+            "No direct imports use agentsassemble.bridge_stop_confirmation for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_room_package.py",),
+        introduced_in="Milestone 6.6 room bridge-stop confirmation move",
+    ),
     "claude_transcript.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.claude_transcript",
         removal_gate=(

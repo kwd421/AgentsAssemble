@@ -911,3 +911,11 @@ module churn were deliberately avoided rather than forgotten.
   `room.text` normalization replaces the legacy helper delegation without
   changing values. Queue bounds, delta eviction, resync markers, socket wakeup,
   bridge supersession, and disconnect behavior are unchanged.
+- 2026-07-17: External Agent Bridge stop request/confirmation correlation
+  moved to `room/bridge_stop_confirmation.py`. Room lifecycle and focused
+  confirmation tests now use the owned path while
+  `bridge_stop_confirmation.py` remains an explicit compatibility export.
+  Direct `room.text` normalization replaces the legacy helper delegation.
+  Current-generation enforcement, control IDs, timeout and delivery errors,
+  effect-before-release callback ordering, and controller-close cancellation
+  are unchanged.

@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import unittest
 
-from agentsassemble.bridge_stop_confirmation import (
+from agentsassemble.room.bridge_stop_confirmation import (
     BridgeStopConfirmationError,
     ExternalBridgeStopCoordinator,
 )

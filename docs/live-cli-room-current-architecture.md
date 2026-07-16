@@ -126,6 +126,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `room_routing.py` | pure mention, default-responder, and relay-depth target selection | persistence or process launch |
 | `room_context.py` | bounded bootstrap and cursor-diff provider input projection | provider-private memory |
 | `room/event_broker.py` | bounded per-connection fanout and targeted bridge delivery | durable history |
+| `room/bridge_stop_confirmation.py` | external bridge generation-safe stop request/confirmation correlation | local process termination |
 | `providers/launch_specs.py` | provider catalog, safe commands, profile identity, and Claude interactive guard | PTY parsing |
 | `providers/capabilities.py` | cached native model, effort, tier, variant, and permission discovery | room or secret state |
 | `provider_secrets.py` | OS keyring credential access and redacted status | provider prompts or room events |
