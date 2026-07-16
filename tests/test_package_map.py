@@ -187,6 +187,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.providers.runtime_contracts",
             "agentsassemble.providers.runtime_factory",
             "agentsassemble.providers.secrets",
+            "agentsassemble.providers.sessions",
             "agentsassemble.providers.windows_conpty",
         ):
             with self.subTest(module_name=module_name):
@@ -215,6 +216,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.provider_runtime_contracts",
             "agentsassemble.provider_runtime_factory",
             "agentsassemble.provider_secrets",
+            "agentsassemble.provider_sessions",
             "agentsassemble.windows_conpty",
         ):
             with self.subTest(compatibility_module=compatibility_module):

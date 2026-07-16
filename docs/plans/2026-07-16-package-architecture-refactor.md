@@ -711,3 +711,9 @@ module churn were deliberately avoided rather than forgotten.
   terminal capture, transcript-first final extraction, interrupt/restart,
   process-group cleanup, diagnostics, and the unsupported API stub are
   unchanged.
+- 2026-07-17: Best-effort local provider session discovery moved to
+  `providers/sessions.py`. Its behavior tests use the owned path while
+  `provider_sessions.py` remains an explicit compatibility export. Codex UUID
+  extraction, Claude workspace scoping, Antigravity conversation labels,
+  timestamp ordering, result limits, and the existing empty-on-unreadable
+  policy are unchanged.

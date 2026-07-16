@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.provider_sessions import list_provider_sessions
+from agentsassemble.providers.sessions import list_provider_sessions
 
 
 def _write(path: Path, lines: list[dict]) -> None:

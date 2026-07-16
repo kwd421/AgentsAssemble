@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `d5cb67139c16d39e`
+Source fingerprint: `62dc102b7663b1f3`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 426
+- Python modules: 427
 - Top-level package modules: 303
-- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=62, room=43, web=58
-- Classifications: compatibility=64, current=273, legacy=78, optional=11
+- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=63, room=43, web=58
+- Classifications: compatibility=65, current=273, legacy=78, optional=11
 
 ## Classification Rules
 
@@ -338,7 +338,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.provider_runtime_contracts` | `agentsassemble/provider_runtime_contracts.py` | 16 | providers | compatibility | `agentsassemble.providers.runtime_contracts` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.provider_runtime_factory` | `agentsassemble/provider_runtime_factory.py` | 12 | providers | compatibility | `agentsassemble.providers.runtime_factory` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.provider_secrets` | `agentsassemble/provider_secrets.py` | 14 | providers | compatibility | `agentsassemble.providers.secrets` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
-| `agentsassemble.provider_sessions` | `agentsassemble/provider_sessions.py` | 172 | providers | current | - | 0 | `call:compile@20` | test-import:1 | `tests/test_provider_sessions.py` | `providers/` | planned-move |
+| `agentsassemble.provider_sessions` | `agentsassemble/provider_sessions.py` | 6 | providers | compatibility | `agentsassemble.providers.sessions` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.providers` | `agentsassemble/providers/__init__.py` | 1 | providers | current | - | 3 | - | test-import:2 | `tests/test_provider_catalog.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.bridge_protocol` | `agentsassemble/providers/bridge_protocol.py` | 133 | providers | current | `agentsassemble.room.text` | 3 | - | test-import:4 | `tests/test_bridge_protocol.py`, `tests/test_bridge_report_tracker.py`, `tests/test_provider_package.py`, `+1` | `providers/` | in-target-package |
 | `agentsassemble.providers.bridge_report_tracker` | `agentsassemble/providers/bridge_report_tracker.py` | 100 | providers | current | `agentsassemble.providers.bridge_protocol` | 2 | - | test-import:2 | `tests/test_bridge_report_tracker.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
@@ -354,6 +354,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.runtime_contracts` | `agentsassemble/providers/runtime_contracts.py` | 130 | providers | current | - | 5 | `call:frozenset@8` | test-import:2 | `tests/test_provider_package.py`, `tests/test_room_agent_bridge.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.runtime_factory` | `agentsassemble/providers/runtime_factory.py` | 117 | providers | current | `agentsassemble.providers.deepseek`, `agentsassemble.providers.grok_acp`, `agentsassemble.providers.live_cli`, `agentsassemble.providers.opencode`, `agentsassemble.providers.runtime_config`, `agentsassemble.providers.windows_conpty` | 3 | - | test-import:2 | `tests/test_provider_package.py`, `tests/test_room_agent_bridge.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.secrets` | `agentsassemble/providers/secrets.py` | 106 | providers | current | - | 4 | `call:ProviderSecretStore@106` | test-import:2 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.sessions` | `agentsassemble/providers/sessions.py` | 172 | providers | current | - | 1 | `call:compile@20` | test-import:2 | `tests/test_provider_package.py`, `tests/test_provider_sessions.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.windows_conpty` | `agentsassemble/providers/windows_conpty.py` | 321 | providers | current | `agentsassemble.providers.live_cli_output`, `agentsassemble.providers.live_cli_transcripts`, `agentsassemble.providers.process_environment`, `agentsassemble.room.text` | 2 | - | test-import:2 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |
 | `agentsassemble.public_invite_runtime` | `agentsassemble/public_invite_runtime.py` | 109 | admission | current | - | 7 | - | test-import:5 | `tests/room_realtime_test_support.py`, `tests/test_gui_application_services.py`, `tests/test_public_invite_http.py`, `+2` | `admission/` | planned-move |
 | `agentsassemble.public_tunnel` | `agentsassemble/public_tunnel.py` | 154 | application | current | `agentsassemble.public_invite_runtime`, `agentsassemble.stable_entry` | 3 | `call:compile@15` | test-import:2, monkeypatch:1 | `tests/test_public_invite_http.py`, `tests/test_public_tunnel.py` | `application/` | planned-move |

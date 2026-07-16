@@ -425,6 +425,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.6 provider security utilities move",
     ),
+    "provider_sessions.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.sessions",
+        removal_gate=(
+            "No direct imports use agentsassemble.provider_sessions for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.14 provider session discovery move",
+    ),
     "windows_conpty.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.windows_conpty",
         removal_gate=(
