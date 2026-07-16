@@ -6,7 +6,7 @@ from uuid import UUID
 
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.identity_store import device_auth_key
-from agentsassemble.live_agents import connect_live_agent
+from agentsassemble.legacy.admission_projection import LegacyAdmissionParticipant
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.operator_pairing import normalize_pairing_origin
 from agentsassemble.room_admission_coordinator import AdmissionIdempotencyConflict
@@ -170,22 +170,18 @@ def register_invite_admission_routes(router: Router) -> None:
             return
         participant_type = str(result.get("participant_type") or "human")
         if participant_type != "human":
-            try:
-                connect_live_agent(
-                    ctx.deps.output_root,
-                    {
-                        "agent_id": result["agent_id"],
-                        "display_name": result["display_name"],
-                        "provider_kind": result.get("provider_kind") or "manual",
-                        "connection_kind": result.get("connection_kind")
-                        or NATIVE_REMOTE_ROOM_CLIENT_KIND,
-                        "meeting_id": result["meeting_id"],
-                        "status": "online",
-                        "owner_display_name": str(result.get("owner_display_name") or ""),
-                    },
+            ctx.deps.admission_projection.participant_joined(
+                LegacyAdmissionParticipant(
+                    participant_id=str(result["agent_id"]),
+                    display_name=str(result["display_name"]),
+                    provider_kind=str(result.get("provider_kind") or "manual"),
+                    connection_kind=str(
+                        result.get("connection_kind") or NATIVE_REMOTE_ROOM_CLIENT_KIND
+                    ),
+                    room_id=str(result["meeting_id"]),
+                    owner_display_name=str(result.get("owner_display_name") or ""),
                 )
-            except ValueError:
-                pass
+            )
         ctx.send_json(result)
 
     @router.post("/api/room-invite/admission")
@@ -308,13 +304,8 @@ def register_invite_admission_routes(router: Router) -> None:
         session = ctx.require_session()
         if session is None:
             return
-        try:
-            connect_live_agent(
-                ctx.deps.output_root,
-                {"agent_id": session["agent_id"], "status": "offline"},
-            )
-        except ValueError:
-            pass
+        if str(session.get("participant_type") or "human") != "human":
+            ctx.deps.admission_projection.participant_left(str(session["agent_id"]))
         ctx.deps.sessions.revoke(ctx.bearer_token())
         ctx.send_json({"status": "left", "agent_id": session["agent_id"]})
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.legacy.admission_projection import LegacyAdmissionProjection
 from agentsassemble.local_resources import cached_local_resource_snapshot
 from agentsassemble.release_health import release_health_catalog_payload, release_health_queue_payload
 
@@ -34,6 +35,7 @@ def register_observability_routes(
     router: Router,
     *,
     processes: ProcessSnapshotSource,
+    admission_projection: LegacyAdmissionProjection,
 ) -> None:
     """Register safe, read-only host observability projections."""
 
@@ -48,3 +50,9 @@ def register_observability_routes(
     @router.get("/api/release-health/queue")
     def release_health_queue(ctx: RequestContext) -> None:
         ctx.send_json(release_health_queue_payload(output_root=ctx.deps.output_root))
+
+    @router.get("/api/diagnostics/legacy-admission-projection")
+    def legacy_admission_projection(ctx: RequestContext) -> None:
+        if not ctx.require_moderator():
+            return
+        ctx.send_json(admission_projection.diagnostics())

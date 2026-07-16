@@ -8,6 +8,7 @@ from pathlib import Path
 
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.gui_application import GuiApplicationServices
+from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionProjection
 from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room_admission import RoomAdmissionService
@@ -180,6 +181,7 @@ class GuiApplicationServicesTests(unittest.TestCase):
             ws_ticket_store=object(),  # type: ignore[arg-type]
             native_cli_bridge_manager=None,
             room_realtime_controller=_RealtimeController(events),  # type: ignore[arg-type]
+            legacy_admission_projection=LiveAgentLegacyAdmissionProjection(root),
             application_database=_ApplicationDatabase(events) if owns_database else None,
             identity_registry_cleanup=lambda: events.append("identity.unregister"),
             owns_room_repository=owns_resources,

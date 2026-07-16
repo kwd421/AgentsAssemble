@@ -20,6 +20,7 @@ from agentsassemble.attachments import (
 )
 from agentsassemble.codex_sessions import list_codex_sessions
 from agentsassemble.live_agent_context import live_agent_context_contract
+from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionProjection
 from agentsassemble.live_agent_flow import FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
 from agentsassemble.gui_provider_http import (
     model_catalog_payload,
@@ -871,6 +872,7 @@ def _build_gui_application_services(
             sessions=room_session_service,
             transaction_boundary=application_database_override,
         )
+        legacy_admission_projection = LiveAgentLegacyAdmissionProjection(output_root)
 
         live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
         if owns_process_supervisor:
@@ -947,6 +949,7 @@ def _build_gui_application_services(
             ws_ticket_store=ws_ticket_store,
             native_cli_bridge_manager=native_cli_bridge_manager,
             room_realtime_controller=room_realtime_controller,
+            legacy_admission_projection=legacy_admission_projection,
             application_database=application_database_override,
             identity_registry_cleanup=release_identity_registration,
             owns_room_repository=owns_room_repository,
@@ -3140,6 +3143,7 @@ def _make_handler(
         operator_pairing_service=services.pairing,
         public_invite_runtime=services.public_invite,
         attachment_store=services.media_store,
+        legacy_admission_projection=services.legacy_admission_projection,
         process_supervisor=live_agent_process_supervisor,
         read_lobby=read_lobby,
         read_lobby_before=read_lobby_before,
@@ -3388,7 +3392,11 @@ def _make_handler(
         record_operation=record_live_agent_operation,
     )
 
-    register_observability_routes(route_table, processes=live_agent_process_supervisor)
+    register_observability_routes(
+        route_table,
+        processes=live_agent_process_supervisor,
+        admission_projection=services.legacy_admission_projection,
+    )
     legacy_application.register_live_agent_routes(route_table)
 
     register_mafia_routes(route_table, read_operation_payload=_read_operation_payload)

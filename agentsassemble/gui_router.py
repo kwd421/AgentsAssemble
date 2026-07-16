@@ -32,6 +32,7 @@ from agentsassemble.gui_request_security import (
     _split_authority_host_port,
 )
 from agentsassemble.identity_store import IdentityBackend, device_auth_key
+from agentsassemble.legacy.admission_projection import LegacyAdmissionProjection
 from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room_admission import RoomAdmissionService
@@ -60,6 +61,7 @@ class GuiDeps:
     operator_pairing_service: OperatorPairingService | None = None
     public_invite_runtime: PublicInviteRuntime | None = None
     attachment_store: FileAttachmentStore | None = None
+    legacy_admission_projection: LegacyAdmissionProjection | None = None
     process_supervisor: Any = None
     read_lobby: Callable[..., list[dict[str, object]]] | None = None
     read_lobby_before: Callable[..., dict[str, object]] | None = None
@@ -130,6 +132,13 @@ class GuiDeps:
         if store is None:
             raise RuntimeError("GUI attachment store is not configured.")
         return store
+
+    @property
+    def admission_projection(self) -> LegacyAdmissionProjection:
+        projection = self.legacy_admission_projection
+        if projection is None:
+            raise RuntimeError("GUI legacy admission projection is not configured.")
+        return projection
 
 
 class RequestContext:

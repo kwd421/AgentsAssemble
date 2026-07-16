@@ -35,6 +35,7 @@ from tests.gui_server_test_support import (
 )
 from agentsassemble.gui_router import GuiDeps
 from agentsassemble.identity_store import IdentityStore, device_auth_key
+from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionProjection
 from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
@@ -79,6 +80,7 @@ def _invite_route_dependencies(root: Path) -> GuiDeps:
             sessions=sessions,
         ),
         public_invite_runtime=compatibility_public_invite_runtime(),
+        legacy_admission_projection=LiveAgentLegacyAdmissionProjection(root),
     )
 
 
@@ -214,6 +216,59 @@ class GuiServerRoomRouteTests(unittest.TestCase):
         self.assertEqual(first.sent_json["status"], "admitted")
         self.assertEqual(conflict.sent_error[0], HTTPStatus.CONFLICT)
         self.assertEqual(conflict.sent_error_code, "idempotency_conflict")
+
+    def test_legacy_projection_failure_does_not_rollback_agent_join_or_leave(self):
+        def fail_projection(_root: Path, _payload: dict[str, object]) -> object:
+            raise RuntimeError("secret path /tmp/private-token must stay hidden")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _invite_route_dependencies(root)
+            projection = LiveAgentLegacyAdmissionProjection(root, connect=fail_projection)
+            deps.legacy_admission_projection = projection
+            deps.rooms.create_room("agent-room", label="Agent room")
+            invite = deps.invites.create(
+                room_url="http://127.0.0.1:8765",
+                meeting_id="agent-room",
+                agent_id="remote-agent",
+                display_name="Remote Agent",
+                participant_type="agent",
+                client_type="agent_bridge",
+                provider_kind="codex",
+            )
+
+            joined = _dispatch_room_route(
+                root,
+                path="/api/room-invite/join",
+                method="POST",
+                payload={
+                    "invite_token": invite["join_code"],
+                    "request_id": "3576aa31-2798-43e0-8737-0c3da3a806f4",
+                },
+                deps=deps,
+            )
+            session_token = str(joined.sent_json["session_token"])
+            participant_id = str(joined.sent_json["agent_id"])
+            left = _dispatch_room_route(
+                root,
+                path="/api/room-invite/leave",
+                method="POST",
+                payload={},
+                headers={"Authorization": f"Bearer {session_token}"},
+                deps=deps,
+            )
+
+        self.assertEqual(joined.sent_json["status"], "admitted")
+        self.assertEqual(left.sent_json, {"status": "left", "agent_id": participant_id})
+        self.assertIsNone(deps.sessions.verify(session_token))
+        diagnostics = projection.diagnostics()
+        self.assertEqual(diagnostics["failure_count"], 2)
+        self.assertEqual(
+            [failure["operation"] for failure in diagnostics["recent_failures"]],
+            ["participant_joined", "participant_left"],
+        )
+        self.assertNotIn("secret", str(diagnostics))
+        self.assertNotIn("/tmp", str(diagnostics))
 
     def test_room_route_split_preserves_historical_service_imports(self):
         from agentsassemble import gui_room_http

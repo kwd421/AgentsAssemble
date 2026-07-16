@@ -9,6 +9,7 @@ from typing import Protocol
 from agentsassemble.application_transaction import ApplicationTransactionBoundary
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.identity_store import IdentityBackend
+from agentsassemble.legacy.admission_projection import LegacyAdmissionProjection
 from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
@@ -75,6 +76,7 @@ class GuiApplicationServices:
     ws_ticket_store: WsTicketStore
     native_cli_bridge_manager: NativeCliBridgeProcessManager | None
     room_realtime_controller: RoomRealtimeController
+    legacy_admission_projection: LegacyAdmissionProjection
     application_database: ApplicationDatabase | None = None
     identity_registry_cleanup: Callable[[], object] | None = None
     owns_room_repository: bool = True
