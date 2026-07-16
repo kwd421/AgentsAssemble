@@ -17,6 +17,7 @@ import agentsassemble.room_realtime as compatibility_realtime
 import agentsassemble.room_repository as compatibility_repository
 import agentsassemble.room_repository_records as compatibility_repository_records
 import agentsassemble.room_setting_values as compatibility_setting_values
+import agentsassemble.room_settings_service as compatibility_settings_service
 import agentsassemble.room_types as compatibility_types
 import agentsassemble.room_turn_context as compatibility_turn_context
 import agentsassemble.room_turn_coordinator as compatibility_turn_coordinator
@@ -36,6 +37,7 @@ from agentsassemble.room import realtime as owned_realtime
 from agentsassemble.room import repository as owned_repository
 from agentsassemble.room import repository_records as owned_repository_records
 from agentsassemble.room import setting_values as owned_setting_values
+from agentsassemble.room import settings_service as owned_settings_service
 from agentsassemble.room import types as owned_types
 from agentsassemble.room import turn_context as owned_turn_context
 from agentsassemble.room import turn_coordinator as owned_turn_coordinator
@@ -43,6 +45,16 @@ from agentsassemble.room import user_preferences as owned_user_preferences
 
 
 class RoomPackageTests(unittest.TestCase):
+    def test_room_settings_service_root_module_exports_owned_service(self) -> None:
+        for name in (
+            "room_settings_payload",
+            "update_room_settings",
+        ):
+            self.assertIs(
+                getattr(compatibility_settings_service, name),
+                getattr(owned_settings_service, name),
+            )
+
     def test_room_repository_records_root_module_exports_owned_normalizers(self) -> None:
         for name in (
             "ACTIVE_PARTICIPANT_STATUSES",

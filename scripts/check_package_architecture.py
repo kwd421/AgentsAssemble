@@ -605,6 +605,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_room_package.py",),
         introduced_in="Milestone 6.18 room setting values move",
     ),
+    "room_settings_service.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.settings_service",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_settings_service for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_room_package.py",),
+        introduced_in="Milestone 6.21 room settings service move",
+    ),
     "room_store.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.local.room.repository",
         removal_gate=(

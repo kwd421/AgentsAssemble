@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `69911f52f1059e1e`
+Source fingerprint: `57c669f9385d5766`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 488
+- Python modules: 489
 - Top-level package modules: 303
-- Domains: admission=28, application=64, diagnostics=14, features=14, identity=9, legacy=79, persistence=58, providers=84, room=78, web=60
-- Classifications: compatibility=105, current=294, legacy=78, optional=11
+- Domains: admission=28, application=64, diagnostics=14, features=14, identity=9, legacy=79, persistence=58, providers=84, room=79, web=60
+- Classifications: compatibility=106, current=294, legacy=78, optional=11
 
 ## Classification Rules
 
@@ -416,6 +416,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room.repository` | `agentsassemble/room/repository.py` | 329 | room | current | `agentsassemble.room.global_settings`, `agentsassemble.room_attention` | 38 | - | test-import:4 | `tests/room_repository_contract.py`, `tests/test_postgres_room_repository.py`, `tests/test_room_package.py`, `+1` | `room/` | in-target-package |
 | `agentsassemble.room.repository_records` | `agentsassemble/room/repository_records.py` | 239 | room | current | `agentsassemble.room.text`, `agentsassemble.room.visibility` | 11 | `call:frozenset@11`, `call:frozenset@12`, `call:frozenset@13`, `call:frozenset@14` | test-import:1 | `tests/test_room_package.py` | `room/` | in-target-package |
 | `agentsassemble.room.setting_values` | `agentsassemble/room/setting_values.py` | 34 | room | current | - | 5 | `call:frozenset@10`, `call:frozenset@11`, `call:frozenset@12` | test-import:1 | `tests/test_room_package.py` | `room/` | in-target-package |
+| `agentsassemble.room.settings_service` | `agentsassemble/room/settings_service.py` | 257 | room | current | `agentsassemble.identity.repository`, `agentsassemble.room.global_settings`, `agentsassemble.room.repository`, `agentsassemble.room.repository_records`, `agentsassemble.room.setting_values`, `agentsassemble.room.user_preferences` | 2 | `call:frozenset@41` | test-import:1 | `tests/test_room_package.py` | `room/` | in-target-package |
 | `agentsassemble.room.snapshots` | `agentsassemble/room/snapshots.py` | 178 | room | current | `agentsassemble.room.event_broker`, `agentsassemble.room.projection`, `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_room_snapshots.py` | `room/` | in-target-package |
 | `agentsassemble.room.startup_reconciliation` | `agentsassemble/room/startup_reconciliation.py` | 86 | room | current | `agentsassemble.room.repository`, `agentsassemble.room.text`, `agentsassemble.room.turn_coordinator` | 1 | `call:frozenset@11` | test-import:1 | `tests/test_room_startup_reconciliation.py` | `room/` | in-target-package |
 | `agentsassemble.room.text` | `agentsassemble/room/text.py` | 20 | room | current | - | 63 | - | test-import:1 | `tests/test_room_text.py` | `room/` | in-target-package |
@@ -471,7 +472,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room_setting_values` | `agentsassemble/room_setting_values.py` | 24 | room | compatibility | `agentsassemble.room.setting_values` | 0 | - | test-import:1 | `tests/test_room_package.py` | `room/` | compatibility-shim |
 | `agentsassemble.room_settings` | `agentsassemble/room_settings.py` | 209 | room | current | `agentsassemble.room.channels`, `agentsassemble.room.setting_values` | 0 | - | test-import:3 | `tests/test_room_channels.py`, `tests/test_room_realtime.py`, `tests/test_room_settings.py` | `room/` | planned-move |
 | `agentsassemble.room_settings_migration` | `agentsassemble/room_settings_migration.py` | 435 | room | current | `agentsassemble.legacy_room_settings_source`, `agentsassemble.persistence.local.room.database`, `agentsassemble.room.global_settings` | 1 | - | test-import:1, monkeypatch:1 | `tests/test_room_settings_migration.py` | `room/` | planned-move |
-| `agentsassemble.room_settings_service` | `agentsassemble/room_settings_service.py` | 257 | room | current | `agentsassemble.identity.repository`, `agentsassemble.room.global_settings`, `agentsassemble.room.repository`, `agentsassemble.room.repository_records`, `agentsassemble.room.setting_values`, `agentsassemble.room.user_preferences` | 1 | `call:frozenset@41` | - | - | `room/` | planned-move |
+| `agentsassemble.room_settings_service` | `agentsassemble/room_settings_service.py` | 12 | room | compatibility | `agentsassemble.room.settings_service` | 0 | - | test-import:1 | `tests/test_room_package.py` | `room/` | compatibility-shim |
 | `agentsassemble.room_speech` | `agentsassemble/room_speech.py` | 226 | room | current | - | 7 | `call:frozenset@54` | test-import:2 | `tests/test_room_say_identity.py`, `tests/test_room_speech.py` | `room/` | planned-move |
 | `agentsassemble.room_store` | `agentsassemble/room_store.py` | 10 | room | compatibility | `agentsassemble.persistence.local.room.repository` | 0 | - | test-import:28 | `tests/gui_server_test_support.py`, `tests/test_agent_session_room_store.py`, `tests/test_gui_room_repository_injection.py`, `+25` | `room/` | compatibility-shim |
 | `agentsassemble.room_thought` | `agentsassemble/room_thought.py` | 88 | room | current | - | 2 | - | test-import:1 | `tests/test_room_thought_stream.py` | `room/` | planned-move |
@@ -510,7 +511,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.web.routes.room_invite` | `agentsassemble/web/routes/room_invite.py` | 332 | web | current | `agentsassemble.admission.coordinator`, `agentsassemble.admission.projection`, `agentsassemble.identity.pairing`, `agentsassemble.identity.repository`, `agentsassemble.multi_host_invites`, `agentsassemble.stable_entry`, `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.routes.room_lifecycle` | `agentsassemble/web/routes/room_lifecycle.py` | 123 | web | current | `agentsassemble.agent_sessions`, `agentsassemble.room.text`, `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.routes.room_members` | `agentsassemble/web/routes/room_members.py` | 97 | web | current | `agentsassemble.live_agents`, `agentsassemble.room.moderation`, `agentsassemble.room_members`, `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |
-| `agentsassemble.web.routes.room_settings` | `agentsassemble/web/routes/room_settings.py` | 49 | web | current | `agentsassemble.room_settings_service`, `agentsassemble.web.router` | 2 | - | test-import:2 | `tests/test_gui_server_room_settings_http.py`, `tests/test_web_routes_package.py` | `web/` | in-target-package |
+| `agentsassemble.web.routes.room_settings` | `agentsassemble/web/routes/room_settings.py` | 49 | web | current | `agentsassemble.room.settings_service`, `agentsassemble.web.router` | 2 | - | test-import:2 | `tests/test_gui_server_room_settings_http.py`, `tests/test_web_routes_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.security` | `agentsassemble/web/security.py` | 137 | web | current | - | 3 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.static` | `agentsassemble/web/static.py` | 136 | web | current | `agentsassemble.web.router` | 2 | `call:frozenset@15` | test-import:2 | `tests/test_gui_route_ownership.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.websocket` | `agentsassemble/web/websocket.py` | 145 | web | current | `agentsassemble.room_websocket`, `agentsassemble.sse_cadence`, `agentsassemble.web.router`, `agentsassemble.ws_room_session` | 2 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |

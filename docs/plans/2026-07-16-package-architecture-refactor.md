@@ -1154,3 +1154,9 @@ module churn were deliberately avoided rather than forgotten.
   metadata-tracked compatibility export. Identifier/path validation, status
   sets, timestamp generation, merge semantics, event visibility, and recursive
   private-field stripping are unchanged.
+- 2026-07-17: Canonical room settings composition moved mechanically to
+  `room/settings_service.py`. The web route now imports the owned service
+  directly; root `room_settings_service.py` is a metadata-tracked compatibility
+  export. The service still keeps room-global writes in RoomRepository,
+  user-owned notification/read writes in IdentityBackend, rejects mixed writes,
+  preserves accepted legacy aliases, and returns the same projected payload.
