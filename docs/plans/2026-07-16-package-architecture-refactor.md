@@ -519,3 +519,8 @@ module churn were deliberately avoided rather than forgotten.
   `web/security.py` without changing its allowlist or trust decisions.
   `gui.py` and the request context import the owned path directly;
   `gui_request_security.py` remains an explicit compatibility export.
+- 2026-07-16: HTTP response writing and React static delivery moved to
+  `web/response.py` and `web/static.py`. Existing SSE framing, attachment
+  security headers, cache policy, index rewriting, path containment, bootstrap
+  routes, and disconnect behavior are unchanged. The two root modules remain
+  explicit compatibility exports.

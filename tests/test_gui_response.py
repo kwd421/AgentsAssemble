@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.gui_response import GuiResponseMethods
+from agentsassemble.web.response import GuiResponseMethods
 
 
 class _BrokenPipeHandler:

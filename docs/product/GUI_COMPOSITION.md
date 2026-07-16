@@ -142,6 +142,12 @@ Host, origin, CORS, and public-route trust policy now belongs to
 `agentsassemble/web/security.py`. `gui_request_security.py` remains a temporary
 compatibility export; current request handling imports the owned web path.
 
+HTTP byte/header writing and React bootstrap/static delivery now belong to
+`agentsassemble/web/response.py` and `agentsassemble/web/static.py`.
+`gui_response.py` and `gui_static_transport.py` remain temporary compatibility
+exports; cache policy, attachment headers, SPA paths, and SSE framing are
+unchanged.
+
 ## Router-Owned Route Families
 
 These families already have a clear module owner and should not move back into

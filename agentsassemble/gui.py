@@ -45,11 +45,11 @@ from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, regi
 from agentsassemble.gui_room_settings_http import register_room_settings_routes
 from agentsassemble.gui_side_chat_http import register_side_chat_routes
 from agentsassemble.gui_social_http import register_room_friend_profile_routes
-from agentsassemble.gui_static_transport import (
+from agentsassemble.web.static import (
     ReactStaticTransport,
     safe_static_path as _safe_static_path,
 )
-from agentsassemble.gui_response import (
+from agentsassemble.web.response import (
     GuiResponseMethods,
     _last_payload_event_id,
     _rewrite_react_app_index,

@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `8e7b1933b39d34aa`
+Source fingerprint: `dc245b49acf881de`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 382
+- Python modules: 384
 - Top-level package modules: 303
-- Domains: admission=27, application=59, diagnostics=12, features=7, identity=9, legacy=79, persistence=58, providers=45, room=43, web=43
-- Classifications: compatibility=32, current=265, legacy=78, optional=7
+- Domains: admission=27, application=59, diagnostics=12, features=7, identity=9, legacy=79, persistence=58, providers=45, room=43, web=45
+- Classifications: compatibility=34, current=265, legacy=78, optional=7
 
 ## Classification Rules
 
@@ -133,7 +133,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.gui_provider_http` | `agentsassemble/gui_provider_http.py` | 108 | providers | current | `agentsassemble`, `agentsassemble.adapters`, `agentsassemble.gui_router`, `agentsassemble.provider_catalog`, `agentsassemble.provider_login`, `agentsassemble.provider_secrets` | 1 | - | test-import:1, monkeypatch:1 | `tests/test_gui_server_provider_http.py` | `providers/` | planned-move |
 | `agentsassemble.gui_public_invite_http` | `agentsassemble/gui_public_invite_http.py` | 150 | admission | current | `agentsassemble.gui_router` | 1 | - | - | - | `admission/` | planned-move |
 | `agentsassemble.gui_request_security` | `agentsassemble/gui_request_security.py` | 28 | web | compatibility | `agentsassemble.web.security` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
-| `agentsassemble.gui_response` | `agentsassemble/gui_response.py` | 141 | web | current | `agentsassemble.attachments`, `agentsassemble.frontend_runtime` | 1 | - | test-import:1 | `tests/test_gui_response.py` | `web/` | planned-move |
+| `agentsassemble.gui_response` | `agentsassemble/gui_response.py` | 14 | web | compatibility | `agentsassemble.web.response` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.gui_retired_http` | `agentsassemble/gui_retired_http.py` | 52 | web | current | `agentsassemble.gui_router` | 1 | - | - | - | `web/` | planned-move |
 | `agentsassemble.gui_room_agent_http` | `agentsassemble/gui_room_agent_http.py` | 137 | web | current | `agentsassemble.agent_sessions`, `agentsassemble.gui_router` | 1 | - | - | - | `web/` | planned-move |
 | `agentsassemble.gui_room_http` | `agentsassemble/gui_room_http.py` | 206 | web | current | `agentsassemble.agent_sessions`, `agentsassemble.codex_app_server_runtime`, `agentsassemble.gui_room_agent_http`, `agentsassemble.gui_room_invite_http`, `agentsassemble.gui_room_lifecycle_http`, `agentsassemble.gui_room_moderation_media_http`, `agentsassemble.gui_router`, `agentsassemble.live_agent_room_admin`, +12 | 1 | `call:CodexAppServerRuntimeManager@98` | test-import:2, monkeypatch:1 | `tests/gui_server_test_support.py`, `tests/test_gui_server_room_routes.py` | `web/` | planned-move |
@@ -144,7 +144,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.gui_router` | `agentsassemble/gui_router.py` | 495 | web | current | `agentsassemble.admission.coordinator`, `agentsassemble.admission.invite_service`, `agentsassemble.admission.preflight`, `agentsassemble.admission.session_service`, `agentsassemble.attachments`, `agentsassemble.identity.pairing`, `agentsassemble.identity.repository`, `agentsassemble.legacy.admission_projection`, +3 | 43 | - | test-import:31 | `tests/gui_server_test_support.py`, `tests/test_gui_legacy_codex_session_http.py`, `tests/test_gui_legacy_live_agent_discovery_http.py`, `+28` | `web/` | planned-move |
 | `agentsassemble.gui_side_chat_http` | `agentsassemble/gui_side_chat_http.py` | 45 | features | optional | `agentsassemble.gui_router`, `agentsassemble.side_chat` | 1 | - | monkeypatch:1 | `tests/test_gui_server_lobby_social.py` | `features/side_chat/` | planned-move |
 | `agentsassemble.gui_social_http` | `agentsassemble/gui_social_http.py` | 87 | features | optional | `agentsassemble.gui_router`, `agentsassemble.live_agents`, `agentsassemble.room_friend_dms`, `agentsassemble.room_friends`, `agentsassemble.user_profile` | 1 | - | test-import:1 | `tests/test_gui_server_social_http.py` | `features/social/` | planned-move |
-| `agentsassemble.gui_static_transport` | `agentsassemble/gui_static_transport.py` | 124 | web | current | `agentsassemble.gui_router` | 1 | `call:frozenset@15` | test-import:1 | `tests/test_gui_route_ownership.py` | `web/` | planned-move |
+| `agentsassemble.gui_static_transport` | `agentsassemble/gui_static_transport.py` | 16 | web | compatibility | `agentsassemble.web.static` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.gui_ws_http` | `agentsassemble/gui_ws_http.py` | 145 | web | current | `agentsassemble.gui_router`, `agentsassemble.room_websocket`, `agentsassemble.sse_cadence`, `agentsassemble.ws_room_session` | 1 | - | - | - | `web/` | planned-move |
 | `agentsassemble.hermes_resident` | `agentsassemble/hermes_resident.py` | 230 | application | current | `agentsassemble.live_agent_runner` | 4 | `call:compile@13`, `call:compile@14` | test-import:1 | `tests/test_hermes_resident.py` | `application/` | planned-move |
 | `agentsassemble.identity` | `agentsassemble/identity/__init__.py` | 1 | identity | current | - | 0 | - | test-import:4 | `tests/test_identity_pairing_package.py`, `tests/test_identity_repository_factory.py`, `tests/test_identity_repository_package.py`, `+1` | `identity/` | in-target-package |
@@ -407,7 +407,9 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.user_profile` | `agentsassemble/user_profile.py` | 152 | application | current | - | 1 | - | test-import:1 | `tests/test_user_profile.py` | `application/` | planned-move |
 | `agentsassemble.voice_presence` | `agentsassemble/voice_presence.py` | 107 | application | current | - | 3 | `call:Lock@18` | test-import:1 | `tests/test_voice_presence.py` | `application/` | planned-move |
 | `agentsassemble.web` | `agentsassemble/web/__init__.py` | 1 | web | current | - | 0 | - | test-import:1, monkeypatch:1 | `tests/test_package_architecture_gate.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
+| `agentsassemble.web.response` | `agentsassemble/web/response.py` | 173 | web | current | `agentsassemble.attachments`, `agentsassemble.frontend_runtime` | 2 | - | test-import:2 | `tests/test_gui_response.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.security` | `agentsassemble/web/security.py` | 137 | web | current | - | 3 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
+| `agentsassemble.web.static` | `agentsassemble/web/static.py` | 136 | web | current | `agentsassemble.gui_router` | 2 | `call:frozenset@15` | test-import:2 | `tests/test_gui_route_ownership.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.windows_conpty` | `agentsassemble/windows_conpty.py` | 315 | web | current | `agentsassemble.live_cli_output`, `agentsassemble.live_cli_transcripts`, `agentsassemble.meeting_events`, `agentsassemble.process_environment` | 1 | - | test-import:1 | `tests/test_provider_runtime_controls.py` | `web/` | planned-move |
 | `agentsassemble.ws_resident` | `agentsassemble/ws_resident.py` | 259 | web | current | `agentsassemble.live_agent_runner`, `agentsassemble.room_engagement`, `agentsassemble.ws_room_client` | 1 | - | test-import:1, monkeypatch:1 | `tests/test_ws_resident.py` | `web/` | planned-move |
 | `agentsassemble.ws_room_client` | `agentsassemble/ws_room_client.py` | 347 | web | current | `agentsassemble.room_websocket` | 5 | - | test-import:3, monkeypatch:2 | `tests/test_room_native_cli_e2e.py`, `tests/test_room_social_flows.py`, `tests/test_ws_resident.py`, `+1` | `web/` | planned-move |
