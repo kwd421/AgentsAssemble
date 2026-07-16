@@ -10,7 +10,7 @@ from agentsassemble.room_database import open_room_database
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room_store import RoomStore
-from agentsassemble.room_turn_coordinator import RoomTurnCoordinator
+from agentsassemble.room.turn_coordinator import RoomTurnCoordinator
 
 
 class RoomTurnCoordinatorTests(unittest.TestCase):

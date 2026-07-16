@@ -14,6 +14,7 @@ import agentsassemble.room_projection as compatibility_projection
 import agentsassemble.room_repository as compatibility_repository
 import agentsassemble.room_types as compatibility_types
 import agentsassemble.room_turn_context as compatibility_turn_context
+import agentsassemble.room_turn_coordinator as compatibility_turn_coordinator
 from agentsassemble.room import bridge_stop_confirmation as owned_bridge_stop
 from agentsassemble.room import command_uow as owned_command_uow
 from agentsassemble.room import commands as owned_commands
@@ -26,9 +27,35 @@ from agentsassemble.room import projection as owned_projection
 from agentsassemble.room import repository as owned_repository
 from agentsassemble.room import types as owned_types
 from agentsassemble.room import turn_context as owned_turn_context
+from agentsassemble.room import turn_coordinator as owned_turn_coordinator
 
 
 class RoomPackageTests(unittest.TestCase):
+    def test_room_turn_coordinator_root_module_exports_owned_service(self) -> None:
+        for name in (
+            "EnsureRoom",
+            "PendingEventPartition",
+            "PreparedFinalMessage",
+            "ProviderLookup",
+            "RecoveryScheduler",
+            "RoomTurnCoordinator",
+            "SessionCallback",
+            "TurnFinalizationWriter",
+            "TurnPacketBuilder",
+            "dedupe_event_ids",
+            "message_delta_text",
+            "now",
+            "provider_process_exited",
+            "require_active_turn_phase",
+            "room_message_text",
+            "safe_bounded_int",
+            "validate_turn_phase_transition",
+        ):
+            self.assertIs(
+                getattr(compatibility_turn_coordinator, name),
+                getattr(owned_turn_coordinator, name),
+            )
+
     def test_room_turn_context_root_module_exports_owned_builder(self) -> None:
         for name in (
             "BoundedProviderContext",

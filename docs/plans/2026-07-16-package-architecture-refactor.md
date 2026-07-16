@@ -973,3 +973,12 @@ module churn were deliberately avoided rather than forgotten.
   compatibility callers; canonical realtime and Agent Session execution still
   inject their existing repository instance. Packet fields, prompt text,
   media audit rules, cursor advancement, and failure behavior are unchanged.
+- 2026-07-17: Pending-event partitioning, provider turn assignment, bridge
+  state validation, activity and delta projection, final-message transaction
+  writes, provider cursor advancement, decline/failure handling, and bounded
+  recovery moved to `room/turn_coordinator.py`. Realtime composition and
+  focused turn tests now use the owned path while `room_turn_coordinator.py`
+  remains an explicit compatibility export. The existing
+  `room_turn_attention.py` policy dependency remains in place and frozen;
+  queueing decisions, phase transitions, model verification, diagnostics,
+  event payloads, retry timing, and cleanup behavior are unchanged.

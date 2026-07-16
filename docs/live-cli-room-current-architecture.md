@@ -126,6 +126,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `room_routing.py` | pure mention, default-responder, and relay-depth target selection | persistence or process launch |
 | `room/context.py` | bounded room-visible message projection after a sequence cursor | provider-private memory or turn instructions |
 | `room/turn_context.py` | bounded bootstrap, delta, recovery, identity, and media manifest provider input assembly | provider execution or room scheduling |
+| `room/turn_coordinator.py` | pending input, active provider turns, delta/final commit, cursor advancement, and recovery | speaker-selection policy |
 | `room/event_broker.py` | bounded per-connection fanout and targeted bridge delivery | durable history |
 | `room/bridge_stop_confirmation.py` | external bridge generation-safe stop request/confirmation correlation | local process termination |
 | `room/agent_lifecycle.py` | Agent Session start, pause, stop, recovery, and room-visible lifecycle state | provider process implementation |

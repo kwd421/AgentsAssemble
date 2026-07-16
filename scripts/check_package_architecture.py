@@ -337,6 +337,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         ),
         introduced_in="Milestone 6.11 room turn-context move",
     ),
+    "room_turn_coordinator.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.turn_coordinator",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_turn_coordinator for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_room_package.py",),
+        introduced_in="Milestone 6.12 room turn coordinator move",
+    ),
     "room_errors.py": CompatibilityShim(
         replacement_import="agentsassemble.room.errors",
         removal_gate=(
