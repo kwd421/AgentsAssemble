@@ -407,6 +407,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_identity_pairing_package.py",),
         introduced_in="Milestone 3.7 identity pairing package bootstrap",
     ),
+    "opencode_runtime.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.opencode",
+        removal_gate=(
+            "No direct imports use agentsassemble.opencode_runtime for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.9 OpenCode runtime move",
+    ),
     "identity_store.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.local.identity.repository",
         removal_gate=(

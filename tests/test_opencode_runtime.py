@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.opencode_runtime import OpenCodeRuntime
+from agentsassemble.providers.opencode import OpenCodeRuntime
 
 
 class _Response:

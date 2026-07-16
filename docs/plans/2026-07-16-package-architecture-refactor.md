@@ -670,3 +670,11 @@ module churn were deliberately avoided rather than forgotten.
   pywinpty spawning, injected process seams, startup readiness, persistent
   process reuse, output limits, delta/final extraction, interrupt, cleanup,
   profile diagnostics, and platform environment sanitation are unchanged.
+- 2026-07-16: OpenCode shared-server and per-agent session ownership moved to
+  `providers/opencode.py`. Runtime construction, attendee, server-owned bridge
+  process, and behavior tests now use the owned path; `opencode_runtime.py`
+  remains an explicit compatibility export. Direct `room.text` normalization
+  replaces the legacy delegation without changing values. Shared server
+  startup/cleanup, model and permission validation, persisted session reuse,
+  directory scoping, SSE ordering, reasoning/tool activity projection, text
+  delta/final selection, interruption, and diagnostics are unchanged.

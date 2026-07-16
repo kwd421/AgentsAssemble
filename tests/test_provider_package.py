@@ -5,6 +5,7 @@ import unittest
 import agentsassemble.bridge_protocol as compatibility_bridge_protocol
 import agentsassemble.bridge_report_tracker as compatibility_bridge_tracker
 import agentsassemble.deepseek_runtime as compatibility_deepseek
+import agentsassemble.opencode_runtime as compatibility_opencode
 import agentsassemble.process_environment as compatibility_process_environment
 import agentsassemble.provider_catalog as compatibility_catalog
 import agentsassemble.provider_runtime_config as compatibility_config
@@ -16,6 +17,7 @@ from agentsassemble.providers import catalog as owned_catalog
 from agentsassemble.providers import bridge_protocol as owned_bridge_protocol
 from agentsassemble.providers import bridge_report_tracker as owned_bridge_tracker
 from agentsassemble.providers import deepseek as owned_deepseek
+from agentsassemble.providers import opencode as owned_opencode
 from agentsassemble.providers import process_environment as owned_process_environment
 from agentsassemble.providers import runtime_config as owned_config
 from agentsassemble.providers import runtime_contracts as owned_contracts
@@ -49,6 +51,16 @@ class ProviderPackageTests(unittest.TestCase):
         self.assertIs(
             compatibility_deepseek.DeepSeekApiRuntime,
             owned_deepseek.DeepSeekApiRuntime,
+        )
+
+    def test_opencode_runtime_root_module_exports_owned_types(self) -> None:
+        self.assertIs(
+            compatibility_opencode.OpenCodeRuntime,
+            owned_opencode.OpenCodeRuntime,
+        )
+        self.assertIs(
+            compatibility_opencode.OpenCodeServerProcess,
+            owned_opencode.OpenCodeServerProcess,
         )
 
     def test_process_environment_root_module_exports_owned_functions(self) -> None:
