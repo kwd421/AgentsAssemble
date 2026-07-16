@@ -73,6 +73,57 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         ),
         introduced_in="Milestone 2.1 PostgreSQL connection pool move",
     ),
+    "postgres_identity_preferences.py": CompatibilityShim(
+        replacement_import=(
+            "agentsassemble.persistence.postgres.identity.preferences"
+        ),
+        removal_gate=(
+            "No direct imports use agentsassemble.postgres_identity_preferences "
+            "for one compatibility window."
+        ),
+        known_callers=("tests/test_postgres_identity_persistence_package.py",),
+        introduced_in="Milestone 2.3 PostgreSQL identity persistence move",
+    ),
+    "postgres_identity_repository.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.postgres.identity.repository",
+        removal_gate=(
+            "No direct imports use agentsassemble.postgres_identity_repository "
+            "for one compatibility window."
+        ),
+        known_callers=(
+            "tests/test_postgres_cross_authority_transactions.py",
+            "tests/test_postgres_identity_persistence_package.py",
+            "tests/test_postgres_identity_repository.py",
+        ),
+        introduced_in="Milestone 2.3 PostgreSQL identity persistence move",
+    ),
+    "postgres_identity_roster.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.postgres.identity.roster",
+        removal_gate=(
+            "No direct imports use agentsassemble.postgres_identity_roster for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_postgres_identity_persistence_package.py",),
+        introduced_in="Milestone 2.3 PostgreSQL identity persistence move",
+    ),
+    "postgres_identity_usage.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.postgres.identity.usage",
+        removal_gate=(
+            "No direct imports use agentsassemble.postgres_identity_usage for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_postgres_identity_persistence_package.py",),
+        introduced_in="Milestone 2.3 PostgreSQL identity persistence move",
+    ),
+    "postgres_identity_users.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.postgres.identity.users",
+        removal_gate=(
+            "No direct imports use agentsassemble.postgres_identity_users for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_postgres_identity_persistence_package.py",),
+        introduced_in="Milestone 2.3 PostgreSQL identity persistence move",
+    ),
     "postgres_room_mutations.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.postgres.room.mutations",
         removal_gate=(
