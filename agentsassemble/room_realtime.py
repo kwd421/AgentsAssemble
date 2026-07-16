@@ -33,6 +33,7 @@ from agentsassemble.room.command_uow import (
     RoomCommandUnitOfWork,
     command_payload_hash,
 )
+from agentsassemble.room.deletion import RoomDeletionService
 from agentsassemble.room.agent_creation import RoomAgentCreationService
 from agentsassemble.room.bridge_reports import RoomBridgeReportService
 from agentsassemble.room.connections import RoomConnectionService
@@ -328,6 +329,46 @@ class RoomRealtimeController:
                 participant_id,
             ),
             remove_provider=self._provider_registry.remove,
+        )
+        self._room_deletion = RoomDeletionService(
+            store=self.store,
+            identity_room=lambda room_id: (
+                identity_store_for_output_root(self.output_root).get_room(
+                    room_id
+                )
+                or {}
+            ),
+            has_bridge=lambda room_id, session_id: self.broker.has_bridge(
+                room_id,
+                session_id,
+            ),
+            stop_agent=lambda room_id, session_id, operation_id: (
+                self._agent_lifecycle.stop(
+                    room_id,
+                    session_id,
+                    operation_id=operation_id,
+                )
+            ),
+            revoke_participant_sessions=lambda room_id, participant_id: (
+                self._room_sessions.revoke_participant(
+                    room_id,
+                    participant_id,
+                )
+            ),
+            disconnect_participant=lambda room_id, participant_id: (
+                self.broker.disconnect_participant(
+                    room_id,
+                    participant_id,
+                )
+            ),
+            complete_cleanup=lambda room_id, room_name, ack, deduplicated: (
+                self._complete_deleted_room_cleanup(
+                    room_id,
+                    room_name=room_name,
+                    ack=ack,
+                    deduplicated=deduplicated,
+                )
+            ),
         )
         self._agent_creation = RoomAgentCreationService(
             store=self.store,
@@ -1092,85 +1133,14 @@ class RoomRealtimeController:
         payload_hash: str,
         operation_id: str,
     ) -> dict[str, object]:
-        if not self._is_room_owner(identity, room_id):
-            raise RoomCommandRejected("Only the room owner can delete this server.", code="permission_denied")
-        identity_store = identity_store_for_output_root(self.output_root)
-        identity_room = identity_store.get_room(room_id) or {}
-        canonical_room = self.store.room(room_id)
-        room_name = clean_lobby_text(
-            identity_room.get("label") or canonical_room.get("label") or room_id,
-            limit=128,
-        )
-        confirmation = str(payload.get("confirmation_name") or "")
-        if confirmation != room_name:
-            raise RoomCommandRejected("The confirmation name does not match the server name.", code="confirmation_mismatch")
-        cleanup_failures: list[str] = []
-        cleanup_warnings: list[str] = []
-        for session in list(self.store.sessions(room_id)):
-            session_id = clean_lobby_text(session.get("session_id"), limit=128)
-            if not session_id or session.get("runtime_status") in {"stopped", "available"}:
-                continue
-            ownership = clean_lobby_text(session.get("process_ownership"), limit=32) or (
-                "external" if session.get("external_owned") else "server"
-            )
-            if ownership == "external" and not self.broker.has_bridge(room_id, session_id):
-                self._room_sessions.revoke_participant(room_id, session_id)
-                self.broker.disconnect_participant(room_id, session_id)
-                cleanup_warnings.append(
-                    f"{session_id}: external bridge was disconnected; room access was revoked without "
-                    "claiming provider shutdown"
-                )
-                continue
-            try:
-                self._agent_lifecycle.stop(
-                    room_id,
-                    session_id,
-                    operation_id=_nested_effect_operation_id(operation_id, session_id),
-                )
-            except (RoomCommandRejected, ValueError) as error:
-                if ownership == "external":
-                    cleanup_warnings.append(f"{session_id}: {error}")
-                else:
-                    cleanup_failures.append(f"{session_id}: {error}")
-        if cleanup_failures:
-            raise RoomCommandRejected(
-                "Room deletion stopped because Agent Session cleanup failed: "
-                + "; ".join(cleanup_failures),
-                code="room_cleanup_failed",
-            )
-        result = {
-            "room_id": room_id,
-            "deleted": True,
-            "cleanup_warnings": cleanup_warnings,
-        }
-        ack = {
-            "op": "ack",
-            "request_id": request_id,
-            "accepted": True,
-            "action": "room.delete",
-            "result": result,
-            "deduplicated": False,
-        }
-        deleted = self.store.delete_room(
+        return self._room_deletion.delete(
             room_id,
-            reason="owner deleted server",
-            tombstone={
-                "principal_id": principal_id,
-                "request_id": request_id,
-                "action": "room.delete",
-                "payload_hash": payload_hash,
-                "result": ack,
-            },
-            cleanup_status="pending",
-            room_name=room_name,
-        )
-        if not deleted:
-            raise RoomCommandRejected("The room no longer exists.", code="room_deleted")
-        return self._complete_deleted_room_cleanup(
-            room_id,
-            room_name=room_name,
-            ack=ack,
-            deduplicated=False,
+            str(payload.get("confirmation_name") or ""),
+            is_owner=self._is_room_owner(identity, room_id),
+            request_id=request_id,
+            principal_id=principal_id,
+            payload_hash=payload_hash,
+            operation_id=operation_id,
         )
 
     def _resume_deleted_room_command(
@@ -1182,29 +1152,13 @@ class RoomRealtimeController:
         payload: dict[str, object],
         tombstone: dict[str, object],
     ) -> dict[str, object]:
-        principal_id = _command_principal(identity)
-        if (
-            tombstone.get("principal_id") != principal_id
-            or tombstone.get("request_id") != request_id
-            or tombstone.get("action") != "room.delete"
-        ):
-            raise RoomCommandRejected("The room was deleted.", code="room_deleted")
-        if tombstone.get("payload_hash") != command_payload_hash(payload):
-            raise RoomCommandRejected(
-                "request_id was already used for a different command.",
-                code="idempotency_conflict",
-            )
-        ack = dict(tombstone.get("result") or {})
-        if not ack:
-            raise RoomCommandRejected("The room was deleted.", code="room_deleted")
-        if tombstone.get("cleanup_status") != "complete":
-            ack = self._complete_deleted_room_cleanup(
-                room_id,
-                room_name=clean_lobby_text(tombstone.get("room_name"), limit=128) or room_id,
-                ack=ack,
-                deduplicated=True,
-            )
-        return {**ack, "deduplicated": True}
+        return self._room_deletion.resume(
+            room_id,
+            principal_id=_command_principal(identity),
+            request_id=request_id,
+            payload_hash=command_payload_hash(payload),
+            tombstone=tombstone,
+        )
 
     def _complete_deleted_room_cleanup(
         self,
@@ -1530,11 +1484,6 @@ def _external_effect_operation_id(
     action: str,
 ) -> str:
     serialized = "\0".join((room_id, principal_id, request_id, action))
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-
-
-def _nested_effect_operation_id(parent_operation_id: str, subject_id: str) -> str:
-    serialized = "\0".join((parent_operation_id, subject_id))
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 

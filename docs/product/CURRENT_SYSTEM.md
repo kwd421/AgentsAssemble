@@ -278,6 +278,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Canonical participant mute transaction and post-commit runtime synchronization | `room/member_mute.py`; composed by `room_realtime.py` |
 | Canonical participant leave transaction and delayed access revocation | `room/participant_leave.py`; composed by `room_realtime.py` |
 | Retryable participant kick intent, external cleanup, and final transaction | `room/participant_kick.py`; composed by `room_realtime.py` |
+| Room-delete owner/name validation, Agent Session cleanup, and tombstone command resumption | `room/deletion.py`; composed by `room_realtime.py` |
 | Room history and lifecycle HTTP | `web/routes/room_history.py`, `web/routes/room_lifecycle.py`; legacy `/api/room/ensure` composition remains in `gui_room_lifecycle_http.py` |
 | Room roster and member HTTP | canonical mute/kick compatibility writes in `room/moderation.py`; retained roster/presence projection in `room_members.py`; HTTP in `web/routes/room_members.py`; retained resident kick and optional channel/voice composition remains in `gui_room_moderation_media_http.py` |
 | Routing and provider context | `room_routing.py`; bounded room projection in `room/context.py`; turn packet assembly in `room/turn_context.py`; compatibility exports in `room_context.py` and `room_turn_context.py`; provider delivery cursor parity in `providers/sync_cursor.py` with compatibility export in `room_provider_sync_cursor.py` |

@@ -1097,3 +1097,14 @@ module churn were deliberately avoided rather than forgotten.
   an ACK failure can be retried without stopping the provider or revoking
   access twice. Host protection, conflict/not-found errors, cleanup warnings,
   public projection, and event/result shape are unchanged.
+- 2026-07-17: Room-delete owner/name validation, active Agent Session cleanup,
+  canonical tombstone creation, and same-command tombstone resumption moved to
+  `room/deletion.py`. Stable nested lifecycle operation IDs moved with that
+  responsibility. `room_realtime.py` retains capability and principal
+  projection, request lookup, locking, and the post-tombstone cleanup callback.
+  Server-owned cleanup failures still block canonical deletion; disconnected
+  external bridges still revoke access with an explicit warning; and only the
+  same principal/request/payload can resume pending cleanup without stopping a
+  provider twice. Invite, identity, listener, provider-registry, file, and
+  socket cleanup remains temporarily in `room_realtime.py` for the next
+  separately verified extraction.
