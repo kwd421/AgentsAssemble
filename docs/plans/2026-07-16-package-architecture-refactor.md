@@ -1160,3 +1160,12 @@ module churn were deliberately avoided rather than forgotten.
   export. The service still keeps room-global writes in RoomRepository,
   user-owned notification/read writes in IdentityBackend, rejects mixed writes,
   preserves accepted legacy aliases, and returns the same projected payload.
+- 2026-07-17: Server-governed legacy/public room speech policy moved
+  mechanically to `room/speech.py`. Current web/GUI callers and retained legacy
+  speech adapters import the owned policy directly; root `room_speech.py` is a
+  metadata-tracked compatibility export. Authenticated identity stamping,
+  read-only and mute rejection, allowed event kinds, auto-chain depth, burst
+  limiting, custom-channel append behavior, and official-reply payloads are
+  unchanged. `room_thought.py` was deliberately not moved because it still
+  mixes provider-side HTTP posting with pure chunking and needs a separate
+  ownership decision.

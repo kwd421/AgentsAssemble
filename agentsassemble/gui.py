@@ -318,7 +318,7 @@ from agentsassemble.room_repository_factory import (
 )
 from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.room_invite_repository_factory import build_invite_session_repository
-from agentsassemble.room_speech import (
+from agentsassemble.room.speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
     governed_lobby_say,

@@ -28,7 +28,7 @@ from agentsassemble.meeting_events import (
     read_live_events,
     write_live_state,
 )
-from agentsassemble.room_speech import ActorIdentity, governed_official_reply
+from agentsassemble.room.speech import ActorIdentity, governed_official_reply
 
 
 OFFICIAL_REPLY_LOCK = threading.Lock()

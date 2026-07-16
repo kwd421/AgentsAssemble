@@ -13,7 +13,7 @@ from agentsassemble.legacy_live_agent_queries import require_live_agent
 from agentsassemble.lobby_queries import read_lobby
 from agentsassemble.meeting_events import LOBBY_KINDS, clean_lobby_text
 from agentsassemble.room_friend_dms import append_live_agent_dm_reply
-from agentsassemble.room_speech import (
+from agentsassemble.room.speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
     ensure_lobby_say_allowed,

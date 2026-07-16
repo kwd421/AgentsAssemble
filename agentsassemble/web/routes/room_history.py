@@ -9,7 +9,7 @@ from agentsassemble.agent_sessions import (
     room_status_payload,
 )
 from agentsassemble.room.moderation import is_room_member_muted
-from agentsassemble.room_speech import (
+from agentsassemble.room.speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
     ensure_lobby_say_allowed,

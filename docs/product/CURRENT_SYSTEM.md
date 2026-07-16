@@ -276,6 +276,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Catalog-validated server-owned Agent Session creation | `room/agent_creation.py`; composed by `room/realtime.py` |
 | Stopped server-owned Agent Session reactivation | `room/agent_reactivation.py`; composed by `room/realtime.py` |
 | Canonical human message validation and append | `room/messages.py`; composed by `room/realtime.py` |
+| Governed legacy/public room speech identity and safety policy | `room/speech.py`; compatibility export in `room_speech.py` |
 | Canonical participant mute transaction and post-commit runtime synchronization | `room/member_mute.py`; composed by `room/realtime.py` |
 | Canonical participant leave transaction and delayed access revocation | `room/participant_leave.py`; composed by `room/realtime.py` |
 | Retryable participant kick intent, external cleanup, and final transaction | `room/participant_kick.py`; composed by `room/realtime.py` |

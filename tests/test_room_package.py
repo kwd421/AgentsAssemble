@@ -18,6 +18,7 @@ import agentsassemble.room_repository as compatibility_repository
 import agentsassemble.room_repository_records as compatibility_repository_records
 import agentsassemble.room_setting_values as compatibility_setting_values
 import agentsassemble.room_settings_service as compatibility_settings_service
+import agentsassemble.room_speech as compatibility_speech
 import agentsassemble.room_types as compatibility_types
 import agentsassemble.room_turn_context as compatibility_turn_context
 import agentsassemble.room_turn_coordinator as compatibility_turn_coordinator
@@ -38,6 +39,7 @@ from agentsassemble.room import repository as owned_repository
 from agentsassemble.room import repository_records as owned_repository_records
 from agentsassemble.room import setting_values as owned_setting_values
 from agentsassemble.room import settings_service as owned_settings_service
+from agentsassemble.room import speech as owned_speech
 from agentsassemble.room import types as owned_types
 from agentsassemble.room import turn_context as owned_turn_context
 from agentsassemble.room import turn_coordinator as owned_turn_coordinator
@@ -45,6 +47,29 @@ from agentsassemble.room import user_preferences as owned_user_preferences
 
 
 class RoomPackageTests(unittest.TestCase):
+    def test_room_speech_root_module_exports_owned_policy(self) -> None:
+        for name in (
+            "PUBLIC_SPEECH_KINDS",
+            "SERVER_AUTO_CHAIN_DEPTH_LIMIT",
+            "SERVER_SPEECH_BURST_LIMIT",
+            "SERVER_SPEECH_BURST_WINDOW_SECONDS",
+            "ActorIdentity",
+            "AllowsRoomScope",
+            "AppendLiveEvent",
+            "AppendLobbyEvent",
+            "GovernedLobbySayRejected",
+            "IsMuted",
+            "NowMonotonic",
+            "ensure_lobby_say_allowed",
+            "governed_channel_say",
+            "governed_lobby_say",
+            "governed_official_reply",
+        ):
+            self.assertIs(
+                getattr(compatibility_speech, name),
+                getattr(owned_speech, name),
+            )
+
     def test_room_settings_service_root_module_exports_owned_service(self) -> None:
         for name in (
             "room_settings_payload",

@@ -30,7 +30,7 @@ from agentsassemble.room.moderation import (
     remove_room_member,
 )
 from agentsassemble.room.text import clean_room_text
-from agentsassemble.room_speech import (
+from agentsassemble.room.speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
     ensure_lobby_say_allowed,

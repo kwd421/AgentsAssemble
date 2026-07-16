@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import reset_state, verify_session_token
-from agentsassemble.room_speech import SERVER_AUTO_CHAIN_DEPTH_LIMIT
+from agentsassemble.room.speech import SERVER_AUTO_CHAIN_DEPTH_LIMIT
 from agentsassemble.room_store import RoomStore
 
 

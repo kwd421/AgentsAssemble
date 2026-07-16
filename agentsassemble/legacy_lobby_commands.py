@@ -17,7 +17,7 @@ from agentsassemble.live_agent_operations import append_live_agent_operation
 from agentsassemble.lobby_promotion import LOBBY_PROMOTION_OPERATION, promote_lobby_events_to_official
 from agentsassemble.meeting_events import LOBBY_KINDS, clean_lobby_text
 from agentsassemble.models import ProviderConfig, Role
-from agentsassemble.room_speech import (
+from agentsassemble.room.speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
     ensure_lobby_say_allowed,
