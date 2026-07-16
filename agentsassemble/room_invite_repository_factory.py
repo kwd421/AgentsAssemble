@@ -41,7 +41,9 @@ def build_invite_session_repository(
 
 def _postgres_repository_type() -> Any:
     try:
-        module = importlib.import_module("agentsassemble.postgres_invite_repository")
+        module = importlib.import_module(
+            "agentsassemble.persistence.postgres.admission.repository"
+        )
     except ModuleNotFoundError as error:
         if error.name in {"psycopg", "psycopg_pool"}:
             raise RoomRepositoryUnavailable(

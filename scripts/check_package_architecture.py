@@ -124,6 +124,21 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_postgres_identity_persistence_package.py",),
         introduced_in="Milestone 2.3 PostgreSQL identity persistence move",
     ),
+    "postgres_invite_repository.py": CompatibilityShim(
+        replacement_import=(
+            "agentsassemble.persistence.postgres.admission.repository"
+        ),
+        removal_gate=(
+            "No direct imports use agentsassemble.postgres_invite_repository "
+            "for one compatibility window."
+        ),
+        known_callers=(
+            "tests/test_postgres_admission_persistence_package.py",
+            "tests/test_postgres_cross_authority_transactions.py",
+            "tests/test_postgres_invite_repository.py",
+        ),
+        introduced_in="Milestone 2.4 PostgreSQL admission persistence move",
+    ),
     "postgres_room_mutations.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.postgres.room.mutations",
         removal_gate=(
