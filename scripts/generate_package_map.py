@@ -17,6 +17,7 @@ EXISTING_PACKAGES = frozenset(
         "admission",
         "application",
         "bridges",
+        "diagnostics",
         "features",
         "identity",
         "legacy",
@@ -31,6 +32,7 @@ PATH_OWNED_DOMAINS = frozenset(
     {
         "admission",
         "application",
+        "diagnostics",
         "features",
         "identity",
         "providers",

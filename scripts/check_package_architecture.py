@@ -20,9 +20,20 @@ CYCLE_BASELINE_RELATIVE_PATH = Path("docs/product/PACKAGE_CYCLE_BASELINE.txt")
 CYCLE_REPORT_RELATIVE_PATH = Path("docs/product/PACKAGE_CYCLES.md")
 PERMANENT_ROOT_ENTRYPOINTS = frozenset({"__init__.py", "cli.py", "gui.py"})
 CURRENT_CORE_PACKAGE_ROOTS = frozenset(
-    {"application", "web", "room", "admission", "identity", "providers", "persistence"}
+    {
+        "admission",
+        "application",
+        "diagnostics",
+        "identity",
+        "persistence",
+        "providers",
+        "room",
+        "web",
+    }
 )
-DOMAIN_PACKAGE_ROOTS = frozenset({"room", "admission", "identity", "providers"})
+DOMAIN_PACKAGE_ROOTS = frozenset(
+    {"admission", "diagnostics", "identity", "providers", "room"}
+)
 
 
 @dataclass(frozen=True)
@@ -37,6 +48,15 @@ class CompatibilityShim:
 # boundaries. Historical presence in the root baseline does not exempt a moved
 # module from recording its replacement, callers, and removal gate here.
 ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
+    "cleanup_report.py": CompatibilityShim(
+        replacement_import="agentsassemble.diagnostics.cleanup",
+        removal_gate=(
+            "No direct imports use agentsassemble.cleanup_report for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_diagnostics_package.py",),
+        introduced_in="Milestone 6.8 shared cleanup diagnostics move",
+    ),
     "antigravity_resident.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.antigravity_resident",
         removal_gate=(

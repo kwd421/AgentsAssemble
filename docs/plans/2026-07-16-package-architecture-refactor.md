@@ -937,3 +937,13 @@ module churn were deliberately avoided rather than forgotten.
   delegation, the transient SQLite fail-open read policy, canonical retry
   behavior, roster output, and Thinking state are unchanged. A focused test
   now covers delegation and the fail-open branch directly.
+- 2026-07-17: Shared cleanup report aggregation, orphan-handle evidence,
+  secret-redacted failure messages, and stderr emission moved to
+  `diagnostics/cleanup.py`. Provider bridges, provider process ownership, room
+  lifecycle, room realtime, turn coordination, attendee cleanup, and focused
+  tests now use the owned path while `cleanup_report.py` remains an explicit
+  compatibility export. The move removes a legacy `meeting_events` dependency
+  by importing the same `room.text` normalizer directly; report fields,
+  counters, redaction patterns, and output format are unchanged. The
+  architecture inventory and dependency gate now recognize `diagnostics/` as
+  a current package that cannot import legacy or web implementations.

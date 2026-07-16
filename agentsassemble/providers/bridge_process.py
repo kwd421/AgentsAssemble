@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable
 from uuid import uuid4
 
-from agentsassemble.cleanup_report import CleanupReport
+from agentsassemble.diagnostics.cleanup import CleanupReport
 from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     validate_native_cli_provider_spec,

@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from agentsassemble.providers.deepseek import DeepSeekApiRuntime
-from agentsassemble.cleanup_report import CleanupReport
+from agentsassemble.diagnostics.cleanup import CleanupReport
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.process_environment import (
     environment_contains_secret_names,

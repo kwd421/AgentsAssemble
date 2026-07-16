@@ -16,7 +16,7 @@ from agentsassemble.providers.bridge_protocol import (
     TurnAssignmentEnvelope,
 )
 from agentsassemble.providers.bridge_report_tracker import BridgeReportTracker
-from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
+from agentsassemble.diagnostics.cleanup import CleanupReport, emit_cleanup_failure
 from agentsassemble.room.text import (
     clean_room_text as clean_lobby_text,
     has_room_visible_text,

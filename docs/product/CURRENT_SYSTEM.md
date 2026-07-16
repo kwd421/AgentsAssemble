@@ -268,6 +268,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Room roster and member HTTP | canonical mute/kick compatibility writes in `room/moderation.py`; retained roster/presence projection in `room_members.py`; HTTP in `web/routes/room_members.py`; retained resident kick and optional channel/voice composition remains in `gui_room_moderation_media_http.py` |
 | Routing and provider context | `room_routing.py`, `room_context.py`, `room_turn_context.py` |
 | Fanout and bridge delivery | `room/event_broker.py` with compatibility export in `room_event_broker.py`; provider-side delivery in `providers/agent_bridge.py`, executable composition in `application/agent_bridge_entrypoint.py`; compatibility export in `room_agent_bridge.py` |
+| Cleanup diagnostics | bounded aggregation and secret-redacted failure output in `diagnostics/cleanup.py`; compatibility export in `cleanup_report.py` |
 | Agent Session compatibility HTTP | `web/routes/agent_sessions.py`; compatibility export in `gui_room_agent_http.py` |
 | Provider catalog and settings | `providers/launch_specs.py`, `providers/capabilities.py`; compatibility exports in `native_cli_providers.py` and `provider_capabilities.py` |
 | Provider catalog/credential HTTP | `web/routes/providers.py`; compatibility export in `gui_provider_http.py`; secret storage in `provider_secrets.py` |

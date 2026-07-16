@@ -8,7 +8,7 @@ from agentsassemble.room.bridge_stop_confirmation import (
     BridgeStopConfirmationError,
     ExternalBridgeStopCoordinator,
 )
-from agentsassemble.cleanup_report import CleanupReport
+from agentsassemble.diagnostics.cleanup import CleanupReport
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.event_broker import RoomEventBroker
