@@ -485,3 +485,32 @@ module churn were deliberately avoided rather than forgotten.
   request-body reader now offers an opt-in pre-error hook, and the operation
   route records the failure before sending the response. Other JSON routes keep
   their prior behavior.
+- 2026-07-16: Milestone 3's stable admission and identity package wave is
+  complete. Current production code owns admission contracts, local and hosted
+  persistence, session/invite services, coordination, compensation, and
+  maintenance under `admission/`; pairing, identity contracts, preference
+  rules, and backend selection live under `identity/`; concrete local identity
+  persistence lives under `persistence/local/identity/`. Root modules retained
+  by this wave are explicit compatibility exports with caller and removal
+  metadata, not parallel implementations.
+
+  Final local evidence for this wave:
+
+  - `python3 -m compileall -q agentsassemble tests`: passed.
+  - targeted GUI composition/factory/architecture run: 490 tests passed.
+  - operation-audit regression run: 60 tests passed, including ten repeated
+    invalid UTF-8 requests before the full rerun.
+  - `python3 -m unittest discover -s tests -t .`: 3,586 tests passed,
+    74 skipped, in 419.531 seconds.
+  - `python3 -W error::ResourceWarning -m unittest discover -s tests -t .`:
+    3,586 tests passed, 74 skipped, in 418.702 seconds.
+  - `npm --prefix frontend test`: 22 files and 126 tests passed.
+  - `npm --prefix frontend run build`: passed.
+  - package-map check and `git diff --check`: passed.
+
+  The real PostgreSQL contract runner was not available locally:
+  `AGENTSASSEMBLE_TEST_POSTGRES_DSN`, `alembic`, `psycopg`, `psycopg_pool`,
+  and `sqlalchemy` are absent. Real provider and frontend Playwright smoke were
+  not run because this wave did not change provider or rendered UI behavior;
+  those remain required for their later package waves and final release
+  evidence. Remote CI also remains unverified until a pushed commit is checked.
