@@ -201,6 +201,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_application_package.py",),
         introduced_in="Milestone 4.12 application room-user facade move",
     ),
+    "session_run_monitor.py": CompatibilityShim(
+        replacement_import="agentsassemble.application.session_run_monitor",
+        removal_gate=(
+            "No direct imports use agentsassemble.session_run_monitor for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_application_package.py",),
+        introduced_in="Milestone 4.13 application session-run monitor move",
+    ),
     "gui_mafia_http.py": CompatibilityShim(
         replacement_import="agentsassemble.features.mafia.routes",
         removal_gate=(

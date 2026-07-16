@@ -33,7 +33,7 @@ from agentsassemble.live_agents import read_live_agents
 from agentsassemble.live_meeting_memory import build_live_meeting_memory
 from agentsassemble.meeting_events import read_live_events
 from agentsassemble.live_agent_roster import safe_live_agent_roster_payload
-from agentsassemble.session_run_monitor import PeriodicSessionRunMonitor
+from agentsassemble.application.session_run_monitor import PeriodicSessionRunMonitor
 
 
 @dataclass(frozen=True)

@@ -84,7 +84,10 @@ from agentsassemble.room.realtime import (
     RoomCommandRejected,
     RoomRealtimeController,
 )
-from agentsassemble.session_run_monitor import PeriodicSessionRunMonitor, safe_monitor_error_type
+from agentsassemble.application.session_run_monitor import (
+    PeriodicSessionRunMonitor,
+    safe_monitor_error_type,
+)
 from agentsassemble.live_agent_join_brief import live_agent_join_brief_payload
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_runner import load_group_configs

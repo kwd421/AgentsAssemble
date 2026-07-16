@@ -6,10 +6,12 @@ import agentsassemble.application_transaction as compatibility_transaction
 import agentsassemble.gui_application as compatibility_gui
 import agentsassemble.room_agent_bridge as compatibility_agent_bridge
 import agentsassemble.room_users as compatibility_room_users
+import agentsassemble.session_run_monitor as compatibility_session_run_monitor
 from agentsassemble.application import agent_bridge_entrypoint as owned_agent_bridge_entrypoint
 from agentsassemble.application import gui as owned_gui
 from agentsassemble.application import gui_factory as owned_gui_factory
 from agentsassemble.application import room_users as owned_room_users
+from agentsassemble.application import session_run_monitor as owned_session_run_monitor
 from agentsassemble.application import transaction as owned_transaction
 
 
@@ -48,6 +50,16 @@ class ApplicationPackageTests(unittest.TestCase):
         self.assertIs(
             compatibility_room_users.resolve_device_user,
             owned_room_users.resolve_device_user,
+        )
+
+    def test_session_run_monitor_root_module_exports_owned_lifecycle(self) -> None:
+        self.assertIs(
+            compatibility_session_run_monitor.PeriodicSessionRunMonitor,
+            owned_session_run_monitor.PeriodicSessionRunMonitor,
+        )
+        self.assertIs(
+            compatibility_session_run_monitor.normalized_monitor_interval,
+            owned_session_run_monitor.normalized_monitor_interval,
         )
 
 

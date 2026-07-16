@@ -27,7 +27,7 @@ from agentsassemble.legacy_live_agent_smoke import (
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
-from agentsassemble.session_run_monitor import PeriodicSessionRunMonitor
+from agentsassemble.application.session_run_monitor import PeriodicSessionRunMonitor
 
 
 MAX_READINESS_PROBE_AGENTS = 10

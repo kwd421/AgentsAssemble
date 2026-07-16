@@ -1180,3 +1180,12 @@ module churn were deliberately avoided rather than forgotten.
   export. Device fingerprinting, stable participant resolution, local operator
   claims, room registry compatibility, JSON-to-SQLite migration, and ephemeral
   cleanup behavior are unchanged.
+- 2026-07-17: Periodic durable-session reconciliation monitoring moved
+  mechanically to `application/session_run_monitor.py`. The application-owned
+  module retains only thread start/stop, interval normalization, one-tick
+  execution, failure reporting, and bounded health snapshot state; GUI code
+  still owns the actual reconciliation policy. Current GUI and retained legacy
+  health/readiness projections import the owned module directly; root
+  `session_run_monitor.py` is a metadata-tracked compatibility export. Thread
+  naming, stop waiting, status classification, error-type redaction, and
+  interval bounds are unchanged.

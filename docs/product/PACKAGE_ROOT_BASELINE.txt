@@ -289,7 +289,6 @@ room_user_preferences.py
 room_votes.py
 room_websocket.py
 sandbox_launcher.py
-session_run_monitor.py
 side_chat.py
 speech_policy.py
 sqlite_attention_repository.py

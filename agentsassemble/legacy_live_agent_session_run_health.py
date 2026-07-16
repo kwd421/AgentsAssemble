@@ -21,7 +21,7 @@ from agentsassemble.legacy_live_agent_health import (
 )
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.session_run_monitor import PeriodicSessionRunMonitor
+from agentsassemble.application.session_run_monitor import PeriodicSessionRunMonitor
 
 
 def live_agent_session_run_health_summary(
