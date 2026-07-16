@@ -1087,3 +1087,13 @@ module churn were deliberately avoided rather than forgotten.
   idempotency, transaction lifetime, and command publication. Owner rejection,
   not-found errors, result/event shape, rollback behavior, and delayed
   credential invalidation are unchanged.
+- 2026-07-17: The retryable participant-kick saga moved to
+  `room/participant_kick.py`. The service owns the durable moderation intent,
+  one-time external cleanup, stop-warning capture, canonical kicked
+  transaction, private intent clearing, and post-commit provider-registry
+  removal. `room_realtime.py` retains capability, request idempotency,
+  operation-id construction, transaction lifetime, and command publication.
+  The `prepared -> effect_applied -> kicked` retry contract remains unchanged:
+  an ACK failure can be retried without stopping the provider or revoking
+  access twice. Host protection, conflict/not-found errors, cleanup warnings,
+  public projection, and event/result shape are unchanged.
