@@ -41,9 +41,16 @@ class PackageArchitectureGateTests(unittest.TestCase):
 
     def test_root_compatibility_shims_have_replacement_and_removal_metadata(self) -> None:
         validate_compatibility_shims()
-        baseline = load_root_baseline(ROOT)
 
-        self.assertFalse(set(ROOT_COMPATIBILITY_SHIMS) & set(baseline))
+        self.assertTrue(
+            set(ROOT_COMPATIBILITY_SHIMS).issubset(current_top_level_modules(ROOT))
+        )
+        graph = load_package_graph(ROOT)
+        for filename, shim in ROOT_COMPATIBILITY_SHIMS.items():
+            with self.subTest(filename=filename):
+                self.assertIn(shim.replacement_import, graph.modules)
+                for caller in shim.known_callers:
+                    self.assertTrue((ROOT / caller).is_file(), caller)
 
     def test_package_map_tracks_every_current_top_level_module(self) -> None:
         package_map = (ROOT / "docs" / "product" / "PACKAGE_MAP.md").read_text(

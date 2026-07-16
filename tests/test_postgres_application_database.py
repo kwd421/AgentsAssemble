@@ -3,6 +3,9 @@ from __future__ import annotations
 import unittest
 from contextlib import contextmanager
 
+from agentsassemble.persistence.postgres.application_database import (
+    PostgresApplicationDatabase as OwnedPostgresApplicationDatabase,
+)
 from agentsassemble.postgres_application_database import PostgresApplicationDatabase
 from agentsassemble.postgres_connection_pool import PostgresPoolClosed
 from agentsassemble.postgres_room_schema import POSTGRES_ROOM_SCHEMA_REVISION
@@ -56,6 +59,12 @@ class _FakePool:
 
 
 class PostgresApplicationDatabaseTests(unittest.TestCase):
+    def test_root_import_is_an_explicit_compatibility_export(self) -> None:
+        self.assertIs(
+            PostgresApplicationDatabase,
+            OwnedPostgresApplicationDatabase,
+        )
+
     def _database(self) -> tuple[PostgresApplicationDatabase, _FakePool, list[str]]:
         pools: list[_FakePool] = []
         checked: list[str] = []

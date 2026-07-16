@@ -11,7 +11,9 @@ from typing import Iterable, Mapping
 
 
 ROOT_ENTRYPOINTS = frozenset({"agentsassemble", "agentsassemble.cli", "agentsassemble.gui"})
-EXISTING_PACKAGES = frozenset({"adapters", "bridges", "legacy", "migrations"})
+EXISTING_PACKAGES = frozenset(
+    {"adapters", "bridges", "legacy", "migrations", "persistence"}
+)
 FROZEN_POLICY_TERMS = (
     "attention",
     "autonomous",
@@ -115,7 +117,11 @@ def build_package_map(repository_root: Path) -> str:
                     test_patches.get(name, ()),
                 ),
                 proposed_package=_proposed_package(module, domain),
-                migration_status=_migration_status(module, domain),
+                migration_status=_migration_status(
+                    module,
+                    domain,
+                    classification,
+                ),
             )
         )
     return _render(inventories)
@@ -260,6 +266,9 @@ def _reference_source_paths(root: Path) -> Iterable[Path]:
 def _classification(module: ModuleSource) -> str:
     relative_parts = Path(module.relative_path).parts
     stem = module.path.stem
+    docstring = ast.get_docstring(module.tree) or ""
+    if docstring.startswith("Compatibility exports for"):
+        return "compatibility"
     if "compat" in stem or "compatibility" in stem:
         return "compatibility"
     if "legacy" in relative_parts[1:-1] or stem.startswith("legacy_"):
@@ -282,7 +291,11 @@ def _domain(module: ModuleSource, classification: str) -> str:
         or stem.startswith("legacy_")
     ):
         return "legacy"
-    if "/migrations/" in path_text or stem.startswith(("postgres_", "sqlite_")):
+    if (
+        "/persistence/" in path_text
+        or "/migrations/" in path_text
+        or stem.startswith(("postgres_", "sqlite_"))
+    ):
         return "persistence"
     if any(term in stem for term in ("mafia", "friend", "side_chat", "social")):
         return "features"
@@ -355,7 +368,11 @@ def _proposed_package(module: ModuleSource, domain: str) -> str:
     if module.name in ROOT_ENTRYPOINTS:
         return "root entrypoint"
     if domain == "persistence":
-        if module.path.stem.startswith("postgres_") or "/migrations/" in module.relative_path:
+        if (
+            "/persistence/postgres/" in module.relative_path
+            or module.path.stem.startswith("postgres_")
+            or "/migrations/" in module.relative_path
+        ):
             return "persistence/postgres/"
         return "persistence/local/"
     if domain == "features":
@@ -368,9 +385,15 @@ def _proposed_package(module: ModuleSource, domain: str) -> str:
     return f"{domain}/"
 
 
-def _migration_status(module: ModuleSource, domain: str) -> str:
+def _migration_status(
+    module: ModuleSource,
+    domain: str,
+    classification: str,
+) -> str:
     if module.name in ROOT_ENTRYPOINTS:
         return "retained-entrypoint"
+    if classification == "compatibility":
+        return "compatibility-shim"
     stem = module.path.stem
     if any(term in stem for term in FROZEN_POLICY_TERMS):
         return "deferred-policy"

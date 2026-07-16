@@ -11,6 +11,9 @@ from agentsassemble.postgres_connection_pool import (
     PostgresPoolStartupError,
     _default_pool_factory,
 )
+from agentsassemble.persistence.postgres.connection_pool import (
+    BoundedPostgresConnectionPool as OwnedBoundedPostgresConnectionPool,
+)
 
 
 class _FakePool:
@@ -56,6 +59,12 @@ class _FakePool:
 
 
 class PostgresConnectionPoolTests(unittest.TestCase):
+    def test_root_import_is_an_explicit_compatibility_export(self) -> None:
+        self.assertIs(
+            BoundedPostgresConnectionPool,
+            OwnedBoundedPostgresConnectionPool,
+        )
+
     def test_settings_require_bounded_positive_values(self) -> None:
         invalid_settings = (
             {"min_size": 0},

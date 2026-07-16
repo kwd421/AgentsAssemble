@@ -29,11 +29,42 @@ DOMAIN_PACKAGE_ROOTS = frozenset({"room", "admission", "identity", "providers"})
 class CompatibilityShim:
     replacement_import: str
     removal_gate: str
+    known_callers: tuple[str, ...]
+    introduced_in: str
 
 
-# A new root shim must be reviewed here instead of being added to the historical
-# baseline. The replacement and removal gate keep the exception temporary.
-ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {}
+# Root modules that have moved remain explicit, temporary compatibility
+# boundaries. Historical presence in the root baseline does not exempt a moved
+# module from recording its replacement, callers, and removal gate here.
+ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
+    "postgres_application_database.py": CompatibilityShim(
+        replacement_import=(
+            "agentsassemble.persistence.postgres.application_database"
+        ),
+        removal_gate=(
+            "No direct imports or monkeypatch targets use "
+            "agentsassemble.postgres_application_database for one compatibility "
+            "window."
+        ),
+        known_callers=(
+            "tests/test_postgres_application_database.py",
+            "tests/test_postgres_cross_authority_transactions.py",
+        ),
+        introduced_in="Milestone 2.1 PostgreSQL application database move",
+    ),
+    "postgres_connection_pool.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.postgres.connection_pool",
+        removal_gate=(
+            "No direct imports or monkeypatch targets use "
+            "agentsassemble.postgres_connection_pool for one compatibility window."
+        ),
+        known_callers=(
+            "tests/test_postgres_application_database.py",
+            "tests/test_postgres_connection_pool.py",
+        ),
+        introduced_in="Milestone 2.1 PostgreSQL connection pool move",
+    ),
+}
 
 
 def current_top_level_modules(repository_root: Path) -> frozenset[str]:
@@ -76,6 +107,16 @@ def validate_compatibility_shims() -> None:
             raise ValueError(f"Compatibility shim {filename!r} needs a replacement import.")
         if not shim.removal_gate.strip():
             raise ValueError(f"Compatibility shim {filename!r} needs a removal gate.")
+        if not shim.known_callers:
+            raise ValueError(f"Compatibility shim {filename!r} needs known callers.")
+        if any(not caller.strip() for caller in shim.known_callers):
+            raise ValueError(
+                f"Compatibility shim {filename!r} has an empty known caller."
+            )
+        if not shim.introduced_in.strip():
+            raise ValueError(
+                f"Compatibility shim {filename!r} needs introduction metadata."
+            )
 
 
 def dependency_direction_violations(graph: PackageGraph) -> tuple[str, ...]:

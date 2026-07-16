@@ -5,8 +5,10 @@ from datetime import UTC, datetime
 
 from psycopg.rows import dict_row
 
-from agentsassemble.postgres_application_database import PostgresConnectionProvider
-from agentsassemble.postgres_connection_pool import (
+from agentsassemble.persistence.postgres.application_database import (
+    PostgresConnectionProvider,
+)
+from agentsassemble.persistence.postgres.connection_pool import (
     BoundedPostgresConnectionPool,
     PoolFactory,
     PostgresPoolSettings,
