@@ -999,3 +999,10 @@ module churn were deliberately avoided rather than forgotten.
   session-state publisher. Strict stored-profile rejection, owner fields,
   cursor parity, model verification, event payloads, and runtime-state guards
   are unchanged.
+- 2026-07-17: Capability-projected initial/resume/gap/bridge snapshots and
+  bounded history-page reads moved to `room/snapshots.py`.
+  `room_realtime.py` retains the same `snapshot()` and `history_page()` methods
+  as delegation points and continues to own room creation and command
+  orchestration. Event limits, bridge self-only projection, provider catalog
+  visibility, active-turn shape, reconnect cursors, raw history-page payloads,
+  and capability output are unchanged.

@@ -62,7 +62,6 @@ from agentsassemble.room_attention_policy import (
 )
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.event_broker import (
-    ROOM_EVENT_STREAM,
     RoomEventBroker,
     RoomSocketChannel,
 )
@@ -93,6 +92,11 @@ from agentsassemble.providers.sync_cursor import (
 )
 from agentsassemble.room_routing import route_message_targets
 from agentsassemble.room.repository import RoomRepository
+from agentsassemble.room.snapshots import (
+    ROOM_HISTORY_MAX_LIMIT,
+    ROOM_SNAPSHOT_EVENT_LIMIT,
+    RoomSnapshotService,
+)
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room.turn_coordinator import (
     RoomTurnCoordinator,
@@ -104,8 +108,6 @@ from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room.types import RoomCommand, RoomEvent
 from agentsassemble.voice_presence import leave_all_voice
 
-ROOM_SNAPSHOT_EVENT_LIMIT = 200
-ROOM_HISTORY_MAX_LIMIT = 200
 AMBIENT_AGENT_RELAY_DEPTH = 2
 AGENT_RUNTIME_PROFILE_KEYS = frozenset(
     {
@@ -189,6 +191,12 @@ class RoomRealtimeController:
             registry=self._provider_registry,
             ensure_room=self.ensure_room,
             publish_session_state=self._publish_session_state,
+        )
+        self._snapshots = RoomSnapshotService(
+            store=self.store,
+            provider_catalog=self.provider_catalog,
+            ensure_room=self.ensure_room,
+            capabilities=self.capabilities,
         )
         self._attention_coordinator = RoomAttentionCoordinator(self.store)
         self._attention_owner_id = f"room-realtime-{uuid4().hex}"
@@ -379,103 +387,14 @@ class RoomRealtimeController:
         self._publish_session_state(room_id, self.store.session(room_id, session_id))
 
     def snapshot(self, identity: dict[str, object], *, after_seq: int = 0) -> dict[str, object]:
-        room_id = clean_lobby_text(identity.get("meeting_id"), limit=128)
-        self.ensure_room(room_id)
-        latest_seq = self.store.latest_event_sequence(room_id)
-        requested_after_seq = max(0, int(after_seq or 0))
-        bridge = identity.get("client_type") == "agent_bridge"
-        resume_gap = False
-        if bridge:
-            events: list[dict[str, object]] = []
-            snapshot_mode = "bridge"
-        elif requested_after_seq:
-            resume_gap = latest_seq - requested_after_seq > ROOM_SNAPSHOT_EVENT_LIMIT
-            if resume_gap:
-                events = self.store.read_events(room_id, limit=ROOM_SNAPSHOT_EVENT_LIMIT, newest=True)
-                snapshot_mode = "gap"
-            else:
-                events = self.store.read_events(
-                    room_id,
-                    after_seq=requested_after_seq,
-                    limit=ROOM_SNAPSHOT_EVENT_LIMIT,
-                )
-                snapshot_mode = "resume"
-        else:
-            events = self.store.read_events(room_id, limit=ROOM_SNAPSHOT_EVENT_LIMIT, newest=True)
-            snapshot_mode = "initial"
-        oldest_seq = int(events[0].get("seq") or 0) if events else 0
-        has_more_before = bool(
-            not bridge
-            and oldest_seq
-            and self.store.oldest_event_sequence(room_id) < oldest_seq
-        )
-        stored_sessions = self.store.sessions(room_id)
-        if bridge:
-            own_session_id = clean_lobby_text(identity.get("session_id") or identity.get("agent_id"), limit=128)
-            stored_sessions = [session for session in stored_sessions if session.get("session_id") == own_session_id]
-        sessions = [public_session(session) for session in stored_sessions]
-        events = [_public_event(event) for event in events]
-        active_turns = [
-            {
-                "turn_id": session.get("active_turn_id"),
-                "participant_id": session.get("participant_id"),
-                "phase": session.get("turn_phase") or session.get("runtime_status"),
-            }
-            for session in sessions
-            if session.get("active_turn_id")
-        ]
-        provider_catalog = {"status": "ready", "catalog_revision": "", "providers": []}
-        if not bridge:
-            provider_catalog = self.provider_catalog.snapshot()
-        return {
-            "op": "snapshot",
-            "stream": ROOM_EVENT_STREAM,
-            "room": self.store.room(room_id),
-            "participants": (
-                [
-                    public_participant(participant)
-                    for participant in self.store.participants(room_id)
-                    if participant.get("participant_id") == identity.get("agent_id")
-                ]
-                if bridge
-                else [
-                    public_participant(participant)
-                    for participant in self.store.participants(room_id)
-                ]
-            ),
-            "agent_sessions": sessions,
-            "active_turns": active_turns,
-            "events": events,
-            "oldest_seq": oldest_seq,
-            "last_seq": latest_seq,
-            "has_more_before": has_more_before,
-            "resume_gap": resume_gap,
-            "snapshot_mode": snapshot_mode,
-            "provider_catalog": provider_catalog,
-            "available_providers": list(provider_catalog.get("providers") or []),
-            "capabilities": self.capabilities(identity),
-        }
+        return self._snapshots.snapshot(identity, after_seq=after_seq)
 
     def history_page(self, room_id: str, *, before_seq: int, limit: int = ROOM_HISTORY_MAX_LIMIT) -> dict[str, object]:
-        clean_room_id = clean_lobby_text(room_id, limit=128)
-        self.ensure_room(clean_room_id)
-        clean_before_seq = max(0, int(before_seq or 0))
-        clean_limit = min(ROOM_HISTORY_MAX_LIMIT, max(1, int(limit or ROOM_HISTORY_MAX_LIMIT)))
-        events = self.store.read_events(
-            clean_room_id,
-            before_seq=clean_before_seq,
-            limit=clean_limit,
-            newest=True,
+        return self._snapshots.history_page(
+            room_id,
+            before_seq=before_seq,
+            limit=limit,
         )
-        oldest_seq = int(events[0].get("seq") or 0) if events else 0
-        return {
-            "events": events,
-            "oldest_seq": oldest_seq,
-            "has_more_before": bool(
-                oldest_seq and self.store.oldest_event_sequence(clean_room_id) < oldest_seq
-            ),
-            "last_seq": self.store.latest_event_sequence(clean_room_id),
-        }
 
     def capabilities(self, identity: dict[str, object]) -> dict[str, bool]:
         return capabilities_for_identity(identity)
