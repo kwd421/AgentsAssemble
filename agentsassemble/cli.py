@@ -4504,7 +4504,7 @@ class _TerminalLiveSessionCommandRunner:
         self._stream_config = stream_config
         self._stream_session_id = ""
         if stream_config is not None:
-            from agentsassemble.claude_transcript import generate_claude_session_id
+            from agentsassemble.providers.claude_transcript import generate_claude_session_id
 
             self._stream_session_id = generate_claude_session_id()
 
@@ -4541,7 +4541,11 @@ class _TerminalLiveSessionCommandRunner:
                 raise
         # Streaming turn: tail the transcript for tool/reasoning steps while the
         # PTY produces the final answer (returned below). Best-effort + additive.
-        from agentsassemble.claude_transcript import ClaudeTranscriptTailer, find_claude_transcript, tail_until
+        from agentsassemble.providers.claude_transcript import (
+            ClaudeTranscriptTailer,
+            find_claude_transcript,
+            tail_until,
+        )
         from agentsassemble.room_thought import post_room_thought
 
         config = self._stream_config

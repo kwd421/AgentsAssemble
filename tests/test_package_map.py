@@ -177,6 +177,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.providers.bridge_protocol",
             "agentsassemble.providers.bridge_report_tracker",
             "agentsassemble.providers.catalog",
+            "agentsassemble.providers.claude_transcript",
             "agentsassemble.providers.codex_session_ids",
             "agentsassemble.providers.codex_stream",
             "agentsassemble.providers.deepseek",
@@ -208,6 +209,7 @@ class PackageMapTests(unittest.TestCase):
         for compatibility_module in (
             "agentsassemble.bridge_protocol",
             "agentsassemble.bridge_report_tracker",
+            "agentsassemble.claude_transcript",
             "agentsassemble.codex_session_ids",
             "agentsassemble.codex_stream",
             "agentsassemble.deepseek_runtime",

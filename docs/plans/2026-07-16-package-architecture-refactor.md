@@ -735,3 +735,10 @@ module churn were deliberately avoided rather than forgotten.
   paths while both root modules remain explicit compatibility exports.
   Session UUID recognition, labeled-text fallback, message/command/reasoning
   event classification, ordering, and ignored-event behavior are unchanged.
+- 2026-07-17: Claude transcript discovery, JSONL parsing, and incremental
+  tailing moved to `providers/claude_transcript.py`. The CLI entrypoint and
+  focused transcript tests now use the owned path while
+  `claude_transcript.py` remains an explicit compatibility export. Generated
+  session IDs, project transcript lookup, assistant-only event filtering,
+  tool summaries, partial-line handling, and no-history-replay behavior are
+  unchanged.

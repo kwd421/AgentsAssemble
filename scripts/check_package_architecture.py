@@ -55,6 +55,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.5 provider bridge protocol move",
     ),
+    "claude_transcript.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.claude_transcript",
+        removal_gate=(
+            "No direct imports use agentsassemble.claude_transcript for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.18 Claude transcript parser move",
+    ),
     "codex_session_ids.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.codex_session_ids",
         removal_gate=(

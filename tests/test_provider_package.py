@@ -4,6 +4,7 @@ import unittest
 
 import agentsassemble.bridge_protocol as compatibility_bridge_protocol
 import agentsassemble.bridge_report_tracker as compatibility_bridge_tracker
+import agentsassemble.claude_transcript as compatibility_claude_transcript
 import agentsassemble.codex_session_ids as compatibility_codex_session_ids
 import agentsassemble.codex_stream as compatibility_codex_stream
 import agentsassemble.deepseek_runtime as compatibility_deepseek
@@ -25,6 +26,7 @@ import agentsassemble.windows_conpty as compatibility_windows_conpty
 from agentsassemble.providers import catalog as owned_catalog
 from agentsassemble.providers import bridge_protocol as owned_bridge_protocol
 from agentsassemble.providers import bridge_report_tracker as owned_bridge_tracker
+from agentsassemble.providers import claude_transcript as owned_claude_transcript
 from agentsassemble.providers import codex_session_ids as owned_codex_session_ids
 from agentsassemble.providers import codex_stream as owned_codex_stream
 from agentsassemble.providers import deepseek as owned_deepseek
@@ -45,6 +47,20 @@ from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_claude_transcript_root_module_exports_owned_contract(self) -> None:
+        for name in (
+            "ClaudeTranscriptTailer",
+            "find_claude_transcript",
+            "generate_claude_session_id",
+            "parse_claude_transcript_line",
+            "tail_until",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_claude_transcript, name),
+                    getattr(owned_claude_transcript, name),
+                )
+
     def test_codex_session_id_root_module_exports_owned_contract(self) -> None:
         for name in (
             "CODEX_SESSION_ID_PATTERN",

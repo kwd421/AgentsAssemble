@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `332d10b0874f7574`
+Source fingerprint: `14fa77c273a73112`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 431
+- Python modules: 432
 - Top-level package modules: 303
-- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=67, room=43, web=58
-- Classifications: compatibility=69, current=273, legacy=78, optional=11
+- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=68, room=43, web=58
+- Classifications: compatibility=70, current=273, legacy=78, optional=11
 
 ## Classification Rules
 
@@ -72,9 +72,9 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.canonical_room_benchmark` | `agentsassemble/canonical_room_benchmark.py` | 373 | diagnostics | current | `agentsassemble.persistence.local.room.database`, `agentsassemble.persistence.local.room.repository`, `agentsassemble.room_context` | 1 | - | test-import:1 | `tests/test_canonical_room_benchmark.py` | `diagnostics/` | planned-move |
 | `agentsassemble.character_mode` | `agentsassemble/character_mode.py` | 116 | application | current | `agentsassemble.meeting_events`, `agentsassemble.persona_cards` | 9 | - | - | - | `application/` | planned-move |
 | `agentsassemble.claude_resident` | `agentsassemble/claude_resident.py` | 237 | providers | current | - | 3 | `call:compile@18`, `call:compile@28` | test-import:1 | `tests/test_claude_resident.py` | `providers/` | planned-move |
-| `agentsassemble.claude_transcript` | `agentsassemble/claude_transcript.py` | 165 | providers | current | - | 1 | - | test-import:1 | `tests/test_claude_transcript.py` | `providers/` | planned-move |
+| `agentsassemble.claude_transcript` | `agentsassemble/claude_transcript.py` | 18 | providers | compatibility | `agentsassemble.providers.claude_transcript` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.cleanup_report` | `agentsassemble/cleanup_report.py` | 107 | diagnostics | current | `agentsassemble.meeting_events` | 6 | `call:compile@95`, `call:compile@98` | test-import:2 | `tests/test_provider_runtime_controls.py`, `tests/test_room_agent_lifecycle.py` | `diagnostics/` | planned-move |
-| `agentsassemble.cli` | `agentsassemble/cli.py` | 5831 | application | current | `agentsassemble`, `agentsassemble.admission.maintenance_command`, `agentsassemble.admission.repository`, `agentsassemble.agent_sessions`, `agentsassemble.antigravity_resident`, `agentsassemble.bridges.claude_code_bridge`, `agentsassemble.canonical_room_benchmark`, `agentsassemble.character_mode`, +66 | 0 | - | test-import:33, monkeypatch:18 | `tests/test_admission_workflow_maintenance.py`, `tests/test_agent_session_cli.py`, `tests/test_api_lane_runner.py`, `+30` | `root entrypoint` | retained-entrypoint |
+| `agentsassemble.cli` | `agentsassemble/cli.py` | 5835 | application | current | `agentsassemble`, `agentsassemble.admission.maintenance_command`, `agentsassemble.admission.repository`, `agentsassemble.agent_sessions`, `agentsassemble.antigravity_resident`, `agentsassemble.bridges.claude_code_bridge`, `agentsassemble.canonical_room_benchmark`, `agentsassemble.character_mode`, +66 | 0 | - | test-import:33, monkeypatch:18 | `tests/test_admission_workflow_maintenance.py`, `tests/test_agent_session_cli.py`, `tests/test_api_lane_runner.py`, `+30` | `root entrypoint` | retained-entrypoint |
 | `agentsassemble.cli_diagnostics` | `agentsassemble/cli_diagnostics.py` | 96 | diagnostics | current | - | 1 | - | - | - | `diagnostics/` | planned-move |
 | `agentsassemble.cli_http_errors` | `agentsassemble/cli_http_errors.py` | 20 | web | current | - | 2 | - | test-import:2 | `tests/test_cli_timeout_session_ensure.py`, `tests/test_gui_server_session_lifecycle.py` | `web/` | planned-move |
 | `agentsassemble.cli_legacy_live_agent_format` | `agentsassemble/cli_legacy_live_agent_format.py` | 588 | application | current | - | 1 | - | test-import:1 | `tests/test_cli_legacy_live_agent_format.py` | `application/` | planned-move |
@@ -344,6 +344,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.bridge_protocol` | `agentsassemble/providers/bridge_protocol.py` | 133 | providers | current | `agentsassemble.room.text` | 3 | - | test-import:4 | `tests/test_bridge_protocol.py`, `tests/test_bridge_report_tracker.py`, `tests/test_provider_package.py`, `+1` | `providers/` | in-target-package |
 | `agentsassemble.providers.bridge_report_tracker` | `agentsassemble/providers/bridge_report_tracker.py` | 100 | providers | current | `agentsassemble.providers.bridge_protocol` | 2 | - | test-import:2 | `tests/test_bridge_report_tracker.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.catalog` | `agentsassemble/providers/catalog.py` | 194 | providers | current | - | 4 | - | test-import:2 | `tests/test_provider_catalog.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.claude_transcript` | `agentsassemble/providers/claude_transcript.py` | 165 | providers | current | - | 2 | - | test-import:2 | `tests/test_claude_transcript.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.codex_session_ids` | `agentsassemble/providers/codex_session_ids.py` | 73 | providers | current | - | 3 | `call:compile@11`, `call:compile@12` | test-import:2 | `tests/test_codex_live_adapter.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.codex_stream` | `agentsassemble/providers/codex_stream.py` | 63 | providers | current | - | 2 | - | test-import:2 | `tests/test_codex_stream.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.deepseek` | `agentsassemble/providers/deepseek.py` | 201 | providers | current | `agentsassemble.room.text` | 2 | - | test-import:2 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |

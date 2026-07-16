@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.claude_transcript import (
+from agentsassemble.providers.claude_transcript import (
     ClaudeTranscriptTailer,
     find_claude_transcript,
     parse_claude_transcript_line,
