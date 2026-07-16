@@ -436,3 +436,13 @@ module churn were deliberately avoided rather than forgotten.
   import the owned maintenance contract directly. No startup purge or implicit
   retention behavior was added; the two root modules remain compatibility
   exports for one removal window.
+- 2026-07-16: Explicit cross-origin local-operator pairing moved to
+  `identity/pairing.py`, bootstrapping the identity domain package without
+  prematurely splitting the still-coupled `identity_store.py` contract and
+  local SQLite implementation. Pairing token hashing, origin validation,
+  one-time redemption, transaction handling, membership writes, resumable
+  session recovery, and revocation behavior are unchanged. Current production
+  callers use the owned identity path; `operator_pairing.py` remains an
+  explicit compatibility export for one removal window. The service now names
+  its existing current-room text dependency directly instead of retaining the
+  old lobby-oriented alias.

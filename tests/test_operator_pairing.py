@@ -15,7 +15,10 @@ from agentsassemble.identity_store import (
     LOCAL_OPERATOR_PARTICIPANT_ID,
     LOCAL_OPERATOR_USER_ID,
 )
-from agentsassemble.operator_pairing import OperatorPairingService, normalize_pairing_origin
+from agentsassemble.identity.pairing import (
+    OperatorPairingService,
+    normalize_pairing_origin,
+)
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.persistence.local.admission.repository import (
     JsonInviteSessionRepository,

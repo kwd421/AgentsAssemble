@@ -254,6 +254,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         ),
         introduced_in="Milestone 2.4 PostgreSQL admission persistence move",
     ),
+    "operator_pairing.py": CompatibilityShim(
+        replacement_import="agentsassemble.identity.pairing",
+        removal_gate=(
+            "No direct imports use agentsassemble.operator_pairing for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_identity_pairing_package.py",),
+        introduced_in="Milestone 3.7 identity pairing package bootstrap",
+    ),
     "postgres_room_mutations.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.postgres.room.mutations",
         removal_gate=(

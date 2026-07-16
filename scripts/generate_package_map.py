@@ -16,6 +16,7 @@ EXISTING_PACKAGES = frozenset(
         "adapters",
         "admission",
         "bridges",
+        "identity",
         "legacy",
         "migrations",
         "persistence",

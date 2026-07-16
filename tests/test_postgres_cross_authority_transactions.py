@@ -28,7 +28,7 @@ if _POSTGRES_AVAILABLE:
         LOCAL_OPERATOR_PARTICIPANT_ID,
         LOCAL_OPERATOR_USER_ID,
     )
-    from agentsassemble.operator_pairing import OperatorPairingService
+    from agentsassemble.identity.pairing import OperatorPairingService
     from agentsassemble.postgres_application_database import PostgresApplicationDatabase
     from agentsassemble.postgres_identity_repository import PostgresIdentityRepository
     from agentsassemble.postgres_invite_repository import PostgresInviteSessionRepository

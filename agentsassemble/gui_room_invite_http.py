@@ -8,7 +8,7 @@ from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.identity_store import device_auth_key
 from agentsassemble.legacy.admission_projection import LegacyAdmissionParticipant
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
-from agentsassemble.operator_pairing import normalize_pairing_origin
+from agentsassemble.identity.pairing import normalize_pairing_origin
 from agentsassemble.admission.coordinator import AdmissionIdempotencyConflict
 from agentsassemble.stable_entry import stable_entry_url
 

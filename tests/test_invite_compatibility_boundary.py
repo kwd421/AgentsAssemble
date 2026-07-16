@@ -25,7 +25,7 @@ CURRENT_IDENTITY_APPLICATION_MODULES = (
     "agentsassemble/gui_room_invite_http.py",
     "agentsassemble/gui_room_lifecycle_http.py",
     "agentsassemble/gui_router.py",
-    "agentsassemble/operator_pairing.py",
+    "agentsassemble/identity/pairing.py",
     "agentsassemble/room_admission.py",
     "agentsassemble/admission/coordinator.py",
     "agentsassemble/admission/saga.py",

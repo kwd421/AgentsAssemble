@@ -33,7 +33,7 @@ from agentsassemble.gui_request_security import (
 )
 from agentsassemble.identity_store import IdentityBackend, device_auth_key
 from agentsassemble.legacy.admission_projection import LegacyAdmissionProjection
-from agentsassemble.operator_pairing import OperatorPairingService
+from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.admission.preflight import RoomAdmissionService
 from agentsassemble.admission.coordinator import RoomAdmissionCoordinator

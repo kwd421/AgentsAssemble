@@ -347,7 +347,7 @@ from agentsassemble.room_invite import (
     configure_room_invite_repository,
     default_room_invite_store_path,
 )
-from agentsassemble.operator_pairing import OperatorPairingService
+from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.meeting_events import (
     FLOW_METADATA_KEYS,
