@@ -497,6 +497,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.14 provider session discovery move",
     ),
+    "room_api_provider.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.api",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_api_provider for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.20 OpenAI-compatible API adapter move",
+    ),
     "windows_conpty.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.windows_conpty",
         removal_gate=(

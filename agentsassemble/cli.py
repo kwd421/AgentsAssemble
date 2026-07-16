@@ -640,7 +640,7 @@ def run_api_call_command(args: argparse.Namespace) -> int:
     """API-provider lane: read a prompt on stdin, call an OpenAI-compatible model,
     print the reply on stdout, and record token usage. Designed to be a live-agent
     `command` so the runner's envelope/heartbeat/meta-filter wrap it unchanged."""
-    from agentsassemble import room_api_provider
+    from agentsassemble.providers import api as room_api_provider
     from agentsassemble.providers import catalog as provider_catalog
     from agentsassemble.persistence.local.identity.registry import (
         identity_store_for_output_root,
@@ -4819,7 +4819,7 @@ class _ApiCatalogCommandRunner:
             return None  # usage accounting is best-effort; never block the reply
 
     def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
-        from agentsassemble import room_api_provider
+        from agentsassemble.providers import api as room_api_provider
 
         try:
             return room_api_provider.run_api_call(

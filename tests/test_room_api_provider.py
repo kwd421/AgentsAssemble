@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from agentsassemble.persistence.local.identity.repository import IdentityStore
-from agentsassemble.room_api_provider import (
+from agentsassemble.providers.api import (
     ApiProviderError,
     api_error_category,
     chat_completion,

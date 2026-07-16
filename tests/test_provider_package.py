@@ -23,7 +23,9 @@ import agentsassemble.provider_runtime_contracts as compatibility_contracts
 import agentsassemble.provider_runtime_factory as compatibility_factory
 import agentsassemble.provider_secrets as compatibility_secrets
 import agentsassemble.provider_sessions as compatibility_sessions
+import agentsassemble.room_api_provider as compatibility_api
 import agentsassemble.windows_conpty as compatibility_windows_conpty
+from agentsassemble.providers import api as owned_api
 from agentsassemble.providers import catalog as owned_catalog
 from agentsassemble.providers import bridge_protocol as owned_bridge_protocol
 from agentsassemble.providers import bridge_report_tracker as owned_bridge_tracker
@@ -49,6 +51,23 @@ from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_room_api_provider_root_module_exports_owned_contract(self) -> None:
+        for name in (
+            "ApiProviderError",
+            "ApiReply",
+            "ApiUsage",
+            "api_error_category",
+            "chat_completion",
+            "chat_completion_with_fallback",
+            "record_api_usage",
+            "run_api_call",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_api, name),
+                    getattr(owned_api, name),
+                )
+
     def test_claude_resident_root_module_exports_owned_contract(self) -> None:
         for name in (
             "CLAUDE_ANSWER_MARKER",

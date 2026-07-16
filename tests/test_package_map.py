@@ -193,6 +193,7 @@ class PackageMapTests(unittest.TestCase):
         graph = load_package_graph(ROOT)
         package_map = build_package_map(ROOT)
         for module_name in (
+            "agentsassemble.providers.api",
             "agentsassemble.providers.auth",
             "agentsassemble.providers.bridge_protocol",
             "agentsassemble.providers.bridge_report_tracker",
@@ -249,6 +250,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.provider_runtime_factory",
             "agentsassemble.provider_secrets",
             "agentsassemble.provider_sessions",
+            "agentsassemble.room_api_provider",
             "agentsassemble.windows_conpty",
         ):
             with self.subTest(compatibility_module=compatibility_module):

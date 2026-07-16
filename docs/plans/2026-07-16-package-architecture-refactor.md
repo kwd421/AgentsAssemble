@@ -756,3 +756,10 @@ module churn were deliberately avoided rather than forgotten.
   explicit compatibility export. Real-capture extraction, CJK screen spacing,
   last-answer selection, envelope stripping, and the ban on `claude -p` and
   `--print` are unchanged.
+- 2026-07-17: The optional OpenAI-compatible direct API adapter moved to
+  `providers/api.py`. CLI API-call entrypoints and behavior tests now use the
+  owned path while `room_api_provider.py` remains an explicit compatibility
+  export. Catalog lookup, key resolution, HTTP error categories, usage
+  estimation and recording, and the existing rate-limit/unavailable-only
+  fallback chain are unchanged; no API lane was promoted over native CLI
+  sessions.
