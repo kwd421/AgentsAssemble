@@ -20,7 +20,7 @@ from agentsassemble.providers.model_verification import (
 from agentsassemble.providers.runtime_contracts import SUPPORTED_DECLINE_REASONS
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room_attention import AttentionLeaseConflict
-from agentsassemble.room_command_uow import RoomCommandUnitOfWork
+from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room_event_broker import RoomEventBroker
 from agentsassemble.room.projection import (
     PUBLIC_ACTIVITY_LABELS,

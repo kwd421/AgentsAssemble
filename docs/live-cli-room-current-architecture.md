@@ -120,6 +120,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `room/types.py` | shared event, participant, session, command, and turn packet shapes | validation or side effects |
 | `room/errors.py` | room command rejection contract | command execution |
 | `room/repository.py` | backend-neutral room and room-transaction persistence protocols | SQLite/PostgreSQL implementation |
+| `room/command_uow.py` | request-id dedupe, payload hashing, atomic command ACK recording | command routing or backend implementation |
 | `room/commands.py` | command envelope validation and identity capability policy | command execution |
 | `room/projection.py` | public room/session/event and runtime-diagnostic projection | persistence or command execution |
 | `room_routing.py` | pure mention, default-responder, and relay-depth target selection | persistence or process launch |

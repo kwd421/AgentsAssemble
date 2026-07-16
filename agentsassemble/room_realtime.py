@@ -46,7 +46,7 @@ from agentsassemble.room.commands import (
     capabilities_for_identity,
     parse_room_command,
 )
-from agentsassemble.room_command_uow import (
+from agentsassemble.room.command_uow import (
     RoomCommandIdempotencyConflict,
     RoomCommandUnitOfWork,
     command_payload_hash,

@@ -10,6 +10,8 @@ promise to migrate every legacy file into the canonical repository.
 
 The backend-neutral `RoomRepository` and `RoomTransaction` protocols live in
 `room/repository.py`; `room_repository.py` is a temporary compatibility export.
+Atomic request dedupe and ACK recording live in `room/command_uow.py`;
+`room_command_uow.py` is a temporary compatibility export.
 
 ## Authority Inventory
 

@@ -9,7 +9,7 @@ from agentsassemble.room_attention import (
     AttentionEvaluationConflict,
     AttentionLeaseConflict,
 )
-from agentsassemble.room_command_uow import (
+from agentsassemble.room.command_uow import (
     RoomCommandIdempotencyConflict,
     RoomCommandNotFinalized,
     RoomCommandUnitOfWork,

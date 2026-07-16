@@ -896,3 +896,10 @@ module churn were deliberately avoided rather than forgotten.
   passed; PostgreSQL behavior tests remained skipped because the current
   environment does not provide the PostgreSQL test extra or configured test
   database.
+- 2026-07-17: Room command idempotency, canonical payload hashing, transaction
+  lifetime, and durable ACK finalization moved to `room/command_uow.py`.
+  Realtime orchestration, turn finalization, and backend-neutral repository
+  contract tests now use the owned path while `room_command_uow.py` remains an
+  explicit compatibility export. Request-id conflict detection, deduplicated
+  ACK shape, rollback-on-unfinalized behavior, transaction proxy methods, and
+  hashing output are unchanged.

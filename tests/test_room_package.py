@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import unittest
 
+import agentsassemble.room_command_uow as compatibility_command_uow
 import agentsassemble.room_commands as compatibility_commands
 import agentsassemble.room_errors as compatibility_errors
 import agentsassemble.room_projection as compatibility_projection
 import agentsassemble.room_repository as compatibility_repository
 import agentsassemble.room_types as compatibility_types
+from agentsassemble.room import command_uow as owned_command_uow
 from agentsassemble.room import commands as owned_commands
 from agentsassemble.room import errors as owned_errors
 from agentsassemble.room import projection as owned_projection
@@ -15,6 +17,18 @@ from agentsassemble.room import types as owned_types
 
 
 class RoomPackageTests(unittest.TestCase):
+    def test_room_command_uow_root_module_exports_owned_transaction(self) -> None:
+        for name in (
+            "RoomCommandIdempotencyConflict",
+            "RoomCommandNotFinalized",
+            "RoomCommandUnitOfWork",
+            "command_payload_hash",
+        ):
+            self.assertIs(
+                getattr(compatibility_command_uow, name),
+                getattr(owned_command_uow, name),
+            )
+
     def test_room_command_root_module_exports_owned_policy(self) -> None:
         for name in (
             "ROOM_COMMAND_ACTIONS",

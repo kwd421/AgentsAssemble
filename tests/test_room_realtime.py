@@ -18,7 +18,7 @@ from agentsassemble.room_realtime import (
     default_native_cli_provider_specs,
     validate_native_cli_provider_spec,
 )
-from agentsassemble.room_command_uow import RoomCommandUnitOfWork
+from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room_members import is_room_member_muted, set_room_member_muted
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room_settings import update_room_settings as update_legacy_room_settings
