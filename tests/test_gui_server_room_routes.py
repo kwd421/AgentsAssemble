@@ -33,7 +33,7 @@ from tests.gui_server_test_support import (
     urlopen,
     user_for_participant,
 )
-from agentsassemble.gui_router import GuiDeps
+from agentsassemble.web.router import GuiDeps
 from agentsassemble.identity.repository import device_auth_key
 from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionProjection
 from agentsassemble.identity.pairing import OperatorPairingService

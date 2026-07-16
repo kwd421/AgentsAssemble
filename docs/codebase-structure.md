@@ -44,7 +44,7 @@ MCP tool-loop 에이전트  ─┤                ├─ lobby.jsonl        (방
 | 파일 | 역할 |
 |---|---|
 | `gui.py` (8k+줄) | HTTP 서버 본체 + payload 빌더. `serve_gui()` 진입. 레거시 do_GET/do_POST if-체인은 라우트 테이블로 점진 이주 중. SSE: `/api/events/lobby`, `/api/events/side-chat`, `/api/events/roster`, `/api/room/events`, `/api/meetings/<id>/events` |
-| `gui_router.py` | **R2 라우트 테이블 + RequestContext**. `@router.get/post` 등록, 디스패처. RequestContext가 신원 판정 단일 창구: `require_host`(호스트 토큰), `require_session`(게스트 세션), `require_moderator`(호스트 또는 운영자 세션), body 파싱 |
+| `web/router.py` | **R2 라우트 테이블 + RequestContext**. `@router.get/post` 등록, 디스패처. RequestContext가 신원 판정 단일 창구: `require_host`(호스트 토큰), `require_session`(게스트 세션), `require_moderator`(호스트 또는 운영자 세션), body 파싱. `gui_router.py`는 임시 호환 export |
 | `gui_room_http.py` | 방 도메인 라우트 모듈(초대/게스트 세션/로스터/모더레이션/`/api/host/claim`/roster SSE). 신규 엔드포인트는 if-체인이 아니라 이런 도메인 모듈에 등록 |
 | `cli.py` (7.9k줄) | argparse 명령 트리: `gui`, `mcp serve`, `live-agent {register,run,run-group,room,say,lobby,heartbeat,leave,engagement,dm-reply,sessions,session-runs,processes,...}`, `invite`, `demo`, `persona`, `memory-capsule`, `health`, `claude-bridge` 등 |
 

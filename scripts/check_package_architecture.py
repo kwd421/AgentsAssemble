@@ -324,6 +324,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_web_transport_package.py",),
         introduced_in="Milestone 4.2 web static transport move",
     ),
+    "gui_router.py": CompatibilityShim(
+        replacement_import="agentsassemble.web.router",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_router for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_web_transport_package.py",),
+        introduced_in="Milestone 4.3 web router move",
+    ),
     "postgres_room_mutations.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.postgres.room.mutations",
         removal_gate=(

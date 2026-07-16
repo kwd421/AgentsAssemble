@@ -8,7 +8,7 @@ from agentsassemble.gui_legacy_live_agent_readiness_http import (
     LegacyLiveAgentReadinessHttpDeps,
     register_legacy_live_agent_readiness_route,
 )
-from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.web.router import GuiDeps, RequestContext, Router
 
 
 class FakeHandler:

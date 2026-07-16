@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 from agentsassemble import room_invite
 from agentsassemble.gui import _make_handler
 from agentsassemble.gui_provider_http import register_provider_routes
-from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.web.router import GuiDeps, RequestContext, Router
 
 
 class FakeHandler:

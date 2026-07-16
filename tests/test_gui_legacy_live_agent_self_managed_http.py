@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from agentsassemble.gui_legacy_live_agent_self_managed_http import register_legacy_self_managed_agent_routes
-from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.web.router import GuiDeps, RequestContext, Router
 
 
 class FakeHandler:

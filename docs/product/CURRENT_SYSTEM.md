@@ -275,7 +275,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Identity, credential, membership compatibility, preference, and usage persistence | storage-independent contract and normalization in `identity/repository.py` and `identity/preferences.py`; backend selection in `identity/factory.py`; local SQLite implementation, cache/binding registry, and one-time JSON import in `persistence/local/identity/`; hosted owner in `persistence/postgres/identity/`; compatibility exports in `identity_store.py`, `identity_room_preferences.py`, `identity_repository_factory.py`, and `postgres_identity_*.py` |
 | Provider credentials | `provider_secrets.py`, provider credential routes |
 | Canonical attachment upload/download HTTP | `gui_attachment_http.py`; storage in `attachments.py`, room media in `persistence/local/room/repository.py` or the selected `RoomRepository` |
-| GUI HTTP response, static delivery, and WebSocket transport | response owner in `web/response.py`; static owner in `web/static.py`; WebSocket owner currently in `gui_ws_http.py`; root compatibility exports retained; composition in `gui.py` |
+| GUI HTTP routing, response, static delivery, and WebSocket transport | route/request-context owner in `web/router.py`; response owner in `web/response.py`; static owner in `web/static.py`; WebSocket owner currently in `gui_ws_http.py`; root compatibility exports retained; composition in `gui.py` |
 | GUI Host/Origin and public-route trust policy | owner in `web/security.py`; compatibility exports in `gui_request_security.py` |
 | Durable legacy session-run monitor lifecycle | `session_run_monitor.py`; reconcile policy wiring in `gui.py` |
 | Canonical room HTTP routes | `gui_room_*_http.py`; coordinator in `gui_room_http.py` |

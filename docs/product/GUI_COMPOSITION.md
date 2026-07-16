@@ -2,7 +2,7 @@
 
 Status: current composition and refactor inventory
 
-Updated: 2026-07-14
+Updated: 2026-07-16
 
 Read this document before changing `agentsassemble/gui.py`, GUI server startup
 or shutdown, HTTP route ownership, or server-scoped dependencies. The exact
@@ -147,6 +147,12 @@ HTTP byte/header writing and React bootstrap/static delivery now belong to
 `gui_response.py` and `gui_static_transport.py` remain temporary compatibility
 exports; cache policy, attachment headers, SPA paths, and SSE framing are
 unchanged.
+
+The route table, `GuiDeps`, and per-request identity/body facade now belong to
+`agentsassemble/web/router.py`. `gui_router.py` remains a temporary
+compatibility export. Current route modules and behavior tests import the owned
+path directly; route registration, path matching, authentication, and request
+parsing behavior are unchanged.
 
 ## Router-Owned Route Families
 

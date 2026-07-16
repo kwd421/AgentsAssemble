@@ -8,7 +8,7 @@ from http import HTTPStatus
 from agentsassemble.agent_sessions import (
     enqueue_agent_session_auto_turn_for_lobby_event,
 )
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payload
 from agentsassemble.live_agents import read_live_agents
 from agentsassemble.meeting_events import (

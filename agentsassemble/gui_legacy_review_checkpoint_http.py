@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.legacy_review_checkpoint import LegacyReviewCheckpointService
 
 

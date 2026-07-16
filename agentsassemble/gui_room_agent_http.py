@@ -11,7 +11,7 @@ from agentsassemble.agent_sessions import (
     run_agent_session_turn_payload,
     run_next_agent_session_turn_payload,
 )
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 
 
 def register_agent_session_routes(

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 
 from agentsassemble.diagnostic_report_projection import safe_diagnostic_report_payload
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.legacy_live_agent_preflight import LegacyLiveAgentPreflightService
 
 

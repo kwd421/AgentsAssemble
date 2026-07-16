@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
-from agentsassemble.gui_router import request_server_url
+from agentsassemble.web.router import request_server_url
 
 
 REACT_APP_EXACT_PATHS = frozenset(

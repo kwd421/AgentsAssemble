@@ -7,7 +7,7 @@ from agentsassemble.gui_legacy_live_agent_probe_http import (
     LegacyLiveAgentProbeHttpDeps,
     register_legacy_live_agent_probe_route,
 )
-from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.web.router import GuiDeps, RequestContext, Router
 
 
 class FakeHandler:

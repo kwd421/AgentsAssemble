@@ -93,7 +93,7 @@ from agentsassemble.gui_legacy_provider_health_http import (
 from agentsassemble.gui_legacy_review_checkpoint_http import (
     register_legacy_review_checkpoint_route,
 )
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.legacy_codex_session_compat import (
     LegacyCodexSessionCompatibilityService,
 )

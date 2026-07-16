@@ -4,8 +4,10 @@ import unittest
 
 import agentsassemble.gui_response as compatibility_response
 import agentsassemble.gui_request_security as compatibility_security
+import agentsassemble.gui_router as compatibility_router
 import agentsassemble.gui_static_transport as compatibility_static
 from agentsassemble.web import response as owned_response
+from agentsassemble.web import router as owned_router
 from agentsassemble.web import security as owned_security
 from agentsassemble.web import static as owned_static
 
@@ -43,6 +45,16 @@ class WebTransportPackageTests(unittest.TestCase):
         self.assertIs(
             compatibility_static.safe_static_path,
             owned_static.safe_static_path,
+        )
+
+    def test_router_root_module_exports_owned_request_context(self) -> None:
+        self.assertIs(
+            compatibility_router.RequestContext,
+            owned_router.RequestContext,
+        )
+        self.assertIs(
+            compatibility_router.Router,
+            owned_router.Router,
         )
 
 

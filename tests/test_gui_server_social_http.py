@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
-from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.web.router import GuiDeps, RequestContext, Router
 from agentsassemble.gui_social_http import register_room_friend_profile_routes
 from agentsassemble.room_invite import reset_state, set_runtime_public_url
 

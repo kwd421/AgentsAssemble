@@ -5,7 +5,7 @@ from collections.abc import Callable
 from http import HTTPStatus
 from typing import Protocol
 
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 
 
 class PublicTunnelControl(Protocol):

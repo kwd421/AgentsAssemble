@@ -1,7 +1,7 @@
 """Side-chat HTTP and event-stream routes."""
 from __future__ import annotations
 
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.side_chat import append_side_chat_event, read_side_chat
 
 

@@ -3,7 +3,7 @@ import unittest
 from collections import defaultdict
 from pathlib import Path
 
-from agentsassemble.gui_router import match_route_template
+from agentsassemble.web.router import match_route_template
 from agentsassemble.web.static import REACT_APP_EXACT_PATHS
 
 

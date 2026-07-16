@@ -7,7 +7,7 @@ from agentsassemble.gui_legacy_live_agent_read_http import (
     LegacyLiveAgentReadDeps,
     register_legacy_live_agent_read_routes,
 )
-from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.web.router import GuiDeps, RequestContext, Router
 from agentsassemble.live_agent_sessions import LiveAgentSessionNotFoundError
 
 

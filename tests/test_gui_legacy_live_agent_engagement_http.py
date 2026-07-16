@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlparse
 from agentsassemble.gui_legacy_live_agent_engagement_http import (
     register_legacy_live_agent_engagement_route,
 )
-from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.web.router import GuiDeps, RequestContext, Router
 
 
 class FakeHandler:

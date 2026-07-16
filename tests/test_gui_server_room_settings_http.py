@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.gui_room_settings_http import register_room_settings_routes
-from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.web.router import GuiDeps, RequestContext, Router
 from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.room_store import RoomStore
 

@@ -30,7 +30,7 @@ from agentsassemble.gui_room_lifecycle_http import (
     register_room_lifecycle_routes,
 )
 from agentsassemble.gui_room_moderation_media_http import register_moderation_media_routes
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payload
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
 from agentsassemble.meeting_events import (

@@ -17,7 +17,7 @@ from agentsassemble.room_websocket import (
     is_websocket_upgrade,
 )
 from agentsassemble.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.ws_room_session import (
     WS_SESSION_TOKEN_KEY,
     WS_TICKET_TTL_SECONDS,

@@ -15,7 +15,7 @@ from agentsassemble.application_transaction import ApplicationTransactionBoundar
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.identity.repository import IdentityBackend
-from agentsassemble.legacy.admission_projection import LegacyAdmissionProjection
+from agentsassemble.admission.projection import LegacyAdmissionProjection
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
 from agentsassemble.public_tunnel import PublicTunnelManager

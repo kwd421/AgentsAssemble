@@ -5,6 +5,8 @@ import unittest
 import agentsassemble.admission as compatibility_admission
 import agentsassemble.room_admission as compatibility_preflight
 from agentsassemble.admission import preflight as owned_preflight
+from agentsassemble.admission import projection as owned_projection
+from agentsassemble.legacy import admission_projection
 from agentsassemble.legacy import meeting_admission
 
 
@@ -23,6 +25,16 @@ class AdmissionPackageTests(unittest.TestCase):
         self.assertIs(
             compatibility_preflight.RoomAdmissionService,
             owned_preflight.RoomAdmissionService,
+        )
+
+    def test_legacy_projection_module_exports_the_owned_contract(self) -> None:
+        self.assertIs(
+            admission_projection.LegacyAdmissionParticipant,
+            owned_projection.LegacyAdmissionParticipant,
+        )
+        self.assertIs(
+            admission_projection.LegacyAdmissionProjection,
+            owned_projection.LegacyAdmissionProjection,
         )
 
 

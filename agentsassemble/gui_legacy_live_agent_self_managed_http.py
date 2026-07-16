@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from http import HTTPStatus
 
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.live_agent_self_managed import LegacySelfManagedAgentService
 from agentsassemble.meeting_events import clean_lobby_text
 

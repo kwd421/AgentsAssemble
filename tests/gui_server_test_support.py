@@ -56,7 +56,7 @@ from agentsassemble.gui import (
     send_lobby_message_to_remote_bridge,
 )
 from agentsassemble.gui_room_http import register_room_routes
-from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.web.router import GuiDeps, RequestContext, Router
 from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.agent_sessions import room_sse_frames_after_cursor
 from agentsassemble.meeting_events import append_live_event, read_live_events, write_live_state

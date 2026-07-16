@@ -10,7 +10,7 @@ from agentsassemble.agent_sessions import (
     room_lifecycle_payload,
     room_status_payload,
 )
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.live_agent_frontend_create import ensure_frontend_meeting
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_speech import (

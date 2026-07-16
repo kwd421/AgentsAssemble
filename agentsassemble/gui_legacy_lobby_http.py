@@ -9,7 +9,7 @@ from collections.abc import Callable
 from http import HTTPStatus
 
 from agentsassemble.attachments import AttachmentError
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.legacy_lobby_commands import LegacyLobbyCommandService
 from agentsassemble.meeting_events import clean_lobby_text
 

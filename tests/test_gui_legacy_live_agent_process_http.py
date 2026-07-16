@@ -4,7 +4,7 @@ from agentsassemble.gui_legacy_live_agent_process_http import (
     LegacyProcessHttpDeps,
     register_legacy_process_mutation_routes,
 )
-from agentsassemble.gui_router import Router
+from agentsassemble.web.router import Router
 
 
 class GuiLegacyLiveAgentProcessHttpTests(unittest.TestCase):

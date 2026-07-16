@@ -5,7 +5,7 @@ from collections.abc import Callable
 from http import HTTPStatus
 from typing import Protocol
 
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.live_agent_quota import quota_viewer_for_host, quota_viewer_for_session
 from agentsassemble.meeting_events import ROOM_TOPIC_LIMIT, clean_lobby_text
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from http import HTTPStatus
 
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.live_agents import read_live_agents
 from agentsassemble.room_friend_dms import room_friend_dm_payload
 from agentsassemble.room_friends import (

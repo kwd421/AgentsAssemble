@@ -8,7 +8,7 @@ from agentsassemble.gui_legacy_codex_session_http import (
     LegacyCodexSessionHttpDeps,
     register_legacy_codex_session_routes,
 )
-from agentsassemble.gui_router import GuiDeps, RequestContext, Router
+from agentsassemble.web.router import GuiDeps, RequestContext, Router
 from agentsassemble.legacy_codex_session_compat import LegacyCodexSessionError
 
 

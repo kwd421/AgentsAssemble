@@ -524,3 +524,13 @@ module churn were deliberately avoided rather than forgotten.
   security headers, cache policy, index rewriting, path containment, bootstrap
   routes, and disconnect behavior are unchanged. The two root modules remain
   explicit compatibility exports.
+- 2026-07-16: The shared route table, `GuiDeps`, `RequestContext`, server URL
+  helpers, and dynamic path validation moved intact to `web/router.py`.
+  Production route modules and behavior tests now import the owned path;
+  `gui_router.py` remains an explicit compatibility export. Invite and identity
+  boundary tests inspect the owned file so the move does not create a vacuous
+  shim-only pass. The architecture gate exposed that the admission projection
+  protocol still lived beside its legacy implementation; the protocol and DTO
+  moved to `admission/projection.py`, while
+  `legacy/admission_projection.py` retains the actual roster mirror and
+  compatibility exports.

@@ -7,7 +7,7 @@ from typing import Protocol
 
 from agentsassemble import provider_catalog
 from agentsassemble.adapters import default_provider_registry
-from agentsassemble.gui_router import RequestContext, Router
+from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.provider_login import ProviderLoginService
 from agentsassemble.provider_secrets import PROVIDER_SECRETS
 

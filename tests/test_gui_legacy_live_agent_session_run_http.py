@@ -4,7 +4,7 @@ from agentsassemble.gui_legacy_live_agent_session_run_http import (
     LegacySessionRunHttpDeps,
     register_legacy_session_run_basic_routes,
 )
-from agentsassemble.gui_router import Router
+from agentsassemble.web.router import Router
 
 
 class GuiLegacyLiveAgentSessionRunHttpTests(unittest.TestCase):
