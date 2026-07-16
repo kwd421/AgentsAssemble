@@ -125,7 +125,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `room/projection.py` | public room/session/event and runtime-diagnostic projection | persistence or command execution |
 | `room_routing.py` | pure mention, default-responder, and relay-depth target selection | persistence or process launch |
 | `room_context.py` | bounded bootstrap and cursor-diff provider input projection | provider-private memory |
-| `room_event_broker.py` | bounded per-connection fanout and targeted bridge delivery | durable history |
+| `room/event_broker.py` | bounded per-connection fanout and targeted bridge delivery | durable history |
 | `providers/launch_specs.py` | provider catalog, safe commands, profile identity, and Claude interactive guard | PTY parsing |
 | `providers/capabilities.py` | cached native model, effort, tier, variant, and permission discovery | room or secret state |
 | `provider_secrets.py` | OS keyring credential access and redacted status | provider prompts or room events |

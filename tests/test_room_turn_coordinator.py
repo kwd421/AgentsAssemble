@@ -8,7 +8,7 @@ from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.room_attention import AttentionEvaluation
 from agentsassemble.room_database import open_room_database
 from agentsassemble.room.errors import RoomCommandRejected
-from agentsassemble.room_event_broker import RoomEventBroker
+from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room_turn_coordinator import RoomTurnCoordinator
 

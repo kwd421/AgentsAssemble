@@ -267,7 +267,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Room history and lifecycle HTTP | `web/routes/room_history.py`, `web/routes/room_lifecycle.py`; legacy `/api/room/ensure` composition remains in `gui_room_lifecycle_http.py` |
 | Room roster and member HTTP | `web/routes/room_members.py`; retained resident kick and optional channel/voice composition remains in `gui_room_moderation_media_http.py` |
 | Routing and provider context | `room_routing.py`, `room_context.py`, `room_turn_context.py` |
-| Fanout and bridge delivery | `room_event_broker.py`, provider-side delivery in `providers/agent_bridge.py`, executable composition in `application/agent_bridge_entrypoint.py`; compatibility export in `room_agent_bridge.py` |
+| Fanout and bridge delivery | `room/event_broker.py` with compatibility export in `room_event_broker.py`; provider-side delivery in `providers/agent_bridge.py`, executable composition in `application/agent_bridge_entrypoint.py`; compatibility export in `room_agent_bridge.py` |
 | Agent Session compatibility HTTP | `web/routes/agent_sessions.py`; compatibility export in `gui_room_agent_http.py` |
 | Provider catalog and settings | `providers/launch_specs.py`, `providers/capabilities.py`; compatibility exports in `native_cli_providers.py` and `provider_capabilities.py` |
 | Provider catalog/credential HTTP | `web/routes/providers.py`; compatibility export in `gui_provider_http.py`; secret storage in `provider_secrets.py` |

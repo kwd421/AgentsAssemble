@@ -284,6 +284,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_room_package.py",),
         introduced_in="Milestone 6.1 room contracts move",
     ),
+    "room_event_broker.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.event_broker",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_event_broker for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_room_package.py",),
+        introduced_in="Milestone 6.5 room event broker move",
+    ),
     "room_projection.py": CompatibilityShim(
         replacement_import="agentsassemble.room.projection",
         removal_gate=(

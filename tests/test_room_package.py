@@ -5,12 +5,14 @@ import unittest
 import agentsassemble.room_command_uow as compatibility_command_uow
 import agentsassemble.room_commands as compatibility_commands
 import agentsassemble.room_errors as compatibility_errors
+import agentsassemble.room_event_broker as compatibility_event_broker
 import agentsassemble.room_projection as compatibility_projection
 import agentsassemble.room_repository as compatibility_repository
 import agentsassemble.room_types as compatibility_types
 from agentsassemble.room import command_uow as owned_command_uow
 from agentsassemble.room import commands as owned_commands
 from agentsassemble.room import errors as owned_errors
+from agentsassemble.room import event_broker as owned_event_broker
 from agentsassemble.room import projection as owned_projection
 from agentsassemble.room import repository as owned_repository
 from agentsassemble.room import types as owned_types
@@ -47,6 +49,17 @@ class RoomPackageTests(unittest.TestCase):
             compatibility_errors.RoomCommandRejected,
             owned_errors.RoomCommandRejected,
         )
+
+    def test_room_event_broker_root_module_exports_owned_fanout(self) -> None:
+        for name in (
+            "ROOM_EVENT_STREAM",
+            "RoomEventBroker",
+            "RoomSocketChannel",
+        ):
+            self.assertIs(
+                getattr(compatibility_event_broker, name),
+                getattr(owned_event_broker, name),
+            )
 
     def test_room_type_root_module_exports_owned_shapes(self) -> None:
         for name in (

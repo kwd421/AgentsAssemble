@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.room_event_broker import RoomEventBroker, RoomSocketChannel
+from agentsassemble.room.event_broker import RoomEventBroker, RoomSocketChannel
 
 
 def _event_message(event_type: str, sequence: int) -> dict[str, object]:

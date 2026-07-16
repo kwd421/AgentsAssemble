@@ -903,3 +903,11 @@ module churn were deliberately avoided rather than forgotten.
   explicit compatibility export. Request-id conflict detection, deduplicated
   ACK shape, rollback-on-unfinalized behavior, transaction proxy methods, and
   hashing output are unchanged.
+- 2026-07-17: Canonical room WebSocket channel queues, message-delta
+  backpressure, room-event fanout, active bridge generations, and targeted
+  bridge delivery moved to `room/event_broker.py`. Realtime, lifecycle, turn
+  coordination, and focused broker tests now use the owned path while
+  `room_event_broker.py` remains an explicit compatibility export. Direct
+  `room.text` normalization replaces the legacy helper delegation without
+  changing values. Queue bounds, delta eviction, resync markers, socket wakeup,
+  bridge supersession, and disconnect behavior are unchanged.

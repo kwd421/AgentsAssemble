@@ -64,7 +64,11 @@ from agentsassemble.room_attention_policy import (
     should_record_shadow_attention,
 )
 from agentsassemble.room.errors import RoomCommandRejected
-from agentsassemble.room_event_broker import ROOM_EVENT_STREAM, RoomEventBroker, RoomSocketChannel
+from agentsassemble.room.event_broker import (
+    ROOM_EVENT_STREAM,
+    RoomEventBroker,
+    RoomSocketChannel,
+)
 from agentsassemble.room_floor_policy import (
     AgentFloorEligibility,
     continuous_floor_targets,
