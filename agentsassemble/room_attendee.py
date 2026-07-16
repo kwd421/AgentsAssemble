@@ -16,7 +16,7 @@ from agentsassemble.native_cli_providers import native_cli_provider_definition
 from agentsassemble.codex_app_server_live_runtime import CodexAppServerLiveRuntime
 from agentsassemble.opencode_runtime import OpenCodeServerProcess
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig, ProviderRuntimeProfile
-from agentsassemble.provider_runtime_factory import runtime_from_config
+from agentsassemble.providers.runtime_factory import runtime_from_config
 from agentsassemble.provider_secrets import PROVIDER_SECRETS
 from agentsassemble.room_agent_bridge import RoomAgentBridge
 from agentsassemble.ws_room_client import connect_room_ws, join_room_session

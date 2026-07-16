@@ -15,7 +15,10 @@ from agentsassemble.providers.runtime_config import (
     CanonicalBridgeLaunchConfig,
     ProviderRuntimeConfig,
 )
-from agentsassemble.provider_runtime_factory import ProviderRuntimeFactoryError, runtime_from_config
+from agentsassemble.providers.runtime_factory import (
+    ProviderRuntimeFactoryError,
+    runtime_from_config,
+)
 from agentsassemble.room_agent_bridge import RoomAgentBridge
 
 

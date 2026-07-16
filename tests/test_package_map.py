@@ -172,10 +172,12 @@ class PackageMapTests(unittest.TestCase):
     def test_provider_modules_use_the_owned_package(self) -> None:
         graph = load_package_graph(ROOT)
         package_map = build_package_map(ROOT)
+        self.assertEqual(graph.domains["agentsassemble.windows_conpty"], "providers")
         for module_name in (
             "agentsassemble.providers.catalog",
             "agentsassemble.providers.runtime_config",
             "agentsassemble.providers.runtime_contracts",
+            "agentsassemble.providers.runtime_factory",
         ):
             with self.subTest(module_name=module_name):
                 self.assertEqual(graph.domains[module_name], "providers")
@@ -192,6 +194,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.provider_catalog",
             "agentsassemble.provider_runtime_config",
             "agentsassemble.provider_runtime_contracts",
+            "agentsassemble.provider_runtime_factory",
         ):
             with self.subTest(compatibility_module=compatibility_module):
                 compatibility_line = next(

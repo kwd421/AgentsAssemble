@@ -335,6 +335,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.1 provider package bootstrap",
     ),
+    "provider_runtime_factory.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.runtime_factory",
+        removal_gate=(
+            "No direct imports use agentsassemble.provider_runtime_factory "
+            "for one compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.4 provider runtime factory move",
+    ),
     "operator_pairing.py": CompatibilityShim(
         replacement_import="agentsassemble.identity.pairing",
         removal_gate=(

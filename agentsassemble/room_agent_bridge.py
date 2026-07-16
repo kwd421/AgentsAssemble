@@ -31,7 +31,7 @@ from agentsassemble.providers.runtime_config import (
     ProviderRuntimeConfig,
     ProviderRuntimeProfile,
 )
-from agentsassemble.provider_runtime_factory import runtime_from_config
+from agentsassemble.providers.runtime_factory import runtime_from_config
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
 
 

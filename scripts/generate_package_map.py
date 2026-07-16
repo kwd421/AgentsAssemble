@@ -365,6 +365,7 @@ def _domain(module: ModuleSource, classification: str) -> str:
                 "agent_bridge",
                 "live_cli",
                 "native_cli",
+                "conpty",
                 "codex_",
                 "claude_",
                 "grok_",

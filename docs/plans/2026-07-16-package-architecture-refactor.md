@@ -629,3 +629,15 @@ module churn were deliberately avoided rather than forgotten.
   owned path. `provider_runtime_config.py` remains an explicit compatibility
   export; field requirements, limits, error codes, command preservation, and
   runtime-profile semantics are unchanged.
+- 2026-07-16: Provider runtime construction moved to
+  `providers/runtime_factory.py`. The owned factory still selects the same
+  DeepSeek, OpenCode, Grok ACP, POSIX PTY, and Windows ConPTY implementations
+  from the same strict provider/transport pairs. Room bridge and attendee
+  callers now use the owned path, while `provider_runtime_factory.py` remains
+  an explicit compatibility export. Runtime arguments, platform selection,
+  mismatch errors, and the no-PTY-fallback rule for Grok are unchanged.
+  During verification, the package inventory incorrectly classified
+  `windows_conpty.py` as web code because the substring `ws_` appears across
+  the end of `windows` and its underscore. The generator now recognizes
+  ConPTY as a provider transport before WebSocket naming rules, with a
+  regression assertion; no runtime behavior changed.
