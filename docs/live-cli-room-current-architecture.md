@@ -145,6 +145,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `room/startup_reconciliation.py` | server-restart cleanup of runtime ownership, inflight work, attention state, and detached membership | provider launch or recovery scheduling |
 | `room/agent_profiles.py` | transactional agent display-name/avatar updates and post-commit provider/session-state synchronization | runtime model/profile selection |
 | `room/agent_runtime_profiles.py` | stopped-session provider catalog validation and native runtime-profile replacement | live process start/stop |
+| `room/agent_creation.py` | provider-catalog selection, native spec construction, canonical Agent Session creation, and optional start | provider process implementation |
 | `providers/bridge_process.py` | server-owned Agent Bridge process lifecycle | room routing |
 | `providers/agent_bridge.py` | authenticated bridge client and turn/report protocol | browser UI or WebSocket construction |
 | `application/agent_bridge_entrypoint.py` | bridge environment/config parsing and WebSocket/runtime composition | provider turn behavior |

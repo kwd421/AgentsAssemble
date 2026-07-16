@@ -12,15 +12,12 @@ from agentsassemble.diagnostics.cleanup import CleanupReport, emit_cleanup_failu
 from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     StoredProviderProfileError,
-    UnsupportedNativeCliProvider,
     default_native_cli_provider_specs,
     native_cli_provider_spec_from_stored_session_strict,
-    native_cli_provider_spec_from_payload,
     validate_native_cli_provider_spec,
 )
 from agentsassemble.providers.capabilities import (
     PROVIDER_CAPABILITIES,
-    ProviderCatalogSelectionError,
     ValidatedProviderSelection,
 )
 from agentsassemble.admission.invite_service import InviteApplicationService
@@ -38,6 +35,7 @@ from agentsassemble.room.command_uow import (
     RoomCommandUnitOfWork,
     command_payload_hash,
 )
+from agentsassemble.room.agent_creation import RoomAgentCreationService
 from agentsassemble.room.bridge_reports import RoomBridgeReportService
 from agentsassemble.room.connections import RoomConnectionService
 from agentsassemble.room.agent_lifecycle import (
@@ -261,6 +259,12 @@ class RoomRealtimeController:
             external_stop_timeout_seconds=external_stop_timeout_seconds,
             recovery_scheduler=recovery_scheduler_impl,
             prepare_session_reset=self._turn_coordinator.prepare_session_reset,
+        )
+        self._agent_creation = RoomAgentCreationService(
+            store=self.store,
+            provider_catalog=self.provider_catalog,
+            create_provider_session=self.create_provider_session,
+            start_agent=self._agent_lifecycle.start,
         )
         self.last_cleanup_report = CleanupReport("room_realtime_controller")
         self.ensure_room(self.default_room_id)
@@ -883,63 +887,12 @@ class RoomRealtimeController:
         server_url: str,
         ticket_issuer: Callable[[dict[str, object]], str] | None,
     ) -> dict[str, object]:
-        provider_id = clean_lobby_text(
-            payload.get("provider_id") or payload.get("provider_kind") or payload.get("provider"),
-            limit=64,
+        return self._agent_creation.create(
+            room_id,
+            payload,
+            server_url=server_url,
+            ticket_issuer=ticket_issuer,
         )
-        catalog_revision = clean_lobby_text(payload.get("catalog_revision"), limit=128)
-        try:
-            selection = self.provider_catalog.validate_selection(
-                catalog_revision=catalog_revision,
-                provider_id=provider_id,
-                values={
-                    "model": clean_lobby_text(payload.get("model") or payload.get("model_id"), limit=128),
-                    "reasoning_effort": clean_lobby_text(
-                        payload.get("reasoning_effort") or payload.get("effort"), limit=32
-                    ),
-                    "service_tier": clean_lobby_text(payload.get("service_tier"), limit=32),
-                    "variant": clean_lobby_text(payload.get("variant"), limit=64),
-                    "permission_mode": clean_lobby_text(
-                        payload.get("permission_mode") or payload.get("permission_option"), limit=64
-                    ),
-                },
-            )
-        except ProviderCatalogSelectionError as error:
-            raise RoomCommandRejected(str(error), code=error.code) from error
-        try:
-            spec = native_cli_provider_spec_from_payload(
-                {
-                    "provider_id": selection.provider_id,
-                    "agent_id": payload.get("agent_id") or payload.get("participant_id"),
-                    "display_name": payload.get("display_name"),
-                    "workspace": payload.get("workspace") or payload.get("workspace_path") or payload.get("cwd"),
-                    "model": selection.model,
-                    "model_selection_kind": selection.model_selection_kind,
-                    "catalog_revision": selection.catalog_revision,
-                    "reasoning_effort": selection.reasoning_effort,
-                    "service_tier": selection.service_tier,
-                    "variant": selection.variant,
-                    "permission_mode": selection.permission_mode,
-                }
-            )
-        except UnsupportedNativeCliProvider as error:
-            raise RoomCommandRejected(str(error), code="unsupported_provider") from error
-        except ValueError as error:
-            raise RoomCommandRejected(str(error), code="invalid_runtime_profile") from error
-        session = self.create_provider_session(room_id, spec)
-        result: dict[str, object] = {
-            "status": "created",
-            "agent_session": session,
-            "participant": self.store.participant(room_id, spec.agent_id),
-        }
-        if bool(payload.get("start") or payload.get("start_now")):
-            result["start"] = self._agent_lifecycle.start(
-                room_id,
-                spec.agent_id,
-                server_url=server_url,
-                ticket_issuer=ticket_issuer,
-            )
-        return result
 
     def _readd_agent(
         self,

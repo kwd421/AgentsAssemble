@@ -1045,3 +1045,11 @@ module churn were deliberately avoided rather than forgotten.
   profile persistence to `room/provider_sessions.py`. Model, effort, tier,
   variant, permission, workspace, error codes, and running-session rejection
   behavior are unchanged.
+- 2026-07-17: Catalog-validated server-owned Agent Session creation moved to
+  `room/agent_creation.py`. The service owns provider selection, native spec
+  construction, canonical participant/session creation delegation, result
+  projection, and optional immediate start; command authorization,
+  idempotency, process implementation, and session persistence remain in their
+  existing owners. Provider aliases, workspace fields, model controls, catalog
+  error codes, creation result shape, and `start`/`start_now` behavior are
+  unchanged.
