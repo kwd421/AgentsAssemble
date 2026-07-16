@@ -43,7 +43,7 @@ from agentsassemble.gui_legacy_application import (
     LegacySessionRunHooks,
     LegacySmokeHooks,
 )
-from agentsassemble.gui_observability_http import register_observability_routes
+from agentsassemble.web.routes.observability import register_observability_routes
 from agentsassemble.web.routes.public_invite import register_public_invite_admin_routes
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
 from agentsassemble.web.routes.room_settings import register_room_settings_routes

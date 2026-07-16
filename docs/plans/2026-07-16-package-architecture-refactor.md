@@ -588,3 +588,8 @@ module churn were deliberately avoided rather than forgotten.
   supplies the existing GUI handler only when SSE samples are requested.
   Enabling SSE samples without a factory fails immediately instead of silently
   skipping or substituting another transport.
+- 2026-07-16: Read-only local-resource, release-health, and moderator-only
+  legacy-admission diagnostic routes moved to `web/routes/observability.py`.
+  Production composition and the local-resource monkeypatch test use the owned
+  path; `gui_observability_http.py` is now an explicit compatibility export.
+  No route, payload, authorization check, or release-health policy changed.

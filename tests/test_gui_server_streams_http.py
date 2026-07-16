@@ -1337,7 +1337,7 @@ class GuiServerStreamsHttpTests(unittest.TestCase):
             thread.start()
             try:
                 with patch(
-                    "agentsassemble.gui_observability_http.cached_local_resource_snapshot",
+                    "agentsassemble.web.routes.observability.cached_local_resource_snapshot",
                     return_value=payload,
                 ) as snapshot_payload:
                     with urlopen(f"http://127.0.0.1:{server.server_port}/api/local-resources", timeout=4) as response:

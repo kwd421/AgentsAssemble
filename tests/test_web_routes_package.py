@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 import agentsassemble.gui_attachment_http as compatibility_attachments
+import agentsassemble.gui_observability_http as compatibility_observability
 import agentsassemble.gui_provider_http as compatibility_providers
 import agentsassemble.gui_public_invite_http as compatibility_public_invite
 import agentsassemble.gui_room_agent_http as compatibility_agent_sessions
@@ -12,6 +13,7 @@ import agentsassemble.gui_room_moderation_media_http as compatibility_moderation
 import agentsassemble.gui_room_settings_http as compatibility_room_settings
 from agentsassemble.web.routes import agent_sessions as owned_agent_sessions
 from agentsassemble.web.routes import attachments as owned_attachments
+from agentsassemble.web.routes import observability as owned_observability
 from agentsassemble.web.routes import providers as owned_providers
 from agentsassemble.web.routes import public_invite as owned_public_invite
 from agentsassemble.web.routes import room_history as owned_room_history
@@ -33,6 +35,16 @@ class WebRoutesPackageTests(unittest.TestCase):
         self.assertIs(
             compatibility_attachments.register_attachment_routes,
             owned_attachments.register_attachment_routes,
+        )
+
+    def test_observability_root_module_exports_owned_routes(self) -> None:
+        self.assertIs(
+            compatibility_observability.register_observability_routes,
+            owned_observability.register_observability_routes,
+        )
+        self.assertIs(
+            compatibility_observability.ProcessSnapshotSource,
+            owned_observability.ProcessSnapshotSource,
         )
 
     def test_provider_root_module_exports_owned_routes(self) -> None:
