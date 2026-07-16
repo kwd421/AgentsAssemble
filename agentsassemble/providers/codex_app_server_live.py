@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agentsassemble.codex_app_server_runtime import (
+from agentsassemble.providers.codex_app_server import (
     CodexAppServerRuntime,
     codex_app_server_runtime_command,
 )

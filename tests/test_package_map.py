@@ -201,6 +201,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.providers.catalog",
             "agentsassemble.providers.claude_resident",
             "agentsassemble.providers.claude_transcript",
+            "agentsassemble.providers.codex_app_server",
             "agentsassemble.providers.codex_app_server_live",
             "agentsassemble.providers.codex_resident",
             "agentsassemble.providers.codex_session_ids",
@@ -223,6 +224,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.providers.runtime_factory",
             "agentsassemble.providers.secrets",
             "agentsassemble.providers.sessions",
+            "agentsassemble.providers.turn_input",
             "agentsassemble.providers.windows_conpty",
         ):
             with self.subTest(module_name=module_name):
@@ -242,6 +244,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.bridge_report_tracker",
             "agentsassemble.claude_resident",
             "agentsassemble.claude_transcript",
+            "agentsassemble.codex_app_server_runtime",
             "agentsassemble.codex_app_server_live_runtime",
             "agentsassemble.codex_resident",
             "agentsassemble.codex_session_ids",

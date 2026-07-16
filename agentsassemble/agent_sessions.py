@@ -23,7 +23,7 @@ from agentsassemble.room_provider_sync_cursor import (
     provider_sync_session_fields,
 )
 from agentsassemble.persistence.local.room.repository import RoomStore
-from agentsassemble.codex_app_server_runtime import (
+from agentsassemble.providers.codex_app_server import (
     CODEX_APP_SERVER_IDLE_COMPLETION_GRACE_SECONDS,
     CODEX_APP_SERVER_INFERRED_TURN_COMPLETED_METHOD,
     CODEX_APP_SERVER_METHOD_TAIL_LENGTH,

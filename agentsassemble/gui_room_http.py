@@ -22,7 +22,7 @@ from agentsassemble.agent_sessions import (
     run_agent_session_turn_payload,
     run_next_agent_session_turn_payload,
 )
-from agentsassemble.codex_app_server_runtime import CodexAppServerRuntimeManager
+from agentsassemble.providers.codex_app_server import CodexAppServerRuntimeManager
 from agentsassemble.web.routes.agent_sessions import register_agent_session_routes
 from agentsassemble.web.routes.room_invite import register_invite_admission_routes
 from agentsassemble.gui_room_lifecycle_http import register_legacy_room_ensure_route

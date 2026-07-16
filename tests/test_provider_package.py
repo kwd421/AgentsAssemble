@@ -7,6 +7,7 @@ import agentsassemble.bridge_protocol as compatibility_bridge_protocol
 import agentsassemble.bridge_report_tracker as compatibility_bridge_tracker
 import agentsassemble.claude_resident as compatibility_claude_resident
 import agentsassemble.claude_transcript as compatibility_claude_transcript
+import agentsassemble.codex_app_server_runtime as compatibility_codex_app_server
 import agentsassemble.codex_app_server_live_runtime as compatibility_codex_app_server_live
 import agentsassemble.codex_resident as compatibility_codex_resident
 import agentsassemble.codex_session_ids as compatibility_codex_session_ids
@@ -39,6 +40,7 @@ from agentsassemble.providers import bridge_protocol as owned_bridge_protocol
 from agentsassemble.providers import bridge_report_tracker as owned_bridge_tracker
 from agentsassemble.providers import claude_resident as owned_claude_resident
 from agentsassemble.providers import claude_transcript as owned_claude_transcript
+from agentsassemble.providers import codex_app_server as owned_codex_app_server
 from agentsassemble.providers import codex_app_server_live as owned_codex_app_server_live
 from agentsassemble.providers import codex_resident as owned_codex_resident
 from agentsassemble.providers import codex_session_ids as owned_codex_session_ids
@@ -61,10 +63,44 @@ from agentsassemble.providers import runtime_contracts as owned_contracts
 from agentsassemble.providers import runtime_factory as owned_factory
 from agentsassemble.providers import secrets as owned_secrets
 from agentsassemble.providers import sessions as owned_sessions
+from agentsassemble.providers import turn_input as owned_turn_input
 from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_codex_app_server_root_module_exports_owned_runtime(self) -> None:
+        for name in (
+            "CodexAppServerRuntime",
+            "CodexAppServerRuntimeManager",
+            "ProcessFactory",
+            "_app_server_progress_text",
+            "_codex_app_server_turn_start_settings",
+            "clean_agent_session_provider_kind",
+            "clean_provider_session_id",
+            "codex_app_server_runtime_command",
+            "runtime_profile_key",
+            "runtime_profile_settings",
+        ):
+            self.assertIs(
+                getattr(compatibility_codex_app_server, name),
+                getattr(owned_codex_app_server, name),
+            )
+        self.assertEqual(
+            compatibility_codex_app_server.CODEX_APP_SERVER_STDERR_TAIL_CHARS,
+            owned_codex_app_server.CODEX_APP_SERVER_STDERR_TAIL_CHARS,
+        )
+
+    def test_provider_turn_input_preserves_explicit_and_json_fallback(self) -> None:
+        self.assertEqual(
+            owned_turn_input.agent_turn_prompt({"provider_input": "visible"}),
+            "visible",
+        )
+        fallback = owned_turn_input.agent_turn_prompt(
+            {"room_id": "room-a", "current_turn_instruction": "안녕"}
+        )
+        self.assertIn("one AgentsAssemble room turn", fallback)
+        self.assertIn('"current_turn_instruction": "안녕"', fallback)
+
     def test_kiro_resident_root_module_exports_owned_adapter(self) -> None:
         for name in (
             "KiroResidentCommandRunner",

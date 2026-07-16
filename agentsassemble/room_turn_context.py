@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.providers.turn_input import agent_turn_prompt
 from agentsassemble.room_context import (
     DEFAULT_ROOM_CONTEXT_CHARS,
     DEFAULT_ROOM_CONTEXT_MESSAGES,
@@ -31,16 +31,7 @@ class BoundedProviderContext:
 
 
 def _agent_turn_prompt(packet: dict[str, object]) -> str:
-    provider_input = str(packet.get("provider_input") or "")
-    if provider_input:
-        return provider_input
-    return (
-        "You are answering one AgentsAssemble room turn. Read the JSON packet, "
-        "use only the room-visible context and supported media manifest, follow "
-        "the explicit non-goals, and return one room-visible answer.\n\n"
-        + json.dumps(packet, ensure_ascii=False, sort_keys=True)
-        + "\n"
-    )
+    return agent_turn_prompt(packet)
 
 
 def build_room_turn_packet(

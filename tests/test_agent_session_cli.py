@@ -11,7 +11,7 @@ from agentsassemble.agent_sessions import (
     ProcessFactory,
     project_room_context,
 )
-from agentsassemble.codex_app_server_runtime import ProcessFactory as RuntimeProcessFactory
+from agentsassemble.providers.codex_app_server import ProcessFactory as RuntimeProcessFactory
 from agentsassemble.room_context import (
     DEFAULT_ROOM_CONTEXT_CHARS as ContextChars,
     DEFAULT_ROOM_CONTEXT_MESSAGES as ContextMessages,

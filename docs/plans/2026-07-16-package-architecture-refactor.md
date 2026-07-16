@@ -821,3 +821,14 @@ module churn were deliberately avoided rather than forgotten.
   normalization, ANSI/status cleanup, timeout and empty-reply behavior, and
   command validation are unchanged. The move corrects the adapter's former
   application-domain classification without changing room behavior.
+- 2026-07-17: Codex app-server process, JSON-RPC, profile isolation, stderr
+  drain, diagnostics, and runtime-manager ownership moved to
+  `providers/codex_app_server.py`. Application, web, and persistent-room
+  callers now use the owned path while `codex_app_server_runtime.py` remains
+  an explicit compatibility export. The already-built provider input fallback
+  moved to `providers/turn_input.py`, with `room_turn_context._agent_turn_prompt`
+  retained as a compatibility wrapper. Direct `room.text` normalization
+  replaces the legacy delegation without changing values. Command and
+  JSON-RPC settings, thread resume, timeout and inferred-completion handling,
+  bounded stderr diagnostics, crash recovery state, runtime sharing, and
+  detach behavior are unchanged.
