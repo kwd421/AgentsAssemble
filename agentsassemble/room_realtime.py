@@ -47,6 +47,7 @@ from agentsassemble.room.agent_lifecycle import (
     RoomAgentLifecycle,
     schedule_daemon_timer,
 )
+from agentsassemble.room.agent_profiles import RoomAgentProfileService
 from agentsassemble.room_attention_coordinator import RoomAttentionCoordinator
 from agentsassemble.room_attention_reconciliation import RoomAttentionReconciler
 from agentsassemble.room_attention_policy import (
@@ -230,6 +231,11 @@ class RoomRealtimeController:
         self._startup_sessions = RoomStartupSessionReconciler(
             store=self.store,
             reconcile_session_attention=self._turn_coordinator.reconcile_session_attention,
+        )
+        self._agent_profiles = RoomAgentProfileService(
+            store=self.store,
+            provider_registry=self._provider_registry,
+            publish_session_state=self._publish_session_state,
         )
         self._agent_lifecycle = RoomAgentLifecycle(
             store=self.store,
@@ -1069,58 +1075,18 @@ class RoomRealtimeController:
         *,
         unit: RoomCommandUnitOfWork,
     ) -> dict[str, object]:
-        agent_id = self._payload_agent_id(payload)
-        current = unit.session(agent_id)
-        if not current:
-            raise RoomCommandRejected(f"Agent session {agent_id} was not found.", code="not_found")
-        participant = unit.participant(agent_id)
-        if not participant:
-            raise RoomCommandRejected(f"Participant {agent_id} was not found.", code="not_found")
-        display_name = clean_lobby_text(
-            payload.get("display_name") or current.get("display_name") or agent_id,
-            limit=80,
+        return self._agent_profiles.update_in_unit(
+            self._payload_agent_id(payload),
+            payload,
+            unit=unit,
         )
-        avatar_image_url = clean_lobby_text(payload.get("avatar_image_url"), limit=4096)
-        updated_participant = unit.update_participant_fields(
-            agent_id,
-            display_name=display_name,
-            avatar_image_url=avatar_image_url,
-        )
-        updated_session = unit.update_session_fields(
-            agent_id,
-            display_name=display_name,
-            avatar_image_url=avatar_image_url,
-        )
-        unit.append_event(
-            "participant_updated",
-            participant_id=agent_id,
-            display_name=display_name,
-            avatar_image_url=avatar_image_url,
-        )
-        return {
-            "status": "profile_updated",
-            "agent_session": public_session(updated_session),
-            "participant": updated_participant,
-        }
 
     def _apply_agent_profile_after_commit(
         self,
         room_id: str,
         ack: dict[str, object],
     ) -> None:
-        if ack.get("deduplicated"):
-            return
-        result = ack.get("result") if isinstance(ack.get("result"), dict) else {}
-        session = result.get("agent_session") if isinstance(result.get("agent_session"), dict) else {}
-        agent_id = clean_lobby_text(
-            session.get("session_id") or session.get("participant_id"),
-            limit=128,
-        )
-        display_name = clean_lobby_text(session.get("display_name"), limit=80)
-        if not agent_id:
-            return
-        self._provider_registry.update_display_name(room_id, agent_id, display_name)
-        self._publish_session_state(room_id, self.store.session(room_id, agent_id))
+        self._agent_profiles.apply_after_commit(room_id, ack)
 
     def _prepare_kick_intent(
         self,

@@ -1029,3 +1029,11 @@ module churn were deliberately avoided rather than forgotten.
   recovery required, and detaches the participant. `room_realtime.py` retains
   its startup method as a delegation point. Stopped-session behavior, error
   text, field values, and provider recovery policy are unchanged.
+- 2026-07-17: Transactional agent display-name/avatar updates and their
+  post-commit provider-registry/session-state synchronization moved to
+  `room/agent_profiles.py`. The command handler still owns capability checks,
+  request idempotency, and transaction lifetime; the new service owns only the
+  canonical participant/session/event mutation and the non-duplicated
+  post-commit projection update. Explicit avatar clearing, rollback behavior,
+  next-turn identity, final-message attribution, and public payloads are
+  unchanged.
