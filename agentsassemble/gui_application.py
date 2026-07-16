@@ -110,17 +110,35 @@ class GuiApplicationServices:
             if self._state != "new":
                 raise RuntimeError(f"GUI application services cannot start from state {self._state!r}.")
             self._state = "starting"
+            rollback_actions: list[tuple[str, Callable[[], object]]] = []
             try:
+                rollback_actions.append(
+                    ("process_monitor", lambda: self.process_supervisor.stop_monitor())
+                )
                 self.process_supervisor.start_monitor()
                 self.public_tunnel_manager.set_local_url(clean_server_url)
                 self.session_run_monitor.default_server = clean_server_url
                 if before_session_monitor is not None:
                     before_session_monitor(clean_server_url)
+                rollback_actions.append(
+                    ("session_run_monitor", self.session_run_monitor.stop)
+                )
                 self.session_run_monitor.start()
                 if start_public_tunnel:
+                    rollback_actions.append(
+                        ("public_tunnel", self.public_tunnel_manager.stop)
+                    )
                     self.public_tunnel_manager.start()
-            except BaseException:
+            except BaseException as error:
                 self._state = "start_failed"
+                for name, callback in reversed(rollback_actions):
+                    try:
+                        callback()
+                    except BaseException as cleanup_error:
+                        error.add_note(
+                            "GUI startup rollback failed in "
+                            f"{name}: {type(cleanup_error).__name__}."
+                        )
                 raise
             self._state = "started"
 

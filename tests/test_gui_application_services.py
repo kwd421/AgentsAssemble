@@ -52,14 +52,26 @@ class _ApplicationDatabase:
 
 
 class _ProcessSupervisor:
-    def __init__(self, events: list[str], *, fail_start: bool = False) -> None:
+    def __init__(
+        self,
+        events: list[str],
+        *,
+        fail_start: bool = False,
+        fail_stop_monitor: bool = False,
+    ) -> None:
         self.events = events
         self.fail_start = fail_start
+        self.fail_stop_monitor = fail_stop_monitor
 
     def start_monitor(self) -> None:
         self.events.append("process.start")
         if self.fail_start:
             raise RuntimeError("process monitor failed")
+
+    def stop_monitor(self) -> None:
+        self.events.append("process.monitor.stop")
+        if self.fail_stop_monitor:
+            raise RuntimeError("sensitive monitor cleanup detail")
 
     def close(self) -> None:
         self.events.append("process.close")
@@ -78,13 +90,22 @@ class _BlockingProcessSupervisor(_ProcessSupervisor):
 
 
 class _SessionMonitor:
-    def __init__(self, events: list[str], *, fail_stop: bool = False) -> None:
+    def __init__(
+        self,
+        events: list[str],
+        *,
+        fail_start: bool = False,
+        fail_stop: bool = False,
+    ) -> None:
         self.events = events
+        self.fail_start = fail_start
         self.fail_stop = fail_stop
         self.default_server = ""
 
     def start(self) -> None:
         self.events.append("session.start")
+        if self.fail_start:
+            raise RuntimeError("session monitor failed")
 
     def stop(self) -> None:
         self.events.append("session.stop")
@@ -93,14 +114,17 @@ class _SessionMonitor:
 
 
 class _Tunnel:
-    def __init__(self, events: list[str]) -> None:
+    def __init__(self, events: list[str], *, fail_start: bool = False) -> None:
         self.events = events
+        self.fail_start = fail_start
 
     def set_local_url(self, server_url: str) -> None:
         self.events.append(f"tunnel.url:{server_url}")
 
     def start(self) -> None:
         self.events.append("tunnel.start")
+        if self.fail_start:
+            raise RuntimeError("tunnel failed")
 
     def stop(self) -> None:
         self.events.append("tunnel.stop")
@@ -127,7 +151,10 @@ class GuiApplicationServicesTests(unittest.TestCase):
         events: list[str],
         *,
         fail_process_start: bool = False,
+        fail_process_stop_monitor: bool = False,
+        fail_session_start: bool = False,
         fail_session_stop: bool = False,
+        fail_tunnel_start: bool = False,
         owns_resources: bool = True,
         owns_database: bool = False,
     ) -> GuiApplicationServices:
@@ -173,11 +200,19 @@ class GuiApplicationServicesTests(unittest.TestCase):
             process_supervisor=_ProcessSupervisor(  # type: ignore[arg-type]
                 events,
                 fail_start=fail_process_start,
+                fail_stop_monitor=fail_process_stop_monitor,
             ),
             session_run_controller=object(),  # type: ignore[arg-type]
-            session_run_monitor=_SessionMonitor(events, fail_stop=fail_session_stop),
+            session_run_monitor=_SessionMonitor(
+                events,
+                fail_start=fail_session_start,
+                fail_stop=fail_session_stop,
+            ),
             flow_supervisor=_FlowSupervisor(),
-            public_tunnel_manager=_Tunnel(events),  # type: ignore[arg-type]
+            public_tunnel_manager=_Tunnel(  # type: ignore[arg-type]
+                events,
+                fail_start=fail_tunnel_start,
+            ),
             ws_ticket_store=object(),  # type: ignore[arg-type]
             native_cli_bridge_manager=None,
             room_realtime_controller=_RealtimeController(events),  # type: ignore[arg-type]
@@ -298,14 +333,17 @@ class GuiApplicationServicesTests(unittest.TestCase):
 
             with self.assertRaisesRegex(RuntimeError, "process monitor failed"):
                 services.start("http://127.0.0.1:8765")
+            self.assertEqual(events, ["process.start", "process.monitor.stop"])
             with self.assertRaisesRegex(RuntimeError, "cannot start from state 'start_failed'"):
                 services.start("http://127.0.0.1:8765")
+            services.close()
             services.close()
 
         self.assertEqual(
             events,
             [
                 "process.start",
+                "process.monitor.stop",
                 "session.stop",
                 "tunnel.stop",
                 "process.close",
@@ -316,6 +354,102 @@ class GuiApplicationServicesTests(unittest.TestCase):
                 "repository.close",
             ],
         )
+
+    def test_pre_monitor_callback_failure_rolls_back_the_process_monitor(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events: list[str] = []
+            services = self._services(Path(temp_dir), events)
+
+            def fail_callback(server_url: str) -> None:
+                events.append(f"autostart:{server_url}")
+                raise RuntimeError("autostart failed")
+
+            with self.assertRaisesRegex(RuntimeError, "autostart failed"):
+                services.start(
+                    "http://127.0.0.1:8765",
+                    before_session_monitor=fail_callback,
+                )
+
+        self.assertEqual(
+            events,
+            [
+                "process.start",
+                "tunnel.url:http://127.0.0.1:8765",
+                "autostart:http://127.0.0.1:8765",
+                "process.monitor.stop",
+            ],
+        )
+
+    def test_session_start_failure_rolls_back_attempted_services_in_reverse_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events: list[str] = []
+            services = self._services(
+                Path(temp_dir),
+                events,
+                fail_session_start=True,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "session monitor failed"):
+                services.start("http://127.0.0.1:8765")
+
+        self.assertEqual(
+            events,
+            [
+                "process.start",
+                "tunnel.url:http://127.0.0.1:8765",
+                "session.start",
+                "session.stop",
+                "process.monitor.stop",
+            ],
+        )
+
+    def test_tunnel_start_failure_rolls_back_all_started_services(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events: list[str] = []
+            services = self._services(
+                Path(temp_dir),
+                events,
+                fail_tunnel_start=True,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "tunnel failed"):
+                services.start(
+                    "http://127.0.0.1:8765",
+                    start_public_tunnel=True,
+                )
+
+        self.assertEqual(
+            events,
+            [
+                "process.start",
+                "tunnel.url:http://127.0.0.1:8765",
+                "session.start",
+                "tunnel.start",
+                "tunnel.stop",
+                "session.stop",
+                "process.monitor.stop",
+            ],
+        )
+
+    def test_startup_rollback_preserves_original_error_and_redacts_cleanup_detail(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events: list[str] = []
+            services = self._services(
+                Path(temp_dir),
+                events,
+                fail_process_start=True,
+                fail_process_stop_monitor=True,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "process monitor failed") as caught:
+                services.start("http://127.0.0.1:8765")
+
+        notes = list(getattr(caught.exception, "__notes__", []))
+        self.assertEqual(
+            notes,
+            ["GUI startup rollback failed in process_monitor: RuntimeError."],
+        )
+        self.assertNotIn("sensitive monitor cleanup detail", str(notes))
 
     def test_shutdown_waits_for_in_progress_start_before_closing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
