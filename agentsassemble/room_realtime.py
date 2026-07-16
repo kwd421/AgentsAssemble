@@ -10,9 +10,7 @@ from pathlib import Path
 from typing import Callable, Protocol
 from uuid import uuid4
 
-from agentsassemble.agent_sessions import build_room_turn_packet
 from agentsassemble.diagnostics.cleanup import CleanupReport, emit_cleanup_failure
-from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     StoredProviderProfileError,
@@ -101,6 +99,8 @@ from agentsassemble.room.turn_coordinator import (
     dedupe_event_ids as _dedupe_text_list,
     room_message_text as _room_message_text,
 )
+from agentsassemble.room.turn_context import build_room_turn_packet
+from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room.types import RoomCommand, RoomEvent
 from agentsassemble.voice_presence import leave_all_voice
 
