@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `3d695ef9233386c9`
+Source fingerprint: `177383c10e15d8a3`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 396
+- Python modules: 397
 - Top-level package modules: 303
-- Domains: admission=28, application=62, diagnostics=12, features=7, identity=9, legacy=79, persistence=58, providers=45, room=43, web=53
-- Classifications: compatibility=43, current=268, legacy=78, optional=7
+- Domains: admission=28, application=62, diagnostics=12, features=7, identity=9, legacy=79, persistence=58, providers=45, room=43, web=54
+- Classifications: compatibility=44, current=268, legacy=78, optional=7
 
 ## Classification Rules
 
@@ -139,8 +139,8 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.gui_request_security` | `agentsassemble/gui_request_security.py` | 28 | web | compatibility | `agentsassemble.web.security` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.gui_response` | `agentsassemble/gui_response.py` | 14 | web | compatibility | `agentsassemble.web.response` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.gui_retired_http` | `agentsassemble/gui_retired_http.py` | 52 | web | current | `agentsassemble.web.router` | 1 | - | - | - | `web/` | planned-move |
-| `agentsassemble.gui_room_agent_http` | `agentsassemble/gui_room_agent_http.py` | 137 | web | current | `agentsassemble.agent_sessions`, `agentsassemble.web.router` | 1 | - | - | - | `web/` | planned-move |
-| `agentsassemble.gui_room_http` | `agentsassemble/gui_room_http.py` | 206 | web | current | `agentsassemble.agent_sessions`, `agentsassemble.codex_app_server_runtime`, `agentsassemble.gui_room_agent_http`, `agentsassemble.gui_room_lifecycle_http`, `agentsassemble.gui_room_moderation_media_http`, `agentsassemble.live_agent_room_admin`, `agentsassemble.live_agents`, `agentsassemble.meeting_events`, +12 | 1 | `call:CodexAppServerRuntimeManager@98` | test-import:2, monkeypatch:1 | `tests/gui_server_test_support.py`, `tests/test_gui_server_room_routes.py` | `web/` | planned-move |
+| `agentsassemble.gui_room_agent_http` | `agentsassemble/gui_room_agent_http.py` | 4 | web | compatibility | `agentsassemble.web.routes.agent_sessions` | 0 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | compatibility-shim |
+| `agentsassemble.gui_room_http` | `agentsassemble/gui_room_http.py` | 206 | web | current | `agentsassemble.agent_sessions`, `agentsassemble.codex_app_server_runtime`, `agentsassemble.gui_room_lifecycle_http`, `agentsassemble.gui_room_moderation_media_http`, `agentsassemble.live_agent_room_admin`, `agentsassemble.live_agents`, `agentsassemble.meeting_events`, `agentsassemble.multi_host_invites`, +12 | 1 | `call:CodexAppServerRuntimeManager@98` | test-import:2, monkeypatch:1 | `tests/gui_server_test_support.py`, `tests/test_gui_server_room_routes.py` | `web/` | planned-move |
 | `agentsassemble.gui_room_invite_http` | `agentsassemble/gui_room_invite_http.py` | 4 | admission | compatibility | `agentsassemble.web.routes.room_invite` | 0 | - | test-import:1 | `tests/test_web_routes_package.py` | `admission/` | compatibility-shim |
 | `agentsassemble.gui_room_lifecycle_http` | `agentsassemble/gui_room_lifecycle_http.py` | 381 | web | current | `agentsassemble.agent_sessions`, `agentsassemble.live_agent_frontend_create`, `agentsassemble.meeting_events`, `agentsassemble.room_members`, `agentsassemble.room_speech`, `agentsassemble.room_votes`, `agentsassemble.web.router` | 1 | - | - | - | `web/` | planned-move |
 | `agentsassemble.gui_room_moderation_media_http` | `agentsassemble/gui_room_moderation_media_http.py` | 445 | web | current | `agentsassemble.agent_sessions`, `agentsassemble.live_agent_room_admin`, `agentsassemble.live_agents`, `agentsassemble.meeting_events`, `agentsassemble.room_channels`, `agentsassemble.room_members`, `agentsassemble.room_speech`, `agentsassemble.voice_presence`, +1 | 1 | `call:Lock@50` | - | - | `web/` | planned-move |
@@ -414,6 +414,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.web.response` | `agentsassemble/web/response.py` | 173 | web | current | `agentsassemble.attachments`, `agentsassemble.frontend_runtime` | 2 | - | test-import:2 | `tests/test_gui_response.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.router` | `agentsassemble/web/router.py` | 495 | web | current | `agentsassemble.admission.coordinator`, `agentsassemble.admission.invite_service`, `agentsassemble.admission.preflight`, `agentsassemble.admission.projection`, `agentsassemble.admission.session_service`, `agentsassemble.attachments`, `agentsassemble.identity.pairing`, `agentsassemble.identity.repository`, +3 | 44 | - | test-import:32 | `tests/gui_server_test_support.py`, `tests/test_gui_legacy_codex_session_http.py`, `tests/test_gui_legacy_live_agent_discovery_http.py`, `+29` | `web/` | in-target-package |
 | `agentsassemble.web.routes` | `agentsassemble/web/routes/__init__.py` | 1 | web | current | - | 0 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |
+| `agentsassemble.web.routes.agent_sessions` | `agentsassemble/web/routes/agent_sessions.py` | 157 | web | current | `agentsassemble.agent_sessions`, `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.routes.attachments` | `agentsassemble/web/routes/attachments.py` | 50 | web | current | `agentsassemble.attachments`, `agentsassemble.room.text`, `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.routes.providers` | `agentsassemble/web/routes/providers.py` | 108 | web | current | `agentsassemble`, `agentsassemble.adapters`, `agentsassemble.provider_catalog`, `agentsassemble.provider_login`, `agentsassemble.provider_secrets`, `agentsassemble.web.router` | 2 | - | test-import:2, monkeypatch:1 | `tests/test_gui_server_provider_http.py`, `tests/test_web_routes_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.routes.public_invite` | `agentsassemble/web/routes/public_invite.py` | 150 | web | current | `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |

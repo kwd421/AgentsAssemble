@@ -556,3 +556,7 @@ module churn were deliberately avoided rather than forgotten.
   targets, and invite-boundary tests use the owned paths. Route parity now
   inventories `web/routes/` recursively instead of relying only on root
   filenames.
+- 2026-07-16: Agent Session create/resume/turn HTTP registration moved intact
+  to `web/routes/agent_sessions.py`. The room coordinator imports the owned
+  registrar while preserving its existing local process and turn adapter patch
+  seams; `gui_room_agent_http.py` remains an explicit compatibility export.

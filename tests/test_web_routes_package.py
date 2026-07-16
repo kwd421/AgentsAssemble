@@ -5,8 +5,10 @@ import unittest
 import agentsassemble.gui_attachment_http as compatibility_attachments
 import agentsassemble.gui_provider_http as compatibility_providers
 import agentsassemble.gui_public_invite_http as compatibility_public_invite
+import agentsassemble.gui_room_agent_http as compatibility_agent_sessions
 import agentsassemble.gui_room_invite_http as compatibility_room_invite
 import agentsassemble.gui_room_settings_http as compatibility_room_settings
+from agentsassemble.web.routes import agent_sessions as owned_agent_sessions
 from agentsassemble.web.routes import attachments as owned_attachments
 from agentsassemble.web.routes import providers as owned_providers
 from agentsassemble.web.routes import public_invite as owned_public_invite
@@ -15,6 +17,12 @@ from agentsassemble.web.routes import room_settings as owned_room_settings
 
 
 class WebRoutesPackageTests(unittest.TestCase):
+    def test_agent_session_root_module_exports_owned_routes(self) -> None:
+        self.assertIs(
+            compatibility_agent_sessions.register_agent_session_routes,
+            owned_agent_sessions.register_agent_session_routes,
+        )
+
     def test_attachment_root_module_exports_owned_routes(self) -> None:
         self.assertIs(
             compatibility_attachments.register_attachment_routes,

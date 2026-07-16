@@ -378,6 +378,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_web_transport_package.py",),
         introduced_in="Milestone 4.3 web router move",
     ),
+    "gui_room_agent_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.web.routes.agent_sessions",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_room_agent_http for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_web_routes_package.py",),
+        introduced_in="Milestone 4.7 Agent Session route package",
+    ),
     "gui_room_invite_http.py": CompatibilityShim(
         replacement_import="agentsassemble.web.routes.room_invite",
         removal_gate=(

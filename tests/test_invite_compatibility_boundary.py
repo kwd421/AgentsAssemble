@@ -21,7 +21,7 @@ CURRENT_INVITE_APPLICATION_MODULES = (
     "agentsassemble/room_realtime.py",
 )
 CURRENT_IDENTITY_APPLICATION_MODULES = (
-    "agentsassemble/gui_room_agent_http.py",
+    "agentsassemble/web/routes/agent_sessions.py",
     "agentsassemble/web/routes/room_invite.py",
     "agentsassemble/gui_room_lifecycle_http.py",
     "agentsassemble/web/router.py",

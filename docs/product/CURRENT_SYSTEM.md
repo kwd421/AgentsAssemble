@@ -266,6 +266,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | WebSocket commands and ACL | `room_commands.py`, `ws_room_session.py`, `room_realtime.py` |
 | Routing and provider context | `room_routing.py`, `room_context.py`, `room_turn_context.py` |
 | Fanout and bridge delivery | `room_event_broker.py`, `room_agent_bridge.py` |
+| Agent Session compatibility HTTP | `web/routes/agent_sessions.py`; compatibility export in `gui_room_agent_http.py` |
 | Provider catalog and settings | `native_cli_providers.py`, `provider_capabilities.py` |
 | Provider catalog/credential HTTP | `web/routes/providers.py`; compatibility export in `gui_provider_http.py`; secret storage in `provider_secrets.py` |
 | Codex app-server lifecycle | `codex_app_server_runtime.py`; compatibility exports in `agent_sessions.py` |
