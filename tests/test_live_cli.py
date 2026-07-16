@@ -9,7 +9,7 @@ from agentsassemble.live_cli import (
     LiveCliRuntime,
     live_cli_supported,
 )
-from agentsassemble.live_cli_transcripts import LiveCliMessageSnapshot
+from agentsassemble.providers.live_cli_transcripts import LiveCliMessageSnapshot
 
 
 def _fake_cli_script(*, delay_seconds: float = 0.0) -> str:

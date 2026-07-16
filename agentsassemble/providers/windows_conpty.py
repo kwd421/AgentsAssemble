@@ -11,7 +11,10 @@ from agentsassemble.providers.live_cli_output import (
     extract_live_cli_terminal_message,
     terminal_text_contains,
 )
-from agentsassemble.live_cli_transcripts import LiveCliMessageSource, make_live_cli_message_source
+from agentsassemble.providers.live_cli_transcripts import (
+    LiveCliMessageSource,
+    make_live_cli_message_source,
+)
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 from agentsassemble.room.text import clean_room_text
 

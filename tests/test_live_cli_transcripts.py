@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.live_cli import LiveCliRuntime, live_cli_supported
-from agentsassemble.live_cli_transcripts import (
+from agentsassemble.providers.live_cli_transcripts import (
     AntigravityTranscriptMessageSource,
     ClaudeSessionMessageSource,
     CodexSessionMessageSource,

@@ -22,7 +22,7 @@ from agentsassemble.providers.live_cli_output import (
     strip_terminal_ansi,
     terminal_text_contains,
 )
-from agentsassemble.live_cli_transcripts import (
+from agentsassemble.providers.live_cli_transcripts import (
     LiveCliMessageExtractionError,
     LiveCliMessageSource,
     LiveCliMessageSnapshot,

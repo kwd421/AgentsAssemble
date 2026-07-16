@@ -694,3 +694,11 @@ module churn were deliberately avoided rather than forgotten.
   rendering, provider answer marker detection, startup readiness matching,
   terminal chrome filtering, reasoning/status suppression, fallback scoring,
   and message cleanup rules are unchanged.
+- 2026-07-17: Provider-native structured transcript adapters moved to
+  `providers/live_cli_transcripts.py`. POSIX PTY and Windows ConPTY runtimes,
+  transcript behavior tests, and the Antigravity request-normalization test
+  now use the owned path; `live_cli_transcripts.py` remains an explicit
+  compatibility export. Direct `room.text` normalization replaces the legacy
+  delegation without changing values. Provider session discovery, exact-turn
+  binding, partial JSONL handling, Markdown preservation, model observation,
+  strict extraction errors, and terminal-capture behavior are unchanged.

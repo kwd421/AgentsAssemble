@@ -136,6 +136,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.11 live CLI output move",
     ),
+    "live_cli_transcripts.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.live_cli_transcripts",
+        removal_gate=(
+            "No direct imports use agentsassemble.live_cli_transcripts for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.12 live CLI transcript adapter move",
+    ),
     "room_admission.py": CompatibilityShim(
         replacement_import="agentsassemble.admission.preflight",
         removal_gate=(
