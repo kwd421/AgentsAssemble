@@ -1280,11 +1280,11 @@ class GuiServerLobbySocialTests(unittest.TestCase):
             thread.start()
             try:
                 with patch(
-                    "agentsassemble.gui_side_chat_http.append_side_chat_event",
+                    "agentsassemble.features.side_chat.routes.append_side_chat_event",
                     return_value=injected_event,
                 ) as append_mock:
                     with patch(
-                        "agentsassemble.gui_side_chat_http.read_side_chat",
+                        "agentsassemble.features.side_chat.routes.read_side_chat",
                         return_value=injected_events,
                     ) as read_mock:
                         request = Request(

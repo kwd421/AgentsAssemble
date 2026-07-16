@@ -46,6 +46,33 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_application_package.py",),
         introduced_in="Milestone 4.5 application package bootstrap",
     ),
+    "gui_mafia_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.features.mafia.routes",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_mafia_http for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_feature_routes_package.py",),
+        introduced_in="Milestone 4.8 optional feature route packages",
+    ),
+    "gui_side_chat_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.features.side_chat.routes",
+        removal_gate=(
+            "No direct imports or monkeypatch targets use "
+            "agentsassemble.gui_side_chat_http for one compatibility window."
+        ),
+        known_callers=("tests/test_feature_routes_package.py",),
+        introduced_in="Milestone 4.8 optional feature route packages",
+    ),
+    "gui_social_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.features.social.routes",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_social_http for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_feature_routes_package.py",),
+        introduced_in="Milestone 4.8 optional feature route packages",
+    ),
     "room_admission.py": CompatibilityShim(
         replacement_import="agentsassemble.admission.preflight",
         removal_gate=(

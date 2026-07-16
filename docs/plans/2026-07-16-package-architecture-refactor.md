@@ -573,3 +573,11 @@ module churn were deliberately avoided rather than forgotten.
   both production composition and the historical combined registrar register
   current member routes before the retained routes, preserving route order and
   behavior.
+- 2026-07-16: Optional Mafia, side-chat, and room-social route registrars moved
+  to `features/mafia/routes.py`, `features/side_chat/routes.py`, and
+  `features/social/routes.py`. Production composition and behavior tests use
+  the owned feature paths; the three root files are explicit compatibility
+  exports. Route parity inventories now include feature route packages. The
+  generated package-map classifier also recognizes existing `application/`
+  and `features/` ownership so already-moved modules are not reported as
+  planned moves.

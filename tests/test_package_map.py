@@ -134,6 +134,37 @@ class PackageMapTests(unittest.TestCase):
         self.assertIn("| compatibility |", row_shim_line)
         self.assertTrue(row_shim_line.endswith("| compatibility-shim |"))
 
+    def test_application_and_feature_packages_are_owned_paths(self) -> None:
+        graph = load_package_graph(ROOT)
+        package_map = build_package_map(ROOT)
+
+        application_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith("| `agentsassemble.application.gui` |")
+        )
+        self.assertEqual(
+            graph.domains["agentsassemble.application.gui"],
+            "application",
+        )
+        self.assertTrue(application_line.endswith("| in-target-package |"))
+
+        for module_name, proposed_package in (
+            ("agentsassemble.features.mafia.routes", "features/mafia/"),
+            ("agentsassemble.features.side_chat.routes", "features/side_chat/"),
+            ("agentsassemble.features.social.routes", "features/social/"),
+        ):
+            with self.subTest(module_name=module_name):
+                self.assertEqual(graph.domains[module_name], "features")
+                self.assertEqual(graph.classifications[module_name], "optional")
+                module_line = next(
+                    line
+                    for line in package_map.splitlines()
+                    if line.startswith(f"| `{module_name}` |")
+                )
+                self.assertIn(f"| `{proposed_package}` |", module_line)
+                self.assertTrue(module_line.endswith("| in-target-package |"))
+
 
 if __name__ == "__main__":
     unittest.main()

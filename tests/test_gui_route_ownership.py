@@ -13,6 +13,7 @@ GUI_ROUTE_MODULES = (
     *sorted((REPOSITORY_ROOT / "agentsassemble").glob("gui*_http.py")),
     REPOSITORY_ROOT / "agentsassemble" / "web" / "websocket.py",
     *sorted((REPOSITORY_ROOT / "agentsassemble" / "web" / "routes").rglob("*.py")),
+    *sorted((REPOSITORY_ROOT / "agentsassemble" / "features").rglob("routes.py")),
 )
 DYNAMIC_ROUTE_HELPERS = {
     "_live_agent_process_action_path": ("POST", "/api/live-agent-processes/{group_id}/{action}"),

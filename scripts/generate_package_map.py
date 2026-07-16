@@ -15,7 +15,9 @@ EXISTING_PACKAGES = frozenset(
     {
         "adapters",
         "admission",
+        "application",
         "bridges",
+        "features",
         "identity",
         "legacy",
         "migrations",
@@ -25,7 +27,15 @@ EXISTING_PACKAGES = frozenset(
     }
 )
 PATH_OWNED_DOMAINS = frozenset(
-    {"admission", "application", "identity", "providers", "room", "web"}
+    {
+        "admission",
+        "application",
+        "features",
+        "identity",
+        "providers",
+        "room",
+        "web",
+    }
 )
 FROZEN_POLICY_TERMS = (
     "attention",
@@ -290,6 +300,8 @@ def _classification(module: ModuleSource) -> str:
         return "legacy"
     if stem.startswith("live_agent_"):
         return "legacy"
+    if len(relative_parts) > 2 and relative_parts[1] == "features":
+        return "optional"
     if any(term in stem for term in ("mafia", "friend", "side_chat", "social")):
         return "optional"
     return "current"
@@ -392,6 +404,11 @@ def _proposed_package(module: ModuleSource, domain: str) -> str:
             return "persistence/postgres/"
         return "persistence/local/"
     if domain == "features":
+        relative_parts = Path(module.relative_path).parts
+        if len(relative_parts) > 2 and relative_parts[1] == "features":
+            if len(relative_parts) > 3:
+                return f"features/{relative_parts[2]}/"
+            return "features/"
         stem = module.path.stem
         feature = next(
             (name for name in ("mafia", "friends", "side_chat", "social") if name in stem),
