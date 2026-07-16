@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from agentsassemble.agent_sessions import merge_room_store_members
-from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.persistence.local.identity.registry import (
+    identity_store_for_output_root,
+)
 from agentsassemble.room_friends import room_friend_type_for_agent
 from agentsassemble.room_repository import RoomRepository
 

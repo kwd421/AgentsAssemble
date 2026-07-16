@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.identity_store import IdentityStore
+from agentsassemble.persistence.local.identity.repository import IdentityStore
 from tests.identity_repository_contract import IdentityRepositoryContractMixin
 
 

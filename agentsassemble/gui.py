@@ -303,7 +303,7 @@ from agentsassemble.admission.preflight import RoomAdmissionService
 from agentsassemble.admission.coordinator import RoomAdmissionCoordinator
 from agentsassemble.identity_repository_factory import build_identity_repository
 from agentsassemble.identity.repository import IdentityBackend
-from agentsassemble.identity_store import (
+from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
     register_identity_store_for_output_root,
     unregister_identity_store_for_output_root,

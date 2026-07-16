@@ -11,17 +11,21 @@ from agentsassemble.identity.repository import (
     LOCAL_OPERATOR_PARTICIPANT_ID,
     LOCAL_OPERATOR_USER_ID,
 )
-from agentsassemble.identity_store import (
-    IdentityStore,
-    SqliteIdentityStore,
-    identity_store_for_output_root,
-    make_identity_backend,
+from agentsassemble.persistence.local.identity.migration import (
     migrate_legacy_members_json,
     migrate_legacy_users_json,
+)
+from agentsassemble.persistence.local.identity.registry import (
+    identity_store_for_output_root,
+    make_identity_backend,
     register_identity_store_for_output_root,
     register_identity_backend,
     reset_identity_store_registry,
     unregister_identity_store_for_output_root,
+)
+from agentsassemble.persistence.local.identity.repository import (
+    IdentityStore,
+    SqliteIdentityStore,
 )
 
 ROOM = "room-db-test"
@@ -417,7 +421,8 @@ class BackendAbstractionTests(IdentityStoreTestCase):
             self.assertIs(make_identity_backend("memory-test"), sentinel)
         finally:
             # don't leak the test backend into the global registry
-            from agentsassemble import identity_store as mod
+            from agentsassemble.persistence.local.identity import registry as mod
+
             mod._BACKEND_FACTORIES.pop("memory-test", None)
 
     def test_output_root_binding_prevents_an_implicit_sqlite_fallback(self):

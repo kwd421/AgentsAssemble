@@ -641,7 +641,9 @@ def run_api_call_command(args: argparse.Namespace) -> int:
     print the reply on stdout, and record token usage. Designed to be a live-agent
     `command` so the runner's envelope/heartbeat/meta-filter wrap it unchanged."""
     from agentsassemble import provider_catalog, room_api_provider
-    from agentsassemble.identity_store import identity_store_for_output_root
+    from agentsassemble.persistence.local.identity.registry import (
+        identity_store_for_output_root,
+    )
 
     if getattr(args, "catalog", False):
         print(json.dumps(provider_catalog.catalog_payload(), ensure_ascii=False, indent=2))
@@ -4796,7 +4798,9 @@ class _ApiCatalogCommandRunner:
         if not self.output_root:
             return None
         try:
-            from agentsassemble.identity_store import identity_store_for_output_root
+            from agentsassemble.persistence.local.identity.registry import (
+                identity_store_for_output_root,
+            )
 
             return identity_store_for_output_root(Path(self.output_root))
         except (OSError, ValueError):

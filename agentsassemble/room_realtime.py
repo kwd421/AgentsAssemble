@@ -36,9 +36,11 @@ from agentsassemble.provider_runtime_config import (
     ProviderRuntimeConfigError,
     ProviderRuntimeProfile,
 )
-from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.session_service import RoomSessionService
+from agentsassemble.persistence.local.identity.registry import (
+    identity_store_for_output_root,
+)
 from agentsassemble.room_commands import (
     RoomCommandValidationError,
     capabilities_for_identity,

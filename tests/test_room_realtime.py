@@ -22,7 +22,9 @@ from agentsassemble.room_command_uow import RoomCommandUnitOfWork
 from agentsassemble.room_members import is_room_member_muted, set_room_member_muted
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room_settings import update_room_settings as update_legacy_room_settings
-from agentsassemble.identity_store import identity_store_for_output_root
+from agentsassemble.persistence.local.identity.registry import (
+    identity_store_for_output_root,
+)
 from agentsassemble.provider_capabilities import ProviderCapabilityCatalog
 from agentsassemble.native_cli_providers import native_cli_provider_definition
 from tests.room_realtime_test_support import memory_room_access_services

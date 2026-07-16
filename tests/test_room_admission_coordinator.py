@@ -11,11 +11,11 @@ from unittest.mock import patch
 from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.identity.repository import device_auth_key
-from agentsassemble.identity_store import IdentityStore
 from agentsassemble.persistence.local.admission.repository import (
     JsonInviteSessionRepository,
     MemoryInviteSessionRepository,
 )
+from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.admission.coordinator import (
     AdmissionIdempotencyConflict,
     RoomAdmissionCoordinator,

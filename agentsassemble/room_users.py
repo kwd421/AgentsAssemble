@@ -29,10 +29,12 @@ from agentsassemble.identity.repository import (
     device_auth_key,
     normalize_participant_type,
 )
-from agentsassemble.identity_store import (
-    IDENTITY_DB_FILENAME,
-    identity_store_at,
+from agentsassemble.persistence.local.identity.migration import (
     migrate_legacy_users_json,
+)
+from agentsassemble.persistence.local.identity.registry import identity_store_at
+from agentsassemble.persistence.local.identity.repository import (
+    IDENTITY_DB_FILENAME,
 )
 
 _state_lock = threading.Lock()

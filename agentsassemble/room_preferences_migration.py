@@ -15,12 +15,12 @@ from agentsassemble.identity_room_preferences import (
     read_room_preferences,
     update_room_preferences,
 )
-from agentsassemble.identity_store import IDENTITY_DB_FILENAME
 from agentsassemble.legacy_room_preferences_source import (
     LEGACY_ROOM_PREFERENCES_SOURCE_VERSION,
     LegacyRoomPreferencesSource,
     read_legacy_room_preferences_source,
 )
+from agentsassemble.persistence.local.identity.repository import IDENTITY_DB_FILENAME
 from agentsassemble.legacy_room_settings_document import LegacyRoomSettingsSourceError
 from agentsassemble.persistence.local.room.database import ROOM_DATABASE_FILENAME, open_room_database
 from agentsassemble.room_user_preferences import RoomUserPreferencesRecord

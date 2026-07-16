@@ -6,10 +6,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentsassemble.identity_repository_factory import build_identity_repository
-from agentsassemble.identity_store import (
-    IdentityStore,
+from agentsassemble.persistence.local.identity.registry import (
     reset_identity_store_registry,
 )
+from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.room_repository_factory import (
     RoomRepositoryConfigurationError,
     RoomRepositorySettings,

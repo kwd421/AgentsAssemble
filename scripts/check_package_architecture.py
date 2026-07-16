@@ -263,6 +263,19 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_identity_pairing_package.py",),
         introduced_in="Milestone 3.7 identity pairing package bootstrap",
     ),
+    "identity_store.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.local.identity.repository",
+        removal_gate=(
+            "Callers use agentsassemble.identity.repository for contracts and "
+            "agentsassemble.persistence.local.identity registry, migration, or "
+            "repository modules for one compatibility window."
+        ),
+        known_callers=(
+            "tests/test_identity_repository_package.py",
+            "tests/test_local_identity_persistence_package.py",
+        ),
+        introduced_in="Milestone 3.9 local identity persistence move",
+    ),
     "postgres_room_mutations.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.postgres.room.mutations",
         removal_gate=(

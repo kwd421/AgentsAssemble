@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from agentsassemble.identity_store import default_identity_db_path
+from agentsassemble.persistence.local.identity.registry import default_identity_db_path
 from agentsassemble.persistence.local.room.repository import RoomStore
 
 

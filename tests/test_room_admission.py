@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.identity_store import IdentityStore
+from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_invite import (
     configure_room_invite_store,

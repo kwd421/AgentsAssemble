@@ -1,0 +1,1 @@
+"""Local identity persistence implementation."""

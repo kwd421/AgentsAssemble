@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentsassemble.cli import build_parser, run_room_command
-from agentsassemble.identity_store import IdentityStore
+from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.room_preferences_migration import (
     PLAN_FILENAME,
     LegacyRoomPreferencesMigrationError,

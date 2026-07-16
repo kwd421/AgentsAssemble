@@ -155,7 +155,7 @@ class GuiServerRoomPayloadTests(unittest.TestCase):
     def test_backfill_room_registry_seeds_existing_meetings(self):
         # Rooms created before the registry existed must resurface in /api/rooms.
         from agentsassemble.gui import _backfill_room_registry
-        from agentsassemble.identity_store import IdentityStore
+        from agentsassemble.persistence.local.identity.repository import IdentityStore
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

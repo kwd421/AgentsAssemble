@@ -35,9 +35,9 @@ from tests.gui_server_test_support import (
 )
 from agentsassemble.gui_router import GuiDeps
 from agentsassemble.identity.repository import device_auth_key
-from agentsassemble.identity_store import IdentityStore
 from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionProjection
 from agentsassemble.identity.pairing import OperatorPairingService
+from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.admission.coordinator import RoomAdmissionCoordinator
 from agentsassemble.room_invite import verify_session_token

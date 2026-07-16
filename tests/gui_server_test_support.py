@@ -57,7 +57,7 @@ from agentsassemble.gui import (
 )
 from agentsassemble.gui_room_http import register_room_routes
 from agentsassemble.gui_router import GuiDeps, RequestContext, Router
-from agentsassemble.identity_store import IdentityStore
+from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.agent_sessions import room_sse_frames_after_cursor
 from agentsassemble.meeting_events import append_live_event, read_live_events, write_live_state
 from agentsassemble.meeting_events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after

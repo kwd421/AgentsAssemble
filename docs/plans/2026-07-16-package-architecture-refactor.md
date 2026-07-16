@@ -455,3 +455,12 @@ module churn were deliberately avoided rather than forgotten.
   temporarily re-exports the contract names; that implementation move is kept
   separate so persistence behavior and registry lifetime can be verified in
   their own commits.
+- 2026-07-16: The local identity SQLite schema and repository moved to
+  `persistence/local/identity/repository.py`. Cached local construction and
+  explicit output-root authority binding moved to `registry.py`; the one-time
+  legacy member/user JSON imports moved to `migration.py`. Current production
+  and implementation tests use those owners directly. `identity_store.py` is
+  now an explicit compatibility export only. The move also removes the local
+  adapter's dependency on legacy meeting text helpers while preserving the
+  same normalization behavior, SQLite filename/schema, additive migrations,
+  cache identity, hosted-backend binding guard, and one-time import rules.

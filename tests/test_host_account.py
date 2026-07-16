@@ -7,9 +7,12 @@ from urllib.parse import parse_qs, urlparse
 from agentsassemble import room_invite, room_users
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.gui_router import GuiDeps, RequestContext
-from agentsassemble.identity_store import identity_store_at, reset_identity_store_registry
 from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,
+)
+from agentsassemble.persistence.local.identity.registry import (
+    identity_store_at,
+    reset_identity_store_registry,
 )
 
 DEVICE_TOKEN = "phone-device-token-1234"

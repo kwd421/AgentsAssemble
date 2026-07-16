@@ -67,6 +67,23 @@ class PackageMapTests(unittest.TestCase):
         )
         self.assertTrue(repository_line.endswith("| in-target-package |"))
 
+    def test_local_identity_modules_use_persistence_ownership(self) -> None:
+        graph = load_package_graph(ROOT)
+        package_map = build_package_map(ROOT)
+
+        for module_name in (
+            "agentsassemble.persistence.local.identity.repository",
+            "agentsassemble.persistence.local.identity.registry",
+            "agentsassemble.persistence.local.identity.migration",
+        ):
+            self.assertEqual(graph.domains[module_name], "persistence")
+            module_line = next(
+                line
+                for line in package_map.splitlines()
+                if line.startswith(f"| `{module_name}` |")
+            )
+            self.assertTrue(module_line.endswith("| in-target-package |"))
+
     def test_nested_persistence_modules_keep_persistence_ownership(self) -> None:
         graph = load_package_graph(ROOT)
         package_map = build_package_map(ROOT)

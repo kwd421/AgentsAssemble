@@ -7,7 +7,10 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
-from agentsassemble.identity_store import identity_store_for_output_root, reset_identity_store_registry
+from agentsassemble.persistence.local.identity.registry import (
+    identity_store_for_output_root,
+    reset_identity_store_registry,
+)
 from agentsassemble.live_agent_frontend_create import (
     _clean_reply_char_limit,
     ensure_frontend_meeting,

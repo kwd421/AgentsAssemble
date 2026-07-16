@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from agentsassemble.identity.repository import IdentityBackend
-from agentsassemble.identity_store import identity_store_for_output_root
+from agentsassemble.persistence.local.identity.registry import (
+    identity_store_for_output_root,
+)
 from agentsassemble.room_repository_factory import (
     RoomRepositoryConfigurationError,
     RoomRepositorySettings,
