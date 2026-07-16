@@ -17,7 +17,6 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from agentsassemble.frontend_runtime import frontend_dist_status
 from agentsassemble.bridges.claude_code_bridge import CLAUDE_PRINT_MODE_DISABLED_MESSAGE, serve_bridge
 from agentsassemble.agent_sessions import (
     CODEX_APP_SERVER_SMOKE_COMMANDS,
@@ -33,6 +32,7 @@ from agentsassemble.cursor_resident import (
 )
 from agentsassemble.grok_resident import GrokResidentCommandRunner
 from agentsassemble.hermes_resident import HermesResidentCommandRunner
+from agentsassemble.web.frontend_runtime import frontend_dist_status
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.codex_sessions import (
     DEFAULT_INVITE_CONFIG_PATH,

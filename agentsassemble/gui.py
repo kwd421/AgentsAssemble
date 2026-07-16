@@ -295,7 +295,7 @@ from agentsassemble.provider_health import provider_health_payload, provider_hea
 from agentsassemble.provider_login import ProviderLoginService
 from agentsassemble.public_tunnel import PublicTunnelManager
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
-from agentsassemble.frontend_runtime import (
+from agentsassemble.web.frontend_runtime import (
     REACT_APP_BUILD_COMMAND,
     REACT_APP_MISSING_BUILD_MESSAGE,
     default_frontend_dist_root,

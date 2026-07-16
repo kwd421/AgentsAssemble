@@ -354,6 +354,8 @@ def _domain(module: ModuleSource, classification: str) -> str:
         )
     ):
         return "admission"
+    if stem == "frontend_runtime":
+        return "web"
     if (
         "/adapters/" in path_text
         or "/bridges/" in path_text

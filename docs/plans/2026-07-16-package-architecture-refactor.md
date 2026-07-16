@@ -742,3 +742,10 @@ module churn were deliberately avoided rather than forgotten.
   session IDs, project transcript lookup, assistant-only event filtering,
   tool summaries, partial-line handling, and no-history-replay behavior are
   unchanged.
+- 2026-07-17: React build inspection moved to
+  `web/frontend_runtime.py`, correcting the generated inventory's former
+  provider classification for the root `frontend_runtime.py` name. CLI, GUI,
+  and response transport callers now use the web-owned path while the root
+  module remains an explicit compatibility export. Missing, incomplete,
+  complete, query/fragment asset, and path-traversal reference behavior are
+  covered directly; static serving behavior is unchanged.

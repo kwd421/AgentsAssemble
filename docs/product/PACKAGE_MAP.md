@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `14fa77c273a73112`
+Source fingerprint: `61cda96476c4ce6d`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 432
+- Python modules: 433
 - Top-level package modules: 303
-- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=68, room=43, web=58
-- Classifications: compatibility=70, current=273, legacy=78, optional=11
+- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=67, room=43, web=60
+- Classifications: compatibility=71, current=273, legacy=78, optional=11
 
 ## Classification Rules
 
@@ -108,7 +108,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.features.side_chat.routes` | `agentsassemble/features/side_chat/routes.py` | 48 | features | optional | `agentsassemble.side_chat`, `agentsassemble.web.router` | 2 | - | test-import:1, monkeypatch:1 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_lobby_social.py` | `features/side_chat/` | in-target-package |
 | `agentsassemble.features.social` | `agentsassemble/features/social/__init__.py` | 1 | features | optional | - | 0 | - | - | - | `features/social/` | in-target-package |
 | `agentsassemble.features.social.routes` | `agentsassemble/features/social/routes.py` | 107 | features | optional | `agentsassemble.live_agents`, `agentsassemble.room_friend_dms`, `agentsassemble.room_friends`, `agentsassemble.user_profile`, `agentsassemble.web.router` | 2 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_social_http.py` | `features/social/` | in-target-package |
-| `agentsassemble.frontend_runtime` | `agentsassemble/frontend_runtime.py` | 65 | providers | current | - | 3 | - | - | - | `providers/` | planned-move |
+| `agentsassemble.frontend_runtime` | `agentsassemble/frontend_runtime.py` | 18 | web | compatibility | `agentsassemble.web.frontend_runtime` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.grok_acp_runtime` | `agentsassemble/grok_acp_runtime.py` | 6 | providers | compatibility | `agentsassemble.providers.grok_acp` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.grok_resident` | `agentsassemble/grok_resident.py` | 397 | providers | current | `agentsassemble.live_agent_runner`, `agentsassemble.providers.auth`, `agentsassemble.room_thought` | 4 | `call:compile@19`, `call:provider_login_required_message@27` | test-import:4 | `tests/test_grok_live_session_lifecycle.py`, `tests/test_grok_resident.py`, `tests/test_live_agent_runner.py`, `+1` | `providers/` | planned-move |
 | `agentsassemble.gui` | `agentsassemble/gui.py` | 3496 | application | current | `agentsassemble.admission.repository`, `agentsassemble.agent_sessions`, `agentsassemble.application.gui`, `agentsassemble.application.gui_factory`, `agentsassemble.attachments`, `agentsassemble.codex_sessions`, `agentsassemble.features.mafia.routes`, `agentsassemble.features.side_chat.routes`, +82 | 2 | `call:RLock@702`, `call:set@703` | test-import:43, monkeypatch:17 | `tests/fixtures/room_ui_server.py`, `tests/gui_server_test_support.py`, `tests/test_api_lane_runner.py`, `+49` | `root entrypoint` | retained-entrypoint |
@@ -441,7 +441,8 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.user_profile` | `agentsassemble/user_profile.py` | 152 | application | current | - | 1 | - | test-import:1 | `tests/test_user_profile.py` | `application/` | planned-move |
 | `agentsassemble.voice_presence` | `agentsassemble/voice_presence.py` | 107 | application | current | - | 3 | `call:Lock@18` | test-import:1 | `tests/test_voice_presence.py` | `application/` | planned-move |
 | `agentsassemble.web` | `agentsassemble/web/__init__.py` | 1 | web | current | - | 0 | - | test-import:1, monkeypatch:1 | `tests/test_package_architecture_gate.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
-| `agentsassemble.web.response` | `agentsassemble/web/response.py` | 173 | web | current | `agentsassemble.attachments`, `agentsassemble.frontend_runtime` | 2 | - | test-import:2 | `tests/test_gui_response.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
+| `agentsassemble.web.frontend_runtime` | `agentsassemble/web/frontend_runtime.py` | 67 | web | current | - | 4 | - | test-import:2 | `tests/test_frontend_runtime.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
+| `agentsassemble.web.response` | `agentsassemble/web/response.py` | 173 | web | current | `agentsassemble.attachments`, `agentsassemble.web.frontend_runtime` | 2 | - | test-import:2 | `tests/test_gui_response.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.router` | `agentsassemble/web/router.py` | 495 | web | current | `agentsassemble.admission.coordinator`, `agentsassemble.admission.invite_service`, `agentsassemble.admission.preflight`, `agentsassemble.admission.projection`, `agentsassemble.admission.session_service`, `agentsassemble.attachments`, `agentsassemble.identity.pairing`, `agentsassemble.identity.repository`, +3 | 47 | - | test-import:33 | `tests/gui_server_test_support.py`, `tests/test_gui_legacy_codex_session_http.py`, `tests/test_gui_legacy_live_agent_discovery_http.py`, `+30` | `web/` | in-target-package |
 | `agentsassemble.web.routes` | `agentsassemble/web/routes/__init__.py` | 1 | web | current | - | 0 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.routes.agent_sessions` | `agentsassemble/web/routes/agent_sessions.py` | 157 | web | current | `agentsassemble.agent_sessions`, `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |

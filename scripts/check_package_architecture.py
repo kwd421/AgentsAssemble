@@ -91,6 +91,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.7 DeepSeek runtime move",
     ),
+    "frontend_runtime.py": CompatibilityShim(
+        replacement_import="agentsassemble.web.frontend_runtime",
+        removal_gate=(
+            "No direct imports use agentsassemble.frontend_runtime for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_web_transport_package.py",),
+        introduced_in="Milestone 4.10 frontend build inspection move",
+    ),
     "application_transaction.py": CompatibilityShim(
         replacement_import="agentsassemble.application.transaction",
         removal_gate=(

@@ -16,7 +16,7 @@ from agentsassemble.attachments import (
     INLINE_SAFE_IMAGE_TYPES,
     attachment_content_disposition,
 )
-from agentsassemble.frontend_runtime import (
+from agentsassemble.web.frontend_runtime import (
     REACT_APP_MISSING_BUILD_MESSAGE,
     frontend_dist_status,
 )

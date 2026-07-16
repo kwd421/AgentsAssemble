@@ -110,12 +110,32 @@ class PackageMapTests(unittest.TestCase):
 
         self.assertEqual(graph.domains["agentsassemble.room.text"], "room")
         self.assertEqual(graph.domains["agentsassemble.room.visibility"], "room")
+        self.assertEqual(
+            graph.domains["agentsassemble.web.frontend_runtime"],
+            "web",
+        )
+        self.assertEqual(graph.domains["agentsassemble.frontend_runtime"], "web")
         text_line = next(
             line
             for line in package_map.splitlines()
             if line.startswith("| `agentsassemble.room.text` |")
         )
         self.assertTrue(text_line.endswith("| in-target-package |"))
+        frontend_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith("| `agentsassemble.web.frontend_runtime` |")
+        )
+        frontend_shim_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith("| `agentsassemble.frontend_runtime` |")
+        )
+        self.assertTrue(frontend_line.endswith("| in-target-package |"))
+        self.assertIn("| compatibility |", frontend_shim_line)
+        self.assertTrue(
+            frontend_shim_line.endswith("| compatibility-shim |")
+        )
 
     def test_room_persistence_move_is_not_misclassified_as_policy(self) -> None:
         package_map = build_package_map(ROOT)
