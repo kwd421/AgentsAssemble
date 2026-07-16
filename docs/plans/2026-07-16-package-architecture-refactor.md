@@ -982,3 +982,11 @@ module churn were deliberately avoided rather than forgotten.
   `room_turn_attention.py` policy dependency remains in place and frozen;
   queueing decisions, phase transitions, model verification, diagnostics,
   event payloads, retry timing, and cleanup behavior are unchanged.
+- 2026-07-17: The room-scoped in-memory provider specification registry moved
+  behind `room/provider_registry.py`. Realtime creation, restored sessions,
+  external bridges, profile display-name updates, kick, room deletion,
+  routing snapshots, and controller cleanup now use the synchronized registry
+  API instead of mutating one shared dictionary from unrelated code paths.
+  Durable Agent Session state, provider launch behavior, room routing policy,
+  public controller methods, and the controller's compatibility lookup methods
+  are unchanged.

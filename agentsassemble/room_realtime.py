@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import hashlib
 import json
 import logging
@@ -86,6 +85,7 @@ from agentsassemble.room.projection import (
     public_session,
     runtime_diagnostic_fields as _runtime_diagnostic_fields,
 )
+from agentsassemble.room.provider_registry import RoomProviderRegistry
 from agentsassemble.providers.sync_cursor import (
     ProviderSyncCursorParityError,
     ProviderSyncCursorReconciler,
@@ -174,10 +174,11 @@ class RoomRealtimeController:
             for spec in list(providers or [])
             if clean_lobby_text(spec.agent_id, limit=128)
         }
-        self._providers_by_room: dict[str, dict[str, NativeCliProviderSpec]] = {
-            self.default_room_id: {},
-        }
         self._lock = threading.RLock()
+        self._provider_registry = RoomProviderRegistry(
+            lock=self._lock,
+            default_room_id=self.default_room_id,
+        )
         self._event_listener_removers: dict[str, Callable[[], None]] = {}
         self._provider_catalog_remove = self.provider_catalog.subscribe(self._on_provider_catalog_update)
         self._closed = False
@@ -233,7 +234,7 @@ class RoomRealtimeController:
                 self.default_room_id, agent_id
             ):
                 continue
-            self._providers_by_room[self.default_room_id][agent_id] = spec
+            self._provider_registry.register(self.default_room_id, spec)
             self._ensure_provider_session(self.default_room_id, spec)
         self._reconcile_startup_sessions()
         self._provider_sync_cursor_reconciliation_report = ProviderSyncCursorReconciler(
@@ -250,7 +251,7 @@ class RoomRealtimeController:
             self.ensure_room(room_id)
             for session in self.store.sessions(room_id):
                 agent_id = clean_lobby_text(session.get("participant_id"), limit=128)
-                if not agent_id or agent_id in self._room_providers(room_id):
+                if not agent_id or self._provider_registry.contains(room_id, agent_id):
                     continue
                 if self.store.participant(room_id, agent_id).get("status") == "kicked":
                     continue
@@ -301,8 +302,7 @@ class RoomRealtimeController:
                         agent_id,
                         **updates,
                     )
-                with self._lock:
-                    self._providers_by_room.setdefault(room_id, {})[agent_id] = spec
+                self._provider_registry.register(room_id, spec)
 
     def create_provider_session(self, room_id: str, spec: NativeCliProviderSpec) -> dict[str, object]:
         clean_room_id = clean_lobby_text(room_id, limit=128)
@@ -318,8 +318,7 @@ class RoomRealtimeController:
                     "An Agent Session with this identity already exists; re-add or configure the existing session instead.",
                     code="session_exists",
                 )
-            providers = self._providers_by_room.setdefault(clean_room_id, {})
-            providers[clean_lobby_text(spec.agent_id, limit=128)] = spec
+            self._provider_registry.register(clean_room_id, spec)
             self._ensure_provider_session(clean_room_id, spec)
             current = self.store.session(clean_room_id, spec.agent_id)
             self.store.append_event(
@@ -360,7 +359,7 @@ class RoomRealtimeController:
                     "Stop this Agent Session before changing its runtime settings.",
                     code="runtime_profile_conflict",
                 )
-            self._providers_by_room.setdefault(clean_room_id, {})[spec.agent_id] = spec
+            self._provider_registry.register(clean_room_id, spec)
             self._ensure_provider_session(clean_room_id, spec)
             self.store.update_session_fields(
                 clean_room_id,
@@ -492,8 +491,7 @@ class RoomRealtimeController:
             transport="websocket",
             default_responder=True,
         )
-        with self._lock:
-            self._providers_by_room.setdefault(room_id, {})[participant_id] = spec
+        self._provider_registry.register(room_id, spec)
         if existing_session:
             return
         self.store.upsert_participant(
@@ -940,7 +938,7 @@ class RoomRealtimeController:
                     ),
                 )
                 if participant.get("role") == "agent":
-                    self._providers_by_room.get(room_id, {}).pop(participant_id, None)
+                    self._provider_registry.remove(room_id, participant_id)
                 return ack
         if action == "message.final":
             self._require_bridge(identity)
@@ -1089,11 +1087,7 @@ class RoomRealtimeController:
             self._closed = True
             removers = list(self._event_listener_removers.values())
             self._event_listener_removers.clear()
-            provider_agents = [
-                (room_id, agent_id)
-                for room_id, providers in self._providers_by_room.items()
-                for agent_id in providers
-            ]
+            provider_agents = self._provider_registry.provider_agents()
             remove_provider_catalog_listener = self._provider_catalog_remove
             self._provider_catalog_remove = lambda: None
         cleanup = CleanupReport("room_realtime_controller")
@@ -1366,7 +1360,7 @@ class RoomRealtimeController:
                 transport=spec.transport,
             )
         with self._lock:
-            self._providers_by_room.setdefault(room_id, {})[agent_id] = spec
+            self._provider_registry.register(room_id, spec)
             self._ensure_provider_session(room_id, spec)
             self.store.update_participant_fields(room_id, agent_id, status="detached")
             session = self.store.session(room_id, agent_id)
@@ -1510,12 +1504,7 @@ class RoomRealtimeController:
         display_name = clean_lobby_text(session.get("display_name"), limit=80)
         if not agent_id:
             return
-        current_spec = self._providers_by_room.get(room_id, {}).get(agent_id)
-        if current_spec is not None and display_name:
-            self._providers_by_room[room_id][agent_id] = replace(
-                current_spec,
-                display_name=display_name,
-            )
+        self._provider_registry.update_display_name(room_id, agent_id, display_name)
         self._publish_session_state(room_id, self.store.session(room_id, agent_id))
 
     def _prepare_kick_intent(
@@ -1852,7 +1841,7 @@ class RoomRealtimeController:
         remove_listener = self._event_listener_removers.pop(room_id, None)
         if remove_listener is not None:
             remove_listener()
-        self._providers_by_room.pop(room_id, None)
+        self._provider_registry.remove_room(room_id)
         for path in (self.output_root / "rooms" / room_id, self.output_root / "meetings" / room_id):
             if path.exists() and path.is_dir():
                 shutil.rmtree(path)
@@ -2340,14 +2329,10 @@ class RoomRealtimeController:
             assert_provider_sync_cursor_parity(created_session, state)
 
     def _room_providers(self, room_id: str) -> dict[str, NativeCliProviderSpec]:
-        with self._lock:
-            return dict(self._providers_by_room.get(clean_lobby_text(room_id, limit=128), {}))
+        return self._provider_registry.providers(room_id)
 
     def _provider(self, room_id: str, agent_id: str) -> NativeCliProviderSpec:
-        spec = self._room_providers(room_id).get(clean_lobby_text(agent_id, limit=128))
-        if spec is None:
-            raise RoomCommandRejected(f"Unknown configured agent: {agent_id}", code="not_found")
-        return spec
+        return self._provider_registry.provider(room_id, agent_id)
 
     def _payload_agent_id(self, payload: dict[str, object]) -> str:
         agent_id = clean_lobby_text(payload.get("agent_id") or payload.get("participant_id") or payload.get("session_id"), limit=128)

@@ -137,6 +137,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `providers/sync_cursor.py` | canonical provider delivery cursor parity, reconciliation, and compatibility fields | speaker selection or provider execution |
 | `provider_secrets.py` | OS keyring credential access and redacted status | provider prompts or room events |
 | `room_realtime.py` | command, durable state, turn, and recovery orchestration | provider terminal implementation |
+| `room/provider_registry.py` | synchronized room-scoped provider specification lookup | durable session state or provider process lifecycle |
 | `providers/bridge_process.py` | server-owned Agent Bridge process lifecycle | room routing |
 | `providers/agent_bridge.py` | authenticated bridge client and turn/report protocol | browser UI or WebSocket construction |
 | `application/agent_bridge_entrypoint.py` | bridge environment/config parsing and WebSocket/runtime composition | provider turn behavior |
