@@ -5,6 +5,7 @@ import unittest
 import agentsassemble.bridge_stop_confirmation as compatibility_bridge_stop
 import agentsassemble.room_command_uow as compatibility_command_uow
 import agentsassemble.room_commands as compatibility_commands
+import agentsassemble.room_context as compatibility_context
 import agentsassemble.room_errors as compatibility_errors
 import agentsassemble.room_event_broker as compatibility_event_broker
 import agentsassemble.room_agent_lifecycle as compatibility_lifecycle
@@ -15,6 +16,7 @@ import agentsassemble.room_types as compatibility_types
 from agentsassemble.room import bridge_stop_confirmation as owned_bridge_stop
 from agentsassemble.room import command_uow as owned_command_uow
 from agentsassemble.room import commands as owned_commands
+from agentsassemble.room import context as owned_context
 from agentsassemble.room import errors as owned_errors
 from agentsassemble.room import event_broker as owned_event_broker
 from agentsassemble.room import agent_lifecycle as owned_lifecycle
@@ -25,6 +27,19 @@ from agentsassemble.room import types as owned_types
 
 
 class RoomPackageTests(unittest.TestCase):
+    def test_room_context_root_module_exports_owned_projection(self) -> None:
+        for name in (
+            "DEFAULT_ROOM_CONTEXT_CHARS",
+            "DEFAULT_ROOM_CONTEXT_MESSAGES",
+            "MAX_ROOM_CONTEXT_MESSAGES",
+            "RoomContextWindow",
+            "project_room_context",
+        ):
+            self.assertIs(
+                getattr(compatibility_context, name),
+                getattr(owned_context, name),
+            )
+
     def test_room_agent_lifecycle_root_module_exports_owned_service(self) -> None:
         for name in (
             "AgentBridgeManager",

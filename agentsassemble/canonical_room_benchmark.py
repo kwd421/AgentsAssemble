@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from agentsassemble.room_context import project_room_context
+from agentsassemble.room.context import project_room_context
 from agentsassemble.persistence.local.room.database import VISIBLE, open_room_database
 from agentsassemble.persistence.local.room.repository import RoomStore
 

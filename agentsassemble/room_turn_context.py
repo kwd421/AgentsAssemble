@@ -6,7 +6,7 @@ from pathlib import Path
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.providers.turn_input import agent_turn_prompt
-from agentsassemble.room_context import (
+from agentsassemble.room.context import (
     DEFAULT_ROOM_CONTEXT_CHARS,
     DEFAULT_ROOM_CONTEXT_MESSAGES,
     project_room_context,

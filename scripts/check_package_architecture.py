@@ -313,6 +313,18 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_room_package.py",),
         introduced_in="Milestone 6.4 room command transaction move",
     ),
+    "room_context.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.context",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_context for one "
+            "compatibility window."
+        ),
+        known_callers=(
+            "tests/test_agent_session_cli.py",
+            "tests/test_room_package.py",
+        ),
+        introduced_in="Milestone 6.10 room context projection move",
+    ),
     "room_errors.py": CompatibilityShim(
         replacement_import="agentsassemble.room.errors",
         removal_gate=(

@@ -124,7 +124,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `room/commands.py` | command envelope validation and identity capability policy | command execution |
 | `room/projection.py` | public room/session/event and runtime-diagnostic projection | persistence or command execution |
 | `room_routing.py` | pure mention, default-responder, and relay-depth target selection | persistence or process launch |
-| `room_context.py` | bounded bootstrap and cursor-diff provider input projection | provider-private memory |
+| `room/context.py` | bounded room-visible message projection after a sequence cursor | provider-private memory or turn instructions |
 | `room/event_broker.py` | bounded per-connection fanout and targeted bridge delivery | durable history |
 | `room/bridge_stop_confirmation.py` | external bridge generation-safe stop request/confirmation correlation | local process termination |
 | `room/agent_lifecycle.py` | Agent Session start, pause, stop, recovery, and room-visible lifecycle state | provider process implementation |

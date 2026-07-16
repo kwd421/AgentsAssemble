@@ -956,3 +956,10 @@ module churn were deliberately avoided rather than forgotten.
   Direct `room.text` normalization replaces the legacy helper delegation;
   cursor authority, monotonic repair rules, recovery-required behavior,
   transaction boundaries, event codes, and diagnostics are unchanged.
+- 2026-07-17: Bounded room-visible message projection, omission accounting,
+  event filtering counts, and per-message character budgets moved to
+  `room/context.py`. Agent Session packet construction, diagnostics benchmarks,
+  and focused context tests now use the owned path while `room_context.py`
+  remains an explicit compatibility export. Direct `room.text` normalization
+  replaces the legacy helper delegation; sequence reads, exclusion of the
+  target participant, truncation markers, and output fields are unchanged.

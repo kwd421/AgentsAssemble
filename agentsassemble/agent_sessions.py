@@ -61,7 +61,7 @@ from agentsassemble.providers.codex_app_server import (
     runtime_profile_key,
     runtime_profile_settings,
 )
-from agentsassemble.room_context import (
+from agentsassemble.room.context import (
     DEFAULT_ROOM_CONTEXT_CHARS,
     DEFAULT_ROOM_CONTEXT_MESSAGES,
     project_room_context,

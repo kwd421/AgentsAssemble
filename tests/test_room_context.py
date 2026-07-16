@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.room_context import project_room_context
+from agentsassemble.room.context import project_room_context
 from agentsassemble.room_store import RoomStore
 
 
