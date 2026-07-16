@@ -308,6 +308,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         ),
         introduced_in="Milestone 2.4 PostgreSQL admission persistence move",
     ),
+    "provider_catalog.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.catalog",
+        removal_gate=(
+            "No direct imports use agentsassemble.provider_catalog for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.2 provider catalog move",
+    ),
     "provider_runtime_contracts.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.runtime_contracts",
         removal_gate=(

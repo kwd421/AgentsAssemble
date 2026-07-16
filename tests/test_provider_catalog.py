@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest import mock
 
-from agentsassemble import provider_catalog as pc
+from agentsassemble.providers import catalog as pc
 
 
 class CatalogLookupTests(unittest.TestCase):

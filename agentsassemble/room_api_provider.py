@@ -19,7 +19,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
-from agentsassemble import provider_catalog as catalog
+from agentsassemble.providers import catalog
 
 # ~4 chars per token is the rough OpenAI-family heuristic; only used when the
 # provider omits a usage block (estimated=True is set so the books stay honest).

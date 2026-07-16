@@ -614,3 +614,9 @@ module churn were deliberately avoided rather than forgotten.
   `provider_runtime_contracts.py` remains an explicit compatibility export
   with a one-window removal gate. No provider command, model profile, process
   lifecycle, result parser behavior, or fallback policy changed.
+- 2026-07-16: The optional API-provider model catalog moved intact to
+  `providers/catalog.py`. CLI validation, the OpenAI-compatible API lane, and
+  provider HTTP routes now import the owned path; `provider_catalog.py` is an
+  explicit compatibility export. Static model data, secret presence
+  projection, cost-owner resolution, and the existing optional API-lane
+  fallback list are unchanged.
