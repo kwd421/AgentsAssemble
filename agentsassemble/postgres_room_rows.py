@@ -1,22 +1,9 @@
-from __future__ import annotations
+"""Compatibility export for PostgreSQL room row decoding.
 
-import json
+Replacement: ``agentsassemble.persistence.postgres.room.rows``.
+Removal gate: all direct imports use the replacement path for one compatibility
+window.
+"""
+from agentsassemble.persistence.postgres.room.rows import payload_from_row
 
-
-def payload_from_row(
-    row: dict[str, object] | None,
-    *,
-    column: str = "data_json",
-) -> dict[str, object]:
-    if row is None:
-        return {}
-    value = row.get(column)
-    if isinstance(value, dict):
-        return dict(value)
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except (json.JSONDecodeError, TypeError, ValueError):
-            return {}
-        return dict(parsed) if isinstance(parsed, dict) else {}
-    return {}
+__all__ = ["payload_from_row"]

@@ -45,6 +45,23 @@ class PackageMapTests(unittest.TestCase):
         )
         self.assertIn("`persistence/postgres/` | in-target-package", package_map)
 
+    def test_room_persistence_move_is_not_misclassified_as_policy(self) -> None:
+        package_map = build_package_map(ROOT)
+        attention_line = next(
+            line
+            for line in package_map.splitlines()
+            if "`agentsassemble.persistence.postgres.room.attention`" in line
+        )
+        row_shim_line = next(
+            line
+            for line in package_map.splitlines()
+            if "`agentsassemble.postgres_room_rows`" in line
+        )
+
+        self.assertTrue(attention_line.endswith("| in-target-package |"))
+        self.assertIn("| compatibility |", row_shim_line)
+        self.assertTrue(row_shim_line.endswith("| compatibility-shim |"))
+
 
 if __name__ == "__main__":
     unittest.main()

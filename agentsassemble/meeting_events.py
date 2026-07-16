@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
+from agentsassemble.room.text import clean_room_text
+
 LobbySide = Literal["mine", "my-agent", "other", "other-agent"]
 LobbyKind = Literal["message", "ready", "deploy", "vote", "vote_cast", "thinking"]
 RoomChannel = Literal["lobby", "side_chat", "official", "system", "review"]
@@ -565,7 +567,7 @@ def write_live_state(meeting_dir: Path, payload: dict[str, object]) -> None:
 
 
 def clean_lobby_text(value: object, limit: int) -> str:
-    return str(value or "").replace("\n", " ").replace("\r", " ").strip()[:limit].strip()
+    return clean_room_text(value, limit)
 
 
 def has_room_visible_text(value: object) -> bool:

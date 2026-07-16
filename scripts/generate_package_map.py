@@ -12,7 +12,7 @@ from typing import Iterable, Mapping
 
 ROOT_ENTRYPOINTS = frozenset({"agentsassemble", "agentsassemble.cli", "agentsassemble.gui"})
 EXISTING_PACKAGES = frozenset(
-    {"adapters", "bridges", "legacy", "migrations", "persistence"}
+    {"adapters", "bridges", "legacy", "migrations", "persistence", "room"}
 )
 FROZEN_POLICY_TERMS = (
     "attention",
@@ -267,7 +267,7 @@ def _classification(module: ModuleSource) -> str:
     relative_parts = Path(module.relative_path).parts
     stem = module.path.stem
     docstring = ast.get_docstring(module.tree) or ""
-    if docstring.startswith("Compatibility exports for"):
+    if docstring.startswith("Compatibility export"):
         return "compatibility"
     if "compat" in stem or "compatibility" in stem:
         return "compatibility"
@@ -395,7 +395,7 @@ def _migration_status(
     if classification == "compatibility":
         return "compatibility-shim"
     stem = module.path.stem
-    if any(term in stem for term in FROZEN_POLICY_TERMS):
+    if domain != "persistence" and any(term in stem for term in FROZEN_POLICY_TERMS):
         return "deferred-policy"
     parts = Path(module.relative_path).parts
     if len(parts) > 2 and parts[1] in EXISTING_PACKAGES:

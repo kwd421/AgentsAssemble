@@ -8,12 +8,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.room_repository import RoomRepository
-from agentsassemble.room_store import RoomStore
-from agentsassemble.postgres_room_schema import (
+from agentsassemble.persistence.postgres.schema import (
     PostgresRoomSchemaNotReady,
     require_postgres_room_schema,
 )
+from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room_store import RoomStore
 
 
 ROOM_REPOSITORY_BACKENDS = frozenset({"sqlite", "postgresql"})
@@ -131,7 +131,9 @@ def build_postgres_application_database(settings: RoomRepositorySettings) -> Any
 
 def _postgres_repository_type() -> Any:
     try:
-        module = importlib.import_module("agentsassemble.postgres_room_repository")
+        module = importlib.import_module(
+            "agentsassemble.persistence.postgres.room.repository"
+        )
     except ModuleNotFoundError as error:
         if error.name in {"psycopg", "psycopg_pool"}:
             raise RoomRepositoryUnavailable(

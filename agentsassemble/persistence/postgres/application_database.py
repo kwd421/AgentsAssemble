@@ -11,7 +11,7 @@ from agentsassemble.persistence.postgres.connection_pool import (
     PoolFactory,
     PostgresPoolSettings,
 )
-from agentsassemble.postgres_room_schema import (
+from agentsassemble.persistence.postgres.schema import (
     POSTGRES_ROOM_SCHEMA_REVISION,
     require_postgres_room_schema,
 )

@@ -37,6 +37,15 @@ class CompatibilityShim:
 # boundaries. Historical presence in the root baseline does not exempt a moved
 # module from recording its replacement, callers, and removal gate here.
 ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
+    "postgres_attention_repository.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.postgres.room.attention",
+        removal_gate=(
+            "No direct imports use agentsassemble.postgres_attention_repository "
+            "for one compatibility window."
+        ),
+        known_callers=("tests/test_postgres_room_persistence_package.py",),
+        introduced_in="Milestone 2.2 PostgreSQL room persistence move",
+    ),
     "postgres_application_database.py": CompatibilityShim(
         replacement_import=(
             "agentsassemble.persistence.postgres.application_database"
@@ -63,6 +72,66 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
             "tests/test_postgres_connection_pool.py",
         ),
         introduced_in="Milestone 2.1 PostgreSQL connection pool move",
+    ),
+    "postgres_room_mutations.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.postgres.room.mutations",
+        removal_gate=(
+            "No direct imports use agentsassemble.postgres_room_mutations for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_postgres_room_persistence_package.py",),
+        introduced_in="Milestone 2.2 PostgreSQL room persistence move",
+    ),
+    "postgres_room_queries.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.postgres.room.queries",
+        removal_gate=(
+            "No direct imports use agentsassemble.postgres_room_queries for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_postgres_room_persistence_package.py",),
+        introduced_in="Milestone 2.2 PostgreSQL room persistence move",
+    ),
+    "postgres_room_repository.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.postgres.room.repository",
+        removal_gate=(
+            "No direct imports or monkeypatch targets use "
+            "agentsassemble.postgres_room_repository for one compatibility window."
+        ),
+        known_callers=(
+            "tests/test_postgres_cross_authority_transactions.py",
+            "tests/test_postgres_room_persistence_package.py",
+            "tests/test_postgres_room_repository.py",
+            "tests/test_room_repository_migration.py",
+        ),
+        introduced_in="Milestone 2.2 PostgreSQL room persistence move",
+    ),
+    "postgres_room_rows.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.postgres.room.rows",
+        removal_gate=(
+            "No direct imports use agentsassemble.postgres_room_rows for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_postgres_room_persistence_package.py",),
+        introduced_in="Milestone 2.2 PostgreSQL room persistence move",
+    ),
+    "postgres_room_schema.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.postgres.schema",
+        removal_gate=(
+            "No direct imports or monkeypatch targets use "
+            "agentsassemble.postgres_room_schema for one compatibility window."
+        ),
+        known_callers=(
+            "tests/test_postgres_application_database.py",
+            "tests/test_postgres_cross_authority_transactions.py",
+            "tests/test_postgres_identity_repository.py",
+            "tests/test_postgres_invite_repository.py",
+            "tests/test_postgres_room_persistence_package.py",
+            "tests/test_postgres_room_repository.py",
+            "tests/test_postgres_room_schema.py",
+            "tests/test_room_repository_factory.py",
+            "tests/test_room_repository_migration.py",
+        ),
+        introduced_in="Milestone 2.2 shared PostgreSQL schema move",
     ),
 }
 

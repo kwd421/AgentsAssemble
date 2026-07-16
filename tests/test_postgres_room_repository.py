@@ -126,13 +126,14 @@ class PostgresRoomRepositoryPoolIntegrationTests(unittest.TestCase):
 
         try:
             with patch(
-                "agentsassemble.postgres_room_repository.read_command_record",
+                "agentsassemble.persistence.postgres.room.repository.read_command_record",
                 side_effect=read_command,
             ), patch(
-                "agentsassemble.postgres_room_repository.read_room",
+                "agentsassemble.persistence.postgres.room.repository.read_room",
                 side_effect=read_room,
             ), patch(
-                "agentsassemble.postgres_room_repository.persist_command_result",
+                "agentsassemble.persistence.postgres.room.repository."
+                "persist_command_result",
                 side_effect=record_command,
             ):
                 with RoomCommandUnitOfWork(
@@ -222,7 +223,8 @@ class PostgresRoomRepositoryContractTests(RoomRepositoryContractMixin, unittest.
 
     def test_repository_constructor_does_not_migrate_by_default(self) -> None:
         with patch(
-            "agentsassemble.postgres_room_repository.upgrade_postgres_room_schema"
+            "agentsassemble.persistence.postgres.room.repository."
+            "upgrade_postgres_room_schema"
         ) as upgrade:
             repository = PostgresRoomRepository(self.test_dsn)
 

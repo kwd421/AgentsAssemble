@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.postgres_room_schema import (
+from agentsassemble.persistence.postgres.schema import (
     POSTGRES_ROOM_AUTHORITY_ID,
     POSTGRES_ROOM_SCHEMA_REVISION,
     PostgresRoomMigrationError,
