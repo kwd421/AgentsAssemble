@@ -51,7 +51,7 @@ from agentsassemble.room.command_uow import (
     RoomCommandUnitOfWork,
     command_payload_hash,
 )
-from agentsassemble.room_agent_lifecycle import (
+from agentsassemble.room.agent_lifecycle import (
     AgentBridgeManager,
     RecoveryScheduler,
     RoomAgentLifecycle,

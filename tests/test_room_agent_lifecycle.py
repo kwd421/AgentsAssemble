@@ -5,7 +5,7 @@ from pathlib import Path
 
 from agentsassemble.cleanup_report import CleanupReport
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
-from agentsassemble.room_agent_lifecycle import RoomAgentLifecycle
+from agentsassemble.room.agent_lifecycle import RoomAgentLifecycle
 from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room_store import RoomStore
 

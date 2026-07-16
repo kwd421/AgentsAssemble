@@ -430,6 +430,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_admission_maintenance_package.py",),
         introduced_in="Milestone 3.6 admission maintenance move",
     ),
+    "room_agent_lifecycle.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.agent_lifecycle",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_agent_lifecycle for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_room_package.py",),
+        introduced_in="Milestone 6.7 room Agent Session lifecycle move",
+    ),
     "room_database.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.local.room.database",
         removal_gate=(

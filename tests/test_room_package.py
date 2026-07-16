@@ -7,6 +7,7 @@ import agentsassemble.room_command_uow as compatibility_command_uow
 import agentsassemble.room_commands as compatibility_commands
 import agentsassemble.room_errors as compatibility_errors
 import agentsassemble.room_event_broker as compatibility_event_broker
+import agentsassemble.room_agent_lifecycle as compatibility_lifecycle
 import agentsassemble.room_projection as compatibility_projection
 import agentsassemble.room_repository as compatibility_repository
 import agentsassemble.room_types as compatibility_types
@@ -15,12 +16,31 @@ from agentsassemble.room import command_uow as owned_command_uow
 from agentsassemble.room import commands as owned_commands
 from agentsassemble.room import errors as owned_errors
 from agentsassemble.room import event_broker as owned_event_broker
+from agentsassemble.room import agent_lifecycle as owned_lifecycle
 from agentsassemble.room import projection as owned_projection
 from agentsassemble.room import repository as owned_repository
 from agentsassemble.room import types as owned_types
 
 
 class RoomPackageTests(unittest.TestCase):
+    def test_room_agent_lifecycle_root_module_exports_owned_service(self) -> None:
+        for name in (
+            "AgentBridgeManager",
+            "EnsureProviderSession",
+            "PendingAssignment",
+            "PrepareSessionReset",
+            "ProviderLookup",
+            "RecoveryScheduler",
+            "RoomAgentLifecycle",
+            "SessionCallback",
+            "SessionRevoker",
+            "schedule_daemon_timer",
+        ):
+            self.assertIs(
+                getattr(compatibility_lifecycle, name),
+                getattr(owned_lifecycle, name),
+            )
+
     def test_bridge_stop_root_module_exports_owned_confirmation(self) -> None:
         for name in (
             "BridgeStopConfirmationError",

@@ -919,3 +919,11 @@ module churn were deliberately avoided rather than forgotten.
   Current-generation enforcement, control IDs, timeout and delivery errors,
   effect-before-release callback ordering, and controller-close cancellation
   are unchanged.
+- 2026-07-17: Agent Session process lifecycle orchestration moved to
+  `room/agent_lifecycle.py`. Realtime composition and focused lifecycle tests
+  now use the owned path while `room_agent_lifecycle.py` remains an explicit
+  compatibility export. Direct `room.text` normalization replaces the legacy
+  helper delegation. Provider lookup, server/external process ownership,
+  generation-safe stop confirmation, pause/resume, pending-event preservation,
+  recovery scheduling, session-state publication, and cleanup reporting are
+  unchanged. Actual OS process handles remain provider-owned.
