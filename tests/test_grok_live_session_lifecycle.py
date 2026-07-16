@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 
-from agentsassemble.grok_resident import (
+from agentsassemble.providers.grok_resident import (
     GROK_JSON_PARSE_FAILURE,
     GROK_MISSING_SESSION_ID,
     GROK_SUBPROCESS_NONZERO,

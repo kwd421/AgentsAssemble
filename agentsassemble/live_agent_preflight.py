@@ -36,7 +36,7 @@ from agentsassemble.cursor_resident import (
     cursor_terminal_session_superseded_error,
     default_cursor_resident_command,
 )
-from agentsassemble.grok_resident import (
+from agentsassemble.providers.grok_resident import (
     default_grok_resident_command,
     grok_auth_check,
     grok_command_check,

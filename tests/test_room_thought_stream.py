@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.grok_resident import parse_grok_stream_line
+from agentsassemble.providers.grok_resident import parse_grok_stream_line
 from agentsassemble.room_thought import ThoughtChunker
 
 

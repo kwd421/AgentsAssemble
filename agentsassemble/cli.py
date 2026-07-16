@@ -28,10 +28,10 @@ from agentsassemble.cursor_resident import (
     cursor_generic_resident_guard_error,
     cursor_terminal_session_superseded_error,
 )
-from agentsassemble.grok_resident import GrokResidentCommandRunner
 from agentsassemble.hermes_resident import HermesResidentCommandRunner
 from agentsassemble.providers.antigravity_resident import AntigravityResidentCommandRunner
 from agentsassemble.providers.codex_resident import CodexResidentCommandRunner
+from agentsassemble.providers.grok_resident import GrokResidentCommandRunner
 from agentsassemble.web.frontend_runtime import frontend_dist_status
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.codex_sessions import (

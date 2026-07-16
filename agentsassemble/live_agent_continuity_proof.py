@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 from agentsassemble.cursor_resident import CursorResidentCommandRunner, cursor_error_category
-from agentsassemble.grok_resident import GrokResidentCommandRunner, grok_error_category
 from agentsassemble.hermes_resident import HermesResidentCommandRunner, hermes_error_category
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.live_agent_runner import ResidentAgentConfig
@@ -21,6 +20,7 @@ from agentsassemble.providers.antigravity_resident import (
     antigravity_error_category,
 )
 from agentsassemble.providers.codex_resident import CodexResidentCommandRunner
+from agentsassemble.providers.grok_resident import GrokResidentCommandRunner, grok_error_category
 
 
 SUPPORTED_CONTINUITY_PROVIDER_KINDS = frozenset(

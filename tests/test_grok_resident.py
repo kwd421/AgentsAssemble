@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.grok_resident import (
+from agentsassemble.providers.grok_resident import (
     GROK_EMPTY_TEXT,
     GROK_JSON_PARSE_FAILURE,
     GROK_MISSING_SESSION_ID,

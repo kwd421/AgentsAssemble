@@ -9,7 +9,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.grok_resident import GROK_JSON_PARSE_FAILURE, GrokResidentValueError
 from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
     RemoteBridgeResidentCommandRunner,
@@ -24,6 +23,7 @@ from agentsassemble.live_agent_runner import (
 )
 from agentsassemble.providers.antigravity_resident import AntigravityResidentCommandRunner
 from agentsassemble.providers.codex_resident import CodexResidentCommandRunner
+from agentsassemble.providers.grok_resident import GROK_JSON_PARSE_FAILURE, GrokResidentValueError
 from agentsassemble.live_session_adapter import (
     InvokeLiveSessionAdapter,
     RuntimeCapabilities,

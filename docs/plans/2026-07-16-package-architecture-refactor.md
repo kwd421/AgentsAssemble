@@ -789,3 +789,10 @@ module churn were deliberately avoided rather than forgotten.
   Conversation resume, native model and permission flags, backend quota/error
   rejection, real-capture answer extraction, status/meta trimming, timeout and
   login diagnostics, and stateless valid-reply behavior are unchanged.
+- 2026-07-17: The resident Grok CLI command adapter moved to
+  `providers/grok_resident.py`. CLI, preflight, continuity, legacy runner,
+  lifecycle, thought-stream, and focused behavior tests now use the owned path
+  while `grok_resident.py` remains an explicit compatibility export. JSON and
+  streaming-JSON parsing, session resume, native model/effort/permission flags,
+  thought chunking and posting, timeout/auth/error categories, command checks,
+  and final answer assembly are unchanged.

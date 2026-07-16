@@ -13,6 +13,7 @@ import agentsassemble.codex_session_ids as compatibility_codex_session_ids
 import agentsassemble.codex_stream as compatibility_codex_stream
 import agentsassemble.deepseek_runtime as compatibility_deepseek
 import agentsassemble.grok_acp_runtime as compatibility_grok_acp
+import agentsassemble.grok_resident as compatibility_grok_resident
 import agentsassemble.live_cli as compatibility_live_cli
 import agentsassemble.live_cli_output as compatibility_live_cli_output
 import agentsassemble.live_cli_transcripts as compatibility_live_cli_transcripts
@@ -41,6 +42,7 @@ from agentsassemble.providers import codex_session_ids as owned_codex_session_id
 from agentsassemble.providers import codex_stream as owned_codex_stream
 from agentsassemble.providers import deepseek as owned_deepseek
 from agentsassemble.providers import grok_acp as owned_grok_acp
+from agentsassemble.providers import grok_resident as owned_grok_resident
 from agentsassemble.providers import live_cli as owned_live_cli
 from agentsassemble.providers import live_cli_output as owned_live_cli_output
 from agentsassemble.providers import live_cli_transcripts as owned_live_cli_transcripts
@@ -57,6 +59,29 @@ from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_grok_resident_root_module_exports_owned_adapter(self) -> None:
+        for name in (
+            "GrokResidentCommandRunner",
+            "GrokResidentRuntimeError",
+            "GrokResidentValueError",
+            "clean_grok_session_id",
+            "default_grok_resident_command",
+            "grok_auth_check",
+            "grok_command_check",
+            "grok_error_category",
+            "grok_login_required_message",
+            "grok_provider_connection_check",
+            "parse_grok_stream_line",
+        ):
+            self.assertIs(
+                getattr(compatibility_grok_resident, name),
+                getattr(owned_grok_resident, name),
+            )
+        self.assertEqual(
+            compatibility_grok_resident.GROK_JSON_PARSE_FAILURE,
+            owned_grok_resident.GROK_JSON_PARSE_FAILURE,
+        )
+
     def test_antigravity_resident_root_module_exports_owned_adapter(self) -> None:
         for name in (
             "AntigravityResidentCommandRunner",
