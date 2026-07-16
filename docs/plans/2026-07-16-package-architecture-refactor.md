@@ -813,3 +813,11 @@ module churn were deliberately avoided rather than forgotten.
   prefix and DSML tool-call removal, timeout/error categories, and command
   validation are unchanged. The move corrects the adapter's former
   application-domain classification without changing room behavior.
+- 2026-07-17: The resident Kiro CLI command adapter moved to
+  `providers/kiro_resident.py`. CLI, preflight, continuity, legacy runner, and
+  focused behavior tests now use the owned path while `kiro_resident.py`
+  remains an explicit compatibility export. Fresh-session capture
+  serialization, session-list diffing, `--resume-id` reuse, chat command
+  normalization, ANSI/status cleanup, timeout and empty-reply behavior, and
+  command validation are unchanged. The move corrects the adapter's former
+  application-domain classification without changing room behavior.

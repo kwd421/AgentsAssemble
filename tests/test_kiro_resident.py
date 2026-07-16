@@ -5,7 +5,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from agentsassemble.kiro_resident import (
+from agentsassemble.providers.kiro_resident import (
     KiroResidentCommandRunner,
     clean_kiro_reply,
     default_kiro_resident_command,

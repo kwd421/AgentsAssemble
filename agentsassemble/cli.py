@@ -33,7 +33,7 @@ from agentsassemble.providers.antigravity_resident import AntigravityResidentCom
 from agentsassemble.providers.codex_resident import CodexResidentCommandRunner
 from agentsassemble.providers.grok_resident import GrokResidentCommandRunner
 from agentsassemble.web.frontend_runtime import frontend_dist_status
-from agentsassemble.kiro_resident import KiroResidentCommandRunner
+from agentsassemble.providers.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.codex_sessions import (
     DEFAULT_INVITE_CONFIG_PATH,
     DEFAULT_LIVE_AGENT_CONFIG_PATH,

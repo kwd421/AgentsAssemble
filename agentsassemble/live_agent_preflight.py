@@ -47,7 +47,7 @@ from agentsassemble.providers.hermes_resident import (
     hermes_command_check,
     hermes_provider_connection_check,
 )
-from agentsassemble.kiro_resident import (
+from agentsassemble.providers.kiro_resident import (
     default_kiro_resident_command,
     kiro_command_check,
     kiro_provider_connection_check,

@@ -190,6 +190,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.26 Hermes resident adapter move",
     ),
+    "kiro_resident.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.kiro_resident",
+        removal_gate=(
+            "No direct imports use agentsassemble.kiro_resident for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.27 Kiro resident adapter move",
+    ),
     "live_cli.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.live_cli",
         removal_gate=(
