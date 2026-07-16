@@ -598,3 +598,12 @@ module churn were deliberately avoided rather than forgotten.
   the owned registrar, while `gui_retired_http.py` remains a compatibility
   export through the documented release audit. Status codes, error code,
   replacement details, and route inventory are unchanged.
+- 2026-07-16: GUI service construction ownership moved from the root entrypoint
+  to `application/gui_factory.py`. The owned builder now enforces the shared
+  repository instance, constructs the server-scoped ownership graph, and
+  preserves reverse-order cleanup on partial construction failure. `gui.py`
+  retains a thin `_build_gui_application_services()` wrapper so existing
+  runtime monkeypatch seams remain stable. Legacy admission projection and
+  legacy room-directory backfill are injected by that root composition wrapper
+  rather than imported by `application/`; this differs from a literal full
+  factory move to preserve the current-core-to-legacy dependency firewall.

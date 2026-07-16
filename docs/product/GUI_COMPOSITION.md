@@ -97,9 +97,16 @@ deliberate pre-bind construction step and post-bind activation step.
 
 Phase 5.2 introduced `GuiApplicationServices`; its owned location is now
 `agentsassemble/application/gui.py`. `gui_application.py` remains a temporary
-compatibility export. `_build_gui_application_services()` is still the single
-composition function used by both `serve_gui()` and the compatibility
-`_make_handler()` test/helper surface.
+compatibility export. Construction ownership and rollback now live in
+`agentsassemble/application/gui_factory.py`.
+
+`gui.py` keeps `_build_gui_application_services()` as the stable composition
+entrypoint used by both `serve_gui()` and the compatibility `_make_handler()`
+test/helper surface. The wrapper selects the concrete legacy process, flow,
+monitor, admission-projection, and room-registry backfill implementations, then
+passes those constructors to the application factory. This preserves existing
+monkeypatch seams while preventing the current `application/` package from
+importing legacy implementations.
 
 The cross-authority transaction protocol now belongs to
 `agentsassemble/application/transaction.py`;
@@ -368,8 +375,12 @@ After a context reset, read `CURRENT_SYSTEM.md`, the active room-correctness
 plan, and this file. Phase 5.3 meeting reads, room/return-packet reads, durable
 diagnostic histories, process connection projections, readiness, roster/
 admission projections, health aggregation, preflight, discovery, all four
-direct smoke routes, and aggregate readiness are complete. Begin Phase 5.4 by
-moving one typed route family per verified commit. Legacy lobby promotion and
+direct smoke routes, and aggregate readiness are complete. Phase 5.4 has moved
+the shared web transport, current route registrars, optional feature routes,
+observability routes, retired endpoint tombstones, application lifecycle, and
+application construction ownership into their packages. Continue by
+inventorying the remaining fixed compatibility paths rather than moving
+unstable conversation policy. Legacy lobby promotion and
 remote-bridge commands are already Router-owned through
 `LegacyLobbyCommandService`; they remain compatibility behavior and are not
 canonical ambient routing. Current provider login is also Router-owned through

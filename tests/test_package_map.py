@@ -138,16 +138,20 @@ class PackageMapTests(unittest.TestCase):
         graph = load_package_graph(ROOT)
         package_map = build_package_map(ROOT)
 
-        application_line = next(
-            line
-            for line in package_map.splitlines()
-            if line.startswith("| `agentsassemble.application.gui` |")
-        )
-        self.assertEqual(
-            graph.domains["agentsassemble.application.gui"],
-            "application",
-        )
-        self.assertTrue(application_line.endswith("| in-target-package |"))
+        for module_name in (
+            "agentsassemble.application.gui",
+            "agentsassemble.application.gui_factory",
+        ):
+            with self.subTest(module_name=module_name):
+                application_line = next(
+                    line
+                    for line in package_map.splitlines()
+                    if line.startswith(f"| `{module_name}` |")
+                )
+                self.assertEqual(graph.domains[module_name], "application")
+                self.assertTrue(
+                    application_line.endswith("| in-target-package |")
+                )
 
         for module_name, proposed_package in (
             ("agentsassemble.features.mafia.routes", "features/mafia/"),

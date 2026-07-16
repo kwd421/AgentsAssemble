@@ -5,6 +5,7 @@ import unittest
 import agentsassemble.application_transaction as compatibility_transaction
 import agentsassemble.gui_application as compatibility_gui
 from agentsassemble.application import gui as owned_gui
+from agentsassemble.application import gui_factory as owned_gui_factory
 from agentsassemble.application import transaction as owned_transaction
 
 
@@ -24,6 +25,10 @@ class ApplicationPackageTests(unittest.TestCase):
             compatibility_transaction.ApplicationTransactionBoundary,
             owned_transaction.ApplicationTransactionBoundary,
         )
+
+    def test_gui_factory_is_owned_by_the_application_package(self) -> None:
+        self.assertTrue(callable(owned_gui_factory.build_gui_application_services))
+        self.assertTrue(hasattr(owned_gui_factory, "GuiRuntimeConstructors"))
 
 
 if __name__ == "__main__":

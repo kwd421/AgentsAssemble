@@ -15,7 +15,6 @@ from urllib.parse import parse_qs, urlparse
 
 from agentsassemble.attachments import (
     AttachmentError,
-    FileAttachmentStore,
     normalize_attachment_references,
 )
 from agentsassemble.codex_sessions import list_codex_sessions
@@ -33,6 +32,10 @@ from agentsassemble.web.routes.providers import (
     register_provider_routes,
 )
 from agentsassemble.application.gui import ApplicationDatabase, GuiApplicationServices
+from agentsassemble.application.gui_factory import (
+    GuiRuntimeConstructors,
+    build_gui_application_services,
+)
 from agentsassemble.web.routes.attachments import register_attachment_routes
 from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
 from agentsassemble.gui_legacy_application import (
@@ -77,11 +80,9 @@ from agentsassemble.web.router import (
     local_server_url as _local_server_url,
 )
 from agentsassemble.web.websocket import handle_ws_upgrade, register_ws_ticket_route
-from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_realtime import (
     RoomCommandRejected,
     RoomRealtimeController,
-    default_native_cli_provider_specs,
 )
 from agentsassemble.session_run_monitor import PeriodicSessionRunMonitor, safe_monitor_error_type
 from agentsassemble.live_agent_join_brief import live_agent_join_brief_payload
@@ -301,14 +302,10 @@ from agentsassemble.frontend_runtime import (
     frontend_dist_status,
 )
 from agentsassemble.room_friend_dms import enqueue_room_friend_direct_dm
-from agentsassemble.admission.preflight import RoomAdmissionService
-from agentsassemble.admission.coordinator import RoomAdmissionCoordinator
 from agentsassemble.identity.factory import build_identity_repository
 from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
-    register_identity_store_for_output_root,
-    unregister_identity_store_for_output_root,
 )
 from agentsassemble.room_members import is_room_member_muted, mark_thinking, room_members_payload
 from agentsassemble.room_repository import RoomRepository
@@ -319,11 +316,7 @@ from agentsassemble.room_repository_factory import (
     build_room_repository,
 )
 from agentsassemble.admission.repository import InviteSessionRepository
-from agentsassemble.persistence.local.admission.repository import (
-    JsonInviteSessionRepository,
-)
 from agentsassemble.room_invite_repository_factory import build_invite_session_repository
-from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room_speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
@@ -332,25 +325,11 @@ from agentsassemble.room_speech import (
 from agentsassemble.ws_room_session import (
     WsRoomDeps,
     WsSayRejected,
-    WsTicketStore,
-)
-from agentsassemble.room_users import (
-    configure_room_users_backend,
-    release_room_users_backend,
 )
 from agentsassemble.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
-from agentsassemble.admission.invite_service import (
-    InviteApplicationService,
-    SESSION_TOKEN_PREFIX,
-    SESSION_TOKEN_TTL_SECONDS,
-)
 from agentsassemble.room_invite import (
     compatibility_public_invite_runtime,
-    configure_room_invite_repository,
-    default_room_invite_store_path,
 )
-from agentsassemble.identity.pairing import OperatorPairingService
-from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.meeting_events import (
     FLOW_METADATA_KEYS,
     ROOM_TOPIC_LIMIT,
@@ -717,6 +696,8 @@ def _parse_iso_datetime(value: object) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed
+
+
 REAL_SESSION_SMOKE_REPLY_REDACTION = "[redacted real session smoke reply]"
 LIVE_AGENT_LOBBY_LOCK = threading.RLock()
 REAL_SESSION_SMOKE_REDACTED_SOURCE_EVENT_IDS: set[str] = set()
@@ -737,12 +718,10 @@ def _backfill_room_registry(
 ) -> None:
     """Register pre-existing meeting dirs into the rooms table.
 
-    The rooms registry only fills going forward (on ensure), so rooms created
-    before it existed — or before a localStorage clear — wouldn't show in
-    /api/rooms. Seed them once from the meeting dirs on disk so old rooms
-    resurface in the dock. Idempotent (skips known rooms) and best-effort: a
-    failure here must never block server startup.
+    This remains best-effort compatibility behavior so a legacy directory
+    cannot block current server startup.
     """
+
     try:
         known = {
             str(room.get("room_id"))
@@ -783,195 +762,37 @@ def _build_gui_application_services(
     public_invite_runtime_override: PublicInviteRuntime | None = None,
     attention_shadow_mode: str = "off",
 ) -> GuiApplicationServices:
-    """Build one ownership graph for the GUI server and handler factory."""
+    """Select concrete GUI runtimes and delegate ownership composition."""
 
-    if room_realtime_controller_override is not None:
-        room_repository = room_repository_override or room_realtime_controller_override.store
-        if room_repository is not room_realtime_controller_override.store:
-            raise ValueError(
-                "Room realtime controller and GUI routes must share one room repository instance."
-            )
-        owns_room_repository = bool(owns_room_repository_override and room_repository_override is not None)
-    else:
-        room_repository = room_repository_override or RoomStore(output_root)
-        owns_room_repository = bool(room_repository_override is None or owns_room_repository_override)
-
-    cleanup_actions: list[tuple[str, Callable[[], object]]] = []
-
-    def remember_cleanup(name: str, callback: Callable[[], object]) -> None:
-        cleanup_actions.append((name, callback))
-
-    owns_application_database = bool(
-        application_database_override is not None and owns_application_database_override
+    return build_gui_application_services(
+        output_root,
+        constructors=GuiRuntimeConstructors(
+            process_supervisor=LiveAgentProcessSupervisor,
+            session_run_controller=LiveAgentSessionRunController,
+            flow_supervisor=LiveAgentFlowSupervisor,
+            public_invite_runtime=PublicInviteRuntime,
+            public_tunnel_manager=PublicTunnelManager,
+            session_run_monitor=LiveAgentSessionRunMonitor,
+            legacy_admission_projection=LiveAgentLegacyAdmissionProjection,
+            backfill_room_registry=_backfill_room_registry,
+        ),
+        process_supervisor=process_supervisor,
+        session_run_controller=session_run_controller,
+        session_run_monitor=session_run_monitor,
+        flow_supervisor=flow_supervisor,
+        public_tunnel_manager=public_tunnel_manager,
+        room_realtime_controller_override=room_realtime_controller_override,
+        room_repository_override=room_repository_override,
+        owns_room_repository_override=owns_room_repository_override,
+        invite_repository_override=invite_repository_override,
+        owns_invite_repository_override=owns_invite_repository_override,
+        identity_backend_override=identity_backend_override,
+        owns_identity_backend_override=owns_identity_backend_override,
+        application_database_override=application_database_override,
+        owns_application_database_override=owns_application_database_override,
+        public_invite_runtime_override=public_invite_runtime_override,
+        attention_shadow_mode=attention_shadow_mode,
     )
-    if owns_application_database:
-        remember_cleanup("application_database.close", application_database_override.close)
-
-    if owns_room_repository:
-        remember_cleanup("room_repository.close", room_repository.close)
-
-    invite_repository = invite_repository_override or JsonInviteSessionRepository(
-        default_room_invite_store_path(output_root)
-    )
-    owns_invite_repository = bool(
-        invite_repository_override is None or owns_invite_repository_override
-    )
-    identity_backend = identity_backend_override or identity_store_for_output_root(output_root)
-    owns_identity_backend = bool(
-        identity_backend_override is not None and owns_identity_backend_override
-    )
-
-    owns_process_supervisor = process_supervisor is None
-    owns_session_run_monitor = session_run_monitor is None
-    owns_public_tunnel_manager = public_tunnel_manager is None
-    owns_room_realtime_controller = room_realtime_controller_override is None
-
-    try:
-        configure_room_invite_repository(invite_repository)
-        if owns_invite_repository:
-            remember_cleanup("invite_repository.close", invite_repository.close)
-        if owns_identity_backend:
-            close_identity = getattr(identity_backend, "close", None)
-            if callable(close_identity):
-                remember_cleanup("identity_backend.close", close_identity)
-
-        register_identity_store_for_output_root(output_root, identity_backend)
-
-        def release_identity_registration() -> None:
-            release_room_users_backend(identity_backend)
-            unregister_identity_store_for_output_root(output_root, identity_backend)
-
-        remember_cleanup("identity_backend.unregister", release_identity_registration)
-        configure_room_users_backend(identity_backend)
-        _backfill_room_registry(output_root, identity_backend)
-
-        public_invite_runtime = public_invite_runtime_override or PublicInviteRuntime()
-        invite_application = InviteApplicationService(
-            invite_repository,
-            public_url=public_invite_runtime.public_url,
-        )
-        room_session_service = RoomSessionService(
-            invite_repository,
-            token_prefix=SESSION_TOKEN_PREFIX,
-            ttl_seconds=SESSION_TOKEN_TTL_SECONDS,
-            token_key=invite_application.signing_secret,
-        )
-        admission_preflight = RoomAdmissionService(
-            identities=identity_backend,
-            rooms=room_repository,
-            invite_inspector=invite_application.inspect,
-        )
-        admission_coordinator = RoomAdmissionCoordinator(
-            invites=invite_application,
-            sessions=room_session_service,
-            identities=identity_backend,
-            rooms=room_repository,
-            transaction_boundary=application_database_override,
-        )
-        operator_pairing_service = OperatorPairingService(
-            identities=identity_backend,
-            rooms=room_repository,
-            sessions=room_session_service,
-            transaction_boundary=application_database_override,
-        )
-        legacy_admission_projection = LiveAgentLegacyAdmissionProjection(output_root)
-
-        live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
-        if owns_process_supervisor:
-            remember_cleanup("process_supervisor.close", live_agent_process_supervisor.close)
-
-        live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
-        live_agent_flow_supervisor = flow_supervisor or LiveAgentFlowSupervisor(output_root)
-        invite_tunnel_manager = public_tunnel_manager or PublicTunnelManager(
-            public_invite_runtime=public_invite_runtime,
-        )
-        if owns_public_tunnel_manager:
-            remember_cleanup("public_tunnel_manager.stop", invite_tunnel_manager.stop)
-
-        live_agent_session_run_monitor = session_run_monitor or LiveAgentSessionRunMonitor(
-            output_root,
-            live_agent_process_supervisor,
-            live_agent_session_run_controller,
-            default_server="",
-        )
-        if owns_session_run_monitor:
-            remember_cleanup("session_run_monitor.stop", live_agent_session_run_monitor.stop)
-
-        ws_ticket_store = WsTicketStore()
-        native_cli_bridge_manager: NativeCliBridgeProcessManager | None = None
-        if room_realtime_controller_override is not None:
-            room_realtime_controller = room_realtime_controller_override
-        else:
-            native_cli_bridge_manager = NativeCliBridgeProcessManager(output_root)
-            built_controller: RoomRealtimeController | None = None
-            try:
-                built_controller = RoomRealtimeController(
-                    output_root,
-                    invite_application=invite_application,
-                    room_sessions=room_session_service,
-                    providers=default_native_cli_provider_specs(workspace=Path.cwd()),
-                    bridge_manager=native_cli_bridge_manager,
-                    repository=room_repository,
-                    attention_shadow_mode=attention_shadow_mode,
-                )
-                native_cli_bridge_manager.set_exit_listener(built_controller.bridge_process_exited)
-            except BaseException as error:
-                try:
-                    if built_controller is not None:
-                        built_controller.close()
-                    else:
-                        native_cli_bridge_manager.close()
-                except BaseException as cleanup_error:
-                    error.add_note(
-                        "GUI realtime construction cleanup failed: "
-                        f"{cleanup_error}"
-                    )
-                raise
-            room_realtime_controller = built_controller
-            remember_cleanup("room_realtime_controller.close", room_realtime_controller.close)
-
-        services = GuiApplicationServices(
-            output_root=output_root,
-            room_repository=room_repository,
-            invite_repository=invite_repository,
-            invites=invite_application,
-            sessions=room_session_service,
-            admission_preflight=admission_preflight,
-            admission=admission_coordinator,
-            pairing=operator_pairing_service,
-            public_invite=public_invite_runtime,
-            identity_backend=identity_backend,
-            invite_store_path=default_room_invite_store_path(output_root),
-            media_store=FileAttachmentStore(output_root),
-            process_supervisor=live_agent_process_supervisor,
-            session_run_controller=live_agent_session_run_controller,
-            session_run_monitor=live_agent_session_run_monitor,
-            flow_supervisor=live_agent_flow_supervisor,
-            public_tunnel_manager=invite_tunnel_manager,
-            ws_ticket_store=ws_ticket_store,
-            native_cli_bridge_manager=native_cli_bridge_manager,
-            room_realtime_controller=room_realtime_controller,
-            legacy_admission_projection=legacy_admission_projection,
-            application_database=application_database_override,
-            identity_registry_cleanup=release_identity_registration,
-            owns_room_repository=owns_room_repository,
-            owns_invite_repository=owns_invite_repository,
-            owns_identity_backend=owns_identity_backend,
-            owns_process_supervisor=owns_process_supervisor,
-            owns_session_run_monitor=owns_session_run_monitor,
-            owns_public_tunnel_manager=owns_public_tunnel_manager,
-            owns_room_realtime_controller=owns_room_realtime_controller,
-            owns_application_database=owns_application_database,
-        )
-    except BaseException as error:
-        for name, callback in reversed(cleanup_actions):
-            try:
-                callback()
-            except BaseException as cleanup_error:
-                error.add_note(f"GUI service construction cleanup failed in {name}: {cleanup_error}")
-        raise
-    cleanup_actions.clear()
-    return services
 
 
 def serve_gui(
