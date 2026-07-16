@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
@@ -466,7 +467,10 @@ class PublicInviteHttpTests(unittest.TestCase):
                     with urlopen(
                         _json_request(
                             f"{base}/api/room-invite/join",
-                            {"invite_token": invite["invite_token"]},
+                            {
+                                "invite_token": invite["invite_token"],
+                                "request_id": str(uuid4()),
+                            },
                             public_headers,
                         ),
                         timeout=4,
@@ -562,7 +566,10 @@ class PublicInviteHttpTests(unittest.TestCase):
                     with urlopen(
                         _json_request(
                             f"{base}/api/room-invite/join",
-                            {"invite_token": read_only_invite["invite_token"]},
+                            {
+                                "invite_token": read_only_invite["invite_token"],
+                                "request_id": str(uuid4()),
+                            },
                             public_headers,
                         ),
                         timeout=4,
@@ -661,7 +668,10 @@ class PublicInviteHttpTests(unittest.TestCase):
                 with urlopen(
                     _json_request(
                         f"{base}/api/room-invite/join",
-                        {"invite_token": invite["invite_token"]},
+                        {
+                            "invite_token": invite["invite_token"],
+                            "request_id": str(uuid4()),
+                        },
                         null_origin_headers,
                     ),
                     timeout=4,
@@ -729,7 +739,10 @@ class PublicInviteHttpTests(unittest.TestCase):
                 with urlopen(
                     _json_request(
                         f"{base}/api/room-invite/join",
-                        {"invite_token": invite["invite_token"]},
+                        {
+                            "invite_token": invite["invite_token"],
+                            "request_id": str(uuid4()),
+                        },
                     ),
                     timeout=4,
                 ) as response:
@@ -761,7 +774,10 @@ class PublicInviteHttpTests(unittest.TestCase):
                     urlopen(
                         _json_request(
                             f"{restarted_base}/api/room-invite/join",
-                            {"invite_token": invite["invite_token"]},
+                            {
+                                "invite_token": invite["invite_token"],
+                                "request_id": str(uuid4()),
+                            },
                         ),
                         timeout=4,
                     )
@@ -794,7 +810,10 @@ class PublicInviteHttpTests(unittest.TestCase):
                 with urlopen(
                     _json_request(
                         f"{base}/api/room-invite/join",
-                        {"invite_token": invite["invite_token"]},
+                        {
+                            "invite_token": invite["invite_token"],
+                            "request_id": str(uuid4()),
+                        },
                     ),
                     timeout=4,
                 ) as response:

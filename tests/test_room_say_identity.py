@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
+from uuid import uuid4
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import reset_state, verify_session_token
@@ -73,6 +74,7 @@ class TestRoomSayIdentity(unittest.TestCase):
         join = self._post("/api/room-invite/join", {
             "invite_token": invite["invite_token"],
             "meeting_id": "test-m",
+            "request_id": str(uuid4()),
         })
         self.assertEqual(join["status"], "admitted")
         session_token = join["session_token"]
@@ -130,6 +132,7 @@ class TestRoomSayIdentity(unittest.TestCase):
         })
         friend_join = self._post("/api/room-invite/join", {
             "invite_token": invite["invite_token"],
+            "request_id": str(uuid4()),
         })
         friend_session_token = friend_join["session_token"]
 
@@ -147,6 +150,7 @@ class TestRoomSayIdentity(unittest.TestCase):
 
         ai_join = self._post("/api/room-invite/join", {
             "invite_token": companion["invite_token"],
+            "request_id": str(uuid4()),
         })
         self.assertEqual(ai_join["participant_type"], "remote")
         ai_session_token = ai_join["session_token"]
@@ -180,6 +184,7 @@ class TestRoomSayIdentity(unittest.TestCase):
         join = self._post("/api/room-invite/join", {
             "invite_token": invite["invite_token"],
             "meeting_id": "test-m",
+            "request_id": str(uuid4()),
         })
         request = Request(
             f"{self.url}/api/room/say",

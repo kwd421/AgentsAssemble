@@ -8,6 +8,7 @@ import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import reset_state
@@ -111,7 +112,10 @@ class CanonicalRoomSocialFlowTests(unittest.TestCase):
                 public_headers = {"Host": PUBLIC_HOST, "Origin": PUBLIC_ORIGIN}
                 joined = _post_json(
                     f"{base}/api/room-invite/join",
-                    {"invite_token": invite["invite_token"]},
+                    {
+                        "invite_token": invite["invite_token"],
+                        "request_id": str(uuid4()),
+                    },
                     headers=public_headers,
                 )
                 self.assertEqual(joined["status"], "admitted")

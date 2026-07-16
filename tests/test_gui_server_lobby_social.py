@@ -32,6 +32,7 @@ from tests.gui_server_test_support import (
     urlopen,
     write_live_state,
 )
+from uuid import uuid4
 
 
 class GuiServerLobbySocialTests(unittest.TestCase):
@@ -668,7 +669,12 @@ class GuiServerLobbySocialTests(unittest.TestCase):
                         invite = json.loads(response.read().decode("utf-8"))
                     join_request = Request(
                         f"{base}/api/room-invite/join",
-                        data=json.dumps({"invite_token": invite["invite_token"]}).encode("utf-8"),
+                        data=json.dumps(
+                            {
+                                "invite_token": invite["invite_token"],
+                                "request_id": str(uuid4()),
+                            }
+                        ).encode("utf-8"),
                         headers={"Content-Type": "application/json"},
                         method="POST",
                     )
