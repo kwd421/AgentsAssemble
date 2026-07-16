@@ -136,7 +136,10 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 root,
                 path="/api/room-invite/join",
                 method="POST",
-                payload={"invite_token": invite["join_code"]},
+                payload={
+                    "invite_token": invite["join_code"],
+                    "request_id": "86a68d2b-7bc7-49b7-886a-6dff35b20b69",
+                },
                 deps=deps,
             )
 
@@ -144,6 +147,38 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             response.sent_error,
             (HTTPStatus.GONE, "room was deleted or does not exist"),
         )
+
+    def test_room_invite_join_requires_a_request_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            response = _dispatch_room_route(
+                Path(temp_dir),
+                path="/api/room-invite/join",
+                method="POST",
+                payload={"invite_token": "present-token"},
+                deps=_invite_route_dependencies(Path(temp_dir)),
+            )
+
+        self.assertEqual(
+            response.sent_error,
+            (HTTPStatus.BAD_REQUEST, "request_id is required"),
+        )
+        self.assertEqual(response.sent_error_code, "request_id_required")
+
+    def test_room_invite_join_rejects_a_noncanonical_request_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            response = _dispatch_room_route(
+                Path(temp_dir),
+                path="/api/room-invite/join",
+                method="POST",
+                payload={
+                    "invite_token": "present-token",
+                    "request_id": "B4BD54E0-EC42-4B19-BBC4-0D888A5A32A3",
+                },
+                deps=_invite_route_dependencies(Path(temp_dir)),
+            )
+
+        self.assertEqual(response.sent_error[0], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(response.sent_error_code, "request_id_invalid")
 
     def test_room_invite_join_returns_conflict_for_changed_idempotent_request(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -158,7 +193,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             )
             base_payload = {
                 "invite_token": invite["join_code"],
-                "request_id": "browser-request-1",
+                "request_id": "1f44bcc0-8646-492c-8c7f-d422f75723f6",
                 "device_token": "known-device-token",
             }
             first = _dispatch_room_route(

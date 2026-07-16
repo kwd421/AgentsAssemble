@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from http import HTTPStatus
+from uuid import UUID
 
 from agentsassemble.gui_router import RequestContext, Router
 from agentsassemble.identity_store import device_auth_key
@@ -118,10 +119,35 @@ def register_invite_admission_routes(router: Router) -> None:
         if not token:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "invite_token is required")
             return
+        raw_request_id = str(payload.get("request_id") or "").strip()
+        if not raw_request_id:
+            ctx.send_error(
+                HTTPStatus.BAD_REQUEST,
+                "request_id is required",
+                code="request_id_required",
+            )
+            return
+        try:
+            parsed_request_id = UUID(raw_request_id)
+            request_id = str(parsed_request_id)
+        except (TypeError, ValueError, AttributeError):
+            ctx.send_error(
+                HTTPStatus.BAD_REQUEST,
+                "request_id must be a UUID",
+                code="request_id_invalid",
+            )
+            return
+        if raw_request_id != request_id or parsed_request_id.int == 0:
+            ctx.send_error(
+                HTTPStatus.BAD_REQUEST,
+                "request_id must be a canonical non-zero UUID",
+                code="request_id_invalid",
+            )
+            return
         try:
             result = ctx.deps.admission.admit(
                 invite_token=token,
-                request_id=str(payload.get("request_id") or ""),
+                request_id=request_id,
                 meeting_id=str(payload.get("meeting_id") or ""),
                 display_name=str(payload.get("display_name") or ""),
                 device_token=str(payload.get("device_token") or ""),
