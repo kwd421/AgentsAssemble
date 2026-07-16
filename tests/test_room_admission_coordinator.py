@@ -10,7 +10,8 @@ from unittest.mock import patch
 
 from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.session_service import RoomSessionService
-from agentsassemble.identity_store import IdentityStore, device_auth_key
+from agentsassemble.identity.repository import device_auth_key
+from agentsassemble.identity_store import IdentityStore
 from agentsassemble.persistence.local.admission.repository import (
     JsonInviteSessionRepository,
     MemoryInviteSessionRepository,

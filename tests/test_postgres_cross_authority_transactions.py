@@ -24,7 +24,7 @@ if _POSTGRES_AVAILABLE:
     import psycopg
     from psycopg import sql
 
-    from agentsassemble.identity_store import (
+    from agentsassemble.identity.repository import (
         LOCAL_OPERATOR_PARTICIPANT_ID,
         LOCAL_OPERATOR_USER_ID,
     )

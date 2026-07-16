@@ -52,6 +52,21 @@ class PackageMapTests(unittest.TestCase):
         )
         self.assertTrue(pairing_line.endswith("| in-target-package |"))
 
+    def test_identity_contract_uses_the_owned_package(self) -> None:
+        graph = load_package_graph(ROOT)
+        package_map = build_package_map(ROOT)
+
+        self.assertEqual(
+            graph.domains["agentsassemble.identity.repository"],
+            "identity",
+        )
+        repository_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith("| `agentsassemble.identity.repository` |")
+        )
+        self.assertTrue(repository_line.endswith("| in-target-package |"))
+
     def test_nested_persistence_modules_keep_persistence_ownership(self) -> None:
         graph = load_package_graph(ROOT)
         package_map = build_package_map(ROOT)

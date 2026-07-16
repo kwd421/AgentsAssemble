@@ -19,7 +19,7 @@ if _PSYCOPG_AVAILABLE:
     import psycopg
     from psycopg import sql
 
-    from agentsassemble.identity_store import IdentityBackend
+    from agentsassemble.identity.repository import IdentityBackend
     from agentsassemble.postgres_identity_repository import PostgresIdentityRepository
     from agentsassemble.postgres_room_schema import upgrade_postgres_room_schema
 

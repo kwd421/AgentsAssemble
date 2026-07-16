@@ -6,11 +6,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.identity_store import (
+from agentsassemble.identity.repository import (
     IdentityBackend,
-    IdentityStore,
     LOCAL_OPERATOR_PARTICIPANT_ID,
     LOCAL_OPERATOR_USER_ID,
+)
+from agentsassemble.identity_store import (
+    IdentityStore,
     SqliteIdentityStore,
     identity_store_for_output_root,
     make_identity_backend,

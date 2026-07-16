@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
-from agentsassemble.identity_store import LOCAL_OPERATOR_PARTICIPANT_ID
+from agentsassemble.identity.repository import LOCAL_OPERATOR_PARTICIPANT_ID
 from agentsassemble.room_websocket import (
     CLOSE_NORMAL,
     CLOSE_POLICY_VIOLATION,

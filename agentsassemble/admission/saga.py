@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.session_service import RoomSessionService
-from agentsassemble.identity_store import IdentityBackend
+from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
 

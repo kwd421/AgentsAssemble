@@ -302,8 +302,8 @@ from agentsassemble.room_friend_dms import enqueue_room_friend_direct_dm
 from agentsassemble.admission.preflight import RoomAdmissionService
 from agentsassemble.admission.coordinator import RoomAdmissionCoordinator
 from agentsassemble.identity_repository_factory import build_identity_repository
+from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.identity_store import (
-    IdentityBackend,
     identity_store_for_output_root,
     register_identity_store_for_output_root,
     unregister_identity_store_for_output_root,

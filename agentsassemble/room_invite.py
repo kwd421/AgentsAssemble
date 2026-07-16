@@ -25,7 +25,10 @@ from agentsassemble.admission.repository import (
     InviteSessionRepository,
     UnconfiguredInviteSessionRepository,
 )
-from agentsassemble.identity_store import LOCAL_OPERATOR_PARTICIPANT_ID, LOCAL_OPERATOR_USER_ID
+from agentsassemble.identity.repository import (
+    LOCAL_OPERATOR_PARTICIPANT_ID,
+    LOCAL_OPERATOR_USER_ID,
+)
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_users import normalize_participant_type, resolve_device_user
 from agentsassemble.multi_host_invites import (

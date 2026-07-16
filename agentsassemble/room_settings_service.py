@@ -1,7 +1,7 @@
 """Compose repository-owned room settings with identity-owned preferences."""
 from __future__ import annotations
 
-from agentsassemble.identity_store import IdentityBackend
+from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.room_global_settings import (
     ROOM_APPEARANCE_FIELDS,
     ROOM_GLOBAL_SETTING_FIELDS,

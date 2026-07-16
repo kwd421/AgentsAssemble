@@ -18,7 +18,7 @@ from agentsassemble.admission.saga import (
 )
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.application_transaction import ApplicationTransactionBoundary
-from agentsassemble.identity_store import (
+from agentsassemble.identity.repository import (
     IdentityBackend,
     device_auth_key,
     normalize_participant_type,

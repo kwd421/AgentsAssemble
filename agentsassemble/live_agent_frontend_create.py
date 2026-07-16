@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable, Sequence
 from uuid import uuid4
 
-from agentsassemble.identity_store import IdentityBackend
+from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL

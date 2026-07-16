@@ -10,11 +10,11 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
-from agentsassemble.identity_store import (
-    IdentityStore,
+from agentsassemble.identity.repository import (
     LOCAL_OPERATOR_PARTICIPANT_ID,
     LOCAL_OPERATOR_USER_ID,
 )
+from agentsassemble.identity_store import IdentityStore
 from agentsassemble.identity.pairing import (
     OperatorPairingService,
     normalize_pairing_origin,

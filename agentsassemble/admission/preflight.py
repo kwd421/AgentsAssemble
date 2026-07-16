@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from agentsassemble.identity_store import (
+from agentsassemble.identity.repository import (
     IdentityBackend,
     LOCAL_OPERATOR_PARTICIPANT_ID,
     device_auth_key,

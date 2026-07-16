@@ -22,15 +22,17 @@ import tempfile
 import threading
 from pathlib import Path
 
-from agentsassemble.identity_store import (
-    IDENTITY_DB_FILENAME,
+from agentsassemble.identity.repository import (
     IdentityBackend,
     LOCAL_OPERATOR_PARTICIPANT_ID,
     PARTICIPANT_TYPES,
     device_auth_key,
+    normalize_participant_type,
+)
+from agentsassemble.identity_store import (
+    IDENTITY_DB_FILENAME,
     identity_store_at,
     migrate_legacy_users_json,
-    normalize_participant_type,
 )
 
 _state_lock = threading.Lock()

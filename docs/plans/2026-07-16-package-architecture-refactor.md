@@ -446,3 +446,12 @@ module churn were deliberately avoided rather than forgotten.
   explicit compatibility export for one removal window. The service now names
   its existing current-room text dependency directly instead of retaining the
   old lobby-oriented alias.
+- 2026-07-16: The storage-independent `IdentityBackend` protocol, canonical
+  local-operator identifiers, participant-type normalization, pairing
+  redemption states, and device credential fingerprinting moved to
+  `identity/repository.py`. Current domain, GUI composition, and PostgreSQL
+  adapter code imports this owner directly. `identity_store.py` still owns the
+  local SQLite schema, implementation, registry, and legacy JSON migration, and
+  temporarily re-exports the contract names; that implementation move is kept
+  separate so persistence behavior and registry lifetime can be verified in
+  their own commits.

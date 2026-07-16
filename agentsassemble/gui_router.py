@@ -31,7 +31,7 @@ from agentsassemble.gui_request_security import (
     _origin_is_loopback_or_empty,
     _split_authority_host_port,
 )
-from agentsassemble.identity_store import IdentityBackend, device_auth_key
+from agentsassemble.identity.repository import IdentityBackend, device_auth_key
 from agentsassemble.legacy.admission_projection import LegacyAdmissionProjection
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
