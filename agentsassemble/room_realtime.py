@@ -69,6 +69,7 @@ from agentsassemble.room.moderation import (
     set_room_member_muted,
 )
 from agentsassemble.room.messages import RoomMessageService
+from agentsassemble.room.member_mute import RoomMemberMuteService
 from agentsassemble.room.projection import (
     public_event as _public_event,
     public_participant,
@@ -224,6 +225,19 @@ class RoomRealtimeController:
             bridge_session=self._turn_coordinator.bridge_session,
             assign_pending=self._turn_coordinator.assign_pending,
             publish_session_state=self._publish_session_state,
+        )
+        self._member_mute = RoomMemberMuteService(
+            store=self.store,
+            broker=self.broker,
+            assign_pending=self._turn_coordinator.assign_pending,
+            compatibility_mute_writer=lambda room_id, participant_id, muted: (
+                set_room_member_muted(
+                    self.output_root,
+                    meeting_id=room_id,
+                    participant_id=participant_id,
+                    muted=muted,
+                )
+            ),
         )
         self._startup_sessions = RoomStartupSessionReconciler(
             store=self.store,
@@ -1037,16 +1051,12 @@ class RoomRealtimeController:
         *,
         unit: RoomCommandUnitOfWork,
     ) -> dict[str, object]:
-        participant = unit.participant(participant_id)
-        if not participant:
-            raise RoomCommandRejected(f"Participant {participant_id} was not found.", code="not_found")
-        updated = unit.update_participant_fields(participant_id, muted=muted)
-        unit.append_event(
-            "participant_muted",
-            participant_id=participant_id,
-            muted=muted,
+        return self._member_mute.update_in_unit(
+            participant_id,
+            muted,
+            compatibility_member,
+            unit=unit,
         )
-        return {"participant": updated, "member": compatibility_member}
 
     def _apply_mute_after_commit(
         self,
@@ -1054,25 +1064,11 @@ class RoomRealtimeController:
         participant_id: str,
         muted: bool,
     ) -> None:
-        try:
-            set_room_member_muted(
-                self.output_root,
-                meeting_id=room_id,
-                participant_id=participant_id,
-                muted=muted,
-            )
-        except Exception as error:
-            raise RoomCommandRejected(
-                "The room mute state was saved, but the compatibility roster did not synchronize; retry the command.",
-                code="compatibility_sync_failed",
-            ) from error
-        participant = self.store.participant(room_id, participant_id)
-        session = self.store.session(room_id, participant_id)
-        if participant.get("role") == "agent" and session:
-            if muted and session.get("runtime_status") == "busy":
-                self.broker.direct_to_bridge(room_id, participant_id, {"op": "agent.control", "action": "interrupt"})
-            elif not muted:
-                self._turn_coordinator.assign_pending(room_id, participant_id)
+        self._member_mute.apply_after_commit(
+            room_id,
+            participant_id,
+            muted,
+        )
 
     def _leave_participant_durable(
         self,

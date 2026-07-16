@@ -1068,3 +1068,13 @@ module churn were deliberately avoided rather than forgotten.
   idempotency, compatibility mute lookup, event publication, routing, and
   speaker policy remain in their existing owners. Message limits, error codes,
   vote exceptions, event shape, and rollback behavior are unchanged.
+- 2026-07-17: Canonical participant mute mutation and its post-commit runtime
+  synchronization moved to `room/member_mute.py`. The service owns the
+  participant field and event write inside the existing command unit of work,
+  then synchronizes the compatibility roster, interrupts a busy muted agent,
+  or reassigns pending work after unmute. `room_realtime.py` retains command
+  authorization, idempotency, transaction lifetime, and event publication.
+  The existing `set_room_member_muted` patch seam is injected at composition,
+  so compatibility tests and failure semantics remain unchanged. Error codes,
+  public result shape, agent-only runtime effects, and speaker policy are
+  unchanged.
