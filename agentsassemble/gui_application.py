@@ -8,6 +8,7 @@ from typing import Protocol
 
 from agentsassemble.admission.preflight import RoomAdmissionService
 from agentsassemble.admission.repository import InviteSessionRepository
+from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.application_transaction import ApplicationTransactionBoundary
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.identity_store import IdentityBackend
@@ -22,7 +23,6 @@ from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_realtime import RoomRealtimeController
 from agentsassemble.room_repository import RoomRepository
-from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.ws_room_session import WsTicketStore
 
 

@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
+from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.identity_store import IdentityStore, device_auth_key
 from agentsassemble.persistence.local.admission.repository import (
     JsonInviteSessionRepository,
@@ -18,7 +19,6 @@ from agentsassemble.room_admission_coordinator import (
     RoomAdmissionCoordinator,
 )
 from agentsassemble.room_invite_application import InviteApplicationService
-from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.room_store import RoomStore
 
 

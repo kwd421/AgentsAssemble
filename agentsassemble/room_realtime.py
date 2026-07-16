@@ -38,7 +38,7 @@ from agentsassemble.provider_runtime_config import (
 )
 from agentsassemble.identity_store import identity_store_for_output_root
 from agentsassemble.room_invite_application import InviteApplicationService
-from agentsassemble.room_session_service import RoomSessionService
+from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.room_commands import (
     RoomCommandValidationError,
     capabilities_for_identity,

@@ -4,10 +4,13 @@ import unittest
 from datetime import UTC, datetime, timedelta
 
 from agentsassemble.admission.repository import InviteRepositoryWriteFailed
+from agentsassemble.admission.session_issuer import (
+    RoomSessionIssuer,
+    session_token_fingerprint,
+)
 from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,
 )
-from agentsassemble.room_session_issuer import RoomSessionIssuer, session_token_fingerprint
 
 
 class RoomSessionIssuerTests(unittest.TestCase):

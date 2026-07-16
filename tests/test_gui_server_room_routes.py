@@ -45,7 +45,7 @@ from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,
 )
-from agentsassemble.room_session_service import RoomSessionService
+from agentsassemble.admission.session_service import RoomSessionService
 
 
 def _invite_route_dependencies(root: Path) -> GuiDeps:

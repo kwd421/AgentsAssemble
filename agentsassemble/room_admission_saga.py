@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from agentsassemble.identity_store import IdentityBackend
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_invite_application import InviteApplicationService
-from agentsassemble.room_session_service import RoomSessionService
+from agentsassemble.admission.session_service import RoomSessionService
 
 
 class RoomAdmissionCompensationFailed(RuntimeError):

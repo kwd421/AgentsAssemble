@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import unittest
 
+from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,
 )
-from agentsassemble.room_session_service import RoomSessionService
 
 
 class RoomSessionServiceTests(unittest.TestCase):

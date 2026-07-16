@@ -57,7 +57,10 @@ from agentsassemble.persistence.local.admission.repository import (
     JsonInviteSessionRepository,
     MemoryInviteSessionRepository,
 )
-from agentsassemble.room_session_issuer import RoomSessionIssuer, session_token_fingerprint
+from agentsassemble.admission.session_issuer import (
+    RoomSessionIssuer,
+    session_token_fingerprint,
+)
 
 # Compatibility facade state. Persistence and synchronization live in the
 # injected repository; only process-local host/public configuration remains.

@@ -6,6 +6,7 @@ import time
 import unittest
 from pathlib import Path
 
+from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.gui_application import GuiApplicationServices
 from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionProjection
@@ -17,7 +18,6 @@ from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,
 )
-from agentsassemble.room_session_service import RoomSessionService
 
 
 class _Repository:

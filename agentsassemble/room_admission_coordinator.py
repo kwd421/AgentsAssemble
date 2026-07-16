@@ -25,7 +25,7 @@ from agentsassemble.room_invite_application import (
     PreparedInviteAdmission,
 )
 from agentsassemble.room_repository import RoomRepository
-from agentsassemble.room_session_service import RoomSessionService
+from agentsassemble.admission.session_service import RoomSessionService
 
 
 class AdmissionIdempotencyConflict(ValueError):

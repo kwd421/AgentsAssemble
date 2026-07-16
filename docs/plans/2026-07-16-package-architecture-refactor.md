@@ -409,3 +409,10 @@ module churn were deliberately avoided rather than forgotten.
   removal metadata. Production composition and smoke code import the owned
   local adapter path directly; only two focused compatibility tests retain the
   root import.
+- 2026-07-16: Room session token issuance, fingerprint verification, expiry
+  cleanup, revocation, idempotent request tokens, and redacted active-session
+  summaries moved to `admission/session_issuer.py` and
+  `admission/session_service.py`. Current callers import those owners directly;
+  `room_session_issuer.py` and `room_session_service.py` remain explicit
+  compatibility exports. The summary normalizer now depends on current
+  `room.text` rather than legacy meeting helpers without changing output.
