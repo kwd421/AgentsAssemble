@@ -11,9 +11,7 @@ from uuid import uuid4
 from agentsassemble.diagnostics.cleanup import CleanupReport, emit_cleanup_failure
 from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
-    StoredProviderProfileError,
     default_native_cli_provider_specs,
-    native_cli_provider_spec_from_stored_session_strict,
     validate_native_cli_provider_spec,
 )
 from agentsassemble.providers.capabilities import (
@@ -45,6 +43,7 @@ from agentsassemble.room.agent_lifecycle import (
     schedule_daemon_timer,
 )
 from agentsassemble.room.agent_profiles import RoomAgentProfileService
+from agentsassemble.room.agent_reactivation import RoomAgentReactivationService
 from agentsassemble.room.agent_runtime_profiles import (
     RoomAgentRuntimeProfileService,
 )
@@ -264,6 +263,15 @@ class RoomRealtimeController:
             store=self.store,
             provider_catalog=self.provider_catalog,
             create_provider_session=self.create_provider_session,
+            start_agent=self._agent_lifecycle.start,
+        )
+        self._agent_reactivation = RoomAgentReactivationService(
+            store=self.store,
+            broker=self.broker,
+            lock=self._lock,
+            provider_registry=self._provider_registry,
+            ensure_provider_session=self._provider_sessions.ensure_provider_session,
+            publish_session_state=self._publish_session_state,
             start_agent=self._agent_lifecycle.start,
         )
         self.last_cleanup_report = CleanupReport("room_realtime_controller")
@@ -902,69 +910,13 @@ class RoomRealtimeController:
         server_url: str,
         ticket_issuer: Callable[[dict[str, object]], str] | None,
     ) -> dict[str, object]:
-        agent_id = self._payload_agent_id(payload)
-        current = self.store.session(room_id, agent_id)
-        if not current:
-            raise RoomCommandRejected(f"Agent session {agent_id} was not found.", code="not_found")
-        if current.get("process_ownership") != "server":
-            raise RoomCommandRejected(
-                "External Agent Sessions must reconnect with their original invite.",
-                code="runtime_unavailable",
-            )
-        participant = self.store.participant(room_id, agent_id)
-        if current.get("runtime_status") not in {"stopped", "available"}:
-            raise RoomCommandRejected(
-                "Only stopped Agent Sessions can be added back to the room.",
-                code="readd_invalid_state",
-            )
-        if current.get("enabled"):
-            raise RoomCommandRejected("The Agent Session is still enabled.", code="readd_invalid_state")
-        if participant.get("status") not in {"detached", "kicked"}:
-            raise RoomCommandRejected("The Agent Session participant is still active.", code="readd_invalid_state")
-        if current.get("active_turn_id") or current.get("bridge_handle_id") or self.broker.has_bridge(room_id, agent_id):
-            raise RoomCommandRejected("The Agent Session still owns an active runtime.", code="readd_invalid_state")
-        try:
-            spec = native_cli_provider_spec_from_stored_session_strict(current)
-        except StoredProviderProfileError as error:
-            raise RoomCommandRejected(
-                str(error),
-                code=error.code,
-            ) from error
-        if (
-            current.get("runtime_profile_key") != spec.runtime_profile_key()
-            or current.get("transport") != spec.transport
-        ):
-            self.store.update_session_fields(
-                room_id,
-                agent_id,
-                runtime_profile_key=spec.runtime_profile_key(),
-                transport=spec.transport,
-            )
-        with self._lock:
-            self._provider_registry.register(room_id, spec)
-            self._provider_sessions.ensure_provider_session(room_id, spec)
-            self.store.update_participant_fields(room_id, agent_id, status="detached")
-            session = self.store.session(room_id, agent_id)
-            self.store.append_event(
-                room_id,
-                "agent_session_reactivated",
-                participant_id=agent_id,
-                session_id=agent_id,
-            )
-            self._publish_session_state(room_id, session)
-        result: dict[str, object] = {
-            "status": "readded",
-            "agent_session": public_session(session),
-            "participant": self.store.participant(room_id, agent_id),
-        }
-        if bool(payload.get("start") or payload.get("start_now")):
-            result["start"] = self._agent_lifecycle.start(
-                room_id,
-                agent_id,
-                server_url=server_url,
-                ticket_issuer=ticket_issuer,
-            )
-        return result
+        return self._agent_reactivation.readd(
+            room_id,
+            self._payload_agent_id(payload),
+            payload,
+            server_url=server_url,
+            ticket_issuer=ticket_issuer,
+        )
 
     def _configure_agent(self, room_id: str, payload: dict[str, object]) -> dict[str, object]:
         return self._agent_runtime_profiles.configure(

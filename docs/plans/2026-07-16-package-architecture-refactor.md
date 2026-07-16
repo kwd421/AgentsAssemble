@@ -1053,3 +1053,11 @@ module churn were deliberately avoided rather than forgotten.
   existing owners. Provider aliases, workspace fields, model controls, catalog
   error codes, creation result shape, and `start`/`start_now` behavior are
   unchanged.
+- 2026-07-17: Stopped server-owned Agent Session reactivation moved to
+  `room/agent_reactivation.py`. The service preserves external-owner rejection,
+  stopped/disabled/detached guards, active runtime checks, strict durable
+  profile restoration, registry/session/event synchronization, and optional
+  immediate start. The provider session service still owns canonical profile
+  persistence and the lifecycle service still owns the process. Error codes,
+  profile migration repair, participant state, result shape, and start behavior
+  are unchanged.
