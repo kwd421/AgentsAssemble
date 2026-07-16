@@ -15,6 +15,7 @@ import agentsassemble.room_members as compatibility_members
 import agentsassemble.room_projection as compatibility_projection
 import agentsassemble.room_realtime as compatibility_realtime
 import agentsassemble.room_repository as compatibility_repository
+import agentsassemble.room_repository_records as compatibility_repository_records
 import agentsassemble.room_setting_values as compatibility_setting_values
 import agentsassemble.room_types as compatibility_types
 import agentsassemble.room_turn_context as compatibility_turn_context
@@ -33,6 +34,7 @@ from agentsassemble.room import moderation as owned_moderation
 from agentsassemble.room import projection as owned_projection
 from agentsassemble.room import realtime as owned_realtime
 from agentsassemble.room import repository as owned_repository
+from agentsassemble.room import repository_records as owned_repository_records
 from agentsassemble.room import setting_values as owned_setting_values
 from agentsassemble.room import types as owned_types
 from agentsassemble.room import turn_context as owned_turn_context
@@ -41,6 +43,34 @@ from agentsassemble.room import user_preferences as owned_user_preferences
 
 
 class RoomPackageTests(unittest.TestCase):
+    def test_room_repository_records_root_module_exports_owned_normalizers(self) -> None:
+        for name in (
+            "ACTIVE_PARTICIPANT_STATUSES",
+            "PARTICIPANT_STATUSES",
+            "ROOM_STATUSES",
+            "SESSION_STATUSES",
+            "build_room_event",
+            "build_room_record",
+            "clean_event_type",
+            "clean_participant_id",
+            "clean_room_id",
+            "clean_session_id",
+            "merge_participant_record",
+            "merge_session_record",
+            "participant_status",
+            "room_status",
+            "safe_media_filename",
+            "session_status",
+            "strip_private_event_fields",
+            "update_participant_record",
+            "update_session_record",
+            "utc_now",
+        ):
+            self.assertIs(
+                getattr(compatibility_repository_records, name),
+                getattr(owned_repository_records, name),
+            )
+
     def test_room_global_settings_root_module_exports_owned_record(self) -> None:
         for name in (
             "DEFAULT_CONVERSATION_MODE",

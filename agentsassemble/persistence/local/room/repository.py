@@ -38,7 +38,7 @@ from agentsassemble.room.global_settings import (
     validate_room_global_settings,
 )
 from agentsassemble.room.repository import RoomTransaction
-from agentsassemble.room_repository_records import (
+from agentsassemble.room.repository_records import (
     ACTIVE_PARTICIPANT_STATUSES,
     build_room_event,
     build_room_record,

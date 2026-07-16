@@ -68,7 +68,7 @@ from agentsassemble.persistence.postgres.schema import upgrade_postgres_room_sch
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
 from agentsassemble.room.global_settings import RoomGlobalSettingsRecord
 from agentsassemble.room.repository import RoomTransaction
-from agentsassemble.room_repository_records import (
+from agentsassemble.room.repository_records import (
     clean_participant_id,
     clean_room_id,
     clean_session_id,

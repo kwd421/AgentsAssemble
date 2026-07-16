@@ -15,7 +15,7 @@ from agentsassemble.room.global_settings import (
     default_room_global_settings,
     merge_room_global_settings,
 )
-from agentsassemble.room_repository_records import clean_room_id
+from agentsassemble.room.repository_records import clean_room_id
 from agentsassemble.room.setting_values import clean_short_label
 
 

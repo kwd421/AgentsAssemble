@@ -11,7 +11,7 @@ from agentsassemble.room.global_settings import (
     merge_room_global_settings,
     validate_room_global_settings,
 )
-from agentsassemble.room_repository_records import (
+from agentsassemble.room.repository_records import (
     build_room_event,
     build_room_record,
     clean_participant_id,

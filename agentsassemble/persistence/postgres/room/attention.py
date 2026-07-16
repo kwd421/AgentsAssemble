@@ -18,7 +18,7 @@ from agentsassemble.room_attention import (
     AttentionLeaseConflict,
     attention_lease_is_expired,
 )
-from agentsassemble.room_repository_records import utc_now
+from agentsassemble.room.repository_records import utc_now
 
 
 def read_attention_state(

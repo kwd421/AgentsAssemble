@@ -5,7 +5,7 @@ import json
 import sqlite3
 
 from agentsassemble.identity.preferences import canonical_user_id
-from agentsassemble.room_repository_records import clean_room_id
+from agentsassemble.room.repository_records import clean_room_id
 from agentsassemble.room.user_preferences import (
     RoomUserPreferencesRecord,
     default_room_user_preferences,

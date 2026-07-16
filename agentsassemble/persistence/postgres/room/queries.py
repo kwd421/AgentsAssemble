@@ -10,7 +10,7 @@ from agentsassemble.room.global_settings import (
     RoomGlobalSettingsRecord,
     validate_room_global_settings,
 )
-from agentsassemble.room_repository_records import ACTIVE_PARTICIPANT_STATUSES
+from agentsassemble.room.repository_records import ACTIVE_PARTICIPANT_STATUSES
 from agentsassemble.room.visibility import VISIBLE
 
 

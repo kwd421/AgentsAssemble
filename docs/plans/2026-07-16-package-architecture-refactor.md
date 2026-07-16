@@ -1146,3 +1146,11 @@ module churn were deliberately avoided rather than forgotten.
   `room_user_preferences.py` remain metadata-tracked compatibility exports.
   Typed record shapes, validation failures, default values, merge behavior,
   persistence schemas, and migration behavior are unchanged.
+- 2026-07-17: Shared room, participant, Agent Session, and event record
+  normalization moved mechanically to `room/repository_records.py`. Local and
+  PostgreSQL room repositories, PostgreSQL attention storage, identity
+  preference storage, legacy import readers, and the settings service now
+  import the owned module directly. Root `room_repository_records.py` is a
+  metadata-tracked compatibility export. Identifier/path validation, status
+  sets, timestamp generation, merge semantics, event visibility, and recursive
+  private-field stripping are unchanged.

@@ -9,7 +9,7 @@ from pathlib import Path
 from agentsassemble.legacy_room_settings_document import (
     read_legacy_room_settings_document,
 )
-from agentsassemble.room_repository_records import clean_room_id
+from agentsassemble.room.repository_records import clean_room_id
 from agentsassemble.room.user_preferences import (
     CHANNEL_NOTIFICATION_VALUES,
     ROOM_NOTIFICATION_VALUES,

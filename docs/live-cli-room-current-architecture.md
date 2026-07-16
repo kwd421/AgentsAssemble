@@ -121,6 +121,7 @@ New behavior belongs in the focused owning module rather than the controller.
 | `room/types.py` | shared event, participant, session, command, and turn packet shapes | validation or side effects |
 | `room/errors.py` | room command rejection contract | command execution |
 | `room/repository.py` | backend-neutral room and room-transaction persistence protocols | SQLite/PostgreSQL implementation |
+| `room/repository_records.py` | shared room/participant/session/event record normalization and private event-field stripping | backend I/O or command policy |
 | `room/command_uow.py` | request-id dedupe, payload hashing, atomic command ACK recording | command routing or backend implementation |
 | `room/commands.py` | command envelope validation and identity capability policy | command execution |
 | `room/setting_values.py` | shared bounded values and canonical asset/text normalization for room settings | persistence or user-specific preferences |
