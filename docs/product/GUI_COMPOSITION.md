@@ -232,13 +232,13 @@ families directly.
 | --- | --- | --- | --- |
 | `/ws` | Current core composition | Authenticated protocol upgrade is a transport concern | Keep the thin upgrade branch in the final handler |
 | `/`, `/app/*`, `/join`, `/pair`, guarded React assets | Current core composition | `ReactStaticTransport` owns SPA/bootstrap delivery as one side-effect boundary | Keep static behavior out of domain route registrars |
-| Seven retired exact API paths | Compatibility tombstones | No supported frontend or CLI caller remains; each returns `410 legacy_route_retired` from `gui_retired_http.py` | Retain through the first tagged `v0.1.x` release; audit for removal in `v0.2` or later |
+| Seven retired exact API paths | Compatibility tombstones | No supported frontend or CLI caller remains; each returns `410 legacy_route_retired` from `web/routes/retired.py`; root compatibility export remains in `gui_retired_http.py` | Retain through the first tagged `v0.1.x` release; audit for removal in `v0.2` or later |
 
 ## Retired Exact Routes
 
 The 2026-07-15 caller audit found no production frontend or CLI caller for the
 seven routes below. Their implementations and direct handler wiring were
-removed. `gui_retired_http.py` now owns explicit `410 Gone` tombstones so an
+removed. `web/routes/retired.py` now owns explicit `410 Gone` tombstones so an
 obsolete external caller fails visibly instead of receiving a false success.
 
 - `POST /api/demo`

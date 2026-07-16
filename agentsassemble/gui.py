@@ -69,7 +69,7 @@ from agentsassemble.web.security import (
     _request_trusted,
     _split_authority_host_port,
 )
-from agentsassemble.gui_retired_http import register_retired_legacy_routes
+from agentsassemble.web.routes.retired import register_retired_legacy_routes
 from agentsassemble.web.router import (
     GuiDeps,
     RequestContext,

@@ -6,6 +6,7 @@ import agentsassemble.gui_attachment_http as compatibility_attachments
 import agentsassemble.gui_observability_http as compatibility_observability
 import agentsassemble.gui_provider_http as compatibility_providers
 import agentsassemble.gui_public_invite_http as compatibility_public_invite
+import agentsassemble.gui_retired_http as compatibility_retired
 import agentsassemble.gui_room_agent_http as compatibility_agent_sessions
 import agentsassemble.gui_room_invite_http as compatibility_room_invite
 import agentsassemble.gui_room_lifecycle_http as compatibility_room_lifecycle
@@ -16,6 +17,7 @@ from agentsassemble.web.routes import attachments as owned_attachments
 from agentsassemble.web.routes import observability as owned_observability
 from agentsassemble.web.routes import providers as owned_providers
 from agentsassemble.web.routes import public_invite as owned_public_invite
+from agentsassemble.web.routes import retired as owned_retired
 from agentsassemble.web.routes import room_history as owned_room_history
 from agentsassemble.web.routes import room_invite as owned_room_invite
 from agentsassemble.web.routes import room_lifecycle as owned_room_lifecycle
@@ -61,6 +63,12 @@ class WebRoutesPackageTests(unittest.TestCase):
         self.assertIs(
             compatibility_public_invite.register_public_invite_admin_routes,
             owned_public_invite.register_public_invite_admin_routes,
+        )
+
+    def test_retired_root_module_exports_owned_tombstones(self) -> None:
+        self.assertIs(
+            compatibility_retired.register_retired_legacy_routes,
+            owned_retired.register_retired_legacy_routes,
         )
 
     def test_room_invite_root_module_exports_owned_routes(self) -> None:

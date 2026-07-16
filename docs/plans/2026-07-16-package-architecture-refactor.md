@@ -593,3 +593,8 @@ module churn were deliberately avoided rather than forgotten.
   Production composition and the local-resource monkeypatch test use the owned
   path; `gui_observability_http.py` is now an explicit compatibility export.
   No route, payload, authorization check, or release-health policy changed.
+- 2026-07-16: The seven explicit `410 legacy_route_retired` endpoint
+  tombstones moved to `web/routes/retired.py`. Production composition imports
+  the owned registrar, while `gui_retired_http.py` remains a compatibility
+  export through the documented release audit. Status codes, error code,
+  replacement details, and route inventory are unchanged.

@@ -64,6 +64,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_web_routes_package.py",),
         introduced_in="Milestone 4.9 observability route package",
     ),
+    "gui_retired_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.web.routes.retired",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_retired_http for one "
+            "compatibility window, and the v0.2 tombstone audit permits removal."
+        ),
+        known_callers=("tests/test_web_routes_package.py",),
+        introduced_in="Milestone 4.10 retired route package",
+    ),
     "gui_side_chat_http.py": CompatibilityShim(
         replacement_import="agentsassemble.features.side_chat.routes",
         removal_gate=(
