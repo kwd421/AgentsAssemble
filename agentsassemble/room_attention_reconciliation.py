@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_attention import attention_lease_is_expired
-from agentsassemble.room_repository import RoomRepository, RoomTransaction
+from agentsassemble.room.repository import RoomRepository, RoomTransaction
 
 
 _ACTIVE_JOB_STATUSES = frozenset({"pending", "leased"})

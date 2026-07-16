@@ -16,7 +16,7 @@ from uuid import uuid4
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.providers.process_environment import sanitized_provider_environment
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room_provider_sync_cursor import (
     ProviderSyncCursorParityError,
     assert_provider_sync_cursor_parity,

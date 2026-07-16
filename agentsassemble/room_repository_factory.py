@@ -12,7 +12,7 @@ from agentsassemble.persistence.postgres.schema import (
     PostgresRoomSchemaNotReady,
     require_postgres_room_schema,
 )
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 from agentsassemble.persistence.local.room.repository import RoomStore
 
 

@@ -308,7 +308,7 @@ from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
 )
 from agentsassemble.room_members import is_room_member_muted, mark_thinking, room_members_payload
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room_repository_factory import (
     DEFAULT_POSTGRES_DSN_ENV,
     RoomRepositorySettings,

@@ -20,7 +20,7 @@ from agentsassemble.providers.bridge_process import NativeCliBridgeProcessManage
 from agentsassemble.public_tunnel import PublicTunnelManager
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room_realtime import RoomRealtimeController
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 from agentsassemble.ws_room_session import WsTicketStore
 
 

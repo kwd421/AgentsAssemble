@@ -44,7 +44,7 @@ from agentsassemble.room_realtime import (
     RoomRealtimeController,
     default_native_cli_provider_specs,
 )
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room_users import (
     configure_room_users_backend,
     release_room_users_backend,

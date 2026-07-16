@@ -11,7 +11,7 @@ from agentsassemble.room_context import (
     DEFAULT_ROOM_CONTEXT_MESSAGES,
     project_room_context,
 )
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room_provider_sync_cursor import canonical_provider_sync_seq
 from agentsassemble.persistence.local.room.repository import RoomStore
 

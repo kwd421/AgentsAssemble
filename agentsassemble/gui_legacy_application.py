@@ -143,7 +143,7 @@ from agentsassemble.legacy_live_agent_presence import LegacyLiveAgentPresenceSer
 from agentsassemble.live_agent_room_admin import LegacyLiveAgentRoomSessionService
 from agentsassemble.live_agent_self_managed import LegacySelfManagedAgentService
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 
 
 LegacyCallable = Callable[..., object]

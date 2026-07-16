@@ -14,7 +14,7 @@ from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room_event_broker import RoomEventBroker
 from agentsassemble.room.projection import public_session
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 
 
 class AgentBridgeManager(Protocol):

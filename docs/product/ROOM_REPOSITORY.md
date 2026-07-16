@@ -2,11 +2,14 @@
 
 Status: current storage authority and migration contract
 
-Updated: 2026-07-15
+Updated: 2026-07-17
 
 Read this document when changing canonical room persistence, transactions,
 attention state, or the SQLite/PostgreSQL boundary. It records ownership, not a
 promise to migrate every legacy file into the canonical repository.
+
+The backend-neutral `RoomRepository` and `RoomTransaction` protocols live in
+`room/repository.py`; `room_repository.py` is a temporary compatibility export.
 
 ## Authority Inventory
 

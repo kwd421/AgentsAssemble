@@ -14,7 +14,7 @@ from agentsassemble.room_command_uow import (
     RoomCommandNotFinalized,
     RoomCommandUnitOfWork,
 )
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 
 
 def _raise_at(actual: str, expected: str) -> None:

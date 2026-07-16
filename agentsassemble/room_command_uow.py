@@ -7,7 +7,7 @@ from contextlib import AbstractContextManager
 from types import TracebackType
 
 from agentsassemble.room_attention import AgentAttentionState
-from agentsassemble.room_repository import RoomRepository, RoomTransaction
+from agentsassemble.room.repository import RoomRepository, RoomTransaction
 
 
 class RoomCommandIdempotencyConflict(ValueError):

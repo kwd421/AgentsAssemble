@@ -36,7 +36,7 @@ from agentsassemble.room_provider_sync_cursor import (
     canonical_provider_sync_seq,
     provider_sync_session_fields,
 )
-from agentsassemble.room_repository import RoomRepository, RoomTransaction
+from agentsassemble.room.repository import RoomRepository, RoomTransaction
 from agentsassemble.room_turn_attention import RoomTurnAttention
 from agentsassemble.room.types import RoomEvent, TurnAssignment
 

@@ -112,6 +112,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.room.commands",
             "agentsassemble.room.errors",
             "agentsassemble.room.projection",
+            "agentsassemble.room.repository",
             "agentsassemble.room.text",
             "agentsassemble.room.types",
             "agentsassemble.room.visibility",
@@ -133,6 +134,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.room_commands",
             "agentsassemble.room_errors",
             "agentsassemble.room_projection",
+            "agentsassemble.room_repository",
             "agentsassemble.room_types",
         ):
             compatibility_line = next(

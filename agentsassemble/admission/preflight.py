@@ -8,7 +8,7 @@ from agentsassemble.identity.repository import (
     LOCAL_OPERATOR_PARTICIPANT_ID,
     device_auth_key,
 )
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.text import clean_room_text
 
 _INACTIVE_MEMBERSHIP_STATUSES = {"kicked", "left", "exported", "removed"}

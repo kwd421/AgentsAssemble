@@ -886,3 +886,13 @@ module churn were deliberately avoided rather than forgotten.
   unchanged. Command actions, validation codes, capability decisions, private
   field redaction, activity labels, latency merging, and diagnostic bounds are
   unchanged.
+- 2026-07-17: The backend-neutral room persistence and room-transaction
+  protocols moved to `room/repository.py`. Application, admission, identity,
+  web, room orchestration, local SQLite, hosted PostgreSQL, and contract tests
+  now import the owned path while `room_repository.py` remains an explicit
+  compatibility export. Record aliases, runtime-checkable protocol behavior,
+  transaction atomicity requirements, listener semantics, and attention
+  cursor method signatures are unchanged. SQLite/factory/realtime verification
+  passed; PostgreSQL behavior tests remained skipped because the current
+  environment does not provide the PostgreSQL test extra or configured test
+  database.

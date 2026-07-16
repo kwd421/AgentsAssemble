@@ -33,7 +33,7 @@ from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.identity.repository import IdentityBackend, device_auth_key
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 from agentsassemble.web.security import (
     _LOOPBACK_HOSTNAMES,
     _is_loopback_host,

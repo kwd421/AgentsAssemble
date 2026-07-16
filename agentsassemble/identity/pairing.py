@@ -17,7 +17,7 @@ from agentsassemble.identity.repository import (
     device_auth_key,
 )
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.text import clean_room_text
 
 OPERATOR_PAIRING_TOKEN_PREFIX = "aap1_"

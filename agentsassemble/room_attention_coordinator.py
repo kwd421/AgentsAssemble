@@ -4,7 +4,7 @@ from collections.abc import Iterable
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_attention_policy import evaluate_ambient_attention, evaluate_attention
-from agentsassemble.room_repository import RoomRepository, RoomTransaction
+from agentsassemble.room.repository import RoomRepository, RoomTransaction
 
 
 class RoomAttentionCoordinator:

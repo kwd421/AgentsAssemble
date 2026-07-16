@@ -14,7 +14,7 @@ from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
 )
 from agentsassemble.room_friends import room_friend_type_for_agent
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 
 ROOM_MEMBERS_FILE = "room_members.json"  # legacy JSON store; imported into identity.db once
 ROOM_MEMBER_ROLES = ("human", "director", "implementer", "reviewer", "agent")

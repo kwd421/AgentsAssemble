@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.room_repository import RoomRepository
+from agentsassemble.room.repository import RoomRepository
 
 DEFAULT_ROOM_CONTEXT_MESSAGES = 12
 DEFAULT_ROOM_CONTEXT_CHARS = 4000

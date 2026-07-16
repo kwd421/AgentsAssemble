@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_attention import AgentAttentionState
-from agentsassemble.room_repository import RoomRepository, RoomTransaction
+from agentsassemble.room.repository import RoomRepository, RoomTransaction
 
 
 class ProviderSyncCursorParityError(RuntimeError):
