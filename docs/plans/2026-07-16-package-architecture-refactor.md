@@ -990,3 +990,12 @@ module churn were deliberately avoided rather than forgotten.
   Durable Agent Session state, provider launch behavior, room routing policy,
   public controller methods, and the controller's compatibility lookup methods
   are unchanged.
+- 2026-07-17: Provider participant and durable Agent Session creation,
+  external-bridge registration, stored server-owned profile restoration,
+  stopped-profile replacement, cursor initialization, and profile migration
+  repair moved to `room/provider_sessions.py`. `room_realtime.py` retains its
+  public create/configure methods as delegation points and composes the service
+  with the existing repository, broker, registry, lock, room creation, and
+  session-state publisher. Strict stored-profile rejection, owner fields,
+  cursor parity, model verification, event payloads, and runtime-state guards
+  are unchanged.
