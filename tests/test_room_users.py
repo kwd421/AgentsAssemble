@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from agentsassemble import room_users
+from agentsassemble.application import room_users
 
 
 class RoomUsersStoreLifecycleTests(unittest.TestCase):

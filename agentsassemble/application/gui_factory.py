@@ -21,6 +21,10 @@ from agentsassemble.application.gui import (
     ProcessSupervisor,
     SessionRunMonitor,
 )
+from agentsassemble.application.room_users import (
+    configure_room_users_backend,
+    release_room_users_backend,
+)
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.identity.repository import IdentityBackend
@@ -45,10 +49,6 @@ from agentsassemble.room.realtime import (
     default_native_cli_provider_specs,
 )
 from agentsassemble.room.repository import RoomRepository
-from agentsassemble.room_users import (
-    configure_room_users_backend,
-    release_room_users_backend,
-)
 from agentsassemble.ws_room_session import WsTicketStore
 
 

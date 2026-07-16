@@ -4,7 +4,8 @@ from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from agentsassemble import room_invite, room_users
+from agentsassemble import room_invite
+from agentsassemble.application import room_users
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.web.router import GuiDeps, RequestContext
 from agentsassemble.persistence.local.admission.repository import (

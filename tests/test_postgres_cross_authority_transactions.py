@@ -40,7 +40,7 @@ if _POSTGRES_AVAILABLE:
     from agentsassemble.admission.coordinator import RoomAdmissionCoordinator
     from agentsassemble.admission.invite_service import InviteApplicationService
     from agentsassemble.admission.session_service import RoomSessionService
-    from agentsassemble.room_users import device_auth_key
+    from agentsassemble.application.room_users import device_auth_key
 
 
     class _PostgresAppContext:

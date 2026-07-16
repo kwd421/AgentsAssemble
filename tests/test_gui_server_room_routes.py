@@ -318,7 +318,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
                 origin="frontend_room",
             )
             configure_room_users_store(root / "compatibility-identity.db")
-            from agentsassemble.room_users import upsert_room
+            from agentsassemble.application.room_users import upsert_room
 
             upsert_room(
                 room_id="compatibility-room",
@@ -949,7 +949,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             root = Path(temp_dir)
             configure_room_users_store(root / "identity.db")
             try:
-                from agentsassemble.room_users import upsert_room
+                from agentsassemble.application.room_users import upsert_room
 
                 set_runtime_public_url("https://room.example.com")
                 set_runtime_host_token("host-secret")
@@ -999,7 +999,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             root = Path(temp_dir)
             configure_room_users_store(root / "identity.db")
             try:
-                from agentsassemble.room_users import upsert_room
+                from agentsassemble.application.room_users import upsert_room
 
                 set_runtime_host_token("host-secret")
                 upsert_room(room_id="archive-room", label="Archive Room", origin="frontend_room")

@@ -30,7 +30,10 @@ from agentsassemble.identity.repository import (
     LOCAL_OPERATOR_USER_ID,
 )
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.room_users import normalize_participant_type, resolve_device_user
+from agentsassemble.application.room_users import (
+    normalize_participant_type,
+    resolve_device_user,
+)
 from agentsassemble.multi_host_invites import (
     NATIVE_REMOTE_ROOM_CLIENT_KIND,
     resolve_lan_invite_secret_ref,

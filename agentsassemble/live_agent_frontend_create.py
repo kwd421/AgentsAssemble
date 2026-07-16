@@ -649,7 +649,7 @@ def _upsert_frontend_room_registry(
             )
             return
 
-        from agentsassemble.room_users import upsert_room
+        from agentsassemble.application.room_users import upsert_room
 
         upsert_room(
             room_id=room_id,

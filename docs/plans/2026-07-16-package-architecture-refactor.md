@@ -1169,3 +1169,14 @@ module churn were deliberately avoided rather than forgotten.
   unchanged. `room_thought.py` was deliberately not moved because it still
   mixes provider-side HTTP posting with pure chunking and needs a separate
   ownership decision.
+- 2026-07-17: The process-scoped room-user identity facade moved mechanically
+  to `application/room_users.py`. This deliberately differs from the initial
+  generated `room/` proposal: the module binds the server-selected
+  `IdentityBackend`, owns compatibility lifecycle state, and constructs the
+  legacy local persistence fallback, so placing it in a domain package would
+  invert the dependency on concrete storage. Current composition, GUI,
+  admission compatibility, and behavior tests import the application-owned
+  module directly; root `room_users.py` is a metadata-tracked compatibility
+  export. Device fingerprinting, stable participant resolution, local operator
+  claims, room registry compatibility, JSON-to-SQLite migration, and ephemeral
+  cleanup behavior are unchanged.

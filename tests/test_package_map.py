@@ -67,6 +67,28 @@ class PackageMapTests(unittest.TestCase):
         )
         self.assertTrue(repository_line.endswith("| in-target-package |"))
 
+    def test_room_user_facade_uses_application_ownership(self) -> None:
+        graph = load_package_graph(ROOT)
+        package_map = build_package_map(ROOT)
+
+        self.assertEqual(
+            graph.domains["agentsassemble.application.room_users"],
+            "application",
+        )
+        owned_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith("| `agentsassemble.application.room_users` |")
+        )
+        compatibility_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith("| `agentsassemble.room_users` |")
+        )
+        self.assertTrue(owned_line.endswith("| in-target-package |"))
+        self.assertIn("| compatibility |", compatibility_line)
+        self.assertTrue(compatibility_line.endswith("| compatibility-shim |"))
+
     def test_local_identity_modules_use_persistence_ownership(self) -> None:
         graph = load_package_graph(ROOT)
         package_map = build_package_map(ROOT)

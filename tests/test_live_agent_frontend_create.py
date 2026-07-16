@@ -22,7 +22,10 @@ from agentsassemble.live_agent_frontend_create import (
 from agentsassemble.live_agent_operations import read_live_agent_operations
 from agentsassemble.live_agent_sessions import resume_live_agent_session_agent
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
-from agentsassemble.room_users import configure_room_users_store, reset_state as reset_room_users_state
+from agentsassemble.application.room_users import (
+    configure_room_users_store,
+    reset_state as reset_room_users_state,
+)
 
 
 class FakeSupervisor:

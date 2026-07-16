@@ -164,6 +164,7 @@ New behavior belongs in the focused owning module rather than the controller.
 | `providers/bridge_process.py` | server-owned Agent Bridge process lifecycle | room routing |
 | `providers/agent_bridge.py` | authenticated bridge client and turn/report protocol | browser UI or WebSocket construction |
 | `application/agent_bridge_entrypoint.py` | bridge environment/config parsing and WebSocket/runtime composition | provider turn behavior |
+| `application/room_users.py` | process-scoped identity-backend binding and legacy local-store fallback | identity persistence contract or room policy |
 | `live_cli.py` | persistent PTY lifecycle and provider message extraction | room membership or history replay |
 | `grok_acp_runtime.py` | Grok ACP lifecycle, permission denial, structured deltas, and provider session load | room routing or browser state |
 | `opencode_runtime.py` | one host-shared server and durable per-agent OpenCode sessions | room membership |

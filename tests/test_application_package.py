@@ -5,9 +5,11 @@ import unittest
 import agentsassemble.application_transaction as compatibility_transaction
 import agentsassemble.gui_application as compatibility_gui
 import agentsassemble.room_agent_bridge as compatibility_agent_bridge
+import agentsassemble.room_users as compatibility_room_users
 from agentsassemble.application import agent_bridge_entrypoint as owned_agent_bridge_entrypoint
 from agentsassemble.application import gui as owned_gui
 from agentsassemble.application import gui_factory as owned_gui_factory
+from agentsassemble.application import room_users as owned_room_users
 from agentsassemble.application import transaction as owned_transaction
 
 
@@ -37,6 +39,16 @@ class ApplicationPackageTests(unittest.TestCase):
     def test_gui_factory_is_owned_by_the_application_package(self) -> None:
         self.assertTrue(callable(owned_gui_factory.build_gui_application_services))
         self.assertTrue(hasattr(owned_gui_factory, "GuiRuntimeConstructors"))
+
+    def test_room_users_root_module_exports_owned_facade(self) -> None:
+        self.assertIs(
+            compatibility_room_users.configure_room_users_backend,
+            owned_room_users.configure_room_users_backend,
+        )
+        self.assertIs(
+            compatibility_room_users.resolve_device_user,
+            owned_room_users.resolve_device_user,
+        )
 
 
 if __name__ == "__main__":

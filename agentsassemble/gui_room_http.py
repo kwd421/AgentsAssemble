@@ -76,7 +76,7 @@ from agentsassemble.room.speech import (
     governed_lobby_say,
 )
 from agentsassemble.persistence.local.room.repository import RoomStore
-from agentsassemble.room_users import (
+from agentsassemble.application.room_users import (
     grant_operator_to_device,
     list_rooms,
     operator_user_id,

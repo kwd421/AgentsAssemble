@@ -15,7 +15,7 @@ from agentsassemble.room_invite import (
     verify_session_token,
 )
 from agentsassemble.room_store import RoomStore
-from agentsassemble.room_users import device_auth_key
+from agentsassemble.application.room_users import device_auth_key
 
 
 class RoomAdmissionServiceTests(unittest.TestCase):

@@ -84,7 +84,7 @@ from agentsassemble.persistence.local.admission.repository import (
 from agentsassemble.room_store import RoomStore
 from agentsassemble.side_chat import append_side_chat_event, read_side_chat
 from agentsassemble.room.moderation import set_room_member_muted
-from agentsassemble.room_users import (
+from agentsassemble.application.room_users import (
     configure_room_users_store,
     reset_state as reset_room_users_state,
     user_for_participant,

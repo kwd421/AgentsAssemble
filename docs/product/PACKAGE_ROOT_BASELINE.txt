@@ -286,7 +286,6 @@ room_turn_context.py
 room_turn_coordinator.py
 room_types.py
 room_user_preferences.py
-room_users.py
 room_votes.py
 room_websocket.py
 sandbox_launcher.py

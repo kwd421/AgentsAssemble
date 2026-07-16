@@ -192,6 +192,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_application_package.py",),
         introduced_in="Milestone 4.5 application package bootstrap",
     ),
+    "room_users.py": CompatibilityShim(
+        replacement_import="agentsassemble.application.room_users",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_users for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_application_package.py",),
+        introduced_in="Milestone 4.12 application room-user facade move",
+    ),
     "gui_mafia_http.py": CompatibilityShim(
         replacement_import="agentsassemble.features.mafia.routes",
         removal_gate=(

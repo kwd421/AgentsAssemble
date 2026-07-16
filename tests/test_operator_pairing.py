@@ -24,7 +24,7 @@ from agentsassemble.persistence.local.admission.repository import (
 )
 from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.room_store import RoomStore
-from agentsassemble.room_users import device_auth_key
+from agentsassemble.application.room_users import device_auth_key
 
 
 class _RecordingTransactionBoundary:
