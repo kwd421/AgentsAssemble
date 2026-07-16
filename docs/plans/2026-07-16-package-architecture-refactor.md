@@ -402,3 +402,10 @@ module churn were deliberately avoided rather than forgotten.
   intentionally remain in `room_invite_repository.py` for this commit so the
   contract move and concrete local persistence move can be verified and
   reverted independently.
+- 2026-07-16: Local memory and JSON invite/session adapters moved to
+  `persistence/local/admission/` without changing the JSON schema, atomic
+  rollback behavior, expiry filtering, or workflow purge semantics.
+  `room_invite_repository.py` is now an explicit compatibility export with
+  removal metadata. Production composition and smoke code import the owned
+  local adapter path directly; only two focused compatibility tests retain the
+  root import.

@@ -5,7 +5,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.room_invite_repository import JsonInviteSessionRepository
+from agentsassemble.persistence.local.admission.repository import (
+    JsonInviteSessionRepository,
+)
 from agentsassemble.room_invite_repository_factory import (
     build_invite_session_repository,
 )

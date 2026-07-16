@@ -8,6 +8,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from agentsassemble.admission.repository import (
+    InviteRepositoryNotConfigured,
+    UnconfiguredInviteSessionRepository,
+)
+from agentsassemble.persistence.local.admission.repository import (
+    MemoryInviteSessionRepository,
+)
 from agentsassemble.room_invite import (
     active_sessions_summary,
     configure_room_invite_store,
@@ -23,11 +30,6 @@ from agentsassemble.room_invite import (
     verify_session_token,
 )
 from agentsassemble.room_invite_application import InviteApplicationService
-from agentsassemble.room_invite_repository import (
-    InviteRepositoryNotConfigured,
-    MemoryInviteSessionRepository,
-    UnconfiguredInviteSessionRepository,
-)
 
 
 class TestRoomInviteRepositoryConfiguration(unittest.TestCase):

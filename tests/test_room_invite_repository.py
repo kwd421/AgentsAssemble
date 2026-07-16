@@ -8,20 +8,22 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.room_admission_workflow_maintenance import (
-    AdmissionWorkflowSelection,
-    TERMINAL_ADMISSION_WORKFLOW_STATUSES,
-)
-from agentsassemble.room_invite_repository import (
+from agentsassemble.admission.repository import (
     InviteRepositoryCorrupt,
     InviteRepositoryNotConfigured,
     InviteRepositoryUnavailable,
     InviteRepositoryWriteFailed,
     InviteSessionRepository,
+    UnconfiguredInviteSessionRepository,
+)
+from agentsassemble.persistence.local.admission.repository import (
+    ROOM_INVITE_STORE_SCHEMA,
     JsonInviteSessionRepository,
     MemoryInviteSessionRepository,
-    ROOM_INVITE_STORE_SCHEMA,
-    UnconfiguredInviteSessionRepository,
+)
+from agentsassemble.room_admission_workflow_maintenance import (
+    AdmissionWorkflowSelection,
+    TERMINAL_ADMISSION_WORKFLOW_STATUSES,
 )
 
 

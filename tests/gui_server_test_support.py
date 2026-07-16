@@ -77,7 +77,9 @@ from agentsassemble.room_invite import (
     set_runtime_host_token,
     set_runtime_public_url,
 )
-from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
+from agentsassemble.persistence.local.admission.repository import (
+    MemoryInviteSessionRepository,
+)
 from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.room_store import RoomStore
 from agentsassemble.side_chat import append_side_chat_event, read_side_chat

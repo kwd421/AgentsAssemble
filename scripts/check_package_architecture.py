@@ -55,6 +55,20 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_local_room_persistence_package.py",),
         introduced_in="Milestone 2.5 local SQLite room persistence move",
     ),
+    "room_invite_repository.py": CompatibilityShim(
+        replacement_import=(
+            "agentsassemble.persistence.local.admission.repository"
+        ),
+        removal_gate=(
+            "No direct imports or monkeypatch targets use "
+            "agentsassemble.room_invite_repository for one compatibility window."
+        ),
+        known_callers=(
+            "tests/test_admission_repository_contracts.py",
+            "tests/test_local_admission_persistence_package.py",
+        ),
+        introduced_in="Milestone 3.2 local admission persistence move",
+    ),
     "room_store.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.local.room.repository",
         removal_gate=(

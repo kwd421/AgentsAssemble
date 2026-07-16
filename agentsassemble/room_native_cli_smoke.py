@@ -32,7 +32,9 @@ from agentsassemble.room_invite_application import (
     SESSION_TOKEN_TTL_SECONDS,
     InviteApplicationService,
 )
-from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
+from agentsassemble.persistence.local.admission.repository import (
+    MemoryInviteSessionRepository,
+)
 from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
 

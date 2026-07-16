@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime, timedelta
 
-from agentsassemble.room_invite_repository import (
-    InviteRepositoryWriteFailed,
+from agentsassemble.admission.repository import InviteRepositoryWriteFailed
+from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,
 )
 from agentsassemble.room_session_issuer import RoomSessionIssuer, session_token_fingerprint

@@ -42,7 +42,9 @@ from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
 from agentsassemble.room_invite import verify_session_token
 from agentsassemble.room_invite import compatibility_public_invite_runtime
 from agentsassemble.room_invite_application import InviteApplicationService
-from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
+from agentsassemble.persistence.local.admission.repository import (
+    MemoryInviteSessionRepository,
+)
 from agentsassemble.room_session_service import RoomSessionService
 
 

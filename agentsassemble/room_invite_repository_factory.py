@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from agentsassemble.admission.repository import InviteSessionRepository
-from agentsassemble.room_invite_repository import JsonInviteSessionRepository
+from agentsassemble.persistence.local.admission.repository import (
+    JsonInviteSessionRepository,
+)
 from agentsassemble.room_repository_factory import (
     RoomRepositoryConfigurationError,
     RoomRepositorySettings,

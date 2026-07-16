@@ -53,7 +53,7 @@ from agentsassemble.public_invite_runtime import (
     PublicInviteRuntime,
     normalize_public_room_url,
 )
-from agentsassemble.room_invite_repository import (
+from agentsassemble.persistence.local.admission.repository import (
     JsonInviteSessionRepository,
     MemoryInviteSessionRepository,
 )

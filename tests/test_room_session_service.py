@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
+from agentsassemble.persistence.local.admission.repository import (
+    MemoryInviteSessionRepository,
+)
 from agentsassemble.room_session_service import RoomSessionService
 
 

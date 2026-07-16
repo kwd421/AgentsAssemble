@@ -17,7 +17,9 @@ from agentsassemble.room_repository_factory import (
     RoomRepositorySettings,
 )
 from agentsassemble.room_store import RoomStore
-from agentsassemble.room_invite_repository import MemoryInviteSessionRepository
+from agentsassemble.persistence.local.admission.repository import (
+    MemoryInviteSessionRepository,
+)
 
 
 class GuiRoomRepositoryInjectionTests(unittest.TestCase):
