@@ -24,7 +24,7 @@ from agentsassemble.agent_sessions import (
 )
 from agentsassemble.codex_app_server_runtime import CodexAppServerRuntimeManager
 from agentsassemble.gui_room_agent_http import register_agent_session_routes
-from agentsassemble.gui_room_invite_http import register_invite_admission_routes
+from agentsassemble.web.routes.room_invite import register_invite_admission_routes
 from agentsassemble.gui_room_lifecycle_http import (
     register_room_history_routes,
     register_room_lifecycle_routes,

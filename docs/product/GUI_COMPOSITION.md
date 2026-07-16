@@ -173,11 +173,11 @@ These families already have a clear module owner and should not move back into
 | Owner module | Classification | Responsibility | Primary evidence |
 | --- | --- | --- | --- |
 | `web/websocket.py` | Current core | Single-use WebSocket ticket issue and authenticated upgrade lifecycle | `tests/test_ws_endpoint.py`, `tests/test_ws_room_session.py`, `tests/test_ws_room_client.py` |
-| `gui_attachment_http.py` | Current core | Safe attachment upload/download and room media reference | `tests/test_gui_server_room_routes.py` |
-| `gui_provider_http.py` | Current core | Provider catalog, local provider-login command, and redacted DeepSeek credential status/mutation; login execution/audit lives in `provider_login.py` | `tests/test_gui_server_provider_http.py`, `tests/test_live_agent_frontend_create.py` |
-| `gui_public_invite_http.py` | Current core | Host-gated public URL and tunnel control | `tests/test_public_invite_http.py` |
-| `gui_room_invite_http.py` | Current core | Host claim, invite admission, companion invite, leave/revoke | `tests/test_room_invite.py`, `tests/test_public_invite.py` |
-| `gui_room_settings_http.py` | Current core | Repository-owned room-global settings | `tests/test_gui_server_room_settings_http.py` |
+| `web/routes/attachments.py` | Current core | Safe attachment upload/download and room media reference | `tests/test_gui_server_room_routes.py` |
+| `web/routes/providers.py` | Current core | Provider catalog, local provider-login command, and redacted DeepSeek credential status/mutation; login execution/audit lives in `provider_login.py` | `tests/test_gui_server_provider_http.py`, `tests/test_live_agent_frontend_create.py` |
+| `web/routes/public_invite.py` | Current core | Host-gated public URL and tunnel control | `tests/test_public_invite_http.py` |
+| `web/routes/room_invite.py` | Current core | Host claim, invite admission, companion invite, leave/revoke | `tests/test_room_invite.py`, `tests/test_public_invite.py` |
+| `web/routes/room_settings.py` | Current core | Repository-owned room-global settings | `tests/test_gui_server_room_settings_http.py` |
 | `gui_room_lifecycle_http.py` | Mixed current/compatibility | Room directory/lifecycle plus HTTP/SSE history compatibility | `tests/test_gui_server_room_routes.py`, `tests/test_gui_server_streams_http.py` |
 | `gui_room_moderation_media_http.py` | Mixed current/optional/compatibility | Roster compatibility, moderation HTTP, custom channels, voice presence | `tests/test_gui_server_room_routes.py`, `tests/test_room_channels_http.py` |
 | `gui_room_agent_http.py` | Compatibility | Pre-canonical Agent Session HTTP create/resume/turn controls | `tests/test_agent_session_cli.py`, `tests/test_live_agent_session_agent_controls.py` |

@@ -22,13 +22,13 @@ from agentsassemble.codex_sessions import list_codex_sessions
 from agentsassemble.live_agent_context import live_agent_context_contract
 from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionProjection
 from agentsassemble.live_agent_flow import FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
-from agentsassemble.gui_provider_http import (
+from agentsassemble.web.routes.providers import (
     model_catalog_payload,
     provider_catalog_payload,
     register_provider_routes,
 )
 from agentsassemble.application.gui import ApplicationDatabase, GuiApplicationServices
-from agentsassemble.gui_attachment_http import register_attachment_routes
+from agentsassemble.web.routes.attachments import register_attachment_routes
 from agentsassemble.gui_mafia_http import register_mafia_routes
 from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
 from agentsassemble.gui_legacy_application import (
@@ -40,9 +40,9 @@ from agentsassemble.gui_legacy_application import (
     LegacySmokeHooks,
 )
 from agentsassemble.gui_observability_http import register_observability_routes
-from agentsassemble.gui_public_invite_http import register_public_invite_admin_routes
+from agentsassemble.web.routes.public_invite import register_public_invite_admin_routes
 from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
-from agentsassemble.gui_room_settings_http import register_room_settings_routes
+from agentsassemble.web.routes.room_settings import register_room_settings_routes
 from agentsassemble.gui_side_chat_http import register_side_chat_routes
 from agentsassemble.gui_social_http import register_room_friend_profile_routes
 from agentsassemble.web.static import (

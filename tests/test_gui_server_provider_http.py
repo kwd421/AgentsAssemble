@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 
 from agentsassemble import room_invite
 from agentsassemble.gui import _make_handler
-from agentsassemble.gui_provider_http import register_provider_routes
+from agentsassemble.web.routes.providers import register_provider_routes
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
 
 
@@ -218,7 +218,7 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
         store = FakeSecretStore()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            with patch("agentsassemble.gui_provider_http.PROVIDER_SECRETS", store):
+            with patch("agentsassemble.web.routes.providers.PROVIDER_SECRETS", store):
                 server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
@@ -244,7 +244,7 @@ class ProviderHandlerDispatchTests(unittest.TestCase):
         *,
         headers: dict[str, str],
     ) -> tuple[int, dict[str, object]]:
-        with patch("agentsassemble.gui_provider_http.PROVIDER_SECRETS", store):
+        with patch("agentsassemble.web.routes.providers.PROVIDER_SECRETS", store):
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()

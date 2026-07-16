@@ -549,3 +549,10 @@ module churn were deliberately avoided rather than forgotten.
   two type-only imports of legacy process/session implementations: application
   lifecycle names the three process-monitor methods it owns through a Protocol
   and keeps the forwarded session-run controller opaque.
+- 2026-07-16: The first current route registrar family moved to `web/routes/`:
+  attachments, providers, public invite administration, room
+  invite/admission, and room settings. Root modules remain explicit
+  compatibility exports; production composition, behavior tests, monkeypatch
+  targets, and invite-boundary tests use the owned paths. Route parity now
+  inventories `web/routes/` recursively instead of relying only on root
+  filenames.

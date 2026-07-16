@@ -324,6 +324,33 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_application_package.py",),
         introduced_in="Milestone 4.5 application package bootstrap",
     ),
+    "gui_attachment_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.web.routes.attachments",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_attachment_http for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_web_routes_package.py",),
+        introduced_in="Milestone 4.6 current web route package",
+    ),
+    "gui_provider_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.web.routes.providers",
+        removal_gate=(
+            "No direct imports or monkeypatch targets use "
+            "agentsassemble.gui_provider_http for one compatibility window."
+        ),
+        known_callers=("tests/test_web_routes_package.py",),
+        introduced_in="Milestone 4.6 current web route package",
+    ),
+    "gui_public_invite_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.web.routes.public_invite",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_public_invite_http for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_web_routes_package.py",),
+        introduced_in="Milestone 4.6 current web route package",
+    ),
     "gui_response.py": CompatibilityShim(
         replacement_import="agentsassemble.web.response",
         removal_gate=(
@@ -350,6 +377,24 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         ),
         known_callers=("tests/test_web_transport_package.py",),
         introduced_in="Milestone 4.3 web router move",
+    ),
+    "gui_room_invite_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.web.routes.room_invite",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_room_invite_http for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_web_routes_package.py",),
+        introduced_in="Milestone 4.6 current web route package",
+    ),
+    "gui_room_settings_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.web.routes.room_settings",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_room_settings_http for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_web_routes_package.py",),
+        introduced_in="Milestone 4.6 current web route package",
     ),
     "gui_ws_http.py": CompatibilityShim(
         replacement_import="agentsassemble.web.websocket",

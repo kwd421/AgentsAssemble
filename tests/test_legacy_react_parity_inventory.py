@@ -114,6 +114,7 @@ def _parse_gui_routes(path: Path) -> set[Route]:
     route_modules = (
         *sorted(path.parent.glob("gui_*_http.py")),
         path.parent / "web" / "websocket.py",
+        *sorted((path.parent / "web" / "routes").rglob("*.py")),
     )
     for module_path in route_modules:
         routes |= _parse_router_module_routes(module_path)
