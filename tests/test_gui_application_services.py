@@ -10,7 +10,7 @@ from agentsassemble.admission.coordinator import RoomAdmissionCoordinator
 from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.attachments import FileAttachmentStore
-from agentsassemble.gui_application import GuiApplicationServices
+from agentsassemble.application.gui import GuiApplicationServices
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionProjection
 from agentsassemble.persistence.local.admission.repository import (

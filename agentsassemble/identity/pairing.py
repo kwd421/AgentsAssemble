@@ -9,7 +9,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 from agentsassemble.admission.session_issuer import session_token_fingerprint
 from agentsassemble.admission.session_service import RoomSessionService
-from agentsassemble.application_transaction import ApplicationTransactionBoundary
+from agentsassemble.application.transaction import ApplicationTransactionBoundary
 from agentsassemble.identity.repository import (
     IdentityBackend,
     LOCAL_OPERATOR_PARTICIPANT_ID,

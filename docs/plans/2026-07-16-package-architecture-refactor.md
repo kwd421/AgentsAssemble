@@ -539,3 +539,13 @@ module churn were deliberately avoided rather than forgotten.
   compatibility export. Route parity and ownership inventories now inspect
   both retained root route modules and owned `web/` modules rather than
   depending on the old filename location.
+- 2026-07-16: The existing `GuiApplicationServices` lifecycle container moved
+  intact to `application/gui.py`, and the shared transaction protocol moved to
+  `application/transaction.py`. Current composition and domain callers import
+  the owned paths; the two root modules remain explicit compatibility exports.
+  The concrete `_build_gui_application_services()` factory stays in `gui.py`
+  for this commit so ownership relocation is verified separately from changing
+  construction order or rollback behavior. The dependency gate also removed
+  two type-only imports of legacy process/session implementations: application
+  lifecycle names the three process-monitor methods it owns through a Protocol
+  and keeps the forwarded session-run controller opaque.

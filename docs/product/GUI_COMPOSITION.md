@@ -95,10 +95,15 @@ deliberate pre-bind construction step and post-bind activation step.
 
 ## Current Application Services Boundary
 
-Phase 5.2 introduced `GuiApplicationServices` in
-`agentsassemble/gui_application.py`. `_build_gui_application_services()` is the
-single composition function used by both `serve_gui()` and the compatibility
+Phase 5.2 introduced `GuiApplicationServices`; its owned location is now
+`agentsassemble/application/gui.py`. `gui_application.py` remains a temporary
+compatibility export. `_build_gui_application_services()` is still the single
+composition function used by both `serve_gui()` and the compatibility
 `_make_handler()` test/helper surface.
+
+The cross-authority transaction protocol now belongs to
+`agentsassemble/application/transaction.py`;
+`application_transaction.py` remains a temporary compatibility export.
 
 The object now retains the exact instances for:
 

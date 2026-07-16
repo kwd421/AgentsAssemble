@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agentsassemble.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event
-from agentsassemble.gui_application import SessionRunMonitor
+from agentsassemble.application.gui import SessionRunMonitor
 from agentsassemble.gui_legacy_codex_session_http import (
     LegacyCodexSessionHttpDeps,
     register_legacy_codex_session_routes,

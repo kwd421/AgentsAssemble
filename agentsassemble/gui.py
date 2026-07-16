@@ -27,7 +27,7 @@ from agentsassemble.gui_provider_http import (
     provider_catalog_payload,
     register_provider_routes,
 )
-from agentsassemble.gui_application import ApplicationDatabase, GuiApplicationServices
+from agentsassemble.application.gui import ApplicationDatabase, GuiApplicationServices
 from agentsassemble.gui_attachment_http import register_attachment_routes
 from agentsassemble.gui_mafia_http import register_mafia_routes
 from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
