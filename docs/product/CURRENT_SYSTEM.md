@@ -2,7 +2,7 @@
 
 Status: current starting point
 
-Updated: 2026-07-15
+Updated: 2026-07-16
 
 Read this file before changing rooms, Agent Sessions, providers, invites,
 moderation, media, or the React room UI. It is intentionally short. Follow its
@@ -36,7 +36,8 @@ Browser or Agent Bridge
         <-> ticket-authenticated /ws?ticket=...
 RoomRealtimeController
         <-> RoomRepository
-                <-> RoomStore / rooms.sqlite3 (current local default)
+                <-> persistence/local/room/RoomStore / rooms.sqlite3
+                    (current local default)
         <-> persistent provider adapter
 ```
 
@@ -259,7 +260,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Change | Start here |
 | --- | --- |
 | GUI server composition, route ownership, and shutdown | `gui.py`, `gui_application.py`, `docs/product/GUI_COMPOSITION.md` |
-| Room persistence and sequence | `room_store.py`, `room_database.py`, `room_types.py` |
+| Room persistence and sequence | local SQLite owner in `persistence/local/room/`; PostgreSQL owner in `persistence/postgres/room/`; compatibility exports in `room_store.py`, `room_database.py`, and `sqlite_attention_repository.py`; event types in `room_types.py` |
 | Room storage authority and transaction contract | `room_repository.py`, `docs/product/ROOM_REPOSITORY.md` |
 | Autonomous participation and durable attention | `room_attention.py`, `docs/product/ATTENTION_MODEL.md` |
 | WebSocket commands and ACL | `room_commands.py`, `ws_room_session.py`, `room_realtime.py` |
@@ -270,10 +271,10 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Codex app-server lifecycle | `codex_app_server_runtime.py`; compatibility exports in `agent_sessions.py` |
 | Other provider process lifecycle | `room_bridge_process.py`, `live_cli.py`, provider adapter module |
 | Invites, browser admission, and operator-origin pairing | invite policy/application service in `room_invite.py`; preflight in `room_admission.py`; durable mutation owner in `room_admission_coordinator.py`; pairing in `operator_pairing.py`; HTTP in `gui_room_invite_http.py`; native attendee in `room_attendee.py`; browser flow in `frontend/src/app/useRoomAdmission.ts` |
-| Invite/session persistence | contract and local JSON adapter in `room_invite_repository.py`; hosted adapter in `postgres_invite_repository.py`; selection in `room_invite_repository_factory.py` |
-| Identity, credential, membership compatibility, preference, and usage persistence | contract/local SQLite in `identity_store.py`; hosted facade in `postgres_identity_repository.py`; selection in `identity_repository_factory.py` |
+| Invite/session persistence | contract and local JSON adapter remain together in `room_invite_repository.py`; hosted owner in `persistence/postgres/admission/`; compatibility export in `postgres_invite_repository.py`; selection in `room_invite_repository_factory.py` |
+| Identity, credential, membership compatibility, preference, and usage persistence | contract/local SQLite remain together in `identity_store.py`; hosted owner in `persistence/postgres/identity/`; compatibility exports in `postgres_identity_*.py`; selection in `identity_repository_factory.py` |
 | Provider credentials | `provider_secrets.py`, provider credential routes |
-| Canonical attachment upload/download HTTP | `gui_attachment_http.py`; storage in `attachments.py`, room media in `room_store.py` |
+| Canonical attachment upload/download HTTP | `gui_attachment_http.py`; storage in `attachments.py`, room media in `persistence/local/room/repository.py` or the selected `RoomRepository` |
 | GUI HTTP response/WebSocket transport | `gui_response.py`, `gui_ws_http.py`; composition in `gui.py` |
 | GUI Host/Origin and public-route trust policy | `gui_request_security.py` |
 | Durable legacy session-run monitor lifecycle | `session_run_monitor.py`; reconcile policy wiring in `gui.py` |

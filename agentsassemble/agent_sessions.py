@@ -22,7 +22,7 @@ from agentsassemble.room_provider_sync_cursor import (
     assert_provider_sync_cursor_parity,
     provider_sync_session_fields,
 )
-from agentsassemble.room_store import RoomStore
+from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.codex_app_server_runtime import (
     CODEX_APP_SERVER_IDLE_COMPLETION_GRACE_SECONDS,
     CODEX_APP_SERVER_INFERRED_TURN_COMPLETED_METHOD,

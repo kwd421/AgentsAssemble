@@ -73,7 +73,7 @@ from agentsassemble.room_speech import (
     governed_channel_say,
     governed_lobby_say,
 )
-from agentsassemble.room_store import RoomStore
+from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room_users import (
     grant_operator_to_device,
     list_rooms,

@@ -37,6 +37,33 @@ class CompatibilityShim:
 # boundaries. Historical presence in the root baseline does not exempt a moved
 # module from recording its replacement, callers, and removal gate here.
 ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
+    "room_database.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.local.room.database",
+        removal_gate=(
+            "No direct imports or monkeypatch targets use "
+            "agentsassemble.room_database for one compatibility window."
+        ),
+        known_callers=("tests/test_local_room_persistence_package.py",),
+        introduced_in="Milestone 2.5 local SQLite room persistence move",
+    ),
+    "room_store.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.local.room.repository",
+        removal_gate=(
+            "No direct imports or monkeypatch targets use agentsassemble.room_store "
+            "for one compatibility window."
+        ),
+        known_callers=("tests/test_local_room_persistence_package.py",),
+        introduced_in="Milestone 2.5 local SQLite room persistence move",
+    ),
+    "sqlite_attention_repository.py": CompatibilityShim(
+        replacement_import="agentsassemble.persistence.local.room.attention",
+        removal_gate=(
+            "No direct imports use agentsassemble.sqlite_attention_repository for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_local_room_persistence_package.py",),
+        introduced_in="Milestone 2.5 local SQLite room persistence move",
+    ),
     "postgres_attention_repository.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.postgres.room.attention",
         removal_gate=(

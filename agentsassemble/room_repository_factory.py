@@ -13,7 +13,7 @@ from agentsassemble.persistence.postgres.schema import (
     require_postgres_room_schema,
 )
 from agentsassemble.room_repository import RoomRepository
-from agentsassemble.room_store import RoomStore
+from agentsassemble.persistence.local.room.repository import RoomStore
 
 
 ROOM_REPOSITORY_BACKENDS = frozenset({"sqlite", "postgresql"})

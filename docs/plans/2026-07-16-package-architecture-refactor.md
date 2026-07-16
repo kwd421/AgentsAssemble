@@ -372,3 +372,16 @@ module churn were deliberately avoided rather than forgotten.
   removed cycle needs no baseline edit. Migrated core packages cannot import
   legacy or web implementations, and migrated web code cannot import concrete
   SQLite/PostgreSQL adapters.
+- 2026-07-16: Milestone 2 moved PostgreSQL application database/pool ownership,
+  room persistence, identity persistence, and admission persistence under
+  `persistence/postgres/`, then moved the already contract-separated local
+  SQLite room implementation under `persistence/local/room/`. Root paths are
+  explicit compatibility exports with removal metadata, and current production
+  imports use the owned paths. Shared room text normalization and event
+  visibility no longer require a persistence adapter to import legacy meeting
+  code or another concrete backend. Local identity and invite JSON
+  implementations intentionally remain in their current modules because their
+  contracts and implementations are still mixed; Milestone 3 must separate
+  those contracts before moving the adapters. SQLite repository, migration,
+  attention, realtime, Agent Session, package-map, dependency-direction, and
+  cycle checks passed after the move.

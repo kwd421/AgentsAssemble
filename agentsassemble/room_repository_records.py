@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.room_database import LEGACY_HIDDEN, VISIBLE
+from agentsassemble.room.text import clean_room_text
+from agentsassemble.room.visibility import LEGACY_HIDDEN, VISIBLE
 
 
 ROOM_STATUSES = frozenset({"active", "closed", "archived"})
@@ -15,7 +15,7 @@ ACTIVE_PARTICIPANT_STATUSES = frozenset({"joined"})
 
 
 def clean_room_id(value: object) -> str:
-    room_id = clean_lobby_text(value, limit=128)
+    room_id = clean_room_text(value, limit=128)
     if (
         not room_id
         or room_id in {".", ".."}
@@ -28,43 +28,43 @@ def clean_room_id(value: object) -> str:
 
 
 def clean_participant_id(value: object) -> str:
-    return clean_lobby_text(value, limit=128)
+    return clean_room_text(value, limit=128)
 
 
 def clean_session_id(value: object) -> str:
-    return clean_lobby_text(value, limit=128)
+    return clean_room_text(value, limit=128)
 
 
 def clean_event_type(value: object) -> str:
-    event_type = clean_lobby_text(value, limit=64)
+    event_type = clean_room_text(value, limit=64)
     if not event_type:
         raise ValueError("event type is required.")
     return event_type
 
 
 def safe_media_filename(value: object) -> str:
-    name = Path(clean_lobby_text(value, limit=256)).name
+    name = Path(clean_room_text(value, limit=256)).name
     if name in {"", ".", ".."}:
         return ""
     return name.replace("/", "_").replace("\\", "_")
 
 
 def room_status(value: object) -> str:
-    status = clean_lobby_text(value, limit=32) or "active"
+    status = clean_room_text(value, limit=32) or "active"
     if status not in ROOM_STATUSES:
         raise ValueError(f"Unsupported room status: {status}")
     return status
 
 
 def participant_status(value: object) -> str:
-    status = clean_lobby_text(value, limit=32) or "joined"
+    status = clean_room_text(value, limit=32) or "joined"
     if status not in PARTICIPANT_STATUSES:
         raise ValueError(f"Unsupported participant status: {status}")
     return status
 
 
 def session_status(value: object) -> str:
-    status = clean_lobby_text(value, limit=32) or "attached"
+    status = clean_room_text(value, limit=32) or "attached"
     if status not in SESSION_STATUSES:
         raise ValueError(f"Unsupported session status: {status}")
     return status
@@ -81,7 +81,7 @@ def build_room_record(
     clean_status = room_status(status)
     return {
         "room_id": room_id,
-        "label": clean_lobby_text(label, limit=128) or str(existing.get("label") or ""),
+        "label": clean_room_text(label, limit=128) or str(existing.get("label") or ""),
         "status": clean_status if existing.get("status") not in {"closed", "archived"} else existing["status"],
         "created_at": str(existing.get("created_at") or now),
         "updated_at": now,
@@ -100,7 +100,7 @@ def merge_participant_record(
     incoming["room_id"] = room_id
     incoming["participant_id"] = participant_id
     incoming["status"] = participant_status(incoming.get("status") or "joined")
-    incoming["display_name"] = clean_lobby_text(incoming.get("display_name"), limit=64) or participant_id
+    incoming["display_name"] = clean_room_text(incoming.get("display_name"), limit=64) or participant_id
     now = utc_now()
     if existing:
         return {
@@ -177,9 +177,9 @@ def build_room_event(
         and value not in (None, "", [], {})
     }
     if clean_type == "participant_updated" and "avatar_image_url" in payload:
-        clean_payload["avatar_image_url"] = clean_lobby_text(payload.get("avatar_image_url"), limit=4096)
-    participant_id = clean_lobby_text(payload.get("participant_id") or payload.get("actor_id"), limit=128)
-    participant_type = clean_lobby_text(
+        clean_payload["avatar_image_url"] = clean_room_text(payload.get("avatar_image_url"), limit=4096)
+    participant_id = clean_room_text(payload.get("participant_id") or payload.get("actor_id"), limit=128)
+    participant_type = clean_room_text(
         payload.get("participant_type") or payload.get("actor_type"),
         limit=32,
     )
@@ -187,7 +187,7 @@ def build_room_event(
         participant_type = "human"
     if participant_id and not participant_type:
         participant_type = "agent" if payload.get("participant_id") else "human"
-    visibility = clean_lobby_text(payload.get("visibility"), limit=32)
+    visibility = clean_room_text(payload.get("visibility"), limit=32)
     if visibility not in {VISIBLE, LEGACY_HIDDEN}:
         visibility = VISIBLE
     event: dict[str, object] = {

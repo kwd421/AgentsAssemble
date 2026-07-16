@@ -14,8 +14,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from agentsassemble.room_context import project_room_context
-from agentsassemble.room_database import VISIBLE, open_room_database
-from agentsassemble.room_store import RoomStore
+from agentsassemble.persistence.local.room.database import VISIBLE, open_room_database
+from agentsassemble.persistence.local.room.repository import RoomStore
 
 
 CANONICAL_ROOM_BENCHMARK_SCHEMA_VERSION = 1

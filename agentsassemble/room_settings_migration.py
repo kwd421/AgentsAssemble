@@ -17,7 +17,7 @@ from agentsassemble.legacy_room_settings_source import (
     read_legacy_room_settings_source,
 )
 
-from agentsassemble.room_database import (
+from agentsassemble.persistence.local.room.database import (
     ROOM_DATABASE_FILENAME,
     ROOM_SCHEMA_VERSION,
     open_room_database,

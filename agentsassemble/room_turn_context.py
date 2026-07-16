@@ -13,7 +13,7 @@ from agentsassemble.room_context import (
 )
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.room_provider_sync_cursor import canonical_provider_sync_seq
-from agentsassemble.room_store import RoomStore
+from agentsassemble.persistence.local.room.repository import RoomStore
 
 DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS = DEFAULT_ROOM_CONTEXT_MESSAGES
 DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS = 20000

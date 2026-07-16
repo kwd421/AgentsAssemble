@@ -83,7 +83,7 @@ from agentsassemble.room_provider_sync_cursor import (
 )
 from agentsassemble.room_routing import route_message_targets
 from agentsassemble.room_repository import RoomRepository
-from agentsassemble.room_store import RoomStore
+from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room_turn_coordinator import (
     RoomTurnCoordinator,
     dedupe_event_ids as _dedupe_text_list,

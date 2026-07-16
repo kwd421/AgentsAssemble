@@ -6,12 +6,12 @@ from psycopg import Connection
 
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.persistence.postgres.room.rows import payload_from_row
-from agentsassemble.room_database import VISIBLE
 from agentsassemble.room_global_settings import (
     RoomGlobalSettingsRecord,
     validate_room_global_settings,
 )
 from agentsassemble.room_repository_records import ACTIVE_PARTICIPANT_STATUSES
+from agentsassemble.room.visibility import VISIBLE
 
 
 def room_is_deleted(connection: Connection, room_id: str) -> bool:

@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from agentsassemble.identity_store import default_identity_db_path
-from agentsassemble.room_store import RoomStore
+from agentsassemble.persistence.local.room.repository import RoomStore
 
 
 PLAN_FILENAME = ".legacy-message-migration-plan.json"

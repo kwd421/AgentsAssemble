@@ -14,7 +14,7 @@ from agentsassemble.persistence.postgres.schema import (
     PostgresRoomMigrationError,
     upgrade_postgres_room_schema,
 )
-from agentsassemble.room_database import ROOM_DATABASE_FILENAME, ROOM_SCHEMA_VERSION
+from agentsassemble.persistence.local.room.database import ROOM_DATABASE_FILENAME, ROOM_SCHEMA_VERSION
 
 
 class RoomRepositoryTransferError(RuntimeError):

@@ -22,7 +22,7 @@ from agentsassemble.legacy_room_preferences_source import (
     read_legacy_room_preferences_source,
 )
 from agentsassemble.legacy_room_settings_document import LegacyRoomSettingsSourceError
-from agentsassemble.room_database import ROOM_DATABASE_FILENAME, open_room_database
+from agentsassemble.persistence.local.room.database import ROOM_DATABASE_FILENAME, open_room_database
 from agentsassemble.room_user_preferences import RoomUserPreferencesRecord
 from agentsassemble.room_user_preferences import merge_room_user_preferences
 
