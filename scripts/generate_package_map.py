@@ -21,6 +21,7 @@ EXISTING_PACKAGES = frozenset(
         "migrations",
         "persistence",
         "room",
+        "web",
     }
 )
 PATH_OWNED_DOMAINS = frozenset(

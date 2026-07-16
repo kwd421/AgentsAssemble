@@ -514,3 +514,8 @@ module churn were deliberately avoided rather than forgotten.
   not run because this wave did not change provider or rendered UI behavior;
   those remain required for their later package waves and final release
   evidence. Remote CI also remains unverified until a pushed commit is checked.
+- 2026-07-16: Milestone 4 began with the request-security boundary.
+  Host-header, origin, CORS, loopback, and public-invite route policy moved to
+  `web/security.py` without changing its allowlist or trust decisions.
+  `gui.py` and the request context import the owned path directly;
+  `gui_request_security.py` remains an explicit compatibility export.

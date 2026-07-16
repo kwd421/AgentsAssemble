@@ -138,6 +138,10 @@ The handler class retains `room_realtime_controller`, `room_repository`, and
 `application_services`. Production shutdown no longer discovers its controller
 through the generated handler type.
 
+Host, origin, CORS, and public-route trust policy now belongs to
+`agentsassemble/web/security.py`. `gui_request_security.py` remains a temporary
+compatibility export; current request handling imports the owned web path.
+
 ## Router-Owned Route Families
 
 These families already have a clear module owner and should not move back into

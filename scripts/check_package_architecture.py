@@ -297,6 +297,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_identity_repository_factory.py",),
         introduced_in="Milestone 3.11 identity repository factory move",
     ),
+    "gui_request_security.py": CompatibilityShim(
+        replacement_import="agentsassemble.web.security",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_request_security for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_web_transport_package.py",),
+        introduced_in="Milestone 4.1 web security package bootstrap",
+    ),
     "postgres_room_mutations.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.postgres.room.mutations",
         removal_gate=(

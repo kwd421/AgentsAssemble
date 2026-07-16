@@ -55,7 +55,7 @@ from agentsassemble.gui_response import (
     _rewrite_react_app_index,
     _sse_event,
 )
-from agentsassemble.gui_request_security import (
+from agentsassemble.web.security import (
     _LOOPBACK_HOSTNAMES,
     _PUBLIC_INVITE_CORS_HEADERS,
     _PUBLIC_INVITE_CORS_METHODS,

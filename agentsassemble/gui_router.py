@@ -25,7 +25,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from agentsassemble.attachments import FileAttachmentStore
-from agentsassemble.gui_request_security import (
+from agentsassemble.web.security import (
     _LOOPBACK_HOSTNAMES,
     _is_loopback_host,
     _origin_is_loopback_or_empty,
