@@ -115,6 +115,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.room.commands",
             "agentsassemble.room.errors",
             "agentsassemble.room.event_broker",
+            "agentsassemble.room.moderation",
             "agentsassemble.room.projection",
             "agentsassemble.room.repository",
             "agentsassemble.room.text",

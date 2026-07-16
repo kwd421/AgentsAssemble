@@ -8,7 +8,7 @@ from agentsassemble.agent_sessions import (
     enqueue_agent_session_auto_turn_for_lobby_event,
     room_status_payload,
 )
-from agentsassemble.room_members import is_room_member_muted
+from agentsassemble.room.moderation import is_room_member_muted
 from agentsassemble.room_speech import (
     ActorIdentity,
     GovernedLobbySayRejected,

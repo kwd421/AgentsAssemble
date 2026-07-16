@@ -25,7 +25,7 @@ from agentsassemble.room_channels import (
     rename_channel,
     reorder_channels,
 )
-from agentsassemble.room_members import (
+from agentsassemble.room.moderation import (
     is_room_member_muted,
     remove_room_member,
 )

@@ -74,7 +74,11 @@ from agentsassemble.room_floor_policy import (
     continuous_floor_targets,
     evaluate_agent_floor_eligibility,
 )
-from agentsassemble.room_members import is_room_member_muted, remove_room_member, set_room_member_muted
+from agentsassemble.room.moderation import (
+    is_room_member_muted,
+    remove_room_member,
+    set_room_member_muted,
+)
 from agentsassemble.providers.model_verification import (
     model_verification_status as _model_verification_status,
 )

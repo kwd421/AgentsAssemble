@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import logging
 import re
-import sqlite3
 import threading
 import time
 from pathlib import Path
@@ -14,6 +12,11 @@ from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
 )
 from agentsassemble.room_friends import room_friend_type_for_agent
+from agentsassemble.room.moderation import (
+    is_room_member_muted,
+    remove_room_member,
+    set_room_member_muted,
+)
 from agentsassemble.room.repository import RoomRepository
 
 ROOM_MEMBERS_FILE = "room_members.json"  # legacy JSON store; imported into identity.db once
@@ -374,43 +377,3 @@ def _member_key(member: dict[str, object]) -> str:
     meeting_id = clean_lobby_text(member.get("meeting_id"), limit=128)
     participant_id = clean_lobby_text(member.get("participant_id"), limit=128)
     return f"{meeting_id}:{participant_id}"
-
-
-def set_room_member_muted(
-    output_root: Path,
-    *,
-    meeting_id: str,
-    participant_id: str,
-    muted: bool,
-) -> dict[str, object]:
-    """Toggle a member's muted flag. Muted members may read but not post.
-
-    Creates a lightweight moderation record if the participant only exists as a
-    live agent/session (whose presence is merged in at read time).
-    """
-    return identity_store_for_output_root(output_root).set_membership_muted(
-        meeting_id, participant_id, bool(muted)
-    )
-
-
-def remove_room_member(output_root: Path, meeting_id: str, participant_id: str) -> bool:
-    """Delete a saved member record (host kick). Returns True if one was removed.
-
-    Live agents/sessions are surfaced separately at read time; this only clears
-    the persisted roster row. The caller also revokes sessions / expels agents.
-    """
-    return identity_store_for_output_root(output_root).remove_membership(meeting_id, participant_id)
-
-
-def is_room_member_muted(output_root: Path, meeting_id: str, participant_id: str) -> bool:
-    """Return True if the participant is muted in the given room.
-
-    Fail-open: a transient SQLite read error (e.g. under heavy concurrent access
-    from many live connections) must NOT crash a message post / agent turn. The
-    worst case is a muted participant slipping one message through until the next
-    read succeeds — far better than dropping the connection. The host can re-mute."""
-    try:
-        return identity_store_for_output_root(output_root).membership_muted(meeting_id, participant_id)
-    except sqlite3.Error as error:
-        logging.getLogger(__name__).warning("mute check failed (treating as not muted): %s", error)
-        return False

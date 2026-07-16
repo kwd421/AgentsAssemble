@@ -2,12 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.room_members import (
-    read_room_members,
-    room_members_payload,
-    set_room_member_muted,
-    upsert_room_member,
-)
+from agentsassemble.room.moderation import set_room_member_muted
+from agentsassemble.room_members import read_room_members, room_members_payload, upsert_room_member
 
 ROOM = "room-presence-test"
 

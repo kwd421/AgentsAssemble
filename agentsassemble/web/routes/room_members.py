@@ -4,11 +4,8 @@ from __future__ import annotations
 from http import HTTPStatus
 
 from agentsassemble.live_agents import read_live_agents
-from agentsassemble.room_members import (
-    room_members_payload,
-    set_room_member_muted,
-    upsert_room_member,
-)
+from agentsassemble.room.moderation import set_room_member_muted
+from agentsassemble.room_members import room_members_payload, upsert_room_member
 from agentsassemble.web.router import RequestContext, Router
 
 

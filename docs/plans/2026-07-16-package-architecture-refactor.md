@@ -927,3 +927,13 @@ module churn were deliberately avoided rather than forgotten.
   generation-safe stop confirmation, pause/resume, pending-event preservation,
   recovery scheduling, session-state publication, and cleanup reporting are
   unchanged. Actual OS process handles remain provider-owned.
+- 2026-07-17: The moderation slice intentionally did not move
+  `room_members.py` wholesale because that file combines retained roster
+  projection, ephemeral Thinking presence, legacy invite deduplication, and
+  membership mutations. Canonical mute/remove compatibility writes and mute
+  lookup moved instead to `room/moderation.py`; realtime, room HTTP, history,
+  GUI composition, and tests use the owned boundary while `room_members.py`
+  reexports the three functions for compatibility. Identity membership
+  delegation, the transient SQLite fail-open read policy, canonical retry
+  behavior, roster output, and Thinking state are unchanged. A focused test
+  now covers delegation and the fail-open branch directly.
