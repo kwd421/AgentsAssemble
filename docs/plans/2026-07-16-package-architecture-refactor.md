@@ -850,3 +850,13 @@ module churn were deliberately avoided rather than forgotten.
   static Claude and DeepSeek manifests, fail-closed refresh behavior,
   catalog revisions, model/effort/tier relation checks, and sanitized child
   environments are unchanged.
+- 2026-07-17: Persistent provider turn delivery and report handling moved to
+  `providers/agent_bridge.py`, while environment parsing, credential stdin,
+  WebSocket construction, runtime construction, and signal registration moved
+  to `application/agent_bridge_entrypoint.py`. Server-owned bridge launches now
+  invoke the application entrypoint directly; `room_agent_bridge.py` retains
+  runtime exports and the historical module command as a compatibility
+  boundary. Shared room-visible text detection moved to `room.text`, with the
+  legacy `meeting_events` name preserved. Turn assignment, observed-cursor
+  checkpointing, activity redaction, delta/final reporting, stop confirmation,
+  cleanup diagnostics, and launch configuration are unchanged.

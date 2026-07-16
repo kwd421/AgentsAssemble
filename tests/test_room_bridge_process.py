@@ -1,6 +1,7 @@
 import json
 import io
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -138,6 +139,14 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
             command, kwargs = popen.calls[0]
             config = json.loads(Path(launch["config_path"]).read_text(encoding="utf-8"))
 
+            self.assertEqual(
+                command[:3],
+                [
+                    sys.executable,
+                    "-m",
+                    "agentsassemble.application.agent_bridge_entrypoint",
+                ],
+            )
             self.assertNotIn("secret-single-use-ticket", " ".join(command))
             self.assertNotIn("secret-single-use-ticket", json.dumps(config))
             self.assertEqual(kwargs["env"]["AGENTSASSEMBLE_BRIDGE_TICKET"], "secret-single-use-ticket")

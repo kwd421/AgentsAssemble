@@ -127,7 +127,8 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `provider_secrets.py` | OS keyring credential access and redacted status | provider prompts or room events |
 | `room_realtime.py` | command, durable state, turn, and recovery orchestration | provider terminal implementation |
 | `room_bridge_process.py` | server-owned Agent Bridge process lifecycle | room routing |
-| `room_agent_bridge.py` | authenticated bridge client and turn/report protocol | browser UI |
+| `providers/agent_bridge.py` | authenticated bridge client and turn/report protocol | browser UI or WebSocket construction |
+| `application/agent_bridge_entrypoint.py` | bridge environment/config parsing and WebSocket/runtime composition | provider turn behavior |
 | `live_cli.py` | persistent PTY lifecycle and provider message extraction | room membership or history replay |
 | `grok_acp_runtime.py` | Grok ACP lifecycle, permission denial, structured deltas, and provider session load | room routing or browser state |
 | `opencode_runtime.py` | one host-shared server and durable per-agent OpenCode sessions | room membership |

@@ -159,6 +159,7 @@ class PackageMapTests(unittest.TestCase):
         package_map = build_package_map(ROOT)
 
         for module_name in (
+            "agentsassemble.application.agent_bridge_entrypoint",
             "agentsassemble.application.gui",
             "agentsassemble.application.gui_factory",
         ):
@@ -193,6 +194,7 @@ class PackageMapTests(unittest.TestCase):
         graph = load_package_graph(ROOT)
         package_map = build_package_map(ROOT)
         for module_name in (
+            "agentsassemble.providers.agent_bridge",
             "agentsassemble.providers.api",
             "agentsassemble.providers.antigravity_resident",
             "agentsassemble.providers.auth",
@@ -272,6 +274,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.provider_runtime_factory",
             "agentsassemble.provider_secrets",
             "agentsassemble.provider_sessions",
+            "agentsassemble.room_agent_bridge",
             "agentsassemble.room_api_provider",
             "agentsassemble.windows_conpty",
         ):

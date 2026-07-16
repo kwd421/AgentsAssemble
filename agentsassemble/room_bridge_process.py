@@ -185,7 +185,11 @@ class NativeCliBridgeProcessManager:
         )
         package_root = str(Path(__file__).resolve().parent.parent)
         env["PYTHONPATH"] = os.pathsep.join(part for part in (package_root, env.get("PYTHONPATH", "")) if part)
-        command = [sys.executable, "-m", "agentsassemble.room_agent_bridge"]
+        command = [
+            sys.executable,
+            "-m",
+            "agentsassemble.application.agent_bridge_entrypoint",
+        ]
         process = self._popen_factory(
             command,
             stdin=subprocess.PIPE if credential else subprocess.DEVNULL,

@@ -19,7 +19,7 @@ from agentsassemble.providers.runtime_factory import (
     ProviderRuntimeFactoryError,
     runtime_from_config,
 )
-from agentsassemble.room_agent_bridge import RoomAgentBridge
+from agentsassemble.providers.agent_bridge import RoomAgentBridge
 
 
 class FakeClient:

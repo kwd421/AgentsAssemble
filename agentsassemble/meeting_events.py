@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import json
 import re
-import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
-from agentsassemble.room.text import clean_room_text
+from agentsassemble.room.text import clean_room_text, has_room_visible_text
 
 LobbySide = Literal["mine", "my-agent", "other", "other-agent"]
 LobbyKind = Literal["message", "ready", "deploy", "vote", "vote_cast", "thinking"]
@@ -568,14 +567,6 @@ def write_live_state(meeting_dir: Path, payload: dict[str, object]) -> None:
 
 def clean_lobby_text(value: object, limit: int) -> str:
     return clean_room_text(value, limit)
-
-
-def has_room_visible_text(value: object) -> bool:
-    """Return false for whitespace/control-only output such as zero-width silence."""
-    return any(
-        not character.isspace() and unicodedata.category(character) not in {"Cc", "Cf"}
-        for character in str(value or "")
-    )
 
 
 def clean_vote_options(value: object) -> list[str]:

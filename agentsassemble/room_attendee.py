@@ -18,7 +18,7 @@ from agentsassemble.providers.opencode import OpenCodeServerProcess
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig, ProviderRuntimeProfile
 from agentsassemble.providers.runtime_factory import runtime_from_config
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
-from agentsassemble.room_agent_bridge import RoomAgentBridge
+from agentsassemble.providers.agent_bridge import RoomAgentBridge
 from agentsassemble.ws_room_client import connect_room_ws, join_room_session
 
 
