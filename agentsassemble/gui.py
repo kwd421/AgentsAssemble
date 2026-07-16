@@ -80,7 +80,7 @@ from agentsassemble.web.router import (
     local_server_url as _local_server_url,
 )
 from agentsassemble.web.websocket import handle_ws_upgrade, register_ws_ticket_route
-from agentsassemble.room_realtime import (
+from agentsassemble.room.realtime import (
     RoomCommandRejected,
     RoomRealtimeController,
 )

@@ -11,6 +11,7 @@ import agentsassemble.room_event_broker as compatibility_event_broker
 import agentsassemble.room_agent_lifecycle as compatibility_lifecycle
 import agentsassemble.room_members as compatibility_members
 import agentsassemble.room_projection as compatibility_projection
+import agentsassemble.room_realtime as compatibility_realtime
 import agentsassemble.room_repository as compatibility_repository
 import agentsassemble.room_types as compatibility_types
 import agentsassemble.room_turn_context as compatibility_turn_context
@@ -24,6 +25,7 @@ from agentsassemble.room import event_broker as owned_event_broker
 from agentsassemble.room import agent_lifecycle as owned_lifecycle
 from agentsassemble.room import moderation as owned_moderation
 from agentsassemble.room import projection as owned_projection
+from agentsassemble.room import realtime as owned_realtime
 from agentsassemble.room import repository as owned_repository
 from agentsassemble.room import types as owned_types
 from agentsassemble.room import turn_context as owned_turn_context
@@ -31,6 +33,24 @@ from agentsassemble.room import turn_coordinator as owned_turn_coordinator
 
 
 class RoomPackageTests(unittest.TestCase):
+    def test_room_realtime_root_module_exports_owned_controller(self) -> None:
+        for name in (
+            "AGENT_RUNTIME_PROFILE_KEYS",
+            "AMBIENT_AGENT_RELAY_DEPTH",
+            "NativeCliProviderSpec",
+            "ProviderCatalog",
+            "RoomCommandRejected",
+            "RoomEventBroker",
+            "RoomRealtimeController",
+            "RoomSocketChannel",
+            "default_native_cli_provider_specs",
+            "validate_native_cli_provider_spec",
+        ):
+            self.assertIs(
+                getattr(compatibility_realtime, name),
+                getattr(owned_realtime, name),
+            )
+
     def test_room_turn_coordinator_root_module_exports_owned_service(self) -> None:
         for name in (
             "EnsureRoom",

@@ -263,23 +263,23 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Room persistence and sequence | local SQLite owner in `persistence/local/room/`; PostgreSQL owner in `persistence/postgres/room/`; compatibility exports in `room_store.py`, `room_database.py`, and `sqlite_attention_repository.py`; event types in `room/types.py` with compatibility export in `room_types.py` |
 | Room storage authority and transaction contract | repository protocol in `room/repository.py`; command transaction in `room/command_uow.py`; compatibility exports in `room_repository.py` and `room_command_uow.py`; `docs/product/ROOM_REPOSITORY.md` |
 | Autonomous participation and durable attention | `room_attention.py`, `docs/product/ATTENTION_MODEL.md` |
-| WebSocket commands and ACL | `room/commands.py` with compatibility export in `room_commands.py`; `ws_room_session.py`, `room_realtime.py` |
-| Room-scoped configured provider registry | `room/provider_registry.py`; composed by `room_realtime.py` |
-| Provider participant and Agent Session persistence | `room/provider_sessions.py`; composed by `room_realtime.py` |
-| Capability-projected room snapshot and bounded history read model | `room/snapshots.py`; composed by `room_realtime.py` |
-| Browser and Agent Bridge connection membership transitions | `room/connections.py`; composed by `room_realtime.py` |
-| Agent Bridge ready/health report validation and canonical session updates | `room/bridge_reports.py`; composed by `room_realtime.py` |
-| Server-restart Agent Session ownership reconciliation | `room/startup_reconciliation.py`; composed by `room_realtime.py` |
-| Agent display-name/avatar canonical update and provider registry sync | `room/agent_profiles.py`; composed by `room_realtime.py` |
-| Stopped Agent Session runtime-profile validation and replacement | `room/agent_runtime_profiles.py`; composed by `room_realtime.py` |
-| Catalog-validated server-owned Agent Session creation | `room/agent_creation.py`; composed by `room_realtime.py` |
-| Stopped server-owned Agent Session reactivation | `room/agent_reactivation.py`; composed by `room_realtime.py` |
-| Canonical human message validation and append | `room/messages.py`; composed by `room_realtime.py` |
-| Canonical participant mute transaction and post-commit runtime synchronization | `room/member_mute.py`; composed by `room_realtime.py` |
-| Canonical participant leave transaction and delayed access revocation | `room/participant_leave.py`; composed by `room_realtime.py` |
-| Retryable participant kick intent, external cleanup, and final transaction | `room/participant_kick.py`; composed by `room_realtime.py` |
-| Room-delete owner/name validation, Agent Session cleanup, and tombstone command resumption | `room/deletion.py`; composed by `room_realtime.py` |
-| Deleted-room invite/session/identity/listener/provider/file/socket cleanup and tombstone completion | `room/deleted_cleanup.py`; composed by `room_realtime.py` |
+| WebSocket commands and ACL | `room/commands.py` with compatibility export in `room_commands.py`; `ws_room_session.py`, controller in `room/realtime.py` with compatibility export in `room_realtime.py` |
+| Room-scoped configured provider registry | `room/provider_registry.py`; composed by `room/realtime.py` |
+| Provider participant and Agent Session persistence | `room/provider_sessions.py`; composed by `room/realtime.py` |
+| Capability-projected room snapshot and bounded history read model | `room/snapshots.py`; composed by `room/realtime.py` |
+| Browser and Agent Bridge connection membership transitions | `room/connections.py`; composed by `room/realtime.py` |
+| Agent Bridge ready/health report validation and canonical session updates | `room/bridge_reports.py`; composed by `room/realtime.py` |
+| Server-restart Agent Session ownership reconciliation | `room/startup_reconciliation.py`; composed by `room/realtime.py` |
+| Agent display-name/avatar canonical update and provider registry sync | `room/agent_profiles.py`; composed by `room/realtime.py` |
+| Stopped Agent Session runtime-profile validation and replacement | `room/agent_runtime_profiles.py`; composed by `room/realtime.py` |
+| Catalog-validated server-owned Agent Session creation | `room/agent_creation.py`; composed by `room/realtime.py` |
+| Stopped server-owned Agent Session reactivation | `room/agent_reactivation.py`; composed by `room/realtime.py` |
+| Canonical human message validation and append | `room/messages.py`; composed by `room/realtime.py` |
+| Canonical participant mute transaction and post-commit runtime synchronization | `room/member_mute.py`; composed by `room/realtime.py` |
+| Canonical participant leave transaction and delayed access revocation | `room/participant_leave.py`; composed by `room/realtime.py` |
+| Retryable participant kick intent, external cleanup, and final transaction | `room/participant_kick.py`; composed by `room/realtime.py` |
+| Room-delete owner/name validation, Agent Session cleanup, and tombstone command resumption | `room/deletion.py`; composed by `room/realtime.py` |
+| Deleted-room invite/session/identity/listener/provider/file/socket cleanup and tombstone completion | `room/deleted_cleanup.py`; composed by `room/realtime.py` |
 | Room history and lifecycle HTTP | `web/routes/room_history.py`, `web/routes/room_lifecycle.py`; legacy `/api/room/ensure` composition remains in `gui_room_lifecycle_http.py` |
 | Room roster and member HTTP | canonical mute/kick compatibility writes in `room/moderation.py`; retained roster/presence projection in `room_members.py`; HTTP in `web/routes/room_members.py`; retained resident kick and optional channel/voice composition remains in `gui_room_moderation_media_http.py` |
 | Routing and provider context | `room_routing.py`; bounded room projection in `room/context.py`; turn packet assembly in `room/turn_context.py`; compatibility exports in `room_context.py` and `room_turn_context.py`; provider delivery cursor parity in `providers/sync_cursor.py` with compatibility export in `room_provider_sync_cursor.py` |

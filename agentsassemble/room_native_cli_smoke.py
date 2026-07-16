@@ -26,7 +26,7 @@ from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     native_cli_provider_spec_from_config,
 )
-from agentsassemble.room_realtime import RoomRealtimeController
+from agentsassemble.room.realtime import RoomRealtimeController
 from agentsassemble.admission.invite_service import (
     SESSION_TOKEN_PREFIX,
     SESSION_TOKEN_TTL_SECONDS,

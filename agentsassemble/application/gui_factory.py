@@ -40,7 +40,7 @@ from agentsassemble.room_invite import (
     configure_room_invite_repository,
     default_room_invite_store_path,
 )
-from agentsassemble.room_realtime import (
+from agentsassemble.room.realtime import (
     RoomRealtimeController,
     default_native_cli_provider_specs,
 )

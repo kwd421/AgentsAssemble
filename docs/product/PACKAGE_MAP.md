@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `3822b580251d825e`
+Source fingerprint: `c2223a8257cdbb3c`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 482
+- Python modules: 483
 - Top-level package modules: 303
-- Domains: admission=28, application=64, diagnostics=14, features=14, identity=9, legacy=79, persistence=58, providers=84, room=72, web=60
-- Classifications: compatibility=99, current=294, legacy=78, optional=11
+- Domains: admission=28, application=64, diagnostics=14, features=14, identity=9, legacy=79, persistence=58, providers=84, room=73, web=60
+- Classifications: compatibility=100, current=294, legacy=78, optional=11
 
 ## Classification Rules
 
@@ -410,6 +410,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room.projection` | `agentsassemble/room/projection.py` | 155 | room | current | `agentsassemble.room.text`, `agentsassemble.room.types` | 10 | `call:frozenset@16`, `call:frozenset@42`, `call:frozenset@58` | test-import:2 | `tests/test_room_package.py`, `tests/test_room_projection.py` | `room/` | in-target-package |
 | `agentsassemble.room.provider_registry` | `agentsassemble/room/provider_registry.py` | 115 | room | current | `agentsassemble.providers.launch_specs`, `agentsassemble.room.errors`, `agentsassemble.room.text` | 5 | - | test-import:4 | `tests/test_room_agent_profiles.py`, `tests/test_room_agent_reactivation.py`, `tests/test_room_provider_registry.py`, `+1` | `room/` | in-target-package |
 | `agentsassemble.room.provider_sessions` | `agentsassemble/room/provider_sessions.py` | 450 | room | current | `agentsassemble.providers.launch_specs`, `agentsassemble.providers.model_verification`, `agentsassemble.providers.sync_cursor`, `agentsassemble.room.errors`, `agentsassemble.room.event_broker`, `agentsassemble.room.projection`, `agentsassemble.room.provider_registry`, `agentsassemble.room.repository`, +1 | 1 | - | test-import:2 | `tests/test_room_agent_reactivation.py`, `tests/test_room_provider_sessions.py` | `room/` | in-target-package |
+| `agentsassemble.room.realtime` | `agentsassemble/room/realtime.py` | 1534 | room | current | `agentsassemble.admission.invite_service`, `agentsassemble.admission.session_service`, `agentsassemble.diagnostics.cleanup`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.persistence.local.room.repository`, `agentsassemble.providers.capabilities`, `agentsassemble.providers.launch_specs`, `agentsassemble.providers.sync_cursor`, +34 | 5 | `call:frozenset@103`, `call:getLogger@116`, `call:frozenset@1494` | test-import:8, monkeypatch:1 | `tests/fixtures/room_ui_server.py`, `tests/test_gui_room_repository_injection.py`, `tests/test_room_bridge_process.py`, `+5` | `room/` | in-target-package |
 | `agentsassemble.room.repository` | `agentsassemble/room/repository.py` | 329 | room | current | `agentsassemble.room_attention`, `agentsassemble.room_global_settings` | 38 | - | test-import:4 | `tests/room_repository_contract.py`, `tests/test_postgres_room_repository.py`, `tests/test_room_package.py`, `+1` | `room/` | in-target-package |
 | `agentsassemble.room.snapshots` | `agentsassemble/room/snapshots.py` | 178 | room | current | `agentsassemble.room.event_broker`, `agentsassemble.room.projection`, `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | - | test-import:1 | `tests/test_room_snapshots.py` | `room/` | in-target-package |
 | `agentsassemble.room.startup_reconciliation` | `agentsassemble/room/startup_reconciliation.py` | 86 | room | current | `agentsassemble.room.repository`, `agentsassemble.room.text`, `agentsassemble.room.turn_coordinator` | 1 | `call:frozenset@11` | test-import:1 | `tests/test_room_startup_reconciliation.py` | `room/` | in-target-package |
@@ -454,7 +455,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room_preferences_migration` | `agentsassemble/room_preferences_migration.py` | 432 | room | current | `agentsassemble.legacy_room_preferences_source`, `agentsassemble.legacy_room_settings_document`, `agentsassemble.persistence.local.identity.preferences`, `agentsassemble.persistence.local.identity.repository`, `agentsassemble.persistence.local.room.database`, `agentsassemble.room_user_preferences` | 1 | - | test-import:1, monkeypatch:1 | `tests/test_room_preferences_migration.py` | `room/` | planned-move |
 | `agentsassemble.room_projection` | `agentsassemble/room_projection.py` | 24 | room | compatibility | `agentsassemble.room.projection` | 0 | - | test-import:1 | `tests/test_room_package.py` | `room/` | compatibility-shim |
 | `agentsassemble.room_provider_sync_cursor` | `agentsassemble/room_provider_sync_cursor.py` | 22 | providers | compatibility | `agentsassemble.providers.sync_cursor` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
-| `agentsassemble.room_realtime` | `agentsassemble/room_realtime.py` | 1534 | room | current | `agentsassemble.admission.invite_service`, `agentsassemble.admission.session_service`, `agentsassemble.diagnostics.cleanup`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.persistence.local.room.repository`, `agentsassemble.providers.capabilities`, `agentsassemble.providers.launch_specs`, `agentsassemble.providers.sync_cursor`, +34 | 4 | `call:frozenset@103`, `call:getLogger@116`, `call:frozenset@1494` | test-import:7, monkeypatch:1 | `tests/fixtures/room_ui_server.py`, `tests/test_gui_room_repository_injection.py`, `tests/test_room_bridge_process.py`, `+4` | `room/` | planned-move |
+| `agentsassemble.room_realtime` | `agentsassemble/room_realtime.py` | 28 | room | compatibility | `agentsassemble.room.realtime` | 0 | - | test-import:1 | `tests/test_room_package.py` | `room/` | compatibility-shim |
 | `agentsassemble.room_repository` | `agentsassemble/room_repository.py` | 24 | room | compatibility | `agentsassemble.room.repository` | 0 | - | test-import:1 | `tests/test_room_package.py` | `room/` | compatibility-shim |
 | `agentsassemble.room_repository_factory` | `agentsassemble/room_repository_factory.py` | 169 | room | current | `agentsassemble.persistence.local.room.repository`, `agentsassemble.persistence.postgres.schema`, `agentsassemble.room.repository` | 7 | `call:frozenset@19`, `call:compile@21` | test-import:7, monkeypatch:1 | `tests/test_cli_timeout_core.py`, `tests/test_gui_room_repository_injection.py`, `tests/test_identity_repository_factory.py`, `+4` | `room/` | planned-move |
 | `agentsassemble.room_repository_migration` | `agentsassemble/room_repository_migration.py` | 612 | room | current | `agentsassemble.persistence.local.room.database`, `agentsassemble.persistence.postgres.schema` | 1 | - | test-import:1, monkeypatch:1 | `tests/test_room_repository_migration.py` | `room/` | planned-move |

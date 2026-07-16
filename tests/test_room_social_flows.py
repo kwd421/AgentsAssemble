@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import reset_state
-from agentsassemble.room_realtime import RoomRealtimeController
+from agentsassemble.room.realtime import RoomRealtimeController
 from agentsassemble.ws_room_client import WsRoomClient
 from tests.room_realtime_test_support import memory_room_access_services
 

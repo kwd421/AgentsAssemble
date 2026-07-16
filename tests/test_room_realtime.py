@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentsassemble.room_attention import AttentionEvaluation
-from agentsassemble.room_realtime import (
+from agentsassemble.room.realtime import (
     NativeCliProviderSpec,
     RoomCommandRejected,
     RoomEventBroker,
@@ -272,7 +272,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         injected_root = self.root / "injected"
         repository = RoomStore(injected_root)
         with patch(
-            "agentsassemble.room_realtime.RoomStore",
+            "agentsassemble.room.realtime.RoomStore",
             side_effect=AssertionError("unexpected SQLite repository construction"),
         ):
             controller = RoomRealtimeController(
@@ -2590,7 +2590,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             },
         ]
 
-        with patch("agentsassemble.room_realtime.build_room_turn_packet", side_effect=bounded_packets):
+        with patch("agentsassemble.room.realtime.build_room_turn_packet", side_effect=bounded_packets):
             self.assertTrue(self.controller._turn_coordinator.assign_pending("general", "codex"))
             first_assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
             during_first = store.session("general", "codex")
@@ -2641,7 +2641,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             "input_mode": "delta",
         }
 
-        with patch("agentsassemble.room_realtime.build_room_turn_packet", return_value=bounded_packet):
+        with patch("agentsassemble.room.realtime.build_room_turn_packet", return_value=bounded_packet):
             self.assertTrue(self.controller._turn_coordinator.assign_pending("general", "codex"))
             assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
 
@@ -2681,7 +2681,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             )
 
         with patch(
-            "agentsassemble.room_realtime.build_room_turn_packet",
+            "agentsassemble.room.realtime.build_room_turn_packet",
             return_value={
                 "provider_input": "",
                 "events": [],
@@ -2734,7 +2734,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             )
 
         with patch(
-            "agentsassemble.room_realtime.build_room_turn_packet",
+            "agentsassemble.room.realtime.build_room_turn_packet",
             return_value={
                 "provider_input": "included",
                 "events": [included],
@@ -3065,7 +3065,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
     def test_participant_mute_retry_repairs_failed_compatibility_sync(self):
         payload = {"participant_id": "codex", "muted": True}
         with patch(
-            "agentsassemble.room_realtime.set_room_member_muted",
+            "agentsassemble.room.realtime.set_room_member_muted",
             side_effect=RuntimeError("identity store unavailable"),
         ):
             with self.assertRaises(RoomCommandRejected) as failed:

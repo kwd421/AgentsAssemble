@@ -1119,3 +1119,13 @@ module churn were deliberately avoided rather than forgotten.
   retry behavior after absent artifacts, and pending-tombstone failure
   visibility are unchanged. This completes the two-step room-deletion
   extraction described in the preceding entry.
+- 2026-07-17: After the stable Room responsibilities above were extracted,
+  the remaining canonical realtime controller moved mechanically to
+  `room/realtime.py`. Current production callers and behavior tests now import
+  that owned module directly; root `room_realtime.py` is an explicit,
+  metadata-tracked compatibility export only. The controller body, command
+  protocol, routing and attention policy, persistence behavior, logger
+  semantics, provider launch behavior, and public UI are unchanged. Tests that
+  monkeypatch controller composition globals now patch
+  `agentsassemble.room.realtime`, preventing the compatibility module from
+  becoming a second implementation surface.

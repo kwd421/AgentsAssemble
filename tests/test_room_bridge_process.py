@@ -13,7 +13,7 @@ from agentsassemble.providers.bridge_process import (
     NativeCliBridgeProcessManager,
     _BridgeHandle,
 )
-from agentsassemble.room_realtime import NativeCliProviderSpec
+from agentsassemble.room.realtime import NativeCliProviderSpec
 
 
 def _spec(agent_id="codex", command=("codex",), **overrides):

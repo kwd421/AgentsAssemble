@@ -8,7 +8,7 @@ from agentsassemble.providers.sync_cursor import (
     ProviderSyncCursorReconciler,
     canonical_provider_sync_seq,
 )
-from agentsassemble.room_realtime import RoomRealtimeController
+from agentsassemble.room.realtime import RoomRealtimeController
 from tests.room_realtime_test_support import memory_room_access_services
 from agentsassemble.room_store import RoomStore
 

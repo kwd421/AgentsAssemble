@@ -110,8 +110,9 @@ with a validated backup and is never used as a parallel fallback authority.
 
 ### Module Ownership
 
-The canonical path is split by reason to change. Compatibility imports may
-remain in `room_realtime.py`, but new behavior belongs in its owning module.
+The canonical path is split by reason to change. The controller is owned by
+`room/realtime.py`; `room_realtime.py` is only a compatibility import surface.
+New behavior belongs in the focused owning module rather than the controller.
 
 | Module | Owns | Does not own |
 |---|---|---|
@@ -141,7 +142,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `providers/capabilities.py` | cached native model, effort, tier, variant, and permission discovery | room or secret state |
 | `providers/sync_cursor.py` | canonical provider delivery cursor parity, reconciliation, and compatibility fields | speaker selection or provider execution |
 | `provider_secrets.py` | OS keyring credential access and redacted status | provider prompts or room events |
-| `room_realtime.py` | command, durable state, turn, and recovery orchestration | provider terminal implementation |
+| `room/realtime.py` | command dispatch and composition of durable room, turn, lifecycle, and recovery services | provider terminal implementation or speaker-selection redesign |
 | `room/provider_registry.py` | synchronized room-scoped provider specification lookup | durable session state or provider process lifecycle |
 | `room/provider_sessions.py` | provider participant/session creation, external bridge registration, stored-profile restoration, and stopped-profile updates | provider process launch or turn routing |
 | `room/snapshots.py` | browser/bridge snapshot projection, reconnect gap handling, and bounded history pages | room mutation or provider execution |
