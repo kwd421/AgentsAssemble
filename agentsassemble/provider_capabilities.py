@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from agentsassemble.native_cli_providers import NATIVE_CLI_PROVIDER_CATALOG
+from agentsassemble.providers.launch_specs import NATIVE_CLI_PROVIDER_CATALOG
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 
 

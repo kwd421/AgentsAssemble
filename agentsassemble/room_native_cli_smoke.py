@@ -22,7 +22,7 @@ from agentsassemble.live_cli_smoke import _marker_recalled
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
-from agentsassemble.native_cli_providers import (
+from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     native_cli_provider_spec_from_config,
 )

@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from agentsassemble.cleanup_report import CleanupReport
 from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
-from agentsassemble.native_cli_providers import NativeCliProviderSpec
+from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.providers.model_verification import (
     model_observation_matches,
     model_verification_status,

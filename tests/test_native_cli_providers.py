@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 
-from agentsassemble.native_cli_providers import (
+from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     StoredProviderProfileError,
     UnsupportedNativeCliProvider,

@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.native_cli_providers import NativeCliProviderSpec
+from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.room_provider_sync_cursor import (
     ProviderSyncCursorParityError,
     ProviderSyncCursorReconciler,

@@ -4,7 +4,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from agentsassemble.native_cli_providers import NativeCliProviderSpec
+from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.room_attention import AttentionEvaluation
 from agentsassemble.room_database import open_room_database
 from agentsassemble.room_errors import RoomCommandRejected

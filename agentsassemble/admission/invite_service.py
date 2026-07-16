@@ -17,7 +17,7 @@ from agentsassemble.multi_host_invites import (
     create_lan_invite_packet,
     verify_lan_invite_token,
 )
-from agentsassemble.native_cli_providers import native_cli_provider_definition
+from agentsassemble.providers.launch_specs import native_cli_provider_definition
 from agentsassemble.remote_room_client_packet import build_remote_room_client_packet
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 

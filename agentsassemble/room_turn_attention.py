@@ -5,7 +5,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.native_cli_providers import NativeCliProviderSpec
+from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.room_attention import AttentionLeaseConflict, attention_lease_is_expired
 from agentsassemble.room_repository import RoomRepository
 

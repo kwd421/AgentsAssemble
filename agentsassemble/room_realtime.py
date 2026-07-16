@@ -13,7 +13,7 @@ from uuid import uuid4
 from agentsassemble.agent_sessions import build_room_turn_packet
 from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.native_cli_providers import (
+from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     StoredProviderProfileError,
     UnsupportedNativeCliProvider,

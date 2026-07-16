@@ -10,7 +10,7 @@ from agentsassemble.bridge_stop_confirmation import (
 )
 from agentsassemble.cleanup_report import CleanupReport
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.native_cli_providers import NativeCliProviderSpec
+from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.room_errors import RoomCommandRejected
 from agentsassemble.room_event_broker import RoomEventBroker
 from agentsassemble.room_projection import public_session

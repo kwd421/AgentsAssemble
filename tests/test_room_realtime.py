@@ -26,7 +26,7 @@ from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
 )
 from agentsassemble.provider_capabilities import ProviderCapabilityCatalog
-from agentsassemble.native_cli_providers import native_cli_provider_definition
+from agentsassemble.providers.launch_specs import native_cli_provider_definition
 from tests.room_realtime_test_support import memory_room_access_services
 
 

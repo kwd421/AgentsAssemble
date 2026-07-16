@@ -12,7 +12,7 @@ from typing import Callable
 from uuid import uuid4
 
 from agentsassemble.cleanup_report import CleanupReport
-from agentsassemble.native_cli_providers import NativeCliProviderSpec, validate_native_cli_provider_spec
+from agentsassemble.providers.launch_specs import NativeCliProviderSpec, validate_native_cli_provider_spec
 from agentsassemble.providers.process_environment import sanitized_child_environment
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
 from agentsassemble.providers.opencode import OpenCodeServerProcess

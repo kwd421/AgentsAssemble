@@ -21,6 +21,7 @@ import agentsassemble.kiro_resident as compatibility_kiro_resident
 import agentsassemble.live_cli as compatibility_live_cli
 import agentsassemble.live_cli_output as compatibility_live_cli_output
 import agentsassemble.live_cli_transcripts as compatibility_live_cli_transcripts
+import agentsassemble.native_cli_providers as compatibility_launch_specs
 import agentsassemble.opencode_runtime as compatibility_opencode
 import agentsassemble.process_environment as compatibility_process_environment
 import agentsassemble.provider_auth as compatibility_auth
@@ -51,6 +52,7 @@ from agentsassemble.providers import grok_acp as owned_grok_acp
 from agentsassemble.providers import grok_resident as owned_grok_resident
 from agentsassemble.providers import hermes_resident as owned_hermes_resident
 from agentsassemble.providers import kiro_resident as owned_kiro_resident
+from agentsassemble.providers import launch_specs as owned_launch_specs
 from agentsassemble.providers import live_cli as owned_live_cli
 from agentsassemble.providers import live_cli_output as owned_live_cli_output
 from agentsassemble.providers import live_cli_transcripts as owned_live_cli_transcripts
@@ -68,6 +70,29 @@ from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_native_cli_provider_root_module_exports_owned_launch_specs(self) -> None:
+        for name in (
+            "NativeCliProviderDefinition",
+            "NativeCliProviderSpec",
+            "StoredProviderProfileError",
+            "UnsupportedNativeCliProvider",
+            "default_native_cli_provider_specs",
+            "native_cli_provider_catalog_payload",
+            "native_cli_provider_definition",
+            "native_cli_provider_spec_from_config",
+            "native_cli_provider_spec_from_payload",
+            "native_cli_provider_spec_from_stored_session_strict",
+            "validate_native_cli_provider_spec",
+        ):
+            self.assertIs(
+                getattr(compatibility_launch_specs, name),
+                getattr(owned_launch_specs, name),
+            )
+        self.assertIs(
+            compatibility_launch_specs.PROVIDER_CATALOG,
+            owned_launch_specs.PROVIDER_CATALOG,
+        )
+
     def test_codex_app_server_root_module_exports_owned_runtime(self) -> None:
         for name in (
             "CodexAppServerRuntime",

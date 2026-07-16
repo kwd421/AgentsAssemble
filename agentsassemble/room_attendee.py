@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
-from agentsassemble.native_cli_providers import native_cli_provider_definition
+from agentsassemble.providers.launch_specs import native_cli_provider_definition
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.opencode import OpenCodeServerProcess
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig, ProviderRuntimeProfile

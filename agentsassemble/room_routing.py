@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.native_cli_providers import NativeCliProviderSpec
+from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 
 
 @dataclass(frozen=True)

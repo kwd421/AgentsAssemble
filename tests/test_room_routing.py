@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.native_cli_providers import NativeCliProviderSpec
+from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.room_routing import route_message_targets
 
 

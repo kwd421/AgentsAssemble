@@ -832,3 +832,13 @@ module churn were deliberately avoided rather than forgotten.
   JSON-RPC settings, thread resume, timeout and inferred-completion handling,
   bounded stderr diagnostics, crash recovery state, runtime sharing, and
   detach behavior are unchanged.
+- 2026-07-17: Provider command construction, launch specifications, static
+  definitions, stored-profile validation, and migration guards moved to
+  `providers/launch_specs.py`. Admission, room lifecycle, realtime, routing,
+  smoke, capability, and behavior-test callers now use the owned path while
+  `native_cli_providers.py` remains an explicit compatibility export. Direct
+  `room.text` normalization replaces the legacy delegation without changing
+  values. Codex, Antigravity, Grok, Claude, OpenCode, and DeepSeek defaults;
+  runtime profile keys; exact/alias model selection; Grok ACP enforcement;
+  Claude interactive-mode enforcement; and legacy stored-profile acceptance
+  rules are unchanged.
