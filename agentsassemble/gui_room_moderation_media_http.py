@@ -16,7 +16,7 @@ from agentsassemble.meeting_events import (
     read_lobby_events,
     read_lobby_events_after,
 )
-from agentsassemble.room_channels import (
+from agentsassemble.room.channels import (
     ChannelError,
     add_channel,
     channel_stream_filename,

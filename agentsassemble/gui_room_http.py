@@ -42,7 +42,7 @@ from agentsassemble.meeting_events import (
     read_lobby_events_after,
 )
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
-from agentsassemble.room_channels import (
+from agentsassemble.room.channels import (
     ChannelError,
     add_channel,
     channel_stream_filename,

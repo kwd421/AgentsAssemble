@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from agentsassemble.room_channels import MAX_CHANNELS_PER_ROOM, is_channel_id
+from agentsassemble.room.channels import MAX_CHANNELS_PER_ROOM, is_channel_id
 
 
 ROOM_NOTIFICATION_VALUES = frozenset({"all", "mentions", "mute"})

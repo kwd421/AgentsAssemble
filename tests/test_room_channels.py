@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.room_channels import (
+from agentsassemble.room.channels import (
     MAX_CHANNELS_PER_ROOM,
     ChannelError,
     add_channel,

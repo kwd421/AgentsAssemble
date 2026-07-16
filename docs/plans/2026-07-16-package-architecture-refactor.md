@@ -1129,3 +1129,11 @@ module churn were deliberately avoided rather than forgotten.
   monkeypatch controller composition globals now patch
   `agentsassemble.room.realtime`, preventing the compatibility module from
   becoming a second implementation surface.
+- 2026-07-17: Dependency-free shared room setting values and custom channel
+  normalization/mutation rules moved mechanically to
+  `room/setting_values.py` and `room/channels.py`. Current Room, web, legacy
+  migration, and behavior-test callers import the owned modules directly;
+  root `room_setting_values.py` and `room_channels.py` are metadata-tracked
+  compatibility exports only. Value limits, accepted conversation modes,
+  attachment URL validation, channel-id generation, ordering, error
+  categories, persistence shape, and UI behavior are unchanged.

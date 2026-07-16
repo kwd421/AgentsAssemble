@@ -9,14 +9,14 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from agentsassemble.room_channels import (
+from agentsassemble.room.channels import (
     CHANNEL_NAME_LIMIT,
     CHANNEL_TYPES,
     MAX_CHANNELS_PER_ROOM,
     clean_channel_name,
     is_channel_id,
 )
-from agentsassemble.room_setting_values import (
+from agentsassemble.room.setting_values import (
     CONVERSATION_MODES,
     IMAGE_URL_LIMIT,
     ROOM_TEXT_LIMIT,

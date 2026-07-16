@@ -5,8 +5,8 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agentsassemble.room_channels import clean_channels
-from agentsassemble.room_setting_values import (
+from agentsassemble.room.channels import clean_channels
+from agentsassemble.room.setting_values import (
     CONVERSATION_MODES,
     IMAGE_URL_LIMIT,
     ROOM_TEXT_LIMIT,

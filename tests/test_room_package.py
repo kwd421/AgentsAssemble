@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 import agentsassemble.bridge_stop_confirmation as compatibility_bridge_stop
+import agentsassemble.room_channels as compatibility_channels
 import agentsassemble.room_command_uow as compatibility_command_uow
 import agentsassemble.room_commands as compatibility_commands
 import agentsassemble.room_context as compatibility_context
@@ -13,10 +14,12 @@ import agentsassemble.room_members as compatibility_members
 import agentsassemble.room_projection as compatibility_projection
 import agentsassemble.room_realtime as compatibility_realtime
 import agentsassemble.room_repository as compatibility_repository
+import agentsassemble.room_setting_values as compatibility_setting_values
 import agentsassemble.room_types as compatibility_types
 import agentsassemble.room_turn_context as compatibility_turn_context
 import agentsassemble.room_turn_coordinator as compatibility_turn_coordinator
 from agentsassemble.room import bridge_stop_confirmation as owned_bridge_stop
+from agentsassemble.room import channels as owned_channels
 from agentsassemble.room import command_uow as owned_command_uow
 from agentsassemble.room import commands as owned_commands
 from agentsassemble.room import context as owned_context
@@ -27,12 +30,52 @@ from agentsassemble.room import moderation as owned_moderation
 from agentsassemble.room import projection as owned_projection
 from agentsassemble.room import realtime as owned_realtime
 from agentsassemble.room import repository as owned_repository
+from agentsassemble.room import setting_values as owned_setting_values
 from agentsassemble.room import types as owned_types
 from agentsassemble.room import turn_context as owned_turn_context
 from agentsassemble.room import turn_coordinator as owned_turn_coordinator
 
 
 class RoomPackageTests(unittest.TestCase):
+    def test_room_channels_root_module_exports_owned_rules(self) -> None:
+        for name in (
+            "CHANNEL_NAME_LIMIT",
+            "CHANNEL_TYPES",
+            "MAX_CHANNELS_PER_ROOM",
+            "ChannelError",
+            "add_channel",
+            "channel_stream_filename",
+            "clean_channel",
+            "clean_channel_name",
+            "clean_channel_type",
+            "clean_channels",
+            "find_channel",
+            "is_channel_id",
+            "remove_channel",
+            "rename_channel",
+            "reorder_channels",
+        ):
+            self.assertIs(
+                getattr(compatibility_channels, name),
+                getattr(owned_channels, name),
+            )
+
+    def test_room_setting_values_root_module_exports_owned_rules(self) -> None:
+        for name in (
+            "CONVERSATION_MODES",
+            "IMAGE_URL_LIMIT",
+            "ROOM_TEXT_LIMIT",
+            "VALID_BANNER_PRESETS",
+            "VALID_INVITE_SCOPES",
+            "clean_room_asset_url",
+            "clean_room_text",
+            "clean_short_label",
+        ):
+            self.assertIs(
+                getattr(compatibility_setting_values, name),
+                getattr(owned_setting_values, name),
+            )
+
     def test_room_realtime_root_module_exports_owned_controller(self) -> None:
         for name in (
             "AGENT_RUNTIME_PROFILE_KEYS",

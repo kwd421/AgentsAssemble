@@ -16,7 +16,7 @@ from agentsassemble.room_global_settings import (
     merge_room_global_settings,
 )
 from agentsassemble.room_repository_records import clean_room_id
-from agentsassemble.room_setting_values import clean_short_label
+from agentsassemble.room.setting_values import clean_short_label
 
 
 LEGACY_ROOM_SETTINGS_SOURCE_VERSION = 1

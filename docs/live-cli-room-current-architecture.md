@@ -123,6 +123,8 @@ New behavior belongs in the focused owning module rather than the controller.
 | `room/repository.py` | backend-neutral room and room-transaction persistence protocols | SQLite/PostgreSQL implementation |
 | `room/command_uow.py` | request-id dedupe, payload hashing, atomic command ACK recording | command routing or backend implementation |
 | `room/commands.py` | command envelope validation and identity capability policy | command execution |
+| `room/setting_values.py` | shared bounded values and canonical asset/text normalization for room settings | persistence or user-specific preferences |
+| `room/channels.py` | custom text/voice channel identifiers, normalization, and pure list mutations | message persistence or voice transport |
 | `room/projection.py` | public room/session/event and runtime-diagnostic projection | persistence or command execution |
 | `room_routing.py` | pure mention, default-responder, and relay-depth target selection | persistence or process launch |
 | `room/context.py` | bounded room-visible message projection after a sequence cursor | provider-private memory or turn instructions |
