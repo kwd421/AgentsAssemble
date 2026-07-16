@@ -12,7 +12,15 @@ from typing import Iterable, Mapping
 
 ROOT_ENTRYPOINTS = frozenset({"agentsassemble", "agentsassemble.cli", "agentsassemble.gui"})
 EXISTING_PACKAGES = frozenset(
-    {"adapters", "bridges", "legacy", "migrations", "persistence", "room"}
+    {
+        "adapters",
+        "admission",
+        "bridges",
+        "legacy",
+        "migrations",
+        "persistence",
+        "room",
+    }
 )
 PATH_OWNED_DOMAINS = frozenset(
     {"admission", "application", "identity", "providers", "room", "web"}

@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.admission import MEETING_UNSAFE_PERMISSIONS
+from agentsassemble.legacy.meeting_admission import MEETING_UNSAFE_PERMISSIONS
 from agentsassemble.live_agent_finalization import _pending_turn_requests
 from agentsassemble.meeting_events import read_live_events
 

@@ -385,3 +385,11 @@ module churn were deliberately avoided rather than forgotten.
   those contracts before moving the adapters. SQLite repository, migration,
   attention, realtime, Agent Session, package-map, dependency-direction, and
   cycle checks passed after the move.
+- 2026-07-16: Milestone 3 began by resolving the `admission.py` package-name
+  collision. Legacy meeting-mode admission decisions moved to
+  `legacy/meeting_admission.py`; `agentsassemble.admission` preserves those two
+  historical exports lazily without loading the legacy module for current
+  submodule imports. Side-effect-free browser invite preflight moved to
+  `admission/preflight.py`, while `room_admission.py` remains an explicit
+  compatibility export. Production callers now import the owned paths. This
+  slice does not move invite/session contracts or mutation services yet.

@@ -37,6 +37,15 @@ class CompatibilityShim:
 # boundaries. Historical presence in the root baseline does not exempt a moved
 # module from recording its replacement, callers, and removal gate here.
 ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
+    "room_admission.py": CompatibilityShim(
+        replacement_import="agentsassemble.admission.preflight",
+        removal_gate=(
+            "No direct imports or monkeypatch targets use "
+            "agentsassemble.room_admission for one compatibility window."
+        ),
+        known_callers=("tests/test_admission_package.py",),
+        introduced_in="Milestone 3.1 admission package bootstrap",
+    ),
     "room_database.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.local.room.database",
         removal_gate=(

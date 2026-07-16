@@ -11,7 +11,7 @@ from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.identity_store import IdentityBackend
 from agentsassemble.legacy.admission_projection import LegacyAdmissionProjection
 from agentsassemble.operator_pairing import OperatorPairingService
-from agentsassemble.room_admission import RoomAdmissionService
+from agentsassemble.admission.preflight import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
 from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor

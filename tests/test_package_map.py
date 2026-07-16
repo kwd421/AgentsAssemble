@@ -18,12 +18,23 @@ class PackageMapTests(unittest.TestCase):
 
         self.assertEqual(actual, expected)
 
-    def test_existing_admission_module_collision_is_visible_before_package_move(self) -> None:
+    def test_admission_module_collision_is_resolved_by_the_owned_package(self) -> None:
+        graph = load_package_graph(ROOT)
         package_map = build_package_map(ROOT)
 
         self.assertIn("`agentsassemble.admission`", package_map)
-        self.assertIn("`agentsassemble/admission.py`", package_map)
-        self.assertIn("legacy", package_map)
+        self.assertNotIn("`agentsassemble/admission.py`", package_map)
+        self.assertEqual(graph.domains["agentsassemble.admission"], "admission")
+        self.assertEqual(
+            graph.domains["agentsassemble.admission.preflight"],
+            "admission",
+        )
+        preflight_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith("| `agentsassemble.admission.preflight` |")
+        )
+        self.assertTrue(preflight_line.endswith("| in-target-package |"))
 
     def test_nested_persistence_modules_keep_persistence_ownership(self) -> None:
         graph = load_package_graph(ROOT)

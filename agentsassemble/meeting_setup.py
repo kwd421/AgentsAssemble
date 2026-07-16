@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.admission import build_admission_decisions
+from agentsassemble.legacy.meeting_admission import build_admission_decisions
 from agentsassemble.adapters import default_provider_registry
 from agentsassemble.adapters.registry import ProviderRegistry, ResolvedAgentAdapter
 from agentsassemble.config import (
