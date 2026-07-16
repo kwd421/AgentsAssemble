@@ -6,6 +6,7 @@ import agentsassemble.bridge_protocol as compatibility_bridge_protocol
 import agentsassemble.bridge_report_tracker as compatibility_bridge_tracker
 import agentsassemble.claude_resident as compatibility_claude_resident
 import agentsassemble.claude_transcript as compatibility_claude_transcript
+import agentsassemble.codex_app_server_live_runtime as compatibility_codex_app_server_live
 import agentsassemble.codex_session_ids as compatibility_codex_session_ids
 import agentsassemble.codex_stream as compatibility_codex_stream
 import agentsassemble.deepseek_runtime as compatibility_deepseek
@@ -31,6 +32,7 @@ from agentsassemble.providers import bridge_protocol as owned_bridge_protocol
 from agentsassemble.providers import bridge_report_tracker as owned_bridge_tracker
 from agentsassemble.providers import claude_resident as owned_claude_resident
 from agentsassemble.providers import claude_transcript as owned_claude_transcript
+from agentsassemble.providers import codex_app_server_live as owned_codex_app_server_live
 from agentsassemble.providers import codex_session_ids as owned_codex_session_ids
 from agentsassemble.providers import codex_stream as owned_codex_stream
 from agentsassemble.providers import deepseek as owned_deepseek
@@ -51,6 +53,16 @@ from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_codex_app_server_live_root_module_exports_owned_runtime(self) -> None:
+        self.assertIs(
+            compatibility_codex_app_server_live.CodexAppServerLiveRuntime,
+            owned_codex_app_server_live.CodexAppServerLiveRuntime,
+        )
+        self.assertIs(
+            compatibility_codex_app_server_live._codex_activity,
+            owned_codex_app_server_live._codex_activity,
+        )
+
     def test_room_api_provider_root_module_exports_owned_contract(self) -> None:
         for name in (
             "ApiProviderError",

@@ -763,3 +763,12 @@ module churn were deliberately avoided rather than forgotten.
   estimation and recording, and the existing rate-limit/unavailable-only
   fallback chain are unchanged; no API lane was promoted over native CLI
   sessions.
+- 2026-07-17: The Codex app-server room-runtime wrapper moved to
+  `providers/codex_app_server_live.py`. Room attendee construction and runtime
+  control tests now use the owned path while
+  `codex_app_server_live_runtime.py` remains an explicit compatibility export.
+  The wrapper now imports the provider runtime directly instead of through
+  `agent_sessions`, removing a provider-to-application reverse dependency, and
+  uses the current `room.text` normalizer. Sandbox/approval mapping, persistent
+  handle reuse, delta/final/error handling, activity categories, and health
+  diagnostics are unchanged.

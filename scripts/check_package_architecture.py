@@ -82,6 +82,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.17 Codex provider parser move",
     ),
+    "codex_app_server_live_runtime.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.codex_app_server_live",
+        removal_gate=(
+            "No direct imports use agentsassemble.codex_app_server_live_runtime "
+            "for one compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.21 Codex app-server live wrapper move",
+    ),
     "codex_stream.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.codex_stream",
         removal_gate=(
