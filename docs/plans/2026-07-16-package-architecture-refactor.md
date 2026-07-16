@@ -1037,3 +1037,11 @@ module churn were deliberately avoided rather than forgotten.
   post-commit projection update. Explicit avatar clearing, rollback behavior,
   next-turn identity, final-message attribution, and public payloads are
   unchanged.
+- 2026-07-17: Stopped Agent Session runtime-profile validation and replacement
+  moved to `room/agent_runtime_profiles.py`. The service owns stopped-state and
+  provider-kind guards, merge-with-current values, current catalog validation,
+  native spec reconstruction, and provider error translation; the realtime
+  controller retains command capability/idempotency and delegates durable
+  profile persistence to `room/provider_sessions.py`. Model, effort, tier,
+  variant, permission, workspace, error codes, and running-session rejection
+  behavior are unchanged.

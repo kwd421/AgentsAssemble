@@ -14,7 +14,6 @@ from agentsassemble.providers.launch_specs import (
     StoredProviderProfileError,
     UnsupportedNativeCliProvider,
     default_native_cli_provider_specs,
-    native_cli_provider_definition,
     native_cli_provider_spec_from_stored_session_strict,
     native_cli_provider_spec_from_payload,
     validate_native_cli_provider_spec,
@@ -48,6 +47,9 @@ from agentsassemble.room.agent_lifecycle import (
     schedule_daemon_timer,
 )
 from agentsassemble.room.agent_profiles import RoomAgentProfileService
+from agentsassemble.room.agent_runtime_profiles import (
+    RoomAgentRuntimeProfileService,
+)
 from agentsassemble.room_attention_coordinator import RoomAttentionCoordinator
 from agentsassemble.room_attention_reconciliation import RoomAttentionReconciler
 from agentsassemble.room_attention_policy import (
@@ -236,6 +238,11 @@ class RoomRealtimeController:
             store=self.store,
             provider_registry=self._provider_registry,
             publish_session_state=self._publish_session_state,
+        )
+        self._agent_runtime_profiles = RoomAgentRuntimeProfileService(
+            store=self.store,
+            provider_catalog=self.provider_catalog,
+            configure_stopped_profile=self.configure_stopped_provider_profile,
         )
         self._agent_lifecycle = RoomAgentLifecycle(
             store=self.store,
@@ -1007,67 +1014,11 @@ class RoomRealtimeController:
         return result
 
     def _configure_agent(self, room_id: str, payload: dict[str, object]) -> dict[str, object]:
-        agent_id = self._payload_agent_id(payload)
-        current = self.store.session(room_id, agent_id)
-        if not current:
-            raise RoomCommandRejected(f"Agent session {agent_id} was not found.", code="not_found")
-        if current.get("runtime_status") in {"starting", "idle", "busy", "paused", "recovering", "stopping"}:
-            raise RoomCommandRejected(
-                "Stop this Agent Session before changing its runtime settings.",
-                code="runtime_profile_conflict",
-            )
-        requested_provider = clean_lobby_text(
-            payload.get("provider_id") or payload.get("provider_kind") or current.get("provider_kind"),
-            limit=64,
+        return self._agent_runtime_profiles.configure(
+            room_id,
+            self._payload_agent_id(payload),
+            payload,
         )
-        existing_provider = clean_lobby_text(current.get("provider_kind"), limit=64)
-        definition = native_cli_provider_definition(requested_provider)
-        if definition is None or definition.provider_kind != existing_provider:
-            raise RoomCommandRejected(
-                "An existing Agent Session cannot change provider kind; remove it and create a new session.",
-                code="provider_mismatch",
-            )
-        merged = {
-            **payload,
-            "agent_id": agent_id,
-            "provider_id": definition.provider_id,
-            "display_name": payload.get("display_name") or current.get("display_name") or agent_id,
-            "workspace": payload["workspace"] if "workspace" in payload else current.get("workspace"),
-        }
-        selected_values = {
-            key: payload[key] if key in payload else current.get(key)
-            for key in ("model", "reasoning_effort", "service_tier", "variant", "permission_mode")
-        }
-        try:
-            selection = self.provider_catalog.validate_selection(
-                catalog_revision=clean_lobby_text(payload.get("catalog_revision"), limit=128),
-                provider_id=definition.provider_id,
-                values={
-                    "model": clean_lobby_text(selected_values["model"], limit=128),
-                    "reasoning_effort": clean_lobby_text(selected_values["reasoning_effort"], limit=32),
-                    "service_tier": clean_lobby_text(selected_values["service_tier"], limit=32),
-                    "variant": clean_lobby_text(selected_values["variant"], limit=64),
-                    "permission_mode": clean_lobby_text(selected_values["permission_mode"], limit=64),
-                },
-            )
-            spec = native_cli_provider_spec_from_payload(
-                {
-                    **merged,
-                    "model": selection.model,
-                    "model_selection_kind": selection.model_selection_kind,
-                    "catalog_revision": selection.catalog_revision,
-                    "reasoning_effort": selection.reasoning_effort,
-                    "service_tier": selection.service_tier,
-                    "variant": selection.variant,
-                    "permission_mode": selection.permission_mode,
-                }
-            )
-        except ProviderCatalogSelectionError as error:
-            raise RoomCommandRejected(str(error), code=error.code) from error
-        except (UnsupportedNativeCliProvider, ValueError) as error:
-            raise RoomCommandRejected(str(error), code="invalid_runtime_profile") from error
-        session = self.configure_stopped_provider_profile(room_id, spec)
-        return {"status": "configured", "agent_session": session}
 
     def _configure_agent_profile(
         self,
