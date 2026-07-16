@@ -94,6 +94,7 @@ surface rather than silently counted as React parity.
 | `/api/codex-sessions/invite` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/codex-sessions/join` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/demo` | POST | exact | `-` | no | Retired demo HTTP route; returns explicit `410 legacy_route_retired`. |
+| `/api/diagnostics/legacy-admission-projection` | GET | exact | `-` | no | Operator-only bounded diagnostics for the compatibility admission projection; contains no invite token, credential, room bearer, or unbounded history. |
 | `/api/events/lobby` | GET | sse | `subscribeLobby()` | yes | React lobby subscribes to lobby stream. |
 | `/api/events/side-chat` | GET | sse | `subscribeSideChat()` | yes | React side chat subscribes to separate stream. |
 | `/api/events/roster` | GET | sse | `subscribeRoster()` | yes | React member panel rides a push roster stream on the local console; polling stays as a slow fallback. |
