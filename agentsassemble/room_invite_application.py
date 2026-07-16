@@ -15,6 +15,10 @@ from agentsassemble.multi_host_invites import (
 )
 from agentsassemble.native_cli_providers import native_cli_provider_definition
 from agentsassemble.remote_room_client_packet import build_remote_room_client_packet
+from agentsassemble.room_admission_workflow_maintenance import (
+    AdmissionWorkflowSelection,
+    PurgeReport,
+)
 from agentsassemble.room_invite_repository import (
     InviteSessionRepository,
 )
@@ -186,6 +190,23 @@ class InviteApplicationService:
     def revoke_room(self, room_id: str) -> int:
         return self._repository.revoke_room_invites(
             clean_lobby_text(room_id, limit=128),
+        )
+
+    def maintain_admission_workflows(
+        self,
+        selection: AdmissionWorkflowSelection,
+        *,
+        apply: bool = False,
+    ) -> PurgeReport:
+        return self._repository.purge_admission_workflows(selection, apply=apply)
+
+    def remove_terminal_admission_workflows_for_room(self, room_id: str) -> PurgeReport:
+        clean_room_id = clean_lobby_text(room_id, limit=128)
+        if not clean_room_id:
+            raise ValueError("room_id is required")
+        return self.maintain_admission_workflows(
+            AdmissionWorkflowSelection(room_id=clean_room_id),
+            apply=True,
         )
 
     def pending(self) -> list[dict[str, object]]:

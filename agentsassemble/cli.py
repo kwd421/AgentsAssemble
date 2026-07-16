@@ -5545,6 +5545,44 @@ def run_room_command(args: argparse.Namespace) -> int:
             elif result.get("status") == "ready":
                 print("Run the same command with --apply after reviewing the dry-run plan.")
         return 0 if result.get("status") in {"ready", "applied", "already_applied", "not_needed"} else 1
+    if args.room_command == "purge-admission-workflows":
+        from agentsassemble.room_admission_workflow_maintenance_command import (
+            purge_admission_workflows,
+        )
+        from agentsassemble.room_invite_repository import InviteRepositoryError
+        from agentsassemble.room_repository_factory import (
+            RoomRepositoryConfigurationError,
+            RoomRepositoryUnavailable,
+        )
+
+        try:
+            result = purge_admission_workflows(
+                output_root=Path(args.output_root),
+                repository_backend=str(args.room_repository_backend),
+                postgres_dsn_env=str(args.room_postgres_dsn_env),
+                updated_before=str(args.before),
+                room_id=str(args.room_id or ""),
+                apply=bool(args.apply),
+            )
+        except (
+            InviteRepositoryError,
+            RoomRepositoryConfigurationError,
+            RoomRepositoryUnavailable,
+            OSError,
+            ValueError,
+        ) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        if args.as_json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(
+                f"Admission workflow purge {result['mode']}: "
+                f"selected={result['selected_count']} · purged={result['purged_count']}"
+            )
+            if not args.apply:
+                print("Review the dry-run result, then repeat with --apply to delete it.")
+        return 0
     if args.room_command == "list":
         query = urllib.parse.urlencode({"include_archived": "true"} if args.include_archived else {})
         path = "/api/rooms" + (f"?{query}" if query else "")

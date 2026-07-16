@@ -351,3 +351,11 @@ module churn were deliberately avoided rather than forgotten.
   306. The execution plan adopted the domain-package direction while making
   retention non-destructive and inventory-driven, and while freezing unsettled
   conversation/media behavior.
+- 2026-07-16: Milestone 0 correctness work completed in four reviewable slices:
+  canonical UUID request IDs, an injected/redacted legacy admission projection,
+  reverse-order GUI startup rollback, and explicit terminal-workflow maintenance.
+  The maintenance contract supports dry-run/apply parity for memory, local JSON,
+  and PostgreSQL, rejects retryable/compensating states, and has no startup purge.
+  A proposed `agentsassemble/admission/` directory was not introduced early
+  because it would shadow the existing public `agentsassemble/admission.py`
+  module; that collision must be handled by the inventoried Milestone 3 shim.

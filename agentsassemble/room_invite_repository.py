@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import Iterator, Protocol, runtime_checkable
 
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.room_admission_workflow_maintenance import (
+    AdmissionWorkflowSelection,
+    PurgeReport,
+    build_purge_report,
+)
 
 ROOM_INVITE_STORE_SCHEMA = "agentsassemble.room_invite_state.v1"
 
@@ -121,6 +126,14 @@ class InviteSessionRepository(InviteRepository, SessionRepository, Protocol):
         max_uses: int,
         updates: dict[str, object],
     ) -> tuple[str, dict[str, object]]: ...
+
+    def purge_admission_workflows(
+        self,
+        selection: AdmissionWorkflowSelection,
+        *,
+        apply: bool,
+    ) -> PurgeReport: ...
+
     def reload(self) -> None: ...
 
     def clear(self) -> None: ...
@@ -242,6 +255,15 @@ class UnconfiguredInviteSessionRepository:
         updates: dict[str, object],
     ) -> tuple[str, dict[str, object]]:
         del workflow_id, invite_id, nonce_fingerprint, reusable, max_uses, updates
+        self._raise()
+
+    def purge_admission_workflows(
+        self,
+        selection: AdmissionWorkflowSelection,
+        *,
+        apply: bool,
+    ) -> PurgeReport:
+        del selection, apply
         self._raise()
 
     def reload(self) -> None:
@@ -532,6 +554,35 @@ class MemoryInviteSessionRepository:
                     self._used_nonce_fingerprints.add(clean_nonce)
                 self._admission_workflows[clean_workflow_id] = updated
             return "", deepcopy(updated)
+
+    def purge_admission_workflows(
+        self,
+        selection: AdmissionWorkflowSelection,
+        *,
+        apply: bool,
+    ) -> PurgeReport:
+        if not isinstance(selection, AdmissionWorkflowSelection):
+            raise TypeError("selection must be an AdmissionWorkflowSelection")
+        with self._lock:
+            selected = [
+                deepcopy(record)
+                for record in self._admission_workflows.values()
+                if selection.matches(record)
+            ]
+            if apply and selected:
+                workflow_ids = {
+                    str(record.get("workflow_id") or "")
+                    for record in selected
+                }
+                with self._persisted_mutation_locked():
+                    for workflow_id in workflow_ids:
+                        self._admission_workflows.pop(workflow_id, None)
+            return build_purge_report(
+                selection,
+                selected,
+                applied=apply,
+                purged_count=len(selected) if apply else 0,
+            )
 
     def reload(self) -> None:
         return

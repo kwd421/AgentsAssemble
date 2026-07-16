@@ -9,7 +9,10 @@ from agentsassemble.cli_parser_common import (
     parse_positive_int,
 )
 from agentsassemble.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG
-from agentsassemble.room_repository_factory import DEFAULT_POSTGRES_DSN_ENV
+from agentsassemble.room_repository_factory import (
+    DEFAULT_POSTGRES_DSN_ENV,
+    ROOM_REPOSITORY_BACKENDS,
+)
 
 
 def register_room_parsers(subparsers: argparse._SubParsersAction) -> None:
@@ -74,6 +77,33 @@ def register_room_parsers(subparsers: argparse._SubParsersAction) -> None:
     migrate_preferences_mode.add_argument("--apply", action="store_true")
     room_migrate_preferences.set_defaults(apply=False)
     room_migrate_preferences.add_argument("--json", action="store_true", dest="as_json")
+
+    room_purge_admission = room_subparsers.add_parser(
+        "purge-admission-workflows",
+        help="Inspect or explicitly delete terminal admission workflows older than a cutoff.",
+    )
+    room_purge_admission.add_argument("--output-root", default=".agentsassemble")
+    room_purge_admission.add_argument(
+        "--room-repository-backend",
+        choices=sorted(ROOM_REPOSITORY_BACKENDS),
+        default="sqlite",
+    )
+    room_purge_admission.add_argument(
+        "--room-postgres-dsn-env",
+        default=DEFAULT_POSTGRES_DSN_ENV,
+        help="Environment variable containing the PostgreSQL DSN; the DSN is never accepted on argv.",
+    )
+    room_purge_admission.add_argument(
+        "--before",
+        required=True,
+        help="Select terminal workflows updated before this timezone-aware ISO 8601 timestamp.",
+    )
+    room_purge_admission.add_argument("--room-id", default="")
+    purge_admission_mode = room_purge_admission.add_mutually_exclusive_group()
+    purge_admission_mode.add_argument("--dry-run", action="store_false", dest="apply")
+    purge_admission_mode.add_argument("--apply", action="store_true")
+    room_purge_admission.set_defaults(apply=False)
+    room_purge_admission.add_argument("--json", action="store_true", dest="as_json")
 
     room_attend = room_subparsers.add_parser(
         "attend",

@@ -1830,6 +1830,11 @@ class RoomRealtimeController:
         revoked = {
             "revoked_invites": self._invite_application.revoke_room(room_id),
             "revoked_sessions": self._room_sessions.revoke_room(room_id),
+            "purged_admission_workflows": (
+                self._invite_application.remove_terminal_admission_workflows_for_room(
+                    room_id
+                ).purged_count
+            ),
         }
         identity_store_for_output_root(self.output_root).delete_room(room_id)
         remove_listener = self._event_listener_removers.pop(room_id, None)

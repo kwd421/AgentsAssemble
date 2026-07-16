@@ -1778,6 +1778,23 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         artifact = self.root / "rooms" / "general" / "media" / "artifact.txt"
         artifact.parent.mkdir(parents=True, exist_ok=True)
         artifact.write_text("delete me", encoding="utf-8")
+        for workflow_id, status in (
+            ("terminal-admission", "completed"),
+            ("retryable-admission", "failed_retryable"),
+        ):
+            self.room_access.repository.create_admission_workflow(
+                workflow_id,
+                {
+                    "request_id": f"request-{workflow_id}",
+                    "token_fingerprint": f"token-{workflow_id}",
+                    "payload_hash": f"payload-{workflow_id}",
+                    "status": status,
+                    "resume_phase": status,
+                    "room_id": "general",
+                    "created_at": "2026-07-15T00:00:00+00:00",
+                    "updated_at": "2026-07-15T00:00:00+00:00",
+                },
+            )
         self.controller.connect(owner)
         self.controller.connect(member)
         with self.assertRaises(RoomCommandRejected) as owner_leave:
@@ -1794,6 +1811,13 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(mismatch.exception.code, "confirmation_mismatch")
         deleted = self._command("delete-right", "room.delete", {"confirmation_name": "Council"}, owner)
         self.assertTrue(deleted["result"]["deleted"])
+        self.assertEqual(deleted["result"]["purged_admission_workflows"], 1)
+        self.assertIsNone(
+            self.room_access.repository.admission_workflow("terminal-admission")
+        )
+        self.assertIsNotNone(
+            self.room_access.repository.admission_workflow("retryable-admission")
+        )
         self.assertTrue(RoomStore(self.root).room_is_deleted("general"))
         self.assertIsNone(identity_store.get_room("general"))
         self.assertFalse(artifact.exists())

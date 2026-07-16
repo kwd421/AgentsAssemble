@@ -8,6 +8,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+from agentsassemble.room_admission_workflow_maintenance import (
+    AdmissionWorkflowSelection,
+    TERMINAL_ADMISSION_WORKFLOW_STATUSES,
+)
 from agentsassemble.room_invite_repository import (
     InviteRepositoryCorrupt,
     InviteRepositoryNotConfigured,
@@ -131,6 +135,10 @@ class UnconfiguredInviteSessionRepositoryTests(unittest.TestCase):
                 reusable=True,
                 max_uses=2,
                 updates={"status": "invite_consumed"},
+            ),
+            lambda: self.repository.purge_admission_workflows(
+                AdmissionWorkflowSelection(),
+                apply=False,
             ),
             self.repository.reload,
             self.repository.clear,
@@ -366,6 +374,62 @@ class InviteSessionRepositoryContract:
         self.assertEqual(updated["compensated_at"], "2026-07-15T00:00:00+00:00")
         self.assertNotIn("compensation_debug_token", updated)
 
+    def test_admission_workflow_purge_dry_run_and_apply_only_select_terminal_old_records(
+        self,
+    ) -> None:
+        now = datetime.now(UTC)
+        old = (now - timedelta(days=2)).isoformat()
+        recent = now.isoformat()
+        cases = {
+            "completed-old": ("completed", "room-a", old),
+            "terminal-old": ("failed_terminal", "room-a", old),
+            "retryable-old": ("failed_retryable", "room-a", old),
+            "compensating-old": ("compensating", "room-a", old),
+            "completed-recent": ("completed", "room-a", recent),
+            "completed-other-room": ("completed", "room-b", old),
+        }
+        for workflow_id, (status, room_id, updated_at) in cases.items():
+            self.repository.create_admission_workflow(
+                workflow_id,
+                {
+                    **_workflow(workflow_id=workflow_id),
+                    "status": status,
+                    "room_id": room_id,
+                    "created_at": old,
+                    "updated_at": updated_at,
+                },
+            )
+
+        selection = AdmissionWorkflowSelection(
+            room_id="room-a",
+            updated_before=now - timedelta(days=1),
+        )
+        dry_run = self.repository.purge_admission_workflows(selection, apply=False)
+
+        self.assertEqual(dry_run.mode, "dry_run")
+        self.assertEqual(dry_run.selected_count, 2)
+        self.assertEqual(dry_run.purged_count, 0)
+        self.assertEqual(
+            dry_run.status_counts,
+            {"completed": 1, "failed_terminal": 1},
+        )
+        self.assertIsNotNone(self.repository.admission_workflow("completed-old"))
+
+        applied = self.repository.purge_admission_workflows(selection, apply=True)
+
+        self.assertEqual(applied.mode, "apply")
+        self.assertEqual(applied.selected_count, 2)
+        self.assertEqual(applied.purged_count, 2)
+        self.assertIsNone(self.repository.admission_workflow("completed-old"))
+        self.assertIsNone(self.repository.admission_workflow("terminal-old"))
+        for workflow_id in (
+            "retryable-old",
+            "compensating-old",
+            "completed-recent",
+            "completed-other-room",
+        ):
+            self.assertIsNotNone(self.repository.admission_workflow(workflow_id))
+
 
 class MemoryInviteSessionRepositoryTests(
     InviteSessionRepositoryContract,
@@ -460,6 +524,22 @@ class JsonInviteSessionRepositoryTests(
 
         self.assertEqual(self.repository.invite("invite-1")["use_count"], 0)
         self.assertFalse(self.repository.admission_workflow("workflow-1")["invite_consumed"])
+
+    def test_failed_admission_workflow_purge_rolls_back_selected_records(self) -> None:
+        self.repository.create_admission_workflow(
+            "workflow-1",
+            {**_workflow(), "status": "completed"},
+        )
+
+        with patch.object(Path, "replace", side_effect=OSError("replace failed")):
+            with self.assertRaises(InviteRepositoryWriteFailed):
+                self.repository.purge_admission_workflows(
+                    AdmissionWorkflowSelection(room_id="room-a"),
+                    apply=True,
+                )
+
+        self.assertIsNotNone(self.repository.admission_workflow("workflow-1"))
+
 
     def test_reading_an_uninitialized_secret_has_no_persistence_side_effect(self) -> None:
         self.assertEqual(self.repository.existing_signing_secret(), "")
@@ -638,6 +718,24 @@ class JsonInviteSessionRepositoryTests(
                 )
 
         self.assertEqual(self.repository.invite("invite-1")["use_count"], 0)
+
+
+class AdmissionWorkflowSelectionTests(unittest.TestCase):
+    def test_defaults_to_the_known_terminal_statuses(self) -> None:
+        self.assertEqual(
+            AdmissionWorkflowSelection().statuses,
+            TERMINAL_ADMISSION_WORKFLOW_STATUSES,
+        )
+
+    def test_rejects_retryable_or_compensating_statuses(self) -> None:
+        for status in ("failed_retryable", "compensating", "started"):
+            with self.subTest(status=status):
+                with self.assertRaisesRegex(ValueError, "non-terminal"):
+                    AdmissionWorkflowSelection(statuses=frozenset({status}))
+
+    def test_rejects_naive_cutoff(self) -> None:
+        with self.assertRaisesRegex(ValueError, "timezone-aware"):
+            AdmissionWorkflowSelection(updated_before=datetime(2026, 7, 16))
 
 
 if __name__ == "__main__":

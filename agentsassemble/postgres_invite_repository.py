@@ -14,6 +14,11 @@ from agentsassemble.postgres_connection_pool import (
     PoolFactory,
     PostgresPoolSettings,
 )
+from agentsassemble.room_admission_workflow_maintenance import (
+    AdmissionWorkflowSelection,
+    PurgeReport,
+    build_purge_report,
+)
 from agentsassemble.room_invite_repository import validate_admission_workflow_record
 
 _AUTHORITY_ID = "default"
@@ -427,6 +432,53 @@ class PostgresInviteSessionRepository:
                 ),
             )
             return "", updated
+
+    def purge_admission_workflows(
+        self,
+        selection: AdmissionWorkflowSelection,
+        *,
+        apply: bool,
+    ) -> PurgeReport:
+        if not isinstance(selection, AdmissionWorkflowSelection):
+            raise TypeError("selection must be an AdmissionWorkflowSelection")
+        clauses = ["status = ANY(%s)"]
+        parameters: list[object] = [sorted(selection.statuses)]
+        if selection.room_id:
+            clauses.append("room_id = %s")
+            parameters.append(selection.room_id)
+        if selection.updated_before is not None:
+            clauses.append("updated_at < %s")
+            parameters.append(selection.updated_before)
+        query = (
+            "SELECT record_json FROM room_admission_workflows WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY updated_at, workflow_id"
+        )
+
+        with self._connections.connection() as connection, connection.transaction():
+            rows = connection.execute(
+                query + (" FOR UPDATE" if apply else ""),
+                tuple(parameters),
+            ).fetchall()
+            selected = [
+                record
+                for record in (_workflow_from_row(row) for row in rows)
+                if selection.matches(record)
+            ]
+            purged_count = 0
+            if apply and selected:
+                workflow_ids = [str(record["workflow_id"]) for record in selected]
+                cursor = connection.execute(
+                    "DELETE FROM room_admission_workflows WHERE workflow_id = ANY(%s)",
+                    (workflow_ids,),
+                )
+                purged_count = int(cursor.rowcount)
+        return build_purge_report(
+            selection,
+            selected,
+            applied=apply,
+            purged_count=purged_count,
+        )
 
     def reload(self) -> None:
         return

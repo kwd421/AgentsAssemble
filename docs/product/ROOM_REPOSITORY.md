@@ -123,6 +123,14 @@ the workflow. A failed compensation remains retryable across restart. Consumed
 invite authority is deliberately not restored because doing so would weaken
 replay protection.
 
+Admission workflow retention is explicit and non-destructive by default.
+`assemble room purge-admission-workflows --before <timezone-aware-ISO-8601>`
+reports terminal `completed` and `failed_terminal` candidates without deleting
+them; `--apply` is required for deletion. Retryable and compensating workflows
+cannot be selected by this contract. Canonical room deletion removes terminal
+workflows owned by that room, while retaining retryable recovery evidence. No
+startup task, polling loop, or implicit age policy purges admission workflows.
+
 Identity persistence follows the same backend choice through
 `identity_repository_factory.py`. Local mode keeps `identity.db`; hosted mode
 selects `PostgresIdentityRepository` with the room DSN. The GUI registers that
