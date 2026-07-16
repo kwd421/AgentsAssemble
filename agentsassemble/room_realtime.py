@@ -70,6 +70,7 @@ from agentsassemble.room.moderation import (
 )
 from agentsassemble.room.messages import RoomMessageService
 from agentsassemble.room.member_mute import RoomMemberMuteService
+from agentsassemble.room.participant_leave import RoomParticipantLeaveService
 from agentsassemble.room.projection import (
     public_event as _public_event,
     public_participant,
@@ -237,6 +238,28 @@ class RoomRealtimeController:
                     participant_id=participant_id,
                     muted=muted,
                 )
+            ),
+        )
+        self._participant_leave = RoomParticipantLeaveService(
+            remove_membership=lambda room_id, participant_id: (
+                identity_store_for_output_root(self.output_root).remove_membership(
+                    room_id,
+                    participant_id,
+                )
+            ),
+            leave_all_voice=lambda room_id, participant_id: leave_all_voice(
+                room_id,
+                participant_id,
+            ),
+            revoke_participant_sessions=lambda room_id, participant_id: (
+                self._room_sessions.revoke_participant(
+                    room_id,
+                    participant_id,
+                )
+            ),
+            schedule_cleanup=lambda delay, callback: schedule_daemon_timer(
+                delay,
+                callback,
             ),
         )
         self._startup_sessions = RoomStartupSessionReconciler(
@@ -1077,28 +1100,17 @@ class RoomRealtimeController:
         is_owner: bool,
         unit: RoomCommandUnitOfWork,
     ) -> dict[str, object]:
-        participant = unit.participant(participant_id)
-        if not participant:
-            raise RoomCommandRejected("Participant was not found in this room.", code="not_found")
-        if is_owner:
-            raise RoomCommandRejected(
-                "The room owner must transfer ownership or delete the server.",
-                code="owner_must_transfer_or_delete",
-            )
-        updated = unit.update_participant_fields(participant_id, status="left")
-        event = unit.append_event("participant_left", participant_id=participant_id)
-        return {"participant": updated, "event": event, "revocation_scheduled": True}
+        return self._participant_leave.update_in_unit(
+            participant_id,
+            is_owner=is_owner,
+            unit=unit,
+        )
 
     def _schedule_participant_leave_cleanup(self, room_id: str, participant_id: str) -> None:
-        identity_store_for_output_root(self.output_root).remove_membership(room_id, participant_id)
-        leave_all_voice(room_id, participant_id)
-        timer = threading.Timer(
-            0.1,
-            self._room_sessions.revoke_participant,
-            args=(room_id, participant_id),
+        self._participant_leave.apply_after_commit(
+            room_id,
+            participant_id,
         )
-        timer.daemon = True
-        timer.start()
 
     def _delete_room(
         self,

@@ -1078,3 +1078,12 @@ module churn were deliberately avoided rather than forgotten.
   so compatibility tests and failure semantics remain unchanged. Error codes,
   public result shape, agent-only runtime effects, and speaker policy are
   unchanged.
+- 2026-07-17: Canonical participant self-leave mutation and post-commit access
+  cleanup moved to `room/participant_leave.py`. The service owns the
+  participant `left` transition and event inside the existing command unit of
+  work, then removes compatibility identity membership, leaves voice presence,
+  and schedules room-session revocation after the existing 0.1-second ACK
+  window. `room_realtime.py` retains capability, owner detection,
+  idempotency, transaction lifetime, and command publication. Owner rejection,
+  not-found errors, result/event shape, rollback behavior, and delayed
+  credential invalidation are unchanged.

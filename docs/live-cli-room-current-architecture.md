@@ -132,6 +132,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `room/agent_lifecycle.py` | Agent Session start, pause, stop, recovery, and room-visible lifecycle state | provider process implementation |
 | `room/moderation.py` | identity-membership mute/remove compatibility writes and mute lookup policy | roster projection or live process cleanup |
 | `room/member_mute.py` | canonical participant mute transaction plus compatibility roster, active-turn interrupt, and pending-turn synchronization | command authorization or speaker-selection policy |
+| `room/participant_leave.py` | canonical self-leave transaction plus identity membership, voice presence, and delayed room-session revocation | room ownership transfer or room deletion |
 | `diagnostics/cleanup.py` | bounded cleanup reports and secret-redacted cleanup failure output | room or provider lifecycle policy |
 | `providers/launch_specs.py` | provider catalog, safe commands, profile identity, and Claude interactive guard | PTY parsing |
 | `providers/capabilities.py` | cached native model, effort, tier, variant, and permission discovery | room or secret state |
