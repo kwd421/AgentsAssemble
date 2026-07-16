@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.live_cli import LiveCliRuntime, live_cli_supported
+from agentsassemble.providers.live_cli import LiveCliRuntime, live_cli_supported
 from agentsassemble.providers.live_cli_transcripts import (
     AntigravityTranscriptMessageSource,
     ClaudeSessionMessageSource,

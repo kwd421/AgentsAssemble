@@ -8,8 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
 
-from agentsassemble.live_cli import GENERAL_ROOM_ID, LiveCliRuntime
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.providers.live_cli import GENERAL_ROOM_ID, LiveCliRuntime
 
 
 DEFAULT_LIVE_CLI_SMOKE_CONFIG = Path("configs/live-cli-providers.example.json")

@@ -14,7 +14,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
-from agentsassemble.live_cli import LiveCliRuntime
+from agentsassemble.providers.live_cli import LiveCliRuntime
 from agentsassemble.providers.runtime_config import ProviderRuntimeProfile
 from agentsassemble.room_attendee import AgentAttendee
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager

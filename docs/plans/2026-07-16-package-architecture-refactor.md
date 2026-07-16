@@ -702,3 +702,12 @@ module churn were deliberately avoided rather than forgotten.
   delegation without changing values. Provider session discovery, exact-turn
   binding, partial JSONL handling, Markdown preservation, model observation,
   strict extraction errors, and terminal-capture behavior are unchanged.
+- 2026-07-17: The persistent POSIX PTY runtime moved to
+  `providers/live_cli.py`. Runtime construction, the opt-in smoke harness, and
+  persistent PTY/room behavior tests now use the owned path; `live_cli.py`
+  remains an explicit compatibility export for its public runtime contract.
+  Direct `room.text` normalization replaces the legacy delegation without
+  changing values. Process persistence, startup TUI negotiation, bounded
+  terminal capture, transcript-first final extraction, interrupt/restart,
+  process-group cleanup, diagnostics, and the unsupported API stub are
+  unchanged.

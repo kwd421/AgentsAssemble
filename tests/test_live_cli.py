@@ -4,7 +4,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from agentsassemble.live_cli import (
+from agentsassemble.providers.live_cli import (
     ApiRuntime,
     LiveCliRuntime,
     live_cli_supported,

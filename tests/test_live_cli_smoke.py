@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.live_cli import live_cli_supported
 from agentsassemble.live_cli_smoke import _marker_recalled, run_live_cli_smoke
+from agentsassemble.providers.live_cli import live_cli_supported
 
 
 def _fake_cli_script(path: Path) -> None:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from agentsassemble.providers.deepseek import DeepSeekApiRuntime
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
-from agentsassemble.live_cli import LiveCliRuntime
+from agentsassemble.providers.live_cli import LiveCliRuntime
 from agentsassemble.providers.opencode import OpenCodeRuntime
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
 from agentsassemble.providers.windows_conpty import WindowsConPtyRuntime

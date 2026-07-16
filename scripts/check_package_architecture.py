@@ -91,6 +91,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.10 Grok ACP runtime move",
     ),
+    "live_cli.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.live_cli",
+        removal_gate=(
+            "No direct imports use agentsassemble.live_cli for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.13 POSIX live CLI runtime move",
+    ),
     "gui_observability_http.py": CompatibilityShim(
         replacement_import="agentsassemble.web.routes.observability",
         removal_gate=(
