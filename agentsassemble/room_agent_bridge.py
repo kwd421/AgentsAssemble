@@ -20,7 +20,7 @@ from agentsassemble.bridge_protocol import (
 from agentsassemble.bridge_report_tracker import BridgeReportTracker
 from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
 from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
-from agentsassemble.provider_runtime_contracts import (
+from agentsassemble.providers.runtime_contracts import (
     AdapterContractError,
     ProviderRuntimeHealth,
     ProviderTurnResult,

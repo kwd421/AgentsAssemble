@@ -169,6 +169,31 @@ class PackageMapTests(unittest.TestCase):
                 self.assertIn(f"| `{proposed_package}` |", module_line)
                 self.assertTrue(module_line.endswith("| in-target-package |"))
 
+    def test_provider_runtime_contract_uses_the_owned_package(self) -> None:
+        graph = load_package_graph(ROOT)
+        package_map = build_package_map(ROOT)
+        module_name = "agentsassemble.providers.runtime_contracts"
+
+        self.assertEqual(graph.domains[module_name], "providers")
+        module_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith(f"| `{module_name}` |")
+        )
+        self.assertTrue(module_line.endswith("| in-target-package |"))
+
+        compatibility_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith(
+                "| `agentsassemble.provider_runtime_contracts` |"
+            )
+        )
+        self.assertIn("| compatibility |", compatibility_line)
+        self.assertTrue(
+            compatibility_line.endswith("| compatibility-shim |")
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

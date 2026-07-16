@@ -22,6 +22,7 @@ EXISTING_PACKAGES = frozenset(
         "legacy",
         "migrations",
         "persistence",
+        "providers",
         "room",
         "web",
     }

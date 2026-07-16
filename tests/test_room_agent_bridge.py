@@ -6,7 +6,10 @@ from unittest.mock import patch
 
 from agentsassemble.grok_acp_runtime import GrokAcpRuntime
 from agentsassemble.bridge_protocol import BridgeReportTimeout
-from agentsassemble.provider_runtime_contracts import AdapterContractError, ProviderTurnResult
+from agentsassemble.providers.runtime_contracts import (
+    AdapterContractError,
+    ProviderTurnResult,
+)
 from agentsassemble.provider_runtime_config import (
     BridgeConfigError,
     CanonicalBridgeLaunchConfig,

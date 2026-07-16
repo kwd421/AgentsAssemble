@@ -607,3 +607,10 @@ module churn were deliberately avoided rather than forgotten.
   legacy room-directory backfill are injected by that root composition wrapper
   rather than imported by `application/`; this differs from a literal full
   factory move to preserve the current-core-to-legacy dependency firewall.
+- 2026-07-16: Milestone 5 began with the dependency-free provider runtime
+  result and health contracts. Their owner is now
+  `providers/runtime_contracts.py`; production bridge, realtime, turn
+  coordinator, and Grok runtime imports use the owned path.
+  `provider_runtime_contracts.py` remains an explicit compatibility export
+  with a one-window removal gate. No provider command, model profile, process
+  lifecycle, result parser behavior, or fallback policy changed.

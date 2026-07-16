@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TextIO
 
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.provider_runtime_contracts import AdapterContractError
+from agentsassemble.providers.runtime_contracts import AdapterContractError
 from agentsassemble.process_environment import sanitized_provider_environment
 
 

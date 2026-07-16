@@ -14,7 +14,7 @@ from agentsassemble.provider_model_verification import (
     model_observation_matches,
     model_verification_status,
 )
-from agentsassemble.provider_runtime_contracts import SUPPORTED_DECLINE_REASONS
+from agentsassemble.providers.runtime_contracts import SUPPORTED_DECLINE_REASONS
 from agentsassemble.room_errors import RoomCommandRejected
 from agentsassemble.room_attention import AttentionLeaseConflict
 from agentsassemble.room_command_uow import RoomCommandUnitOfWork

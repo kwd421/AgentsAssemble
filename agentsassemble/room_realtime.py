@@ -28,7 +28,7 @@ from agentsassemble.provider_capabilities import (
     ProviderCatalogSelectionError,
     ValidatedProviderSelection,
 )
-from agentsassemble.provider_runtime_contracts import (
+from agentsassemble.providers.runtime_contracts import (
     AdapterContractError,
     ProviderRuntimeHealth,
 )
