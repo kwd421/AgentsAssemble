@@ -717,3 +717,9 @@ module churn were deliberately avoided rather than forgotten.
   extraction, Claude workspace scoping, Antigravity conversation labels,
   timestamp ordering, result limits, and the existing empty-on-unreadable
   policy are unchanged.
+- 2026-07-17: Provider-reported model identity verification moved to
+  `providers/model_verification.py`. Room realtime and turn coordination use
+  the owned policy while `provider_model_verification.py` remains an explicit
+  compatibility export. Focused tests now document the existing pending,
+  unavailable, exact, alias, Claude provider-revision, and mismatch outcomes;
+  no model selection or rejection rule changed.

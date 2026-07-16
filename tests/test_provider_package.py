@@ -12,6 +12,7 @@ import agentsassemble.live_cli_transcripts as compatibility_live_cli_transcripts
 import agentsassemble.opencode_runtime as compatibility_opencode
 import agentsassemble.process_environment as compatibility_process_environment
 import agentsassemble.provider_catalog as compatibility_catalog
+import agentsassemble.provider_model_verification as compatibility_model_verification
 import agentsassemble.provider_runtime_config as compatibility_config
 import agentsassemble.provider_runtime_contracts as compatibility_contracts
 import agentsassemble.provider_runtime_factory as compatibility_factory
@@ -26,6 +27,7 @@ from agentsassemble.providers import grok_acp as owned_grok_acp
 from agentsassemble.providers import live_cli as owned_live_cli
 from agentsassemble.providers import live_cli_output as owned_live_cli_output
 from agentsassemble.providers import live_cli_transcripts as owned_live_cli_transcripts
+from agentsassemble.providers import model_verification as owned_model_verification
 from agentsassemble.providers import opencode as owned_opencode
 from agentsassemble.providers import process_environment as owned_process_environment
 from agentsassemble.providers import runtime_config as owned_config
@@ -152,6 +154,16 @@ class ProviderPackageTests(unittest.TestCase):
         self.assertIs(
             compatibility_sessions.list_provider_sessions,
             owned_sessions.list_provider_sessions,
+        )
+
+    def test_model_verification_root_module_exports_owned_policy(self) -> None:
+        self.assertIs(
+            compatibility_model_verification.model_observation_matches,
+            owned_model_verification.model_observation_matches,
+        )
+        self.assertIs(
+            compatibility_model_verification.model_verification_status,
+            owned_model_verification.model_verification_status,
         )
 
     def test_windows_conpty_root_module_exports_owned_type(self) -> None:

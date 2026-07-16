@@ -71,7 +71,9 @@ from agentsassemble.room_floor_policy import (
     evaluate_agent_floor_eligibility,
 )
 from agentsassemble.room_members import is_room_member_muted, remove_room_member, set_room_member_muted
-from agentsassemble.provider_model_verification import model_verification_status as _model_verification_status
+from agentsassemble.providers.model_verification import (
+    model_verification_status as _model_verification_status,
+)
 from agentsassemble.room_projection import (
     public_event as _public_event,
     public_participant,
