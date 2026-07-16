@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.codex_stream import parse_codex_stream, parse_codex_stream_line
+from agentsassemble.providers.codex_stream import parse_codex_stream, parse_codex_stream_line
 
 
 class ParseCodexStreamLineTests(unittest.TestCase):

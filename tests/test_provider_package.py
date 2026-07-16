@@ -4,6 +4,8 @@ import unittest
 
 import agentsassemble.bridge_protocol as compatibility_bridge_protocol
 import agentsassemble.bridge_report_tracker as compatibility_bridge_tracker
+import agentsassemble.codex_session_ids as compatibility_codex_session_ids
+import agentsassemble.codex_stream as compatibility_codex_stream
 import agentsassemble.deepseek_runtime as compatibility_deepseek
 import agentsassemble.grok_acp_runtime as compatibility_grok_acp
 import agentsassemble.live_cli as compatibility_live_cli
@@ -23,6 +25,8 @@ import agentsassemble.windows_conpty as compatibility_windows_conpty
 from agentsassemble.providers import catalog as owned_catalog
 from agentsassemble.providers import bridge_protocol as owned_bridge_protocol
 from agentsassemble.providers import bridge_report_tracker as owned_bridge_tracker
+from agentsassemble.providers import codex_session_ids as owned_codex_session_ids
+from agentsassemble.providers import codex_stream as owned_codex_stream
 from agentsassemble.providers import deepseek as owned_deepseek
 from agentsassemble.providers import grok_acp as owned_grok_acp
 from agentsassemble.providers import live_cli as owned_live_cli
@@ -41,6 +45,29 @@ from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_codex_session_id_root_module_exports_owned_contract(self) -> None:
+        for name in (
+            "CODEX_SESSION_ID_PATTERN",
+            "CODEX_SESSION_ID_RE",
+            "CODEX_SESSION_LABEL_RE",
+            "extract_codex_session_id",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_codex_session_ids, name),
+                    getattr(owned_codex_session_ids, name),
+                )
+
+    def test_codex_stream_root_module_exports_owned_functions(self) -> None:
+        self.assertIs(
+            compatibility_codex_stream.parse_codex_stream,
+            owned_codex_stream.parse_codex_stream,
+        )
+        self.assertIs(
+            compatibility_codex_stream.parse_codex_stream_line,
+            owned_codex_stream.parse_codex_stream_line,
+        )
+
     def test_bridge_protocol_root_module_exports_owned_types(self) -> None:
         for name in (
             "BridgeProtocolError",

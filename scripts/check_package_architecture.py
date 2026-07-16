@@ -55,6 +55,24 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.5 provider bridge protocol move",
     ),
+    "codex_session_ids.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.codex_session_ids",
+        removal_gate=(
+            "No direct imports use agentsassemble.codex_session_ids for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.17 Codex provider parser move",
+    ),
+    "codex_stream.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.codex_stream",
+        removal_gate=(
+            "No direct imports use agentsassemble.codex_stream for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.17 Codex provider parser move",
+    ),
     "deepseek_runtime.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.deepseek",
         removal_gate=(

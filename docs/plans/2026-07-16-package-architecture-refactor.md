@@ -729,3 +729,9 @@ module churn were deliberately avoided rather than forgotten.
   export. Focused tests document the existing case-insensitive login markers,
   Korean login guidance, and unrelated-error behavior; marker and copy values
   are unchanged.
+- 2026-07-17: Codex CLI session-id extraction and JSONL event parsing moved to
+  `providers/codex_session_ids.py` and `providers/codex_stream.py`. The Codex
+  resident, legacy Codex adapter, and focused parser tests now use the owned
+  paths while both root modules remain explicit compatibility exports.
+  Session UUID recognition, labeled-text fallback, message/command/reasoning
+  event classification, ordering, and ignored-event behavior are unchanged.

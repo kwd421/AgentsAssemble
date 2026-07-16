@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `d3e4db82fe392d5a`
+Source fingerprint: `332d10b0874f7574`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 429
+- Python modules: 431
 - Top-level package modules: 303
-- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=65, room=43, web=58
-- Classifications: compatibility=67, current=273, legacy=78, optional=11
+- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=67, room=43, web=58
+- Classifications: compatibility=69, current=273, legacy=78, optional=11
 
 ## Classification Rules
 
@@ -33,7 +33,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble` | `agentsassemble/__init__.py` | 1 | application | current | - | 1 | - | test-import:15, monkeypatch:7 | `scripts/check_package_architecture.py`, `tests/test_agent_session_room_store.py`, `tests/test_api_lane_runner.py`, `+19` | `root entrypoint` | retained-entrypoint |
 | `agentsassemble.adapters` | `agentsassemble/adapters/__init__.py` | 17 | providers | current | `agentsassemble.adapters.base`, `agentsassemble.adapters.codex`, `agentsassemble.adapters.codex_live`, `agentsassemble.adapters.mock`, `agentsassemble.adapters.registry`, `agentsassemble.adapters.unsupported` | 2 | - | - | - | `providers/` | pending-consolidation |
 | `agentsassemble.adapters.base` | `agentsassemble/adapters/base.py` | 45 | providers | current | `agentsassemble.models` | 8 | - | test-import:3 | `tests/test_demo_meeting.py`, `tests/test_partial_failure.py`, `tests/test_provider_registry.py` | `providers/` | pending-consolidation |
-| `agentsassemble.adapters.codex` | `agentsassemble/adapters/codex.py` | 444 | providers | current | `agentsassemble.adapters.base`, `agentsassemble.codex_resident`, `agentsassemble.codex_session_ids`, `agentsassemble.models`, `agentsassemble.speech_policy` | 3 | - | test-import:2 | `tests/test_codex_adapter.py`, `tests/test_decision_context.py` | `providers/` | pending-consolidation |
+| `agentsassemble.adapters.codex` | `agentsassemble/adapters/codex.py` | 444 | providers | current | `agentsassemble.adapters.base`, `agentsassemble.codex_resident`, `agentsassemble.models`, `agentsassemble.providers.codex_session_ids`, `agentsassemble.speech_policy` | 3 | - | test-import:2 | `tests/test_codex_adapter.py`, `tests/test_decision_context.py` | `providers/` | pending-consolidation |
 | `agentsassemble.adapters.codex_live` | `agentsassemble/adapters/codex_live.py` | 103 | providers | current | `agentsassemble.adapters.codex`, `agentsassemble.codex_resident`, `agentsassemble.models` | 2 | - | test-import:2 | `tests/test_codex_live_adapter.py`, `tests/test_provider_registry.py` | `providers/` | pending-consolidation |
 | `agentsassemble.adapters.http_llm` | `agentsassemble/adapters/http_llm.py` | 335 | providers | current | `agentsassemble.adapters.base`, `agentsassemble.models`, `agentsassemble.speech_policy` | 3 | - | test-import:2, monkeypatch:1 | `tests/test_http_llm_adapters.py`, `tests/test_provider_health.py`, `tests/test_provider_registry.py` | `providers/` | pending-consolidation |
 | `agentsassemble.adapters.local_cli` | `agentsassemble/adapters/local_cli.py` | 257 | providers | current | `agentsassemble.adapters.base`, `agentsassemble.adapters.http_llm`, `agentsassemble.models`, `agentsassemble.speech_policy` | 1 | - | test-import:3 | `tests/test_local_cli_adapter.py`, `tests/test_partial_failure.py`, `tests/test_provider_registry.py` | `providers/` | pending-consolidation |
@@ -89,10 +89,10 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.cli_parser_sessions` | `agentsassemble/cli_parser_sessions.py` | 40 | application | current | `agentsassemble.cli_parser_common`, `agentsassemble.codex_sessions` | 1 | - | - | - | `application/` | planned-move |
 | `agentsassemble.codex_app_server_live_runtime` | `agentsassemble/codex_app_server_live_runtime.py` | 138 | providers | current | `agentsassemble.agent_sessions`, `agentsassemble.meeting_events` | 1 | - | test-import:1 | `tests/test_provider_runtime_controls.py` | `providers/` | planned-move |
 | `agentsassemble.codex_app_server_runtime` | `agentsassemble/codex_app_server_runtime.py` | 1042 | providers | current | `agentsassemble.meeting_events`, `agentsassemble.providers.process_environment`, `agentsassemble.room_turn_context` | 2 | - | test-import:1 | `tests/test_agent_session_cli.py` | `providers/` | planned-move |
-| `agentsassemble.codex_resident` | `agentsassemble/codex_resident.py` | 347 | providers | current | `agentsassemble.codex_session_ids`, `agentsassemble.codex_stream`, `agentsassemble.live_agent_runner`, `agentsassemble.providers.auth`, `agentsassemble.sandbox_launcher` | 6 | `call:provider_login_required_message@23` | test-import:2 | `tests/test_codex_resident.py`, `tests/test_live_agent_runner.py` | `providers/` | planned-move |
-| `agentsassemble.codex_session_ids` | `agentsassemble/codex_session_ids.py` | 71 | providers | current | - | 2 | `call:compile@9`, `call:compile@10` | test-import:1 | `tests/test_codex_live_adapter.py` | `providers/` | planned-move |
+| `agentsassemble.codex_resident` | `agentsassemble/codex_resident.py` | 347 | providers | current | `agentsassemble.live_agent_runner`, `agentsassemble.providers.auth`, `agentsassemble.providers.codex_session_ids`, `agentsassemble.providers.codex_stream`, `agentsassemble.sandbox_launcher` | 6 | `call:provider_login_required_message@23` | test-import:2 | `tests/test_codex_resident.py`, `tests/test_live_agent_runner.py` | `providers/` | planned-move |
+| `agentsassemble.codex_session_ids` | `agentsassemble/codex_session_ids.py` | 16 | providers | compatibility | `agentsassemble.providers.codex_session_ids` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.codex_sessions` | `agentsassemble/codex_sessions.py` | 249 | providers | current | `agentsassemble.live_agent_timing` | 5 | - | test-import:1 | `tests/test_codex_sessions.py` | `providers/` | planned-move |
-| `agentsassemble.codex_stream` | `agentsassemble/codex_stream.py` | 62 | providers | current | - | 1 | - | test-import:1 | `tests/test_codex_stream.py` | `providers/` | planned-move |
+| `agentsassemble.codex_stream` | `agentsassemble/codex_stream.py` | 9 | providers | compatibility | `agentsassemble.providers.codex_stream` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.config` | `agentsassemble/config.py` | 206 | application | current | `agentsassemble.character_mode`, `agentsassemble.models`, `agentsassemble.templates` | 8 | - | test-import:3 | `tests/test_config.py`, `tests/test_live_agent_discovery.py`, `tests/test_live_agent_sessions.py` | `application/` | planned-move |
 | `agentsassemble.cursor_resident` | `agentsassemble/cursor_resident.py` | 346 | application | current | `agentsassemble.live_agent_runner`, `agentsassemble.providers.auth` | 4 | `call:compile@17`, `call:provider_login_required_message@24` | test-import:2 | `tests/test_cursor_live_session_lifecycle.py`, `tests/test_cursor_resident.py` | `application/` | planned-move |
 | `agentsassemble.decision_gate` | `agentsassemble/decision_gate.py` | 153 | application | current | `agentsassemble.stance_match` | 1 | - | test-import:1 | `tests/test_decision_gate.py` | `application/` | planned-move |
@@ -344,6 +344,8 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.bridge_protocol` | `agentsassemble/providers/bridge_protocol.py` | 133 | providers | current | `agentsassemble.room.text` | 3 | - | test-import:4 | `tests/test_bridge_protocol.py`, `tests/test_bridge_report_tracker.py`, `tests/test_provider_package.py`, `+1` | `providers/` | in-target-package |
 | `agentsassemble.providers.bridge_report_tracker` | `agentsassemble/providers/bridge_report_tracker.py` | 100 | providers | current | `agentsassemble.providers.bridge_protocol` | 2 | - | test-import:2 | `tests/test_bridge_report_tracker.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.catalog` | `agentsassemble/providers/catalog.py` | 194 | providers | current | - | 4 | - | test-import:2 | `tests/test_provider_catalog.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.codex_session_ids` | `agentsassemble/providers/codex_session_ids.py` | 73 | providers | current | - | 3 | `call:compile@11`, `call:compile@12` | test-import:2 | `tests/test_codex_live_adapter.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.codex_stream` | `agentsassemble/providers/codex_stream.py` | 63 | providers | current | - | 2 | - | test-import:2 | `tests/test_codex_stream.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.deepseek` | `agentsassemble/providers/deepseek.py` | 201 | providers | current | `agentsassemble.room.text` | 2 | - | test-import:2 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.grok_acp` | `agentsassemble/providers/grok_acp.py` | 749 | providers | current | `agentsassemble.providers.process_environment`, `agentsassemble.providers.runtime_contracts`, `agentsassemble.room.text` | 2 | - | test-import:3 | `tests/test_grok_acp_runtime.py`, `tests/test_provider_package.py`, `tests/test_room_agent_bridge.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.live_cli` | `agentsassemble/providers/live_cli.py` | 893 | providers | current | `agentsassemble.providers.live_cli_output`, `agentsassemble.providers.live_cli_transcripts`, `agentsassemble.providers.process_environment`, `agentsassemble.room.text` | 3 | `control-flow@9`, `control-flow@34`, `control-flow@39`, `control-flow@44` | test-import:6 | `tests/test_live_cli.py`, `tests/test_live_cli_smoke.py`, `tests/test_live_cli_transcripts.py`, `+3` | `providers/` | in-target-package |

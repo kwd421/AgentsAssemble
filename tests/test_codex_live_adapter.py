@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.adapters.codex_live import CodexLiveSessionAdapter
-from agentsassemble.codex_session_ids import extract_codex_session_id
 from agentsassemble.models import ResearchSteering, Role, get_research_depth
+from agentsassemble.providers.codex_session_ids import extract_codex_session_id
 
 
 class CodexLiveSessionAdapterTests(unittest.TestCase):
