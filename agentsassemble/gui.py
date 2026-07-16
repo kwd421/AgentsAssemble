@@ -3159,8 +3159,7 @@ def _make_handler(
         operation_name: str,
         target_id: str = "",
     ) -> dict[str, object] | None:
-        payload = ctx.read_json_body()
-        if payload is None:
+        def record_invalid_json() -> None:
             record_live_agent_operation(
                 output_root,
                 operation=operation_name,
@@ -3169,7 +3168,10 @@ def _make_handler(
                 error="Invalid JSON",
                 details={},
             )
-        return payload
+
+        return ctx.read_json_body(
+            before_invalid_json_response=record_invalid_json,
+        )
 
     def _legacy_session_run_should_reconcile(
         run: dict[str, object],

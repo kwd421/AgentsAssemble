@@ -479,3 +479,9 @@ module churn were deliberately avoided rather than forgotten.
   unchanged. GUI composition now imports the owned path directly;
   `identity_repository_factory.py` is an explicit compatibility export for one
   removal window.
+- 2026-07-16: The first full Milestone 3 regression run exposed an existing
+  ordering race in legacy live-agent operation auditing: malformed JSON could
+  receive HTTP 400 before its failed operation record was durable. The shared
+  request-body reader now offers an opt-in pre-error hook, and the operation
+  route records the failure before sending the response. Other JSON routes keep
+  their prior behavior.

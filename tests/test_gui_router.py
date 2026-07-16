@@ -122,6 +122,23 @@ class RequestContextBodyTests(unittest.TestCase):
             self.assertIsNone(_context(handler).read_json_body())
             self.assertEqual(handler.sent_error[0], HTTPStatus.BAD_REQUEST)
 
+    def test_read_json_body_runs_invalid_json_hook_before_response(self):
+        events = []
+
+        class OrderedHandler(FakeHandler):
+            def _send_error(self, status, message):
+                events.append("response")
+                super()._send_error(status, message)
+
+        handler = OrderedHandler(body=b"\xff")
+        self.assertIsNone(
+            _context(handler).read_json_body(
+                before_invalid_json_response=lambda: events.append("hook"),
+            )
+        )
+
+        self.assertEqual(events, ["hook", "response"])
+
     def test_read_json_body_empty_is_empty_dict(self):
         self.assertEqual(_context(FakeHandler()).read_json_body(), {})
 

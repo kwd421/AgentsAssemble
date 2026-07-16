@@ -201,18 +201,28 @@ class RequestContext:
             return
         self.handler._send_error(status, message, details=details)
 
-    def read_json_body(self, *, coerce_non_object: bool = False) -> dict[str, object] | None:
+    def read_json_body(
+        self,
+        *,
+        coerce_non_object: bool = False,
+        before_invalid_json_response: Callable[[], None] | None = None,
+    ) -> dict[str, object] | None:
         """Parse the JSON request body; sends 400 and returns None when bad."""
+        def reject_invalid_json() -> None:
+            if before_invalid_json_response is not None:
+                before_invalid_json_response()
+            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+
         length = int(self.headers.get("Content-Length", "0") or "0")
         try:
             payload = json.loads(self.handler.rfile.read(length).decode("utf-8")) if length else {}
         except (UnicodeDecodeError, json.JSONDecodeError):
-            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+            reject_invalid_json()
             return None
         if not isinstance(payload, dict) and coerce_non_object:
             return {}
         if not isinstance(payload, dict):
-            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+            reject_invalid_json()
             return None
         return payload
 
