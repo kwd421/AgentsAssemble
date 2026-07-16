@@ -749,3 +749,10 @@ module churn were deliberately avoided rather than forgotten.
   module remains an explicit compatibility export. Missing, incomplete,
   complete, query/fragment asset, and path-traversal reference behavior are
   covered directly; static serving behavior is unchanged.
+- 2026-07-17: Claude interactive TUI rendering, answer extraction, prompt-leak
+  trimming, and print-mode rejection moved to
+  `providers/claude_resident.py`. CLI, preflight, and shared live-output
+  callers now use the owned path while `claude_resident.py` remains an
+  explicit compatibility export. Real-capture extraction, CJK screen spacing,
+  last-answer selection, envelope stripping, and the ban on `claude -p` and
+  `--print` are unchanged.

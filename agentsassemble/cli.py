@@ -43,7 +43,7 @@ from agentsassemble.codex_sessions import (
     read_agent_config,
     write_agent_config,
 )
-from agentsassemble.claude_resident import claude_code_print_mode_resident_error
+from agentsassemble.providers.claude_resident import claude_code_print_mode_resident_error
 from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
 # Keep these imports public for callers that historically imported validators
 # and choice lists from ``agentsassemble.cli``.
@@ -5114,7 +5114,7 @@ def _command_runner_for_config(config: ResidentAgentConfig, *, output_root: str 
         # Claude Code's interactive TUI: scrape the PTY, gate completion on the ⏺
         # answer marker, and extract just the reply (see claude_resident). A longer
         # idle floor tolerates mid-answer pauses while it streams.
-        from agentsassemble.claude_resident import (
+        from agentsassemble.providers.claude_resident import (
             claude_answer_ready,
             extract_claude_terminal_message,
         )

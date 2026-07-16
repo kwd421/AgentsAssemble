@@ -23,7 +23,10 @@ from agentsassemble.codex_resident import (
     codex_provider_connection_check,
     default_codex_resident_command,
 )
-from agentsassemble.claude_resident import claude_code_print_mode_resident_check, claude_code_print_mode_resident_error
+from agentsassemble.providers.claude_resident import (
+    claude_code_print_mode_resident_check,
+    claude_code_print_mode_resident_error,
+)
 from agentsassemble.cursor_resident import (
     cursor_auth_check,
     cursor_command_check,

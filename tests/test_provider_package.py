@@ -4,6 +4,7 @@ import unittest
 
 import agentsassemble.bridge_protocol as compatibility_bridge_protocol
 import agentsassemble.bridge_report_tracker as compatibility_bridge_tracker
+import agentsassemble.claude_resident as compatibility_claude_resident
 import agentsassemble.claude_transcript as compatibility_claude_transcript
 import agentsassemble.codex_session_ids as compatibility_codex_session_ids
 import agentsassemble.codex_stream as compatibility_codex_stream
@@ -26,6 +27,7 @@ import agentsassemble.windows_conpty as compatibility_windows_conpty
 from agentsassemble.providers import catalog as owned_catalog
 from agentsassemble.providers import bridge_protocol as owned_bridge_protocol
 from agentsassemble.providers import bridge_report_tracker as owned_bridge_tracker
+from agentsassemble.providers import claude_resident as owned_claude_resident
 from agentsassemble.providers import claude_transcript as owned_claude_transcript
 from agentsassemble.providers import codex_session_ids as owned_codex_session_ids
 from agentsassemble.providers import codex_stream as owned_codex_stream
@@ -47,6 +49,25 @@ from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_claude_resident_root_module_exports_owned_contract(self) -> None:
+        for name in (
+            "CLAUDE_ANSWER_MARKER",
+            "CLAUDE_CODE_PRINT_FLAGS",
+            "CLAUDE_CODE_PRINT_MODE_MESSAGE",
+            "_strip_envelope_leak",
+            "_strip_terminal_ansi",
+            "claude_answer_ready",
+            "claude_code_print_mode_resident_check",
+            "claude_code_print_mode_resident_error",
+            "extract_claude_terminal_message",
+            "render_terminal_screen",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_claude_resident, name),
+                    getattr(owned_claude_resident, name),
+                )
+
     def test_claude_transcript_root_module_exports_owned_contract(self) -> None:
         for name in (
             "ClaudeTranscriptTailer",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from agentsassemble.claude_resident import render_terminal_screen
+from agentsassemble.providers.claude_resident import render_terminal_screen
 
 
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b[@-_][0-?]*[ -/]*[@-~]?")

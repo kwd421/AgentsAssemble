@@ -8,7 +8,7 @@ The extractor must pull out exactly "루피." (anti-regression against real chro
 import base64
 import unittest
 
-from agentsassemble.claude_resident import (
+from agentsassemble.providers.claude_resident import (
     _strip_envelope_leak,
     claude_answer_ready,
     extract_claude_terminal_message,
