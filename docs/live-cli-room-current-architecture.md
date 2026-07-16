@@ -140,6 +140,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `room/provider_registry.py` | synchronized room-scoped provider specification lookup | durable session state or provider process lifecycle |
 | `room/provider_sessions.py` | provider participant/session creation, external bridge registration, stored-profile restoration, and stopped-profile updates | provider process launch or turn routing |
 | `room/snapshots.py` | browser/bridge snapshot projection, reconnect gap handling, and bounded history pages | room mutation or provider execution |
+| `room/connections.py` | browser participant connection updates and active Agent Bridge detach transitions | bridge lease activation or provider process lifecycle |
 | `providers/bridge_process.py` | server-owned Agent Bridge process lifecycle | room routing |
 | `providers/agent_bridge.py` | authenticated bridge client and turn/report protocol | browser UI or WebSocket construction |
 | `application/agent_bridge_entrypoint.py` | bridge environment/config parsing and WebSocket/runtime composition | provider turn behavior |

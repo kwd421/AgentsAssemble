@@ -1006,3 +1006,11 @@ module churn were deliberately avoided rather than forgotten.
   orchestration. Event limits, bridge self-only projection, provider catalog
   visibility, active-turn shape, reconnect cursors, raw history-page payloads,
   and capability output are unchanged.
+- 2026-07-17: Browser participant connection/update behavior and active Agent
+  Bridge disconnect-to-detached transitions moved to `room/connections.py`.
+  External bridge session creation remains delegated to
+  `room/provider_sessions.py`, while bridge lease activation remains owned by
+  the broker/ready command path. `room_realtime.py` keeps the same
+  `connect()`/`disconnect()` entrypoints. Connection-id mutation, superseded
+  bridge handling, session-detached events, and session-state publication are
+  unchanged.

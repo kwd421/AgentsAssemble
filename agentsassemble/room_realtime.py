@@ -48,6 +48,7 @@ from agentsassemble.room.command_uow import (
     RoomCommandUnitOfWork,
     command_payload_hash,
 )
+from agentsassemble.room.connections import RoomConnectionService
 from agentsassemble.room.agent_lifecycle import (
     AgentBridgeManager,
     RecoveryScheduler,
@@ -192,6 +193,13 @@ class RoomRealtimeController:
             ensure_room=self.ensure_room,
             publish_session_state=self._publish_session_state,
         )
+        self._connections = RoomConnectionService(
+            store=self.store,
+            broker=self.broker,
+            ensure_room=self.ensure_room,
+            ensure_external_bridge_session=self._provider_sessions.ensure_external_bridge_session,
+            publish_session_state=self._publish_session_state,
+        )
         self._snapshots = RoomSnapshotService(
             store=self.store,
             provider_catalog=self.provider_catalog,
@@ -323,68 +331,10 @@ class RoomRealtimeController:
             return room
 
     def connect(self, identity: dict[str, object]) -> RoomSocketChannel:
-        room_id = clean_lobby_text(identity.get("meeting_id"), limit=128)
-        self.ensure_room(room_id)
-        if identity.get("client_type") == "agent_bridge":
-            self._provider_sessions.ensure_external_bridge_session(room_id, identity)
-        else:
-            participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
-            if participant_id:
-                existing = self.store.participant(room_id, participant_id)
-                if not existing:
-                    self.store.upsert_participant(
-                        room_id,
-                        {
-                            "participant_id": participant_id,
-                            "display_name": clean_lobby_text(identity.get("display_name"), limit=64) or participant_id,
-                            "participant_type": "human",
-                            "role": "host" if identity.get("operator") else "member",
-                            "status": "joined",
-                        },
-                    )
-                elif existing.get("status") not in {"left", "kicked"}:
-                    self.store.update_participant_fields(
-                        room_id,
-                        participant_id,
-                        display_name=clean_lobby_text(identity.get("display_name"), limit=64) or participant_id,
-                    )
-        return self.broker.connect(identity)
+        return self._connections.connect(identity)
 
     def disconnect(self, channel: RoomSocketChannel) -> None:
-        identity = channel.identity
-        was_active = self.broker.disconnect(channel)
-        if identity.get("client_type") != "agent_bridge":
-            return
-        if not was_active:
-            return
-        room_id = clean_lobby_text(identity.get("meeting_id"), limit=128)
-        session_id = clean_lobby_text(identity.get("session_id") or identity.get("agent_id"), limit=128)
-        session = self.store.session(room_id, session_id)
-        if (
-            not session
-            or session.get("runtime_status") in {"stopping", "stopped"}
-            or not session.get("enabled")
-        ):
-            return
-        self.store.update_session_fields(
-            room_id,
-            session_id,
-            status="unavailable",
-            runtime_status="disconnected",
-            pid=None,
-            last_error="Agent bridge disconnected.",
-        )
-        participant_id = clean_lobby_text(session.get("participant_id"), limit=128)
-        if participant_id and self.store.participant(room_id, participant_id):
-            self.store.update_participant_fields(room_id, participant_id, status="detached")
-        self.store.append_event(
-            room_id,
-            "session_detached",
-            participant_id=participant_id,
-            session_id=session_id,
-            reason="agent bridge disconnected",
-        )
-        self._publish_session_state(room_id, self.store.session(room_id, session_id))
+        self._connections.disconnect(channel)
 
     def snapshot(self, identity: dict[str, object], *, after_seq: int = 0) -> dict[str, object]:
         return self._snapshots.snapshot(identity, after_seq=after_seq)

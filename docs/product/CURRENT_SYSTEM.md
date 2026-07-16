@@ -267,6 +267,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Room-scoped configured provider registry | `room/provider_registry.py`; composed by `room_realtime.py` |
 | Provider participant and Agent Session persistence | `room/provider_sessions.py`; composed by `room_realtime.py` |
 | Capability-projected room snapshot and bounded history read model | `room/snapshots.py`; composed by `room_realtime.py` |
+| Browser and Agent Bridge connection membership transitions | `room/connections.py`; composed by `room_realtime.py` |
 | Room history and lifecycle HTTP | `web/routes/room_history.py`, `web/routes/room_lifecycle.py`; legacy `/api/room/ensure` composition remains in `gui_room_lifecycle_http.py` |
 | Room roster and member HTTP | canonical mute/kick compatibility writes in `room/moderation.py`; retained roster/presence projection in `room_members.py`; HTTP in `web/routes/room_members.py`; retained resident kick and optional channel/voice composition remains in `gui_room_moderation_media_http.py` |
 | Routing and provider context | `room_routing.py`; bounded room projection in `room/context.py`; turn packet assembly in `room/turn_context.py`; compatibility exports in `room_context.py` and `room_turn_context.py`; provider delivery cursor parity in `providers/sync_cursor.py` with compatibility export in `room_provider_sync_cursor.py` |
