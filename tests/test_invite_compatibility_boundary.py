@@ -15,8 +15,8 @@ CURRENT_INVITE_APPLICATION_MODULES = (
     "agentsassemble/gui_router.py",
     "agentsassemble/public_tunnel.py",
     "agentsassemble/room_admission.py",
-    "agentsassemble/room_admission_coordinator.py",
-    "agentsassemble/room_admission_saga.py",
+    "agentsassemble/admission/coordinator.py",
+    "agentsassemble/admission/saga.py",
     "agentsassemble/admission/invite_service.py",
     "agentsassemble/room_realtime.py",
 )
@@ -27,8 +27,8 @@ CURRENT_IDENTITY_APPLICATION_MODULES = (
     "agentsassemble/gui_router.py",
     "agentsassemble/operator_pairing.py",
     "agentsassemble/room_admission.py",
-    "agentsassemble/room_admission_coordinator.py",
-    "agentsassemble/room_admission_saga.py",
+    "agentsassemble/admission/coordinator.py",
+    "agentsassemble/admission/saga.py",
     "agentsassemble/room_realtime.py",
 )
 

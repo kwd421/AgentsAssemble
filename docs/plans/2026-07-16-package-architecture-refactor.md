@@ -423,3 +423,10 @@ module churn were deliberately avoided rather than forgotten.
   normalization instead of legacy meeting helpers. Production callers import
   the owned path; `room_invite_application.py` remains an explicit compatibility
   export with the same constants, types, and functions.
+- 2026-07-16: The resume-safe admission mutation coordinator and its durable
+  compensation saga moved together to `admission/coordinator.py` and
+  `admission/saga.py`. This preserves idempotency keys, deterministic session
+  recovery, invite-consumption ordering, membership writes, and retryable
+  compensation as one local state-machine boundary. Current callers import the
+  owned paths, while the two root modules remain explicit compatibility
+  exports. Both modules now use current `room.text` normalization.

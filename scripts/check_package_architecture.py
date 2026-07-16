@@ -46,6 +46,24 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_admission_package.py",),
         introduced_in="Milestone 3.1 admission package bootstrap",
     ),
+    "room_admission_coordinator.py": CompatibilityShim(
+        replacement_import="agentsassemble.admission.coordinator",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_admission_coordinator for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_admission_coordinator_package.py",),
+        introduced_in="Milestone 3.5 admission coordinator move",
+    ),
+    "room_admission_saga.py": CompatibilityShim(
+        replacement_import="agentsassemble.admission.saga",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_admission_saga for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_admission_coordinator_package.py",),
+        introduced_in="Milestone 3.5 admission coordinator move",
+    ),
     "room_database.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.local.room.database",
         removal_gate=(

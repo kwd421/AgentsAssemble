@@ -38,7 +38,7 @@ from agentsassemble.identity_store import IdentityStore, device_auth_key
 from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionProjection
 from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.room_admission import RoomAdmissionService
-from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
+from agentsassemble.admission.coordinator import RoomAdmissionCoordinator
 from agentsassemble.room_invite import verify_session_token
 from agentsassemble.room_invite import compatibility_public_invite_runtime
 from agentsassemble.admission.invite_service import InviteApplicationService

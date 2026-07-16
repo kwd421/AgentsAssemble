@@ -15,7 +15,7 @@ from agentsassemble.persistence.local.admission.repository import (
     JsonInviteSessionRepository,
     MemoryInviteSessionRepository,
 )
-from agentsassemble.room_admission_coordinator import (
+from agentsassemble.admission.coordinator import (
     AdmissionIdempotencyConflict,
     RoomAdmissionCoordinator,
 )

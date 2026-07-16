@@ -300,7 +300,7 @@ from agentsassemble.frontend_runtime import (
 )
 from agentsassemble.room_friend_dms import enqueue_room_friend_direct_dm
 from agentsassemble.admission.preflight import RoomAdmissionService
-from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
+from agentsassemble.admission.coordinator import RoomAdmissionCoordinator
 from agentsassemble.identity_repository_factory import build_identity_repository
 from agentsassemble.identity_store import (
     IdentityBackend,
