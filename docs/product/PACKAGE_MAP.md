@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `0c37e3dc19380219`
+Source fingerprint: `dd12d2aafb43dcb8`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 415
+- Python modules: 417
 - Top-level package modules: 303
-- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=51, room=43, web=58
-- Classifications: compatibility=53, current=273, legacy=78, optional=11
+- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=53, room=43, web=58
+- Classifications: compatibility=55, current=273, legacy=78, optional=11
 
 ## Classification Rules
 
@@ -64,8 +64,8 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.artifact_public` | `agentsassemble/artifact_public.py` | 119 | application | current | `agentsassemble.meeting_context` | 1 | - | test-import:1 | `tests/test_decision_context.py` | `application/` | planned-move |
 | `agentsassemble.artifacts` | `agentsassemble/artifacts.py` | 250 | application | current | `agentsassemble.artifact_packets`, `agentsassemble.artifact_public`, `agentsassemble.delegate_packets`, `agentsassemble.models`, `agentsassemble.persona_artifact_contract`, `agentsassemble.task_scope_report` | 4 | - | test-import:1 | `tests/test_task_scope_report.py` | `application/` | planned-move |
 | `agentsassemble.attachments` | `agentsassemble/attachments.py` | 187 | application | current | - | 7 | `call:compile@16` | test-import:2 | `tests/test_attachments.py`, `tests/test_gui_application_services.py` | `application/` | planned-move |
-| `agentsassemble.bridge_protocol` | `agentsassemble/bridge_protocol.py` | 133 | application | current | `agentsassemble.meeting_events` | 2 | - | test-import:3 | `tests/test_bridge_protocol.py`, `tests/test_bridge_report_tracker.py`, `tests/test_room_agent_bridge.py` | `application/` | planned-move |
-| `agentsassemble.bridge_report_tracker` | `agentsassemble/bridge_report_tracker.py` | 100 | application | current | `agentsassemble.bridge_protocol` | 1 | - | test-import:1 | `tests/test_bridge_report_tracker.py` | `application/` | planned-move |
+| `agentsassemble.bridge_protocol` | `agentsassemble/bridge_protocol.py` | 18 | application | compatibility | `agentsassemble.providers.bridge_protocol` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `application/` | compatibility-shim |
+| `agentsassemble.bridge_report_tracker` | `agentsassemble/bridge_report_tracker.py` | 6 | application | compatibility | `agentsassemble.providers.bridge_report_tracker` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `application/` | compatibility-shim |
 | `agentsassemble.bridge_stop_confirmation` | `agentsassemble/bridge_stop_confirmation.py` | 147 | application | current | `agentsassemble.meeting_events` | 1 | - | test-import:1 | `tests/test_bridge_stop_confirmation.py` | `application/` | planned-move |
 | `agentsassemble.bridges` | `agentsassemble/bridges/__init__.py` | 1 | providers | current | - | 0 | - | - | - | `providers/` | pending-consolidation |
 | `agentsassemble.bridges.claude_code_bridge` | `agentsassemble/bridges/claude_code_bridge.py` | 128 | providers | current | - | 1 | - | test-import:1, monkeypatch:1 | `tests/test_claude_code_bridge.py` | `providers/` | pending-consolidation |
@@ -256,7 +256,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.mcp_server` | `agentsassemble/mcp_server.py` | 831 | application | current | `agentsassemble.live_agent_runner`, `agentsassemble.live_agent_timing`, `agentsassemble.meeting_events`, `agentsassemble.room_engagement` | 1 | - | test-import:1 | `tests/test_mcp_server.py` | `application/` | planned-move |
 | `agentsassemble.meeting` | `agentsassemble/meeting.py` | 430 | legacy | legacy | `agentsassemble.artifacts`, `agentsassemble.character_mode`, `agentsassemble.config`, `agentsassemble.decision_gate`, `agentsassemble.decision_status`, `agentsassemble.meeting_events`, `agentsassemble.meeting_phases`, `agentsassemble.meeting_record`, +4 | 3 | - | test-import:5, monkeypatch:1 | `tests/gui_server_test_support.py`, `tests/test_delegate_packets.py`, `tests/test_demo_meeting.py`, `+2` | `legacy/` | planned-move |
 | `agentsassemble.meeting_context` | `agentsassemble/meeting_context.py` | 161 | legacy | legacy | - | 3 | - | test-import:1 | `tests/test_decision_context.py` | `legacy/` | planned-move |
-| `agentsassemble.meeting_events` | `agentsassemble/meeting_events.py` | 696 | legacy | legacy | `agentsassemble.room.text` | 112 | - | test-import:20, monkeypatch:1 | `tests/gui_server_test_support.py`, `tests/test_debate_turn_control.py`, `tests/test_grok_live_session_lifecycle.py`, `+17` | `legacy/` | planned-move |
+| `agentsassemble.meeting_events` | `agentsassemble/meeting_events.py` | 696 | legacy | legacy | `agentsassemble.room.text` | 111 | - | test-import:20, monkeypatch:1 | `tests/gui_server_test_support.py`, `tests/test_debate_turn_control.py`, `tests/test_grok_live_session_lifecycle.py`, `+17` | `legacy/` | planned-move |
 | `agentsassemble.meeting_lifecycle` | `agentsassemble/meeting_lifecycle.py` | 309 | legacy | legacy | `agentsassemble.legacy.meeting_admission`, `agentsassemble.live_agent_finalization`, `agentsassemble.meeting_events` | 1 | `call:frozenset@15` | test-import:1 | `tests/test_meeting_lifecycle.py` | `legacy/` | planned-move |
 | `agentsassemble.meeting_phases` | `agentsassemble/meeting_phases.py` | 545 | legacy | legacy | `agentsassemble.artifacts`, `agentsassemble.evidence`, `agentsassemble.meeting_context`, `agentsassemble.models`, `agentsassemble.templates` | 1 | - | test-import:4 | `tests/test_debate_turn_control.py`, `tests/test_live_research_summary.py`, `tests/test_partial_failure.py`, `+1` | `legacy/` | planned-move |
 | `agentsassemble.meeting_record` | `agentsassemble/meeting_record.py` | 275 | legacy | legacy | `agentsassemble.meeting_context`, `agentsassemble.models` | 2 | - | - | - | `legacy/` | planned-move |
@@ -340,6 +340,8 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.provider_secrets` | `agentsassemble/provider_secrets.py` | 106 | providers | current | - | 3 | `call:ProviderSecretStore@106` | test-import:1 | `tests/test_provider_runtime_controls.py` | `providers/` | planned-move |
 | `agentsassemble.provider_sessions` | `agentsassemble/provider_sessions.py` | 172 | providers | current | - | 0 | `call:compile@20` | test-import:1 | `tests/test_provider_sessions.py` | `providers/` | planned-move |
 | `agentsassemble.providers` | `agentsassemble/providers/__init__.py` | 1 | providers | current | - | 3 | - | test-import:2 | `tests/test_provider_catalog.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.bridge_protocol` | `agentsassemble/providers/bridge_protocol.py` | 133 | providers | current | `agentsassemble.room.text` | 3 | - | test-import:4 | `tests/test_bridge_protocol.py`, `tests/test_bridge_report_tracker.py`, `tests/test_provider_package.py`, `+1` | `providers/` | in-target-package |
+| `agentsassemble.providers.bridge_report_tracker` | `agentsassemble/providers/bridge_report_tracker.py` | 100 | providers | current | `agentsassemble.providers.bridge_protocol` | 2 | - | test-import:2 | `tests/test_bridge_report_tracker.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.catalog` | `agentsassemble/providers/catalog.py` | 194 | providers | current | - | 4 | - | test-import:2 | `tests/test_provider_catalog.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.runtime_config` | `agentsassemble/providers/runtime_config.py` | 279 | providers | current | `agentsassemble.room.text` | 6 | - | test-import:4 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py`, `tests/test_room_agent_bridge.py`, `+1` | `providers/` | in-target-package |
 | `agentsassemble.providers.runtime_contracts` | `agentsassemble/providers/runtime_contracts.py` | 130 | providers | current | - | 5 | `call:frozenset@8` | test-import:2 | `tests/test_provider_package.py`, `tests/test_room_agent_bridge.py` | `providers/` | in-target-package |
@@ -350,14 +352,14 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.remote_bridge_config` | `agentsassemble/remote_bridge_config.py` | 55 | application | current | - | 4 | - | - | - | `application/` | planned-move |
 | `agentsassemble.remote_room_client_packet` | `agentsassemble/remote_room_client_packet.py` | 69 | application | current | `agentsassemble.meeting_events` | 1 | - | - | - | `application/` | planned-move |
 | `agentsassemble.room` | `agentsassemble/room/__init__.py` | 1 | room | current | - | 0 | - | monkeypatch:1 | `tests/test_package_architecture_gate.py` | `room/` | in-target-package |
-| `agentsassemble.room.text` | `agentsassemble/room/text.py` | 10 | room | current | - | 29 | - | test-import:1 | `tests/test_room_text.py` | `room/` | in-target-package |
+| `agentsassemble.room.text` | `agentsassemble/room/text.py` | 10 | room | current | - | 30 | - | test-import:1 | `tests/test_room_text.py` | `room/` | in-target-package |
 | `agentsassemble.room.visibility` | `agentsassemble/room/visibility.py` | 9 | room | current | - | 3 | - | - | - | `room/` | in-target-package |
 | `agentsassemble.room_admission` | `agentsassemble/room_admission.py` | 10 | admission | compatibility | `agentsassemble.admission.preflight` | 0 | - | test-import:4 | `tests/test_admission_package.py`, `tests/test_gui_application_services.py`, `tests/test_gui_server_room_routes.py`, `+1` | `admission/` | compatibility-shim |
 | `agentsassemble.room_admission_coordinator` | `agentsassemble/room_admission_coordinator.py` | 7 | admission | compatibility | `agentsassemble.admission.coordinator` | 0 | - | test-import:1 | `tests/test_admission_coordinator_package.py` | `admission/` | compatibility-shim |
 | `agentsassemble.room_admission_saga` | `agentsassemble/room_admission_saga.py` | 7 | admission | compatibility | `agentsassemble.admission.saga` | 0 | - | test-import:1 | `tests/test_admission_coordinator_package.py` | `admission/` | compatibility-shim |
 | `agentsassemble.room_admission_workflow_maintenance` | `agentsassemble/room_admission_workflow_maintenance.py` | 14 | admission | compatibility | `agentsassemble.admission.maintenance` | 0 | - | test-import:1 | `tests/test_admission_maintenance_package.py` | `admission/` | compatibility-shim |
 | `agentsassemble.room_admission_workflow_maintenance_command` | `agentsassemble/room_admission_workflow_maintenance_command.py` | 4 | admission | compatibility | `agentsassemble.admission.maintenance_command` | 0 | - | test-import:1 | `tests/test_admission_maintenance_package.py` | `admission/` | compatibility-shim |
-| `agentsassemble.room_agent_bridge` | `agentsassemble/room_agent_bridge.py` | 659 | providers | current | `agentsassemble.bridge_protocol`, `agentsassemble.bridge_report_tracker`, `agentsassemble.cleanup_report`, `agentsassemble.meeting_events`, `agentsassemble.providers.runtime_config`, `agentsassemble.providers.runtime_contracts`, `agentsassemble.providers.runtime_factory`, `agentsassemble.ws_room_client` | 1 | - | test-import:1 | `tests/test_room_agent_bridge.py` | `providers/` | planned-move |
+| `agentsassemble.room_agent_bridge` | `agentsassemble/room_agent_bridge.py` | 659 | providers | current | `agentsassemble.cleanup_report`, `agentsassemble.meeting_events`, `agentsassemble.providers.bridge_protocol`, `agentsassemble.providers.bridge_report_tracker`, `agentsassemble.providers.runtime_config`, `agentsassemble.providers.runtime_contracts`, `agentsassemble.providers.runtime_factory`, `agentsassemble.ws_room_client` | 1 | - | test-import:1 | `tests/test_room_agent_bridge.py` | `providers/` | planned-move |
 | `agentsassemble.room_agent_lifecycle` | `agentsassemble/room_agent_lifecycle.py` | 846 | room | current | `agentsassemble.bridge_stop_confirmation`, `agentsassemble.cleanup_report`, `agentsassemble.meeting_events`, `agentsassemble.native_cli_providers`, `agentsassemble.room_errors`, `agentsassemble.room_event_broker`, `agentsassemble.room_projection`, `agentsassemble.room_repository` | 1 | - | test-import:1 | `tests/test_room_agent_lifecycle.py` | `room/` | planned-move |
 | `agentsassemble.room_api_provider` | `agentsassemble/room_api_provider.py` | 258 | providers | current | `agentsassemble.providers`, `agentsassemble.providers.catalog` | 1 | - | test-import:1 | `tests/test_room_api_provider.py` | `providers/` | planned-move |
 | `agentsassemble.room_attendee` | `agentsassemble/room_attendee.py` | 300 | room | current | `agentsassemble.cleanup_report`, `agentsassemble.codex_app_server_live_runtime`, `agentsassemble.native_cli_providers`, `agentsassemble.opencode_runtime`, `agentsassemble.provider_secrets`, `agentsassemble.providers.runtime_config`, `agentsassemble.providers.runtime_factory`, `agentsassemble.room_agent_bridge`, +1 | 1 | - | test-import:2, monkeypatch:2 | `tests/test_provider_runtime_controls.py`, `tests/test_room_native_cli_e2e.py` | `room/` | planned-move |

@@ -37,6 +37,24 @@ class CompatibilityShim:
 # boundaries. Historical presence in the root baseline does not exempt a moved
 # module from recording its replacement, callers, and removal gate here.
 ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
+    "bridge_protocol.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.bridge_protocol",
+        removal_gate=(
+            "No direct imports use agentsassemble.bridge_protocol for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.5 provider bridge protocol move",
+    ),
+    "bridge_report_tracker.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.bridge_report_tracker",
+        removal_gate=(
+            "No direct imports use agentsassemble.bridge_report_tracker for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.5 provider bridge protocol move",
+    ),
     "application_transaction.py": CompatibilityShim(
         replacement_import="agentsassemble.application.transaction",
         removal_gate=(

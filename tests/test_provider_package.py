@@ -2,17 +2,41 @@ from __future__ import annotations
 
 import unittest
 
+import agentsassemble.bridge_protocol as compatibility_bridge_protocol
+import agentsassemble.bridge_report_tracker as compatibility_bridge_tracker
 import agentsassemble.provider_catalog as compatibility_catalog
 import agentsassemble.provider_runtime_config as compatibility_config
 import agentsassemble.provider_runtime_contracts as compatibility_contracts
 import agentsassemble.provider_runtime_factory as compatibility_factory
 from agentsassemble.providers import catalog as owned_catalog
+from agentsassemble.providers import bridge_protocol as owned_bridge_protocol
+from agentsassemble.providers import bridge_report_tracker as owned_bridge_tracker
 from agentsassemble.providers import runtime_config as owned_config
 from agentsassemble.providers import runtime_contracts as owned_contracts
 from agentsassemble.providers import runtime_factory as owned_factory
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_bridge_protocol_root_module_exports_owned_types(self) -> None:
+        for name in (
+            "BridgeProtocolError",
+            "BridgeReportRejected",
+            "BridgeReportResponse",
+            "BridgeReportTimeout",
+            "TurnAssignmentEnvelope",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_bridge_protocol, name),
+                    getattr(owned_bridge_protocol, name),
+                )
+
+    def test_bridge_report_tracker_root_module_exports_owned_type(self) -> None:
+        self.assertIs(
+            compatibility_bridge_tracker.BridgeReportTracker,
+            owned_bridge_tracker.BridgeReportTracker,
+        )
+
     def test_catalog_root_module_exports_owned_data_and_functions(self) -> None:
         self.assertIs(
             compatibility_catalog.PROVIDER_CATALOG,

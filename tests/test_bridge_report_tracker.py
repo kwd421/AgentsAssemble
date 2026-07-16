@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from agentsassemble.bridge_protocol import BridgeReportRejected, BridgeReportTimeout
-from agentsassemble.bridge_report_tracker import BridgeReportTracker
+from agentsassemble.providers.bridge_protocol import BridgeReportRejected, BridgeReportTimeout
+from agentsassemble.providers.bridge_report_tracker import BridgeReportTracker
 
 
 class BridgeReportTrackerTests(unittest.TestCase):

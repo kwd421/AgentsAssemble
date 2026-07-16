@@ -641,3 +641,11 @@ module churn were deliberately avoided rather than forgotten.
   the end of `windows` and its underscore. The generator now recognizes
   ConPTY as a provider transport before WebSocket naming rules, with a
   regression assertion; no runtime behavior changed.
+- 2026-07-16: Agent Bridge turn-assignment and ACK/NACK contracts moved to
+  `providers/bridge_protocol.py`, with correlated report deadline ownership in
+  `providers/bridge_report_tracker.py`. The protocol now imports the current
+  `room.text` normalizer directly; this is behavior-equivalent to the former
+  legacy helper delegation. `room_agent_bridge.py` and protocol behavior tests
+  use the owned paths, while both root modules remain explicit compatibility
+  exports. Identity checks, fatal/error codes, request correlation, timeout
+  behavior, and tracker synchronization are unchanged.

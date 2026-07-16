@@ -11,13 +11,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from agentsassemble.bridge_protocol import (
+from agentsassemble.providers.bridge_protocol import (
     BridgeProtocolError,
     BridgeReportRejected,
     BridgeReportTimeout,
     TurnAssignmentEnvelope,
 )
-from agentsassemble.bridge_report_tracker import BridgeReportTracker
+from agentsassemble.providers.bridge_report_tracker import BridgeReportTracker
 from agentsassemble.cleanup_report import CleanupReport, emit_cleanup_failure
 from agentsassemble.meeting_events import clean_lobby_text, has_room_visible_text
 from agentsassemble.providers.runtime_contracts import (

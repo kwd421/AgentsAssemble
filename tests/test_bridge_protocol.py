@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.bridge_protocol import (
+from agentsassemble.providers.bridge_protocol import (
     BridgeProtocolError,
     BridgeReportResponse,
     TurnAssignmentEnvelope,
