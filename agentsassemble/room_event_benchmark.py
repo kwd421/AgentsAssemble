@@ -7,8 +7,9 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -44,6 +45,7 @@ SCHEDULER_P99_LATENCY_CEILING_MS = 75.0
 SCHEDULER_LATENCY_EVENT_COUNT = 10_000
 SCHEDULER_LATENCY_CALLS = 60
 SSE_SAMPLE_TIMEOUT_SECONDS = 5.0
+RoomEventHttpHandlerFactory = Callable[[Path], type[BaseHTTPRequestHandler]]
 
 
 @dataclass(frozen=True)
@@ -57,12 +59,20 @@ class RoomEventBenchmarkOptions:
     cleanup: bool = True
 
 
-def run_room_event_benchmark(options: RoomEventBenchmarkOptions) -> dict[str, object]:
+def run_room_event_benchmark(
+    options: RoomEventBenchmarkOptions,
+    *,
+    http_handler_factory: RoomEventHttpHandlerFactory | None = None,
+) -> dict[str, object]:
     events = max(1, int(options.events))
     read_window = max(1, int(options.read_window))
     warmup_events = max(0, int(options.warmup_events))
     agent_count = max(1, int(options.agent_count))
     sse_samples = max(0, int(options.sse_samples))
+    if sse_samples and http_handler_factory is None:
+        raise ValueError(
+            "http_handler_factory is required when sse_samples is enabled"
+        )
     run_root, temporary_root = _benchmark_run_root(options.output_root)
     run_root.mkdir(parents=True, exist_ok=False)
     lobby_path = run_root / "lobby.jsonl"
@@ -109,6 +119,7 @@ def run_room_event_benchmark(options: RoomEventBenchmarkOptions) -> dict[str, ob
             lobby_path,
             samples=sse_samples,
             last_event_id=all_lobby_ids[-1] if all_lobby_ids else "",
+            http_handler_factory=http_handler_factory,
         )
         metrics: dict[str, object] = {
             "lobby_append_ms": _latency_stats(measured_lobby_appends),
@@ -312,14 +323,21 @@ def _measure_lobby_sse_append_to_frame_ms(
     *,
     samples: int,
     last_event_id: str,
+    http_handler_factory: RoomEventHttpHandlerFactory | None,
     per_sample_timeout_seconds: float = SSE_SAMPLE_TIMEOUT_SECONDS,
 ) -> list[float]:
     clean_samples = max(0, int(samples))
     if clean_samples <= 0:
         return []
-    from agentsassemble.gui import _make_handler
+    if http_handler_factory is None:
+        raise ValueError(
+            "http_handler_factory is required when sse_samples is enabled"
+        )
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(run_root))
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        http_handler_factory(run_root),
+    )
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     durations: list[float] = []

@@ -7,6 +7,7 @@ from io import StringIO
 from pathlib import Path
 
 from agentsassemble.cli import build_parser, main
+from agentsassemble.gui import _make_handler
 from agentsassemble.room_event_benchmark import (
     RoomEventBenchmarkOptions,
     SCHEDULER_ANCHOR_IMPROVEMENT_FLOOR,
@@ -80,7 +81,8 @@ class RoomEventBenchmarkTests(unittest.TestCase):
                     agent_count=2,
                     sse_samples=2,
                     cleanup=True,
-                )
+                ),
+                http_handler_factory=_make_handler,
             )
 
         metric = result["metrics"]["lobby_sse_append_to_frame_ms"]
@@ -91,6 +93,18 @@ class RoomEventBenchmarkTests(unittest.TestCase):
         self.assertTrue(metric["enabled"])
         self.assert_metric_is_finite(metric)
         self.assertLess(metric["max_ms"], 700.0)
+
+    def test_sse_benchmark_requires_an_explicit_http_handler_factory(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "http_handler_factory is required when sse_samples is enabled",
+        ):
+            run_room_event_benchmark(
+                RoomEventBenchmarkOptions(
+                    events=1,
+                    sse_samples=1,
+                )
+            )
 
     def test_default_benchmark_omits_lobby_sse_delivery_metric(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -208,6 +222,36 @@ class RoomEventBenchmarkTests(unittest.TestCase):
         self.assertTrue(payload["cleanup_removed"])
         self.assertIn("metrics", payload)
         self.assertIn("environment", payload)
+
+    def test_cli_room_benchmark_wires_the_gui_handler_for_sse_samples(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "room-benchmark",
+                        "--output-root",
+                        temp_dir,
+                        "--events",
+                        "2",
+                        "--read-window",
+                        "2",
+                        "--warmup-events",
+                        "1",
+                        "--agent-count",
+                        "2",
+                        "--sse-samples",
+                        "1",
+                        "--json",
+                    ]
+                )
+            payload = json.loads(stdout.getvalue())
+
+        self.assertEqual(exit_code, 0)
+        metric = payload["metrics"]["lobby_sse_append_to_frame_ms"]
+        self.assertEqual(metric["count"], 1)
+        self.assertEqual(metric["samples_requested"], 1)
 
     def assert_metric_is_finite(self, metric):
         self.assertGreater(metric["count"], 0)

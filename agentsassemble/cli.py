@@ -1491,6 +1491,12 @@ def _run_live_agent_room_benchmark(args: argparse.Namespace) -> int:
     from agentsassemble.room_event_benchmark import RoomEventBenchmarkOptions, run_room_event_benchmark
 
     output_root = Path(args.output_root) if args.output_root else None
+    sse_samples = int(args.sse_samples)
+    http_handler_factory = None
+    if sse_samples:
+        from agentsassemble.gui import _make_handler
+
+        http_handler_factory = _make_handler
     result = run_room_event_benchmark(
         RoomEventBenchmarkOptions(
             output_root=output_root,
@@ -1498,9 +1504,10 @@ def _run_live_agent_room_benchmark(args: argparse.Namespace) -> int:
             read_window=int(args.read_window),
             warmup_events=int(args.warmup_events),
             agent_count=int(args.agent_count),
-            sse_samples=int(args.sse_samples),
+            sse_samples=sse_samples,
             cleanup=not bool(args.keep_output),
-        )
+        ),
+        http_handler_factory=http_handler_factory,
     )
     if args.as_json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

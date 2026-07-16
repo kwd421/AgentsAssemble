@@ -581,3 +581,10 @@ module churn were deliberately avoided rather than forgotten.
   generated package-map classifier also recognizes existing `application/`
   and `features/` ownership so already-moved modules are not reported as
   planned moves.
+- 2026-07-16: Before relocating read-only observability routes, the historical
+  `gui -> observability -> release_health -> room_event_benchmark -> gui`
+  import cycle was removed. The room-event benchmark now accepts an explicit
+  HTTP handler factory for optional SSE measurement; the CLI composition root
+  supplies the existing GUI handler only when SSE samples are requested.
+  Enabling SSE samples without a factory fails immediately instead of silently
+  skipping or substituting another transport.

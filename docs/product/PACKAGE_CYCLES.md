@@ -4,10 +4,10 @@ Status: generated architecture report
 
 Generator: `python3 scripts/check_package_architecture.py --write-cycle-report`
 
-Source fingerprint: `68fd9e9f026c0dee`
+Source fingerprint: `d90bf3a4111dc800`
 
-- Current import cycles: 2
-- Grandfathered exact cycles: 2
+- Current import cycles: 1
+- Grandfathered exact cycles: 1
 - New cycles: 0
 
 An exact historical cycle may disappear without updating the baseline. Any
@@ -16,5 +16,4 @@ moves into a target package is therefore not silently grandfathered.
 
 ## Current Cycles
 
-- **grandfathered**: `agentsassemble.gui` -> `agentsassemble.gui_observability_http` -> `agentsassemble.release_health` -> `agentsassemble.room_event_benchmark`
 - **grandfathered**: `agentsassemble.antigravity_resident` -> `agentsassemble.codex_resident` -> `agentsassemble.cursor_resident` -> `agentsassemble.grok_resident` -> `agentsassemble.hermes_resident` -> `agentsassemble.kiro_resident` -> `agentsassemble.live_agent_runner`
