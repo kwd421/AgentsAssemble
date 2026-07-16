@@ -68,6 +68,7 @@ from agentsassemble.room.moderation import (
     remove_room_member,
     set_room_member_muted,
 )
+from agentsassemble.room.messages import RoomMessageService
 from agentsassemble.room.projection import (
     public_event as _public_event,
     public_participant,
@@ -88,10 +89,7 @@ from agentsassemble.room.snapshots import (
 )
 from agentsassemble.room.startup_reconciliation import RoomStartupSessionReconciler
 from agentsassemble.persistence.local.room.repository import RoomStore
-from agentsassemble.room.turn_coordinator import (
-    RoomTurnCoordinator,
-    room_message_text as _room_message_text,
-)
+from agentsassemble.room.turn_coordinator import RoomTurnCoordinator
 from agentsassemble.room.turn_context import build_room_turn_packet
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room.types import RoomCommand, RoomEvent
@@ -274,6 +272,7 @@ class RoomRealtimeController:
             publish_session_state=self._publish_session_state,
             start_agent=self._agent_lifecycle.start,
         )
+        self._messages = RoomMessageService()
         self.last_cleanup_report = CleanupReport("room_realtime_controller")
         self.ensure_room(self.default_room_id)
         self._provider_sessions.restore_server_owned_providers()
@@ -857,35 +856,12 @@ class RoomRealtimeController:
         unit: RoomCommandUnitOfWork,
         compatibility_muted: bool,
     ) -> dict[str, object]:
-        content = _room_message_text(payload.get("content") or payload.get("message"), limit=12000)
-        kind = clean_lobby_text(payload.get("kind"), limit=64) or "message"
-        if kind not in {"vote", "vote_cast"} and not content:
-            raise RoomCommandRejected("Message content is required.", code="empty")
-        participant_id = clean_lobby_text(identity.get("agent_id"), limit=128)
-        participant = unit.participant(participant_id)
-        if participant.get("status") in {"kicked", "left"}:
-            raise RoomCommandRejected("This participant is no longer in the room.", code="session_revoked")
-        canonical_muted = bool(participant.get("muted")) if "muted" in participant else compatibility_muted
-        if canonical_muted:
-            raise RoomCommandRejected("You are muted by the room host.", code="muted")
-        event = unit.append_event(
-            "message_final",
-            participant_id=participant_id,
-            participant_type="human",
-            actor_id=participant_id,
-            actor_type="human",
-            display_name=clean_lobby_text(identity.get("display_name"), limit=64) or participant_id,
-            content=content,
-            message_kind=kind,
-            attachments=payload.get("attachments") if isinstance(payload.get("attachments"), list) else [],
-            vote_id=payload.get("vote_id"),
-            vote_question=payload.get("vote_question"),
-            vote_options=payload.get("vote_options"),
-            vote_choice=payload.get("vote_choice"),
-            target_agent_id=payload.get("target_agent_id"),
-            relay_depth=0,
+        return self._messages.send_in_unit(
+            identity,
+            payload,
+            unit=unit,
+            compatibility_muted=compatibility_muted,
         )
-        return {"event": event, "event_seq": event["seq"]}
 
     def _create_agent(
         self,

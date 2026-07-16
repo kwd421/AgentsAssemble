@@ -147,6 +147,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `room/agent_runtime_profiles.py` | stopped-session provider catalog validation and native runtime-profile replacement | live process start/stop |
 | `room/agent_creation.py` | provider-catalog selection, native spec construction, canonical Agent Session creation, and optional start | provider process implementation |
 | `room/agent_reactivation.py` | strict durable-profile validation and room reactivation of stopped server-owned Agent Sessions | external-agent reconnect or provider process implementation |
+| `room/messages.py` | canonical human message validation and transactional `message_final` append | routing or speaker selection |
 | `providers/bridge_process.py` | server-owned Agent Bridge process lifecycle | room routing |
 | `providers/agent_bridge.py` | authenticated bridge client and turn/report protocol | browser UI or WebSocket construction |
 | `application/agent_bridge_entrypoint.py` | bridge environment/config parsing and WebSocket/runtime composition | provider turn behavior |

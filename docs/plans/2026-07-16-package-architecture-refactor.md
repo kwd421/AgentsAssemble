@@ -1061,3 +1061,10 @@ module churn were deliberately avoided rather than forgotten.
   persistence and the lifecycle service still owns the process. Error codes,
   profile migration repair, participant state, result shape, and start behavior
   are unchanged.
+- 2026-07-17: Canonical human message validation and transactional event append
+  moved to `room/messages.py`. The service owns content/kind validation,
+  participant lifecycle and mute checks, identity projection, and attachment/
+  vote field mapping inside the existing command unit of work. Capability,
+  idempotency, compatibility mute lookup, event publication, routing, and
+  speaker policy remain in their existing owners. Message limits, error codes,
+  vote exceptions, event shape, and rollback behavior are unchanged.
