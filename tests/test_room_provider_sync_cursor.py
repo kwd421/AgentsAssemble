@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
-from agentsassemble.room_provider_sync_cursor import (
+from agentsassemble.providers.sync_cursor import (
     ProviderSyncCursorParityError,
     ProviderSyncCursorReconciler,
     canonical_provider_sync_seq,

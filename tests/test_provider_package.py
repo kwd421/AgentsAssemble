@@ -35,6 +35,7 @@ import agentsassemble.provider_secrets as compatibility_secrets
 import agentsassemble.provider_sessions as compatibility_sessions
 import agentsassemble.room_agent_bridge as compatibility_agent_bridge
 import agentsassemble.room_bridge_process as compatibility_bridge_process
+import agentsassemble.room_provider_sync_cursor as compatibility_sync_cursor
 import agentsassemble.room_api_provider as compatibility_api
 import agentsassemble.windows_conpty as compatibility_windows_conpty
 from agentsassemble.providers import api as owned_api
@@ -71,11 +72,27 @@ from agentsassemble.providers import runtime_contracts as owned_contracts
 from agentsassemble.providers import runtime_factory as owned_factory
 from agentsassemble.providers import secrets as owned_secrets
 from agentsassemble.providers import sessions as owned_sessions
+from agentsassemble.providers import sync_cursor as owned_sync_cursor
 from agentsassemble.providers import turn_input as owned_turn_input
 from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_room_provider_sync_cursor_exports_owned_provider_cursor(self) -> None:
+        for name in (
+            "ProviderSyncCursorParityError",
+            "ProviderSyncCursorReconciler",
+            "ProviderSyncCursorReconciliationReport",
+            "assert_provider_sync_cursor_parity",
+            "canonical_provider_sync_seq",
+            "compatibility_provider_sync_seq",
+            "provider_sync_session_fields",
+        ):
+            self.assertIs(
+                getattr(compatibility_sync_cursor, name),
+                getattr(owned_sync_cursor, name),
+            )
+
     def test_room_bridge_process_root_module_exports_owned_manager(self) -> None:
         for name in (
             "BridgeExitListener",

@@ -30,7 +30,7 @@ from agentsassemble.room.projection import (
     public_session,
     runtime_diagnostic_fields,
 )
-from agentsassemble.room_provider_sync_cursor import (
+from agentsassemble.providers.sync_cursor import (
     ProviderSyncCursorParityError,
     assert_provider_sync_cursor_parity,
     canonical_provider_sync_seq,

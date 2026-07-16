@@ -264,6 +264,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.30 provider capability move",
     ),
+    "room_provider_sync_cursor.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.sync_cursor",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_provider_sync_cursor "
+            "for one compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 6.9 provider sync cursor move",
+    ),
     "room_agent_bridge.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.agent_bridge",
         removal_gate=(

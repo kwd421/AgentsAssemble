@@ -191,6 +191,28 @@ class PackageMapTests(unittest.TestCase):
         self.assertIn("| compatibility |", compatibility_line)
         self.assertTrue(compatibility_line.endswith("| compatibility-shim |"))
 
+    def test_provider_sync_cursor_uses_the_owned_provider_package(self) -> None:
+        graph = load_package_graph(ROOT)
+        package_map = build_package_map(ROOT)
+
+        self.assertEqual(
+            graph.domains["agentsassemble.providers.sync_cursor"],
+            "providers",
+        )
+        owned_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith("| `agentsassemble.providers.sync_cursor` |")
+        )
+        compatibility_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith("| `agentsassemble.room_provider_sync_cursor` |")
+        )
+        self.assertTrue(owned_line.endswith("| in-target-package |"))
+        self.assertIn("| compatibility |", compatibility_line)
+        self.assertTrue(compatibility_line.endswith("| compatibility-shim |"))
+
     def test_room_persistence_move_is_not_misclassified_as_policy(self) -> None:
         package_map = build_package_map(ROOT)
         attention_line = next(

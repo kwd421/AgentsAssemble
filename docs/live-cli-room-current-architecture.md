@@ -132,6 +132,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `diagnostics/cleanup.py` | bounded cleanup reports and secret-redacted cleanup failure output | room or provider lifecycle policy |
 | `providers/launch_specs.py` | provider catalog, safe commands, profile identity, and Claude interactive guard | PTY parsing |
 | `providers/capabilities.py` | cached native model, effort, tier, variant, and permission discovery | room or secret state |
+| `providers/sync_cursor.py` | canonical provider delivery cursor parity, reconciliation, and compatibility fields | speaker selection or provider execution |
 | `provider_secrets.py` | OS keyring credential access and redacted status | provider prompts or room events |
 | `room_realtime.py` | command, durable state, turn, and recovery orchestration | provider terminal implementation |
 | `providers/bridge_process.py` | server-owned Agent Bridge process lifecycle | room routing |

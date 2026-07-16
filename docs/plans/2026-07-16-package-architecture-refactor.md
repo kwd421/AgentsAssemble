@@ -947,3 +947,12 @@ module churn were deliberately avoided rather than forgotten.
   counters, redaction patterns, and output format are unchanged. The
   architecture inventory and dependency gate now recognize `diagnostics/` as
   a current package that cannot import legacy or web implementations.
+- 2026-07-17: Canonical provider-delivery cursor validation, compatibility
+  cursor fields, divergence reconciliation, bounded reconciliation diagnostics,
+  and fail-closed parity errors moved to `providers/sync_cursor.py`.
+  Agent Session packet preparation, room context, turn coordination, realtime
+  startup reconciliation, and focused tests now use the owned path while
+  `room_provider_sync_cursor.py` remains an explicit compatibility export.
+  Direct `room.text` normalization replaces the legacy helper delegation;
+  cursor authority, monotonic repair rules, recovery-required behavior,
+  transaction boundaries, event codes, and diagnostics are unchanged.
