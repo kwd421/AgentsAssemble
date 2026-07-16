@@ -316,10 +316,8 @@ from agentsassemble.room_repository_factory import (
     build_postgres_application_database,
     build_room_repository,
 )
-from agentsassemble.room_invite_repository import (
-    InviteSessionRepository,
-    JsonInviteSessionRepository,
-)
+from agentsassemble.admission.repository import InviteSessionRepository
+from agentsassemble.room_invite_repository import JsonInviteSessionRepository
 from agentsassemble.room_invite_repository_factory import build_invite_session_repository
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room_speech import (

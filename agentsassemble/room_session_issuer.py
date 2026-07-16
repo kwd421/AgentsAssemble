@@ -6,7 +6,7 @@ import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-from agentsassemble.room_invite_repository import SessionRepository
+from agentsassemble.admission.repository import SessionRepository
 
 
 def session_token_fingerprint(token: str) -> str:

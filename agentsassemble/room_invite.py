@@ -21,6 +21,10 @@ import secrets
 from datetime import UTC, datetime
 from pathlib import Path
 
+from agentsassemble.admission.repository import (
+    InviteSessionRepository,
+    UnconfiguredInviteSessionRepository,
+)
 from agentsassemble.identity_store import LOCAL_OPERATOR_PARTICIPANT_ID, LOCAL_OPERATOR_USER_ID
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_users import normalize_participant_type, resolve_device_user
@@ -50,11 +54,8 @@ from agentsassemble.public_invite_runtime import (
     normalize_public_room_url,
 )
 from agentsassemble.room_invite_repository import (
-    ROOM_INVITE_STORE_SCHEMA,
-    InviteSessionRepository,
     JsonInviteSessionRepository,
     MemoryInviteSessionRepository,
-    UnconfiguredInviteSessionRepository,
 )
 from agentsassemble.room_session_issuer import RoomSessionIssuer, session_token_fingerprint
 

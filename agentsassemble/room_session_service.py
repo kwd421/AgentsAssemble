@@ -8,7 +8,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.room_invite_repository import SessionRepository
+from agentsassemble.admission.repository import SessionRepository
 from agentsassemble.room_session_issuer import RoomSessionIssuer
 
 

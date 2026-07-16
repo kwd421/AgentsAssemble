@@ -5,10 +5,8 @@ import importlib
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.room_invite_repository import (
-    InviteSessionRepository,
-    JsonInviteSessionRepository,
-)
+from agentsassemble.admission.repository import InviteSessionRepository
+from agentsassemble.room_invite_repository import JsonInviteSessionRepository
 from agentsassemble.room_repository_factory import (
     RoomRepositoryConfigurationError,
     RoomRepositorySettings,

@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from agentsassemble.admission.workflow_record import validate_admission_workflow_record
 from agentsassemble.persistence.postgres.application_database import (
     PostgresConnectionProvider,
 )
@@ -20,7 +21,6 @@ from agentsassemble.room_admission_workflow_maintenance import (
     PurgeReport,
     build_purge_report,
 )
-from agentsassemble.room_invite_repository import validate_admission_workflow_record
 from agentsassemble.room.text import clean_room_text
 
 _AUTHORITY_ID = "default"

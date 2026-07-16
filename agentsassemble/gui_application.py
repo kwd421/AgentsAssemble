@@ -6,12 +6,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from agentsassemble.admission.preflight import RoomAdmissionService
+from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.application_transaction import ApplicationTransactionBoundary
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.identity_store import IdentityBackend
 from agentsassemble.legacy.admission_projection import LegacyAdmissionProjection
 from agentsassemble.operator_pairing import OperatorPairingService
-from agentsassemble.admission.preflight import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
 from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
@@ -21,7 +22,6 @@ from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_realtime import RoomRealtimeController
 from agentsassemble.room_repository import RoomRepository
-from agentsassemble.room_invite_repository import InviteSessionRepository
 from agentsassemble.room_session_service import RoomSessionService
 from agentsassemble.ws_room_session import WsTicketStore
 

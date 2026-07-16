@@ -1,4 +1,4 @@
-"""Persistence contracts for room invites and short-lived room sessions."""
+"""Local invite/session adapters and compatibility contract exports."""
 from __future__ import annotations
 
 import json
@@ -8,36 +8,28 @@ from contextlib import contextmanager
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator, Protocol, runtime_checkable
+from typing import Iterator
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.admission.repository import (
+    InviteRepository,
+    InviteRepositoryCorrupt,
+    InviteRepositoryError,
+    InviteRepositoryNotConfigured,
+    InviteRepositoryUnavailable,
+    InviteRepositoryWriteFailed,
+    InviteSessionRepository,
+    SessionRepository,
+    UnconfiguredInviteSessionRepository,
+)
+from agentsassemble.admission.workflow_record import validate_admission_workflow_record
 from agentsassemble.room_admission_workflow_maintenance import (
     AdmissionWorkflowSelection,
     PurgeReport,
     build_purge_report,
 )
+from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
 ROOM_INVITE_STORE_SCHEMA = "agentsassemble.room_invite_state.v1"
-
-
-class InviteRepositoryError(RuntimeError):
-    """Base error for unavailable or invalid invite/session persistence."""
-
-
-class InviteRepositoryUnavailable(InviteRepositoryError):
-    """The configured repository cannot be read."""
-
-
-class InviteRepositoryCorrupt(InviteRepositoryError):
-    """The configured repository contains invalid or unsupported state."""
-
-
-class InviteRepositoryWriteFailed(InviteRepositoryError):
-    """A repository mutation could not be durably persisted."""
-
-
-class InviteRepositoryNotConfigured(InviteRepositoryError):
-    """Invite/session persistence has not been selected for this process."""
 
 
 _RepositoryState = tuple[
@@ -47,233 +39,6 @@ _RepositoryState = tuple[
     dict[str, dict[str, object]],
     dict[str, dict[str, object]],
 ]
-
-
-@runtime_checkable
-class InviteRepository(Protocol):
-    def signing_secret(self) -> str: ...
-
-    def existing_signing_secret(self) -> str: ...
-
-    def save_invite(self, record: dict[str, object]) -> None: ...
-
-    def invite(self, invite_id: str) -> dict[str, object] | None: ...
-
-    def invite_for_join_code(self, join_code_fingerprint: str) -> dict[str, object] | None: ...
-
-    def nonce_was_used(self, nonce_fingerprint: str) -> bool: ...
-
-    def consume(
-        self,
-        *,
-        invite_id: str,
-        nonce_fingerprint: str,
-        reusable: bool,
-        max_uses: int,
-    ) -> str: ...
-
-    def revoke_invite(self, invite_id: str) -> bool: ...
-
-    def revoke_room_invites(self, room_id: str) -> int: ...
-
-    def list_invites(self) -> list[dict[str, object]]: ...
-
-
-@runtime_checkable
-class SessionRepository(Protocol):
-    def save_session(self, token_fingerprint: str, record: dict[str, object]) -> None: ...
-
-    def replace_participant_session(
-        self,
-        token_fingerprint: str,
-        record: dict[str, object],
-    ) -> None: ...
-
-    def session(self, token_fingerprint: str) -> dict[str, object] | None: ...
-
-    def revoke_session(self, token_fingerprint: str) -> bool: ...
-
-    def revoke_participant_sessions(self, room_id: str, participant_id: str) -> int: ...
-
-    def revoke_room_sessions(self, room_id: str) -> int: ...
-
-    def list_sessions(self) -> list[tuple[str, dict[str, object]]]: ...
-
-
-@runtime_checkable
-class InviteSessionRepository(InviteRepository, SessionRepository, Protocol):
-    def create_admission_workflow(
-        self,
-        workflow_id: str,
-        record: dict[str, object],
-    ) -> dict[str, object]: ...
-
-    def admission_workflow(self, workflow_id: str) -> dict[str, object] | None: ...
-
-    def update_admission_workflow(
-        self,
-        workflow_id: str,
-        updates: dict[str, object],
-    ) -> dict[str, object]: ...
-
-    def consume_for_admission(
-        self,
-        workflow_id: str,
-        *,
-        invite_id: str,
-        nonce_fingerprint: str,
-        reusable: bool,
-        max_uses: int,
-        updates: dict[str, object],
-    ) -> tuple[str, dict[str, object]]: ...
-
-    def purge_admission_workflows(
-        self,
-        selection: AdmissionWorkflowSelection,
-        *,
-        apply: bool,
-    ) -> PurgeReport: ...
-
-    def reload(self) -> None: ...
-
-    def clear(self) -> None: ...
-
-    def close(self) -> None: ...
-
-
-class UnconfiguredInviteSessionRepository:
-    """Fail-closed placeholder used until application composition selects storage."""
-
-    _MESSAGE = "Invite/session repository is not configured."
-
-    def _raise(self) -> None:
-        raise InviteRepositoryNotConfigured(self._MESSAGE)
-
-    def signing_secret(self) -> str:
-        self._raise()
-
-    def existing_signing_secret(self) -> str:
-        self._raise()
-
-    def save_invite(self, record: dict[str, object]) -> None:
-        del record
-        self._raise()
-
-    def invite(self, invite_id: str) -> dict[str, object] | None:
-        del invite_id
-        self._raise()
-
-    def invite_for_join_code(self, join_code_fingerprint: str) -> dict[str, object] | None:
-        del join_code_fingerprint
-        self._raise()
-
-    def nonce_was_used(self, nonce_fingerprint: str) -> bool:
-        del nonce_fingerprint
-        self._raise()
-
-    def consume(
-        self,
-        *,
-        invite_id: str,
-        nonce_fingerprint: str,
-        reusable: bool,
-        max_uses: int,
-    ) -> str:
-        del invite_id, nonce_fingerprint, reusable, max_uses
-        self._raise()
-
-    def revoke_invite(self, invite_id: str) -> bool:
-        del invite_id
-        self._raise()
-
-    def revoke_room_invites(self, room_id: str) -> int:
-        del room_id
-        self._raise()
-
-    def list_invites(self) -> list[dict[str, object]]:
-        self._raise()
-
-    def save_session(self, token_fingerprint: str, record: dict[str, object]) -> None:
-        del token_fingerprint, record
-        self._raise()
-
-    def replace_participant_session(
-        self,
-        token_fingerprint: str,
-        record: dict[str, object],
-    ) -> None:
-        del token_fingerprint, record
-        self._raise()
-
-    def session(self, token_fingerprint: str) -> dict[str, object] | None:
-        del token_fingerprint
-        self._raise()
-
-    def revoke_session(self, token_fingerprint: str) -> bool:
-        del token_fingerprint
-        self._raise()
-
-    def revoke_participant_sessions(self, room_id: str, participant_id: str) -> int:
-        del room_id, participant_id
-        self._raise()
-
-    def revoke_room_sessions(self, room_id: str) -> int:
-        del room_id
-        self._raise()
-
-    def list_sessions(self) -> list[tuple[str, dict[str, object]]]:
-        self._raise()
-
-    def create_admission_workflow(
-        self,
-        workflow_id: str,
-        record: dict[str, object],
-    ) -> dict[str, object]:
-        del workflow_id, record
-        self._raise()
-
-    def admission_workflow(self, workflow_id: str) -> dict[str, object] | None:
-        del workflow_id
-        self._raise()
-
-    def update_admission_workflow(
-        self,
-        workflow_id: str,
-        updates: dict[str, object],
-    ) -> dict[str, object]:
-        del workflow_id, updates
-        self._raise()
-
-    def consume_for_admission(
-        self,
-        workflow_id: str,
-        *,
-        invite_id: str,
-        nonce_fingerprint: str,
-        reusable: bool,
-        max_uses: int,
-        updates: dict[str, object],
-    ) -> tuple[str, dict[str, object]]:
-        del workflow_id, invite_id, nonce_fingerprint, reusable, max_uses, updates
-        self._raise()
-
-    def purge_admission_workflows(
-        self,
-        selection: AdmissionWorkflowSelection,
-        *,
-        apply: bool,
-    ) -> PurgeReport:
-        del selection, apply
-        self._raise()
-
-    def reload(self) -> None:
-        self._raise()
-
-    def clear(self) -> None:
-        self._raise()
-
-    def close(self) -> None:
-        return
 
 
 class MemoryInviteSessionRepository:
@@ -852,75 +617,4 @@ def _clean_invite_record(value: object, *, invite_id: str) -> dict[str, object]:
     }
     if not record["invite_id"] or not record["meeting_id"] or not record["expires_at"]:
         return {}
-    return record
-
-
-def validate_admission_workflow_record(
-    value: object,
-    *,
-    workflow_id: str,
-) -> dict[str, object]:
-    """Return the bounded durable admission record or reject it.
-
-    Keeping this allowlist at the repository boundary prevents callers from
-    accidentally persisting raw invite, device, or room bearer credentials.
-    """
-
-    source = value if isinstance(value, dict) else {}
-    record: dict[str, object] = {
-        "workflow_id": clean_lobby_text(source.get("workflow_id") or workflow_id, limit=128),
-        "request_id": clean_lobby_text(source.get("request_id"), limit=128),
-        "token_fingerprint": clean_lobby_text(source.get("token_fingerprint"), limit=128),
-        "device_auth_key": clean_lobby_text(source.get("device_auth_key"), limit=128),
-        "payload_hash": clean_lobby_text(source.get("payload_hash"), limit=128),
-        "status": clean_lobby_text(source.get("status"), limit=64),
-        "resume_phase": clean_lobby_text(source.get("resume_phase"), limit=64),
-        "invite_id": clean_lobby_text(source.get("invite_id"), limit=128),
-        "room_id": clean_lobby_text(source.get("room_id"), limit=128),
-        "base_agent_id": clean_lobby_text(source.get("base_agent_id"), limit=64),
-        "invite_display_name": clean_lobby_text(source.get("invite_display_name"), limit=128),
-        "invite_scope": clean_lobby_text(source.get("invite_scope"), limit=32),
-        "participant_type": clean_lobby_text(source.get("participant_type"), limit=32),
-        "client_type": clean_lobby_text(source.get("client_type"), limit=32),
-        "provider_kind": clean_lobby_text(source.get("provider_kind"), limit=64),
-        "owner_id": clean_lobby_text(source.get("owner_id"), limit=128),
-        "reusable": bool(source.get("reusable")),
-        "max_uses": max(0, int(source.get("max_uses", 1) or 0)),
-        "nonce_fingerprint": clean_lobby_text(source.get("nonce_fingerprint"), limit=128),
-        "invite_consumed": bool(source.get("invite_consumed")),
-        "participant_id": clean_lobby_text(source.get("participant_id"), limit=128),
-        "display_name": clean_lobby_text(source.get("display_name"), limit=128),
-        "owner_display_name": clean_lobby_text(source.get("owner_display_name"), limit=64),
-        "connection_kind": clean_lobby_text(source.get("connection_kind"), limit=64),
-        "stable_identity": bool(source.get("stable_identity")),
-        "operator": bool(source.get("operator")),
-        "session_joined_at": clean_lobby_text(source.get("session_joined_at"), limit=64),
-        "session_expires_at": clean_lobby_text(source.get("session_expires_at"), limit=64),
-        "room_label": clean_lobby_text(source.get("room_label"), limit=128),
-        "room_topic": clean_lobby_text(source.get("room_topic"), limit=160),
-        "room_created_at": clean_lobby_text(source.get("room_created_at"), limit=64),
-        "failure_code": clean_lobby_text(source.get("failure_code"), limit=128),
-        "compensation_status": clean_lobby_text(
-            source.get("compensation_status"),
-            limit=64,
-        ),
-        "compensation_failure_code": clean_lobby_text(
-            source.get("compensation_failure_code"),
-            limit=128,
-        ),
-        "session_compensated": bool(source.get("session_compensated")),
-        "membership_compensated": bool(source.get("membership_compensated")),
-        "invite_consumption_retained": bool(source.get("invite_consumption_retained")),
-        "compensated_at": clean_lobby_text(source.get("compensated_at"), limit=64),
-        "created_at": clean_lobby_text(source.get("created_at"), limit=64),
-        "updated_at": clean_lobby_text(source.get("updated_at"), limit=64),
-    }
-    if (
-        not record["workflow_id"]
-        or not record["request_id"]
-        or not record["token_fingerprint"]
-        or not record["payload_hash"]
-        or not record["status"]
-    ):
-        raise ValueError("admission workflow is missing required fields")
     return record

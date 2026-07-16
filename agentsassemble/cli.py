@@ -5549,7 +5549,7 @@ def run_room_command(args: argparse.Namespace) -> int:
         from agentsassemble.room_admission_workflow_maintenance_command import (
             purge_admission_workflows,
         )
-        from agentsassemble.room_invite_repository import InviteRepositoryError
+        from agentsassemble.admission.repository import InviteRepositoryError
         from agentsassemble.room_repository_factory import (
             RoomRepositoryConfigurationError,
             RoomRepositoryUnavailable,

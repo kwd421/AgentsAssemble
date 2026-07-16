@@ -393,3 +393,12 @@ module churn were deliberately avoided rather than forgotten.
   `admission/preflight.py`, while `room_admission.py` remains an explicit
   compatibility export. Production callers now import the owned paths. This
   slice does not move invite/session contracts or mutation services yet.
+- 2026-07-16: Invite/session persistence contracts, repository errors, and the
+  fail-closed unconfigured repository moved to `admission/repository.py`.
+  Admission workflow persistence validation moved to
+  `admission/workflow_record.py`, preserving its strict field allowlist while
+  removing its dependency on legacy meeting text helpers. Current production
+  services import the owned contracts directly. The memory and JSON adapters
+  intentionally remain in `room_invite_repository.py` for this commit so the
+  contract move and concrete local persistence move can be verified and
+  reverted independently.
