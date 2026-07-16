@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import threading
-import shutil
 from pathlib import Path
 from typing import Callable, Protocol
 from uuid import uuid4
@@ -33,6 +32,7 @@ from agentsassemble.room.command_uow import (
     RoomCommandUnitOfWork,
     command_payload_hash,
 )
+from agentsassemble.room.deleted_cleanup import RoomDeletedCleanupService
 from agentsassemble.room.deletion import RoomDeletionService
 from agentsassemble.room.agent_creation import RoomAgentCreationService
 from agentsassemble.room.bridge_reports import RoomBridgeReportService
@@ -329,6 +329,35 @@ class RoomRealtimeController:
                 participant_id,
             ),
             remove_provider=self._provider_registry.remove,
+        )
+        self._deleted_room_cleanup = RoomDeletedCleanupService(
+            store=self.store,
+            broker=self.broker,
+            provider_registry=self._provider_registry,
+            output_root=self.output_root,
+            revoke_room_invites=lambda room_id: (
+                self._invite_application.revoke_room(room_id)
+            ),
+            revoke_room_sessions=lambda room_id: (
+                self._room_sessions.revoke_room(room_id)
+            ),
+            purge_terminal_admission_workflows=lambda room_id: (
+                self._invite_application
+                .remove_terminal_admission_workflows_for_room(
+                    room_id
+                )
+                .purged_count
+            ),
+            delete_identity_room=lambda room_id: (
+                identity_store_for_output_root(
+                    self.output_root
+                ).delete_room(room_id)
+            ),
+            remove_event_listener=self._remove_room_event_listener,
+            schedule_cleanup=lambda delay, callback: schedule_daemon_timer(
+                delay,
+                callback,
+            ),
         )
         self._room_deletion = RoomDeletionService(
             store=self.store,
@@ -1168,42 +1197,17 @@ class RoomRealtimeController:
         ack: dict[str, object],
         deduplicated: bool,
     ) -> dict[str, object]:
-        self.broker.broadcast_control(
+        return self._deleted_room_cleanup.complete(
             room_id,
-            {"op": "room_deleted", "room_id": room_id, "room_name": room_name},
+            room_name,
+            ack,
+            deduplicated,
         )
-        revoked = {
-            "revoked_invites": self._invite_application.revoke_room(room_id),
-            "revoked_sessions": self._room_sessions.revoke_room(room_id),
-            "purged_admission_workflows": (
-                self._invite_application.remove_terminal_admission_workflows_for_room(
-                    room_id
-                ).purged_count
-            ),
-        }
-        identity_store_for_output_root(self.output_root).delete_room(room_id)
+
+    def _remove_room_event_listener(self, room_id: str) -> None:
         remove_listener = self._event_listener_removers.pop(room_id, None)
         if remove_listener is not None:
             remove_listener()
-        self._provider_registry.remove_room(room_id)
-        for path in (self.output_root / "rooms" / room_id, self.output_root / "meetings" / room_id):
-            if path.exists() and path.is_dir():
-                shutil.rmtree(path)
-        disconnect = threading.Timer(0.1, lambda: self.broker.disconnect_room(room_id))
-        disconnect.daemon = True
-        disconnect.start()
-        result = dict(ack.get("result") or {})
-        completed_ack = {
-            **ack,
-            "result": {**result, **revoked},
-            "deduplicated": deduplicated,
-        }
-        self.store.update_deleted_room_record(
-            room_id,
-            result={**completed_ack, "deduplicated": False},
-            cleanup_status="complete",
-        )
-        return completed_ack
 
     def _is_room_owner(self, identity: dict[str, object], room_id: str) -> bool:
         store = identity_store_for_output_root(self.output_root)

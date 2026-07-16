@@ -1108,3 +1108,14 @@ module churn were deliberately avoided rather than forgotten.
   provider twice. Invite, identity, listener, provider-registry, file, and
   socket cleanup remains temporarily in `room_realtime.py` for the next
   separately verified extraction.
+- 2026-07-17: Post-tombstone deleted-room cleanup moved to
+  `room/deleted_cleanup.py`. The service broadcasts `room_deleted`, revokes
+  room invites and sessions, purges terminal admission workflows, deletes
+  identity state, removes the event listener and provider registry entry,
+  deletes room/meeting artifacts, schedules the existing delayed socket
+  disconnect, and marks the tombstone complete. `room_realtime.py` now retains
+  only the listener-map callback needed by that service. Result counters,
+  broadcast-before-disconnect ordering, the 0.1-second disconnect window,
+  retry behavior after absent artifacts, and pending-tombstone failure
+  visibility are unchanged. This completes the two-step room-deletion
+  extraction described in the preceding entry.
