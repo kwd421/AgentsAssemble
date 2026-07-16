@@ -86,10 +86,10 @@ from agentsassemble.room.snapshots import (
     ROOM_SNAPSHOT_EVENT_LIMIT,
     RoomSnapshotService,
 )
+from agentsassemble.room.startup_reconciliation import RoomStartupSessionReconciler
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.room.turn_coordinator import (
     RoomTurnCoordinator,
-    dedupe_event_ids as _dedupe_text_list,
     room_message_text as _room_message_text,
 )
 from agentsassemble.room.turn_context import build_room_turn_packet
@@ -227,6 +227,10 @@ class RoomRealtimeController:
             assign_pending=self._turn_coordinator.assign_pending,
             publish_session_state=self._publish_session_state,
         )
+        self._startup_sessions = RoomStartupSessionReconciler(
+            store=self.store,
+            reconcile_session_attention=self._turn_coordinator.reconcile_session_attention,
+        )
         self._agent_lifecycle = RoomAgentLifecycle(
             store=self.store,
             broker=self.broker,
@@ -272,45 +276,7 @@ class RoomRealtimeController:
         return self._provider_sessions.configure_stopped_provider_profile(room_id, spec)
 
     def _reconcile_startup_sessions(self) -> None:
-        active_states = {"starting", "idle", "busy", "paused", "recovering", "stopping"}
-        for room in self.store.list_rooms(include_archived=True):
-            room_id = clean_lobby_text(room.get("room_id"), limit=128)
-            if not room_id:
-                continue
-            for session in self.store.sessions(room_id):
-                if session.get("runtime_status") not in active_states:
-                    continue
-                pending = _dedupe_text_list(
-                    [
-                        *list(session.get("inflight_event_ids") or []),
-                        *list(session.get("pending_event_ids") or []),
-                    ]
-                )
-                attention_reset = self._turn_coordinator.reconcile_session_attention(
-                    room_id,
-                    session,
-                    pending_event_ids=pending,
-                )
-                session_id = clean_lobby_text(session.get("session_id"), limit=128)
-                updated = self.store.update_session_fields(
-                    room_id,
-                    session_id,
-                    status="unavailable",
-                    runtime_status="disconnected",
-                    pid=None,
-                    reported_provider_pid=None,
-                    bridge_pid=None,
-                    bridge_handle_id="",
-                    active_turn_id="",
-                    turn_phase="",
-                    inflight_event_ids=[],
-                    **attention_reset,
-                    recovery_required=True,
-                    last_error="Server restarted without a current bridge lease or owned process handle.",
-                )
-                participant_id = clean_lobby_text(updated.get("participant_id"), limit=128)
-                if participant_id and self.store.participant(room_id, participant_id):
-                    self.store.update_participant_fields(room_id, participant_id, status="detached")
+        self._startup_sessions.reconcile()
 
     def ensure_room(self, room_id: str) -> dict[str, object]:
         clean_room_id = clean_lobby_text(room_id, limit=128)

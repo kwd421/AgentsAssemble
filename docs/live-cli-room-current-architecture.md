@@ -142,6 +142,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `room/snapshots.py` | browser/bridge snapshot projection, reconnect gap handling, and bounded history pages | room mutation or provider execution |
 | `room/connections.py` | browser participant connection updates and active Agent Bridge detach transitions | bridge lease activation or provider process lifecycle |
 | `room/bridge_reports.py` | Agent Bridge ready/health contract validation, bridge generation activation, and canonical runtime-state persistence | provider process execution or browser projection |
+| `room/startup_reconciliation.py` | server-restart cleanup of runtime ownership, inflight work, attention state, and detached membership | provider launch or recovery scheduling |
 | `providers/bridge_process.py` | server-owned Agent Bridge process lifecycle | room routing |
 | `providers/agent_bridge.py` | authenticated bridge client and turn/report protocol | browser UI or WebSocket construction |
 | `application/agent_bridge_entrypoint.py` | bridge environment/config parsing and WebSocket/runtime composition | provider turn behavior |

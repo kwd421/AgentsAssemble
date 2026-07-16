@@ -1022,3 +1022,10 @@ module churn were deliberately avoided rather than forgotten.
   broker, repository, turn coordinator, and session-state publisher. Health
   contract errors, provider/profile mismatch errors, attached/joined events,
   pending-turn assignment, and private PID/executable redaction are unchanged.
+- 2026-07-17: Server-restart Agent Session ownership reconciliation moved to
+  `room/startup_reconciliation.py`. The service detects the same active runtime
+  states, restores inflight event IDs to the ordered pending set, delegates the
+  existing attention reset, clears stale process/bridge/turn ownership, marks
+  recovery required, and detaches the participant. `room_realtime.py` retains
+  its startup method as a delegation point. Stopped-session behavior, error
+  text, field values, and provider recovery policy are unchanged.
