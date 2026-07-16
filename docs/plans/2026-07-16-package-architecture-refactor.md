@@ -567,3 +567,9 @@ module churn were deliberately avoided rather than forgotten.
   combined registrar still registers ensure before current lifecycle routes.
   Current web modules therefore do not import the legacy frontend-meeting
   implementation.
+- 2026-07-16: Roster streaming/read and member upsert/mute routes moved to
+  `web/routes/room_members.py`. The retained resident kick path and optional
+  custom channel/voice routes stay in `gui_room_moderation_media_http.py`;
+  both production composition and the historical combined registrar register
+  current member routes before the retained routes, preserving route order and
+  behavior.

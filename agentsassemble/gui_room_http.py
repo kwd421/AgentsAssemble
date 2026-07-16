@@ -26,10 +26,13 @@ from agentsassemble.codex_app_server_runtime import CodexAppServerRuntimeManager
 from agentsassemble.web.routes.agent_sessions import register_agent_session_routes
 from agentsassemble.web.routes.room_invite import register_invite_admission_routes
 from agentsassemble.gui_room_lifecycle_http import register_legacy_room_ensure_route
-from agentsassemble.gui_room_moderation_media_http import register_moderation_media_routes
+from agentsassemble.gui_room_moderation_media_http import (
+    register_legacy_moderation_media_routes,
+)
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.web.routes.room_history import register_room_history_routes
 from agentsassemble.web.routes.room_lifecycle import register_room_lifecycle_routes
+from agentsassemble.web.routes.room_members import register_room_member_routes
 from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payload
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
 from agentsassemble.meeting_events import (
@@ -197,7 +200,8 @@ def register_room_routes(
     )
     register_legacy_room_ensure_route(router)
     register_room_lifecycle_routes(router)
-    register_moderation_media_routes(
+    register_room_member_routes(router)
+    register_legacy_moderation_media_routes(
         router,
         agent_session_control_allowed=resolved.agent_session_control_allowed,
         agent_turn_adapter=resolved.turn_adapter,

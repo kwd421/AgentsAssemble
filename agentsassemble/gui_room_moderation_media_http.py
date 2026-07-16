@@ -13,7 +13,6 @@ from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payl
 from agentsassemble.live_agents import read_live_agents
 from agentsassemble.meeting_events import (
     append_lobby_event_to_file,
-    clean_lobby_text,
     read_lobby_events,
     read_lobby_events_after,
 )
@@ -29,10 +28,8 @@ from agentsassemble.room_channels import (
 from agentsassemble.room_members import (
     is_room_member_muted,
     remove_room_member,
-    room_members_payload,
-    set_room_member_muted,
-    upsert_room_member,
 )
+from agentsassemble.room.text import clean_room_text
 from agentsassemble.room_speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
@@ -45,6 +42,10 @@ from agentsassemble.voice_presence import (
     leave_voice,
     voice_participants,
 )
+from agentsassemble.web.routes.room_members import (
+    register_room_member_routes,
+    room_members_response,
+)
 
 
 _CHANNEL_LOBBY_LOCK = threading.Lock()
@@ -52,84 +53,14 @@ _LOCAL_OPERATOR_PARTICIPANT_ID = "operator-local"
 _LOCAL_OPERATOR_DISPLAY_DEFAULT = "호스트"
 
 
-def register_moderation_media_routes(
+def register_legacy_moderation_media_routes(
     router: Router,
     *,
     agent_session_control_allowed: Callable[[RequestContext], bool],
     agent_turn_adapter: Callable[..., object],
     speech_rejection_status: Callable[[str], HTTPStatus],
 ) -> None:
-    """Register roster, moderation, custom channel, and voice presence routes."""
-
-    def _members_payload(ctx: RequestContext, meeting_id: str) -> dict[str, object]:
-        return room_members_payload(
-            ctx.deps.output_root,
-            read_live_agents(ctx.deps.output_root),
-            meeting_id=meeting_id,
-            sessions=ctx.deps.sessions.active_summary(),
-            repository=ctx.deps.rooms,
-        )
-
-    @router.get("/api/events/roster")
-    def roster_events_stream(ctx: RequestContext) -> None:
-        ctx.send_sse_stream(
-            "roster",
-            "roster",
-            meeting_id=ctx.query_value("meeting_id"),
-            last_event_id=None,
-        )
-
-    @router.get("/api/room-members")
-    def room_members(ctx: RequestContext) -> None:
-        if (
-            not ctx.uses_loopback_host()
-            and ctx.session() is None
-            and not ctx.is_host()
-        ):
-            ctx.send_error(HTTPStatus.UNAUTHORIZED, "session token required")
-            return
-        ctx.send_json(_members_payload(ctx, ctx.query_value("meeting_id")))
-
-    @router.post("/api/room-members")
-    def room_members_upsert(ctx: RequestContext) -> None:
-        payload = ctx.read_json_body()
-        if payload is None:
-            return
-        try:
-            member = upsert_room_member(ctx.deps.output_root, payload)
-        except ValueError as error:
-            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
-            return
-        ctx.send_json(
-            {
-                "member": member,
-                **_members_payload(ctx, str(member.get("meeting_id") or "")),
-            }
-        )
-
-    @router.post("/api/room-members/mute")
-    def room_members_mute(ctx: RequestContext) -> None:
-        if not ctx.require_moderator():
-            return
-        payload = ctx.read_json_body()
-        if payload is None:
-            return
-        try:
-            member = set_room_member_muted(
-                ctx.deps.output_root,
-                meeting_id=str(payload.get("meeting_id") or ""),
-                participant_id=str(payload.get("participant_id") or ""),
-                muted=bool(payload.get("muted", True)),
-            )
-        except ValueError as error:
-            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
-            return
-        ctx.send_json(
-            {
-                "member": member,
-                **_members_payload(ctx, str(member.get("meeting_id") or "")),
-            }
-        )
+    """Register legacy resident kick, custom channel, and voice routes."""
 
     @router.post("/api/room-members/kick")
     def room_members_kick(ctx: RequestContext) -> None:
@@ -154,10 +85,12 @@ def register_moderation_media_routes(
             return revoked_sessions
 
         is_live_agent = any(
-            clean_lobby_text(agent.get("agent_id"), limit=128) == clean_lobby_text(kick_participant_id, limit=128)
+            clean_room_text(agent.get("agent_id"), limit=128)
+            == clean_room_text(kick_participant_id, limit=128)
             and (
                 not kick_meeting_id.strip()
-                or clean_lobby_text(agent.get("meeting_id"), limit=128) == clean_lobby_text(kick_meeting_id, limit=128)
+                or clean_room_text(agent.get("meeting_id"), limit=128)
+                == clean_room_text(kick_meeting_id, limit=128)
             )
             for agent in read_live_agents(ctx.deps.output_root)
         )
@@ -185,7 +118,7 @@ def register_moderation_media_routes(
                 "revoked_sessions": revoked_sessions,
                 "removed_member": removed_member,
                 "expelled_agent": expelled_agent,
-                **_members_payload(ctx, kick_meeting_id),
+                **room_members_response(ctx, kick_meeting_id),
             }
         )
 
@@ -303,7 +236,8 @@ def register_moderation_media_routes(
             )
         return (
             _LOCAL_OPERATOR_PARTICIPANT_ID,
-            clean_lobby_text(payload.get("name"), limit=80) or _LOCAL_OPERATOR_DISPLAY_DEFAULT,
+            clean_room_text(payload.get("name"), limit=80)
+            or _LOCAL_OPERATOR_DISPLAY_DEFAULT,
         )
 
     @router.get("/api/room/channel-lobby")
@@ -352,7 +286,7 @@ def register_moderation_media_routes(
         else:
             identity = ActorIdentity(
                 agent_id=_LOCAL_OPERATOR_PARTICIPANT_ID,
-                display_name=clean_lobby_text(payload.get("name"), limit=80)
+                display_name=clean_room_text(payload.get("name"), limit=80)
                 or _LOCAL_OPERATOR_DISPLAY_DEFAULT,
                 participant_type="human",
                 meeting_id=meeting_id,
@@ -443,3 +377,28 @@ def register_moderation_media_routes(
         ctx.send_json(
             {"channel_id": channel_id, "participants": voice_participants(meeting_id, channel_id)}
         )
+
+
+def register_moderation_media_routes(
+    router: Router,
+    *,
+    agent_session_control_allowed: Callable[[RequestContext], bool],
+    agent_turn_adapter: Callable[..., object],
+    speech_rejection_status: Callable[[str], HTTPStatus],
+) -> None:
+    """Preserve the historical combined moderation/media registrar."""
+    register_room_member_routes(router)
+    register_legacy_moderation_media_routes(
+        router,
+        agent_session_control_allowed=agent_session_control_allowed,
+        agent_turn_adapter=agent_turn_adapter,
+        speech_rejection_status=speech_rejection_status,
+    )
+
+
+__all__ = [
+    "register_legacy_moderation_media_routes",
+    "register_moderation_media_routes",
+    "register_room_member_routes",
+    "room_members_response",
+]

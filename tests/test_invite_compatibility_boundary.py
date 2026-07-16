@@ -11,7 +11,7 @@ CURRENT_INVITE_APPLICATION_MODULES = (
     "agentsassemble/gui_live_agent_flow_http.py",
     "agentsassemble/web/routes/public_invite.py",
     "agentsassemble/web/security.py",
-    "agentsassemble/gui_room_moderation_media_http.py",
+    "agentsassemble/web/routes/room_members.py",
     "agentsassemble/web/router.py",
     "agentsassemble/public_tunnel.py",
     "agentsassemble/room_admission.py",

@@ -8,6 +8,7 @@ import agentsassemble.gui_public_invite_http as compatibility_public_invite
 import agentsassemble.gui_room_agent_http as compatibility_agent_sessions
 import agentsassemble.gui_room_invite_http as compatibility_room_invite
 import agentsassemble.gui_room_lifecycle_http as compatibility_room_lifecycle
+import agentsassemble.gui_room_moderation_media_http as compatibility_moderation_media
 import agentsassemble.gui_room_settings_http as compatibility_room_settings
 from agentsassemble.web.routes import agent_sessions as owned_agent_sessions
 from agentsassemble.web.routes import attachments as owned_attachments
@@ -16,6 +17,7 @@ from agentsassemble.web.routes import public_invite as owned_public_invite
 from agentsassemble.web.routes import room_history as owned_room_history
 from agentsassemble.web.routes import room_invite as owned_room_invite
 from agentsassemble.web.routes import room_lifecycle as owned_room_lifecycle
+from agentsassemble.web.routes import room_members as owned_room_members
 from agentsassemble.web.routes import room_settings as owned_room_settings
 from agentsassemble.web.router import Router
 
@@ -74,6 +76,32 @@ class WebRoutesPackageTests(unittest.TestCase):
 
         self.assertIn(("POST", "/api/room/ensure"), router.routes())
         self.assertIn(("POST", "/api/rooms/close"), router.routes())
+
+    def test_moderation_root_module_exports_owned_member_routes(self) -> None:
+        self.assertIs(
+            compatibility_moderation_media.register_room_member_routes,
+            owned_room_members.register_room_member_routes,
+        )
+        self.assertIs(
+            compatibility_moderation_media.room_members_response,
+            owned_room_members.room_members_response,
+        )
+
+    def test_moderation_compatibility_registrar_keeps_member_and_media_routes(
+        self,
+    ) -> None:
+        router = Router()
+
+        compatibility_moderation_media.register_moderation_media_routes(
+            router,
+            agent_session_control_allowed=lambda _ctx: False,
+            agent_turn_adapter=lambda *_args, **_kwargs: (),
+            speech_rejection_status=lambda _category: 400,
+        )
+
+        self.assertIn(("GET", "/api/room-members"), router.routes())
+        self.assertIn(("POST", "/api/room-members/kick"), router.routes())
+        self.assertIn(("GET", "/api/room/voice"), router.routes())
 
     def test_room_settings_root_module_exports_owned_routes(self) -> None:
         self.assertIs(
