@@ -4,7 +4,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from agentsassemble.grok_acp_runtime import GrokAcpRuntime
+from agentsassemble.providers.grok_acp import GrokAcpRuntime
 from agentsassemble.providers.bridge_protocol import BridgeReportTimeout
 from agentsassemble.providers.runtime_contracts import (
     AdapterContractError,

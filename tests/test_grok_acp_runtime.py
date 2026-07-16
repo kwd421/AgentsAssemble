@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.grok_acp_runtime import GrokAcpRuntime
+from agentsassemble.providers.grok_acp import GrokAcpRuntime
 
 
 ROOT = Path(__file__).resolve().parents[1]

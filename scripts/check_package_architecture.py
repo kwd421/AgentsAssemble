@@ -82,6 +82,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_feature_routes_package.py",),
         introduced_in="Milestone 4.8 optional feature route packages",
     ),
+    "grok_acp_runtime.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.grok_acp",
+        removal_gate=(
+            "No direct imports use agentsassemble.grok_acp_runtime for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.10 Grok ACP runtime move",
+    ),
     "gui_observability_http.py": CompatibilityShim(
         replacement_import="agentsassemble.web.routes.observability",
         removal_gate=(

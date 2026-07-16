@@ -678,3 +678,12 @@ module churn were deliberately avoided rather than forgotten.
   startup/cleanup, model and permission validation, persisted session reuse,
   directory scoping, SSE ordering, reasoning/tool activity projection, text
   delta/final selection, interruption, and diagnostics are unchanged.
+- 2026-07-16: The structured Grok ACP stdio adapter moved to
+  `providers/grok_acp.py`. Runtime construction and ACP lifecycle tests now use
+  the owned path, while `grok_acp_runtime.py` remains an explicit
+  compatibility export. Direct `room.text` normalization replaces the legacy
+  delegation. Exact `grok agent stdio` selection, JSON-RPC correlation,
+  persistent session load/save, permission denial, yolo rejection, structured
+  delta filtering, bounded stderr drain, notification backpressure failure,
+  process-group cleanup, provider error classification, and diagnostics are
+  unchanged.
