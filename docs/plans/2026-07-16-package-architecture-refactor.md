@@ -430,3 +430,9 @@ module churn were deliberately avoided rather than forgotten.
   compensation as one local state-machine boundary. Current callers import the
   owned paths, while the two root modules remain explicit compatibility
   exports. Both modules now use current `room.text` normalization.
+- 2026-07-16: Terminal admission workflow selection, bounded purge reports, and
+  the explicit dry-run/apply CLI command moved to `admission/maintenance.py`
+  and `admission/maintenance_command.py`. Local and PostgreSQL adapters now
+  import the owned maintenance contract directly. No startup purge or implicit
+  retention behavior was added; the two root modules remain compatibility
+  exports for one removal window.

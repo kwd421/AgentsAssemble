@@ -7,6 +7,11 @@ from datetime import UTC, datetime
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from agentsassemble.admission.maintenance import (
+    AdmissionWorkflowSelection,
+    PurgeReport,
+    build_purge_report,
+)
 from agentsassemble.admission.workflow_record import validate_admission_workflow_record
 from agentsassemble.persistence.postgres.application_database import (
     PostgresConnectionProvider,
@@ -15,11 +20,6 @@ from agentsassemble.persistence.postgres.connection_pool import (
     BoundedPostgresConnectionPool,
     PoolFactory,
     PostgresPoolSettings,
-)
-from agentsassemble.room_admission_workflow_maintenance import (
-    AdmissionWorkflowSelection,
-    PurgeReport,
-    build_purge_report,
 )
 from agentsassemble.room.text import clean_room_text
 

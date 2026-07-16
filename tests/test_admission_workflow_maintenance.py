@@ -7,11 +7,11 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
+from agentsassemble.admission.maintenance import AdmissionWorkflowSelection
 from agentsassemble.cli import build_parser, main
 from agentsassemble.persistence.local.admission.repository import (
     JsonInviteSessionRepository,
 )
-from agentsassemble.room_admission_workflow_maintenance import AdmissionWorkflowSelection
 
 
 def _terminal_workflow(workflow_id: str) -> dict[str, object]:

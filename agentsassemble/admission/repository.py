@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from agentsassemble.room_admission_workflow_maintenance import (
+from agentsassemble.admission.maintenance import (
     AdmissionWorkflowSelection,
     PurgeReport,
 )

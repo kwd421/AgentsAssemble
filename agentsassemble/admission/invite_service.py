@@ -7,6 +7,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from agentsassemble.admission.maintenance import (
+    AdmissionWorkflowSelection,
+    PurgeReport,
+)
 from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.multi_host_invites import (
     NATIVE_REMOTE_ROOM_CLIENT_KIND,
@@ -15,10 +19,6 @@ from agentsassemble.multi_host_invites import (
 )
 from agentsassemble.native_cli_providers import native_cli_provider_definition
 from agentsassemble.remote_room_client_packet import build_remote_room_client_packet
-from agentsassemble.room_admission_workflow_maintenance import (
-    AdmissionWorkflowSelection,
-    PurgeReport,
-)
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
 

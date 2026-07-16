@@ -5546,7 +5546,7 @@ def run_room_command(args: argparse.Namespace) -> int:
                 print("Run the same command with --apply after reviewing the dry-run plan.")
         return 0 if result.get("status") in {"ready", "applied", "already_applied", "not_needed"} else 1
     if args.room_command == "purge-admission-workflows":
-        from agentsassemble.room_admission_workflow_maintenance_command import (
+        from agentsassemble.admission.maintenance_command import (
             purge_admission_workflows,
         )
         from agentsassemble.admission.repository import InviteRepositoryError

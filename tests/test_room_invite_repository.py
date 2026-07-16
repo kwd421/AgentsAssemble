@@ -16,14 +16,14 @@ from agentsassemble.admission.repository import (
     InviteSessionRepository,
     UnconfiguredInviteSessionRepository,
 )
+from agentsassemble.admission.maintenance import (
+    AdmissionWorkflowSelection,
+    TERMINAL_ADMISSION_WORKFLOW_STATUSES,
+)
 from agentsassemble.persistence.local.admission.repository import (
     ROOM_INVITE_STORE_SCHEMA,
     JsonInviteSessionRepository,
     MemoryInviteSessionRepository,
-)
-from agentsassemble.room_admission_workflow_maintenance import (
-    AdmissionWorkflowSelection,
-    TERMINAL_ADMISSION_WORKFLOW_STATUSES,
 )
 
 
