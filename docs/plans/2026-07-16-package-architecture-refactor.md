@@ -1014,3 +1014,11 @@ module churn were deliberately avoided rather than forgotten.
   `connect()`/`disconnect()` entrypoints. Connection-id mutation, superseded
   bridge handling, session-detached events, and session-state publication are
   unchanged.
+- 2026-07-17: Agent Bridge `ready` and `health` report validation, external
+  runtime-profile verification, bridge-generation activation, canonical
+  participant/session updates, and bounded runtime diagnostics moved to
+  `room/bridge_reports.py`. `room_realtime.py` retains its private command
+  handlers as delegation points and composes the service with the existing
+  broker, repository, turn coordinator, and session-state publisher. Health
+  contract errors, provider/profile mismatch errors, attached/joined events,
+  pending-turn assignment, and private PID/executable redaction are unchanged.

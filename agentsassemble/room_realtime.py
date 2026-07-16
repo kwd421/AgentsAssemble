@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import threading
 import shutil
@@ -25,14 +24,6 @@ from agentsassemble.providers.capabilities import (
     ProviderCatalogSelectionError,
     ValidatedProviderSelection,
 )
-from agentsassemble.providers.runtime_contracts import (
-    AdapterContractError,
-    ProviderRuntimeHealth,
-)
-from agentsassemble.providers.runtime_config import (
-    ProviderRuntimeConfigError,
-    ProviderRuntimeProfile,
-)
 from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.persistence.local.identity.registry import (
@@ -48,6 +39,7 @@ from agentsassemble.room.command_uow import (
     RoomCommandUnitOfWork,
     command_payload_hash,
 )
+from agentsassemble.room.bridge_reports import RoomBridgeReportService
 from agentsassemble.room.connections import RoomConnectionService
 from agentsassemble.room.agent_lifecycle import (
     AgentBridgeManager,
@@ -76,14 +68,10 @@ from agentsassemble.room.moderation import (
     remove_room_member,
     set_room_member_muted,
 )
-from agentsassemble.providers.model_verification import (
-    model_verification_status as _model_verification_status,
-)
 from agentsassemble.room.projection import (
     public_event as _public_event,
     public_participant,
     public_session,
-    runtime_diagnostic_fields as _runtime_diagnostic_fields,
 )
 from agentsassemble.room.provider_registry import RoomProviderRegistry
 from agentsassemble.room.provider_sessions import RoomProviderSessionService
@@ -231,6 +219,13 @@ class RoomRealtimeController:
                 **kwargs,
             ),
             attention_owner_id=self._attention_owner_id,
+        )
+        self._bridge_reports = RoomBridgeReportService(
+            store=self.store,
+            broker=self.broker,
+            bridge_session=self._turn_coordinator.bridge_session,
+            assign_pending=self._turn_coordinator.assign_pending,
+            publish_session_state=self._publish_session_state,
         )
         self._agent_lifecycle = RoomAgentLifecycle(
             store=self.store,
@@ -1527,125 +1522,10 @@ class RoomRealtimeController:
         return bool(identity.get("operator"))
 
     def _bridge_ready(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
-        agent_id, session = self._turn_coordinator.bridge_session(identity, room_id, allow_unleased=True)
-        try:
-            health = ProviderRuntimeHealth.parse(payload)
-        except AdapterContractError as error:
-            raise RoomCommandRejected(str(error), code="adapter_health_invalid") from error
-        if not health.running:
-            raise RoomCommandRejected("A stopped provider cannot become ready.", code="adapter_health_invalid")
-        connection_id = clean_lobby_text(identity.get("connection_id"), limit=128)
-        channel = self.broker.channel(connection_id)
-        if channel is None:
-            raise RoomCommandRejected("Agent bridge connection is no longer active.", code="bridge_disconnected")
-        external_profile: dict[str, object] = {}
-        if session.get("process_ownership") == "external":
-            definition = native_cli_provider_definition(session.get("provider_kind"))
-            if definition is None:
-                raise RoomCommandRejected(
-                    "The external provider kind is not supported.",
-                    code="provider_profile_invalid",
-                )
-            try:
-                profile = ProviderRuntimeProfile.parse_strict(payload)
-            except ProviderRuntimeConfigError as error:
-                raise RoomCommandRejected(str(error), code="provider_profile_invalid") from error
-            if profile.provider_kind != clean_lobby_text(session.get("provider_kind"), limit=64):
-                raise RoomCommandRejected(
-                    "The external provider profile does not match its invite.",
-                    code="provider_profile_invalid",
-                )
-            if profile.runtime_kind != definition.runtime_kind:
-                raise RoomCommandRejected(
-                    "The external provider runtime kind is not supported for this provider.",
-                    code="provider_profile_invalid",
-                )
-            if profile.transport not in definition.reported_transports:
-                raise RoomCommandRejected(
-                    "The external provider transport is not supported for this provider.",
-                    code="provider_profile_invalid",
-                )
-            for field, required_default in (
-                ("reasoning_effort", definition.default_reasoning_effort),
-                ("service_tier", definition.default_service_tier),
-                ("variant", definition.default_variant),
-            ):
-                if required_default and not getattr(profile, field):
-                    raise RoomCommandRejected(
-                        f"The external provider profile is missing required {field}.",
-                        code="provider_profile_invalid",
-                    )
-            observation_policy = definition.model_observation_policy
-            external_profile = {
-                "model": profile.model,
-                "requested_model_id": profile.model,
-                "observed_model_id": "",
-                "model_selection_kind": "exact",
-                "model_observation_policy": observation_policy,
-                "model_verification_status": _model_verification_status(
-                    requested_model_id=profile.model,
-                    observed_model_id="",
-                    selection_kind="exact",
-                    observation_policy=observation_policy,
-                ),
-                "reasoning_effort": profile.reasoning_effort,
-                "service_tier": profile.service_tier,
-                "variant": profile.variant,
-                "permission_mode": profile.permission_mode,
-                "runtime_kind": profile.runtime_kind,
-                "runtime_profile_key": _external_runtime_profile_key(profile),
-            }
-        generation = self.broker.activate_bridge(channel)
-        identity["bridge_generation"] = generation
-        previous_participant = self.store.participant(room_id, agent_id)
-        self.store.update_participant_fields(room_id, agent_id, status="joined")
-        updated = self.store.update_session_fields(
-            room_id,
-            str(session["session_id"]),
-            status="attached",
-            enabled=True,
-            runtime_status="idle",
-            reported_provider_pid=_safe_int_or_none(payload.get("pid")),
-            bridge_generation=generation,
-            pty=health.pty,
-            transport=health.transport,
-            is_one_shot=bool(payload.get("is_one_shot", False)),
-            started_at=health.started_at,
-            last_error="",
-            **external_profile,
-            **_runtime_diagnostic_fields(payload),
-        )
-        if previous_participant.get("status") != "joined":
-            self.store.append_event(room_id, "participant_joined", participant_id=agent_id, session_id=session["session_id"])
-        self.store.append_event(room_id, "session_attached", participant_id=agent_id, session_id=session["session_id"])
-        self._turn_coordinator.assign_pending(room_id, agent_id)
-        current = self.store.session(room_id, str(session["session_id"]))
-        self._publish_session_state(room_id, current)
-        return {"agent_session": public_session(current)}
+        return self._bridge_reports.ready(identity, room_id, payload)
 
     def _bridge_health(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
-        _agent_id, session = self._turn_coordinator.bridge_session(identity, room_id)
-        try:
-            health = ProviderRuntimeHealth.parse(payload)
-        except AdapterContractError as error:
-            raise RoomCommandRejected(str(error), code="adapter_health_invalid") from error
-        fields: dict[str, object] = {
-            key: payload[key]
-            for key in ("resolved_executable", "last_error", "returncode")
-            if key in payload
-        }
-        fields.update(
-            running=health.running,
-            pty=health.pty,
-            transport=health.transport,
-            started_at=health.started_at,
-        )
-        if "pid" in payload:
-            fields["reported_provider_pid"] = _safe_int_or_none(payload.get("pid"))
-        fields.update(_runtime_diagnostic_fields(payload))
-        updated = self.store.update_session_fields(room_id, str(session["session_id"]), **fields)
-        self._publish_session_state(room_id, updated)
-        return {"agent_session": public_session(updated)}
+        return self._bridge_reports.health(identity, room_id, payload)
 
     def _on_event_appended(self, event: RoomEvent | dict[str, object]) -> None:
         self.broker.broadcast_event(_public_event(event))
@@ -1904,19 +1784,6 @@ def _kick_cleanup_from_participant(participant: dict[str, object]) -> dict[str, 
     }
 
 
-def _external_runtime_profile_key(profile: ProviderRuntimeProfile) -> str:
-    serialized = json.dumps(
-        {
-            **profile.report_fields(),
-            "transport": profile.transport,
-        },
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:20]
-
-
 def _command_principal(identity: dict[str, object]) -> str:
     client_type = clean_lobby_text(identity.get("client_type"), limit=64) or "unknown"
     principal = clean_lobby_text(
@@ -1965,13 +1832,6 @@ def _validate_turn_phase_transition(session: dict[str, object], phase: str) -> N
             f"Turn phase cannot transition from {current} to {phase or 'empty'}.",
             code="turn_phase_invalid",
         )
-
-
-def _safe_int_or_none(value: object) -> int | None:
-    try:
-        return int(value) if value not in (None, "") else None
-    except (TypeError, ValueError):
-        return None
 
 
 def _safe_bounded_int(
