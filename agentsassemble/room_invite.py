@@ -33,7 +33,7 @@ from agentsassemble.multi_host_invites import (
     resolve_lan_invite_secret_ref,
     verify_lan_invite_token,
 )
-from agentsassemble.room_invite_application import (
+from agentsassemble.admission.invite_service import (
     READ_ONLY_INVITE_SCOPE,
     ROOM_INVITE_SCOPE,
     SESSION_TOKEN_PREFIX,

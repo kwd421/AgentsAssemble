@@ -6,6 +6,7 @@ import time
 import unittest
 from pathlib import Path
 
+from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.gui_application import GuiApplicationServices
@@ -14,7 +15,6 @@ from agentsassemble.operator_pairing import OperatorPairingService
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.room_admission_coordinator import RoomAdmissionCoordinator
-from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,
 )

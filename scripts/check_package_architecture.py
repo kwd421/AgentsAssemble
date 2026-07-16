@@ -69,6 +69,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         ),
         introduced_in="Milestone 3.2 local admission persistence move",
     ),
+    "room_invite_application.py": CompatibilityShim(
+        replacement_import="agentsassemble.admission.invite_service",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_invite_application for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_admission_invite_service_package.py",),
+        introduced_in="Milestone 3.4 admission invite service move",
+    ),
     "room_session_issuer.py": CompatibilityShim(
         replacement_import="agentsassemble.admission.session_issuer",
         removal_gate=(

@@ -416,3 +416,10 @@ module churn were deliberately avoided rather than forgotten.
   `room_session_issuer.py` and `room_session_service.py` remain explicit
   compatibility exports. The summary normalizer now depends on current
   `room.text` rather than legacy meeting helpers without changing output.
+- 2026-07-16: Invite creation, signed-token and short-code validation, reusable
+  invite limits, Agent Bridge provider validation, admission preparation,
+  usage-guide projection, and workflow maintenance delegation moved to
+  `admission/invite_service.py`. The service now uses current `room.text`
+  normalization instead of legacy meeting helpers. Production callers import
+  the owned path; `room_invite_application.py` remains an explicit compatibility
+  export with the same constants, types, and functions.

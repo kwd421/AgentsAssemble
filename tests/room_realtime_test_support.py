@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,
 )
-from agentsassemble.room_invite_application import InviteApplicationService
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
 
 

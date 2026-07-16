@@ -17,7 +17,7 @@ CURRENT_INVITE_APPLICATION_MODULES = (
     "agentsassemble/room_admission.py",
     "agentsassemble/room_admission_coordinator.py",
     "agentsassemble/room_admission_saga.py",
-    "agentsassemble/room_invite_application.py",
+    "agentsassemble/admission/invite_service.py",
     "agentsassemble/room_realtime.py",
 )
 CURRENT_IDENTITY_APPLICATION_MODULES = (

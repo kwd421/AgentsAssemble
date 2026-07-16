@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.repository import (
     InviteRepositoryNotConfigured,
     UnconfiguredInviteSessionRepository,
@@ -29,7 +30,6 @@ from agentsassemble.room_invite import (
     set_runtime_public_url,
     verify_session_token,
 )
-from agentsassemble.room_invite_application import InviteApplicationService
 
 
 class TestRoomInviteRepositoryConfiguration(unittest.TestCase):

@@ -337,7 +337,7 @@ from agentsassemble.room_users import (
     release_room_users_backend,
 )
 from agentsassemble.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
-from agentsassemble.room_invite_application import (
+from agentsassemble.admission.invite_service import (
     InviteApplicationService,
     SESSION_TOKEN_PREFIX,
     SESSION_TOKEN_TTL_SECONDS,

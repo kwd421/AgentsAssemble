@@ -20,7 +20,7 @@ from agentsassemble.room_admission_saga import (
     RoomAdmissionCompensationFailed,
     RoomAdmissionSaga,
 )
-from agentsassemble.room_invite_application import (
+from agentsassemble.admission.invite_service import (
     InviteApplicationService,
     PreparedInviteAdmission,
 )
