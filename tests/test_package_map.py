@@ -194,6 +194,7 @@ class PackageMapTests(unittest.TestCase):
         package_map = build_package_map(ROOT)
         for module_name in (
             "agentsassemble.providers.api",
+            "agentsassemble.providers.antigravity_resident",
             "agentsassemble.providers.auth",
             "agentsassemble.providers.bridge_protocol",
             "agentsassemble.providers.bridge_report_tracker",
@@ -232,6 +233,7 @@ class PackageMapTests(unittest.TestCase):
                 )
 
         for compatibility_module in (
+            "agentsassemble.antigravity_resident",
             "agentsassemble.bridge_protocol",
             "agentsassemble.bridge_report_tracker",
             "agentsassemble.claude_resident",

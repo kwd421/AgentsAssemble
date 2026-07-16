@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+import agentsassemble.antigravity_resident as compatibility_antigravity_resident
 import agentsassemble.bridge_protocol as compatibility_bridge_protocol
 import agentsassemble.bridge_report_tracker as compatibility_bridge_tracker
 import agentsassemble.claude_resident as compatibility_claude_resident
@@ -28,6 +29,7 @@ import agentsassemble.provider_sessions as compatibility_sessions
 import agentsassemble.room_api_provider as compatibility_api
 import agentsassemble.windows_conpty as compatibility_windows_conpty
 from agentsassemble.providers import api as owned_api
+from agentsassemble.providers import antigravity_resident as owned_antigravity_resident
 from agentsassemble.providers import catalog as owned_catalog
 from agentsassemble.providers import bridge_protocol as owned_bridge_protocol
 from agentsassemble.providers import bridge_report_tracker as owned_bridge_tracker
@@ -55,6 +57,27 @@ from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_antigravity_resident_root_module_exports_owned_adapter(self) -> None:
+        for name in (
+            "AntigravityResidentCommandRunner",
+            "AntigravityResidentRuntimeError",
+            "AntigravityResidentValueError",
+            "antigravity_auth_check",
+            "antigravity_command_check",
+            "antigravity_error_category",
+            "antigravity_provider_connection_check",
+            "clean_antigravity_conversation_id",
+            "default_antigravity_resident_command",
+        ):
+            self.assertIs(
+                getattr(compatibility_antigravity_resident, name),
+                getattr(owned_antigravity_resident, name),
+            )
+        self.assertEqual(
+            compatibility_antigravity_resident.ANTIGRAVITY_BACKEND_ERROR,
+            owned_antigravity_resident.ANTIGRAVITY_BACKEND_ERROR,
+        )
+
     def test_codex_resident_root_module_exports_owned_adapter(self) -> None:
         for name in (
             "CODEX_EXEC_SAFETY_FLAGS",

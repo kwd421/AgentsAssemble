@@ -11,7 +11,7 @@ from pathlib import Path
 from subprocess import TimeoutExpired
 from typing import Any
 
-from agentsassemble.antigravity_resident import (
+from agentsassemble.providers.antigravity_resident import (
     antigravity_auth_check,
     antigravity_command_check,
     antigravity_provider_connection_check,

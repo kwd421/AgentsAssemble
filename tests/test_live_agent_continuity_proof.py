@@ -4,7 +4,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.antigravity_resident import ANTIGRAVITY_BACKEND_ERROR
 from agentsassemble.live_agent_continuity_proof import (
     _continuity_code,
     _first_reply_ready_normalized,
@@ -13,6 +12,7 @@ from agentsassemble.live_agent_continuity_proof import (
     run_live_agent_continuity_proof_batch,
 )
 from agentsassemble.live_agent_runner import ResidentAgentConfig
+from agentsassemble.providers.antigravity_resident import ANTIGRAVITY_BACKEND_ERROR
 
 
 def config(**overrides):

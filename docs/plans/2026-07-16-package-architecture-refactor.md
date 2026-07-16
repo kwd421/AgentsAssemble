@@ -782,3 +782,10 @@ module churn were deliberately avoided rather than forgotten.
   moves without changing runtime objects. Exec/resume command construction,
   sandbox and fast overrides, session extraction, streaming thought behavior,
   timeout and login errors, and authentication checks are unchanged.
+- 2026-07-17: The resident Antigravity CLI command adapter moved to
+  `providers/antigravity_resident.py`. CLI, preflight, continuity, legacy
+  runner, and focused behavior tests now use the owned path while
+  `antigravity_resident.py` remains an explicit compatibility export.
+  Conversation resume, native model and permission flags, backend quota/error
+  rejection, real-capture answer extraction, status/meta trimming, timeout and
+  login diagnostics, and stateless valid-reply behavior are unchanged.

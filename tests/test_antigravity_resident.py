@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.antigravity_resident import (
+from agentsassemble.providers.antigravity_resident import (
     ANTIGRAVITY_BACKEND_ERROR,
     ANTIGRAVITY_EMPTY_REPLY,
     ANTIGRAVITY_MISSING_CONVERSATION_ID,

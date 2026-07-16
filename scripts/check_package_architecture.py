@@ -37,6 +37,15 @@ class CompatibilityShim:
 # boundaries. Historical presence in the root baseline does not exempt a moved
 # module from recording its replacement, callers, and removal gate here.
 ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
+    "antigravity_resident.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.antigravity_resident",
+        removal_gate=(
+            "No direct imports use agentsassemble.antigravity_resident for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.23 Antigravity resident adapter move",
+    ),
     "bridge_protocol.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.bridge_protocol",
         removal_gate=(
