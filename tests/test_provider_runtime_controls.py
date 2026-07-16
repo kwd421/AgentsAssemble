@@ -10,7 +10,7 @@ from urllib.error import HTTPError
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from agentsassemble.deepseek_runtime import DeepSeekApiRuntime
+from agentsassemble.providers.deepseek import DeepSeekApiRuntime
 from agentsassemble.codex_app_server_live_runtime import CodexAppServerLiveRuntime
 from agentsassemble.cleanup_report import CleanupReport
 from agentsassemble.providers.process_environment import (

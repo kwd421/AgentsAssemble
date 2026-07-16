@@ -177,6 +177,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.providers.bridge_protocol",
             "agentsassemble.providers.bridge_report_tracker",
             "agentsassemble.providers.catalog",
+            "agentsassemble.providers.deepseek",
             "agentsassemble.providers.process_environment",
             "agentsassemble.providers.runtime_config",
             "agentsassemble.providers.runtime_contracts",
@@ -197,6 +198,7 @@ class PackageMapTests(unittest.TestCase):
         for compatibility_module in (
             "agentsassemble.bridge_protocol",
             "agentsassemble.bridge_report_tracker",
+            "agentsassemble.deepseek_runtime",
             "agentsassemble.process_environment",
             "agentsassemble.provider_catalog",
             "agentsassemble.provider_runtime_config",

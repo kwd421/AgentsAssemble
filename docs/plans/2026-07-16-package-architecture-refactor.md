@@ -656,3 +656,10 @@ module churn were deliberately avoided rather than forgotten.
   root modules remain explicit compatibility exports. The keyring singleton,
   environment fallback, status-only secret projection, platform allowlist,
   provider secret-name filtering, and explicit-extra behavior are unchanged.
+- 2026-07-16: The DeepSeek HTTPS/SSE adapter moved to
+  `providers/deepseek.py`. Runtime construction and behavior tests use the
+  owned path, while `deepseek_runtime.py` remains an explicit compatibility
+  export. The adapter now imports `room.text` directly instead of the legacy
+  delegation; API payloads, supported model/effort validation, private
+  reasoning suppression, bounded conversation memory, interruption, key
+  clearing, and diagnostics are unchanged.

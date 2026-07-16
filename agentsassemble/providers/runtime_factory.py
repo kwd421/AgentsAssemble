@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from agentsassemble.deepseek_runtime import DeepSeekApiRuntime
+from agentsassemble.providers.deepseek import DeepSeekApiRuntime
 from agentsassemble.grok_acp_runtime import GrokAcpRuntime
 from agentsassemble.live_cli import LiveCliRuntime
 from agentsassemble.opencode_runtime import OpenCodeRuntime

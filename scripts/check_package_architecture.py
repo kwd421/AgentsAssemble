@@ -55,6 +55,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.5 provider bridge protocol move",
     ),
+    "deepseek_runtime.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.deepseek",
+        removal_gate=(
+            "No direct imports use agentsassemble.deepseek_runtime for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.7 DeepSeek runtime move",
+    ),
     "application_transaction.py": CompatibilityShim(
         replacement_import="agentsassemble.application.transaction",
         removal_gate=(
