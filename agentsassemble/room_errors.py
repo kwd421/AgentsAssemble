@@ -1,7 +1,6 @@
-from __future__ import annotations
+"""Compatibility exports for room errors."""
+
+from agentsassemble.room.errors import RoomCommandRejected
 
 
-class RoomCommandRejected(ValueError):
-    def __init__(self, message: str, *, code: str = "rejected") -> None:
-        super().__init__(message)
-        self.code = code
+__all__ = ["RoomCommandRejected"]

@@ -869,3 +869,10 @@ module churn were deliberately avoided rather than forgotten.
   repository package root from its new depth, with focused assertions for
   subprocess cwd and `PYTHONPATH`; bridge command, secret boundaries, profile
   directories, stderr diagnostics, and stop semantics are unchanged.
+- 2026-07-17: Milestone 6 began with dependency-free room contracts.
+  `RoomEvent`, participant/session/command/turn typed shapes moved to
+  `room/types.py`, and `RoomCommandRejected` moved to `room/errors.py`.
+  Realtime, lifecycle, projection, turn coordination, and focused tests now use
+  the owned paths while `room_types.py` and `room_errors.py` remain explicit
+  compatibility exports. No event fields, exception codes, runtime behavior,
+  persistence format, or command handling changed.

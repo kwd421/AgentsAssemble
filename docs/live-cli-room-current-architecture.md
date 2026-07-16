@@ -117,7 +117,8 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 |---|---|---|
 | `room_database.py` | SQLite schema, indexed reads, migration transaction and backup | routing or provider processes |
 | `room_store.py` | room, participant, session, event, and command-result persistence API | WebSocket connections |
-| `room_types.py` | shared event, participant, session, command, and turn packet shapes | validation or side effects |
+| `room/types.py` | shared event, participant, session, command, and turn packet shapes | validation or side effects |
+| `room/errors.py` | room command rejection contract | command execution |
 | `room_commands.py` | command envelope validation and identity capability policy | command execution |
 | `room_routing.py` | pure mention, default-responder, and relay-depth target selection | persistence or process launch |
 | `room_context.py` | bounded bootstrap and cursor-diff provider input projection | provider-private memory |

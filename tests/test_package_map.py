@@ -108,19 +108,36 @@ class PackageMapTests(unittest.TestCase):
         graph = load_package_graph(ROOT)
         package_map = build_package_map(ROOT)
 
-        self.assertEqual(graph.domains["agentsassemble.room.text"], "room")
-        self.assertEqual(graph.domains["agentsassemble.room.visibility"], "room")
+        for module_name in (
+            "agentsassemble.room.errors",
+            "agentsassemble.room.text",
+            "agentsassemble.room.types",
+            "agentsassemble.room.visibility",
+        ):
+            with self.subTest(module_name=module_name):
+                self.assertEqual(graph.domains[module_name], "room")
+                module_line = next(
+                    line
+                    for line in package_map.splitlines()
+                    if line.startswith(f"| `{module_name}` |")
+                )
+                self.assertTrue(module_line.endswith("| in-target-package |"))
         self.assertEqual(
             graph.domains["agentsassemble.web.frontend_runtime"],
             "web",
         )
         self.assertEqual(graph.domains["agentsassemble.frontend_runtime"], "web")
-        text_line = next(
-            line
-            for line in package_map.splitlines()
-            if line.startswith("| `agentsassemble.room.text` |")
-        )
-        self.assertTrue(text_line.endswith("| in-target-package |"))
+        for compatibility_module in (
+            "agentsassemble.room_errors",
+            "agentsassemble.room_types",
+        ):
+            compatibility_line = next(
+                line
+                for line in package_map.splitlines()
+                if line.startswith(f"| `{compatibility_module}` |")
+            )
+            self.assertIn("| compatibility |", compatibility_line)
+            self.assertTrue(compatibility_line.endswith("| compatibility-shim |"))
         frontend_line = next(
             line
             for line in package_map.splitlines()

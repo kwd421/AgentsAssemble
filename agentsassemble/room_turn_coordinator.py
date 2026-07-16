@@ -18,7 +18,7 @@ from agentsassemble.providers.model_verification import (
     model_verification_status,
 )
 from agentsassemble.providers.runtime_contracts import SUPPORTED_DECLINE_REASONS
-from agentsassemble.room_errors import RoomCommandRejected
+from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room_attention import AttentionLeaseConflict
 from agentsassemble.room_command_uow import RoomCommandUnitOfWork
 from agentsassemble.room_event_broker import RoomEventBroker
@@ -38,7 +38,7 @@ from agentsassemble.room_provider_sync_cursor import (
 )
 from agentsassemble.room_repository import RoomRepository, RoomTransaction
 from agentsassemble.room_turn_attention import RoomTurnAttention
-from agentsassemble.room_types import RoomEvent, TurnAssignment
+from agentsassemble.room.types import RoomEvent, TurnAssignment
 
 
 RecoveryScheduler = Callable[[float, Callable[[], None]], object]

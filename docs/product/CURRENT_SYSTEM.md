@@ -260,7 +260,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Change | Start here |
 | --- | --- |
 | GUI server composition, route ownership, and shutdown | stable entrypoint in `gui.py`; lifecycle container in `application/gui.py`; cross-authority transaction contract in `application/transaction.py`; root compatibility exports retained; `docs/product/GUI_COMPOSITION.md` |
-| Room persistence and sequence | local SQLite owner in `persistence/local/room/`; PostgreSQL owner in `persistence/postgres/room/`; compatibility exports in `room_store.py`, `room_database.py`, and `sqlite_attention_repository.py`; event types in `room_types.py` |
+| Room persistence and sequence | local SQLite owner in `persistence/local/room/`; PostgreSQL owner in `persistence/postgres/room/`; compatibility exports in `room_store.py`, `room_database.py`, and `sqlite_attention_repository.py`; event types in `room/types.py` with compatibility export in `room_types.py` |
 | Room storage authority and transaction contract | `room_repository.py`, `docs/product/ROOM_REPOSITORY.md` |
 | Autonomous participation and durable attention | `room_attention.py`, `docs/product/ATTENTION_MODEL.md` |
 | WebSocket commands and ACL | `room_commands.py`, `ws_room_session.py`, `room_realtime.py` |

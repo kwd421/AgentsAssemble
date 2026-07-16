@@ -257,6 +257,24 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.32 provider bridge-process move",
     ),
+    "room_errors.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.errors",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_errors for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_room_package.py",),
+        introduced_in="Milestone 6.1 room contracts move",
+    ),
+    "room_types.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.types",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_types for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_room_package.py",),
+        introduced_in="Milestone 6.1 room contracts move",
+    ),
     "gui_observability_http.py": CompatibilityShim(
         replacement_import="agentsassemble.web.routes.observability",
         removal_gate=(

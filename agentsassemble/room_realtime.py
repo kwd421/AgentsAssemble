@@ -63,7 +63,7 @@ from agentsassemble.room_attention_policy import (
     normalize_shadow_attention_mode,
     should_record_shadow_attention,
 )
-from agentsassemble.room_errors import RoomCommandRejected
+from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room_event_broker import ROOM_EVENT_STREAM, RoomEventBroker, RoomSocketChannel
 from agentsassemble.room_floor_policy import (
     AgentFloorEligibility,
@@ -93,7 +93,7 @@ from agentsassemble.room_turn_coordinator import (
     dedupe_event_ids as _dedupe_text_list,
     room_message_text as _room_message_text,
 )
-from agentsassemble.room_types import RoomCommand, RoomEvent
+from agentsassemble.room.types import RoomCommand, RoomEvent
 from agentsassemble.voice_presence import leave_all_voice
 
 ROOM_SNAPSHOT_EVENT_LIMIT = 200

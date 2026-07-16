@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.room_types import RoomEvent
+from agentsassemble.room.types import RoomEvent
 
 
 PUBLIC_ACTIVITY_LABELS = {
