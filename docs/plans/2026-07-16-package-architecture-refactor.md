@@ -560,3 +560,10 @@ module churn were deliberately avoided rather than forgotten.
   to `web/routes/agent_sessions.py`. The room coordinator imports the owned
   registrar while preserving its existing local process and turn adapter patch
   seams; `gui_room_agent_http.py` remains an explicit compatibility export.
+- 2026-07-16: Room history/registry/message/vote routes and canonical
+  participant/room lifecycle routes moved to `web/routes/room_history.py` and
+  `web/routes/room_lifecycle.py`. The legacy file-backed `/api/room/ensure`
+  endpoint remains isolated in `gui_room_lifecycle_http.py`; its historical
+  combined registrar still registers ensure before current lifecycle routes.
+  Current web modules therefore do not import the legacy frontend-meeting
+  implementation.

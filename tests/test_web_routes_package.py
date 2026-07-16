@@ -7,13 +7,17 @@ import agentsassemble.gui_provider_http as compatibility_providers
 import agentsassemble.gui_public_invite_http as compatibility_public_invite
 import agentsassemble.gui_room_agent_http as compatibility_agent_sessions
 import agentsassemble.gui_room_invite_http as compatibility_room_invite
+import agentsassemble.gui_room_lifecycle_http as compatibility_room_lifecycle
 import agentsassemble.gui_room_settings_http as compatibility_room_settings
 from agentsassemble.web.routes import agent_sessions as owned_agent_sessions
 from agentsassemble.web.routes import attachments as owned_attachments
 from agentsassemble.web.routes import providers as owned_providers
 from agentsassemble.web.routes import public_invite as owned_public_invite
+from agentsassemble.web.routes import room_history as owned_room_history
 from agentsassemble.web.routes import room_invite as owned_room_invite
+from agentsassemble.web.routes import room_lifecycle as owned_room_lifecycle
 from agentsassemble.web.routes import room_settings as owned_room_settings
+from agentsassemble.web.router import Router
 
 
 class WebRoutesPackageTests(unittest.TestCase):
@@ -50,6 +54,26 @@ class WebRoutesPackageTests(unittest.TestCase):
             compatibility_room_invite.register_invite_admission_routes,
             owned_room_invite.register_invite_admission_routes,
         )
+
+    def test_room_lifecycle_root_module_exports_owned_route_parts(self) -> None:
+        self.assertIs(
+            compatibility_room_lifecycle.register_room_history_routes,
+            owned_room_history.register_room_history_routes,
+        )
+        self.assertIs(
+            compatibility_room_lifecycle.register_current_room_lifecycle_routes,
+            owned_room_lifecycle.register_room_lifecycle_routes,
+        )
+
+    def test_room_lifecycle_compatibility_registrar_keeps_ensure_and_current_routes(
+        self,
+    ) -> None:
+        router = Router()
+
+        compatibility_room_lifecycle.register_room_lifecycle_routes(router)
+
+        self.assertIn(("POST", "/api/room/ensure"), router.routes())
+        self.assertIn(("POST", "/api/rooms/close"), router.routes())
 
     def test_room_settings_root_module_exports_owned_routes(self) -> None:
         self.assertIs(

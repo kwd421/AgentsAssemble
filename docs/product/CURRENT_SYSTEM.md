@@ -264,6 +264,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Room storage authority and transaction contract | `room_repository.py`, `docs/product/ROOM_REPOSITORY.md` |
 | Autonomous participation and durable attention | `room_attention.py`, `docs/product/ATTENTION_MODEL.md` |
 | WebSocket commands and ACL | `room_commands.py`, `ws_room_session.py`, `room_realtime.py` |
+| Room history and lifecycle HTTP | `web/routes/room_history.py`, `web/routes/room_lifecycle.py`; legacy `/api/room/ensure` composition remains in `gui_room_lifecycle_http.py` |
 | Routing and provider context | `room_routing.py`, `room_context.py`, `room_turn_context.py` |
 | Fanout and bridge delivery | `room_event_broker.py`, `room_agent_bridge.py` |
 | Agent Session compatibility HTTP | `web/routes/agent_sessions.py`; compatibility export in `gui_room_agent_http.py` |

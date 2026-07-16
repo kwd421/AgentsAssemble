@@ -178,7 +178,9 @@ These families already have a clear module owner and should not move back into
 | `web/routes/public_invite.py` | Current core | Host-gated public URL and tunnel control | `tests/test_public_invite_http.py` |
 | `web/routes/room_invite.py` | Current core | Host claim, invite admission, companion invite, leave/revoke | `tests/test_room_invite.py`, `tests/test_public_invite.py` |
 | `web/routes/room_settings.py` | Current core | Repository-owned room-global settings | `tests/test_gui_server_room_settings_http.py` |
-| `gui_room_lifecycle_http.py` | Mixed current/compatibility | Room directory/lifecycle plus HTTP/SSE history compatibility | `tests/test_gui_server_room_routes.py`, `tests/test_gui_server_streams_http.py` |
+| `web/routes/room_history.py` | Mixed current/compatibility | Room directory plus HTTP/SSE history, message, and vote compatibility | `tests/test_gui_server_room_routes.py`, `tests/test_gui_server_streams_http.py` |
+| `web/routes/room_lifecycle.py` | Current core | Participant leave/kick/export and room close/archive commands | `tests/test_gui_server_room_routes.py` |
+| `gui_room_lifecycle_http.py` | Mixed legacy/compatibility | Legacy `/api/room/ensure` registration plus historical combined registrar exports | `tests/test_gui_server_room_routes.py`, `tests/test_live_agent_frontend_create.py` |
 | `gui_room_moderation_media_http.py` | Mixed current/optional/compatibility | Roster compatibility, moderation HTTP, custom channels, voice presence | `tests/test_gui_server_room_routes.py`, `tests/test_room_channels_http.py` |
 | `web/routes/agent_sessions.py` | Compatibility | Pre-canonical Agent Session HTTP create/resume/turn controls; root compatibility export remains in `gui_room_agent_http.py` | `tests/test_agent_session_cli.py`, `tests/test_live_agent_session_agent_controls.py` |
 | `gui_legacy_lobby_http.py` | Compatibility | HTTP lobby write/SSE plus explicit promotion and governed remote-bridge commands; command policy lives in `legacy_lobby_commands.py` | `tests/test_gui_server_streams_http.py`, `tests/test_gui_server_lobby_social.py`, `tests/test_lobby_promotion.py` |

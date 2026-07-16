@@ -23,7 +23,8 @@ CURRENT_INVITE_APPLICATION_MODULES = (
 CURRENT_IDENTITY_APPLICATION_MODULES = (
     "agentsassemble/web/routes/agent_sessions.py",
     "agentsassemble/web/routes/room_invite.py",
-    "agentsassemble/gui_room_lifecycle_http.py",
+    "agentsassemble/web/routes/room_history.py",
+    "agentsassemble/web/routes/room_lifecycle.py",
     "agentsassemble/web/router.py",
     "agentsassemble/identity/pairing.py",
     "agentsassemble/room_admission.py",
