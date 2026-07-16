@@ -13,6 +13,7 @@ import agentsassemble.room_members as compatibility_members
 import agentsassemble.room_projection as compatibility_projection
 import agentsassemble.room_repository as compatibility_repository
 import agentsassemble.room_types as compatibility_types
+import agentsassemble.room_turn_context as compatibility_turn_context
 from agentsassemble.room import bridge_stop_confirmation as owned_bridge_stop
 from agentsassemble.room import command_uow as owned_command_uow
 from agentsassemble.room import commands as owned_commands
@@ -24,9 +25,32 @@ from agentsassemble.room import moderation as owned_moderation
 from agentsassemble.room import projection as owned_projection
 from agentsassemble.room import repository as owned_repository
 from agentsassemble.room import types as owned_types
+from agentsassemble.room import turn_context as owned_turn_context
 
 
 class RoomPackageTests(unittest.TestCase):
+    def test_room_turn_context_root_module_exports_owned_builder(self) -> None:
+        for name in (
+            "BoundedProviderContext",
+            "DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS",
+            "DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS",
+            "MAX_MODEL_VISIBLE_MEDIA_SIZE",
+            "MODEL_VISIBLE_MEDIA_REPRESENTATIONS",
+            "UNSUPPORTED_MEDIA_AUDIT_NOTE",
+            "_agent_turn_prompt",
+            "_bound_room_turn_packet",
+            "_nonnegative_int",
+            "build_provider_bootstrap_input",
+            "build_provider_recovery_input",
+            "build_provider_turn_input",
+            "build_room_turn_packet",
+            "room_memory_from_session",
+        ):
+            self.assertIs(
+                getattr(compatibility_turn_context, name),
+                getattr(owned_turn_context, name),
+            )
+
     def test_room_context_root_module_exports_owned_projection(self) -> None:
         for name in (
             "DEFAULT_ROOM_CONTEXT_CHARS",

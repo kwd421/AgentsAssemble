@@ -963,3 +963,13 @@ module churn were deliberately avoided rather than forgotten.
   remains an explicit compatibility export. Direct `room.text` normalization
   replaces the legacy helper delegation; sequence reads, exclusion of the
   target participant, truncation markers, and output fields are unchanged.
+- 2026-07-17: Provider turn packet assembly, bootstrap/delta/recovery text,
+  room identity projection, bounded room-memory inclusion, media manifest
+  filtering, and prompt-budget fitting moved to `room/turn_context.py`.
+  Agent Session execution now uses the owned path while `room_turn_context.py`
+  retains the verified compatibility exports and test patch seam. Direct
+  `room.text` normalization replaces the legacy helper delegation. The
+  optional local `RoomStore` construction remains unchanged for direct
+  compatibility callers; canonical realtime and Agent Session execution still
+  inject their existing repository instance. Packet fields, prompt text,
+  media audit rules, cursor advancement, and failure behavior are unchanged.

@@ -120,6 +120,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.room.projection",
             "agentsassemble.room.repository",
             "agentsassemble.room.text",
+            "agentsassemble.room.turn_context",
             "agentsassemble.room.types",
             "agentsassemble.room.visibility",
         ):
@@ -146,6 +147,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.room_event_broker",
             "agentsassemble.room_projection",
             "agentsassemble.room_repository",
+            "agentsassemble.room_turn_context",
             "agentsassemble.room_types",
         ):
             compatibility_line = next(

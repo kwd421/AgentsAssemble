@@ -67,7 +67,7 @@ from agentsassemble.room.context import (
     project_room_context,
 )
 
-from agentsassemble.room_turn_context import (
+from agentsassemble.room.turn_context import (
     DEFAULT_ROOM_TURN_MAX_PROMPT_CHARS,
     DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS,
     UNSUPPORTED_MEDIA_AUDIT_NOTE,

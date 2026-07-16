@@ -294,7 +294,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         store.append_event("room-a", "message_final", actor_id="human-1", content="hello")
 
         with patch(
-            "agentsassemble.room_turn_context.RoomStore",
+            "agentsassemble.room.turn_context.RoomStore",
             side_effect=AssertionError("unexpected SQLite repository construction"),
         ):
             packet = build_room_turn_packet(
