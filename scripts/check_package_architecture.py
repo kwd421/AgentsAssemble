@@ -389,6 +389,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.6 provider security utilities move",
     ),
+    "windows_conpty.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.windows_conpty",
+        removal_gate=(
+            "No direct imports use agentsassemble.windows_conpty for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.8 Windows ConPTY runtime move",
+    ),
     "operator_pairing.py": CompatibilityShim(
         replacement_import="agentsassemble.identity.pairing",
         removal_gate=(

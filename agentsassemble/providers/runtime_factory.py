@@ -8,7 +8,7 @@ from agentsassemble.grok_acp_runtime import GrokAcpRuntime
 from agentsassemble.live_cli import LiveCliRuntime
 from agentsassemble.opencode_runtime import OpenCodeRuntime
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
-from agentsassemble.windows_conpty import WindowsConPtyRuntime
+from agentsassemble.providers.windows_conpty import WindowsConPtyRuntime
 
 
 class ProviderRuntimeFactoryError(ValueError):

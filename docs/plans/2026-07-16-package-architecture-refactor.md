@@ -663,3 +663,10 @@ module churn were deliberately avoided rather than forgotten.
   delegation; API payloads, supported model/effort validation, private
   reasoning suppression, bounded conversation memory, interruption, key
   clearing, and diagnostics are unchanged.
+- 2026-07-16: The Windows persistent terminal adapter moved to
+  `providers/windows_conpty.py`. The provider factory and ConPTY behavior tests
+  use the owned path, while `windows_conpty.py` remains an explicit
+  compatibility export. The adapter now imports `room.text` directly;
+  pywinpty spawning, injected process seams, startup readiness, persistent
+  process reuse, output limits, delta/final extraction, interrupt, cleanup,
+  profile diagnostics, and platform environment sanitation are unchanged.

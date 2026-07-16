@@ -25,7 +25,7 @@ from agentsassemble.providers.secrets import ProviderSecretStore
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
 from agentsassemble.room_attendee import _leave_room, _orientation_text, parse_agent_invite_url
 from agentsassemble.room_attendee import AgentAttendee
-from agentsassemble.windows_conpty import WindowsConPtyRuntime
+from agentsassemble.providers.windows_conpty import WindowsConPtyRuntime
 from agentsassemble.live_cli_transcripts import _antigravity_user_request
 from agentsassemble.live_cli import _terminal_query_response
 

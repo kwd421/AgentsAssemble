@@ -172,7 +172,6 @@ class PackageMapTests(unittest.TestCase):
     def test_provider_modules_use_the_owned_package(self) -> None:
         graph = load_package_graph(ROOT)
         package_map = build_package_map(ROOT)
-        self.assertEqual(graph.domains["agentsassemble.windows_conpty"], "providers")
         for module_name in (
             "agentsassemble.providers.bridge_protocol",
             "agentsassemble.providers.bridge_report_tracker",
@@ -183,6 +182,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.providers.runtime_contracts",
             "agentsassemble.providers.runtime_factory",
             "agentsassemble.providers.secrets",
+            "agentsassemble.providers.windows_conpty",
         ):
             with self.subTest(module_name=module_name):
                 self.assertEqual(graph.domains[module_name], "providers")
@@ -205,6 +205,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.provider_runtime_contracts",
             "agentsassemble.provider_runtime_factory",
             "agentsassemble.provider_secrets",
+            "agentsassemble.windows_conpty",
         ):
             with self.subTest(compatibility_module=compatibility_module):
                 compatibility_line = next(
