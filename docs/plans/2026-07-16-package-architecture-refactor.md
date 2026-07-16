@@ -876,3 +876,13 @@ module churn were deliberately avoided rather than forgotten.
   the owned paths while `room_types.py` and `room_errors.py` remain explicit
   compatibility exports. No event fields, exception codes, runtime behavior,
   persistence format, or command handling changed.
+- 2026-07-17: Room command-envelope validation, identity capability policy,
+  public room/session/event projection, and bounded runtime-diagnostic
+  projection moved to `room/commands.py` and `room/projection.py`. Realtime,
+  lifecycle, turn coordination, and focused behavior tests now use the owned
+  paths while `room_commands.py` and `room_projection.py` remain explicit
+  compatibility exports. Both owned modules import `room.text` directly
+  instead of the legacy `meeting_events` delegation; normalization output is
+  unchanged. Command actions, validation codes, capability decisions, private
+  field redaction, activity labels, latency merging, and diagnostic bounds are
+  unchanged.

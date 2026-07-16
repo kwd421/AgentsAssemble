@@ -41,7 +41,7 @@ from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
 )
-from agentsassemble.room_commands import (
+from agentsassemble.room.commands import (
     RoomCommandValidationError,
     capabilities_for_identity,
     parse_room_command,
@@ -74,7 +74,7 @@ from agentsassemble.room_members import is_room_member_muted, remove_room_member
 from agentsassemble.providers.model_verification import (
     model_verification_status as _model_verification_status,
 )
-from agentsassemble.room_projection import (
+from agentsassemble.room.projection import (
     public_event as _public_event,
     public_participant,
     public_session,

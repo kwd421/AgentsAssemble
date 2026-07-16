@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.room_commands import (
+from agentsassemble.room.commands import (
     RoomCommandValidationError,
     capabilities_for_identity,
     parse_room_command,

@@ -22,7 +22,7 @@ from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room_attention import AttentionLeaseConflict
 from agentsassemble.room_command_uow import RoomCommandUnitOfWork
 from agentsassemble.room_event_broker import RoomEventBroker
-from agentsassemble.room_projection import (
+from agentsassemble.room.projection import (
     PUBLIC_ACTIVITY_LABELS,
     merged_latency,
     public_activity,

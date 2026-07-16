@@ -109,7 +109,9 @@ class PackageMapTests(unittest.TestCase):
         package_map = build_package_map(ROOT)
 
         for module_name in (
+            "agentsassemble.room.commands",
             "agentsassemble.room.errors",
+            "agentsassemble.room.projection",
             "agentsassemble.room.text",
             "agentsassemble.room.types",
             "agentsassemble.room.visibility",
@@ -128,7 +130,9 @@ class PackageMapTests(unittest.TestCase):
         )
         self.assertEqual(graph.domains["agentsassemble.frontend_runtime"], "web")
         for compatibility_module in (
+            "agentsassemble.room_commands",
             "agentsassemble.room_errors",
+            "agentsassemble.room_projection",
             "agentsassemble.room_types",
         ):
             compatibility_line = next(

@@ -257,6 +257,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.32 provider bridge-process move",
     ),
+    "room_commands.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.commands",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_commands for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_room_package.py",),
+        introduced_in="Milestone 6.2 room commands and projection move",
+    ),
     "room_errors.py": CompatibilityShim(
         replacement_import="agentsassemble.room.errors",
         removal_gate=(
@@ -265,6 +274,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         ),
         known_callers=("tests/test_room_package.py",),
         introduced_in="Milestone 6.1 room contracts move",
+    ),
+    "room_projection.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.projection",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_projection for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_room_package.py",),
+        introduced_in="Milestone 6.2 room commands and projection move",
     ),
     "room_types.py": CompatibilityShim(
         replacement_import="agentsassemble.room.types",

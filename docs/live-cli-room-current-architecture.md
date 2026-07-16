@@ -119,7 +119,8 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `room_store.py` | room, participant, session, event, and command-result persistence API | WebSocket connections |
 | `room/types.py` | shared event, participant, session, command, and turn packet shapes | validation or side effects |
 | `room/errors.py` | room command rejection contract | command execution |
-| `room_commands.py` | command envelope validation and identity capability policy | command execution |
+| `room/commands.py` | command envelope validation and identity capability policy | command execution |
+| `room/projection.py` | public room/session/event and runtime-diagnostic projection | persistence or command execution |
 | `room_routing.py` | pure mention, default-responder, and relay-depth target selection | persistence or process launch |
 | `room_context.py` | bounded bootstrap and cursor-diff provider input projection | provider-private memory |
 | `room_event_broker.py` | bounded per-connection fanout and targeted bridge delivery | durable history |

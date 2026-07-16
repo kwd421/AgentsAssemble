@@ -55,7 +55,7 @@ MCP tool-loop 에이전트  ─┤                ├─ lobby.jsonl        (방
 | `room_store.py` | canonical room 도메인 저장 API. 브라우저 backfill, 참가자/Agent Session, command dedup이 모두 이 경로를 사용 |
 | `room_context.py` | 새 세션의 RoomMemory + 최근 12개/4,000자 bootstrap, 이후 `last_provider_sync_seq` 뒤의 bounded diff 구성 |
 | `room_types.py` | canonical room event/participant/session/command/turn packet 타입 계약 |
-| `room_commands.py` | request-id command 검증과 서버 권위 capability 정책 |
+| `room/commands.py` | request-id command 검증과 서버 권위 capability 정책; `room_commands.py`는 호환 export |
 | `room_routing.py` | `@mention`, `@all`, default responder, agent relay depth를 결정하는 순수 정책 |
 | `room_event_broker.py` | bounded WebSocket fanout. delta를 먼저 버리고 essential overflow는 `resync_required`로 SQLite replay 유도 |
 | `meeting_events.py` | `LobbyEvent`(40+ 필드: actor_id, side, auto_chain_depth, flow_* 15개, attachments), JSONL append/tail-read, `clean_lobby_text` |

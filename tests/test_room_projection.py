@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.room_projection import (
+from agentsassemble.room.projection import (
     merged_latency,
     public_activity,
     public_event,

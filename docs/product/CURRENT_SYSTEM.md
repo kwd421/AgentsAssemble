@@ -263,7 +263,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Room persistence and sequence | local SQLite owner in `persistence/local/room/`; PostgreSQL owner in `persistence/postgres/room/`; compatibility exports in `room_store.py`, `room_database.py`, and `sqlite_attention_repository.py`; event types in `room/types.py` with compatibility export in `room_types.py` |
 | Room storage authority and transaction contract | `room_repository.py`, `docs/product/ROOM_REPOSITORY.md` |
 | Autonomous participation and durable attention | `room_attention.py`, `docs/product/ATTENTION_MODEL.md` |
-| WebSocket commands and ACL | `room_commands.py`, `ws_room_session.py`, `room_realtime.py` |
+| WebSocket commands and ACL | `room/commands.py` with compatibility export in `room_commands.py`; `ws_room_session.py`, `room_realtime.py` |
 | Room history and lifecycle HTTP | `web/routes/room_history.py`, `web/routes/room_lifecycle.py`; legacy `/api/room/ensure` composition remains in `gui_room_lifecycle_http.py` |
 | Room roster and member HTTP | `web/routes/room_members.py`; retained resident kick and optional channel/voice composition remains in `gui_room_moderation_media_http.py` |
 | Routing and provider context | `room_routing.py`, `room_context.py`, `room_turn_context.py` |
