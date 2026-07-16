@@ -126,7 +126,7 @@ remain in `room_realtime.py`, but new behavior belongs in its owning module.
 | `providers/capabilities.py` | cached native model, effort, tier, variant, and permission discovery | room or secret state |
 | `provider_secrets.py` | OS keyring credential access and redacted status | provider prompts or room events |
 | `room_realtime.py` | command, durable state, turn, and recovery orchestration | provider terminal implementation |
-| `room_bridge_process.py` | server-owned Agent Bridge process lifecycle | room routing |
+| `providers/bridge_process.py` | server-owned Agent Bridge process lifecycle | room routing |
 | `providers/agent_bridge.py` | authenticated bridge client and turn/report protocol | browser UI or WebSocket construction |
 | `application/agent_bridge_entrypoint.py` | bridge environment/config parsing and WebSocket/runtime composition | provider turn behavior |
 | `live_cli.py` | persistent PTY lifecycle and provider message extraction | room membership or history replay |

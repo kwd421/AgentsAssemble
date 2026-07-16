@@ -1,5 +1,6 @@
 import json
 import io
+import os
 import subprocess
 import sys
 import tempfile
@@ -8,7 +9,10 @@ import time
 import unittest
 from pathlib import Path
 
-from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager, _BridgeHandle
+from agentsassemble.providers.bridge_process import (
+    NativeCliBridgeProcessManager,
+    _BridgeHandle,
+)
 from agentsassemble.room_realtime import NativeCliProviderSpec
 
 
@@ -146,6 +150,12 @@ class NativeCliBridgeProcessManagerTests(unittest.TestCase):
                     "-m",
                     "agentsassemble.application.agent_bridge_entrypoint",
                 ],
+            )
+            package_root = Path(__file__).resolve().parents[1]
+            self.assertEqual(Path(kwargs["cwd"]), package_root)
+            self.assertEqual(
+                Path(kwargs["env"]["PYTHONPATH"].split(os.pathsep)[0]),
+                package_root,
             )
             self.assertNotIn("secret-single-use-ticket", " ".join(command))
             self.assertNotIn("secret-single-use-ticket", json.dumps(config))

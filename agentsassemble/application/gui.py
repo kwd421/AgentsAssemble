@@ -16,9 +16,9 @@ from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.admission.projection import LegacyAdmissionProjection
+from agentsassemble.providers.bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.public_tunnel import PublicTunnelManager
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
-from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_realtime import RoomRealtimeController
 from agentsassemble.room_repository import RoomRepository
 from agentsassemble.ws_room_session import WsTicketStore

@@ -15,7 +15,7 @@ turn assignment, or legacy resident controls. Start with `CURRENT_SYSTEM.md`.
 | Browser and Agent Bridge transport | ticket-authenticated canonical `/ws` |
 | Room command validation and coordination | `RoomRealtimeController` |
 | Provider turn delivery and active bridge lease | `providers/agent_bridge.py`, `room_event_broker.py`; process entrypoint composition in `application/agent_bridge_entrypoint.py` |
-| Server-owned provider process handles | `room_bridge_process.py` |
+| Server-owned provider process handles | `providers/bridge_process.py`; compatibility export in `room_bridge_process.py` |
 | Codex app-server process and provider thread | `providers/codex_app_server.py` |
 | Provider-visible room context | `room_turn_context.py` |
 | Provider-private conversation memory | the provider adapter/session |

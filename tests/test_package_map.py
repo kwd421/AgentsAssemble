@@ -199,6 +199,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.providers.antigravity_resident",
             "agentsassemble.providers.auth",
             "agentsassemble.providers.bridge_protocol",
+            "agentsassemble.providers.bridge_process",
             "agentsassemble.providers.bridge_report_tracker",
             "agentsassemble.providers.capabilities",
             "agentsassemble.providers.catalog",
@@ -275,6 +276,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.provider_secrets",
             "agentsassemble.provider_sessions",
             "agentsassemble.room_agent_bridge",
+            "agentsassemble.room_bridge_process",
             "agentsassemble.room_api_provider",
             "agentsassemble.windows_conpty",
         ):

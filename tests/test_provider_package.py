@@ -34,6 +34,7 @@ import agentsassemble.provider_runtime_factory as compatibility_factory
 import agentsassemble.provider_secrets as compatibility_secrets
 import agentsassemble.provider_sessions as compatibility_sessions
 import agentsassemble.room_agent_bridge as compatibility_agent_bridge
+import agentsassemble.room_bridge_process as compatibility_bridge_process
 import agentsassemble.room_api_provider as compatibility_api
 import agentsassemble.windows_conpty as compatibility_windows_conpty
 from agentsassemble.providers import api as owned_api
@@ -41,6 +42,7 @@ from agentsassemble.providers import agent_bridge as owned_agent_bridge
 from agentsassemble.providers import antigravity_resident as owned_antigravity_resident
 from agentsassemble.providers import catalog as owned_catalog
 from agentsassemble.providers import bridge_protocol as owned_bridge_protocol
+from agentsassemble.providers import bridge_process as owned_bridge_process
 from agentsassemble.providers import bridge_report_tracker as owned_bridge_tracker
 from agentsassemble.providers import capabilities as owned_capabilities
 from agentsassemble.providers import claude_resident as owned_claude_resident
@@ -74,6 +76,17 @@ from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_room_bridge_process_root_module_exports_owned_manager(self) -> None:
+        for name in (
+            "BridgeExitListener",
+            "NativeCliBridgeProcessManager",
+            "_BridgeHandle",
+        ):
+            self.assertIs(
+                getattr(compatibility_bridge_process, name),
+                getattr(owned_bridge_process, name),
+            )
+
     def test_room_agent_bridge_root_module_exports_owned_runtime(self) -> None:
         for name in ("BridgeRoomClient", "BridgeRuntime", "RoomAgentBridge"):
             self.assertIs(

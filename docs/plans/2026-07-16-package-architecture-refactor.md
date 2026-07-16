@@ -860,3 +860,12 @@ module churn were deliberately avoided rather than forgotten.
   legacy `meeting_events` name preserved. Turn assignment, observed-cursor
   checkpointing, activity redaction, delta/final reporting, stop confirmation,
   cleanup diagnostics, and launch configuration are unchanged.
+- 2026-07-17: Server-owned Agent Bridge process handles, launch-config
+  persistence, credential stdin handoff, shared OpenCode server ownership,
+  stderr drain, exit watching, and process cleanup moved to
+  `providers/bridge_process.py`. GUI composition, native CLI smoke, fixtures,
+  and E2E tests now use the owned path while `room_bridge_process.py` remains
+  an explicit compatibility export. The relocated module computes the
+  repository package root from its new depth, with focused assertions for
+  subprocess cwd and `PYTHONPATH`; bridge command, secret boundaries, profile
+  directories, stderr diagnostics, and stop semantics are unchanged.
