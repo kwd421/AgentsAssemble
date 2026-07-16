@@ -1,0 +1,4 @@
+# Exact import cycles grandfathered at the 2026-07-16 architecture gate.
+# Cycles may disappear, but changed or new cycles must not be added here.
+agentsassemble.gui | agentsassemble.gui_observability_http | agentsassemble.release_health | agentsassemble.room_event_benchmark
+agentsassemble.antigravity_resident | agentsassemble.codex_resident | agentsassemble.cursor_resident | agentsassemble.grok_resident | agentsassemble.hermes_resident | agentsassemble.kiro_resident | agentsassemble.live_agent_runner

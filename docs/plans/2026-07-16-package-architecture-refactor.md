@@ -365,3 +365,10 @@ module churn were deliberately avoided rather than forgotten.
   maintenance modules), internal and reverse imports, import-time call signals,
   test/monkeypatch evidence, proposed owners, and migration status. The
   committed map is checked byte-for-byte by a unit test before any module move.
+- 2026-07-16: Milestones 1.2 and 1.3 froze the historical package-root module
+  list, require metadata for any future root compatibility shim, and added
+  dependency-direction and import-cycle gates. The two exact starting cycles
+  are reported in `PACKAGE_CYCLES.md`; a changed or new cycle fails, while a
+  removed cycle needs no baseline edit. Migrated core packages cannot import
+  legacy or web implementations, and migrated web code cannot import concrete
+  SQLite/PostgreSQL adapters.

@@ -7,7 +7,7 @@ import hashlib
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 
 ROOT_ENTRYPOINTS = frozenset({"agentsassemble", "agentsassemble.cli", "agentsassemble.gui"})
@@ -47,7 +47,15 @@ class ModuleInventory:
     migration_status: str
 
 
-def build_package_map(repository_root: Path) -> str:
+@dataclass(frozen=True)
+class PackageGraph:
+    modules: Mapping[str, ModuleSource]
+    imports_by_module: Mapping[str, tuple[str, ...]]
+    domains: Mapping[str, str]
+    classifications: Mapping[str, str]
+
+
+def load_package_graph(repository_root: Path) -> PackageGraph:
     root = Path(repository_root).resolve()
     modules = _load_modules(root)
     known_modules = frozenset(modules)
@@ -55,6 +63,28 @@ def build_package_map(repository_root: Path) -> str:
         name: _internal_imports(module, known_modules)
         for name, module in modules.items()
     }
+    classifications = {
+        name: _classification(module)
+        for name, module in modules.items()
+    }
+    domains = {
+        name: _domain(module, classifications[name])
+        for name, module in modules.items()
+    }
+    return PackageGraph(
+        modules=modules,
+        imports_by_module=imports_by_module,
+        domains=domains,
+        classifications=classifications,
+    )
+
+
+def build_package_map(repository_root: Path) -> str:
+    root = Path(repository_root).resolve()
+    graph = load_package_graph(root)
+    modules = graph.modules
+    imports_by_module = graph.imports_by_module
+    known_modules = frozenset(modules)
     reverse_counts = Counter(
         imported
         for imports in imports_by_module.values()
@@ -64,8 +94,8 @@ def build_package_map(repository_root: Path) -> str:
     inventories = []
     for name in sorted(modules):
         module = modules[name]
-        classification = _classification(module)
-        domain = _domain(module, classification)
+        classification = graph.classifications[name]
+        domain = graph.domains[name]
         inventories.append(
             ModuleInventory(
                 name=name,
