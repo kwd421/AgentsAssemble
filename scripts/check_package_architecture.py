@@ -389,6 +389,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.2 provider catalog move",
     ),
+    "provider_auth.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.auth",
+        removal_gate=(
+            "No direct imports use agentsassemble.provider_auth for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.16 provider authentication classifier move",
+    ),
     "provider_model_verification.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.model_verification",
         removal_gate=(

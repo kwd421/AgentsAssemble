@@ -9,7 +9,7 @@ from pathlib import Path
 from subprocess import TimeoutExpired
 from typing import TYPE_CHECKING, Any
 
-from agentsassemble.provider_auth import provider_auth_error_message, provider_login_required_message
+from agentsassemble.providers.auth import provider_auth_error_message, provider_login_required_message
 from agentsassemble.room_thought import ThoughtChunker, post_room_thought
 
 if TYPE_CHECKING:

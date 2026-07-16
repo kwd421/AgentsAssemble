@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from agentsassemble.codex_session_ids import extract_codex_session_id
 from agentsassemble.codex_stream import parse_codex_stream_line
-from agentsassemble.provider_auth import provider_auth_error_message, provider_login_required_message
+from agentsassemble.providers.auth import provider_auth_error_message, provider_login_required_message
 from agentsassemble.sandbox_launcher import CODEX_EXEC_SAFETY_FLAGS, sandbox_launcher_for
 
 if TYPE_CHECKING:

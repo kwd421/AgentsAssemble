@@ -173,6 +173,7 @@ class PackageMapTests(unittest.TestCase):
         graph = load_package_graph(ROOT)
         package_map = build_package_map(ROOT)
         for module_name in (
+            "agentsassemble.providers.auth",
             "agentsassemble.providers.bridge_protocol",
             "agentsassemble.providers.bridge_report_tracker",
             "agentsassemble.providers.catalog",
@@ -213,6 +214,7 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.provider_model_verification",
             "agentsassemble.opencode_runtime",
             "agentsassemble.process_environment",
+            "agentsassemble.provider_auth",
             "agentsassemble.provider_catalog",
             "agentsassemble.provider_runtime_config",
             "agentsassemble.provider_runtime_contracts",

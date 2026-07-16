@@ -723,3 +723,9 @@ module churn were deliberately avoided rather than forgotten.
   compatibility export. Focused tests now document the existing pending,
   unavailable, exact, alias, Claude provider-revision, and mismatch outcomes;
   no model selection or rejection rule changed.
+- 2026-07-17: Shared provider authentication error classification moved to
+  `providers/auth.py`. Codex, Grok, Antigravity, and Cursor residents now use
+  the owned helper while `provider_auth.py` remains an explicit compatibility
+  export. Focused tests document the existing case-insensitive login markers,
+  Korean login guidance, and unrelated-error behavior; marker and copy values
+  are unchanged.

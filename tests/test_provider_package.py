@@ -11,6 +11,7 @@ import agentsassemble.live_cli_output as compatibility_live_cli_output
 import agentsassemble.live_cli_transcripts as compatibility_live_cli_transcripts
 import agentsassemble.opencode_runtime as compatibility_opencode
 import agentsassemble.process_environment as compatibility_process_environment
+import agentsassemble.provider_auth as compatibility_auth
 import agentsassemble.provider_catalog as compatibility_catalog
 import agentsassemble.provider_model_verification as compatibility_model_verification
 import agentsassemble.provider_runtime_config as compatibility_config
@@ -30,6 +31,7 @@ from agentsassemble.providers import live_cli_transcripts as owned_live_cli_tran
 from agentsassemble.providers import model_verification as owned_model_verification
 from agentsassemble.providers import opencode as owned_opencode
 from agentsassemble.providers import process_environment as owned_process_environment
+from agentsassemble.providers import auth as owned_auth
 from agentsassemble.providers import runtime_config as owned_config
 from agentsassemble.providers import runtime_contracts as owned_contracts
 from agentsassemble.providers import runtime_factory as owned_factory
@@ -139,6 +141,16 @@ class ProviderPackageTests(unittest.TestCase):
                     getattr(compatibility_process_environment, name),
                     getattr(owned_process_environment, name),
                 )
+
+    def test_provider_auth_root_module_exports_owned_functions(self) -> None:
+        self.assertIs(
+            compatibility_auth.provider_auth_error_message,
+            owned_auth.provider_auth_error_message,
+        )
+        self.assertIs(
+            compatibility_auth.provider_login_required_message,
+            owned_auth.provider_login_required_message,
+        )
 
     def test_provider_secrets_root_module_exports_owned_store(self) -> None:
         self.assertIs(
