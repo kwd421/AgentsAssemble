@@ -4,8 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import agentsassemble.identity_room_preferences as compatibility_preferences
 import agentsassemble.identity_store as compatibility_store
+from agentsassemble.identity import preferences as shared_preferences
 from agentsassemble.persistence.local.identity import migration as owned_migration
+from agentsassemble.persistence.local.identity import preferences as owned_preferences
 from agentsassemble.persistence.local.identity import registry as owned_registry
 from agentsassemble.persistence.local.identity import repository as owned_repository
 
@@ -26,6 +29,20 @@ class LocalIdentityPersistencePackageTests(unittest.TestCase):
         self.assertIs(
             compatibility_store.migrate_legacy_users_json,
             owned_migration.migrate_legacy_users_json,
+        )
+
+    def test_room_preference_compatibility_exports_owned_boundaries(self) -> None:
+        self.assertIs(
+            compatibility_preferences.canonical_user_id,
+            shared_preferences.canonical_user_id,
+        )
+        self.assertIs(
+            compatibility_preferences.read_room_preferences,
+            owned_preferences.read_room_preferences,
+        )
+        self.assertIs(
+            compatibility_preferences.update_room_preferences,
+            owned_preferences.update_room_preferences,
         )
 
     def test_compatibility_and_owned_paths_share_one_sqlite_authority(self) -> None:

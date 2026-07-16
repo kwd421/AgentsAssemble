@@ -31,7 +31,7 @@ from agentsassemble.identity.repository import (
     LOCAL_OPERATOR_USER_ID,
     OPERATOR_PAIRING_REDEMPTION_STATUSES,
 )
-from agentsassemble.identity_room_preferences import (
+from agentsassemble.persistence.local.identity.preferences import (
     delete_room_preferences,
     ensure_room_preferences_schema,
     read_room_preferences,

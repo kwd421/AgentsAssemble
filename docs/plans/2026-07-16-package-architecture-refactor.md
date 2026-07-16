@@ -464,3 +464,12 @@ module churn were deliberately avoided rather than forgotten.
   adapter's dependency on legacy meeting text helpers while preserving the
   same normalization behavior, SQLite filename/schema, additive migrations,
   cache identity, hosted-backend binding guard, and one-time import rules.
+- 2026-07-16: Identity-owned room preferences were split at the persistence
+  boundary. Canonical `user_id` validation now lives in
+  `identity/preferences.py`; SQLite schema, JSON encoding, migration markers,
+  and CRUD helpers live in `persistence/local/identity/preferences.py`.
+  PostgreSQL preferences depend only on the shared identity rule, while the
+  explicit legacy preference migration depends directly on the local adapter.
+  `identity_room_preferences.py` remains a compatibility export for one
+  removal window. Preference data, table names, validation, and error behavior
+  are unchanged.

@@ -4,7 +4,7 @@ from __future__ import annotations
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
-from agentsassemble.identity_room_preferences import canonical_user_id
+from agentsassemble.identity.preferences import canonical_user_id
 from agentsassemble.room_repository_records import clean_room_id
 from agentsassemble.room_user_preferences import (
     RoomUserPreferencesRecord,

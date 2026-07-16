@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agentsassemble.identity_room_preferences import (
+from agentsassemble.persistence.local.identity.preferences import (
     ROOM_PREFERENCE_MIGRATIONS_TABLE,
     encode_room_preferences,
     read_room_preferences,

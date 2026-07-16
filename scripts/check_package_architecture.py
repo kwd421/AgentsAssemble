@@ -276,6 +276,18 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         ),
         introduced_in="Milestone 3.9 local identity persistence move",
     ),
+    "identity_room_preferences.py": CompatibilityShim(
+        replacement_import=(
+            "agentsassemble.persistence.local.identity.preferences"
+        ),
+        removal_gate=(
+            "Callers use agentsassemble.identity.preferences for shared identity "
+            "rules and agentsassemble.persistence.local.identity.preferences for "
+            "SQLite persistence for one compatibility window."
+        ),
+        known_callers=("tests/test_local_identity_persistence_package.py",),
+        introduced_in="Milestone 3.10 identity room preference split",
+    ),
     "postgres_room_mutations.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.postgres.room.mutations",
         removal_gate=(
