@@ -326,6 +326,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         ),
         introduced_in="Milestone 2.4 PostgreSQL admission persistence move",
     ),
+    "process_environment.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.process_environment",
+        removal_gate=(
+            "No direct imports use agentsassemble.process_environment for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.6 provider security utilities move",
+    ),
     "provider_catalog.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.catalog",
         removal_gate=(
@@ -361,6 +370,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         ),
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.4 provider runtime factory move",
+    ),
+    "provider_secrets.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.secrets",
+        removal_gate=(
+            "No direct imports use agentsassemble.provider_secrets for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.6 provider security utilities move",
     ),
     "operator_pairing.py": CompatibilityShim(
         replacement_import="agentsassemble.identity.pairing",

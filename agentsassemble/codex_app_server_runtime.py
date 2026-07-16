@@ -9,7 +9,7 @@ import time
 from typing import Callable, Iterable
 
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.process_environment import sanitized_provider_environment
+from agentsassemble.providers.process_environment import sanitized_provider_environment
 from agentsassemble.room_turn_context import _agent_turn_prompt
 
 AgentTurnChunk = dict[str, object]

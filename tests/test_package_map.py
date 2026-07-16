@@ -177,9 +177,11 @@ class PackageMapTests(unittest.TestCase):
             "agentsassemble.providers.bridge_protocol",
             "agentsassemble.providers.bridge_report_tracker",
             "agentsassemble.providers.catalog",
+            "agentsassemble.providers.process_environment",
             "agentsassemble.providers.runtime_config",
             "agentsassemble.providers.runtime_contracts",
             "agentsassemble.providers.runtime_factory",
+            "agentsassemble.providers.secrets",
         ):
             with self.subTest(module_name=module_name):
                 self.assertEqual(graph.domains[module_name], "providers")
@@ -195,10 +197,12 @@ class PackageMapTests(unittest.TestCase):
         for compatibility_module in (
             "agentsassemble.bridge_protocol",
             "agentsassemble.bridge_report_tracker",
+            "agentsassemble.process_environment",
             "agentsassemble.provider_catalog",
             "agentsassemble.provider_runtime_config",
             "agentsassemble.provider_runtime_contracts",
             "agentsassemble.provider_runtime_factory",
+            "agentsassemble.provider_secrets",
         ):
             with self.subTest(compatibility_module=compatibility_module):
                 compatibility_line = next(

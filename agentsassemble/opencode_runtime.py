@@ -11,7 +11,7 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.process_environment import sanitized_provider_environment
+from agentsassemble.providers.process_environment import sanitized_provider_environment
 
 
 class OpenCodeServerProcess:

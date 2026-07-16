@@ -16,7 +16,7 @@ from typing import TextIO
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.providers.runtime_contracts import AdapterContractError
-from agentsassemble.process_environment import sanitized_provider_environment
+from agentsassemble.providers.process_environment import sanitized_provider_environment
 
 
 class GrokAcpRuntime:

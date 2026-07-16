@@ -29,7 +29,7 @@ from agentsassemble.live_cli_transcripts import (
     make_live_cli_message_source,
 )
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.process_environment import sanitized_provider_environment
+from agentsassemble.providers.process_environment import sanitized_provider_environment
 
 try:
     import pty

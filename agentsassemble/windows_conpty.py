@@ -10,7 +10,7 @@ from pathlib import Path
 from agentsassemble.live_cli_output import extract_live_cli_terminal_message, terminal_text_contains
 from agentsassemble.live_cli_transcripts import LiveCliMessageSource, make_live_cli_message_source
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.process_environment import sanitized_provider_environment
+from agentsassemble.providers.process_environment import sanitized_provider_environment
 
 
 class WindowsConPtyRuntime:

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from agentsassemble.native_cli_providers import NATIVE_CLI_PROVIDER_CATALOG
-from agentsassemble.process_environment import sanitized_provider_environment
+from agentsassemble.providers.process_environment import sanitized_provider_environment
 
 
 ProbeRunner = Callable[[list[str], float], tuple[int, str, str]]

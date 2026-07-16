@@ -649,3 +649,10 @@ module churn were deliberately avoided rather than forgotten.
   use the owned paths, while both root modules remain explicit compatibility
   exports. Identity checks, fatal/error codes, request correlation, timeout
   behavior, and tracker synchronization are unchanged.
+- 2026-07-16: Provider credential storage and child-process environment
+  sanitation moved to `providers/secrets.py` and
+  `providers/process_environment.py`. Server, room bridge, provider runtime,
+  capability discovery, and provider HTTP callers now use the owned paths;
+  root modules remain explicit compatibility exports. The keyring singleton,
+  environment fallback, status-only secret projection, platform allowlist,
+  provider secret-name filtering, and explicit-extra behavior are unchanged.

@@ -13,8 +13,8 @@ from uuid import uuid4
 
 from agentsassemble.cleanup_report import CleanupReport
 from agentsassemble.native_cli_providers import NativeCliProviderSpec, validate_native_cli_provider_spec
-from agentsassemble.process_environment import sanitized_child_environment
-from agentsassemble.provider_secrets import PROVIDER_SECRETS
+from agentsassemble.providers.process_environment import sanitized_child_environment
+from agentsassemble.providers.secrets import PROVIDER_SECRETS
 from agentsassemble.opencode_runtime import OpenCodeServerProcess
 from agentsassemble.providers.runtime_config import CanonicalBridgeLaunchConfig
 

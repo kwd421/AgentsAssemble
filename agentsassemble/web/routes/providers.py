@@ -9,7 +9,7 @@ from agentsassemble.adapters import default_provider_registry
 from agentsassemble.providers import catalog as provider_catalog
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.provider_login import ProviderLoginService
-from agentsassemble.provider_secrets import PROVIDER_SECRETS
+from agentsassemble.providers.secrets import PROVIDER_SECRETS
 
 
 class ProviderSecretStore(Protocol):

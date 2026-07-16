@@ -4,16 +4,20 @@ import unittest
 
 import agentsassemble.bridge_protocol as compatibility_bridge_protocol
 import agentsassemble.bridge_report_tracker as compatibility_bridge_tracker
+import agentsassemble.process_environment as compatibility_process_environment
 import agentsassemble.provider_catalog as compatibility_catalog
 import agentsassemble.provider_runtime_config as compatibility_config
 import agentsassemble.provider_runtime_contracts as compatibility_contracts
 import agentsassemble.provider_runtime_factory as compatibility_factory
+import agentsassemble.provider_secrets as compatibility_secrets
 from agentsassemble.providers import catalog as owned_catalog
 from agentsassemble.providers import bridge_protocol as owned_bridge_protocol
 from agentsassemble.providers import bridge_report_tracker as owned_bridge_tracker
+from agentsassemble.providers import process_environment as owned_process_environment
 from agentsassemble.providers import runtime_config as owned_config
 from agentsassemble.providers import runtime_contracts as owned_contracts
 from agentsassemble.providers import runtime_factory as owned_factory
+from agentsassemble.providers import secrets as owned_secrets
 
 
 class ProviderPackageTests(unittest.TestCase):
@@ -35,6 +39,28 @@ class ProviderPackageTests(unittest.TestCase):
         self.assertIs(
             compatibility_bridge_tracker.BridgeReportTracker,
             owned_bridge_tracker.BridgeReportTracker,
+        )
+
+    def test_process_environment_root_module_exports_owned_functions(self) -> None:
+        for name in (
+            "environment_contains_secret_names",
+            "sanitized_child_environment",
+            "sanitized_provider_environment",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_process_environment, name),
+                    getattr(owned_process_environment, name),
+                )
+
+    def test_provider_secrets_root_module_exports_owned_store(self) -> None:
+        self.assertIs(
+            compatibility_secrets.ProviderSecretStore,
+            owned_secrets.ProviderSecretStore,
+        )
+        self.assertIs(
+            compatibility_secrets.PROVIDER_SECRETS,
+            owned_secrets.PROVIDER_SECRETS,
         )
 
     def test_catalog_root_module_exports_owned_data_and_functions(self) -> None:

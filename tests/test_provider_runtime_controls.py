@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 from agentsassemble.deepseek_runtime import DeepSeekApiRuntime
 from agentsassemble.codex_app_server_live_runtime import CodexAppServerLiveRuntime
 from agentsassemble.cleanup_report import CleanupReport
-from agentsassemble.process_environment import (
+from agentsassemble.providers.process_environment import (
     environment_contains_secret_names,
     sanitized_provider_environment,
 )
@@ -21,7 +21,7 @@ from agentsassemble.provider_capabilities import (
     ProviderCapabilityCatalog,
     ProviderCatalogSelectionError,
 )
-from agentsassemble.provider_secrets import ProviderSecretStore
+from agentsassemble.providers.secrets import ProviderSecretStore
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
 from agentsassemble.room_attendee import _leave_room, _orientation_text, parse_agent_invite_url
 from agentsassemble.room_attendee import AgentAttendee
