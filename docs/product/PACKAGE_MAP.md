@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `8c1396ac23fa3119`
+Source fingerprint: `f366bf9767912d4c`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -13,7 +13,7 @@ itself authorize a module move or a product behavior change.
 
 - Python modules: 357
 - Top-level package modules: 304
-- Domains: admission=16, application=62, diagnostics=12, features=7, identity=4, legacy=79, persistence=51, providers=45, room=40, web=41
+- Domains: admission=16, application=59, diagnostics=12, features=7, identity=4, legacy=79, persistence=51, providers=45, room=43, web=41
 - Classifications: compatibility=18, current=254, legacy=78, optional=7
 
 ## Classification Rules
@@ -309,9 +309,9 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.release_health` | `agentsassemble/release_health.py` | 768 | diagnostics | current | `agentsassemble.room_event_benchmark` | 3 | `call:compile@23` | test-import:1 | `tests/test_release_health.py` | `diagnostics/` | planned-move |
 | `agentsassemble.remote_bridge_config` | `agentsassemble/remote_bridge_config.py` | 55 | application | current | - | 4 | - | - | - | `application/` | planned-move |
 | `agentsassemble.remote_room_client_packet` | `agentsassemble/remote_room_client_packet.py` | 69 | application | current | `agentsassemble.meeting_events` | 1 | - | - | - | `application/` | planned-move |
-| `agentsassemble.room` | `agentsassemble/room/__init__.py` | 1 | application | current | - | 0 | - | monkeypatch:1 | `tests/test_package_architecture_gate.py` | `application/` | pending-consolidation |
-| `agentsassemble.room.text` | `agentsassemble/room/text.py` | 10 | application | current | - | 13 | - | test-import:1 | `tests/test_room_text.py` | `application/` | pending-consolidation |
-| `agentsassemble.room.visibility` | `agentsassemble/room/visibility.py` | 9 | application | current | - | 3 | - | - | - | `application/` | pending-consolidation |
+| `agentsassemble.room` | `agentsassemble/room/__init__.py` | 1 | room | current | - | 0 | - | monkeypatch:1 | `tests/test_package_architecture_gate.py` | `room/` | in-target-package |
+| `agentsassemble.room.text` | `agentsassemble/room/text.py` | 10 | room | current | - | 13 | - | test-import:1 | `tests/test_room_text.py` | `room/` | in-target-package |
+| `agentsassemble.room.visibility` | `agentsassemble/room/visibility.py` | 9 | room | current | - | 3 | - | - | - | `room/` | in-target-package |
 | `agentsassemble.room_admission` | `agentsassemble/room_admission.py` | 133 | admission | current | `agentsassemble.identity_store`, `agentsassemble.meeting_events`, `agentsassemble.room_repository` | 3 | - | test-import:3 | `tests/test_gui_application_services.py`, `tests/test_gui_server_room_routes.py`, `tests/test_room_admission.py` | `admission/` | planned-move |
 | `agentsassemble.room_admission_coordinator` | `agentsassemble/room_admission_coordinator.py` | 550 | admission | current | `agentsassemble.application_transaction`, `agentsassemble.identity_store`, `agentsassemble.meeting_events`, `agentsassemble.multi_host_invites`, `agentsassemble.room_admission_saga`, `agentsassemble.room_invite_application`, `agentsassemble.room_repository`, `agentsassemble.room_session_service` | 4 | - | test-import:4 | `tests/test_gui_application_services.py`, `tests/test_gui_server_room_routes.py`, `tests/test_postgres_cross_authority_transactions.py`, `+1` | `admission/` | planned-move |
 | `agentsassemble.room_admission_saga` | `agentsassemble/room_admission_saga.py` | 160 | admission | current | `agentsassemble.identity_store`, `agentsassemble.meeting_events`, `agentsassemble.room_invite_application`, `agentsassemble.room_session_service` | 1 | - | - | - | `admission/` | planned-move |

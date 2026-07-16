@@ -45,6 +45,19 @@ class PackageMapTests(unittest.TestCase):
         )
         self.assertIn("`persistence/postgres/` | in-target-package", package_map)
 
+    def test_nested_domain_modules_use_their_package_owner(self) -> None:
+        graph = load_package_graph(ROOT)
+        package_map = build_package_map(ROOT)
+
+        self.assertEqual(graph.domains["agentsassemble.room.text"], "room")
+        self.assertEqual(graph.domains["agentsassemble.room.visibility"], "room")
+        text_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith("| `agentsassemble.room.text` |")
+        )
+        self.assertTrue(text_line.endswith("| in-target-package |"))
+
     def test_room_persistence_move_is_not_misclassified_as_policy(self) -> None:
         package_map = build_package_map(ROOT)
         attention_line = next(

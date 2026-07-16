@@ -14,6 +14,9 @@ ROOT_ENTRYPOINTS = frozenset({"agentsassemble", "agentsassemble.cli", "agentsass
 EXISTING_PACKAGES = frozenset(
     {"adapters", "bridges", "legacy", "migrations", "persistence", "room"}
 )
+PATH_OWNED_DOMAINS = frozenset(
+    {"admission", "application", "identity", "providers", "room", "web"}
+)
 FROZEN_POLICY_TERMS = (
     "attention",
     "autonomous",
@@ -285,6 +288,7 @@ def _classification(module: ModuleSource) -> str:
 def _domain(module: ModuleSource, classification: str) -> str:
     stem = module.path.stem
     path_text = module.relative_path
+    relative_parts = Path(module.relative_path).parts
     if (
         classification == "legacy"
         or "/legacy/" in path_text
@@ -297,6 +301,8 @@ def _domain(module: ModuleSource, classification: str) -> str:
         or stem.startswith(("postgres_", "sqlite_"))
     ):
         return "persistence"
+    if len(relative_parts) > 2 and relative_parts[1] in PATH_OWNED_DOMAINS:
+        return relative_parts[1]
     if any(term in stem for term in ("mafia", "friend", "side_chat", "social")):
         return "features"
     if any(
