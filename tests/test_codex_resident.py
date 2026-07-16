@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.codex_resident import CodexResidentCommandRunner, codex_auth_check
 from agentsassemble.live_agent_runner import ResidentAgentConfig
+from agentsassemble.providers.codex_resident import CodexResidentCommandRunner, codex_auth_check
 
 
 def _codex_config(**overrides) -> ResidentAgentConfig:

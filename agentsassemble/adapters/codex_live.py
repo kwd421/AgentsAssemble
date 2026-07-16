@@ -5,8 +5,8 @@ from subprocess import TimeoutExpired
 from typing import Any
 
 from agentsassemble.adapters.codex import CodexAdapter
-from agentsassemble.codex_resident import codex_exec_prefix
 from agentsassemble.models import Role
+from agentsassemble.providers.codex_resident import codex_exec_prefix
 
 
 class CodexLiveSessionAdapter(CodexAdapter):

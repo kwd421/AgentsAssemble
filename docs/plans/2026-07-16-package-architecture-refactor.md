@@ -772,3 +772,13 @@ module churn were deliberately avoided rather than forgotten.
   uses the current `room.text` normalizer. Sandbox/approval mapping, persistent
   handle reuse, delta/final/error handling, activity categories, and health
   diagnostics are unchanged.
+- 2026-07-17: The resident Codex CLI command adapter moved to
+  `providers/codex_resident.py`. CLI, preflight, continuity, legacy adapter,
+  runner, and focused behavior tests now use the owned path while
+  `codex_resident.py` remains an explicit compatibility export. A narrow
+  `providers/resident_config.py` protocol replaces the resident adapters'
+  former type-only imports from legacy `live_agent_runner`, removing the
+  historical resident/runner import cycle and preparing the remaining provider
+  moves without changing runtime objects. Exec/resume command construction,
+  sandbox and fast overrides, session extraction, streaming thought behavior,
+  timeout and login errors, and authentication checks are unchanged.

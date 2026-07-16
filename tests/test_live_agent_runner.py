@@ -10,7 +10,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentsassemble.antigravity_resident import AntigravityResidentCommandRunner
-from agentsassemble.codex_resident import CodexResidentCommandRunner
 from agentsassemble.grok_resident import GROK_JSON_PARSE_FAILURE, GrokResidentValueError
 from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
@@ -24,6 +23,7 @@ from agentsassemble.live_agent_runner import (
     official_turn_request_candidate,
     visible_reply_contains_control_meta,
 )
+from agentsassemble.providers.codex_resident import CodexResidentCommandRunner
 from agentsassemble.live_session_adapter import (
     InvokeLiveSessionAdapter,
     RuntimeCapabilities,

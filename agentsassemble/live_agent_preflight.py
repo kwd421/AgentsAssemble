@@ -17,7 +17,7 @@ from agentsassemble.antigravity_resident import (
     antigravity_provider_connection_check,
     default_antigravity_resident_command,
 )
-from agentsassemble.codex_resident import (
+from agentsassemble.providers.codex_resident import (
     codex_auth_check,
     codex_exec_prefix,
     codex_provider_connection_check,

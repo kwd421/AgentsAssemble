@@ -6,12 +6,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 from subprocess import TimeoutExpired
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from agentsassemble.providers.auth import provider_auth_error_message, provider_login_required_message
-
-if TYPE_CHECKING:
-    from agentsassemble.live_agent_runner import ResidentAgentConfig
+from agentsassemble.providers.resident_config import ResidentCommandConfig
 
 
 _SAFE_CHAT_ID_RE = re.compile(r"[A-Za-z0-9_.:-]{1,200}")
@@ -59,7 +57,7 @@ class CursorResidentCommandRunner:
 
     def __init__(
         self,
-        config: ResidentAgentConfig,
+        config: ResidentCommandConfig,
         *,
         command_runner: Any | None = None,
         cwd: Path | None = None,

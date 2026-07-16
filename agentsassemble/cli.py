@@ -24,7 +24,6 @@ from agentsassemble.agent_sessions import (
     run_codex_app_server_smoke,
 )
 from agentsassemble.antigravity_resident import AntigravityResidentCommandRunner
-from agentsassemble.codex_resident import CodexResidentCommandRunner
 from agentsassemble.cursor_resident import (
     CursorResidentCommandRunner,
     cursor_generic_resident_guard_error,
@@ -32,6 +31,7 @@ from agentsassemble.cursor_resident import (
 )
 from agentsassemble.grok_resident import GrokResidentCommandRunner
 from agentsassemble.hermes_resident import HermesResidentCommandRunner
+from agentsassemble.providers.codex_resident import CodexResidentCommandRunner
 from agentsassemble.web.frontend_runtime import frontend_dist_status
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.codex_sessions import (

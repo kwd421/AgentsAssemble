@@ -7,13 +7,11 @@ import tempfile
 import threading
 from pathlib import Path
 from subprocess import TimeoutExpired
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from agentsassemble.providers.auth import provider_auth_error_message, provider_login_required_message
+from agentsassemble.providers.resident_config import ResidentCommandConfig
 from agentsassemble.room_thought import ThoughtChunker, post_room_thought
-
-if TYPE_CHECKING:
-    from agentsassemble.live_agent_runner import ResidentAgentConfig
 
 
 _SAFE_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_.:-]{1,160}")
@@ -53,7 +51,7 @@ class GrokResidentCommandRunner:
 
     def __init__(
         self,
-        config: ResidentAgentConfig,
+        config: ResidentCommandConfig,
         *,
         command_runner: Any | None = None,
         cwd: Path | None = None,

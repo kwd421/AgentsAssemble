@@ -10,7 +10,6 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
-from agentsassemble.codex_resident import CodexResidentCommandRunner
 from agentsassemble.antigravity_resident import AntigravityResidentCommandRunner, antigravity_error_category
 from agentsassemble.cursor_resident import CursorResidentCommandRunner, cursor_error_category
 from agentsassemble.grok_resident import GrokResidentCommandRunner, grok_error_category
@@ -18,6 +17,7 @@ from agentsassemble.hermes_resident import HermesResidentCommandRunner, hermes_e
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.providers.codex_resident import CodexResidentCommandRunner
 
 
 SUPPORTED_CONTINUITY_PROVIDER_KINDS = frozenset(
