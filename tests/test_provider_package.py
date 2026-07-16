@@ -11,6 +11,7 @@ import agentsassemble.codex_app_server_live_runtime as compatibility_codex_app_s
 import agentsassemble.codex_resident as compatibility_codex_resident
 import agentsassemble.codex_session_ids as compatibility_codex_session_ids
 import agentsassemble.codex_stream as compatibility_codex_stream
+import agentsassemble.cursor_resident as compatibility_cursor_resident
 import agentsassemble.deepseek_runtime as compatibility_deepseek
 import agentsassemble.grok_acp_runtime as compatibility_grok_acp
 import agentsassemble.grok_resident as compatibility_grok_resident
@@ -40,6 +41,7 @@ from agentsassemble.providers import codex_app_server_live as owned_codex_app_se
 from agentsassemble.providers import codex_resident as owned_codex_resident
 from agentsassemble.providers import codex_session_ids as owned_codex_session_ids
 from agentsassemble.providers import codex_stream as owned_codex_stream
+from agentsassemble.providers import cursor_resident as owned_cursor_resident
 from agentsassemble.providers import deepseek as owned_deepseek
 from agentsassemble.providers import grok_acp as owned_grok_acp
 from agentsassemble.providers import grok_resident as owned_grok_resident
@@ -59,6 +61,32 @@ from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_cursor_resident_root_module_exports_owned_adapter(self) -> None:
+        for name in (
+            "CursorResidentCommandRunner",
+            "CursorResidentRuntimeError",
+            "CursorResidentValueError",
+            "clean_cursor_chat_id",
+            "cursor_auth_check",
+            "cursor_command_check",
+            "cursor_error_category",
+            "cursor_generic_resident_guard_check",
+            "cursor_generic_resident_guard_error",
+            "cursor_login_required_message",
+            "cursor_provider_connection_check",
+            "cursor_terminal_session_superseded_check",
+            "cursor_terminal_session_superseded_error",
+            "default_cursor_resident_command",
+        ):
+            self.assertIs(
+                getattr(compatibility_cursor_resident, name),
+                getattr(owned_cursor_resident, name),
+            )
+        self.assertEqual(
+            compatibility_cursor_resident.CURSOR_GENERIC_RESIDENT_UNSUPPORTED_MESSAGE,
+            owned_cursor_resident.CURSOR_GENERIC_RESIDENT_UNSUPPORTED_MESSAGE,
+        )
+
     def test_grok_resident_root_module_exports_owned_adapter(self) -> None:
         for name in (
             "GrokResidentCommandRunner",

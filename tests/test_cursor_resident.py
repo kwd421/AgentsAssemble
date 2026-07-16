@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.cursor_resident import (
+from agentsassemble.providers.cursor_resident import (
     CURSOR_EMPTY_TEXT,
     CURSOR_INVALID_CHAT_ID,
     CURSOR_SUBPROCESS_NONZERO,

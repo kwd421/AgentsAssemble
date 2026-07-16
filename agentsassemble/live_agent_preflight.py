@@ -27,7 +27,7 @@ from agentsassemble.providers.claude_resident import (
     claude_code_print_mode_resident_check,
     claude_code_print_mode_resident_error,
 )
-from agentsassemble.cursor_resident import (
+from agentsassemble.providers.cursor_resident import (
     cursor_auth_check,
     cursor_command_check,
     cursor_generic_resident_guard_error,

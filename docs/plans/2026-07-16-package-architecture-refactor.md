@@ -796,3 +796,12 @@ module churn were deliberately avoided rather than forgotten.
   streaming-JSON parsing, session resume, native model/effort/permission flags,
   thought chunking and posting, timeout/auth/error categories, command checks,
   and final answer assembly are unchanged.
+- 2026-07-17: The resident Cursor CLI command adapter moved to
+  `providers/cursor_resident.py`. CLI, preflight, continuity, legacy runner,
+  lifecycle, and focused behavior tests now use the owned path while
+  `cursor_resident.py` remains an explicit compatibility export. Chat creation
+  and resume, isolated or configured workspace reuse, native model selection,
+  command and authentication checks, timeout/error categories, and the
+  superseded/generic-provider guards are unchanged. The owned path also
+  corrects the adapter's previous application-domain classification without
+  adding a new dependency or runtime behavior.

@@ -118,6 +118,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.17 Codex provider parser move",
     ),
+    "cursor_resident.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.cursor_resident",
+        removal_gate=(
+            "No direct imports use agentsassemble.cursor_resident for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.25 Cursor resident adapter move",
+    ),
     "deepseek_runtime.py": CompatibilityShim(
         replacement_import="agentsassemble.providers.deepseek",
         removal_gate=(

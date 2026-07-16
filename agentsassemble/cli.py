@@ -23,7 +23,7 @@ from agentsassemble.agent_sessions import (
     clean_agent_session_provider_kind,
     run_codex_app_server_smoke,
 )
-from agentsassemble.cursor_resident import (
+from agentsassemble.providers.cursor_resident import (
     CursorResidentCommandRunner,
     cursor_generic_resident_guard_error,
     cursor_terminal_session_superseded_error,

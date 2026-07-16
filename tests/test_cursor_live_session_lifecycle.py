@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.cursor_resident import (
+from agentsassemble.providers.cursor_resident import (
     CURSOR_SUBPROCESS_NONZERO,
     CursorResidentCommandRunner,
     cursor_error_category,
