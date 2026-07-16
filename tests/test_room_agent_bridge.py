@@ -10,7 +10,7 @@ from agentsassemble.providers.runtime_contracts import (
     AdapterContractError,
     ProviderTurnResult,
 )
-from agentsassemble.provider_runtime_config import (
+from agentsassemble.providers.runtime_config import (
     BridgeConfigError,
     CanonicalBridgeLaunchConfig,
     ProviderRuntimeConfig,

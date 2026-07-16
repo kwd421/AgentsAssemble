@@ -22,7 +22,7 @@ from agentsassemble.provider_capabilities import (
     ProviderCatalogSelectionError,
 )
 from agentsassemble.provider_secrets import ProviderSecretStore
-from agentsassemble.provider_runtime_config import ProviderRuntimeConfig
+from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
 from agentsassemble.room_attendee import _leave_room, _orientation_text, parse_agent_invite_url
 from agentsassemble.room_attendee import AgentAttendee
 from agentsassemble.windows_conpty import WindowsConPtyRuntime

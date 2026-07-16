@@ -15,7 +15,7 @@ from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.live_cli import LiveCliRuntime
-from agentsassemble.provider_runtime_config import ProviderRuntimeProfile
+from agentsassemble.providers.runtime_config import ProviderRuntimeProfile
 from agentsassemble.room_attendee import AgentAttendee
 from agentsassemble.room_bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room_invite import reset_state

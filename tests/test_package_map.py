@@ -174,6 +174,7 @@ class PackageMapTests(unittest.TestCase):
         package_map = build_package_map(ROOT)
         for module_name in (
             "agentsassemble.providers.catalog",
+            "agentsassemble.providers.runtime_config",
             "agentsassemble.providers.runtime_contracts",
         ):
             with self.subTest(module_name=module_name):
@@ -189,6 +190,7 @@ class PackageMapTests(unittest.TestCase):
 
         for compatibility_module in (
             "agentsassemble.provider_catalog",
+            "agentsassemble.provider_runtime_config",
             "agentsassemble.provider_runtime_contracts",
         ):
             with self.subTest(compatibility_module=compatibility_module):

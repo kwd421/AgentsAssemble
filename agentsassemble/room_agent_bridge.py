@@ -25,7 +25,7 @@ from agentsassemble.providers.runtime_contracts import (
     ProviderRuntimeHealth,
     ProviderTurnResult,
 )
-from agentsassemble.provider_runtime_config import (
+from agentsassemble.providers.runtime_config import (
     BridgeConfigError,
     CanonicalBridgeLaunchConfig,
     ProviderRuntimeConfig,

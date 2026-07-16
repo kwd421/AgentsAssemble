@@ -620,3 +620,12 @@ module churn were deliberately avoided rather than forgotten.
   explicit compatibility export. Static model data, secret presence
   projection, cost-owner resolution, and the existing optional API-lane
   fallback list are unchanged.
+- 2026-07-16: Provider runtime launch configuration and profile parsing moved
+  to `providers/runtime_config.py`. The owned module now imports the current
+  `room.text` normalizer directly instead of reaching through legacy
+  `meeting_events`; this preserves behavior because `clean_lobby_text` was
+  already an exact delegation to `clean_room_text`. Production bridge,
+  realtime, attendee, process-manager, and runtime-factory imports now use the
+  owned path. `provider_runtime_config.py` remains an explicit compatibility
+  export; field requirements, limits, error codes, command preservation, and
+  runtime-profile semantics are unchanged.

@@ -32,7 +32,7 @@ from agentsassemble.providers.runtime_contracts import (
     AdapterContractError,
     ProviderRuntimeHealth,
 )
-from agentsassemble.provider_runtime_config import (
+from agentsassemble.providers.runtime_config import (
     ProviderRuntimeConfigError,
     ProviderRuntimeProfile,
 )
