@@ -805,3 +805,11 @@ module churn were deliberately avoided rather than forgotten.
   superseded/generic-provider guards are unchanged. The owned path also
   corrects the adapter's previous application-domain classification without
   adding a new dependency or runtime behavior.
+- 2026-07-17: The resident Hermes CLI command adapter moved to
+  `providers/hermes_resident.py`. CLI, preflight, continuity, legacy runner,
+  and focused behavior tests now use the owned path while
+  `hermes_resident.py` remains an explicit compatibility export. Hermes chat
+  query construction, provider-managed resume IDs, safe source names, status
+  prefix and DSML tool-call removal, timeout/error categories, and command
+  validation are unchanged. The move corrects the adapter's former
+  application-domain classification without changing room behavior.

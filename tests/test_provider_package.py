@@ -15,6 +15,7 @@ import agentsassemble.cursor_resident as compatibility_cursor_resident
 import agentsassemble.deepseek_runtime as compatibility_deepseek
 import agentsassemble.grok_acp_runtime as compatibility_grok_acp
 import agentsassemble.grok_resident as compatibility_grok_resident
+import agentsassemble.hermes_resident as compatibility_hermes_resident
 import agentsassemble.live_cli as compatibility_live_cli
 import agentsassemble.live_cli_output as compatibility_live_cli_output
 import agentsassemble.live_cli_transcripts as compatibility_live_cli_transcripts
@@ -45,6 +46,7 @@ from agentsassemble.providers import cursor_resident as owned_cursor_resident
 from agentsassemble.providers import deepseek as owned_deepseek
 from agentsassemble.providers import grok_acp as owned_grok_acp
 from agentsassemble.providers import grok_resident as owned_grok_resident
+from agentsassemble.providers import hermes_resident as owned_hermes_resident
 from agentsassemble.providers import live_cli as owned_live_cli
 from agentsassemble.providers import live_cli_output as owned_live_cli_output
 from agentsassemble.providers import live_cli_transcripts as owned_live_cli_transcripts
@@ -61,6 +63,26 @@ from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_hermes_resident_root_module_exports_owned_adapter(self) -> None:
+        for name in (
+            "HermesResidentCommandRunner",
+            "HermesResidentRuntimeError",
+            "HermesResidentValueError",
+            "clean_hermes_session_id",
+            "default_hermes_resident_command",
+            "hermes_command_check",
+            "hermes_error_category",
+            "hermes_provider_connection_check",
+        ):
+            self.assertIs(
+                getattr(compatibility_hermes_resident, name),
+                getattr(owned_hermes_resident, name),
+            )
+        self.assertEqual(
+            compatibility_hermes_resident.HERMES_MISSING_SESSION_ID,
+            owned_hermes_resident.HERMES_MISSING_SESSION_ID,
+        )
+
     def test_cursor_resident_root_module_exports_owned_adapter(self) -> None:
         for name in (
             "CursorResidentCommandRunner",

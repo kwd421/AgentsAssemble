@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 from agentsassemble.providers.cursor_resident import CursorResidentCommandRunner, cursor_error_category
-from agentsassemble.hermes_resident import HermesResidentCommandRunner, hermes_error_category
+from agentsassemble.providers.hermes_resident import HermesResidentCommandRunner, hermes_error_category
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.meeting_events import clean_lobby_text

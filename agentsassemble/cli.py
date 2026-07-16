@@ -28,7 +28,7 @@ from agentsassemble.providers.cursor_resident import (
     cursor_generic_resident_guard_error,
     cursor_terminal_session_superseded_error,
 )
-from agentsassemble.hermes_resident import HermesResidentCommandRunner
+from agentsassemble.providers.hermes_resident import HermesResidentCommandRunner
 from agentsassemble.providers.antigravity_resident import AntigravityResidentCommandRunner
 from agentsassemble.providers.codex_resident import CodexResidentCommandRunner
 from agentsassemble.providers.grok_resident import GrokResidentCommandRunner

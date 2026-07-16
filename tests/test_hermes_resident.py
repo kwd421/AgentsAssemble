@@ -2,7 +2,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from agentsassemble.hermes_resident import (
+from agentsassemble.providers.hermes_resident import (
     HERMES_EMPTY_REPLY,
     HERMES_MISSING_SESSION_ID,
     HERMES_SUBPROCESS_NONZERO,

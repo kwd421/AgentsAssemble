@@ -42,7 +42,7 @@ from agentsassemble.providers.grok_resident import (
     grok_command_check,
     grok_provider_connection_check,
 )
-from agentsassemble.hermes_resident import (
+from agentsassemble.providers.hermes_resident import (
     default_hermes_resident_command,
     hermes_command_check,
     hermes_provider_connection_check,

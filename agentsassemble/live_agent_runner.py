@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Callable
 
 from agentsassemble.providers.cursor_resident import default_cursor_resident_command
-from agentsassemble.hermes_resident import default_hermes_resident_command
+from agentsassemble.providers.hermes_resident import default_hermes_resident_command
 from agentsassemble.kiro_resident import default_kiro_resident_command
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.providers.antigravity_resident import default_antigravity_resident_command
