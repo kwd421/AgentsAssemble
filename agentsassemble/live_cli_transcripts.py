@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Protocol
 from urllib.parse import quote
 
-from agentsassemble.live_cli_output import extract_live_cli_terminal_message
+from agentsassemble.providers.live_cli_output import extract_live_cli_terminal_message
 from agentsassemble.meeting_events import clean_lobby_text
 
 

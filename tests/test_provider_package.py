@@ -6,6 +6,7 @@ import agentsassemble.bridge_protocol as compatibility_bridge_protocol
 import agentsassemble.bridge_report_tracker as compatibility_bridge_tracker
 import agentsassemble.deepseek_runtime as compatibility_deepseek
 import agentsassemble.grok_acp_runtime as compatibility_grok_acp
+import agentsassemble.live_cli_output as compatibility_live_cli_output
 import agentsassemble.opencode_runtime as compatibility_opencode
 import agentsassemble.process_environment as compatibility_process_environment
 import agentsassemble.provider_catalog as compatibility_catalog
@@ -19,6 +20,7 @@ from agentsassemble.providers import bridge_protocol as owned_bridge_protocol
 from agentsassemble.providers import bridge_report_tracker as owned_bridge_tracker
 from agentsassemble.providers import deepseek as owned_deepseek
 from agentsassemble.providers import grok_acp as owned_grok_acp
+from agentsassemble.providers import live_cli_output as owned_live_cli_output
 from agentsassemble.providers import opencode as owned_opencode
 from agentsassemble.providers import process_environment as owned_process_environment
 from agentsassemble.providers import runtime_config as owned_config
@@ -60,6 +62,19 @@ class ProviderPackageTests(unittest.TestCase):
             compatibility_grok_acp.GrokAcpRuntime,
             owned_grok_acp.GrokAcpRuntime,
         )
+
+    def test_live_cli_output_root_module_exports_owned_functions(self) -> None:
+        for name in (
+            "extract_live_cli_terminal_message",
+            "filter_live_cli_terminal_text",
+            "strip_terminal_ansi",
+            "terminal_text_contains",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_live_cli_output, name),
+                    getattr(owned_live_cli_output, name),
+                )
 
     def test_opencode_runtime_root_module_exports_owned_types(self) -> None:
         self.assertIs(

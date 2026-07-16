@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from agentsassemble.live_cli_output import (
+from agentsassemble.providers.live_cli_output import (
     extract_live_cli_terminal_message,
     strip_terminal_ansi,
     terminal_text_contains,

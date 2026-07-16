@@ -687,3 +687,10 @@ module churn were deliberately avoided rather than forgotten.
   delta filtering, bounded stderr drain, notification backpressure failure,
   process-group cleanup, provider error classification, and diagnostics are
   unchanged.
+- 2026-07-16: Live terminal output extraction moved to
+  `providers/live_cli_output.py`. POSIX PTY, Windows ConPTY, transcript
+  adapters, and output behavior tests now use the owned path;
+  `live_cli_output.py` remains an explicit compatibility export. ANSI/screen
+  rendering, provider answer marker detection, startup readiness matching,
+  terminal chrome filtering, reasoning/status suppression, fallback scoring,
+  and message cleanup rules are unchanged.

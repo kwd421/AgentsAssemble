@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `04fbb5b974d7c1cf`
+Source fingerprint: `ca91910063463e9a`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 423
+- Python modules: 424
 - Top-level package modules: 303
-- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=59, room=43, web=58
-- Classifications: compatibility=61, current=273, legacy=78, optional=11
+- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=60, room=43, web=58
+- Classifications: compatibility=62, current=273, legacy=78, optional=11
 
 ## Classification Rules
 
@@ -241,10 +241,10 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.live_agent_timing` | `agentsassemble/live_agent_timing.py` | 17 | legacy | legacy | - | 9 | - | - | - | `legacy/` | planned-move |
 | `agentsassemble.live_agent_turns` | `agentsassemble/live_agent_turns.py` | 204 | legacy | legacy | `agentsassemble.meeting_events` | 6 | - | test-import:1 | `tests/test_live_agent_turns.py` | `legacy/` | planned-move |
 | `agentsassemble.live_agents` | `agentsassemble/live_agents.py` | 784 | application | current | `agentsassemble.character_mode`, `agentsassemble.live_agent_context`, `agentsassemble.live_agent_quota`, `agentsassemble.meeting_events`, `agentsassemble.models`, `agentsassemble.remote_bridge_config` | 26 | `call:Lock@33`, `call:frozenset@36` | test-import:14 | `tests/gui_server_test_support.py`, `tests/test_grok_live_session_lifecycle.py`, `tests/test_legacy_live_agent_engagement.py`, `+11` | `application/` | planned-move |
-| `agentsassemble.live_cli` | `agentsassemble/live_cli.py` | 893 | providers | current | `agentsassemble.live_cli_output`, `agentsassemble.live_cli_transcripts`, `agentsassemble.meeting_events`, `agentsassemble.providers.process_environment` | 2 | `control-flow@9`, `control-flow@34`, `control-flow@39`, `control-flow@44` | test-import:5 | `tests/test_live_cli.py`, `tests/test_live_cli_smoke.py`, `tests/test_live_cli_transcripts.py`, `+2` | `providers/` | planned-move |
-| `agentsassemble.live_cli_output` | `agentsassemble/live_cli_output.py` | 190 | providers | current | `agentsassemble.claude_resident` | 3 | `call:compile@8`, `call:compile@9`, `call:compile@10`, `call:compile@11`, `call:compile@12`, `+7` | test-import:1 | `tests/test_live_cli_output.py` | `providers/` | planned-move |
+| `agentsassemble.live_cli` | `agentsassemble/live_cli.py` | 893 | providers | current | `agentsassemble.live_cli_transcripts`, `agentsassemble.meeting_events`, `agentsassemble.providers.live_cli_output`, `agentsassemble.providers.process_environment` | 2 | `control-flow@9`, `control-flow@34`, `control-flow@39`, `control-flow@44` | test-import:5 | `tests/test_live_cli.py`, `tests/test_live_cli_smoke.py`, `tests/test_live_cli_transcripts.py`, `+2` | `providers/` | planned-move |
+| `agentsassemble.live_cli_output` | `agentsassemble/live_cli_output.py` | 16 | providers | compatibility | `agentsassemble.providers.live_cli_output` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.live_cli_smoke` | `agentsassemble/live_cli_smoke.py` | 326 | diagnostics | current | `agentsassemble.live_cli`, `agentsassemble.meeting_events` | 3 | `call:Path@15` | test-import:1 | `tests/test_live_cli_smoke.py` | `diagnostics/` | planned-move |
-| `agentsassemble.live_cli_transcripts` | `agentsassemble/live_cli_transcripts.py` | 674 | providers | current | `agentsassemble.live_cli_output`, `agentsassemble.meeting_events` | 2 | - | test-import:3 | `tests/test_live_cli.py`, `tests/test_live_cli_transcripts.py`, `tests/test_provider_runtime_controls.py` | `providers/` | planned-move |
+| `agentsassemble.live_cli_transcripts` | `agentsassemble/live_cli_transcripts.py` | 674 | providers | current | `agentsassemble.meeting_events`, `agentsassemble.providers.live_cli_output` | 2 | - | test-import:3 | `tests/test_live_cli.py`, `tests/test_live_cli_transcripts.py`, `tests/test_provider_runtime_controls.py` | `providers/` | planned-move |
 | `agentsassemble.live_meeting_memory` | `agentsassemble/live_meeting_memory.py` | 401 | application | current | `agentsassemble.live_transcript`, `agentsassemble.meeting_events` | 6 | `call:Lock@27` | test-import:1, monkeypatch:1 | `tests/test_live_meeting_memory.py` | `application/` | planned-move |
 | `agentsassemble.live_session_adapter` | `agentsassemble/live_session_adapter.py` | 141 | application | current | - | 2 | - | test-import:1 | `tests/test_live_agent_runner.py` | `application/` | planned-move |
 | `agentsassemble.live_session_transport` | `agentsassemble/live_session_transport.py` | 746 | application | current | - | 4 | `control-flow@14`, `control-flow@19`, `control-flow@24` | test-import:3, monkeypatch:1 | `tests/gui_server_test_support.py`, `tests/test_live_agent_runner.py`, `tests/test_live_session_transport.py` | `application/` | planned-move |
@@ -345,13 +345,14 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.catalog` | `agentsassemble/providers/catalog.py` | 194 | providers | current | - | 4 | - | test-import:2 | `tests/test_provider_catalog.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.deepseek` | `agentsassemble/providers/deepseek.py` | 201 | providers | current | `agentsassemble.room.text` | 2 | - | test-import:2 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.grok_acp` | `agentsassemble/providers/grok_acp.py` | 749 | providers | current | `agentsassemble.providers.process_environment`, `agentsassemble.providers.runtime_contracts`, `agentsassemble.room.text` | 2 | - | test-import:3 | `tests/test_grok_acp_runtime.py`, `tests/test_provider_package.py`, `tests/test_room_agent_bridge.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.live_cli_output` | `agentsassemble/providers/live_cli_output.py` | 190 | providers | current | `agentsassemble.claude_resident` | 4 | `call:compile@8`, `call:compile@9`, `call:compile@10`, `call:compile@11`, `call:compile@12`, `+7` | test-import:2 | `tests/test_live_cli_output.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.opencode` | `agentsassemble/providers/opencode.py` | 485 | providers | current | `agentsassemble.providers.process_environment`, `agentsassemble.room.text` | 4 | - | test-import:2 | `tests/test_opencode_runtime.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.process_environment` | `agentsassemble/providers/process_environment.py` | 75 | providers | current | - | 9 | `call:frozenset@7` | test-import:2 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.runtime_config` | `agentsassemble/providers/runtime_config.py` | 279 | providers | current | `agentsassemble.room.text` | 6 | - | test-import:4 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py`, `tests/test_room_agent_bridge.py`, `+1` | `providers/` | in-target-package |
 | `agentsassemble.providers.runtime_contracts` | `agentsassemble/providers/runtime_contracts.py` | 130 | providers | current | - | 5 | `call:frozenset@8` | test-import:2 | `tests/test_provider_package.py`, `tests/test_room_agent_bridge.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.runtime_factory` | `agentsassemble/providers/runtime_factory.py` | 117 | providers | current | `agentsassemble.live_cli`, `agentsassemble.providers.deepseek`, `agentsassemble.providers.grok_acp`, `agentsassemble.providers.opencode`, `agentsassemble.providers.runtime_config`, `agentsassemble.providers.windows_conpty` | 3 | - | test-import:2 | `tests/test_provider_package.py`, `tests/test_room_agent_bridge.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.secrets` | `agentsassemble/providers/secrets.py` | 106 | providers | current | - | 4 | `call:ProviderSecretStore@106` | test-import:2 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |
-| `agentsassemble.providers.windows_conpty` | `agentsassemble/providers/windows_conpty.py` | 315 | providers | current | `agentsassemble.live_cli_output`, `agentsassemble.live_cli_transcripts`, `agentsassemble.providers.process_environment`, `agentsassemble.room.text` | 2 | - | test-import:2 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.windows_conpty` | `agentsassemble/providers/windows_conpty.py` | 318 | providers | current | `agentsassemble.live_cli_transcripts`, `agentsassemble.providers.live_cli_output`, `agentsassemble.providers.process_environment`, `agentsassemble.room.text` | 2 | - | test-import:2 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py` | `providers/` | in-target-package |
 | `agentsassemble.public_invite_runtime` | `agentsassemble/public_invite_runtime.py` | 109 | admission | current | - | 7 | - | test-import:5 | `tests/room_realtime_test_support.py`, `tests/test_gui_application_services.py`, `tests/test_public_invite_http.py`, `+2` | `admission/` | planned-move |
 | `agentsassemble.public_tunnel` | `agentsassemble/public_tunnel.py` | 154 | application | current | `agentsassemble.public_invite_runtime`, `agentsassemble.stable_entry` | 3 | `call:compile@15` | test-import:2, monkeypatch:1 | `tests/test_public_invite_http.py`, `tests/test_public_tunnel.py` | `application/` | planned-move |
 | `agentsassemble.release_health` | `agentsassemble/release_health.py` | 768 | diagnostics | current | `agentsassemble.room_event_benchmark` | 3 | `call:compile@23` | test-import:1 | `tests/test_release_health.py` | `diagnostics/` | planned-move |

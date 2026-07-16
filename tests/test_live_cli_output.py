@@ -1,6 +1,9 @@
 import unittest
 
-from agentsassemble.live_cli_output import extract_live_cli_terminal_message, filter_live_cli_terminal_text
+from agentsassemble.providers.live_cli_output import (
+    extract_live_cli_terminal_message,
+    filter_live_cli_terminal_text,
+)
 
 
 class LiveCliOutputExtractionTests(unittest.TestCase):

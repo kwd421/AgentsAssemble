@@ -127,6 +127,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_feature_routes_package.py",),
         introduced_in="Milestone 4.8 optional feature route packages",
     ),
+    "live_cli_output.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.live_cli_output",
+        removal_gate=(
+            "No direct imports use agentsassemble.live_cli_output for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.11 live CLI output move",
+    ),
     "room_admission.py": CompatibilityShim(
         replacement_import="agentsassemble.admission.preflight",
         removal_gate=(
