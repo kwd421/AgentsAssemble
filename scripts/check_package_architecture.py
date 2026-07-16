@@ -288,6 +288,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_local_identity_persistence_package.py",),
         introduced_in="Milestone 3.10 identity room preference split",
     ),
+    "identity_repository_factory.py": CompatibilityShim(
+        replacement_import="agentsassemble.identity.factory",
+        removal_gate=(
+            "No direct imports use agentsassemble.identity_repository_factory for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_identity_repository_factory.py",),
+        introduced_in="Milestone 3.11 identity repository factory move",
+    ),
     "postgres_room_mutations.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.postgres.room.mutations",
         removal_gate=(

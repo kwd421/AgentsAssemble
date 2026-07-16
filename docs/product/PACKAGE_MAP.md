@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `f83254efd2fa716e`
+Source fingerprint: `5fe626ccce323b0e`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 379
+- Python modules: 380
 - Top-level package modules: 303
-- Domains: admission=27, application=59, diagnostics=12, features=7, identity=8, legacy=79, persistence=58, providers=45, room=43, web=41
-- Classifications: compatibility=30, current=264, legacy=78, optional=7
+- Domains: admission=27, application=59, diagnostics=12, features=7, identity=9, legacy=79, persistence=58, providers=45, room=43, web=41
+- Classifications: compatibility=31, current=264, legacy=78, optional=7
 
 ## Classification Rules
 
@@ -147,11 +147,12 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.gui_static_transport` | `agentsassemble/gui_static_transport.py` | 124 | web | current | `agentsassemble.gui_router` | 1 | `call:frozenset@15` | test-import:1 | `tests/test_gui_route_ownership.py` | `web/` | planned-move |
 | `agentsassemble.gui_ws_http` | `agentsassemble/gui_ws_http.py` | 145 | web | current | `agentsassemble.gui_router`, `agentsassemble.room_websocket`, `agentsassemble.sse_cadence`, `agentsassemble.ws_room_session` | 1 | - | - | - | `web/` | planned-move |
 | `agentsassemble.hermes_resident` | `agentsassemble/hermes_resident.py` | 230 | application | current | `agentsassemble.live_agent_runner` | 4 | `call:compile@13`, `call:compile@14` | test-import:1 | `tests/test_hermes_resident.py` | `application/` | planned-move |
-| `agentsassemble.identity` | `agentsassemble/identity/__init__.py` | 1 | identity | current | - | 0 | - | test-import:3 | `tests/test_identity_pairing_package.py`, `tests/test_identity_repository_package.py`, `tests/test_local_identity_persistence_package.py` | `identity/` | in-target-package |
+| `agentsassemble.identity` | `agentsassemble/identity/__init__.py` | 1 | identity | current | - | 0 | - | test-import:4 | `tests/test_identity_pairing_package.py`, `tests/test_identity_repository_factory.py`, `tests/test_identity_repository_package.py`, `+1` | `identity/` | in-target-package |
+| `agentsassemble.identity.factory` | `agentsassemble/identity/factory.py` | 58 | identity | current | `agentsassemble.identity.repository`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.room_repository_factory` | 2 | - | test-import:1, monkeypatch:1 | `tests/test_identity_repository_factory.py` | `identity/` | in-target-package |
 | `agentsassemble.identity.pairing` | `agentsassemble/identity/pairing.py` | 360 | identity | current | `agentsassemble.admission.session_issuer`, `agentsassemble.admission.session_service`, `agentsassemble.application_transaction`, `agentsassemble.identity.repository`, `agentsassemble.multi_host_invites`, `agentsassemble.room.text`, `agentsassemble.room_repository` | 5 | - | test-import:5 | `tests/test_gui_application_services.py`, `tests/test_gui_server_room_routes.py`, `tests/test_identity_pairing_package.py`, `+2` | `identity/` | in-target-package |
 | `agentsassemble.identity.preferences` | `agentsassemble/identity/preferences.py` | 12 | identity | current | `agentsassemble.room.text` | 3 | - | test-import:1 | `tests/test_local_identity_persistence_package.py` | `identity/` | in-target-package |
 | `agentsassemble.identity.repository` | `agentsassemble/identity/repository.py` | 179 | identity | current | `agentsassemble.room.text`, `agentsassemble.room_user_preferences` | 19 | - | test-import:8 | `tests/identity_repository_contract.py`, `tests/test_gui_server_room_routes.py`, `tests/test_identity_repository_package.py`, `+5` | `identity/` | in-target-package |
-| `agentsassemble.identity_repository_factory` | `agentsassemble/identity_repository_factory.py` | 58 | identity | current | `agentsassemble.identity.repository`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.room_repository_factory` | 1 | - | test-import:1, monkeypatch:1 | `tests/test_identity_repository_factory.py` | `identity/` | planned-move |
+| `agentsassemble.identity_repository_factory` | `agentsassemble/identity_repository_factory.py` | 4 | identity | compatibility | `agentsassemble.identity.factory` | 0 | - | test-import:1 | `tests/test_identity_repository_factory.py` | `identity/` | compatibility-shim |
 | `agentsassemble.identity_room_preferences` | `agentsassemble/identity_room_preferences.py` | 22 | identity | compatibility | `agentsassemble.identity.preferences`, `agentsassemble.persistence.local.identity.preferences` | 0 | - | test-import:1 | `tests/test_local_identity_persistence_package.py` | `identity/` | compatibility-shim |
 | `agentsassemble.identity_store` | `agentsassemble/identity_store.py` | 52 | identity | compatibility | `agentsassemble.identity.repository`, `agentsassemble.persistence.local.identity.migration`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.persistence.local.identity.repository` | 0 | - | test-import:2 | `tests/test_identity_repository_package.py`, `tests/test_local_identity_persistence_package.py` | `identity/` | compatibility-shim |
 | `agentsassemble.kiro_resident` | `agentsassemble/kiro_resident.py` | 228 | application | current | `agentsassemble.live_agent_runner` | 4 | `call:compile@14`, `call:compile@15`, `call:compile@18`, `call:Lock@24` | test-import:1 | `tests/test_kiro_resident.py` | `application/` | planned-move |

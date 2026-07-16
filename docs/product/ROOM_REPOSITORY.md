@@ -132,11 +132,12 @@ workflows owned by that room, while retaining retryable recovery evidence. No
 startup task, polling loop, or implicit age policy purges admission workflows.
 
 Identity persistence follows the same backend choice through
-`identity_repository_factory.py`. Local mode keeps `identity.db`; hosted mode
-selects `PostgresIdentityRepository` with the room DSN. The GUI registers that
-single backend for its output root so lower-level membership and realtime
-helpers cannot silently open SQLite. PostgreSQL identity operations are split
-by ownership: users/operator pairing, memberships/compatibility room registry,
+`identity/factory.py`; `identity_repository_factory.py` is a temporary
+compatibility export. Local mode keeps `identity.db`; hosted mode selects
+`PostgresIdentityRepository` with the room DSN. The GUI registers that single
+backend for its output root so lower-level membership and realtime helpers
+cannot silently open SQLite. PostgreSQL identity operations are split by
+ownership: users/operator pairing, memberships/compatibility room registry,
 user preferences, and usage accounting. In the GUI server, room, identity, and
 invite/session repositories borrow one application-owned connection provider;
 none of those repository facades can close the shared pool.

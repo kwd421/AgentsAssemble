@@ -473,3 +473,9 @@ module churn were deliberately avoided rather than forgotten.
   `identity_room_preferences.py` remains a compatibility export for one
   removal window. Preference data, table names, validation, and error behavior
   are unchanged.
+- 2026-07-16: Identity backend selection moved to `identity/factory.py`.
+  SQLite output-root binding, PostgreSQL DSN validation, application-database
+  injection, lazy optional-dependency loading, and fail-closed errors are
+  unchanged. GUI composition now imports the owned path directly;
+  `identity_repository_factory.py` is an explicit compatibility export for one
+  removal window.

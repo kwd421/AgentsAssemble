@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.identity_repository_factory import build_identity_repository
+import agentsassemble.identity_repository_factory as compatibility_factory
+from agentsassemble.identity import factory as owned_factory
 from agentsassemble.persistence.local.identity.registry import (
     reset_identity_store_registry,
 )
@@ -20,10 +21,16 @@ class IdentityRepositoryFactoryTests(unittest.TestCase):
     def tearDown(self) -> None:
         reset_identity_store_registry()
 
+    def test_root_module_exports_owned_identity_factory(self) -> None:
+        self.assertIs(
+            compatibility_factory.build_identity_repository,
+            owned_factory.build_identity_repository,
+        )
+
     def test_sqlite_uses_the_output_root_identity_database(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            repository = build_identity_repository(
+            repository = owned_factory.build_identity_repository(
                 root,
                 RoomRepositorySettings(backend="sqlite"),
             )
@@ -43,7 +50,7 @@ class IdentityRepositoryFactoryTests(unittest.TestCase):
                 RoomRepositoryConfigurationError,
                 "ROOM_DATABASE_URL",
             ):
-                build_identity_repository(root, settings)
+                owned_factory.build_identity_repository(root, settings)
 
             self.assertFalse((root / "identity.db").exists())
 
@@ -57,10 +64,13 @@ class IdentityRepositoryFactoryTests(unittest.TestCase):
             postgres_dsn="postgresql://user:secret@example.invalid/rooms",
         )
         with patch(
-            "agentsassemble.identity_repository_factory._postgres_repository_type",
+            "agentsassemble.identity.factory._postgres_repository_type",
             return_value=FakePostgresRepository,
         ):
-            repository = build_identity_repository(Path("/tmp/unused"), settings)
+            repository = owned_factory.build_identity_repository(
+                Path("/tmp/unused"),
+                settings,
+            )
 
         self.assertEqual(repository.dsn, settings.postgres_dsn)
 
@@ -76,10 +86,10 @@ class IdentityRepositoryFactoryTests(unittest.TestCase):
             postgres_dsn="postgresql://user:secret@example.invalid/rooms",
         )
         with patch(
-            "agentsassemble.identity_repository_factory._postgres_repository_type",
+            "agentsassemble.identity.factory._postgres_repository_type",
             return_value=FakePostgresRepository,
         ):
-            repository = build_identity_repository(
+            repository = owned_factory.build_identity_repository(
                 Path("/tmp/unused"),
                 settings,
                 postgres_database=database,
