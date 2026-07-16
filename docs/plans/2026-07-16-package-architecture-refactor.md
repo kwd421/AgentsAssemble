@@ -359,3 +359,9 @@ module churn were deliberately avoided rather than forgotten.
   A proposed `agentsassemble/admission/` directory was not introduced early
   because it would shadow the existing public `agentsassemble/admission.py`
   module; that collision must be handled by the inventoried Milestone 3 shim.
+- 2026-07-16: Milestone 1.1 added a deterministic AST inventory and generated
+  `docs/product/PACKAGE_MAP.md`. It records 330 Python modules and 304 top-level
+  modules (the 302-module starting point plus the two explicit workflow
+  maintenance modules), internal and reverse imports, import-time call signals,
+  test/monkeypatch evidence, proposed owners, and migration status. The
+  committed map is checked byte-for-byte by a unit test before any module move.
