@@ -23,7 +23,7 @@ from agentsassemble.providers.launch_specs import (
     native_cli_provider_spec_from_payload,
     validate_native_cli_provider_spec,
 )
-from agentsassemble.provider_capabilities import (
+from agentsassemble.providers.capabilities import (
     PROVIDER_CAPABILITIES,
     ProviderCatalogSelectionError,
     ValidatedProviderSelection,

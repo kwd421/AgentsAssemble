@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `b9c2cb6b580f4f89`
+Source fingerprint: `97f57e06b16a05e1`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 446
+- Python modules: 447
 - Top-level package modules: 303
-- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=80, room=43, web=60
-- Classifications: compatibility=82, current=275, legacy=78, optional=11
+- Domains: admission=28, application=63, diagnostics=12, features=14, identity=9, legacy=79, persistence=58, providers=81, room=43, web=60
+- Classifications: compatibility=83, current=275, legacy=78, optional=11
 
 ## Classification Rules
 
@@ -329,7 +329,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.postgres_room_schema` | `agentsassemble/postgres_room_schema.py` | 26 | persistence | compatibility | `agentsassemble.persistence.postgres.schema` | 0 | - | test-import:9 | `tests/test_postgres_application_database.py`, `tests/test_postgres_cross_authority_transactions.py`, `tests/test_postgres_identity_repository.py`, `+6` | `persistence/postgres/` | compatibility-shim |
 | `agentsassemble.process_environment` | `agentsassemble/process_environment.py` | 14 | application | compatibility | `agentsassemble.providers.process_environment` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `application/` | compatibility-shim |
 | `agentsassemble.provider_auth` | `agentsassemble/provider_auth.py` | 9 | providers | compatibility | `agentsassemble.providers.auth` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
-| `agentsassemble.provider_capabilities` | `agentsassemble/provider_capabilities.py` | 697 | providers | current | `agentsassemble.providers.launch_specs`, `agentsassemble.providers.process_environment` | 1 | `call:ProviderCapabilityCatalog@689` | test-import:2 | `tests/test_provider_runtime_controls.py`, `tests/test_room_realtime.py` | `providers/` | planned-move |
+| `agentsassemble.provider_capabilities` | `agentsassemble/provider_capabilities.py` | 24 | providers | compatibility | `agentsassemble.providers.capabilities` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.provider_catalog` | `agentsassemble/provider_catalog.py` | 32 | providers | compatibility | `agentsassemble.providers.catalog` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.provider_health` | `agentsassemble/provider_health.py` | 919 | diagnostics | current | `agentsassemble.adapters.registry`, `agentsassemble.config`, `agentsassemble.models` | 3 | - | test-import:1, monkeypatch:1 | `tests/test_provider_health.py` | `diagnostics/` | planned-move |
 | `agentsassemble.provider_login` | `agentsassemble/provider_login.py` | 68 | providers | current | `agentsassemble.live_agent_frontend_create`, `agentsassemble.live_agent_operations`, `agentsassemble.meeting_events` | 2 | - | - | - | `providers/` | planned-move |
@@ -345,6 +345,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.auth` | `agentsassemble/providers/auth.py` | 29 | providers | current | - | 5 | - | test-import:2 | `tests/test_provider_auth.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.bridge_protocol` | `agentsassemble/providers/bridge_protocol.py` | 133 | providers | current | `agentsassemble.room.text` | 3 | - | test-import:4 | `tests/test_bridge_protocol.py`, `tests/test_bridge_report_tracker.py`, `tests/test_provider_package.py`, `+1` | `providers/` | in-target-package |
 | `agentsassemble.providers.bridge_report_tracker` | `agentsassemble/providers/bridge_report_tracker.py` | 100 | providers | current | `agentsassemble.providers.bridge_protocol` | 2 | - | test-import:2 | `tests/test_bridge_report_tracker.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
+| `agentsassemble.providers.capabilities` | `agentsassemble/providers/capabilities.py` | 699 | providers | current | `agentsassemble.providers.launch_specs`, `agentsassemble.providers.process_environment` | 2 | `call:ProviderCapabilityCatalog@691` | test-import:3 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py`, `tests/test_room_realtime.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.catalog` | `agentsassemble/providers/catalog.py` | 194 | providers | current | - | 4 | - | test-import:2 | `tests/test_provider_catalog.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.claude_resident` | `agentsassemble/providers/claude_resident.py` | 241 | providers | current | - | 4 | `call:compile@20`, `call:compile@30` | test-import:2 | `tests/test_claude_resident.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.claude_transcript` | `agentsassemble/providers/claude_transcript.py` | 165 | providers | current | - | 2 | - | test-import:2 | `tests/test_claude_transcript.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
@@ -418,7 +419,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room_preferences_migration` | `agentsassemble/room_preferences_migration.py` | 432 | room | current | `agentsassemble.legacy_room_preferences_source`, `agentsassemble.legacy_room_settings_document`, `agentsassemble.persistence.local.identity.preferences`, `agentsassemble.persistence.local.identity.repository`, `agentsassemble.persistence.local.room.database`, `agentsassemble.room_user_preferences` | 1 | - | test-import:1, monkeypatch:1 | `tests/test_room_preferences_migration.py` | `room/` | planned-move |
 | `agentsassemble.room_projection` | `agentsassemble/room_projection.py` | 143 | room | current | `agentsassemble.meeting_events`, `agentsassemble.room_types` | 3 | `call:frozenset@16`, `call:frozenset@42`, `call:frozenset@58` | test-import:1 | `tests/test_room_projection.py` | `room/` | planned-move |
 | `agentsassemble.room_provider_sync_cursor` | `agentsassemble/room_provider_sync_cursor.py` | 322 | providers | current | `agentsassemble.meeting_events`, `agentsassemble.room_attention`, `agentsassemble.room_repository` | 4 | - | test-import:1 | `tests/test_room_provider_sync_cursor.py` | `providers/` | planned-move |
-| `agentsassemble.room_realtime` | `agentsassemble/room_realtime.py` | 2496 | room | current | `agentsassemble.admission.invite_service`, `agentsassemble.admission.session_service`, `agentsassemble.agent_sessions`, `agentsassemble.cleanup_report`, `agentsassemble.meeting_events`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.persistence.local.room.repository`, `agentsassemble.provider_capabilities`, +21 | 4 | `call:frozenset@102`, `call:getLogger@115`, `call:frozenset@2449` | test-import:7, monkeypatch:1 | `tests/fixtures/room_ui_server.py`, `tests/test_gui_room_repository_injection.py`, `tests/test_room_bridge_process.py`, `+4` | `room/` | planned-move |
+| `agentsassemble.room_realtime` | `agentsassemble/room_realtime.py` | 2496 | room | current | `agentsassemble.admission.invite_service`, `agentsassemble.admission.session_service`, `agentsassemble.agent_sessions`, `agentsassemble.cleanup_report`, `agentsassemble.meeting_events`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.persistence.local.room.repository`, `agentsassemble.providers.capabilities`, +21 | 4 | `call:frozenset@102`, `call:getLogger@115`, `call:frozenset@2449` | test-import:7, monkeypatch:1 | `tests/fixtures/room_ui_server.py`, `tests/test_gui_room_repository_injection.py`, `tests/test_room_bridge_process.py`, `+4` | `room/` | planned-move |
 | `agentsassemble.room_repository` | `agentsassemble/room_repository.py` | 317 | room | current | `agentsassemble.room_attention`, `agentsassemble.room_global_settings` | 24 | - | test-import:3 | `tests/room_repository_contract.py`, `tests/test_postgres_room_repository.py`, `tests/test_sqlite_room_repository.py` | `room/` | planned-move |
 | `agentsassemble.room_repository_factory` | `agentsassemble/room_repository_factory.py` | 169 | room | current | `agentsassemble.persistence.local.room.repository`, `agentsassemble.persistence.postgres.schema`, `agentsassemble.room_repository` | 7 | `call:frozenset@19`, `call:compile@21` | test-import:7, monkeypatch:1 | `tests/test_cli_timeout_core.py`, `tests/test_gui_room_repository_injection.py`, `tests/test_identity_repository_factory.py`, `+4` | `room/` | planned-move |
 | `agentsassemble.room_repository_migration` | `agentsassemble/room_repository_migration.py` | 612 | room | current | `agentsassemble.persistence.local.room.database`, `agentsassemble.persistence.postgres.schema` | 1 | - | test-import:1, monkeypatch:1 | `tests/test_room_repository_migration.py` | `room/` | planned-move |

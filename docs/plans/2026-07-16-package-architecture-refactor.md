@@ -842,3 +842,11 @@ module churn were deliberately avoided rather than forgotten.
   runtime profile keys; exact/alias model selection; Grok ACP enforcement;
   Claude interactive-mode enforcement; and legacy stored-profile acceptance
   rules are unchanged.
+- 2026-07-17: Provider option discovery, bounded catalog caching, listener
+  diagnostics, and session-selection validation moved to
+  `providers/capabilities.py`. Realtime orchestration and focused capability
+  tests now use the owned path while `provider_capabilities.py` remains an
+  explicit compatibility export. Native command probes, OpenCode discovery,
+  static Claude and DeepSeek manifests, fail-closed refresh behavior,
+  catalog revisions, model/effort/tier relation checks, and sanitized child
+  environments are unchanged.

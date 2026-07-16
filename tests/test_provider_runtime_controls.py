@@ -17,7 +17,7 @@ from agentsassemble.providers.process_environment import (
     environment_contains_secret_names,
     sanitized_provider_environment,
 )
-from agentsassemble.provider_capabilities import (
+from agentsassemble.providers.capabilities import (
     ProviderCapabilityCatalog,
     ProviderCatalogSelectionError,
 )

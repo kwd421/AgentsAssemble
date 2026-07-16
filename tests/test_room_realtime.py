@@ -25,7 +25,7 @@ from agentsassemble.room_settings import update_room_settings as update_legacy_r
 from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
 )
-from agentsassemble.provider_capabilities import ProviderCapabilityCatalog
+from agentsassemble.providers.capabilities import ProviderCapabilityCatalog
 from agentsassemble.providers.launch_specs import native_cli_provider_definition
 from tests.room_realtime_test_support import memory_room_access_services
 

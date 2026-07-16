@@ -24,6 +24,7 @@ import agentsassemble.live_cli_transcripts as compatibility_live_cli_transcripts
 import agentsassemble.native_cli_providers as compatibility_launch_specs
 import agentsassemble.opencode_runtime as compatibility_opencode
 import agentsassemble.process_environment as compatibility_process_environment
+import agentsassemble.provider_capabilities as compatibility_capabilities
 import agentsassemble.provider_auth as compatibility_auth
 import agentsassemble.provider_catalog as compatibility_catalog
 import agentsassemble.provider_model_verification as compatibility_model_verification
@@ -39,6 +40,7 @@ from agentsassemble.providers import antigravity_resident as owned_antigravity_r
 from agentsassemble.providers import catalog as owned_catalog
 from agentsassemble.providers import bridge_protocol as owned_bridge_protocol
 from agentsassemble.providers import bridge_report_tracker as owned_bridge_tracker
+from agentsassemble.providers import capabilities as owned_capabilities
 from agentsassemble.providers import claude_resident as owned_claude_resident
 from agentsassemble.providers import claude_transcript as owned_claude_transcript
 from agentsassemble.providers import codex_app_server as owned_codex_app_server
@@ -70,6 +72,25 @@ from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_provider_capability_root_module_exports_owned_discovery(self) -> None:
+        for name in (
+            "CatalogListener",
+            "ProbeRunner",
+            "ProviderCapabilityCatalog",
+            "ProviderCatalogSelectionError",
+            "ValidatedProviderSelection",
+            "provider_catalog_payload",
+            "provider_catalog_snapshot",
+        ):
+            self.assertIs(
+                getattr(compatibility_capabilities, name),
+                getattr(owned_capabilities, name),
+            )
+        self.assertIs(
+            compatibility_capabilities.PROVIDER_CAPABILITIES,
+            owned_capabilities.PROVIDER_CAPABILITIES,
+        )
+
     def test_native_cli_provider_root_module_exports_owned_launch_specs(self) -> None:
         for name in (
             "NativeCliProviderDefinition",

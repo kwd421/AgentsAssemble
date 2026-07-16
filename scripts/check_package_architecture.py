@@ -226,6 +226,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_provider_package.py",),
         introduced_in="Milestone 5.29 provider launch-spec move",
     ),
+    "provider_capabilities.py": CompatibilityShim(
+        replacement_import="agentsassemble.providers.capabilities",
+        removal_gate=(
+            "No direct imports use agentsassemble.provider_capabilities for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_provider_package.py",),
+        introduced_in="Milestone 5.30 provider capability move",
+    ),
     "gui_observability_http.py": CompatibilityShim(
         replacement_import="agentsassemble.web.routes.observability",
         removal_gate=(
