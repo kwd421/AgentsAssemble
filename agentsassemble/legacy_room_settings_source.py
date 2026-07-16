@@ -11,7 +11,7 @@ from agentsassemble.legacy_room_settings_document import (
     LegacyRoomSettingsSourceError,
     read_legacy_room_settings_document,
 )
-from agentsassemble.room_global_settings import (
+from agentsassemble.room.global_settings import (
     default_room_global_settings,
     merge_room_global_settings,
 )

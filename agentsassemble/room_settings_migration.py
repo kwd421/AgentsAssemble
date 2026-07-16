@@ -22,7 +22,7 @@ from agentsassemble.persistence.local.room.database import (
     ROOM_SCHEMA_VERSION,
     open_room_database,
 )
-from agentsassemble.room_global_settings import (
+from agentsassemble.room.global_settings import (
     RoomGlobalSettingsRecord,
     merge_room_global_settings,
     validate_room_global_settings,

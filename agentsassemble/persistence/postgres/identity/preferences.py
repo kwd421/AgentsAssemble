@@ -6,7 +6,7 @@ from psycopg.types.json import Jsonb
 
 from agentsassemble.identity.preferences import canonical_user_id
 from agentsassemble.room_repository_records import clean_room_id
-from agentsassemble.room_user_preferences import (
+from agentsassemble.room.user_preferences import (
     RoomUserPreferencesRecord,
     default_room_user_preferences,
     merge_room_user_preferences,

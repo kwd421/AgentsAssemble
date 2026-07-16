@@ -38,7 +38,7 @@ from agentsassemble.persistence.local.identity.preferences import (
     update_room_preferences,
 )
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
-from agentsassemble.room_user_preferences import (
+from agentsassemble.room.user_preferences import (
     RoomUserPreferencesRecord,
 )
 

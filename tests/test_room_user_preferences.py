@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from agentsassemble.room_user_preferences import (
+from agentsassemble.room.user_preferences import (
     default_room_user_preferences,
     merge_room_user_preferences,
     validate_room_user_preferences,

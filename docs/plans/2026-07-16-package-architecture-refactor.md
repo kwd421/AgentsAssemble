@@ -1137,3 +1137,12 @@ module churn were deliberately avoided rather than forgotten.
   compatibility exports only. Value limits, accepted conversation modes,
   attachment URL validation, channel-id generation, ordering, error
   categories, persistence shape, and UI behavior are unchanged.
+- 2026-07-17: Strict canonical room-global settings and user-owned
+  notification/read preference records moved mechanically to
+  `room/global_settings.py` and `room/user_preferences.py`. Current room and
+  identity repository protocols, local/PostgreSQL implementations, migration
+  code, settings service, legacy import readers, and behavior tests now import
+  the owned contracts directly. Root `room_global_settings.py` and
+  `room_user_preferences.py` remain metadata-tracked compatibility exports.
+  Typed record shapes, validation failures, default values, merge behavior,
+  persistence schemas, and migration behavior are unchanged.

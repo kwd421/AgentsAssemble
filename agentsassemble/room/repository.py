@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterable
 from typing import ContextManager, Protocol, runtime_checkable
 
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
-from agentsassemble.room_global_settings import RoomGlobalSettingsRecord
+from agentsassemble.room.global_settings import RoomGlobalSettingsRecord
 
 
 RoomRecord = dict[str, object]

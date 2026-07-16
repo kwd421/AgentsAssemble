@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from agentsassemble.room_global_settings import (
+from agentsassemble.room.global_settings import (
     ROOM_GLOBAL_SETTING_FIELDS,
     default_room_global_settings,
     merge_room_global_settings,

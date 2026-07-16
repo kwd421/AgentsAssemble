@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Iterator
 from uuid import uuid4
 
-from agentsassemble.room_global_settings import default_room_global_settings
+from agentsassemble.room.global_settings import default_room_global_settings
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.room.visibility import LEGACY_HIDDEN, VISIBLE
 

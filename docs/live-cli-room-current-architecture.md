@@ -125,6 +125,8 @@ New behavior belongs in the focused owning module rather than the controller.
 | `room/commands.py` | command envelope validation and identity capability policy | command execution |
 | `room/setting_values.py` | shared bounded values and canonical asset/text normalization for room settings | persistence or user-specific preferences |
 | `room/channels.py` | custom text/voice channel identifiers, normalization, and pure list mutations | message persistence or voice transport |
+| `room/global_settings.py` | strict canonical room-wide settings record shared by repository backends | user notification/read preferences |
+| `room/user_preferences.py` | strict user-owned room notification and channel read preferences | room-wide appearance, topic, or conversation mode |
 | `room/projection.py` | public room/session/event and runtime-diagnostic projection | persistence or command execution |
 | `room_routing.py` | pure mention, default-responder, and relay-depth target selection | persistence or process launch |
 | `room/context.py` | bounded room-visible message projection after a sequence cursor | provider-private memory or turn instructions |

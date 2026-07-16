@@ -10,7 +10,7 @@ from agentsassemble.legacy_room_settings_document import (
     read_legacy_room_settings_document,
 )
 from agentsassemble.room_repository_records import clean_room_id
-from agentsassemble.room_user_preferences import (
+from agentsassemble.room.user_preferences import (
     CHANNEL_NOTIFICATION_VALUES,
     ROOM_NOTIFICATION_VALUES,
     default_room_user_preferences,

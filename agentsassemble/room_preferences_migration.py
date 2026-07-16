@@ -23,8 +23,8 @@ from agentsassemble.legacy_room_preferences_source import (
 from agentsassemble.persistence.local.identity.repository import IDENTITY_DB_FILENAME
 from agentsassemble.legacy_room_settings_document import LegacyRoomSettingsSourceError
 from agentsassemble.persistence.local.room.database import ROOM_DATABASE_FILENAME, open_room_database
-from agentsassemble.room_user_preferences import RoomUserPreferencesRecord
-from agentsassemble.room_user_preferences import merge_room_user_preferences
+from agentsassemble.room.user_preferences import RoomUserPreferencesRecord
+from agentsassemble.room.user_preferences import merge_room_user_preferences
 
 
 MIGRATION_VERSION = LEGACY_ROOM_PREFERENCES_SOURCE_VERSION

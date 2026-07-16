@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from agentsassemble.identity.repository import IdentityBackend
-from agentsassemble.room_global_settings import (
+from agentsassemble.room.global_settings import (
     ROOM_APPEARANCE_FIELDS,
     ROOM_GLOBAL_SETTING_FIELDS,
     merge_room_global_settings,
@@ -10,7 +10,7 @@ from agentsassemble.room_global_settings import (
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room_repository_records import clean_room_id
 from agentsassemble.room.setting_values import clean_short_label
-from agentsassemble.room_user_preferences import (
+from agentsassemble.room.user_preferences import (
     default_room_user_preferences,
     merge_room_user_preferences,
 )

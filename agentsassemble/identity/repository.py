@@ -5,7 +5,7 @@ import hashlib
 from typing import Protocol, runtime_checkable
 
 from agentsassemble.room.text import clean_room_text
-from agentsassemble.room_user_preferences import RoomUserPreferencesRecord
+from agentsassemble.room.user_preferences import RoomUserPreferencesRecord
 
 LOCAL_OPERATOR_USER_ID = "operator-local-user"
 LOCAL_OPERATOR_PARTICIPANT_ID = "operator-local"

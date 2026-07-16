@@ -9,6 +9,7 @@ import agentsassemble.room_commands as compatibility_commands
 import agentsassemble.room_context as compatibility_context
 import agentsassemble.room_errors as compatibility_errors
 import agentsassemble.room_event_broker as compatibility_event_broker
+import agentsassemble.room_global_settings as compatibility_global_settings
 import agentsassemble.room_agent_lifecycle as compatibility_lifecycle
 import agentsassemble.room_members as compatibility_members
 import agentsassemble.room_projection as compatibility_projection
@@ -18,6 +19,7 @@ import agentsassemble.room_setting_values as compatibility_setting_values
 import agentsassemble.room_types as compatibility_types
 import agentsassemble.room_turn_context as compatibility_turn_context
 import agentsassemble.room_turn_coordinator as compatibility_turn_coordinator
+import agentsassemble.room_user_preferences as compatibility_user_preferences
 from agentsassemble.room import bridge_stop_confirmation as owned_bridge_stop
 from agentsassemble.room import channels as owned_channels
 from agentsassemble.room import command_uow as owned_command_uow
@@ -25,6 +27,7 @@ from agentsassemble.room import commands as owned_commands
 from agentsassemble.room import context as owned_context
 from agentsassemble.room import errors as owned_errors
 from agentsassemble.room import event_broker as owned_event_broker
+from agentsassemble.room import global_settings as owned_global_settings
 from agentsassemble.room import agent_lifecycle as owned_lifecycle
 from agentsassemble.room import moderation as owned_moderation
 from agentsassemble.room import projection as owned_projection
@@ -34,9 +37,50 @@ from agentsassemble.room import setting_values as owned_setting_values
 from agentsassemble.room import types as owned_types
 from agentsassemble.room import turn_context as owned_turn_context
 from agentsassemble.room import turn_coordinator as owned_turn_coordinator
+from agentsassemble.room import user_preferences as owned_user_preferences
 
 
 class RoomPackageTests(unittest.TestCase):
+    def test_room_global_settings_root_module_exports_owned_record(self) -> None:
+        for name in (
+            "DEFAULT_CONVERSATION_MODE",
+            "DEFAULT_MAX_RELAY_TURNS",
+            "MAX_RELAY_TURNS",
+            "MIN_RELAY_TURNS",
+            "ROOM_APPEARANCE_FIELDS",
+            "ROOM_CHANNEL_FIELDS",
+            "ROOM_GLOBAL_SETTING_FIELDS",
+            "ROOM_LABEL_LIMIT",
+            "RoomGlobalAppearance",
+            "RoomGlobalChannel",
+            "RoomGlobalSettingsRecord",
+            "default_room_global_settings",
+            "merge_room_global_settings",
+            "validate_room_global_settings",
+        ):
+            self.assertIs(
+                getattr(compatibility_global_settings, name),
+                getattr(owned_global_settings, name),
+            )
+
+    def test_room_user_preferences_root_module_exports_owned_record(self) -> None:
+        for name in (
+            "BUILTIN_CHANNEL_IDS",
+            "CHANNEL_NOTIFICATION_VALUES",
+            "MAX_PREFERENCE_CHANNELS",
+            "READ_CURSOR_LIMIT",
+            "ROOM_NOTIFICATION_VALUES",
+            "ChannelPreference",
+            "RoomUserPreferencesRecord",
+            "default_room_user_preferences",
+            "merge_room_user_preferences",
+            "validate_room_user_preferences",
+        ):
+            self.assertIs(
+                getattr(compatibility_user_preferences, name),
+                getattr(owned_user_preferences, name),
+            )
+
     def test_room_channels_root_module_exports_owned_rules(self) -> None:
         for name in (
             "CHANNEL_NAME_LIMIT",

@@ -6,7 +6,7 @@ from psycopg import Connection
 
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.persistence.postgres.room.rows import payload_from_row
-from agentsassemble.room_global_settings import (
+from agentsassemble.room.global_settings import (
     RoomGlobalSettingsRecord,
     validate_room_global_settings,
 )

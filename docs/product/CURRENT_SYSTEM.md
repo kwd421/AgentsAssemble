@@ -262,7 +262,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | GUI server composition, route ownership, and shutdown | stable entrypoint in `gui.py`; lifecycle container in `application/gui.py`; cross-authority transaction contract in `application/transaction.py`; root compatibility exports retained; `docs/product/GUI_COMPOSITION.md` |
 | Room persistence and sequence | local SQLite owner in `persistence/local/room/`; PostgreSQL owner in `persistence/postgres/room/`; compatibility exports in `room_store.py`, `room_database.py`, and `sqlite_attention_repository.py`; event types in `room/types.py` with compatibility export in `room_types.py` |
 | Room storage authority and transaction contract | repository protocol in `room/repository.py`; command transaction in `room/command_uow.py`; compatibility exports in `room_repository.py` and `room_command_uow.py`; `docs/product/ROOM_REPOSITORY.md` |
-| Room setting values and custom channel model | `room/setting_values.py`, `room/channels.py`; compatibility exports in `room_setting_values.py` and `room_channels.py` |
+| Room settings contracts and custom channel model | primitives in `room/setting_values.py` and `room/channels.py`; canonical room-wide record in `room/global_settings.py`; user notification/read record in `room/user_preferences.py`; root compatibility exports retained |
 | Autonomous participation and durable attention | `room_attention.py`, `docs/product/ATTENTION_MODEL.md` |
 | WebSocket commands and ACL | `room/commands.py` with compatibility export in `room_commands.py`; `ws_room_session.py`, controller in `room/realtime.py` with compatibility export in `room_realtime.py` |
 | Room-scoped configured provider registry | `room/provider_registry.py`; composed by `room/realtime.py` |

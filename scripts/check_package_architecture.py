@@ -355,6 +355,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_room_package.py",),
         introduced_in="Milestone 6.12 room turn coordinator move",
     ),
+    "room_user_preferences.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.user_preferences",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_user_preferences for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_room_package.py",),
+        introduced_in="Milestone 6.19 room user preferences record move",
+    ),
     "room_errors.py": CompatibilityShim(
         replacement_import="agentsassemble.room.errors",
         removal_gate=(
@@ -372,6 +381,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         ),
         known_callers=("tests/test_room_package.py",),
         introduced_in="Milestone 6.5 room event broker move",
+    ),
+    "room_global_settings.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.global_settings",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_global_settings for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_room_package.py",),
+        introduced_in="Milestone 6.19 room global settings record move",
     ),
     "room_projection.py": CompatibilityShim(
         replacement_import="agentsassemble.room.projection",

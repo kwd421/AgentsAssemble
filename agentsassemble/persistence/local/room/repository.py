@@ -31,7 +31,7 @@ from agentsassemble.persistence.local.room.database import (
     open_room_database,
 )
 from agentsassemble.room_attention import AgentAttentionState, AttentionEvaluation
-from agentsassemble.room_global_settings import (
+from agentsassemble.room.global_settings import (
     RoomGlobalSettingsRecord,
     default_room_global_settings,
     merge_room_global_settings,

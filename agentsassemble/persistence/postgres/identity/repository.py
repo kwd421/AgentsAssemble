@@ -50,7 +50,7 @@ from agentsassemble.persistence.postgres.identity.users import (
     user_for_credential,
     user_for_participant,
 )
-from agentsassemble.room_user_preferences import RoomUserPreferencesRecord
+from agentsassemble.room.user_preferences import RoomUserPreferencesRecord
 
 
 class PostgresIdentityRepository:
