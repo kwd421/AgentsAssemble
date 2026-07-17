@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.user_profile import read_user_profile, update_user_profile
+from agentsassemble.features.social.profile import read_user_profile, update_user_profile
 
 
 class UserProfileTests(unittest.TestCase):

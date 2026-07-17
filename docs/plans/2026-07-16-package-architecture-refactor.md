@@ -1271,3 +1271,10 @@ module churn were deliberately avoided rather than forgotten.
   is a metadata-tracked compatibility export. Hashed filenames, message limits,
   missing-session errors, queued/delivered semantics, cursor behavior, and
   HTTP/frontend payloads are unchanged.
+- 2026-07-17: The optional local UI profile moved mechanically to
+  `features/social/profile.py`. This is not the canonical identity or login
+  record; it owns only `user_profile.json`, public field normalization, status
+  and banner presets, and safe attachment-backed avatar URLs. Social routes and
+  behavior tests import the feature owner directly; root `user_profile.py` is a
+  metadata-tracked compatibility export. Defaults, limits, timestamp behavior,
+  file shape, URL allowlist, and frontend payloads are unchanged.

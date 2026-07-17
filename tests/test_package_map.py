@@ -458,6 +458,7 @@ class PackageMapTests(unittest.TestCase):
             ("agentsassemble.features.side_chat.service", "features/side_chat/"),
             ("agentsassemble.features.social.direct_messages", "features/social/"),
             ("agentsassemble.features.social.friends", "features/social/"),
+            ("agentsassemble.features.social.profile", "features/social/"),
             ("agentsassemble.features.social.routes", "features/social/"),
         ):
             with self.subTest(module_name=module_name):

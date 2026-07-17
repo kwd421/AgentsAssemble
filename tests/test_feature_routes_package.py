@@ -5,6 +5,7 @@ import unittest
 import agentsassemble.side_chat as compatibility_side_chat
 import agentsassemble.room_friends as compatibility_room_friends
 import agentsassemble.room_friend_dms as compatibility_room_friend_dms
+import agentsassemble.user_profile as compatibility_user_profile
 
 from agentsassemble.features.mafia.routes import (
     OperationPayloadReader as OwnedOperationPayloadReader,
@@ -21,6 +22,7 @@ from agentsassemble.features.social.routes import (
 )
 from agentsassemble.features.social import friends as owned_room_friends
 from agentsassemble.features.social import direct_messages as owned_room_friend_dms
+from agentsassemble.features.social import profile as owned_user_profile
 from agentsassemble.gui_mafia_http import (
     OperationPayloadReader as CompatibilityOperationPayloadReader,
 )
@@ -90,6 +92,19 @@ class FeatureRoutesPackageTests(unittest.TestCase):
                 self.assertIs(
                     getattr(compatibility_room_friend_dms, name),
                     getattr(owned_room_friend_dms, name),
+                )
+
+    def test_user_profile_root_module_exports_owned_service(self) -> None:
+        for name in (
+            "read_user_profile",
+            "update_user_profile",
+            "public_user_profile",
+            "clean_avatar_image_url",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_user_profile, name),
+                    getattr(owned_user_profile, name),
                 )
 
 

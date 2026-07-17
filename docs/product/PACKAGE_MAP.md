@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `295ea76eb37a12a7`
+Source fingerprint: `c86e893a7b0d5cc8`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 502
+- Python modules: 503
 - Top-level package modules: 303
-- Domains: admission=28, application=69, diagnostics=14, features=17, identity=9, legacy=79, persistence=58, providers=84, room=80, web=64
-- Classifications: compatibility=119, current=294, legacy=78, optional=11
+- Domains: admission=28, application=69, diagnostics=14, features=18, identity=9, legacy=79, persistence=58, providers=84, room=80, web=64
+- Classifications: compatibility=120, current=293, legacy=78, optional=12
 
 ## Classification Rules
 
@@ -118,7 +118,8 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.features.social` | `agentsassemble/features/social/__init__.py` | 1 | features | optional | - | 0 | - | test-import:1 | `tests/test_feature_routes_package.py` | `features/social/` | in-target-package |
 | `agentsassemble.features.social.direct_messages` | `agentsassemble/features/social/direct_messages.py` | 303 | features | optional | `agentsassemble.features.social.friends`, `agentsassemble.meeting_events` | 5 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_room_friends.py` | `features/social/` | in-target-package |
 | `agentsassemble.features.social.friends` | `agentsassemble/features/social/friends.py` | 289 | features | optional | `agentsassemble.meeting_events` | 4 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_room_friends.py` | `features/social/` | in-target-package |
-| `agentsassemble.features.social.routes` | `agentsassemble/features/social/routes.py` | 107 | features | optional | `agentsassemble.features.social.direct_messages`, `agentsassemble.features.social.friends`, `agentsassemble.live_agents`, `agentsassemble.user_profile`, `agentsassemble.web.router` | 2 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_social_http.py` | `features/social/` | in-target-package |
+| `agentsassemble.features.social.profile` | `agentsassemble/features/social/profile.py` | 153 | features | optional | - | 2 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_user_profile.py` | `features/social/` | in-target-package |
+| `agentsassemble.features.social.routes` | `agentsassemble/features/social/routes.py` | 107 | features | optional | `agentsassemble.features.social.direct_messages`, `agentsassemble.features.social.friends`, `agentsassemble.features.social.profile`, `agentsassemble.live_agents`, `agentsassemble.web.router` | 2 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_social_http.py` | `features/social/` | in-target-package |
 | `agentsassemble.frontend_runtime` | `agentsassemble/frontend_runtime.py` | 18 | web | compatibility | `agentsassemble.web.frontend_runtime` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.grok_acp_runtime` | `agentsassemble/grok_acp_runtime.py` | 6 | providers | compatibility | `agentsassemble.providers.grok_acp` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.grok_resident` | `agentsassemble/grok_resident.py` | 44 | providers | compatibility | `agentsassemble.providers.grok_resident` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
@@ -503,7 +504,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.stance_match` | `agentsassemble/stance_match.py` | 113 | application | current | - | 2 | - | - | - | `application/` | planned-move |
 | `agentsassemble.task_scope_report` | `agentsassemble/task_scope_report.py` | 302 | application | current | - | 1 | `call:compile@13`, `call:compile@14`, `call:compile@15`, `call:compile@16` | test-import:1 | `tests/test_task_scope_report.py` | `application/` | planned-move |
 | `agentsassemble.templates` | `agentsassemble/templates.py` | 33 | application | current | `agentsassemble.models` | 3 | - | - | - | `application/` | planned-move |
-| `agentsassemble.user_profile` | `agentsassemble/user_profile.py` | 152 | application | current | - | 1 | - | test-import:1 | `tests/test_user_profile.py` | `application/` | planned-move |
+| `agentsassemble.user_profile` | `agentsassemble/user_profile.py` | 38 | application | compatibility | `agentsassemble.features.social.profile` | 0 | - | test-import:1 | `tests/test_feature_routes_package.py` | `application/` | compatibility-shim |
 | `agentsassemble.voice_presence` | `agentsassemble/voice_presence.py` | 107 | application | current | - | 3 | `call:Lock@18` | test-import:1 | `tests/test_voice_presence.py` | `application/` | planned-move |
 | `agentsassemble.web` | `agentsassemble/web/__init__.py` | 1 | web | current | - | 0 | - | test-import:1, monkeypatch:1 | `tests/test_package_architecture_gate.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.frontend_runtime` | `agentsassemble/web/frontend_runtime.py` | 67 | web | current | - | 4 | - | test-import:2 | `tests/test_frontend_runtime.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |

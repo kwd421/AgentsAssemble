@@ -11,7 +11,7 @@ from agentsassemble.features.social.friends import (
     room_friends_payload,
     upsert_room_friend,
 )
-from agentsassemble.user_profile import read_user_profile, update_user_profile
+from agentsassemble.features.social.profile import read_user_profile, update_user_profile
 from agentsassemble.web.router import RequestContext, Router
 
 

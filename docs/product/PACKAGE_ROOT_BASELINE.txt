@@ -289,7 +289,6 @@ sqlite_attention_repository.py
 stance_match.py
 task_scope_report.py
 templates.py
-user_profile.py
 voice_presence.py
 windows_conpty.py
 ws_resident.py
