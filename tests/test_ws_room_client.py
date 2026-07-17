@@ -8,7 +8,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-import agentsassemble.ws_room_client as ws_room_client
+import agentsassemble.web.room_client as ws_room_client
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import create_room_invite, join_room_with_invite, reset_state
 from agentsassemble.room_store import RoomStore
@@ -22,7 +22,7 @@ from agentsassemble.web.websocket_codec import (
     encode_text,
     parse_frame,
 )
-from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws, connect_room_ws_with_ticket, join_room_session
+from agentsassemble.web.room_client import WsRoomClient, connect_room_ws, connect_room_ws_with_ticket, join_room_session
 
 
 class FakeSocket:
@@ -267,7 +267,7 @@ class LiveRoundTripTests(unittest.TestCase):
 class ConnectRoomWsTests(unittest.TestCase):
     def test_connect_with_internal_ticket_uses_same_ws_endpoint(self):
         sock = FakeSocket()
-        with patch("agentsassemble.ws_room_client.socket_module.create_connection", return_value=sock):
+        with patch("agentsassemble.web.room_client.socket_module.create_connection", return_value=sock):
             client = connect_room_ws_with_ticket(
                 "http://room.example",
                 "internal-ticket",
@@ -298,8 +298,8 @@ class ConnectRoomWsTests(unittest.TestCase):
                 return context
 
         with (
-            patch("agentsassemble.ws_room_client.request_ws_ticket", return_value="ticket"),
-            patch("agentsassemble.ws_room_client.socket_module.create_connection", return_value=sock),
+            patch("agentsassemble.web.room_client.request_ws_ticket", return_value="ticket"),
+            patch("agentsassemble.web.room_client.socket_module.create_connection", return_value=sock),
             patch.object(ws_room_client, "ssl", FakeSslModule, create=True),
         ):
             client = connect_room_ws("https://room.example", "session-token", ["lobby"])
@@ -314,8 +314,8 @@ class ConnectRoomWsTests(unittest.TestCase):
         sock = FakeSocket()
 
         with (
-            patch("agentsassemble.ws_room_client.request_ws_ticket", return_value="ticket"),
-            patch("agentsassemble.ws_room_client.socket_module.create_connection", return_value=sock),
+            patch("agentsassemble.web.room_client.request_ws_ticket", return_value="ticket"),
+            patch("agentsassemble.web.room_client.socket_module.create_connection", return_value=sock),
         ):
             client = connect_room_ws("http://room.example/aa", "session-token", ["lobby"])
 

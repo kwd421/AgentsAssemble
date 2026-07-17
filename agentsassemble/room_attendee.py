@@ -19,7 +19,7 @@ from agentsassemble.providers.runtime_config import ProviderRuntimeConfig, Provi
 from agentsassemble.providers.runtime_factory import runtime_from_config
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
-from agentsassemble.ws_room_client import connect_room_ws, join_room_session
+from agentsassemble.web.room_client import connect_room_ws, join_room_session
 
 
 class AgentAttendee:

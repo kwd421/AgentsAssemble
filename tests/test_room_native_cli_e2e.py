@@ -21,7 +21,7 @@ from agentsassemble.providers.bridge_process import NativeCliBridgeProcessManage
 from agentsassemble.room_invite import reset_state
 from agentsassemble.room_native_cli_smoke import NON_ROOM_REPLY, _latency_acceptance, run_room_native_cli_smoke
 from agentsassemble.room.realtime import NativeCliProviderSpec, RoomRealtimeController
-from agentsassemble.ws_room_client import (
+from agentsassemble.web.room_client import (
     connect_room_ws,
     connect_room_ws_with_ticket,
     join_room_session,

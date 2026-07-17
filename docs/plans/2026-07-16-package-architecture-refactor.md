@@ -1229,3 +1229,12 @@ module churn were deliberately avoided rather than forgotten.
   import the web-owned module directly; root `room_websocket.py` is a
   metadata-tracked compatibility export. Frame limits, masking enforcement,
   close codes, protocol errors, wire bytes, and room behavior are unchanged.
+- 2026-07-17: The canonical Python room client moved mechanically to
+  `web/room_client.py`. Resident, attendee, Agent Bridge entrypoint, native CLI
+  smoke, CLI command, social-flow, and protocol-test callers now import the
+  web-owned module directly; root `ws_room_client.py` is a metadata-tracked
+  compatibility export. Test monkeypatches also target the owned module so the
+  shim cannot hold separate socket, TLS, ticket, or join state. Admission HTTP
+  payloads, ticket exchange, TLS wrapping, path-prefix handling, frame I/O,
+  ACK/error behavior, and the existing conversation-mode fallback are
+  unchanged.

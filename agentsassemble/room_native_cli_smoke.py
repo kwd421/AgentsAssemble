@@ -36,7 +36,7 @@ from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,
 )
 from agentsassemble.admission.session_service import RoomSessionService
-from agentsassemble.ws_room_client import WsRoomClient, connect_room_ws_with_ticket
+from agentsassemble.web.room_client import WsRoomClient, connect_room_ws_with_ticket
 
 
 STRICT_MESSAGE_SOURCES = {

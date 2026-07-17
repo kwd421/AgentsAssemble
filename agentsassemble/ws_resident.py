@@ -15,7 +15,7 @@ import socket as socket_module
 from typing import Callable
 
 from agentsassemble.room_engagement import chain_depth as _chain_depth
-from agentsassemble.ws_room_client import WsRoomClient, WsRoomSayRejected, connect_room_ws
+from agentsassemble.web.room_client import WsRoomClient, WsRoomSayRejected, connect_room_ws
 
 Brain = Callable[[dict], str]
 ShouldReply = Callable[[dict], bool]

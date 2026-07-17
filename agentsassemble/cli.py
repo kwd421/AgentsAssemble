@@ -1740,7 +1740,7 @@ def _run_ws_resident_command(args: argparse.Namespace, config: ResidentAgentConf
     the provider's command runner as the brain + the runner's prompt envelope."""
     from agentsassemble.room_engagement import resolve_engagement, room_uses_floor
     from agentsassemble.ws_resident import run_provider_ws_resident
-    from agentsassemble.ws_room_client import (
+    from agentsassemble.web.room_client import (
         fetch_room_conversation_mode,
         join_room_session,
         meeting_id_from_invite_token,
@@ -1843,7 +1843,7 @@ def _run_ws_group_resident(config) -> int:
     """Run one group member over the governed WebSocket resident loop."""
     from agentsassemble.room_engagement import resolve_engagement, room_uses_floor
     from agentsassemble.ws_resident import run_provider_ws_resident
-    from agentsassemble.ws_room_client import (
+    from agentsassemble.web.room_client import (
         fetch_room_conversation_mode,
         join_room_session,
         meeting_id_from_invite_token,

@@ -11,7 +11,7 @@ from pathlib import Path
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
 from agentsassemble.providers.runtime_config import CanonicalBridgeLaunchConfig
 from agentsassemble.providers.runtime_factory import runtime_from_config
-from agentsassemble.ws_room_client import connect_room_ws_with_ticket
+from agentsassemble.web.room_client import connect_room_ws_with_ticket
 
 
 def main() -> int:

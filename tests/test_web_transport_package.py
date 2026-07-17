@@ -10,7 +10,9 @@ import agentsassemble.gui_static_transport as compatibility_static
 import agentsassemble.gui_ws_http as compatibility_websocket
 import agentsassemble.room_websocket as compatibility_websocket_codec
 import agentsassemble.sse_cadence as compatibility_sse_cadence
+import agentsassemble.ws_room_client as compatibility_room_client
 from agentsassemble.web import response as owned_response
+from agentsassemble.web import room_client as owned_room_client
 from agentsassemble.web import frontend_runtime as owned_frontend_runtime
 from agentsassemble.web import router as owned_router
 from agentsassemble.web import security as owned_security
@@ -108,6 +110,20 @@ class WebTransportPackageTests(unittest.TestCase):
                 self.assertIs(
                     getattr(compatibility_websocket_codec, name),
                     getattr(owned_websocket_codec, name),
+                )
+
+    def test_room_client_root_module_exports_owned_transport(self) -> None:
+        for name in (
+            "WsRoomClient",
+            "WsRoomSayRejected",
+            "connect_room_ws",
+            "connect_room_ws_with_ticket",
+            "join_room_session",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_room_client, name),
+                    getattr(owned_room_client, name),
                 )
 
     def test_sse_cadence_root_module_exports_owned_transport_values(self) -> None:
