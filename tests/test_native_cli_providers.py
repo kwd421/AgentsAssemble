@@ -284,6 +284,69 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "profile_migration_required")
 
+    def test_runtime_reported_transport_overwrite_is_migrated_to_configured_transport(self):
+        definition = native_cli_provider_definition("opencode")
+        self.assertIsNotNone(definition)
+        spec = definition.make_selected_spec(
+            agent_id="opencode",
+            display_name="OpenCode",
+            cwd="/tmp/workspace",
+            model="opencode-go/glm-5.2",
+            permission_mode="meeting_read_only",
+        )
+
+        restored = native_cli_provider_spec_from_stored_session_strict(
+            {
+                "participant_id": spec.agent_id,
+                "display_name": spec.display_name,
+                "provider_kind": spec.provider_kind,
+                "workspace": spec.cwd,
+                "model": spec.model,
+                "reasoning_effort": spec.reasoning_effort,
+                "service_tier": spec.service_tier,
+                "variant": spec.variant,
+                "permission_mode": spec.permission_mode,
+                "runtime_kind": spec.runtime_kind,
+                "transport": "http_sse",
+                "command_configured": list(spec.command),
+                "runtime_profile_key": spec.runtime_profile_key(),
+            }
+        )
+
+        self.assertEqual(restored.transport, "http")
+
+    def test_unknown_runtime_reported_transport_is_not_migrated(self):
+        definition = native_cli_provider_definition("opencode")
+        self.assertIsNotNone(definition)
+        spec = definition.make_selected_spec(
+            agent_id="opencode",
+            display_name="OpenCode",
+            cwd="/tmp/workspace",
+            model="opencode-go/glm-5.2",
+            permission_mode="meeting_read_only",
+        )
+
+        with self.assertRaises(StoredProviderProfileError) as raised:
+            native_cli_provider_spec_from_stored_session_strict(
+                {
+                    "participant_id": spec.agent_id,
+                    "display_name": spec.display_name,
+                    "provider_kind": spec.provider_kind,
+                    "workspace": spec.cwd,
+                    "model": spec.model,
+                    "reasoning_effort": spec.reasoning_effort,
+                    "service_tier": spec.service_tier,
+                    "variant": spec.variant,
+                    "permission_mode": spec.permission_mode,
+                    "runtime_kind": spec.runtime_kind,
+                    "transport": "unknown_stream",
+                    "command_configured": list(spec.command),
+                    "runtime_profile_key": spec.runtime_profile_key(),
+                }
+            )
+
+        self.assertEqual(raised.exception.code, "provider_definition_changed")
+
     def test_public_catalog_is_safe_and_unknown_provider_is_clear(self):
         payload = native_cli_provider_catalog_payload()
 

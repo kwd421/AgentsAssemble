@@ -9,6 +9,7 @@ from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.providers.launch_specs import (
     NativeCliProviderSpec,
     default_native_cli_provider_specs,
+    native_cli_provider_definition,
 )
 from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.event_broker import RoomEventBroker
@@ -106,6 +107,44 @@ class RoomProviderSessionServiceTests(unittest.TestCase):
         self._service(restored_registry).restore_server_owned_providers()
 
         self.assertTrue(restored_registry.contains("general", restorable.agent_id))
+
+    def test_restore_repairs_reported_transport_overwrite_and_clears_profile_error(self) -> None:
+        definition = native_cli_provider_definition("opencode")
+        self.assertIsNotNone(definition)
+        spec = definition.make_selected_spec(
+            agent_id="opencode",
+            display_name="OpenCode",
+            cwd=self.root,
+            model="opencode-go/glm-5.2",
+            permission_mode="meeting_read_only",
+        )
+        self.service.create_provider_session("general", spec)
+        self.store.update_session_fields(
+            "general",
+            "opencode",
+            transport="http_sse",
+            status="error",
+            runtime_status="error",
+            enabled=False,
+            recovery_required=True,
+            last_error="Stored Agent Session provider definition changed.",
+            last_error_code="provider_definition_changed",
+        )
+        restored_registry = RoomProviderRegistry(
+            lock=self.lock,
+            default_room_id="general",
+        )
+
+        self._service(restored_registry).restore_server_owned_providers()
+
+        restored = self.store.session("general", "opencode")
+        self.assertEqual(restored["transport"], "http")
+        self.assertEqual(restored["status"], "available")
+        self.assertEqual(restored["runtime_status"], "stopped")
+        self.assertFalse(restored["recovery_required"])
+        self.assertEqual(restored["last_error"], "")
+        self.assertEqual(restored["last_error_code"], "")
+        self.assertTrue(restored_registry.contains("general", "opencode"))
 
     def test_running_session_rejects_profile_changes_without_replacing_registry_spec(self) -> None:
         original = _spec("codex", model="model-a")

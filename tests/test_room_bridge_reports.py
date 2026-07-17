@@ -34,6 +34,7 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
                 "process_ownership": "server",
                 "enabled": True,
                 "runtime_status": "starting",
+                "transport": "http",
             },
         )
         self.broker = RoomEventBroker()
@@ -83,7 +84,7 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
                 "pid": 42,
                 "running": True,
                 "pty": False,
-                "transport": "websocket",
+                "transport": "http_sse",
                 "provider_session_active": True,
                 "started_at": None,
             },
@@ -93,6 +94,8 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
         self.assertEqual(result["agent_session"]["runtime_status"], "idle")
         self.assertEqual(session["bridge_generation"], 1)
         self.assertEqual(session["reported_provider_pid"], 42)
+        self.assertEqual(session["transport"], "http")
+        self.assertEqual(session["reported_transport"], "http_sse")
         self.assertEqual(
             self.store.participant("general", "codex")["status"],
             "joined",
@@ -128,7 +131,7 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
                 "pid": "84",
                 "running": True,
                 "pty": True,
-                "transport": "pty",
+                "transport": "http_sse",
                 "provider_session_active": True,
                 "started_at": "2026-07-17T00:00:00Z",
                 "resolved_executable": "/usr/local/bin/codex",
@@ -139,7 +142,9 @@ class RoomBridgeReportServiceTests(unittest.TestCase):
         self.assertNotIn("reported_provider_pid", result["agent_session"])
         self.assertEqual(session["reported_provider_pid"], 84)
         self.assertEqual(session["resolved_executable"], "/usr/local/bin/codex")
-        self.assertTrue(session["pty"])
+        self.assertFalse(session["pty"])
+        self.assertEqual(session["transport"], "http")
+        self.assertEqual(session["reported_transport"], "http_sse")
 
 
 if __name__ == "__main__":

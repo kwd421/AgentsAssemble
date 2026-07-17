@@ -79,10 +79,16 @@ class RoomProviderSessionService:
                     session.get("runtime_profile_key") != spec.runtime_profile_key()
                     or session.get("transport") != spec.transport
                 )
-                migration_blocked = session.get("last_error_code") == "profile_migration_required" or (
+                migration_blocked = session.get("last_error_code") in {
+                    "profile_migration_required",
+                    "provider_definition_changed",
+                } or (
                     not session.get("last_error_code")
                     and session.get("last_error")
-                    == "Stored Agent Session profile must be migrated before it can be reused."
+                    in {
+                        "Stored Agent Session profile must be migrated before it can be reused.",
+                        "Stored Agent Session provider definition changed.",
+                    }
                 )
                 if profile_changed or migration_blocked:
                     updates: dict[str, object] = {}

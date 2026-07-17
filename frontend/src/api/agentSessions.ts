@@ -47,6 +47,7 @@ export interface RoomAgentSession {
   latency?: RoomAgentLatency;
   pty?: boolean;
   transport?: string;
+  reported_transport?: string;
   is_one_shot?: boolean;
   runtime_profile_key?: string;
   model?: string;

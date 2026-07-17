@@ -132,6 +132,7 @@ class RoomBridgeReportService:
                 "variant": profile.variant,
                 "permission_mode": profile.permission_mode,
                 "runtime_kind": profile.runtime_kind,
+                "transport": profile.transport,
                 "runtime_profile_key": external_runtime_profile_key(profile),
             }
         generation = self.broker.activate_bridge(channel)
@@ -147,7 +148,7 @@ class RoomBridgeReportService:
             reported_provider_pid=safe_int_or_none(payload.get("pid")),
             bridge_generation=generation,
             pty=health.pty,
-            transport=health.transport,
+            reported_transport=health.transport,
             is_one_shot=bool(payload.get("is_one_shot", False)),
             started_at=health.started_at,
             last_error="",
@@ -191,7 +192,7 @@ class RoomBridgeReportService:
         fields.update(
             running=health.running,
             pty=health.pty,
-            transport=health.transport,
+            reported_transport=health.transport,
             started_at=health.started_at,
         )
         if "pid" in payload:

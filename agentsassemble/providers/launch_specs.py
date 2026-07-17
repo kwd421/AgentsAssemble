@@ -291,7 +291,14 @@ def native_cli_provider_spec_from_stored_session_strict(
         ).runtime_profile_key()
         == required["runtime_profile_key"]
     )
-    if stored_transport != definition.transport and not legacy_grok_transport_profile:
+    reported_transport_overwrite_profile = (
+        stored_transport in definition.reported_transports
+        and spec.command == stored_command
+        and spec.runtime_profile_key() == required["runtime_profile_key"]
+    )
+    if stored_transport != definition.transport and not (
+        legacy_grok_transport_profile or reported_transport_overwrite_profile
+    ):
         raise StoredProviderProfileError(
             "Stored Agent Session provider definition changed.",
             code="provider_definition_changed",
@@ -300,6 +307,7 @@ def native_cli_provider_spec_from_stored_session_strict(
         profile_matches
         or legacy_grok_transport_profile
         or legacy_claude_startup_profile
+        or reported_transport_overwrite_profile
     ):
         raise StoredProviderProfileError(
             "Stored Agent Session profile must be migrated before it can be reused.",
