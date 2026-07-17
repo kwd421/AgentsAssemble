@@ -30,7 +30,10 @@ from agentsassemble.meeting_events import (
     read_lobby_events,
     read_lobby_events_after,
 )
-from agentsassemble.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS, SSE_KEEPALIVE_INTERVAL_SECONDS
+from agentsassemble.web.sse_cadence import (
+    SSE_EVENT_POLL_INTERVAL_SECONDS,
+    SSE_KEEPALIVE_INTERVAL_SECONDS,
+)
 
 
 BENCHMARK_SCHEMA_VERSION = 1

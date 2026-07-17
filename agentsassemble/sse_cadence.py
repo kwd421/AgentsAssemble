@@ -1,4 +1,12 @@
-from __future__ import annotations
+"""Compatibility exports for shared SSE and WebSocket transport cadence."""
 
-SSE_EVENT_POLL_INTERVAL_SECONDS = 0.2
-SSE_KEEPALIVE_INTERVAL_SECONDS = 1.0
+from agentsassemble.web.sse_cadence import (
+    SSE_EVENT_POLL_INTERVAL_SECONDS,
+    SSE_KEEPALIVE_INTERVAL_SECONDS,
+)
+
+
+__all__ = [
+    "SSE_EVENT_POLL_INTERVAL_SECONDS",
+    "SSE_KEEPALIVE_INTERVAL_SECONDS",
+]

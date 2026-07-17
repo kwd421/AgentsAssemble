@@ -1,0 +1,4 @@
+from __future__ import annotations
+
+SSE_EVENT_POLL_INTERVAL_SECONDS = 0.2
+SSE_KEEPALIVE_INTERVAL_SECONDS = 1.0

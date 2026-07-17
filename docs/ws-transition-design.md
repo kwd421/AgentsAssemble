@@ -7,7 +7,7 @@
 ## 현재 상태 (맵 요약)
 - 서버 = stdlib `http.server.BaseHTTPRequestHandler` (동기, async 아님, WS 미지원).
 - 로비 = JSONL 파일. **pub/sub 없음.** SSE "푸시"는 사실 `_send_sse_stream()`이 200ms마다
-  `_stream_snapshot_payload()`로 파일을 폴링→diff→프레임. (`sse_cadence.py`)
+  `_stream_snapshot_payload()`로 파일을 폴링→diff→프레임. (`web/sse_cadence.py`)
 - 신원 = **요청당** Bearer 토큰 → 세션 dict (`verify_session_token`, `RequestContext`).
   연결당 상태 없음. 음소거/스코프는 매 POST 재조회. 레이트리밋 없음.
 - 3개 표면: ① 이벤트 SSE(`/api/room/events`·`/api/events/roster|lobby|side-chat`·`/api/meetings/{id}/events`)

@@ -1189,3 +1189,11 @@ module churn were deliberately avoided rather than forgotten.
   `session_run_monitor.py` is a metadata-tracked compatibility export. Thread
   naming, stop waiting, status classification, error-type redaction, and
   interval bounds are unchanged.
+- 2026-07-17: Shared legacy SSE keepalive and WebSocket select cadence moved
+  mechanically to `web/sse_cadence.py`. This corrects the initial generated
+  `application/` proposal: both values are transport timing, while the room
+  benchmark only observes them. GUI compatibility streaming,
+  `web/websocket.py`, and the benchmark now import the web-owned values
+  directly; root `sse_cadence.py` is a metadata-tracked compatibility export.
+  Poll interval, keepalive interval, event ordering, and live-room transport
+  behavior are unchanged.

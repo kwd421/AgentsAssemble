@@ -292,7 +292,6 @@ sandbox_launcher.py
 side_chat.py
 speech_policy.py
 sqlite_attention_repository.py
-sse_cadence.py
 stable_entry.py
 stance_match.py
 task_scope_report.py

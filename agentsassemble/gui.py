@@ -347,7 +347,10 @@ from agentsassemble.meeting_events import (
 from agentsassemble.side_chat import (
     _filter_side_chat_events_for_meeting,
 )
-from agentsassemble.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS, SSE_KEEPALIVE_INTERVAL_SECONDS
+from agentsassemble.web.sse_cadence import (
+    SSE_EVENT_POLL_INTERVAL_SECONDS,
+    SSE_KEEPALIVE_INTERVAL_SECONDS,
+)
 
 SSE_ERROR_MESSAGE_LIMIT = 500
 REMOTE_LOBBY_REQUESTER = None
