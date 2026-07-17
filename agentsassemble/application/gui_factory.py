@@ -38,7 +38,7 @@ from agentsassemble.persistence.local.identity.registry import (
 )
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.providers.bridge_process import NativeCliBridgeProcessManager
-from agentsassemble.public_invite_runtime import PublicInviteRuntime
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.public_tunnel import PublicTunnelManager
 from agentsassemble.room_invite import (
     configure_room_invite_repository,

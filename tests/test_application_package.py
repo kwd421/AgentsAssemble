@@ -9,12 +9,14 @@ import agentsassemble.room_agent_bridge as compatibility_agent_bridge
 import agentsassemble.room_users as compatibility_room_users
 import agentsassemble.session_run_monitor as compatibility_session_run_monitor
 import agentsassemble.stable_entry as compatibility_stable_entry
+import agentsassemble.public_invite_runtime as compatibility_public_invite_runtime
 from agentsassemble.application import agent_bridge_entrypoint as owned_agent_bridge_entrypoint
 from agentsassemble.application import gui as owned_gui
 from agentsassemble.application import gui_factory as owned_gui_factory
 from agentsassemble.application import room_users as owned_room_users
 from agentsassemble.application import session_run_monitor as owned_session_run_monitor
 from agentsassemble.application import stable_entry as owned_stable_entry
+from agentsassemble.application import public_invite_runtime as owned_public_invite_runtime
 from agentsassemble.application import transaction as owned_transaction
 
 
@@ -80,6 +82,16 @@ class ApplicationPackageTests(unittest.TestCase):
         self.assertEqual(
             owned_stable_entry._REDIRECTOR_DIR,
             ROOT / "infra" / "room-redirector",
+        )
+
+    def test_public_invite_runtime_root_module_exports_owned_service(self) -> None:
+        self.assertIs(
+            compatibility_public_invite_runtime.PublicInviteRuntime,
+            owned_public_invite_runtime.PublicInviteRuntime,
+        )
+        self.assertIs(
+            compatibility_public_invite_runtime.normalize_public_room_url,
+            owned_public_invite_runtime.normalize_public_room_url,
         )
 
 

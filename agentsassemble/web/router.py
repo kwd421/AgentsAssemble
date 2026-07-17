@@ -32,7 +32,7 @@ from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.identity.repository import IdentityBackend, device_auth_key
-from agentsassemble.public_invite_runtime import PublicInviteRuntime
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.web.security import (
     _LOOPBACK_HOSTNAMES,

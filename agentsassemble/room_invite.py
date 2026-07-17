@@ -53,7 +53,7 @@ from agentsassemble.admission.invite_service import (
     normalize_invite_scope,
     room_usage_guide as _room_usage_guide,
 )
-from agentsassemble.public_invite_runtime import (
+from agentsassemble.application.public_invite_runtime import (
     HOST_TOKEN_ENV,
     PUBLIC_URL_ENV,
     PublicInviteRuntime,

@@ -1,7 +1,7 @@
 import unittest
 from unittest import mock
 
-from agentsassemble.public_invite_runtime import PublicInviteRuntime
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.public_tunnel import PublicTunnelManager, extract_trycloudflare_url
 
 

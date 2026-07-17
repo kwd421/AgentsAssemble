@@ -18,7 +18,7 @@ from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.admission.projection import LegacyAdmissionProjection
 from agentsassemble.providers.bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.public_tunnel import PublicTunnelManager
-from agentsassemble.public_invite_runtime import PublicInviteRuntime
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room.realtime import RoomRealtimeController
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.ws_room_session import WsTicketStore

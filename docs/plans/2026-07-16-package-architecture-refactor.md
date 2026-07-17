@@ -1205,3 +1205,12 @@ module churn were deliberately avoided rather than forgotten.
   from `parents[1]` to `parents[2]` solely because the implementation moved one
   package level deeper. URL validation, retry count, timeout, background-thread
   behavior, raw-tunnel fallback, and public invite payloads are unchanged.
+- 2026-07-17: Server-lifetime public invite host-token and public-URL state
+  moved mechanically to `application/public_invite_runtime.py`. GUI
+  composition, web request context, invite compatibility, diagnostics smoke,
+  and tunnel code now import the application owner directly; root
+  `public_invite_runtime.py` is a metadata-tracked compatibility export. URL
+  normalization and loopback rejection, environment fallback, runtime override,
+  constant-time host-token verification, and owned-URL clearing are unchanged.
+  Tunnel process ownership remains separate for the next commit because it has
+  a different OS-process failure mode.

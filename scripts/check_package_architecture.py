@@ -228,6 +228,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_application_package.py",),
         introduced_in="Milestone 4.15 stable public-entry service move",
     ),
+    "public_invite_runtime.py": CompatibilityShim(
+        replacement_import="agentsassemble.application.public_invite_runtime",
+        removal_gate=(
+            "No direct imports use agentsassemble.public_invite_runtime for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_application_package.py",),
+        introduced_in="Milestone 4.16 public invite runtime move",
+    ),
     "gui_mafia_http.py": CompatibilityShim(
         replacement_import="agentsassemble.features.mafia.routes",
         removal_gate=(

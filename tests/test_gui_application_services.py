@@ -16,7 +16,7 @@ from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionP
 from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,
 )
-from agentsassemble.public_invite_runtime import PublicInviteRuntime
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room_admission import RoomAdmissionService
 
 

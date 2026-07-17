@@ -8,7 +8,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 
-from agentsassemble.public_invite_runtime import PublicInviteRuntime
+from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.application.stable_entry import announce_stable_entry
 
 
