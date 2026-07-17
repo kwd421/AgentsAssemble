@@ -56,6 +56,7 @@ export function projectRoomEventsToTimeline(
 ): LobbyEvent[] {
   const timeline: LobbyEvent[] = [];
   const turnIndex = new Map<string, number>();
+  const reasoningActivityIndex = new Map<string, number>();
   const viewerParticipantId = String(options.viewerParticipantId || "");
   const participantProfiles = options.participantProfiles || {};
 
@@ -66,7 +67,7 @@ export function projectRoomEventsToTimeline(
     const speaker = speakerIdentity(event, eventActor.id, viewerParticipantId, participantProfiles);
 
     if (["thinking_delta", "activity_delta"].includes(event.type) && String(event.content || "").trim()) {
-      timeline.push({
+      const projected: LobbyEvent = {
         id: event.id,
         created_at: event.created_at,
         name: speaker.name,
@@ -80,7 +81,24 @@ export function projectRoomEventsToTimeline(
         flow_action: event.type,
         flow_meeting_id: event.room_id,
         flow_id: key,
-      });
+      };
+      if (event.type === "activity_delta" && event.activity_kind === "reasoning" && event.turn_id) {
+        const activityKey = `${key}:reasoning:${event.category || "reasoning"}`;
+        const existingIndex = reasoningActivityIndex.get(activityKey);
+        if (existingIndex === undefined) {
+          reasoningActivityIndex.set(activityKey, timeline.length);
+          timeline.push(projected);
+        } else {
+          const existing = timeline[existingIndex];
+          timeline[existingIndex] = {
+            ...projected,
+            id: existing.id,
+            created_at: existing.created_at,
+          };
+        }
+      } else {
+        timeline.push(projected);
+      }
       return;
     }
 

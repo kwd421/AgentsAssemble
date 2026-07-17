@@ -612,7 +612,7 @@ def _opencode_controls(models: list[str]) -> list[dict[str, object]]:
 def _deepseek_payload() -> dict[str, object]:
     return {
         "id": "deepseek",
-        "display_name": "DeepSeek API",
+        "display_name": "DeepSeek",
         "provider_kind": "deepseek_api",
         "runtime_kind": "api",
         "connection_kind": "native_cli_bridge",

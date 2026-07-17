@@ -160,4 +160,56 @@ describe("projectRoomEventsToTimeline", () => {
     });
     expect(projectRoomEventProgress(activity)?.message).toBe("정보 검색 중");
   });
+
+  it("updates one reasoning step across an OpenCode answer", () => {
+    const timeline = projectRoomEventsToTimeline([
+      event({
+        id: "reasoning-running",
+        seq: 1,
+        type: "activity_delta",
+        turn_id: "turn-opencode",
+        activity_kind: "reasoning",
+        category: "reasoning",
+        status: "running",
+        content: "생각 정리 중",
+      }),
+      event({
+        id: "answer-delta",
+        seq: 2,
+        type: "message_delta",
+        turn_id: "turn-opencode",
+        content: "답변",
+      }),
+      event({
+        id: "reasoning-completed",
+        seq: 3,
+        type: "activity_delta",
+        turn_id: "turn-opencode",
+        activity_kind: "reasoning",
+        category: "reasoning",
+        status: "completed",
+        content: "생각 정리 완료",
+      }),
+      event({
+        id: "answer-final",
+        seq: 4,
+        type: "message_final",
+        turn_id: "turn-opencode",
+        content: "답변입니다.",
+      }),
+    ]);
+
+    expect(timeline).toHaveLength(2);
+    expect(timeline[0]).toMatchObject({
+      id: "reasoning-running",
+      kind: "thinking",
+      message: "생각 정리 완료",
+      flow_id: "turn-opencode",
+    });
+    expect(timeline[1]).toMatchObject({
+      id: "turn-opencode",
+      kind: "message",
+      message: "답변입니다.",
+    });
+  });
 });

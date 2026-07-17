@@ -4,7 +4,7 @@
     {
       "id": "codex",
       "kind": "live_cli",
-      "display_name": "Codex Luna",
+      "display_name": "Codex",
       "command": [
         "codex",
         "--no-alt-screen",
@@ -40,7 +40,7 @@
     {
       "id": "antigravity",
       "kind": "live_cli",
-      "display_name": "Antigravity CLI",
+      "display_name": "Antigravity",
       "command": [
         "agy",
         "--model",
@@ -80,7 +80,7 @@
     {
       "id": "grok",
       "kind": "live_cli",
-      "display_name": "Grok CLI",
+      "display_name": "Grok",
       "command": [
         "grok",
         "--model",

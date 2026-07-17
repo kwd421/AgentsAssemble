@@ -422,7 +422,7 @@ def _deepseek_command(
 NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
     NativeCliProviderDefinition(
         provider_id="codex",
-        display_name="Codex Luna",
+        display_name="Codex",
         provider_kind="codex_live_session",
         executable="codex",
         command_builder=_codex_command,
@@ -437,7 +437,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
     ),
     NativeCliProviderDefinition(
         provider_id="antigravity",
-        display_name="Antigravity CLI",
+        display_name="Antigravity",
         provider_kind="antigravity_live_session",
         executable="agy",
         command_builder=_antigravity_command,
@@ -449,7 +449,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
     ),
     NativeCliProviderDefinition(
         provider_id="grok",
-        display_name="Grok CLI",
+        display_name="Grok",
         provider_kind="grok_live_session",
         executable="grok",
         command_builder=_grok_command,
@@ -461,7 +461,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
     ),
     NativeCliProviderDefinition(
         provider_id="claude",
-        display_name="Claude Code",
+        display_name="Claude",
         provider_kind="claude_code",
         executable="claude",
         command_builder=_claude_command,
@@ -491,7 +491,7 @@ STRUCTURED_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
     ),
     NativeCliProviderDefinition(
         provider_id="deepseek",
-        display_name="DeepSeek API",
+        display_name="DeepSeek",
         provider_kind="deepseek_api",
         executable="",
         command_builder=_deepseek_command,
