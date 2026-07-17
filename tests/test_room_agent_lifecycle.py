@@ -6,6 +6,7 @@ from pathlib import Path
 from agentsassemble.diagnostics.cleanup import CleanupReport
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.room.agent_lifecycle import RoomAgentLifecycle
+from agentsassemble.room.errors import RoomCommandRejected
 from agentsassemble.room.event_broker import RoomEventBroker
 from agentsassemble.room_store import RoomStore
 
@@ -278,6 +279,55 @@ class RoomAgentLifecycleTests(unittest.TestCase):
         self.assertEqual(self.manager.stops, [])
         self.assertEqual(self.assigned, [("general", "codex")])
         self.assertEqual(self.store.session("general", "codex")["runtime_status"], "idle")
+
+    def test_resume_disconnected_session_without_owned_handle_starts_without_stop(self):
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            status="unavailable",
+            runtime_status="disconnected",
+            enabled=False,
+            recovery_required=True,
+            last_error="Agent bridge disconnected.",
+            last_error_code="bridge_process_exited",
+            bridge_handle_id="",
+        )
+
+        resumed = self.lifecycle.resume(
+            "general",
+            "codex",
+            server_url="http://room",
+            ticket_issuer=None,
+        )
+
+        self.assertFalse(resumed["runtime_reused"])
+        self.assertEqual(self.manager.stops, [])
+        self.assertEqual(self.manager.starts, [("general", "codex")])
+        self.assertEqual(self.store.session("general", "codex")["runtime_status"], "starting")
+
+    def test_resume_profile_migration_error_does_not_attempt_shutdown(self):
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            status="unavailable",
+            runtime_status="disconnected",
+            recovery_required=True,
+            last_error="Stored Agent Session profile must be migrated before it can be reused.",
+            last_error_code="profile_migration_required",
+            bridge_handle_id="",
+        )
+
+        with self.assertRaises(RoomCommandRejected) as raised:
+            self.lifecycle.resume(
+                "general",
+                "codex",
+                server_url="http://room",
+                ticket_issuer=None,
+            )
+
+        self.assertEqual(raised.exception.code, "profile_migration_required")
+        self.assertEqual(self.manager.stops, [])
+        self.assertEqual(self.manager.starts, [])
 
     def test_bridge_exit_requeues_inflight_work_and_schedules_one_restart(self):
         self.lifecycle.start("general", "codex", server_url="http://room", ticket_issuer=None)

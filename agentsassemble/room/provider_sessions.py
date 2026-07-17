@@ -170,6 +170,26 @@ class RoomProviderSessionService:
                 )
             self.registry.register(clean_room_id, spec)
             self.ensure_provider_session(clean_room_id, spec)
+            current = self.store.session(clean_room_id, spec.agent_id)
+            if (
+                current.get("runtime_status") in {"error", "disconnected"}
+                and not current.get("bridge_handle_id")
+                and not self.broker.has_bridge(clean_room_id, spec.agent_id)
+            ):
+                self.store.update_session_fields(
+                    clean_room_id,
+                    spec.agent_id,
+                    status="available",
+                    runtime_status="stopped",
+                    enabled=False,
+                    last_error="",
+                    last_error_code="",
+                    recovery_required=False,
+                    recovery_attempt_count=0,
+                    lifecycle_intent_action="",
+                    lifecycle_intent_id="",
+                    lifecycle_intent_status="",
+                )
             self.store.update_session_fields(
                 clean_room_id,
                 spec.agent_id,

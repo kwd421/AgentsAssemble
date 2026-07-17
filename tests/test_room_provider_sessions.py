@@ -126,6 +126,33 @@ class RoomProviderSessionServiceTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "runtime_profile_conflict")
         self.assertEqual(self.registry.provider("general", "codex").model, "model-a")
 
+    def test_configuring_a_disconnected_profile_makes_it_explicitly_startable(self) -> None:
+        original = _spec("codex", model="model-a")
+        self.service.create_provider_session("general", original)
+        self.store.update_session_fields(
+            "general",
+            "codex",
+            status="unavailable",
+            runtime_status="disconnected",
+            enabled=False,
+            recovery_required=True,
+            last_error="Stored Agent Session profile must be migrated before it can be reused.",
+            last_error_code="profile_migration_required",
+        )
+
+        configured = self.service.configure_stopped_provider_profile(
+            "general",
+            _spec("codex", model="model-b"),
+        )
+
+        self.assertEqual(configured["status"], "available")
+        self.assertEqual(configured["runtime_status"], "stopped")
+        self.assertFalse(configured["enabled"])
+        self.assertFalse(configured["recovery_required"])
+        self.assertEqual(configured["last_error"], "")
+        self.assertEqual(configured["last_error_code"], "")
+        self.assertEqual(self.registry.provider("general", "codex").model, "model-b")
+
     def test_restorable_process_ownership_requires_the_complete_legacy_profile(self) -> None:
         self.assertEqual(restorable_process_ownership({"external_owned": True}), "external")
         self.assertEqual(restorable_process_ownership({"runtime_kind": "live_cli"}), "")

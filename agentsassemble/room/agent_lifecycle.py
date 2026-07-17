@@ -288,9 +288,52 @@ class RoomAgentLifecycle:
             }
         if session and session.get("runtime_status") in {"starting", "idle", "busy"}:
             return {"agent_session": public_session(session), "runtime_reused": True}
+        profile_error_code = clean_lobby_text(session.get("last_error_code"), limit=64) if session else ""
+        if profile_error_code in {
+            "profile_incomplete",
+            "profile_migration_required",
+            "provider_definition_changed",
+        }:
+            raise RoomCommandRejected(
+                "This Agent Session runtime profile must be saved again before it can resume.",
+                code=profile_error_code,
+            )
+        if session and self._known_stopped_server_runtime(room_id, agent_id, session):
+            self._finalize_stop(
+                room_id,
+                agent_id,
+                session,
+                disable=False,
+                process={
+                    "stopped": True,
+                    "alive": False,
+                    "ownership": "server",
+                    "confirmed": True,
+                    "already_stopped": True,
+                },
+                revoked_sessions=0,
+            )
+            session = self.store.session(room_id, agent_id)
         if session and session.get("runtime_status") not in {"stopped", "available"}:
             self.stop(room_id, agent_id, disable=False)
         return self.start(room_id, agent_id, server_url=server_url, ticket_issuer=ticket_issuer)
+
+    def _known_stopped_server_runtime(
+        self,
+        room_id: str,
+        agent_id: str,
+        session: dict[str, object],
+    ) -> bool:
+        ownership = clean_lobby_text(session.get("process_ownership"), limit=32) or (
+            "external" if session.get("external_owned") else "server"
+        )
+        return bool(
+            ownership == "server"
+            and session.get("runtime_status") in {"error", "disconnected"}
+            and not session.get("bridge_handle_id")
+            and not self.broker.has_bridge(room_id, agent_id)
+            and self.process_health(room_id, agent_id).get("running") is False
+        )
 
     def pause(self, room_id: str, agent_id: str) -> dict[str, object]:
         session = self.store.session(room_id, agent_id)
