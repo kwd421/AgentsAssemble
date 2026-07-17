@@ -1197,3 +1197,11 @@ module churn were deliberately avoided rather than forgotten.
   directly; root `sse_cadence.py` is a metadata-tracked compatibility export.
   Poll interval, keepalive interval, event ordering, and live-room transport
   behavior are unchanged.
+- 2026-07-17: Stable public-entry configuration and asynchronous Cloudflare KV
+  announcement moved mechanically to `application/stable_entry.py`. Current
+  tunnel, GUI compatibility, and invite-route callers import the application
+  owner directly; root `stable_entry.py` is a metadata-tracked compatibility
+  export. The repository-relative `infra/room-redirector` lookup was adjusted
+  from `parents[1]` to `parents[2]` solely because the implementation moved one
+  package level deeper. URL validation, retry count, timeout, background-thread
+  behavior, raw-tunnel fallback, and public invite payloads are unchanged.

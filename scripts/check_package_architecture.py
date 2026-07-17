@@ -219,6 +219,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_web_transport_package.py",),
         introduced_in="Milestone 4.14 web transport cadence move",
     ),
+    "stable_entry.py": CompatibilityShim(
+        replacement_import="agentsassemble.application.stable_entry",
+        removal_gate=(
+            "No direct imports use agentsassemble.stable_entry for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_application_package.py",),
+        introduced_in="Milestone 4.15 stable public-entry service move",
+    ),
     "gui_mafia_http.py": CompatibilityShim(
         replacement_import="agentsassemble.features.mafia.routes",
         removal_gate=(

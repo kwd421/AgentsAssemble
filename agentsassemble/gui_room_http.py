@@ -84,7 +84,7 @@ from agentsassemble.application.room_users import (
     user_for_participant,
 )
 from agentsassemble.room_votes import vote_summary
-from agentsassemble.stable_entry import stable_entry_url
+from agentsassemble.application.stable_entry import stable_entry_url
 from agentsassemble.voice_presence import (
     join_voice,
     leave_all_voice,

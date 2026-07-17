@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 import agentsassemble.application_transaction as compatibility_transaction
 import agentsassemble.gui_application as compatibility_gui
 import agentsassemble.room_agent_bridge as compatibility_agent_bridge
 import agentsassemble.room_users as compatibility_room_users
 import agentsassemble.session_run_monitor as compatibility_session_run_monitor
+import agentsassemble.stable_entry as compatibility_stable_entry
 from agentsassemble.application import agent_bridge_entrypoint as owned_agent_bridge_entrypoint
 from agentsassemble.application import gui as owned_gui
 from agentsassemble.application import gui_factory as owned_gui_factory
 from agentsassemble.application import room_users as owned_room_users
 from agentsassemble.application import session_run_monitor as owned_session_run_monitor
+from agentsassemble.application import stable_entry as owned_stable_entry
 from agentsassemble.application import transaction as owned_transaction
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class ApplicationPackageTests(unittest.TestCase):
@@ -60,6 +66,20 @@ class ApplicationPackageTests(unittest.TestCase):
         self.assertIs(
             compatibility_session_run_monitor.normalized_monitor_interval,
             owned_session_run_monitor.normalized_monitor_interval,
+        )
+
+    def test_stable_entry_root_module_exports_owned_service(self) -> None:
+        self.assertIs(
+            compatibility_stable_entry.stable_entry_url,
+            owned_stable_entry.stable_entry_url,
+        )
+        self.assertIs(
+            compatibility_stable_entry.announce_stable_entry,
+            owned_stable_entry.announce_stable_entry,
+        )
+        self.assertEqual(
+            owned_stable_entry._REDIRECTOR_DIR,
+            ROOT / "infra" / "room-redirector",
         )
 
 

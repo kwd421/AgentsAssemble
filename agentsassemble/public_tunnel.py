@@ -9,7 +9,7 @@ from collections import deque
 from collections.abc import Callable
 
 from agentsassemble.public_invite_runtime import PublicInviteRuntime
-from agentsassemble.stable_entry import announce_stable_entry
+from agentsassemble.application.stable_entry import announce_stable_entry
 
 
 TRYCLOUDFLARE_URL_RE = re.compile(r"https://[A-Za-z0-9-]+\.trycloudflare\.com")

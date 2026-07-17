@@ -10,7 +10,7 @@ from agentsassemble.admission.projection import LegacyAdmissionParticipant
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.identity.pairing import normalize_pairing_origin
 from agentsassemble.admission.coordinator import AdmissionIdempotencyConflict
-from agentsassemble.stable_entry import stable_entry_url
+from agentsassemble.application.stable_entry import stable_entry_url
 
 
 def register_invite_admission_routes(router: Router) -> None:
