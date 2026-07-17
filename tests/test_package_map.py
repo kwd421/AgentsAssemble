@@ -455,6 +455,7 @@ class PackageMapTests(unittest.TestCase):
         for module_name, proposed_package in (
             ("agentsassemble.features.mafia.routes", "features/mafia/"),
             ("agentsassemble.features.side_chat.routes", "features/side_chat/"),
+            ("agentsassemble.features.side_chat.service", "features/side_chat/"),
             ("agentsassemble.features.social.routes", "features/social/"),
         ):
             with self.subTest(module_name=module_name):

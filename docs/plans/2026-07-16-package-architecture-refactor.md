@@ -1248,3 +1248,11 @@ module churn were deliberately avoided rather than forgotten.
   `ws_room_session.py` is a metadata-tracked compatibility export. Ticket TTL,
   identity binding, stream cursors, command delegation, error categories, and
   wire payloads are unchanged.
+- 2026-07-17: Optional side-chat JSONL storage and meeting-scoped reads moved
+  mechanically to `features/side_chat/service.py`, beside the already-owned
+  feature routes. Current GUI composition, side-chat routes, retained legacy
+  live-agent query projection, and test support import the feature owner
+  directly; root `side_chat.py` is a metadata-tracked compatibility export.
+  Event normalization, `side_chat.jsonl` location, read limits, meeting
+  filtering, append behavior, HTTP/SSE routes, and frontend behavior are
+  unchanged.

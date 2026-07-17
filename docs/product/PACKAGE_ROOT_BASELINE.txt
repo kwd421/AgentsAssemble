@@ -286,7 +286,6 @@ room_types.py
 room_user_preferences.py
 room_votes.py
 sandbox_launcher.py
-side_chat.py
 speech_policy.py
 sqlite_attention_repository.py
 stance_match.py

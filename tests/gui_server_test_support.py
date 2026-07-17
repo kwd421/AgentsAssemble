@@ -82,7 +82,7 @@ from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,
 )
 from agentsassemble.room_store import RoomStore
-from agentsassemble.side_chat import append_side_chat_event, read_side_chat
+from agentsassemble.features.side_chat.service import append_side_chat_event, read_side_chat
 from agentsassemble.room.moderation import set_room_member_muted
 from agentsassemble.application.room_users import (
     configure_room_users_store,

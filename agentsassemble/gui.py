@@ -344,7 +344,7 @@ from agentsassemble.meeting_events import (
     read_lobby_events_after,
     read_side_chat_events_after,
 )
-from agentsassemble.side_chat import (
+from agentsassemble.features.side_chat.service import (
     _filter_side_chat_events_for_meeting,
 )
 from agentsassemble.web.sse_cadence import (

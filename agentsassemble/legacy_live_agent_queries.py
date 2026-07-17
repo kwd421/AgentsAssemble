@@ -16,7 +16,7 @@ from agentsassemble.live_meeting_memory import load_live_meeting_memory_context
 from agentsassemble.lobby_queries import read_lobby
 from agentsassemble.meeting_events import clean_lobby_text, read_live_events
 from agentsassemble.room_friend_dms import read_live_agent_dm_events
-from agentsassemble.side_chat import read_side_chat
+from agentsassemble.features.side_chat.service import read_side_chat
 
 
 LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT = PROBE_REPLY_EVENT_TAIL_LIMIT

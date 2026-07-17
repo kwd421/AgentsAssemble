@@ -535,6 +535,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_feature_routes_package.py",),
         introduced_in="Milestone 4.8 optional feature route packages",
     ),
+    "side_chat.py": CompatibilityShim(
+        replacement_import="agentsassemble.features.side_chat.service",
+        removal_gate=(
+            "No direct imports use agentsassemble.side_chat for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_feature_routes_package.py",),
+        introduced_in="Milestone 6.13 optional side-chat service move",
+    ),
     "gui_social_http.py": CompatibilityShim(
         replacement_import="agentsassemble.features.social.routes",
         removal_gate=(

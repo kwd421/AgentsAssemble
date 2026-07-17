@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `b0f838308fdf81a0`
+Source fingerprint: `c51c937184c7593f`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 499
+- Python modules: 500
 - Top-level package modules: 303
-- Domains: admission=28, application=69, diagnostics=14, features=14, identity=9, legacy=79, persistence=58, providers=84, room=80, web=64
-- Classifications: compatibility=116, current=294, legacy=78, optional=11
+- Domains: admission=28, application=69, diagnostics=14, features=15, identity=9, legacy=79, persistence=58, providers=84, room=80, web=64
+- Classifications: compatibility=117, current=294, legacy=78, optional=11
 
 ## Classification Rules
 
@@ -112,8 +112,9 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.features` | `agentsassemble/features/__init__.py` | 1 | features | optional | - | 0 | - | - | - | `features/` | in-target-package |
 | `agentsassemble.features.mafia` | `agentsassemble/features/mafia/__init__.py` | 1 | features | optional | - | 0 | - | - | - | `features/mafia/` | in-target-package |
 | `agentsassemble.features.mafia.routes` | `agentsassemble/features/mafia/routes.py` | 134 | features | optional | `agentsassemble.mafia_game`, `agentsassemble.web.router` | 2 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_mafia_http.py` | `features/mafia/` | in-target-package |
-| `agentsassemble.features.side_chat` | `agentsassemble/features/side_chat/__init__.py` | 1 | features | optional | - | 0 | - | - | - | `features/side_chat/` | in-target-package |
-| `agentsassemble.features.side_chat.routes` | `agentsassemble/features/side_chat/routes.py` | 48 | features | optional | `agentsassemble.side_chat`, `agentsassemble.web.router` | 2 | - | test-import:1, monkeypatch:1 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_lobby_social.py` | `features/side_chat/` | in-target-package |
+| `agentsassemble.features.side_chat` | `agentsassemble/features/side_chat/__init__.py` | 1 | features | optional | - | 0 | - | test-import:1 | `tests/test_feature_routes_package.py` | `features/side_chat/` | in-target-package |
+| `agentsassemble.features.side_chat.routes` | `agentsassemble/features/side_chat/routes.py` | 48 | features | optional | `agentsassemble.features.side_chat.service`, `agentsassemble.web.router` | 2 | - | test-import:1, monkeypatch:1 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_lobby_social.py` | `features/side_chat/` | in-target-package |
+| `agentsassemble.features.side_chat.service` | `agentsassemble/features/side_chat/service.py` | 45 | features | optional | `agentsassemble.meeting_events` | 4 | - | test-import:2 | `tests/gui_server_test_support.py`, `tests/test_feature_routes_package.py` | `features/side_chat/` | in-target-package |
 | `agentsassemble.features.social` | `agentsassemble/features/social/__init__.py` | 1 | features | optional | - | 0 | - | - | - | `features/social/` | in-target-package |
 | `agentsassemble.features.social.routes` | `agentsassemble/features/social/routes.py` | 107 | features | optional | `agentsassemble.live_agents`, `agentsassemble.room_friend_dms`, `agentsassemble.room_friends`, `agentsassemble.user_profile`, `agentsassemble.web.router` | 2 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_social_http.py` | `features/social/` | in-target-package |
 | `agentsassemble.frontend_runtime` | `agentsassemble/frontend_runtime.py` | 18 | web | compatibility | `agentsassemble.web.frontend_runtime` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
@@ -194,7 +195,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.legacy_live_agent_process_control` | `agentsassemble/legacy_live_agent_process_control.py` | 140 | legacy | legacy | `agentsassemble.meeting_events` | 3 | - | test-import:1 | `tests/test_legacy_live_agent_process_control.py` | `legacy/` | planned-move |
 | `agentsassemble.legacy_live_agent_process_projection` | `agentsassemble/legacy_live_agent_process_projection.py` | 139 | legacy | legacy | `agentsassemble.legacy_live_agent_health`, `agentsassemble.live_agent_processes`, `agentsassemble.live_agents`, `agentsassemble.meeting_events` | 3 | - | - | - | `legacy/` | planned-move |
 | `agentsassemble.legacy_live_agent_process_service` | `agentsassemble/legacy_live_agent_process_service.py` | 196 | legacy | legacy | `agentsassemble.legacy_live_agent_process_control` | 2 | - | test-import:1 | `tests/test_legacy_live_agent_process_service.py` | `legacy/` | planned-move |
-| `agentsassemble.legacy_live_agent_queries` | `agentsassemble/legacy_live_agent_queries.py` | 464 | legacy | legacy | `agentsassemble.legacy_meeting_queries`, `agentsassemble.legacy_meeting_records`, `agentsassemble.live_agent_probe`, `agentsassemble.live_agents`, `agentsassemble.live_meeting_memory`, `agentsassemble.lobby_queries`, `agentsassemble.meeting_events`, `agentsassemble.room_friend_dms`, +1 | 7 | - | - | - | `legacy/` | planned-move |
+| `agentsassemble.legacy_live_agent_queries` | `agentsassemble/legacy_live_agent_queries.py` | 464 | legacy | legacy | `agentsassemble.features.side_chat.service`, `agentsassemble.legacy_meeting_queries`, `agentsassemble.legacy_meeting_records`, `agentsassemble.live_agent_probe`, `agentsassemble.live_agents`, `agentsassemble.live_meeting_memory`, `agentsassemble.lobby_queries`, `agentsassemble.meeting_events`, +1 | 7 | - | - | - | `legacy/` | planned-move |
 | `agentsassemble.legacy_live_agent_readiness` | `agentsassemble/legacy_live_agent_readiness.py` | 322 | legacy | legacy | `agentsassemble.application.session_run_monitor`, `agentsassemble.legacy_live_agent_health_queries`, `agentsassemble.legacy_live_agent_readiness_projection`, `agentsassemble.legacy_live_agent_smoke`, `agentsassemble.live_agent_probe`, `agentsassemble.live_agent_processes`, `agentsassemble.live_agent_smoke` | 3 | - | - | - | `legacy/` | planned-move |
 | `agentsassemble.legacy_live_agent_readiness_projection` | `agentsassemble/legacy_live_agent_readiness_projection.py` | 356 | legacy | legacy | `agentsassemble.diagnostic_report_projection`, `agentsassemble.meeting_events` | 3 | - | - | - | `legacy/` | planned-move |
 | `agentsassemble.legacy_live_agent_roster_queries` | `agentsassemble/legacy_live_agent_roster_queries.py` | 147 | legacy | legacy | `agentsassemble.legacy_meeting_records`, `agentsassemble.live_agent_quota`, `agentsassemble.live_agent_roster`, `agentsassemble.live_agents`, `agentsassemble.meeting_events` | 5 | - | - | - | `legacy/` | planned-move |
@@ -492,7 +493,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room_websocket` | `agentsassemble/room_websocket.py` | 72 | web | compatibility | `agentsassemble.web.websocket_codec` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.sandbox_launcher` | `agentsassemble/sandbox_launcher.py` | 92 | application | current | `agentsassemble.meeting_events` | 4 | - | test-import:2 | `tests/test_live_agents.py`, `tests/test_sandbox_launcher.py` | `application/` | planned-move |
 | `agentsassemble.session_run_monitor` | `agentsassemble/session_run_monitor.py` | 22 | application | compatibility | `agentsassemble.application.session_run_monitor` | 0 | - | test-import:1 | `tests/test_application_package.py` | `application/` | compatibility-shim |
-| `agentsassemble.side_chat` | `agentsassemble/side_chat.py` | 44 | features | optional | `agentsassemble.meeting_events` | 3 | - | test-import:1 | `tests/gui_server_test_support.py` | `features/side_chat/` | planned-move |
+| `agentsassemble.side_chat` | `agentsassemble/side_chat.py` | 7 | features | compatibility | `agentsassemble.features.side_chat.service` | 0 | - | test-import:1 | `tests/test_feature_routes_package.py` | `features/side_chat/` | compatibility-shim |
 | `agentsassemble.speech_policy` | `agentsassemble/speech_policy.py` | 22 | application | current | - | 4 | - | test-import:1 | `tests/test_speech_policy.py` | `application/` | planned-move |
 | `agentsassemble.sqlite_attention_repository` | `agentsassemble/sqlite_attention_repository.py` | 38 | persistence | compatibility | `agentsassemble.persistence.local.room.attention` | 0 | - | test-import:1 | `tests/test_local_room_persistence_package.py` | `persistence/local/` | compatibility-shim |
 | `agentsassemble.sse_cadence` | `agentsassemble/sse_cadence.py` | 12 | application | compatibility | `agentsassemble.web.sse_cadence` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `application/` | compatibility-shim |
