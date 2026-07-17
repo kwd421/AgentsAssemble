@@ -544,6 +544,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_feature_routes_package.py",),
         introduced_in="Milestone 6.13 optional side-chat service move",
     ),
+    "room_friends.py": CompatibilityShim(
+        replacement_import="agentsassemble.features.social.friends",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_friends for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_feature_routes_package.py",),
+        introduced_in="Milestone 6.14 optional room-friends service move",
+    ),
     "gui_social_http.py": CompatibilityShim(
         replacement_import="agentsassemble.features.social.routes",
         removal_gate=(

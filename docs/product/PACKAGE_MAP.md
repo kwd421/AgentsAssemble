@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `c51c937184c7593f`
+Source fingerprint: `93e8245f0fd66db7`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 500
+- Python modules: 501
 - Top-level package modules: 303
-- Domains: admission=28, application=69, diagnostics=14, features=15, identity=9, legacy=79, persistence=58, providers=84, room=80, web=64
-- Classifications: compatibility=117, current=294, legacy=78, optional=11
+- Domains: admission=28, application=69, diagnostics=14, features=16, identity=9, legacy=79, persistence=58, providers=84, room=80, web=64
+- Classifications: compatibility=118, current=294, legacy=78, optional=11
 
 ## Classification Rules
 
@@ -115,8 +115,9 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.features.side_chat` | `agentsassemble/features/side_chat/__init__.py` | 1 | features | optional | - | 0 | - | test-import:1 | `tests/test_feature_routes_package.py` | `features/side_chat/` | in-target-package |
 | `agentsassemble.features.side_chat.routes` | `agentsassemble/features/side_chat/routes.py` | 48 | features | optional | `agentsassemble.features.side_chat.service`, `agentsassemble.web.router` | 2 | - | test-import:1, monkeypatch:1 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_lobby_social.py` | `features/side_chat/` | in-target-package |
 | `agentsassemble.features.side_chat.service` | `agentsassemble/features/side_chat/service.py` | 45 | features | optional | `agentsassemble.meeting_events` | 4 | - | test-import:2 | `tests/gui_server_test_support.py`, `tests/test_feature_routes_package.py` | `features/side_chat/` | in-target-package |
-| `agentsassemble.features.social` | `agentsassemble/features/social/__init__.py` | 1 | features | optional | - | 0 | - | - | - | `features/social/` | in-target-package |
-| `agentsassemble.features.social.routes` | `agentsassemble/features/social/routes.py` | 107 | features | optional | `agentsassemble.live_agents`, `agentsassemble.room_friend_dms`, `agentsassemble.room_friends`, `agentsassemble.user_profile`, `agentsassemble.web.router` | 2 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_social_http.py` | `features/social/` | in-target-package |
+| `agentsassemble.features.social` | `agentsassemble/features/social/__init__.py` | 1 | features | optional | - | 0 | - | test-import:1 | `tests/test_feature_routes_package.py` | `features/social/` | in-target-package |
+| `agentsassemble.features.social.friends` | `agentsassemble/features/social/friends.py` | 289 | features | optional | `agentsassemble.meeting_events` | 4 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_room_friends.py` | `features/social/` | in-target-package |
+| `agentsassemble.features.social.routes` | `agentsassemble/features/social/routes.py` | 107 | features | optional | `agentsassemble.features.social.friends`, `agentsassemble.live_agents`, `agentsassemble.room_friend_dms`, `agentsassemble.user_profile`, `agentsassemble.web.router` | 2 | - | test-import:2 | `tests/test_feature_routes_package.py`, `tests/test_gui_server_social_http.py` | `features/social/` | in-target-package |
 | `agentsassemble.frontend_runtime` | `agentsassemble/frontend_runtime.py` | 18 | web | compatibility | `agentsassemble.web.frontend_runtime` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.grok_acp_runtime` | `agentsassemble/grok_acp_runtime.py` | 6 | providers | compatibility | `agentsassemble.providers.grok_acp` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.grok_resident` | `agentsassemble/grok_resident.py` | 44 | providers | compatibility | `agentsassemble.providers.grok_resident` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
@@ -456,14 +457,14 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room_event_benchmark` | `agentsassemble/room_event_benchmark.py` | 536 | diagnostics | current | `agentsassemble.live_agent_flow`, `agentsassemble.meeting_events`, `agentsassemble.web.sse_cadence` | 2 | - | test-import:1 | `tests/test_room_event_benchmark.py` | `diagnostics/` | planned-move |
 | `agentsassemble.room_event_broker` | `agentsassemble/room_event_broker.py` | 14 | room | compatibility | `agentsassemble.room.event_broker` | 0 | - | test-import:1 | `tests/test_room_package.py` | `room/` | compatibility-shim |
 | `agentsassemble.room_floor_policy` | `agentsassemble/room_floor_policy.py` | 68 | room | current | - | 1 | - | test-import:1 | `tests/test_room_floor_policy.py` | `room/` | planned-move |
-| `agentsassemble.room_friend_dms` | `agentsassemble/room_friend_dms.py` | 302 | features | optional | `agentsassemble.meeting_events`, `agentsassemble.room_friends` | 4 | - | test-import:1 | `tests/test_room_friends.py` | `features/optional/` | planned-move |
-| `agentsassemble.room_friends` | `agentsassemble/room_friends.py` | 288 | features | optional | `agentsassemble.meeting_events` | 3 | - | test-import:1 | `tests/test_room_friends.py` | `features/friends/` | planned-move |
+| `agentsassemble.room_friend_dms` | `agentsassemble/room_friend_dms.py` | 302 | features | optional | `agentsassemble.features.social.friends`, `agentsassemble.meeting_events` | 4 | - | test-import:1 | `tests/test_room_friends.py` | `features/optional/` | planned-move |
+| `agentsassemble.room_friends` | `agentsassemble/room_friends.py` | 28 | features | compatibility | `agentsassemble.features.social.friends` | 0 | - | test-import:1 | `tests/test_feature_routes_package.py` | `features/friends/` | compatibility-shim |
 | `agentsassemble.room_global_settings` | `agentsassemble/room_global_settings.py` | 36 | room | compatibility | `agentsassemble.room.global_settings` | 0 | - | test-import:1 | `tests/test_room_package.py` | `room/` | compatibility-shim |
 | `agentsassemble.room_invite` | `agentsassemble/room_invite.py` | 544 | admission | current | `agentsassemble.admission.invite_service`, `agentsassemble.admission.repository`, `agentsassemble.admission.session_issuer`, `agentsassemble.application.public_invite_runtime`, `agentsassemble.application.room_users`, `agentsassemble.identity.repository`, `agentsassemble.meeting_events`, `agentsassemble.multi_host_invites`, +1 | 5 | `call:UnconfiguredInviteSessionRepository@73`, `call:PublicInviteRuntime@74`, `call:InviteApplicationService@143` | test-import:22, monkeypatch:1 | `tests/fixtures/room_ui_server.py`, `tests/gui_server_test_support.py`, `tests/test_gui_router.py`, `+19` | `admission/` | planned-move |
 | `agentsassemble.room_invite_application` | `agentsassemble/room_invite_application.py` | 40 | admission | compatibility | `agentsassemble.admission.invite_service` | 0 | - | test-import:1 | `tests/test_admission_invite_service_package.py` | `admission/` | compatibility-shim |
 | `agentsassemble.room_invite_repository` | `agentsassemble/room_invite_repository.py` | 34 | admission | compatibility | `agentsassemble.admission.repository`, `agentsassemble.admission.workflow_record`, `agentsassemble.persistence.local.admission.repository` | 0 | - | test-import:2 | `tests/test_admission_repository_contracts.py`, `tests/test_local_admission_persistence_package.py` | `admission/` | compatibility-shim |
 | `agentsassemble.room_invite_repository_factory` | `agentsassemble/room_invite_repository_factory.py` | 59 | admission | current | `agentsassemble.admission.repository`, `agentsassemble.persistence.local.admission.repository`, `agentsassemble.room_repository_factory` | 2 | - | test-import:1, monkeypatch:1 | `tests/test_room_invite_repository_factory.py` | `admission/` | planned-move |
-| `agentsassemble.room_members` | `agentsassemble/room_members.py` | 379 | room | current | `agentsassemble.agent_sessions`, `agentsassemble.meeting_events`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.room.moderation`, `agentsassemble.room.repository`, `agentsassemble.room_friends` | 3 | `call:Lock@107` | test-import:2 | `tests/test_room_members_presence.py`, `tests/test_room_package.py` | `room/` | planned-move |
+| `agentsassemble.room_members` | `agentsassemble/room_members.py` | 379 | room | current | `agentsassemble.agent_sessions`, `agentsassemble.features.social.friends`, `agentsassemble.meeting_events`, `agentsassemble.persistence.local.identity.registry`, `agentsassemble.room.moderation`, `agentsassemble.room.repository` | 3 | `call:Lock@107` | test-import:2 | `tests/test_room_members_presence.py`, `tests/test_room_package.py` | `room/` | planned-move |
 | `agentsassemble.room_native_cli_smoke` | `agentsassemble/room_native_cli_smoke.py` | 1486 | diagnostics | current | `agentsassemble.admission.invite_service`, `agentsassemble.admission.session_service`, `agentsassemble.agent_sessions`, `agentsassemble.application.public_invite_runtime`, `agentsassemble.gui`, `agentsassemble.live_cli_smoke`, `agentsassemble.meeting_events`, `agentsassemble.persistence.local.admission.repository`, +4 | 1 | `call:compile@48`, `call:compile@52` | test-import:1 | `tests/test_room_native_cli_e2e.py` | `diagnostics/` | planned-move |
 | `agentsassemble.room_preferences_migration` | `agentsassemble/room_preferences_migration.py` | 432 | room | current | `agentsassemble.legacy_room_preferences_source`, `agentsassemble.legacy_room_settings_document`, `agentsassemble.persistence.local.identity.preferences`, `agentsassemble.persistence.local.identity.repository`, `agentsassemble.persistence.local.room.database`, `agentsassemble.room.user_preferences` | 1 | - | test-import:1, monkeypatch:1 | `tests/test_room_preferences_migration.py` | `room/` | planned-move |
 | `agentsassemble.room_projection` | `agentsassemble/room_projection.py` | 24 | room | compatibility | `agentsassemble.room.projection` | 0 | - | test-import:1 | `tests/test_room_package.py` | `room/` | compatibility-shim |

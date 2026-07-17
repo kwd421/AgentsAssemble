@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.room_friends import (
+from agentsassemble.features.social.friends import (
     delete_room_friend,
     read_room_friends,
     room_friends_payload,

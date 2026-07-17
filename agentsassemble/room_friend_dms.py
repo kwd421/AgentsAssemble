@@ -8,7 +8,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from agentsassemble.meeting_events import clean_lobby_text
-from agentsassemble.room_friends import read_room_friends
+from agentsassemble.features.social.friends import read_room_friends
 
 ROOM_FRIEND_DMS_DIR = "room_friend_dms"
 ROOM_FRIEND_DM_MESSAGE_LIMIT = 2000

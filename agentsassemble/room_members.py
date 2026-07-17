@@ -11,7 +11,7 @@ from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
 )
-from agentsassemble.room_friends import room_friend_type_for_agent
+from agentsassemble.features.social.friends import room_friend_type_for_agent
 from agentsassemble.room.moderation import (
     is_room_member_muted,
     remove_room_member,

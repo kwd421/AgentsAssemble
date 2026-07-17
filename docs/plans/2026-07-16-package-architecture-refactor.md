@@ -1256,3 +1256,10 @@ module churn were deliberately avoided rather than forgotten.
   Event normalization, `side_chat.jsonl` location, read limits, meeting
   filtering, append behavior, HTTP/SSE routes, and frontend behavior are
   unchanged.
+- 2026-07-17: Optional saved room-friend records, type inference, suggestions,
+  and live-agent status projection moved mechanically to
+  `features/social/friends.py`. Social routes, friend-DM lookup, canonical room
+  member projection, and behavior tests import the feature owner directly;
+  root `room_friends.py` is a metadata-tracked compatibility export. JSON file
+  location and shape, normalization aliases, status overlay, ordering, delete
+  errors, route payloads, and frontend behavior are unchanged.
