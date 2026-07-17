@@ -170,6 +170,7 @@ New behavior belongs in the focused owning module rather than the controller.
 | `application/public_tunnel.py` | explicitly started Cloudflare quick-tunnel process, output reader, URL rotation, and cleanup | invite authorization or stable-entry storage |
 | `application/stable_entry.py` | stable public URL configuration and asynchronous tunnel-target announcement | tunnel process lifecycle or invite authorization |
 | `web/sse_cadence.py` | shared legacy SSE keepalive and WebSocket select cadence | room scheduling or provider polling |
+| `web/websocket_codec.py` | dependency-free RFC 6455 handshake, frame codec, and message reassembly | room commands, identity, or connection lifecycle |
 | `live_cli.py` | persistent PTY lifecycle and provider message extraction | room membership or history replay |
 | `grok_acp_runtime.py` | Grok ACP lifecycle, permission denial, structured deltas, and provider session load | room routing or browser state |
 | `opencode_runtime.py` | one host-shared server and durable per-agent OpenCode sessions | room membership |

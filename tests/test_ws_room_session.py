@@ -2,7 +2,7 @@ import json
 import struct
 import unittest
 
-from agentsassemble.room_websocket import OP_CLOSE, OP_PING, OP_PONG, OP_TEXT
+from agentsassemble.web.websocket_codec import OP_CLOSE, OP_PING, OP_PONG, OP_TEXT
 from agentsassemble.ws_room_session import (
     WS_SESSION_REVOKED_CATEGORY,
     WsRoomDeps,

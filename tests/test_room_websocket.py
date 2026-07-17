@@ -1,7 +1,7 @@
 import struct
 import unittest
 
-from agentsassemble.room_websocket import (
+from agentsassemble.web.websocket_codec import (
     CLOSE_NORMAL,
     OP_BINARY,
     OP_CLOSE,

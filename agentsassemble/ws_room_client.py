@@ -21,7 +21,7 @@ import urllib.request
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from agentsassemble.room_websocket import (
+from agentsassemble.web.websocket_codec import (
     OP_CLOSE,
     OP_PING,
     OP_PONG,

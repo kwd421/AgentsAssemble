@@ -1222,3 +1222,10 @@ module churn were deliberately avoided rather than forgotten.
   a second implementation state surface. Executable discovery, process
   start/terminate/kill behavior, rotating hostname adoption, stale-reader
   rejection, bounded logs, public-URL clearing, and diagnostics are unchanged.
+- 2026-07-17: The dependency-free RFC 6455 handshake, frame codec, masking,
+  close/ping/pong helpers, client handshake, and fragmented-message reassembly
+  moved mechanically to `web/websocket_codec.py`. Current server upgrade,
+  canonical room session, native WebSocket client, and protocol tests now
+  import the web-owned module directly; root `room_websocket.py` is a
+  metadata-tracked compatibility export. Frame limits, masking enforcement,
+  close codes, protocol errors, wire bytes, and room behavior are unchanged.

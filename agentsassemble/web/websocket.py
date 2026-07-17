@@ -7,7 +7,7 @@ from collections.abc import Callable
 from http import HTTPStatus
 from typing import Any
 
-from agentsassemble.room_websocket import (
+from agentsassemble.web.websocket_codec import (
     CLOSE_PROTOCOL_ERROR,
     MessageAssembler,
     WebSocketProtocolError,

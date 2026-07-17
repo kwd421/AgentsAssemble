@@ -219,6 +219,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_web_transport_package.py",),
         introduced_in="Milestone 4.14 web transport cadence move",
     ),
+    "room_websocket.py": CompatibilityShim(
+        replacement_import="agentsassemble.web.websocket_codec",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_websocket for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_web_transport_package.py",),
+        introduced_in="Milestone 4.18 WebSocket protocol codec move",
+    ),
     "stable_entry.py": CompatibilityShim(
         replacement_import="agentsassemble.application.stable_entry",
         removal_gate=(

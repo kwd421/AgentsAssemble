@@ -22,7 +22,7 @@ from agentsassemble.room_invite import (
     join_room_with_invite,
     reset_state,
 )
-from agentsassemble.room_websocket import OP_TEXT, compute_accept_key
+from agentsassemble.web.websocket_codec import OP_TEXT, compute_accept_key
 from agentsassemble.ws_room_session import WS_SESSION_REVOKED_CATEGORY
 
 

@@ -12,7 +12,7 @@ import agentsassemble.ws_room_client as ws_room_client
 from agentsassemble.gui import _make_handler
 from agentsassemble.room_invite import create_room_invite, join_room_with_invite, reset_state
 from agentsassemble.room_store import RoomStore
-from agentsassemble.room_websocket import (
+from agentsassemble.web.websocket_codec import (
     OP_PING,
     OP_PONG,
     OP_TEXT,

@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `52a117b4d5db4a72`
+Source fingerprint: `d999dfb0fbe7796e`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 496
+- Python modules: 497
 - Top-level package modules: 303
-- Domains: admission=28, application=69, diagnostics=14, features=14, identity=9, legacy=79, persistence=58, providers=84, room=80, web=61
-- Classifications: compatibility=113, current=294, legacy=78, optional=11
+- Domains: admission=28, application=69, diagnostics=14, features=14, identity=9, legacy=79, persistence=58, providers=84, room=80, web=62
+- Classifications: compatibility=114, current=294, legacy=78, optional=11
 
 ## Classification Rules
 
@@ -489,7 +489,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room_user_preferences` | `agentsassemble/room_user_preferences.py` | 28 | room | compatibility | `agentsassemble.room.user_preferences` | 0 | - | test-import:1 | `tests/test_room_package.py` | `room/` | compatibility-shim |
 | `agentsassemble.room_users` | `agentsassemble/room_users.py` | 52 | room | compatibility | `agentsassemble.application.room_users` | 0 | - | test-import:1 | `tests/test_application_package.py` | `room/` | compatibility-shim |
 | `agentsassemble.room_votes` | `agentsassemble/room_votes.py` | 76 | room | current | `agentsassemble.meeting_events` | 2 | - | test-import:1 | `tests/test_room_votes.py` | `room/` | planned-move |
-| `agentsassemble.room_websocket` | `agentsassemble/room_websocket.py` | 297 | web | current | - | 3 | `call:frozenset@31` | test-import:4 | `tests/test_room_websocket.py`, `tests/test_ws_endpoint.py`, `tests/test_ws_room_client.py`, `+1` | `web/` | planned-move |
+| `agentsassemble.room_websocket` | `agentsassemble/room_websocket.py` | 72 | web | compatibility | `agentsassemble.web.websocket_codec` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.sandbox_launcher` | `agentsassemble/sandbox_launcher.py` | 92 | application | current | `agentsassemble.meeting_events` | 4 | - | test-import:2 | `tests/test_live_agents.py`, `tests/test_sandbox_launcher.py` | `application/` | planned-move |
 | `agentsassemble.session_run_monitor` | `agentsassemble/session_run_monitor.py` | 22 | application | compatibility | `agentsassemble.application.session_run_monitor` | 0 | - | test-import:1 | `tests/test_application_package.py` | `application/` | compatibility-shim |
 | `agentsassemble.side_chat` | `agentsassemble/side_chat.py` | 44 | features | optional | `agentsassemble.meeting_events` | 3 | - | test-import:1 | `tests/gui_server_test_support.py` | `features/side_chat/` | planned-move |
@@ -521,8 +521,9 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.web.security` | `agentsassemble/web/security.py` | 137 | web | current | - | 3 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.sse_cadence` | `agentsassemble/web/sse_cadence.py` | 4 | web | current | - | 4 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.static` | `agentsassemble/web/static.py` | 136 | web | current | `agentsassemble.web.router` | 2 | `call:frozenset@15` | test-import:2 | `tests/test_gui_route_ownership.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
-| `agentsassemble.web.websocket` | `agentsassemble/web/websocket.py` | 145 | web | current | `agentsassemble.room_websocket`, `agentsassemble.web.router`, `agentsassemble.web.sse_cadence`, `agentsassemble.ws_room_session` | 2 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
+| `agentsassemble.web.websocket` | `agentsassemble/web/websocket.py` | 145 | web | current | `agentsassemble.web.router`, `agentsassemble.web.sse_cadence`, `agentsassemble.web.websocket_codec`, `agentsassemble.ws_room_session` | 2 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
+| `agentsassemble.web.websocket_codec` | `agentsassemble/web/websocket_codec.py` | 298 | web | current | - | 4 | `call:frozenset@32` | test-import:5 | `tests/test_room_websocket.py`, `tests/test_web_transport_package.py`, `tests/test_ws_endpoint.py`, `+2` | `web/` | in-target-package |
 | `agentsassemble.windows_conpty` | `agentsassemble/windows_conpty.py` | 6 | providers | compatibility | `agentsassemble.providers.windows_conpty` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.ws_resident` | `agentsassemble/ws_resident.py` | 259 | web | current | `agentsassemble.live_agent_runner`, `agentsassemble.room_engagement`, `agentsassemble.ws_room_client` | 1 | - | test-import:1, monkeypatch:1 | `tests/test_ws_resident.py` | `web/` | planned-move |
-| `agentsassemble.ws_room_client` | `agentsassemble/ws_room_client.py` | 347 | web | current | `agentsassemble.room_websocket` | 5 | - | test-import:3, monkeypatch:2 | `tests/test_room_native_cli_e2e.py`, `tests/test_room_social_flows.py`, `tests/test_ws_resident.py`, `+1` | `web/` | planned-move |
-| `agentsassemble.ws_room_session` | `agentsassemble/ws_room_session.py` | 387 | admission | current | `agentsassemble.identity.repository`, `agentsassemble.room_websocket` | 4 | - | test-import:2 | `tests/test_ws_endpoint.py`, `tests/test_ws_room_session.py` | `admission/` | planned-move |
+| `agentsassemble.ws_room_client` | `agentsassemble/ws_room_client.py` | 347 | web | current | `agentsassemble.web.websocket_codec` | 5 | - | test-import:3, monkeypatch:2 | `tests/test_room_native_cli_e2e.py`, `tests/test_room_social_flows.py`, `tests/test_ws_resident.py`, `+1` | `web/` | planned-move |
+| `agentsassemble.ws_room_session` | `agentsassemble/ws_room_session.py` | 387 | admission | current | `agentsassemble.identity.repository`, `agentsassemble.web.websocket_codec` | 4 | - | test-import:2 | `tests/test_ws_endpoint.py`, `tests/test_ws_room_session.py` | `admission/` | planned-move |

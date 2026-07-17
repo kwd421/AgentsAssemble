@@ -1,6 +1,6 @@
 """WebSocket room session: ticket store + per-connection protocol core (WS-4).
 
-Separated from the pure codec (`room_websocket.py`) so it can be unit-tested
+Separated from the pure codec (`web/websocket_codec.py`) so it can be unit-tested
 without a socket: feed decoded messages, assert the outgoing frames.
 
 Governance: identity + client_type are fixed at the handshake, then every
@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from agentsassemble.identity.repository import LOCAL_OPERATOR_PARTICIPANT_ID
-from agentsassemble.room_websocket import (
+from agentsassemble.web.websocket_codec import (
     CLOSE_NORMAL,
     CLOSE_POLICY_VIOLATION,
     CLOSE_PROTOCOL_ERROR,
