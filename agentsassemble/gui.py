@@ -326,7 +326,7 @@ from agentsassemble.room.speech import (
     GovernedLobbySayRejected,
     governed_lobby_say,
 )
-from agentsassemble.ws_room_session import (
+from agentsassemble.web.room_session import (
     WsRoomDeps,
     WsSayRejected,
 )
@@ -2941,7 +2941,7 @@ def _make_handler(
                     ticket_issuer=lambda bridge_identity: ws_ticket_store.issue(bridge_identity),
                 )
             except RoomCommandRejected as rejected:
-                from agentsassemble.ws_room_session import WsCommandRejected
+                from agentsassemble.web.room_session import WsCommandRejected
 
                 raise WsCommandRejected(str(rejected), code=rejected.code) from rejected
 

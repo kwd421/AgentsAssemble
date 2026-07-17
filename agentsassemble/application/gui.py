@@ -21,7 +21,7 @@ from agentsassemble.application.public_tunnel import PublicTunnelManager
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.room.realtime import RoomRealtimeController
 from agentsassemble.room.repository import RoomRepository
-from agentsassemble.ws_room_session import WsTicketStore
+from agentsassemble.web.room_session import WsTicketStore
 
 
 class SessionRunMonitor(Protocol):

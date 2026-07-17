@@ -244,6 +244,25 @@ class PackageMapTests(unittest.TestCase):
         self.assertIn("| compatibility |", compatibility_line)
         self.assertTrue(compatibility_line.endswith("| compatibility-shim |"))
 
+    def test_room_websocket_session_uses_web_transport_ownership(self) -> None:
+        graph = load_package_graph(ROOT)
+        package_map = build_package_map(ROOT)
+
+        self.assertEqual(graph.domains["agentsassemble.web.room_session"], "web")
+        owned_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith("| `agentsassemble.web.room_session` |")
+        )
+        compatibility_line = next(
+            line
+            for line in package_map.splitlines()
+            if line.startswith("| `agentsassemble.ws_room_session` |")
+        )
+        self.assertTrue(owned_line.endswith("| in-target-package |"))
+        self.assertIn("| compatibility |", compatibility_line)
+        self.assertTrue(compatibility_line.endswith("| compatibility-shim |"))
+
     def test_local_identity_modules_use_persistence_ownership(self) -> None:
         graph = load_package_graph(ROOT)
         package_map = build_package_map(ROOT)

@@ -49,7 +49,7 @@ from agentsassemble.room.realtime import (
     default_native_cli_provider_specs,
 )
 from agentsassemble.room.repository import RoomRepository
-from agentsassemble.ws_room_session import WsTicketStore
+from agentsassemble.web.room_session import WsTicketStore
 
 
 @dataclass(frozen=True)

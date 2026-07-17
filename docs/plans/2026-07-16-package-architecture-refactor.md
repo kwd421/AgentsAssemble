@@ -1238,3 +1238,13 @@ module churn were deliberately avoided rather than forgotten.
   payloads, ticket exchange, TLS wrapping, path-prefix handling, frame I/O,
   ACK/error behavior, and the existing conversation-mode fallback are
   unchanged.
+- 2026-07-17: Single-use WebSocket tickets and the decoded per-connection room
+  protocol moved mechanically to `web/room_session.py`. This corrects the
+  generated `admission/` proposal: the application still owns the ephemeral
+  `WsTicketStore` instance lifetime, while ticket consumption, subscribe/say/
+  thinking/command frames, session revocation, and encoded ACK/NACK responses
+  change with the WebSocket transport contract. GUI composition, server
+  upgrade, and protocol tests import the web owner directly; root
+  `ws_room_session.py` is a metadata-tracked compatibility export. Ticket TTL,
+  identity binding, stream cursors, command delegation, error categories, and
+  wire payloads are unchanged.

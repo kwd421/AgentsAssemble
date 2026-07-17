@@ -81,7 +81,7 @@ Every composition change must preserve these product boundaries:
 | `LiveAgentSessionRunMonitor` | Built and started/stopped by `serve_gui()`; read routes accept it | Its `default_server` is assigned only after bind | Application services expose a post-bind `start(server_url)` step and bounded `close()` |
 | `LiveAgentFlowSupervisor` | Built in `_make_handler()` unless injected | Hidden handler-factory lifetime | Explicit active-optional service in the container |
 | `PublicTunnelManager` | Built in `serve_gui()` or `_make_handler()`; started/stopped by `serve_gui()` | Handler creation may create an unowned manager | One application-owned manager; routes only issue commands to it |
-| `WsTicketStore` | Built inside `_make_handler()` and captured by closures | Correct lifetime but invisible to diagnostics and tests except through routes | Explicit application-owned ephemeral ticket service |
+| `WsTicketStore` (`web/room_session.py`) | Built inside `_make_handler()` and captured by closures | Correct lifetime but invisible to diagnostics and tests except through routes | Explicit application-owned ephemeral ticket service |
 | `NativeCliBridgeProcessManager` | Built inside `_make_handler()` only when the realtime controller is not injected | Its ownership is implicit behind controller construction | Build beside the controller and retain an opaque owned handle through application close |
 | `RoomRealtimeController` | Built inside `_make_handler()` or injected; `serve_gui()` discovers it on the handler class to close it | A generated HTTP handler type doubles as a service locator | Explicit application-owned controller; handler receives it but does not own it |
 | `Router` and `GuiDeps` | Built in `_make_handler()` and captured by the generated handler | Reasonable request composition, but `GuiDeps` still carries untyped compatibility callables | Keep per-handler composition; replace only proven service-locator fields with typed services |
@@ -179,7 +179,7 @@ These families already have a clear module owner and should not move back into
 
 | Owner module | Classification | Responsibility | Primary evidence |
 | --- | --- | --- | --- |
-| `web/websocket.py` | Current core | Single-use WebSocket ticket issue and authenticated upgrade lifecycle | `tests/test_ws_endpoint.py`, `tests/test_ws_room_session.py`, `tests/test_ws_room_client.py` |
+| `web/websocket.py`, `web/room_session.py` | Current core | Single-use WebSocket ticket issue, authenticated upgrade lifecycle, and per-connection protocol | `tests/test_ws_endpoint.py`, `tests/test_ws_room_session.py`, `tests/test_ws_room_client.py` |
 | `web/routes/attachments.py` | Current core | Safe attachment upload/download and room media reference | `tests/test_gui_server_room_routes.py` |
 | `web/routes/providers.py` | Current core | Provider catalog, local provider-login command, and redacted DeepSeek credential status/mutation; login execution/audit lives in `provider_login.py` | `tests/test_gui_server_provider_http.py`, `tests/test_live_agent_frontend_create.py` |
 | `web/routes/public_invite.py` | Current core | Host-gated public URL and tunnel control | `tests/test_public_invite_http.py` |

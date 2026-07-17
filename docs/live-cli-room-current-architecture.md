@@ -172,6 +172,7 @@ New behavior belongs in the focused owning module rather than the controller.
 | `web/sse_cadence.py` | shared legacy SSE keepalive and WebSocket select cadence | room scheduling or provider polling |
 | `web/websocket_codec.py` | dependency-free RFC 6455 handshake, frame codec, and message reassembly | room commands, identity, or connection lifecycle |
 | `web/room_client.py` | Python admission bootstrap, ticket exchange, TLS/TCP connection, and canonical room WebSocket client | provider behavior or room policy |
+| `web/room_session.py` | single-use room tickets and decoded per-connection subscribe/say/command protocol | room command execution or socket lifecycle |
 | `live_cli.py` | persistent PTY lifecycle and provider message extraction | room membership or history replay |
 | `grok_acp_runtime.py` | Grok ACP lifecycle, permission denial, structured deltas, and provider session load | room routing or browser state |
 | `opencode_runtime.py` | one host-shared server and durable per-agent OpenCode sessions | room membership |

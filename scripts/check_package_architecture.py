@@ -237,6 +237,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_web_transport_package.py",),
         introduced_in="Milestone 4.19 canonical room client move",
     ),
+    "ws_room_session.py": CompatibilityShim(
+        replacement_import="agentsassemble.web.room_session",
+        removal_gate=(
+            "No direct imports use agentsassemble.ws_room_session for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_web_transport_package.py",),
+        introduced_in="Milestone 4.20 room WebSocket session move",
+    ),
     "stable_entry.py": CompatibilityShim(
         replacement_import="agentsassemble.application.stable_entry",
         removal_gate=(

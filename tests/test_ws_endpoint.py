@@ -23,7 +23,7 @@ from agentsassemble.room_invite import (
     reset_state,
 )
 from agentsassemble.web.websocket_codec import OP_TEXT, compute_accept_key
-from agentsassemble.ws_room_session import WS_SESSION_REVOKED_CATEGORY
+from agentsassemble.web.room_session import WS_SESSION_REVOKED_CATEGORY
 
 
 def _client_text_frame(text: str) -> bytes:

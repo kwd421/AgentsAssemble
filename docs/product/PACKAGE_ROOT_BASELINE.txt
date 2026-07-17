@@ -296,4 +296,3 @@ user_profile.py
 voice_presence.py
 windows_conpty.py
 ws_resident.py
-ws_room_session.py

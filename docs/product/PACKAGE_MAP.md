@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `3dbbf6afe2bd577d`
+Source fingerprint: `b0f838308fdf81a0`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 498
+- Python modules: 499
 - Top-level package modules: 303
-- Domains: admission=28, application=69, diagnostics=14, features=14, identity=9, legacy=79, persistence=58, providers=84, room=80, web=63
-- Classifications: compatibility=115, current=294, legacy=78, optional=11
+- Domains: admission=28, application=69, diagnostics=14, features=14, identity=9, legacy=79, persistence=58, providers=84, room=80, web=64
+- Classifications: compatibility=116, current=294, legacy=78, optional=11
 
 ## Classification Rules
 
@@ -506,6 +506,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.web.frontend_runtime` | `agentsassemble/web/frontend_runtime.py` | 67 | web | current | - | 4 | - | test-import:2 | `tests/test_frontend_runtime.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.response` | `agentsassemble/web/response.py` | 173 | web | current | `agentsassemble.attachments`, `agentsassemble.web.frontend_runtime` | 2 | - | test-import:2 | `tests/test_gui_response.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.room_client` | `agentsassemble/web/room_client.py` | 343 | web | current | `agentsassemble.web.websocket_codec` | 6 | - | test-import:4, monkeypatch:2 | `tests/test_room_native_cli_e2e.py`, `tests/test_room_social_flows.py`, `tests/test_web_transport_package.py`, `+2` | `web/` | in-target-package |
+| `agentsassemble.web.room_session` | `agentsassemble/web/room_session.py` | 387 | web | current | `agentsassemble.identity.repository`, `agentsassemble.web.websocket_codec` | 5 | - | test-import:3 | `tests/test_web_transport_package.py`, `tests/test_ws_endpoint.py`, `tests/test_ws_room_session.py` | `web/` | in-target-package |
 | `agentsassemble.web.router` | `agentsassemble/web/router.py` | 495 | web | current | `agentsassemble.admission.coordinator`, `agentsassemble.admission.invite_service`, `agentsassemble.admission.preflight`, `agentsassemble.admission.projection`, `agentsassemble.admission.session_service`, `agentsassemble.application.public_invite_runtime`, `agentsassemble.attachments`, `agentsassemble.identity.pairing`, +3 | 47 | - | test-import:33 | `tests/gui_server_test_support.py`, `tests/test_gui_legacy_codex_session_http.py`, `tests/test_gui_legacy_live_agent_discovery_http.py`, `+30` | `web/` | in-target-package |
 | `agentsassemble.web.routes` | `agentsassemble/web/routes/__init__.py` | 1 | web | current | - | 0 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.routes.agent_sessions` | `agentsassemble/web/routes/agent_sessions.py` | 157 | web | current | `agentsassemble.agent_sessions`, `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | in-target-package |
@@ -522,9 +523,9 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.web.security` | `agentsassemble/web/security.py` | 137 | web | current | - | 3 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.sse_cadence` | `agentsassemble/web/sse_cadence.py` | 4 | web | current | - | 4 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.static` | `agentsassemble/web/static.py` | 136 | web | current | `agentsassemble.web.router` | 2 | `call:frozenset@15` | test-import:2 | `tests/test_gui_route_ownership.py`, `tests/test_web_transport_package.py` | `web/` | in-target-package |
-| `agentsassemble.web.websocket` | `agentsassemble/web/websocket.py` | 145 | web | current | `agentsassemble.web.router`, `agentsassemble.web.sse_cadence`, `agentsassemble.web.websocket_codec`, `agentsassemble.ws_room_session` | 2 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
+| `agentsassemble.web.websocket` | `agentsassemble/web/websocket.py` | 145 | web | current | `agentsassemble.web.room_session`, `agentsassemble.web.router`, `agentsassemble.web.sse_cadence`, `agentsassemble.web.websocket_codec` | 2 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | in-target-package |
 | `agentsassemble.web.websocket_codec` | `agentsassemble/web/websocket_codec.py` | 298 | web | current | - | 4 | `call:frozenset@32` | test-import:5 | `tests/test_room_websocket.py`, `tests/test_web_transport_package.py`, `tests/test_ws_endpoint.py`, `+2` | `web/` | in-target-package |
 | `agentsassemble.windows_conpty` | `agentsassemble/windows_conpty.py` | 6 | providers | compatibility | `agentsassemble.providers.windows_conpty` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.ws_resident` | `agentsassemble/ws_resident.py` | 259 | web | current | `agentsassemble.live_agent_runner`, `agentsassemble.room_engagement`, `agentsassemble.web.room_client` | 1 | - | test-import:1, monkeypatch:1 | `tests/test_ws_resident.py` | `web/` | planned-move |
 | `agentsassemble.ws_room_client` | `agentsassemble/ws_room_client.py` | 22 | web | compatibility | `agentsassemble.web.room_client` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
-| `agentsassemble.ws_room_session` | `agentsassemble/ws_room_session.py` | 387 | admission | current | `agentsassemble.identity.repository`, `agentsassemble.web.websocket_codec` | 4 | - | test-import:2 | `tests/test_ws_endpoint.py`, `tests/test_ws_room_session.py` | `admission/` | planned-move |
+| `agentsassemble.ws_room_session` | `agentsassemble/ws_room_session.py` | 34 | admission | compatibility | `agentsassemble.web.room_session` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `admission/` | compatibility-shim |

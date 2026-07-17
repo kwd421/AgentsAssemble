@@ -11,8 +11,10 @@ import agentsassemble.gui_ws_http as compatibility_websocket
 import agentsassemble.room_websocket as compatibility_websocket_codec
 import agentsassemble.sse_cadence as compatibility_sse_cadence
 import agentsassemble.ws_room_client as compatibility_room_client
+import agentsassemble.ws_room_session as compatibility_room_session
 from agentsassemble.web import response as owned_response
 from agentsassemble.web import room_client as owned_room_client
+from agentsassemble.web import room_session as owned_room_session
 from agentsassemble.web import frontend_runtime as owned_frontend_runtime
 from agentsassemble.web import router as owned_router
 from agentsassemble.web import security as owned_security
@@ -124,6 +126,21 @@ class WebTransportPackageTests(unittest.TestCase):
                 self.assertIs(
                     getattr(compatibility_room_client, name),
                     getattr(owned_room_client, name),
+                )
+
+    def test_room_session_root_module_exports_owned_protocol(self) -> None:
+        for name in (
+            "WsRoomDeps",
+            "WsRoomSession",
+            "WsTicketStore",
+            "WsCommandRejected",
+            "WsSayRejected",
+            "host_browser_ws_session",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_room_session, name),
+                    getattr(owned_room_session, name),
                 )
 
     def test_sse_cadence_root_module_exports_owned_transport_values(self) -> None:
