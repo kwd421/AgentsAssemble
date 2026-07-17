@@ -2,7 +2,10 @@ import unittest
 from unittest import mock
 
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
-from agentsassemble.public_tunnel import PublicTunnelManager, extract_trycloudflare_url
+from agentsassemble.application.public_tunnel import (
+    PublicTunnelManager,
+    extract_trycloudflare_url,
+)
 
 
 class FakeProcess:
@@ -67,7 +70,10 @@ class PublicTunnelTests(unittest.TestCase):
         manager._process = process
         manager._generation = 1
         announced: list[str] = []
-        with mock.patch("agentsassemble.public_tunnel.announce_stable_entry", lambda url: announced.append(url)):
+        with mock.patch(
+            "agentsassemble.application.public_tunnel.announce_stable_entry",
+            lambda url: announced.append(url),
+        ):
             manager._read_output(process, 1)
         self.assertEqual(manager._public_url, "https://new-tunnel.trycloudflare.com")
         self.assertEqual(self.runtime.public_url(), "https://new-tunnel.trycloudflare.com")

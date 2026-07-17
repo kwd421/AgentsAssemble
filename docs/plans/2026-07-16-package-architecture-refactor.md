@@ -1214,3 +1214,11 @@ module churn were deliberately avoided rather than forgotten.
   constant-time host-token verification, and owned-URL clearing are unchanged.
   Tunnel process ownership remains separate for the next commit because it has
   a different OS-process failure mode.
+- 2026-07-17: The explicitly started Cloudflare quick-tunnel process manager
+  moved mechanically to `application/public_tunnel.py`. GUI lifecycle and
+  public-invite HTTP tests now import the application owner directly; root
+  `public_tunnel.py` is a metadata-tracked compatibility export. The reconnect
+  announcement monkeypatch moved to the owned module so the shim cannot become
+  a second implementation state surface. Executable discovery, process
+  start/terminate/kill behavior, rotating hostname adoption, stale-reader
+  rejection, bounded logs, public-URL clearing, and diagnostics are unchanged.

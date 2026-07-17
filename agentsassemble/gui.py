@@ -296,7 +296,7 @@ from agentsassemble.legacy_codex_session_compat import (
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_payload, provider_health_report
 from agentsassemble.provider_login import ProviderLoginService
-from agentsassemble.public_tunnel import PublicTunnelManager
+from agentsassemble.application.public_tunnel import PublicTunnelManager
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.web.frontend_runtime import (
     REACT_APP_BUILD_COMMAND,

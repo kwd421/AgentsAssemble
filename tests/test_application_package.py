@@ -10,6 +10,7 @@ import agentsassemble.room_users as compatibility_room_users
 import agentsassemble.session_run_monitor as compatibility_session_run_monitor
 import agentsassemble.stable_entry as compatibility_stable_entry
 import agentsassemble.public_invite_runtime as compatibility_public_invite_runtime
+import agentsassemble.public_tunnel as compatibility_public_tunnel
 from agentsassemble.application import agent_bridge_entrypoint as owned_agent_bridge_entrypoint
 from agentsassemble.application import gui as owned_gui
 from agentsassemble.application import gui_factory as owned_gui_factory
@@ -17,6 +18,7 @@ from agentsassemble.application import room_users as owned_room_users
 from agentsassemble.application import session_run_monitor as owned_session_run_monitor
 from agentsassemble.application import stable_entry as owned_stable_entry
 from agentsassemble.application import public_invite_runtime as owned_public_invite_runtime
+from agentsassemble.application import public_tunnel as owned_public_tunnel
 from agentsassemble.application import transaction as owned_transaction
 
 
@@ -92,6 +94,16 @@ class ApplicationPackageTests(unittest.TestCase):
         self.assertIs(
             compatibility_public_invite_runtime.normalize_public_room_url,
             owned_public_invite_runtime.normalize_public_room_url,
+        )
+
+    def test_public_tunnel_root_module_exports_owned_manager(self) -> None:
+        self.assertIs(
+            compatibility_public_tunnel.PublicTunnelManager,
+            owned_public_tunnel.PublicTunnelManager,
+        )
+        self.assertIs(
+            compatibility_public_tunnel.extract_trycloudflare_url,
+            owned_public_tunnel.extract_trycloudflare_url,
         )
 
 

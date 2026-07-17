@@ -237,6 +237,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_application_package.py",),
         introduced_in="Milestone 4.16 public invite runtime move",
     ),
+    "public_tunnel.py": CompatibilityShim(
+        replacement_import="agentsassemble.application.public_tunnel",
+        removal_gate=(
+            "No direct imports or monkeypatch targets use "
+            "agentsassemble.public_tunnel for one compatibility window."
+        ),
+        known_callers=("tests/test_application_package.py",),
+        introduced_in="Milestone 4.17 public tunnel manager move",
+    ),
     "gui_mafia_http.py": CompatibilityShim(
         replacement_import="agentsassemble.features.mafia.routes",
         removal_gate=(

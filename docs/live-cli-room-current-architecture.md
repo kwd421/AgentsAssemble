@@ -167,6 +167,7 @@ New behavior belongs in the focused owning module rather than the controller.
 | `application/room_users.py` | process-scoped identity-backend binding and legacy local-store fallback | identity persistence contract or room policy |
 | `application/session_run_monitor.py` | periodic durable-session reconciliation thread lifecycle and bounded health snapshot | reconciliation policy or provider process recovery |
 | `application/public_invite_runtime.py` | server-lifetime host-token and public-URL state, normalization, and verification | invite issuance or tunnel process lifecycle |
+| `application/public_tunnel.py` | explicitly started Cloudflare quick-tunnel process, output reader, URL rotation, and cleanup | invite authorization or stable-entry storage |
 | `application/stable_entry.py` | stable public URL configuration and asynchronous tunnel-target announcement | tunnel process lifecycle or invite authorization |
 | `web/sse_cadence.py` | shared legacy SSE keepalive and WebSocket select cadence | room scheduling or provider polling |
 | `live_cli.py` | persistent PTY lifecycle and provider message extraction | room membership or history replay |
