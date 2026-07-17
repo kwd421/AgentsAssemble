@@ -11,7 +11,7 @@ from agentsassemble.features.social.friends import (
     room_friend_type_for_agent,
     upsert_room_friend,
 )
-from agentsassemble.room_friend_dms import (
+from agentsassemble.features.social.direct_messages import (
     append_room_friend_dm_event,
     read_room_friend_dm,
     room_friend_dm_payload,

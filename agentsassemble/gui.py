@@ -304,7 +304,7 @@ from agentsassemble.web.frontend_runtime import (
     default_frontend_dist_root,
     frontend_dist_status,
 )
-from agentsassemble.room_friend_dms import enqueue_room_friend_direct_dm
+from agentsassemble.features.social.direct_messages import enqueue_room_friend_direct_dm
 from agentsassemble.identity.factory import build_identity_repository
 from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.persistence.local.identity.registry import (

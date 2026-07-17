@@ -1263,3 +1263,11 @@ module churn were deliberately avoided rather than forgotten.
   root `room_friends.py` is a metadata-tracked compatibility export. JSON file
   location and shape, normalization aliases, status overlay, ordering, delete
   errors, route payloads, and frontend behavior are unchanged.
+- 2026-07-17: Optional friend direct-message JSONL history, delivery status,
+  live-agent inbox lookup, reply correlation, and resume callback composition
+  moved mechanically to `features/social/direct_messages.py`. Social routes,
+  GUI composition, retained legacy live-agent speech/query adapters, and
+  behavior tests import the feature owner directly; root `room_friend_dms.py`
+  is a metadata-tracked compatibility export. Hashed filenames, message limits,
+  missing-session errors, queued/delivered semantics, cursor behavior, and
+  HTTP/frontend payloads are unchanged.

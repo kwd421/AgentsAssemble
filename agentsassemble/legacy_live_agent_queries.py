@@ -15,7 +15,7 @@ from agentsassemble.live_agents import read_live_agents
 from agentsassemble.live_meeting_memory import load_live_meeting_memory_context
 from agentsassemble.lobby_queries import read_lobby
 from agentsassemble.meeting_events import clean_lobby_text, read_live_events
-from agentsassemble.room_friend_dms import read_live_agent_dm_events
+from agentsassemble.features.social.direct_messages import read_live_agent_dm_events
 from agentsassemble.features.side_chat.service import read_side_chat
 
 

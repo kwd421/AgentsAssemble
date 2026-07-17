@@ -252,7 +252,6 @@ room_errors.py
 room_event_benchmark.py
 room_event_broker.py
 room_floor_policy.py
-room_friend_dms.py
 room_global_settings.py
 room_invite.py
 room_invite_application.py

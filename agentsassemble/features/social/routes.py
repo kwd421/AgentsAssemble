@@ -5,7 +5,7 @@ from collections.abc import Callable
 from http import HTTPStatus
 
 from agentsassemble.live_agents import read_live_agents
-from agentsassemble.room_friend_dms import room_friend_dm_payload
+from agentsassemble.features.social.direct_messages import room_friend_dm_payload
 from agentsassemble.features.social.friends import (
     delete_room_friend,
     room_friends_payload,
