@@ -319,7 +319,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Legacy room-global settings migration | source inspection in `legacy_room_settings_source.py`; atomic SQLite migration in `room_settings_migration.py` |
 | Legacy user preference migration | source inspection in `legacy_room_preferences_source.py`; explicit target-user migration in `room_preferences_migration.py` |
 | Friends, direct-message and local-profile HTTP | saved-friend records and live-agent projection in `features/social/friends.py`; friend-DM JSONL and live-agent delivery in `features/social/direct_messages.py`; local UI profile in `features/social/profile.py`; root compatibility exports in `room_friends.py`, `room_friend_dms.py`, and `user_profile.py`; routes in `features/social/routes.py` with root compatibility export in `gui_social_http.py`; direct-message process callback wired in `gui.py` |
-| Play Mode Mafia HTTP | `features/mafia/routes.py`; root compatibility export in `gui_mafia_http.py`; game state and rules in `mafia_game.py` |
+| Play Mode Mafia HTTP | routes in `features/mafia/routes.py`; game state and rules in `features/mafia/game.py`; root compatibility exports in `gui_mafia_http.py` and `mafia_game.py` |
 | Side-chat storage and room scoping | `features/side_chat/service.py` with root compatibility export in `side_chat.py`; event normalization in `meeting_events.py`; HTTP/SSE routes in `features/side_chat/routes.py` with root compatibility export in `gui_side_chat_http.py` |
 | CLI parser registration | `cli_parser_common.py`, `cli_parser_*.py`; dispatch in `cli.py` |
 | Canonical React transport and sequenced history | `frontend/src/useCanonicalRoom.ts`, `frontend/src/roomSocketClient.ts` |

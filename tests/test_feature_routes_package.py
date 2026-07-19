@@ -6,6 +6,7 @@ import agentsassemble.side_chat as compatibility_side_chat
 import agentsassemble.room_friends as compatibility_room_friends
 import agentsassemble.room_friend_dms as compatibility_room_friend_dms
 import agentsassemble.user_profile as compatibility_user_profile
+import agentsassemble.mafia_game as compatibility_mafia_game
 
 from agentsassemble.features.mafia.routes import (
     OperationPayloadReader as OwnedOperationPayloadReader,
@@ -13,6 +14,7 @@ from agentsassemble.features.mafia.routes import (
 from agentsassemble.features.mafia.routes import (
     register_mafia_routes as owned_register_mafia_routes,
 )
+from agentsassemble.features.mafia import game as owned_mafia_game
 from agentsassemble.features.side_chat.routes import (
     register_side_chat_routes as owned_register_side_chat_routes,
 )
@@ -65,6 +67,21 @@ class FeatureRoutesPackageTests(unittest.TestCase):
             compatibility_side_chat.read_side_chat,
             owned_side_chat.read_side_chat,
         )
+
+    def test_mafia_game_root_module_exports_owned_service(self) -> None:
+        for name in (
+            "start_mafia_game",
+            "mafia_game_payload",
+            "post_mafia_chat",
+            "submit_mafia_action",
+            "cast_mafia_vote",
+            "resolve_mafia_phase",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_mafia_game, name),
+                    getattr(owned_mafia_game, name),
+                )
 
     def test_room_friends_root_module_exports_owned_service(self) -> None:
         for name in (

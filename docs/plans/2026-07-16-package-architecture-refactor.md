@@ -115,6 +115,27 @@ refactor:
 - media understanding and provider-native image/PDF/audio delivery;
 - LISTEN/NOTIFY, Redis, Kafka, WebRTC, or voice.
 
+## Recorded Security Follow-up - Client-specific invite consumption
+
+This item is recorded for the post-refactor admission/security plan only. Do
+not implement it as part of mechanical package moves.
+
+- Browser admission may consume only human/browser invite scopes.
+- Agent invites may be consumed only by the native attendee path
+  (`assemble room attend`) using an authenticated Agent Bridge client type.
+- Opening an agent invite in a browser may show a non-consuming explanation,
+  but must not consume the invite, create a human participant, or issue a room
+  bearer session.
+- The server must enforce invite scope and authenticated client type; user
+  agent strings, display names, and frontend claims are not identity evidence.
+- Behavioral coverage must prove that browser and attendee clients cannot
+  exchange each other's invite scopes and that a rejected attempt leaves the
+  invite reusable by its intended client.
+
+Until this follow-up is implemented and verified, documentation and UI must not
+claim that agent invite links are safe to open through the ordinary browser
+join flow.
+
 Non-critical findings in these areas are reproduced, classified, and reported,
 not patched with filters, fallbacks, or unapproved policy.
 
@@ -1278,3 +1299,12 @@ module churn were deliberately avoided rather than forgotten.
   behavior tests import the feature owner directly; root `user_profile.py` is a
   metadata-tracked compatibility export. Defaults, limits, timestamp behavior,
   file shape, URL allowlist, and frontend payloads are unchanged.
+- 2026-07-20: Optional Mafia game state, JSON persistence, visibility
+  projection, and rules moved mechanically to `features/mafia/game.py` beside
+  the existing feature routes. Current routes import the owned service; root
+  `mafia_game.py` remains a metadata-tracked compatibility export for verified
+  callers. The implementation now imports shared room text normalization
+  directly instead of reaching through legacy meeting events. Game file paths
+  and JSON shape, deterministic role assignment, private/team visibility,
+  voting, night actions, phase transitions, errors, and HTTP behavior are
+  unchanged.
