@@ -207,7 +207,7 @@ from agentsassemble.legacy_live_agent_process_projection import (
     parse_public_timestamp as _parse_public_timestamp,
     process_payload_with_agent_connection_evidence as _process_payload_with_agent_connection_evidence,
 )
-from agentsassemble.legacy_live_agent_preflight import (
+from agentsassemble.legacy.live_agent.preflight import (
     live_agent_preflight_payload,
 )
 from agentsassemble.legacy_live_agent_readiness import (

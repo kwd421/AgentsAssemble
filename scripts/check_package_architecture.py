@@ -556,6 +556,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         ),
         introduced_in="Milestone 6.23 optional Mafia game service move",
     ),
+    "legacy_live_agent_preflight.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.live_agent.preflight",
+        removal_gate=(
+            "No direct imports use agentsassemble.legacy_live_agent_preflight "
+            "for one compatibility window."
+        ),
+        known_callers=("tests/test_legacy_package.py",),
+        introduced_in="Milestone 6.24 legacy resident preflight service move",
+    ),
     "room_friends.py": CompatibilityShim(
         replacement_import="agentsassemble.features.social.friends",
         removal_gate=(

@@ -1308,3 +1308,10 @@ module churn were deliberately avoided rather than forgotten.
   and JSON shape, deterministic role assignment, private/team visibility,
   voting, night actions, phase transitions, errors, and HTTP behavior are
   unchanged.
+- 2026-07-20: Retained resident configuration preflight moved mechanically to
+  `legacy/live_agent/preflight.py`, establishing the nested owner for the
+  remaining legacy resident families. GUI composition and the legacy HTTP
+  route import the owned service directly; root
+  `legacy_live_agent_preflight.py` remains a metadata-tracked compatibility
+  export. Config-path defaults, server override behavior, diagnostic
+  projection, operation recording, errors, and HTTP payloads are unchanged.

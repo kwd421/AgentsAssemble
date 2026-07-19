@@ -8,7 +8,7 @@ from http import HTTPStatus
 
 from agentsassemble.diagnostic_report_projection import safe_diagnostic_report_payload
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.legacy_live_agent_preflight import LegacyLiveAgentPreflightService
+from agentsassemble.legacy.live_agent.preflight import LegacyLiveAgentPreflightService
 
 
 ReadOperationPayload = Callable[[RequestContext, str], dict[str, object] | None]
