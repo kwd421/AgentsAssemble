@@ -1611,3 +1611,12 @@ module churn were deliberately avoided rather than forgotten.
   modules remain explicit metadata-tracked compatibility exports. Subcommand
   names, help visibility, arguments, choices, defaults, validation, and
   argparse error behavior are unchanged.
+- 2026-07-20: The current Agent Session application service moved from the
+  2,290-line flat `agent_sessions.py` owner to
+  `application/agent_sessions.py`. Its only legacy dependency was the lobby
+  text normalizer; the owned module now uses the behavior-equivalent current
+  `room.text` contract. Current CLI, GUI, room, web, diagnostic, and legacy
+  composition callers import the application owner directly. The root module
+  is an explicit compatibility export, including its historical private JSONL
+  streamer patch seam. Runtime commands, app-server lifecycle, turn queueing,
+  payloads, diagnostics, and provider behavior are unchanged.

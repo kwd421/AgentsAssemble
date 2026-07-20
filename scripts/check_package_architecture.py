@@ -48,6 +48,19 @@ class CompatibilityShim:
 # boundaries. Historical presence in the root baseline does not exempt a moved
 # module from recording its replacement, callers, and removal gate here.
 ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
+    "agent_sessions.py": CompatibilityShim(
+        replacement_import="agentsassemble.application.agent_sessions",
+        removal_gate=(
+            "No direct imports or monkeypatch targets use "
+            "agentsassemble.agent_sessions for one compatibility window."
+        ),
+        known_callers=(
+            "tests/test_agent_session_cli.py",
+            "tests/test_agent_session_room_store.py",
+            "tests/test_gui_room_repository_injection.py",
+        ),
+        introduced_in="Milestone 7.4 Agent Session application package",
+    ),
     "cleanup_report.py": CompatibilityShim(
         replacement_import="agentsassemble.diagnostics.cleanup",
         removal_gate=(

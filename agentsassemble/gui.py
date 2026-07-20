@@ -330,7 +330,7 @@ from agentsassemble.web.room_session import (
     WsRoomDeps,
     WsSayRejected,
 )
-from agentsassemble.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
+from agentsassemble.application.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
 from agentsassemble.room_invite import (
     compatibility_public_invite_runtime,
 )

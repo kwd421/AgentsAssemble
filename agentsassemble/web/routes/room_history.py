@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from http import HTTPStatus
 
-from agentsassemble.agent_sessions import (
+from agentsassemble.application.agent_sessions import (
     enqueue_agent_session_auto_turn_for_lobby_event,
     room_status_payload,
 )

@@ -5,7 +5,7 @@ import threading
 from collections.abc import Callable
 from http import HTTPStatus
 
-from agentsassemble.agent_sessions import (
+from agentsassemble.application.agent_sessions import (
     enqueue_agent_session_auto_turn_for_lobby_event,
 )
 from agentsassemble.web.router import RequestContext, Router

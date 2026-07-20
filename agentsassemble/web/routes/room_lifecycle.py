@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from agentsassemble.agent_sessions import room_action_payload, room_lifecycle_payload
+from agentsassemble.application.agent_sessions import room_action_payload, room_lifecycle_payload
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.web.router import RequestContext, Router
 

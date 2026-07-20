@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
-from agentsassemble.agent_sessions import DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS
+from agentsassemble.application.agent_sessions import DEFAULT_ROOM_TURN_MAX_RECENT_EVENTS
 from agentsassemble.gui import _make_handler
 from agentsassemble.live_cli_smoke import _marker_recalled
 from agentsassemble.meeting_events import clean_lobby_text

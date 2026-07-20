@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.agent_sessions import merge_room_store_members
+from agentsassemble.application.agent_sessions import merge_room_store_members
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,

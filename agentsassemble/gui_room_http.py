@@ -11,7 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
 
-from agentsassemble.agent_sessions import (
+from agentsassemble.application.agent_sessions import (
     AgentSessionProcessService,
     create_agent_session_payload,
     enqueue_agent_session_auto_turn_for_lobby_event,
@@ -141,7 +141,7 @@ def _local_agent_session_turn_command_streamer(
     prompt: str,
     timeout_seconds: float,
 ):
-    from agentsassemble.agent_sessions import _default_agent_turn_jsonl_streamer
+    from agentsassemble.application.agent_sessions import _default_agent_turn_jsonl_streamer
 
     yield from _default_agent_turn_jsonl_streamer(command, prompt, timeout_seconds)
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from http import HTTPStatus
 
-from agentsassemble.agent_sessions import (
+from agentsassemble.application.agent_sessions import (
     AgentSessionProcessService,
     create_agent_session_payload,
     resume_agent_session_payload,

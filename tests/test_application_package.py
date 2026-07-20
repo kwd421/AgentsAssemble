@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 import agentsassemble.application_transaction as compatibility_transaction
+import agentsassemble.agent_sessions as compatibility_agent_sessions
 import agentsassemble.gui_application as compatibility_gui
 import agentsassemble.room_agent_bridge as compatibility_agent_bridge
 import agentsassemble.room_users as compatibility_room_users
@@ -12,6 +13,7 @@ import agentsassemble.stable_entry as compatibility_stable_entry
 import agentsassemble.public_invite_runtime as compatibility_public_invite_runtime
 import agentsassemble.public_tunnel as compatibility_public_tunnel
 from agentsassemble.application import agent_bridge_entrypoint as owned_agent_bridge_entrypoint
+from agentsassemble.application import agent_sessions as owned_agent_sessions
 from agentsassemble.application import gui as owned_gui
 from agentsassemble.application import gui_factory as owned_gui_factory
 from agentsassemble.application import room_users as owned_room_users
@@ -26,6 +28,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ApplicationPackageTests(unittest.TestCase):
+    def test_agent_session_root_module_exports_owned_service(self) -> None:
+        self.assertIs(
+            compatibility_agent_sessions.AgentSessionProcessService,
+            owned_agent_sessions.AgentSessionProcessService,
+        )
+        self.assertIs(
+            compatibility_agent_sessions.run_agent_session_turn_payload,
+            owned_agent_sessions.run_agent_session_turn_payload,
+        )
+
     def test_agent_bridge_root_command_uses_application_entrypoint(self) -> None:
         self.assertIs(
             compatibility_agent_bridge.main,
