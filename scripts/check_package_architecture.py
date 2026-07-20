@@ -48,6 +48,42 @@ class CompatibilityShim:
 # boundaries. Historical presence in the root baseline does not exempt a moved
 # module from recording its replacement, callers, and removal gate here.
 ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
+    "canonical_room_benchmark.py": CompatibilityShim(
+        replacement_import="agentsassemble.diagnostics.canonical_room_benchmark",
+        removal_gate=(
+            "No direct imports use agentsassemble.canonical_room_benchmark for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_canonical_room_benchmark.py",),
+        introduced_in="Milestone 7.5 diagnostic smoke package",
+    ),
+    "cli_diagnostics.py": CompatibilityShim(
+        replacement_import="agentsassemble.diagnostics.cli",
+        removal_gate=(
+            "No direct imports use agentsassemble.cli_diagnostics for one "
+            "compatibility window."
+        ),
+        known_callers=("agentsassemble/cli.py",),
+        introduced_in="Milestone 7.5 diagnostic smoke package",
+    ),
+    "live_cli_smoke.py": CompatibilityShim(
+        replacement_import="agentsassemble.diagnostics.live_cli_smoke",
+        removal_gate=(
+            "No direct imports use agentsassemble.live_cli_smoke for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_live_cli_smoke.py",),
+        introduced_in="Milestone 7.5 diagnostic smoke package",
+    ),
+    "room_native_cli_smoke.py": CompatibilityShim(
+        replacement_import="agentsassemble.application.room_native_cli_smoke",
+        removal_gate=(
+            "No direct imports use agentsassemble.room_native_cli_smoke for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_room_native_cli_e2e.py",),
+        introduced_in="Milestone 7.5 application integration-smoke package",
+    ),
     "agent_sessions.py": CompatibilityShim(
         replacement_import="agentsassemble.application.agent_sessions",
         removal_gate=(

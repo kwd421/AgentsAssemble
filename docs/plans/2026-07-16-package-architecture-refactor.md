@@ -1620,3 +1620,17 @@ module churn were deliberately avoided rather than forgotten.
   is an explicit compatibility export, including its historical private JSONL
   streamer patch seam. Runtime commands, app-server lifecycle, turn queueing,
   payloads, diagnostics, and provider behavior are unchanged.
+- 2026-07-20: Canonical room benchmarking, persistent live-CLI smoke, and
+  diagnostic CLI command handlers moved to `diagnostics/`; the frontend-driven
+  native-provider smoke moved to `application/` because it composes the GUI
+  handler and canonical WebSocket client and therefore is an integration
+  application rather than a leaf diagnostic policy. Current CLI/parser and
+  smoke composition import the owned paths directly; four root modules remain
+  explicit compatibility
+  exports. The two smoke modules replaced their legacy lobby-text import with
+  the behavior-equivalent current room text contract. Benchmark workloads,
+  provider commands, approval gates, latency thresholds, TUI/no-reply checks,
+  result files, and CLI output are unchanged. The legacy event scheduler
+  benchmark and its release-health projection remain outside this wave because
+  moving either into current diagnostics would create a forbidden current-to-
+  legacy dependency.

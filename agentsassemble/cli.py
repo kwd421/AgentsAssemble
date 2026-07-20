@@ -93,7 +93,7 @@ from agentsassemble.cli_legacy_live_agent_format import (
     _print_live_agent_process_payload,
     _print_live_agent_process_wait_result,
 )
-from agentsassemble.cli_diagnostics import (
+from agentsassemble.diagnostics.cli import (
     DiagnosticCliRuntime,
     run_diagnostic_command,
     run_provider_health_command,
@@ -111,8 +111,8 @@ from agentsassemble.live_agent_continuity_proof import (
     run_live_agent_continuity_proof,
     run_live_agent_continuity_proof_batch,
 )
-from agentsassemble.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG
-from agentsassemble.room_native_cli_smoke import run_room_native_cli_smoke
+from agentsassemble.diagnostics.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG
+from agentsassemble.application.room_native_cli_smoke import run_room_native_cli_smoke
 from agentsassemble.room_repository_factory import RoomRepositoryUnavailable
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
@@ -5628,7 +5628,7 @@ def run_room_command(args: argparse.Namespace) -> int:
             print(f"active participants: {len(participants)}")
         return 0
     if args.room_command == "benchmark":
-        from agentsassemble.canonical_room_benchmark import (
+        from agentsassemble.diagnostics.canonical_room_benchmark import (
             CanonicalRoomBenchmarkOptions,
             run_canonical_room_benchmark,
         )

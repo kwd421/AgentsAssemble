@@ -7,6 +7,7 @@ import agentsassemble.application_transaction as compatibility_transaction
 import agentsassemble.agent_sessions as compatibility_agent_sessions
 import agentsassemble.gui_application as compatibility_gui
 import agentsassemble.room_agent_bridge as compatibility_agent_bridge
+import agentsassemble.room_native_cli_smoke as compatibility_room_smoke
 import agentsassemble.room_users as compatibility_room_users
 import agentsassemble.session_run_monitor as compatibility_session_run_monitor
 import agentsassemble.stable_entry as compatibility_stable_entry
@@ -17,6 +18,7 @@ from agentsassemble.application import agent_sessions as owned_agent_sessions
 from agentsassemble.application import gui as owned_gui
 from agentsassemble.application import gui_factory as owned_gui_factory
 from agentsassemble.application import room_users as owned_room_users
+from agentsassemble.application import room_native_cli_smoke as owned_room_smoke
 from agentsassemble.application import session_run_monitor as owned_session_run_monitor
 from agentsassemble.application import stable_entry as owned_stable_entry
 from agentsassemble.application import public_invite_runtime as owned_public_invite_runtime
@@ -28,6 +30,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ApplicationPackageTests(unittest.TestCase):
+    def test_room_smoke_root_exports_owned_application_integration(self) -> None:
+        self.assertIs(
+            compatibility_room_smoke.run_room_native_cli_smoke,
+            owned_room_smoke.run_room_native_cli_smoke,
+        )
+
     def test_agent_session_root_module_exports_owned_service(self) -> None:
         self.assertIs(
             compatibility_agent_sessions.AgentSessionProcessService,
