@@ -1470,3 +1470,9 @@ module churn were deliberately avoided rather than forgotten.
   compatibility export. Session ownership checks, process/config/binding
   cleanup, audit, errors, and response payloads remain owned by the unchanged
   room-admin service.
+- 2026-07-20: The retained external-resident join-brief HTTP registrar moved
+  mechanically to `legacy/live_agent/http/join_brief.py`. Legacy GUI
+  composition imports the owned registrar directly; root
+  `gui_legacy_live_agent_join_brief_http.py` remains a metadata-tracked
+  compatibility export. Server URL mapping, side-effect-free packet creation,
+  validation, errors, and response payloads are unchanged.

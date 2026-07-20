@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `10d30b4e1f043dc1`
+Source fingerprint: `4e9e0903c642036a`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 533
+- Python modules: 534
 - Top-level package modules: 303
-- Domains: admission=28, application=69, diagnostics=14, features=19, identity=9, legacy=108, persistence=58, providers=84, room=80, web=64
-- Classifications: compatibility=148, current=291, legacy=82, optional=12
+- Domains: admission=28, application=69, diagnostics=14, features=19, identity=9, legacy=109, persistence=58, providers=84, room=80, web=64
+- Classifications: compatibility=149, current=290, legacy=83, optional=12
 
 ## Classification Rules
 
@@ -127,11 +127,11 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.gui` | `agentsassemble/gui.py` | 3503 | application | current | `agentsassemble.admission.repository`, `agentsassemble.agent_sessions`, `agentsassemble.application.gui`, `agentsassemble.application.gui_factory`, `agentsassemble.application.public_invite_runtime`, `agentsassemble.application.public_tunnel`, `agentsassemble.application.session_run_monitor`, `agentsassemble.attachments`, +83 | 2 | `call:RLock@709`, `call:set@710` | test-import:43, monkeypatch:17 | `tests/fixtures/room_ui_server.py`, `tests/gui_server_test_support.py`, `tests/test_api_lane_runner.py`, `+49` | `root entrypoint` | retained-entrypoint |
 | `agentsassemble.gui_application` | `agentsassemble/gui_application.py` | 14 | web | compatibility | `agentsassemble.application.gui` | 0 | - | test-import:1 | `tests/test_application_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.gui_attachment_http` | `agentsassemble/gui_attachment_http.py` | 4 | web | compatibility | `agentsassemble.web.routes.attachments` | 0 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | compatibility-shim |
-| `agentsassemble.gui_legacy_application` | `agentsassemble/gui_legacy_application.py` | 478 | web | current | `agentsassemble.agent_sessions`, `agentsassemble.application.gui`, `agentsassemble.gui_legacy_codex_session_http`, `agentsassemble.gui_legacy_live_agent_discovery_http`, `agentsassemble.gui_legacy_live_agent_join_brief_http`, `agentsassemble.gui_legacy_live_agent_official_reply_http`, `agentsassemble.gui_legacy_live_agent_preflight_http`, `agentsassemble.gui_legacy_live_agent_presence_http`, +48 | 1 | - | - | - | `web/` | planned-move |
+| `agentsassemble.gui_legacy_application` | `agentsassemble/gui_legacy_application.py` | 478 | web | current | `agentsassemble.agent_sessions`, `agentsassemble.application.gui`, `agentsassemble.gui_legacy_codex_session_http`, `agentsassemble.gui_legacy_live_agent_discovery_http`, `agentsassemble.gui_legacy_live_agent_official_reply_http`, `agentsassemble.gui_legacy_live_agent_preflight_http`, `agentsassemble.gui_legacy_live_agent_presence_http`, `agentsassemble.gui_legacy_live_agent_probe_http`, +48 | 1 | - | - | - | `web/` | planned-move |
 | `agentsassemble.gui_legacy_codex_session_http` | `agentsassemble/gui_legacy_codex_session_http.py` | 57 | providers | current | `agentsassemble.legacy_codex_session_compat`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_codex_session_http.py` | `providers/` | planned-move |
 | `agentsassemble.gui_legacy_live_agent_discovery_http` | `agentsassemble/gui_legacy_live_agent_discovery_http.py` | 67 | web | current | `agentsassemble.legacy.live_agent.discovery`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_live_agent_discovery_http.py` | `web/` | planned-move |
 | `agentsassemble.gui_legacy_live_agent_engagement_http` | `agentsassemble/gui_legacy_live_agent_engagement_http.py` | 7 | web | compatibility | `agentsassemble.legacy.live_agent.http.engagement` | 0 | - | test-import:1 | `tests/test_gui_legacy_live_agent_engagement_http.py` | `web/` | compatibility-shim |
-| `agentsassemble.gui_legacy_live_agent_join_brief_http` | `agentsassemble/gui_legacy_live_agent_join_brief_http.py` | 33 | web | current | `agentsassemble.live_agent_join_brief`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_live_agent_join_brief_http.py` | `web/` | planned-move |
+| `agentsassemble.gui_legacy_live_agent_join_brief_http` | `agentsassemble/gui_legacy_live_agent_join_brief_http.py` | 8 | web | compatibility | `agentsassemble.legacy.live_agent.http.join_brief` | 0 | - | test-import:1 | `tests/test_gui_legacy_live_agent_join_brief_http.py` | `web/` | compatibility-shim |
 | `agentsassemble.gui_legacy_live_agent_official_reply_http` | `agentsassemble/gui_legacy_live_agent_official_reply_http.py` | 40 | web | current | `agentsassemble.legacy.live_agent.official_reply`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_live_agent_official_reply_http.py` | `web/` | planned-move |
 | `agentsassemble.gui_legacy_live_agent_preflight_http` | `agentsassemble/gui_legacy_live_agent_preflight_http.py` | 69 | web | current | `agentsassemble.diagnostic_report_projection`, `agentsassemble.legacy.live_agent.preflight`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_live_agent_preflight_http.py` | `web/` | planned-move |
 | `agentsassemble.gui_legacy_live_agent_presence_http` | `agentsassemble/gui_legacy_live_agent_presence_http.py` | 50 | web | current | `agentsassemble.legacy.live_agent.presence`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_live_agent_presence_http.py` | `web/` | planned-move |
@@ -191,6 +191,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.legacy.live_agent.health_queries` | `agentsassemble/legacy/live_agent/health_queries.py` | 345 | legacy | legacy | `agentsassemble.application.session_run_monitor`, `agentsassemble.legacy.live_agent.health`, `agentsassemble.legacy.live_agent.observation_health`, `agentsassemble.legacy.live_agent.process_projection`, `agentsassemble.legacy.live_agent.roster_queries`, `agentsassemble.legacy.live_agent.session_run_health`, `agentsassemble.live_agent_processes`, `agentsassemble.live_agent_roster`, +4 | 5 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.http` | `agentsassemble/legacy/live_agent/http/__init__.py` | 1 | legacy | legacy | - | 0 | - | - | - | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.http.engagement` | `agentsassemble/legacy/live_agent/http/engagement.py` | 27 | legacy | legacy | `agentsassemble.legacy.live_agent.engagement`, `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_gui_legacy_live_agent_engagement_http.py` | `legacy/` | in-target-package |
+| `agentsassemble.legacy.live_agent.http.join_brief` | `agentsassemble/legacy/live_agent/http/join_brief.py` | 33 | legacy | legacy | `agentsassemble.live_agent_join_brief`, `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_gui_legacy_live_agent_join_brief_http.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.http.room_session` | `agentsassemble/legacy/live_agent/http/room_session.py` | 28 | legacy | legacy | `agentsassemble.live_agent_room_admin`, `agentsassemble.meeting_events`, `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_gui_legacy_live_agent_room_session_http.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.observation_health` | `agentsassemble/legacy/live_agent/observation_health.py` | 270 | legacy | legacy | `agentsassemble.legacy.live_agent.health`, `agentsassemble.legacy_meeting_records`, `agentsassemble.live_agent_turns`, `agentsassemble.lobby_queries`, `agentsassemble.meeting_events` | 3 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.official_reply` | `agentsassemble/legacy/live_agent/official_reply.py` | 258 | legacy | legacy | `agentsassemble.legacy.live_agent.queries`, `agentsassemble.legacy_meeting_operation_projection`, `agentsassemble.legacy_meeting_records`, `agentsassemble.live_agent_operations`, `agentsassemble.live_agent_turns`, `agentsassemble.live_agents`, `agentsassemble.live_meeting_memory`, `agentsassemble.meeting_events`, +1 | 4 | `call:Lock@34` | test-import:2, monkeypatch:1 | `tests/test_legacy_live_agent_official_reply.py`, `tests/test_legacy_package.py` | `legacy/` | in-target-package |

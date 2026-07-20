@@ -25,7 +25,7 @@ from agentsassemble.gui_legacy_live_agent_discovery_http import (
 from agentsassemble.legacy.live_agent.http.engagement import (
     register_legacy_live_agent_engagement_route,
 )
-from agentsassemble.gui_legacy_live_agent_join_brief_http import (
+from agentsassemble.legacy.live_agent.http.join_brief import (
     register_legacy_live_agent_join_brief_route,
 )
 from agentsassemble.gui_legacy_live_agent_official_reply_http import (
