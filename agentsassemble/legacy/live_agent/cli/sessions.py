@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 
 from agentsassemble.application.cli.common import _hide_subparser_from_help
-from agentsassemble.codex_sessions import (
+from agentsassemble.legacy.live_agent.codex_sessions import (
     DEFAULT_INVITE_CONFIG_PATH,
     DEFAULT_LIVE_AGENT_CONFIG_PATH,
 )

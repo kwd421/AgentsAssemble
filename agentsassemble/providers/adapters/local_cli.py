@@ -8,7 +8,7 @@ from typing import Any
 from agentsassemble.providers.adapters.base import ProviderAdapter
 from agentsassemble.providers.adapters.http_llm import parse_json_object
 from agentsassemble.models import ProviderConfig, ResearchDepth, ResearchSteering, Role
-from agentsassemble.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
+from agentsassemble.providers.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
 
 
 class LocalCliError(RuntimeError):

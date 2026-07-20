@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from agentsassemble.legacy.live_agent.runtime.timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
-from agentsassemble.live_session_transport import terminal_sessions_supported
+from agentsassemble.providers.live_session_transport import terminal_sessions_supported
 
 
 DEFAULT_DISCOVERY_SERVER = "http://127.0.0.1:8765"

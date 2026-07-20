@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.sandbox_launcher import (
+from agentsassemble.providers.sandbox_launcher import (
     CODEX_EXEC_SAFETY_FLAGS,
     CODEX_EXEC_WORKSPACE_WRITE_FLAGS,
     SANDBOX_ENFORCEMENT_LEVELS,

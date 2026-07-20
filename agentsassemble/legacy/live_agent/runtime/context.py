@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
-from agentsassemble.sandbox_launcher import sandbox_launcher_for, safe_sandbox_enforcement
-from agentsassemble.live_session_adapter import (
+from agentsassemble.providers.sandbox_launcher import sandbox_launcher_for, safe_sandbox_enforcement
+from agentsassemble.providers.live_session_adapter import (
     CALL_RESUME_JOIN_SEMANTICS,
     PROVIDER_PERSISTENT_JOIN_SEMANTICS,
     PROVIDER_TOOL_LOOP_JOIN_SEMANTICS,

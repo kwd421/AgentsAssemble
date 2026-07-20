@@ -8,7 +8,6 @@ from typing import Protocol
 from agentsassemble.providers.adapters import default_provider_registry
 from agentsassemble.providers import catalog as provider_catalog
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.provider_login import ProviderLoginService
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
 
 
@@ -18,6 +17,12 @@ class ProviderSecretStore(Protocol):
     def set(self, provider_id: str, value: str) -> Mapping[str, object]: ...
 
     def delete(self, provider_id: str) -> Mapping[str, object]: ...
+
+
+class ProviderLogin(Protocol):
+    def start(self, payload: dict[str, object]) -> dict[str, object]: ...
+
+    def record_invalid_json(self) -> None: ...
 
 
 def provider_catalog_payload() -> dict[str, object]:
@@ -42,7 +47,7 @@ def register_provider_routes(
     *,
     credentials_allowed: Callable[[RequestContext], bool],
     is_local_operator: Callable[[RequestContext], bool],
-    login_service: ProviderLoginService,
+    login_service: ProviderLogin,
     secret_store: ProviderSecretStore | None = None,
 ) -> None:
     """Register provider discovery, login, and credential-management routes."""

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.codex_sessions import (
+from agentsassemble.legacy.live_agent.codex_sessions import (
     build_codex_live_agent_config,
     build_codex_live_invite_config,
     list_codex_sessions,

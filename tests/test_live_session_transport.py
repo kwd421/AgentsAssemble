@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.live_session_transport import JsonlLiveSession, TerminalLiveSession, terminal_sessions_supported
+from agentsassemble.providers.live_session_transport import JsonlLiveSession, TerminalLiveSession, terminal_sessions_supported
 
 try:
     import pty
@@ -207,8 +207,8 @@ class JsonlLiveSessionTests(unittest.TestCase):
             raise OSError("launch failed")
 
         with (
-            patch("agentsassemble.live_session_transport.pty.openpty", side_effect=fake_openpty),
-            patch("agentsassemble.live_session_transport._disable_terminal_echo"),
+            patch("agentsassemble.providers.live_session_transport.pty.openpty", side_effect=fake_openpty),
+            patch("agentsassemble.providers.live_session_transport._disable_terminal_echo"),
         ):
             with self.assertRaisesRegex(OSError, "launch failed"):
                 TerminalLiveSession(["missing"], popen_factory=fail_launch)
@@ -220,8 +220,8 @@ class JsonlLiveSessionTests(unittest.TestCase):
 
     def test_terminal_session_support_check_handles_missing_pty_modules(self):
         with (
-            patch("agentsassemble.live_session_transport.pty", None),
-            patch("agentsassemble.live_session_transport.termios", None),
+            patch("agentsassemble.providers.live_session_transport.pty", None),
+            patch("agentsassemble.providers.live_session_transport.termios", None),
         ):
             self.assertFalse(terminal_sessions_supported())
 

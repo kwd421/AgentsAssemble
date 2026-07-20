@@ -26,7 +26,7 @@ from agentsassemble.live_agent_turns import (
     is_official_turn_reply_event,
     is_review_checkpoint_reply_event,
 )
-from agentsassemble.live_session_adapter import (
+from agentsassemble.providers.live_session_adapter import (
     RUNTIME_MANAGED_ROOM_TURN_JOIN_SEMANTICS,
     InvokeLiveSessionAdapter,
     RuntimeManagedRoomTurnAdapter,
@@ -50,7 +50,7 @@ from agentsassemble.character_mode import clean_first_message_index, clean_perso
 from agentsassemble.legacy.meeting.core.events import ROOM_TOPIC_LIMIT
 from agentsassemble.models import ENGAGEMENT_MODES, ProviderConfig, Role
 from agentsassemble.persona_cards import load_persona_card, persona_prompt_lines, render_persona_prompt
-from agentsassemble.remote_bridge_config import (
+from agentsassemble.providers.remote_bridge_config import (
     remote_bridge_auth_ref_available,
     remote_bridge_auth_ref_value,
     remote_bridge_endpoint_error,

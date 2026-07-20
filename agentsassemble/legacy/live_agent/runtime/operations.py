@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from agentsassemble.legacy.live_agent.runtime.context import LIVE_AGENT_CONTEXT_DURABILITY, LIVE_AGENT_JOIN_SEMANTICS
-from agentsassemble.sandbox_launcher import SANDBOX_ENFORCEMENT_LEVELS
+from agentsassemble.providers.sandbox_launcher import SANDBOX_ENFORCEMENT_LEVELS
 
 OPERATION_TEXT_LIMIT = 500
 OPERATION_FIELD_LIMIT = 128

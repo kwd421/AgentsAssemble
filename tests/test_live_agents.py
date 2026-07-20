@@ -12,7 +12,7 @@ from agentsassemble.live_agents import (
     update_live_agent_engagement,
     update_live_agent_options,
 )
-from agentsassemble.sandbox_launcher import NoSandboxLauncher, sandbox_launcher_for
+from agentsassemble.providers.sandbox_launcher import NoSandboxLauncher, sandbox_launcher_for
 
 
 class LiveAgentPresenceTests(unittest.TestCase):

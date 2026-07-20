@@ -17,7 +17,7 @@ from agentsassemble.attachments import (
     AttachmentError,
     normalize_attachment_references,
 )
-from agentsassemble.codex_sessions import list_codex_sessions
+from agentsassemble.legacy.live_agent.codex_sessions import list_codex_sessions
 from agentsassemble.features.mafia.routes import register_mafia_routes
 from agentsassemble.features.side_chat.routes import register_side_chat_routes
 from agentsassemble.features.social.routes import (
@@ -295,7 +295,7 @@ from agentsassemble.legacy_codex_session_compat import (
 )
 from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 from agentsassemble.diagnostics.provider_health import provider_health_payload, provider_health_report
-from agentsassemble.provider_login import ProviderLoginService
+from agentsassemble.legacy.live_agent.provider_login import ProviderLoginService
 from agentsassemble.application.public_tunnel import PublicTunnelManager
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.web.frontend_runtime import (

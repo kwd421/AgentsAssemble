@@ -34,7 +34,7 @@ from agentsassemble.providers.codex_resident import CodexResidentCommandRunner
 from agentsassemble.providers.grok_resident import GrokResidentCommandRunner
 from agentsassemble.web.frontend_runtime import frontend_dist_status
 from agentsassemble.providers.kiro_resident import KiroResidentCommandRunner
-from agentsassemble.codex_sessions import (
+from agentsassemble.legacy.live_agent.codex_sessions import (
     DEFAULT_INVITE_CONFIG_PATH,
     DEFAULT_LIVE_AGENT_CONFIG_PATH,
     build_codex_live_agent_config,
@@ -157,7 +157,7 @@ from agentsassemble.legacy.live_agent.runtime.smoke import (
     run_live_agent_smoke,
 )
 from agentsassemble.legacy.live_agent.runtime.sessions import session_ensure_action
-from agentsassemble.live_session_transport import JsonlLiveSession, TerminalLiveSession
+from agentsassemble.providers.live_session_transport import JsonlLiveSession, TerminalLiveSession
 from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 from agentsassemble.memory_capsules import memory_capsule_gate_report
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES

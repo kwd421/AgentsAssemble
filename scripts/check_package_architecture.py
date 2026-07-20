@@ -2091,6 +2091,25 @@ for _root_name, _replacement_import, _known_caller in (
         introduced_in="Milestone 6.67 legacy room migration package",
     )
 
+for _root_name, _replacement_import, _known_caller in (
+    ("codex_sessions.py", "agentsassemble.legacy.live_agent.codex_sessions", "tests/test_codex_sessions.py"),
+    ("provider_login.py", "agentsassemble.legacy.live_agent.provider_login", "tests/test_provider_login.py"),
+    ("live_session_adapter.py", "agentsassemble.providers.live_session_adapter", "tests/test_live_session_adapter.py"),
+    ("live_session_transport.py", "agentsassemble.providers.live_session_transport", "tests/test_live_session_transport.py"),
+    ("remote_bridge_config.py", "agentsassemble.providers.remote_bridge_config", "tests/test_remote_bridge_config.py"),
+    ("sandbox_launcher.py", "agentsassemble.providers.sandbox_launcher", "tests/test_sandbox_launcher.py"),
+    ("speech_policy.py", "agentsassemble.providers.speech_policy", "tests/test_speech_policy.py"),
+):
+    ROOT_COMPATIBILITY_SHIMS[_root_name] = CompatibilityShim(
+        replacement_import=_replacement_import,
+        removal_gate=(
+            f"No direct imports or patches use agentsassemble.{_root_name.removesuffix('.py')} "
+            "for one compatibility window."
+        ),
+        known_callers=(_known_caller,),
+        introduced_in="Milestone 6.68 provider support ownership wave",
+    )
+
 
 def current_top_level_modules(repository_root: Path) -> frozenset[str]:
     package_root = Path(repository_root) / "agentsassemble"

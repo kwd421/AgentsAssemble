@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from agentsassemble.providers.adapters.base import ProviderAdapter
 from agentsassemble.models import ProviderConfig, ResearchDepth, ResearchSteering, Role
-from agentsassemble.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
+from agentsassemble.providers.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
 
 
 JsonRequester = Callable[[str, dict[str, str], dict[str, Any], int | None], dict[str, Any]]

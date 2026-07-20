@@ -16,7 +16,7 @@ from agentsassemble.providers.auth import provider_auth_error_message, provider_
 from agentsassemble.providers.codex_session_ids import extract_codex_session_id
 from agentsassemble.providers.codex_stream import parse_codex_stream_line
 from agentsassemble.providers.resident_config import ResidentCommandConfig
-from agentsassemble.sandbox_launcher import CODEX_EXEC_SAFETY_FLAGS, sandbox_launcher_for
+from agentsassemble.providers.sandbox_launcher import CODEX_EXEC_SAFETY_FLAGS, sandbox_launcher_for
 
 
 CODEX_AUTH_REQUIRED = "codex_auth_required"

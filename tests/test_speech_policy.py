@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
+from agentsassemble.providers.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
 
 
 class SpeechPolicyTests(unittest.TestCase):

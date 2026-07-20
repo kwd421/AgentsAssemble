@@ -6,8 +6,8 @@ from typing import Any
 from agentsassemble.providers.adapters.base import ProviderAdapter
 from agentsassemble.providers.adapters.http_llm import JsonRequester, parse_json_object, request_json
 from agentsassemble.models import ProviderConfig, ResearchDepth, ResearchSteering, Role
-from agentsassemble.remote_bridge_config import remote_bridge_auth_ref_value, remote_bridge_endpoint_error
-from agentsassemble.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
+from agentsassemble.providers.remote_bridge_config import remote_bridge_auth_ref_value, remote_bridge_endpoint_error
+from agentsassemble.providers.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
 
 
 class RemoteBridgeAdapter(ProviderAdapter):

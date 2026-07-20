@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.codex_sessions import (
+from agentsassemble.legacy.live_agent.codex_sessions import (
     CODEX_LIVE_PROVIDER_ID,
     DEFAULT_LIVE_AGENT_CONFIG_PATH,
     build_codex_live_agent_config,

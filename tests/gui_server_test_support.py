@@ -68,7 +68,7 @@ from agentsassemble.legacy.live_agent.runtime.meetings import start_live_agent_m
 from agentsassemble.legacy.live_agent.runtime.processes import LiveAgentProcessSupervisor
 from agentsassemble.legacy.live_agent.runtime.session_runs import LiveAgentSessionRunController
 from agentsassemble.legacy.live_agent.runtime.smoke import LiveAgentSmokeFailed
-from agentsassemble.live_session_transport import terminal_sessions_supported
+from agentsassemble.providers.live_session_transport import terminal_sessions_supported
 from agentsassemble.admission.invite import (
     compatibility_public_invite_runtime,
     create_room_invite,

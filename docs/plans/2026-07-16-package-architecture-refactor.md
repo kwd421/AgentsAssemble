@@ -1703,3 +1703,13 @@ module churn were deliberately avoided rather than forgotten.
   remain explicit compatibility exports. Migration validation, dry-run/apply
   behavior, expected-source checks, transaction boundaries, and backend
   selection are unchanged.
+- 2026-07-20: Provider-facing support modules were separated by actual
+  ownership. Persistent session adapter/transport, remote bridge validation,
+  sandbox launching, and provider speech policy moved to `providers/`.
+  Historical Codex resident configuration and local provider-login execution
+  moved to `legacy/live_agent/`; the current provider HTTP route now depends
+  on a small injected login Protocol instead of importing that legacy concrete
+  service. The sandbox and login services use the current room text cleaner
+  rather than the retained meeting helper. Seven root compatibility exports
+  remain. Commands, validation, environment handling, login auditing, and
+  provider output behavior are unchanged.

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentsassemble.codex_sessions import write_agent_config
+from agentsassemble.legacy.live_agent.codex_sessions import write_agent_config
 from agentsassemble.legacy.live_agent.runtime.discovery import (
     add_session_bundle_outputs,
     apply_discovery_approval_filter,

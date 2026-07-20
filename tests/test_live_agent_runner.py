@@ -24,13 +24,13 @@ from agentsassemble.live_agent_runner import (
 from agentsassemble.providers.antigravity_resident import AntigravityResidentCommandRunner
 from agentsassemble.providers.codex_resident import CodexResidentCommandRunner
 from agentsassemble.providers.grok_resident import GROK_JSON_PARSE_FAILURE, GrokResidentValueError
-from agentsassemble.live_session_adapter import (
+from agentsassemble.providers.live_session_adapter import (
     InvokeLiveSessionAdapter,
     RuntimeCapabilities,
     RuntimeManagedRoomTurnAdapter,
     live_session_runtime_contract,
 )
-from agentsassemble.live_session_transport import JsonlLiveSession
+from agentsassemble.providers.live_session_transport import JsonlLiveSession
 
 
 class FakeClock:
