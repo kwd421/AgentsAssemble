@@ -4,7 +4,7 @@ from __future__ import annotations
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.legacy_review_checkpoint import LegacyReviewCheckpointService
+from agentsassemble.legacy.meeting.review_checkpoint import LegacyReviewCheckpointService
 
 
 def register_legacy_review_checkpoint_route(

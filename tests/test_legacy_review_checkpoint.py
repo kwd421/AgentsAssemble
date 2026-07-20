@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.legacy_meeting_operation_projection import review_checkpoint_request_operation_details
-from agentsassemble.legacy_review_checkpoint import LegacyReviewCheckpointService
+from agentsassemble.legacy.meeting.operation_projection import review_checkpoint_request_operation_details
+from agentsassemble.legacy.meeting.review_checkpoint import LegacyReviewCheckpointService
 from agentsassemble.live_agent_operations import read_live_agent_operations
 
 

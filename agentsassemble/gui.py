@@ -185,7 +185,7 @@ from agentsassemble.lobby_queries import (
     read_lobby,
     read_lobby_before,
 )
-from agentsassemble.legacy_lobby_commands import (
+from agentsassemble.legacy.meeting.lobby_commands import (
     send_lobby_message_to_remote_bridge as _send_legacy_lobby_message_to_remote_bridge,
 )
 from agentsassemble.legacy.live_agent.queries import (
@@ -258,28 +258,28 @@ from agentsassemble.legacy.live_agent.speech import (
     flow_turn_conflict as _flow_turn_conflict,
     live_agent_lobby_flow_metadata as _live_agent_lobby_flow_metadata,
 )
-from agentsassemble.legacy_meeting_queries import (
+from agentsassemble.legacy.meeting.queries import (
     build_meeting_payload,
     build_meeting_stream_payload,
     build_workroom_queue_payload,
     list_meetings,
     project_meeting_stream_events,
 )
-from agentsassemble.legacy_meeting_lifecycle import (
+from agentsassemble.legacy.meeting.lifecycle import (
     live_agent_finalize_meeting_payload,
     live_agent_meeting_start_payload,
 )
-from agentsassemble.legacy_meeting_records import (
+from agentsassemble.legacy.meeting.records import (
     live_agent_admission_details as _live_agent_admission_details_from_meeting,
     read_meeting_record as _read_meeting_record,
     safe_meeting_dir as _safe_meeting_dir,
 )
-from agentsassemble.legacy_official_turns import (
+from agentsassemble.legacy.meeting.official_turns import (
     live_agent_turn_call_payload,
     live_agent_turn_request_payload,
     live_agent_turn_sequence_payload,
 )
-from agentsassemble.legacy_official_rounds import (
+from agentsassemble.legacy.meeting.official_rounds import (
     _live_agent_turn_rounds_payload_locked,
     _payload_bounded_round_count,
     live_agent_turn_preset_payload,
@@ -288,7 +288,7 @@ from agentsassemble.legacy_official_rounds import (
     rounds_finalization_result_if_requested as _rounds_finalization_result_if_requested,
     skipped_rounds_finalization_result as _skipped_rounds_finalization_result,
 )
-from agentsassemble.legacy_review_checkpoint import create_review_checkpoint as _create_review_checkpoint
+from agentsassemble.legacy.meeting.review_checkpoint import create_review_checkpoint as _create_review_checkpoint
 from agentsassemble.legacy_codex_session_compat import (
     codex_session_invite_payload,
     codex_session_join_payload as _legacy_codex_session_join_payload,

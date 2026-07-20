@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentsassemble.legacy_meeting_records import (
+from agentsassemble.legacy.meeting.records import (
     live_agent_admission_details,
     merge_live_progress_from_path,
     safe_meeting_dir,

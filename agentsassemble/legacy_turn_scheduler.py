@@ -1,16 +1,5 @@
-"""Per-meeting locks shared by retained official-turn mutations."""
-from __future__ import annotations
+"""Compatibility exports for retained meeting turn scheduling."""
 
-import threading
+from agentsassemble.legacy.meeting.turn_scheduler import meeting_turn_lock
 
-_MEETING_TURN_LOCKS: dict[str, threading.RLock] = {}
-_MEETING_TURN_LOCKS_GUARD = threading.Lock()
-
-
-def meeting_turn_lock(meeting_id: str) -> threading.RLock:
-    with _MEETING_TURN_LOCKS_GUARD:
-        lock = _MEETING_TURN_LOCKS.get(meeting_id)
-        if lock is None:
-            lock = threading.RLock()
-            _MEETING_TURN_LOCKS[meeting_id] = lock
-        return lock
+__all__ = ["meeting_turn_lock"]

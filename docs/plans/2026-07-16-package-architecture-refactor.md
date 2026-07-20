@@ -1572,3 +1572,11 @@ module churn were deliberately avoided rather than forgotten.
   JSON validation, service delegation, status/error mapping, and response
   payloads are unchanged. Route ownership inventories now include the owned
   meeting HTTP package so static verification follows the runtime owner.
+- 2026-07-20: Retained meeting records and queries, lobby commands, lifecycle
+  orchestration, bounded operation projection, turn locking, official turn and
+  round orchestration, and review checkpoints moved mechanically to
+  `legacy/meeting/`. Production composition, colocated HTTP registrars,
+  resident compatibility services, and behavior tests import the owned modules
+  directly. The nine former root modules are explicit metadata-tracked
+  compatibility exports. Record formats, locks, query projection, operation
+  audit, command ordering, timeouts, errors, and HTTP behavior are unchanged.

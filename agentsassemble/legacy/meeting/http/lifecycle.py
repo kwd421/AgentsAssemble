@@ -5,7 +5,7 @@ import json
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.legacy_meeting_lifecycle import LegacyMeetingLifecycleService
+from agentsassemble.legacy.meeting.lifecycle import LegacyMeetingLifecycleService
 
 
 def register_legacy_meeting_lifecycle_routes(

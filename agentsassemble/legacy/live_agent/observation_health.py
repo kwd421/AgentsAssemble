@@ -10,7 +10,7 @@ from agentsassemble.legacy.live_agent.health import (
     safe_health_identity,
     safe_health_timestamp,
 )
-from agentsassemble.legacy_meeting_records import safe_meeting_dir
+from agentsassemble.legacy.meeting.records import safe_meeting_dir
 from agentsassemble.live_agent_turns import (
     is_official_turn_cancellation_event,
     is_official_turn_reply_event,

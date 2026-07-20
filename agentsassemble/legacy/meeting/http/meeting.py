@@ -6,7 +6,7 @@ from collections.abc import Callable
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.legacy_meeting_queries import (
+from agentsassemble.legacy.meeting.queries import (
     LegacyMeetingNotFoundError,
     LegacyMeetingQueryService,
 )

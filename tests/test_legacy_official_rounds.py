@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.legacy_meeting_records import read_meeting_record
-from agentsassemble.legacy_official_rounds import (
+from agentsassemble.legacy.meeting.records import read_meeting_record
+from agentsassemble.legacy.meeting.official_rounds import (
     LegacyOfficialRoundService,
     _live_agent_turn_rounds_payload_locked,
 )
@@ -35,7 +35,7 @@ class LegacyOfficialRoundServiceTests(unittest.TestCase):
             }
 
             with patch(
-                "agentsassemble.legacy_official_rounds.live_agent_turn_sequence_payload",
+                "agentsassemble.legacy.meeting.official_rounds.live_agent_turn_sequence_payload",
                 return_value=sequence_result,
             ):
                 result = LegacyOfficialRoundService(root).round(
@@ -69,7 +69,7 @@ class LegacyOfficialRoundServiceTests(unittest.TestCase):
         }
 
         with patch(
-            "agentsassemble.legacy_official_rounds.live_agent_turn_round_payload",
+            "agentsassemble.legacy.meeting.official_rounds.live_agent_turn_round_payload",
             return_value=first_result,
         ) as run_round:
             result = _live_agent_turn_rounds_payload_locked(
@@ -103,7 +103,7 @@ class LegacyOfficialRoundServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             with patch(
-                "agentsassemble.legacy_official_rounds.live_agent_turn_rounds_payload",
+                "agentsassemble.legacy.meeting.official_rounds.live_agent_turn_rounds_payload",
                 return_value=timeout_result,
             ):
                 result = LegacyOfficialRoundService(root).rounds(

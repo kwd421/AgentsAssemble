@@ -667,6 +667,88 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_legacy_package.py",),
         introduced_in="Milestone 6.43 legacy resident smoke facade move",
     ),
+    "legacy_lobby_commands.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.lobby_commands",
+        removal_gate=(
+            "No direct imports use agentsassemble.legacy_lobby_commands for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_legacy_meeting_package.py",),
+        introduced_in="Milestone 6.61 legacy meeting service package",
+    ),
+    "legacy_meeting_lifecycle.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.lifecycle",
+        removal_gate=(
+            "No direct imports use agentsassemble.legacy_meeting_lifecycle for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_legacy_meeting_package.py",),
+        introduced_in="Milestone 6.61 legacy meeting service package",
+    ),
+    "legacy_meeting_operation_projection.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.operation_projection",
+        removal_gate=(
+            "No direct imports use "
+            "agentsassemble.legacy_meeting_operation_projection for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_legacy_meeting_package.py",),
+        introduced_in="Milestone 6.61 legacy meeting service package",
+    ),
+    "legacy_meeting_queries.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.queries",
+        removal_gate=(
+            "No direct imports use agentsassemble.legacy_meeting_queries for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_legacy_meeting_package.py",),
+        introduced_in="Milestone 6.61 legacy meeting service package",
+    ),
+    "legacy_meeting_records.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.records",
+        removal_gate=(
+            "No direct imports use agentsassemble.legacy_meeting_records for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_legacy_meeting_package.py",),
+        introduced_in="Milestone 6.61 legacy meeting service package",
+    ),
+    "legacy_official_rounds.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.official_rounds",
+        removal_gate=(
+            "No direct imports use agentsassemble.legacy_official_rounds for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_legacy_meeting_package.py",),
+        introduced_in="Milestone 6.61 legacy meeting service package",
+    ),
+    "legacy_official_turns.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.official_turns",
+        removal_gate=(
+            "No direct imports use agentsassemble.legacy_official_turns for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_legacy_meeting_package.py",),
+        introduced_in="Milestone 6.61 legacy meeting service package",
+    ),
+    "legacy_review_checkpoint.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.review_checkpoint",
+        removal_gate=(
+            "No direct imports use agentsassemble.legacy_review_checkpoint for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_legacy_meeting_package.py",),
+        introduced_in="Milestone 6.61 legacy meeting service package",
+    ),
+    "legacy_turn_scheduler.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.turn_scheduler",
+        removal_gate=(
+            "No direct imports use agentsassemble.legacy_turn_scheduler for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_legacy_meeting_package.py",),
+        introduced_in="Milestone 6.61 legacy meeting service package",
+    ),
     "gui_legacy_live_agent_engagement_http.py": CompatibilityShim(
         replacement_import="agentsassemble.legacy.live_agent.http.engagement",
         removal_gate=(

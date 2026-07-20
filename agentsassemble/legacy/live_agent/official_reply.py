@@ -8,12 +8,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agentsassemble.legacy.live_agent.queries import live_events_visible_to_agent, require_live_agent
-from agentsassemble.legacy_meeting_operation_projection import (
+from agentsassemble.legacy.meeting.operation_projection import (
     official_reply_operation_details,
     official_reply_request_operation_details,
     shared_memory_operation_details,
 )
-from agentsassemble.legacy_meeting_records import read_meeting_record, safe_meeting_dir
+from agentsassemble.legacy.meeting.records import read_meeting_record, safe_meeting_dir
 from agentsassemble.live_agent_operations import append_live_agent_operation
 from agentsassemble.live_agent_turns import (
     is_official_turn_reply_event,

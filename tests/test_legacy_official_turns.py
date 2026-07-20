@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.legacy_official_turns import LegacyOfficialTurnService
-from agentsassemble.legacy_turn_scheduler import meeting_turn_lock
+from agentsassemble.legacy.meeting.official_turns import LegacyOfficialTurnService
+from agentsassemble.legacy.meeting.turn_scheduler import meeting_turn_lock
 from agentsassemble.live_agent_operations import read_live_agent_operations
 from agentsassemble.live_agents import connect_live_agent
 from agentsassemble.meeting_events import read_live_events, write_live_state

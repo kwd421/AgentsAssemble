@@ -8,8 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
-from agentsassemble.legacy_meeting_queries import LegacyMeetingQueryService
-from agentsassemble.legacy_meeting_records import read_meeting_record, safe_meeting_dir
+from agentsassemble.legacy.meeting.queries import LegacyMeetingQueryService
+from agentsassemble.legacy.meeting.records import read_meeting_record, safe_meeting_dir
 from agentsassemble.live_agent_probe import PROBE_REPLY_EVENT_TAIL_LIMIT
 from agentsassemble.live_agents import read_live_agents
 from agentsassemble.live_meeting_memory import load_live_meeting_memory_context

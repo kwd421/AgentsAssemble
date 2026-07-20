@@ -304,7 +304,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Durable legacy session-run monitor lifecycle | thread lifecycle and diagnostics in `application/session_run_monitor.py` with root compatibility export; reconcile policy wiring in `gui.py` |
 | Canonical room HTTP routes | `gui_room_*_http.py`; coordinator in `gui_room_http.py` |
 | Legacy lobby POST/SSE compatibility | `legacy/meeting/http/lobby.py`; root HTTP module is a compatibility export; do not attach new canonical behavior here |
-| Legacy meeting read/lifecycle/workroom/SSE compatibility | registrars in `legacy/meeting/http/`, query projection in `legacy_meeting_queries.py`, record semantics in `legacy_meeting_records.py`; root HTTP modules are compatibility exports |
+| Legacy meeting read/lifecycle/workroom/SSE compatibility | registrars in `legacy/meeting/http/`, query projection in `legacy/meeting/queries.py`, record semantics in `legacy/meeting/records.py`; root HTTP modules are compatibility exports |
 | Legacy resident room/return-packet reads | query facade and visible-event projection in `legacy/live_agent/queries.py`; read-only HTTP registrar in `legacy/live_agent/http/read.py`; both retain root compatibility exports |
 | Legacy resident diagnostic histories | read facade, process/session history, and readiness overlay in `legacy/live_agent/diagnostics.py`; read-only HTTP registrar in `legacy/live_agent/http/read.py`; both retain root compatibility exports |
 | Legacy resident process/connection projections | safe process and connection projection in `legacy/live_agent/process_projection.py` with root compatibility export; diagnostic composition in `legacy/live_agent/diagnostics.py` |

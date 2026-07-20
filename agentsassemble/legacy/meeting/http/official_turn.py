@@ -5,7 +5,7 @@ from collections.abc import Callable
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.legacy_official_turns import LegacyOfficialTurnService
+from agentsassemble.legacy.meeting.official_turns import LegacyOfficialTurnService
 
 
 def register_legacy_official_turn_routes(
