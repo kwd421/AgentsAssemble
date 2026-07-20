@@ -8,6 +8,7 @@ import agentsassemble.legacy_live_agent_presence_projection as compatibility_pre
 import agentsassemble.legacy_live_agent_preflight as compatibility_preflight
 import agentsassemble.legacy_live_agent_probe as compatibility_probe
 import agentsassemble.legacy_live_agent_process_control as compatibility_process_control
+import agentsassemble.legacy_live_agent_process_projection as compatibility_process_projection
 import agentsassemble.legacy_live_agent_process_service as compatibility_process_service
 import agentsassemble.legacy_live_agent_session_control as compatibility_session_control
 import agentsassemble.legacy_live_agent_session_projection as compatibility_session_projection
@@ -19,6 +20,7 @@ from agentsassemble.legacy.live_agent import presence_projection as owned_presen
 from agentsassemble.legacy.live_agent import preflight as owned_preflight
 from agentsassemble.legacy.live_agent import probe as owned_probe
 from agentsassemble.legacy.live_agent import process_control as owned_process_control
+from agentsassemble.legacy.live_agent import process_projection as owned_process_projection
 from agentsassemble.legacy.live_agent import process_service as owned_process_service
 from agentsassemble.legacy.live_agent import session_control as owned_session_control
 from agentsassemble.legacy.live_agent import session_projection as owned_session_projection
@@ -100,6 +102,19 @@ class LegacyPackageTests(unittest.TestCase):
                 self.assertIs(
                     getattr(compatibility_process_service, name),
                     getattr(owned_process_service, name),
+                )
+
+    def test_live_agent_process_projection_root_module_exports_owned_service(self) -> None:
+        for name in (
+            "agent_connection_evidence",
+            "live_agent_processes_payload",
+            "parse_public_timestamp",
+            "process_payload_with_agent_connection_evidence",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_process_projection, name),
+                    getattr(owned_process_projection, name),
                 )
 
     def test_live_agent_session_policy_root_modules_export_owned_services(self) -> None:

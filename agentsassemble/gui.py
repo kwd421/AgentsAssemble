@@ -202,7 +202,7 @@ from agentsassemble.legacy_live_agent_diagnostics import (
     live_agent_session_runs_payload,
     session_process_groups_snapshot as _session_process_groups_snapshot,
 )
-from agentsassemble.legacy_live_agent_process_projection import (
+from agentsassemble.legacy.live_agent.process_projection import (
     live_agent_processes_payload,
     parse_public_timestamp as _parse_public_timestamp,
     process_payload_with_agent_connection_evidence as _process_payload_with_agent_connection_evidence,

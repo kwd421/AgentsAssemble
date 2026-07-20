@@ -1362,3 +1362,10 @@ module churn were deliberately avoided rather than forgotten.
   service modules remain metadata-tracked compatibility exports. Lifecycle
   actions, operation audit, retry/reconcile behavior, errors, and HTTP payloads
   are unchanged.
+- 2026-07-20: Retained resident process-group and agent-connection projection
+  moved mechanically to `legacy/live_agent/process_projection.py`. GUI reads,
+  legacy diagnostics, and health queries import the owned projection directly;
+  root `legacy_live_agent_process_projection.py` remains a metadata-tracked
+  compatibility export. Group payloads, provider/connection mismatch states,
+  reconnect timestamp rules, safe identities, and public response fields are
+  unchanged.

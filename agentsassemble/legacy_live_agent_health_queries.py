@@ -18,7 +18,7 @@ from agentsassemble.legacy_live_agent_health import (
     safe_health_identity,
 )
 from agentsassemble.legacy_live_agent_observation_health import live_agent_observation_health_summary
-from agentsassemble.legacy_live_agent_process_projection import (
+from agentsassemble.legacy.live_agent.process_projection import (
     agent_connection_evidence,
     safe_agent_connection_identity,
 )

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agentsassemble.legacy_live_agent_health import live_agent_process_health_reason, safe_health_identity
-from agentsassemble.legacy_live_agent_process_projection import live_agent_processes_payload
+from agentsassemble.legacy.live_agent.process_projection import live_agent_processes_payload
 from agentsassemble.live_agent_operations import read_live_agent_operation_history
 from agentsassemble.live_agent_processes import (
     LiveAgentProcessSupervisor,
