@@ -1455,3 +1455,11 @@ module churn were deliberately avoided rather than forgotten.
   `legacy_live_agent_smoke.py` remains a metadata-tracked compatibility
   export. Provider approval gates, timeouts, soak limits, runner calls,
   redaction, errors, and response payloads are unchanged.
+- 2026-07-20: The retained resident engagement HTTP registrar moved
+  mechanically to `legacy/live_agent/http/engagement.py`, establishing the
+  package for compatibility-only resident routes without placing legacy
+  dependencies under the current `web/routes/` tree. Legacy GUI composition
+  imports the owned registrar directly; root
+  `gui_legacy_live_agent_engagement_http.py` remains a metadata-tracked
+  compatibility export. Endpoint, JSON validation, operation audit, errors,
+  and response payloads are unchanged.

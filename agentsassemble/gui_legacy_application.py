@@ -22,7 +22,7 @@ from agentsassemble.gui_legacy_live_agent_discovery_http import (
     LegacyLiveAgentDiscoveryHttpDeps,
     register_legacy_live_agent_discovery_route,
 )
-from agentsassemble.gui_legacy_live_agent_engagement_http import (
+from agentsassemble.legacy.live_agent.http.engagement import (
     register_legacy_live_agent_engagement_route,
 )
 from agentsassemble.gui_legacy_live_agent_join_brief_http import (
