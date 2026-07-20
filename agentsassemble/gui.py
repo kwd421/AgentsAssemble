@@ -188,7 +188,7 @@ from agentsassemble.lobby_queries import (
 from agentsassemble.legacy_lobby_commands import (
     send_lobby_message_to_remote_bridge as _send_legacy_lobby_message_to_remote_bridge,
 )
-from agentsassemble.legacy_live_agent_queries import (
+from agentsassemble.legacy.live_agent.queries import (
     LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT,
     live_agent_return_packet_payload,
     live_agent_room_payload,

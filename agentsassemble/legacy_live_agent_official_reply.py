@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agentsassemble.legacy_live_agent_queries import live_events_visible_to_agent, require_live_agent
+from agentsassemble.legacy.live_agent.queries import live_events_visible_to_agent, require_live_agent
 from agentsassemble.legacy_meeting_operation_projection import (
     official_reply_operation_details,
     official_reply_request_operation_details,

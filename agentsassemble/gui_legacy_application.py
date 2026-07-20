@@ -114,7 +114,7 @@ from agentsassemble.legacy.live_agent.process_service import (
     LegacyLiveAgentProcessMutationService,
     LegacyProcessMutationActions,
 )
-from agentsassemble.legacy_live_agent_queries import LegacyLiveAgentQueryService
+from agentsassemble.legacy.live_agent.queries import LegacyLiveAgentQueryService
 from agentsassemble.legacy.live_agent.readiness import LegacyLiveAgentReadinessService
 from agentsassemble.legacy.live_agent.roster_queries import (
     LegacyLiveAgentRosterQueryService,

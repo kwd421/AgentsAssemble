@@ -305,7 +305,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Canonical room HTTP routes | `gui_room_*_http.py`; coordinator in `gui_room_http.py` |
 | Legacy lobby POST/SSE compatibility | `gui_legacy_lobby_http.py`; do not attach new canonical behavior here |
 | Legacy meeting read/lifecycle/workroom/SSE compatibility | `gui_legacy_meeting_http.py`, query projection in `legacy_meeting_queries.py`, record semantics in `legacy_meeting_records.py` |
-| Legacy resident room/return-packet reads | `legacy_live_agent_queries.py`, `gui_legacy_live_agent_read_http.py` |
+| Legacy resident room/return-packet reads | query facade and visible-event projection in `legacy/live_agent/queries.py` with root compatibility export; HTTP in `gui_legacy_live_agent_read_http.py` |
 | Legacy resident diagnostic histories | read facade, process/session history, and readiness overlay in `legacy/live_agent/diagnostics.py` with root compatibility export; HTTP in `gui_legacy_live_agent_read_http.py` |
 | Legacy resident process/connection projections | safe process and connection projection in `legacy/live_agent/process_projection.py` with root compatibility export; diagnostic composition in `legacy/live_agent/diagnostics.py` |
 | Legacy resident process mutations | redacted error and operation-detail policy in `legacy/live_agent/process_control.py`; mutation service in `legacy/live_agent/process_service.py`; root compatibility exports; HTTP in `gui_legacy_live_agent_process_http.py` |

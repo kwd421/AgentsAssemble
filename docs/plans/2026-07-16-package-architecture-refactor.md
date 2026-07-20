@@ -1426,3 +1426,10 @@ module churn were deliberately avoided rather than forgotten.
   directly; root `legacy_live_agent_discovery.py` remains a metadata-tracked
   compatibility export. Command resolution, Codex session discovery, process
   projection, operation details, errors, and HTTP payloads are unchanged.
+- 2026-07-20: Retained resident room, return-packet, required-agent, and
+  agent-visible event query facade moved mechanically to
+  `legacy/live_agent/queries.py`. GUI composition, the legacy read HTTP route,
+  presence, speech, official reply, and official-turn compatibility import the
+  owned query module directly; root `legacy_live_agent_queries.py` remains a
+  metadata-tracked compatibility export. Event limits, visibility rules,
+  memory/DM/side-chat projection, errors, and public payloads are unchanged.

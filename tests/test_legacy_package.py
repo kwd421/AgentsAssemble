@@ -12,6 +12,7 @@ import agentsassemble.legacy_live_agent_presence as compatibility_presence
 import agentsassemble.legacy_live_agent_presence_projection as compatibility_presence_projection
 import agentsassemble.legacy_live_agent_preflight as compatibility_preflight
 import agentsassemble.legacy_live_agent_probe as compatibility_probe
+import agentsassemble.legacy_live_agent_queries as compatibility_queries
 import agentsassemble.legacy_live_agent_process_control as compatibility_process_control
 import agentsassemble.legacy_live_agent_process_projection as compatibility_process_projection
 import agentsassemble.legacy_live_agent_process_service as compatibility_process_service
@@ -33,6 +34,7 @@ from agentsassemble.legacy.live_agent import presence as owned_presence
 from agentsassemble.legacy.live_agent import presence_projection as owned_presence_projection
 from agentsassemble.legacy.live_agent import preflight as owned_preflight
 from agentsassemble.legacy.live_agent import probe as owned_probe
+from agentsassemble.legacy.live_agent import queries as owned_queries
 from agentsassemble.legacy.live_agent import process_control as owned_process_control
 from agentsassemble.legacy.live_agent import process_projection as owned_process_projection
 from agentsassemble.legacy.live_agent import process_service as owned_process_service
@@ -160,6 +162,21 @@ class LegacyPackageTests(unittest.TestCase):
                 self.assertIs(
                     getattr(compatibility_probe, name),
                     getattr(owned_probe, name),
+                )
+
+    def test_live_agent_queries_root_module_exports_owned_service(self) -> None:
+        for name in (
+            "LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT",
+            "LegacyLiveAgentQueryService",
+            "live_agent_return_packet_payload",
+            "live_agent_room_payload",
+            "live_events_visible_to_agent",
+            "require_live_agent",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_queries, name),
+                    getattr(owned_queries, name),
                 )
 
     def test_live_agent_process_root_modules_export_owned_services(self) -> None:
