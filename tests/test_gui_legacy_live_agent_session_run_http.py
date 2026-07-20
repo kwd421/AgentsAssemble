@@ -1,6 +1,9 @@
 import unittest
 
 from agentsassemble.gui_legacy_live_agent_session_run_http import (
+    register_legacy_session_run_basic_routes as compatibility_register,
+)
+from agentsassemble.legacy.live_agent.http.session_run import (
     LegacySessionRunHttpDeps,
     register_legacy_session_run_basic_routes,
 )
@@ -8,6 +11,9 @@ from agentsassemble.web.router import Router
 
 
 class GuiLegacyLiveAgentSessionRunHttpTests(unittest.TestCase):
+    def test_root_module_exports_owned_registrar(self) -> None:
+        self.assertIs(compatibility_register, register_legacy_session_run_basic_routes)
+
     def test_registrar_owns_basic_and_retry_now_routes(self) -> None:
         router = Router()
         register_legacy_session_run_basic_routes(
