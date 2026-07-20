@@ -1413,3 +1413,10 @@ module churn were deliberately avoided rather than forgotten.
   remains a metadata-tracked compatibility export. Aggregate counts,
   readiness/memory overlays, diagnostics, filtering, and HTTP payloads are
   unchanged.
+- 2026-07-20: Retained resident readiness orchestration and bounded public
+  projection moved mechanically to `legacy/live_agent/readiness.py` and
+  `readiness_projection.py`. The service imports its colocated projection;
+  GUI composition and the legacy readiness HTTP route import the owned modules
+  directly. Root readiness modules remain metadata-tracked compatibility
+  exports. Launch approval, probe/smoke execution, health composition,
+  operation details, redaction, errors, and HTTP payloads are unchanged.

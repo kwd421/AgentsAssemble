@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.legacy_live_agent_readiness import LegacyLiveAgentReadinessService
-from agentsassemble.legacy_live_agent_readiness_projection import readiness_operation_details
+from agentsassemble.legacy.live_agent.readiness import LegacyLiveAgentReadinessService
+from agentsassemble.legacy.live_agent.readiness_projection import readiness_operation_details
 
 
 ReadOperationPayload = Callable[[RequestContext, str], dict[str, object] | None]

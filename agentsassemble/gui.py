@@ -210,10 +210,10 @@ from agentsassemble.legacy.live_agent.process_projection import (
 from agentsassemble.legacy.live_agent.preflight import (
     live_agent_preflight_payload,
 )
-from agentsassemble.legacy_live_agent_readiness import (
+from agentsassemble.legacy.live_agent.readiness import (
     live_agent_readiness_payload as _resident_live_agent_readiness_payload,
 )
-from agentsassemble.legacy_live_agent_readiness_projection import (
+from agentsassemble.legacy.live_agent.readiness_projection import (
     readiness_health_operation_details as _readiness_health_operation_details,
     safe_readiness_probe_result as _safe_readiness_probe_result,
 )

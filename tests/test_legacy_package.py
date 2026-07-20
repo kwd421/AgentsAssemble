@@ -15,6 +15,8 @@ import agentsassemble.legacy_live_agent_process_control as compatibility_process
 import agentsassemble.legacy_live_agent_process_projection as compatibility_process_projection
 import agentsassemble.legacy_live_agent_process_service as compatibility_process_service
 import agentsassemble.legacy_live_agent_roster_queries as compatibility_roster_queries
+import agentsassemble.legacy_live_agent_readiness as compatibility_readiness
+import agentsassemble.legacy_live_agent_readiness_projection as compatibility_readiness_projection
 import agentsassemble.legacy_live_agent_session_control as compatibility_session_control
 import agentsassemble.legacy_live_agent_session_projection as compatibility_session_projection
 import agentsassemble.legacy_live_agent_session_run_service as compatibility_session_run_service
@@ -33,6 +35,8 @@ from agentsassemble.legacy.live_agent import process_control as owned_process_co
 from agentsassemble.legacy.live_agent import process_projection as owned_process_projection
 from agentsassemble.legacy.live_agent import process_service as owned_process_service
 from agentsassemble.legacy.live_agent import roster_queries as owned_roster_queries
+from agentsassemble.legacy.live_agent import readiness as owned_readiness
+from agentsassemble.legacy.live_agent import readiness_projection as owned_readiness_projection
 from agentsassemble.legacy.live_agent import session_control as owned_session_control
 from agentsassemble.legacy.live_agent import session_projection as owned_session_projection
 from agentsassemble.legacy.live_agent import session_run_service as owned_session_run_service
@@ -192,6 +196,31 @@ class LegacyPackageTests(unittest.TestCase):
                 self.assertIs(
                     getattr(compatibility_roster_queries, name),
                     getattr(owned_roster_queries, name),
+                )
+
+    def test_live_agent_readiness_root_modules_export_owned_services(self) -> None:
+        for name in (
+            "LegacyLiveAgentReadinessService",
+            "MAX_READINESS_PROBE_AGENTS",
+            "live_agent_readiness_payload",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_readiness, name),
+                    getattr(owned_readiness, name),
+                )
+        for name in (
+            "OFFICIAL_ROUND_SMOKE_ERROR",
+            "SESSION_SMOKE_ERROR",
+            "payload_probe_ids",
+            "readiness_operation_details",
+            "safe_readiness_probe_result",
+            "safe_readiness_smoke_result",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_readiness_projection, name),
+                    getattr(owned_readiness_projection, name),
                 )
 
     def test_live_agent_session_policy_root_modules_export_owned_services(self) -> None:
