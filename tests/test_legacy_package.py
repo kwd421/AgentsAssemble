@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import unittest
 
+import agentsassemble.gui_legacy_application as compatibility_gui_application
+from agentsassemble.legacy import gui_application as owned_gui_application
+
 import agentsassemble.legacy_live_agent_engagement as compatibility_engagement
 import agentsassemble.legacy_live_agent_diagnostics as compatibility_diagnostics
 import agentsassemble.legacy_live_agent_discovery as compatibility_discovery
@@ -55,6 +58,20 @@ from agentsassemble.legacy.live_agent import smoke as owned_smoke
 
 
 class LegacyPackageTests(unittest.TestCase):
+    def test_root_gui_application_exports_owned_composition(self) -> None:
+        for name in (
+            "LegacyGuiApplication",
+            "LegacyGuiPatchHooks",
+            "LegacyProcessHooks",
+            "LegacySessionHooks",
+            "LegacySessionRunHooks",
+            "LegacySmokeHooks",
+        ):
+            self.assertIs(
+                getattr(compatibility_gui_application, name),
+                getattr(owned_gui_application, name),
+            )
+
     def test_live_agent_smoke_root_module_exports_owned_service(self) -> None:
         for name in (
             "LegacyLiveAgentSmokeService",

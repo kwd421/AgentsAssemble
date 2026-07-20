@@ -1591,3 +1591,12 @@ module churn were deliberately avoided rather than forgotten.
   diagnostics, and behavior tests import the owned modules directly; the three
   root modules remain metadata-tracked compatibility exports. Probe modes,
   network/auth checks, redaction, errors, and response payloads are unchanged.
+- 2026-07-20: Retained GUI route composition moved mechanically from the flat
+  `gui_legacy_application.py` module to `legacy/gui_application.py`. The root
+  module is now an explicit compatibility export and current `gui.py` imports
+  the owned composition directly. The 478-line owner was not split into
+  pass-through meeting/live-agent coordinators: it has one server-lifetime
+  dependency graph and patch-hook contract, while actual route and service
+  responsibilities are already separated under `legacy/meeting/` and
+  `legacy/live_agent/`. Construction order, patch seams, routes, and behavior
+  are unchanged.

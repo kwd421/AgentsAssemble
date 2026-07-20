@@ -192,13 +192,12 @@ class GuiRouteOwnershipTests(unittest.TestCase):
     def test_main_gui_composes_legacy_routes_through_owned_application(self) -> None:
         imported_modules = _imported_modules(GUI_SOURCE)
 
-        self.assertIn("agentsassemble.gui_legacy_application", imported_modules)
+        self.assertIn("agentsassemble.legacy.gui_application", imported_modules)
         self.assertEqual(
             {
                 module
                 for module in imported_modules
                 if module.startswith("agentsassemble.gui_legacy_")
-                and module != "agentsassemble.gui_legacy_application"
             },
             set(),
         )

@@ -1624,6 +1624,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_legacy_meeting_http_package.py",),
         introduced_in="Milestone 6.60 legacy lobby HTTP move",
     ),
+    "gui_legacy_application.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.gui_application",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_legacy_application for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_legacy_package.py",),
+        introduced_in="Milestone 7.2 legacy GUI composition package",
+    ),
     "gui_legacy_meeting_http.py": CompatibilityShim(
         replacement_import="agentsassemble.legacy.meeting.http.meeting",
         removal_gate=(

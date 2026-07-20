@@ -38,7 +38,7 @@ from agentsassemble.application.gui_factory import (
 )
 from agentsassemble.web.routes.attachments import register_attachment_routes
 from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
-from agentsassemble.gui_legacy_application import (
+from agentsassemble.legacy.gui_application import (
     LegacyGuiApplication,
     LegacyGuiPatchHooks,
     LegacyProcessHooks,
