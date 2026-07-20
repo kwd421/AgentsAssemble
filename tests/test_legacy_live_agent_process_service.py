@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.legacy_live_agent_process_service import (
+from agentsassemble.legacy.live_agent.process_service import (
     LegacyLiveAgentProcessMutationService,
     LegacyProcessMutationActions,
     LegacyProcessMutationError,

@@ -110,7 +110,7 @@ from agentsassemble.legacy_live_agent_official_reply import (
 )
 from agentsassemble.legacy.live_agent.preflight import LegacyLiveAgentPreflightService
 from agentsassemble.legacy.live_agent.probe import LegacyLiveAgentProbeService
-from agentsassemble.legacy_live_agent_process_service import (
+from agentsassemble.legacy.live_agent.process_service import (
     LegacyLiveAgentProcessMutationService,
     LegacyProcessMutationActions,
 )

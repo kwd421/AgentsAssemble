@@ -7,11 +7,15 @@ import agentsassemble.legacy_live_agent_presence as compatibility_presence
 import agentsassemble.legacy_live_agent_presence_projection as compatibility_presence_projection
 import agentsassemble.legacy_live_agent_preflight as compatibility_preflight
 import agentsassemble.legacy_live_agent_probe as compatibility_probe
+import agentsassemble.legacy_live_agent_process_control as compatibility_process_control
+import agentsassemble.legacy_live_agent_process_service as compatibility_process_service
 from agentsassemble.legacy.live_agent import engagement as owned_engagement
 from agentsassemble.legacy.live_agent import presence as owned_presence
 from agentsassemble.legacy.live_agent import presence_projection as owned_presence_projection
 from agentsassemble.legacy.live_agent import preflight as owned_preflight
 from agentsassemble.legacy.live_agent import probe as owned_probe
+from agentsassemble.legacy.live_agent import process_control as owned_process_control
+from agentsassemble.legacy.live_agent import process_service as owned_process_service
 
 
 class LegacyPackageTests(unittest.TestCase):
@@ -64,6 +68,30 @@ class LegacyPackageTests(unittest.TestCase):
                 self.assertIs(
                     getattr(compatibility_probe, name),
                     getattr(owned_probe, name),
+                )
+
+    def test_live_agent_process_root_modules_export_owned_services(self) -> None:
+        for name in (
+            "looks_sensitive_process_control_error",
+            "process_bulk_offline_operation_details",
+            "process_offline_operation_details",
+            "process_start_error_message",
+            "process_stop_running_operation_status",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_process_control, name),
+                    getattr(owned_process_control, name),
+                )
+        for name in (
+            "LegacyLiveAgentProcessMutationService",
+            "LegacyProcessMutationActions",
+            "LegacyProcessMutationError",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_process_service, name),
+                    getattr(owned_process_service, name),
                 )
 
 

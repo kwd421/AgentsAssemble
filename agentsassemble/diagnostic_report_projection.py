@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agentsassemble.legacy_live_agent_process_control import looks_sensitive_process_control_error
+from agentsassemble.legacy.live_agent.process_control import looks_sensitive_process_control_error
 
 
 def safe_diagnostic_report_payload(report: dict[str, object]) -> dict[str, object]:

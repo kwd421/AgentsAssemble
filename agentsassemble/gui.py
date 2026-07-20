@@ -110,7 +110,7 @@ from agentsassemble.legacy_live_agent_observation_health import (
     live_agent_lobby_observation_status as _live_agent_lobby_observation_status,
     live_agent_observation_events as _live_agent_observation_events,
 )
-from agentsassemble.legacy_live_agent_process_control import (
+from agentsassemble.legacy.live_agent.process_control import (
     process_bulk_offline_operation_details as _process_bulk_offline_operation_details,
     process_offline_operation_details as _process_offline_operation_details,
     process_recover_error_message as _process_recover_error_message,

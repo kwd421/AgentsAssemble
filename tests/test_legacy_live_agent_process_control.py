@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.legacy_live_agent_process_control import (
+from agentsassemble.legacy.live_agent.process_control import (
     process_bulk_offline_operation_details,
     process_offline_operation_details,
     process_start_error_message,

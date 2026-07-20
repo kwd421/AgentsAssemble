@@ -1337,3 +1337,11 @@ module churn were deliberately avoided rather than forgotten.
   remain metadata-tracked compatibility exports. Roster mutation, admission
   audit details, heartbeat metadata, leave cursors, errors, and HTTP payloads
   are unchanged.
+- 2026-07-20: Retained resident process-control error redaction, offline
+  operation projection, and process mutation service moved mechanically to
+  `legacy/live_agent/process_control.py` and `process_service.py`. The mutation
+  service imports its colocated policy directly; GUI composition, diagnostic
+  projection, the legacy HTTP route, and behavior tests import the owned
+  modules. Root process modules remain metadata-tracked compatibility exports.
+  Start/stop/restart/recover actions, safe diagnostic fields, operation status,
+  exception behavior, and HTTP payloads are unchanged.
