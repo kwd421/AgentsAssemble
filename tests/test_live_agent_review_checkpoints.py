@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.live_agent_review_checkpoints import (
+from agentsassemble.legacy.live_agent.runtime.review_checkpoints import (
     review_checkpoint_file_stem,
     write_review_checkpoint_artifacts,
 )

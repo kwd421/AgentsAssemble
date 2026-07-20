@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from agentsassemble.live_agent_frontend_create import ensure_frontend_meeting
+from agentsassemble.legacy.live_agent.runtime.frontend_create import ensure_frontend_meeting
 from agentsassemble.room.text import clean_room_text
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.web.routes.room_history import register_room_history_routes

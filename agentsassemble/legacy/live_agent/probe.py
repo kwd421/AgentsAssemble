@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
-from agentsassemble.live_agent_probe import (
+from agentsassemble.legacy.live_agent.runtime.probe import (
     DEFAULT_PROBE_TIMEOUT_SECONDS,
     run_live_agent_probe,
     safe_probe_timeout,

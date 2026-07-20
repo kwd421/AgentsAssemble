@@ -2044,6 +2044,33 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
     ),
 }
 
+for _root_name, _replacement_name, _known_caller in (
+    ("live_agent_context.py", "context", "agentsassemble/gui.py"),
+    ("live_agent_continuity_proof.py", "continuity_proof", "agentsassemble/cli.py"),
+    ("live_agent_discovery.py", "discovery", "tests/test_live_agent_discovery.py"),
+    ("live_agent_finalization.py", "finalization", "tests/test_live_agent_finalization.py"),
+    ("live_agent_frontend_create.py", "frontend_create", "tests/test_live_agent_frontend_create.py"),
+    ("live_agent_join_brief.py", "join_brief", "tests/test_live_agent_join_brief.py"),
+    ("live_agent_meetings.py", "meetings", "tests/test_live_agent_meetings.py"),
+    ("live_agent_persona_smoke.py", "persona_smoke", "tests/test_live_agent_persona_smoke.py"),
+    ("live_agent_play_presets.py", "play_presets", "tests/test_live_agent_play_presets.py"),
+    ("live_agent_preflight.py", "preflight", "tests/test_live_agent_preflight.py"),
+    ("live_agent_probe.py", "probe", "tests/test_live_agent_probe.py"),
+    ("live_agent_review_checkpoints.py", "review_checkpoints", "tests/test_live_agent_review_checkpoints.py"),
+    ("live_agent_room_admin.py", "room_admin", "tests/test_live_agent_room_admin.py"),
+    ("live_agent_roster.py", "roster", "tests/test_live_agent_roster.py"),
+    ("live_agent_smoke.py", "smoke", "tests/test_live_agent_smoke.py"),
+):
+    ROOT_COMPATIBILITY_SHIMS[_root_name] = CompatibilityShim(
+        replacement_import=f"agentsassemble.legacy.live_agent.runtime.{_replacement_name}",
+        removal_gate=(
+            f"No direct imports or patches use agentsassemble.{_root_name.removesuffix('.py')} "
+            "for one compatibility window."
+        ),
+        known_callers=(_known_caller,),
+        introduced_in="Milestone 6.66 resident room integration package",
+    )
+
 
 def current_top_level_modules(repository_root: Path) -> frozenset[str]:
     package_root = Path(repository_root) / "agentsassemble"

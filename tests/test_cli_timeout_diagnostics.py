@@ -10,7 +10,7 @@ from unittest.mock import patch
 from agentsassemble import cli as cli_module
 from agentsassemble.cli import build_parser, main
 from agentsassemble.gui import _make_handler, append_lobby_event, read_lobby
-from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
+from agentsassemble.legacy.live_agent.runtime.smoke import LiveAgentSmokeFailed
 
 
 class CliTimeoutDiagnosticsTests(unittest.TestCase):

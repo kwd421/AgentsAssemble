@@ -9,7 +9,7 @@ from agentsassemble.application.cli.common import (
     parse_positive_int,
 )
 from agentsassemble.live_agent_runner import SUPPORTED_RESIDENT_CONNECTION_KINDS
-from agentsassemble.live_agent_smoke import (
+from agentsassemble.legacy.live_agent.runtime.smoke import (
     MAX_SESSION_SMOKE_LOBBY_PROBES,
     MAX_SESSION_SMOKE_SOAK_CYCLES,
     MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS,

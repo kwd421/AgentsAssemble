@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agentsassemble.codex_sessions import write_agent_config
-from agentsassemble.live_agent_discovery import (
+from agentsassemble.legacy.live_agent.runtime.discovery import (
     add_session_bundle_outputs,
     apply_discovery_approval_filter,
     build_discovered_live_agent_config,

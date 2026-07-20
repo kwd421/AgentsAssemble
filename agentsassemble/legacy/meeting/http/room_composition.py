@@ -33,7 +33,7 @@ from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.web.routes.room_history import register_room_history_routes
 from agentsassemble.web.routes.room_lifecycle import register_room_lifecycle_routes
 from agentsassemble.web.routes.room_members import register_room_member_routes
-from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payload
+from agentsassemble.legacy.live_agent.runtime.room_admin import expel_live_agent_from_room_payload
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
 from agentsassemble.legacy.meeting.core.events import (
     append_lobby_event_to_file,

@@ -12,7 +12,7 @@ import urllib.request
 from agentsassemble.cli import main
 from agentsassemble.config import load_agent_runtime_config, load_council_config
 from agentsassemble.gui import _make_handler
-from agentsassemble.live_agent_discovery import build_discovered_live_agent_config, build_discovered_session_bundle
+from agentsassemble.legacy.live_agent.runtime.discovery import build_discovered_live_agent_config, build_discovered_session_bundle
 from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation, read_live_agent_operations
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.legacy.live_agent.runtime.sessions import start_live_agent_session
@@ -321,8 +321,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 return f"/opt/bin/{command}" if command in {"claude", "codex"} else None
 
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
                 patch("sys.stdout", StringIO()) as stdout,
             ):
                 exit_code = main(
@@ -359,8 +359,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 return f"/opt/bin/{command}" if command in {"claude", "gemini"} else None
 
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
                 patch("sys.stdout", StringIO()) as stdout,
             ):
                 exit_code = main(
@@ -399,8 +399,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 return f"/opt/bin/{command}" if command == "claude" else None
 
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=False),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=False),
                 patch("sys.stdout", StringIO()) as stdout,
             ):
                 exit_code = main(
@@ -433,8 +433,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 return f"/opt/bin/{command}" if command in {"claude", "codex", "antigravity"} else None
 
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
             ):
                 with patch("agentsassemble.cli.subprocess.Popen", side_effect=AssertionError("agent process started")):
                     with patch("agentsassemble.cli.subprocess.run", side_effect=AssertionError("command executed")):
@@ -517,8 +517,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 return f"/opt/bin/{command}" if command == "codex" else None
 
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
                 patch("agentsassemble.cli._request_json", side_effect=AssertionError("approval gate must stop before ensure")),
                 patch("sys.stdout", stdout),
             ):
@@ -580,8 +580,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
 
             stdout = StringIO()
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
             ):
                 with patch("agentsassemble.cli._request_json", side_effect=request_json):
                     with patch("sys.stdout", stdout):
@@ -653,8 +653,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
 
             stdout = StringIO()
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
                 patch("agentsassemble.cli._request_json", side_effect=request_json),
                 patch("sys.stdout", stdout),
             ):
@@ -709,8 +709,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 raise AssertionError(f"unexpected request: {url}")
 
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
                 patch("agentsassemble.cli._request_json", side_effect=request_json),
                 patch("sys.stdout", stdout),
             ):
@@ -758,8 +758,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 return f"/opt/bin/{command}" if command == "codex" else None
 
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
                 patch("agentsassemble.cli._request_json", side_effect=AssertionError("approval filter must stop before ensure")),
                 patch("sys.stdout", stdout),
             ):
@@ -836,8 +836,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
 
             stdout = StringIO()
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
             ):
                 with patch("agentsassemble.cli._request_json", side_effect=request_json):
                     with patch("sys.stdout", stdout):
@@ -1022,8 +1022,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
 
             stdout = StringIO()
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
             ):
                 with patch("agentsassemble.cli._request_json", side_effect=request_json):
                     with patch("sys.stdout", stdout):
@@ -1108,8 +1108,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
 
             stdout = StringIO()
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
             ):
                 with patch("agentsassemble.cli._request_json", side_effect=request_json):
                     with patch("sys.stdout", stdout):
@@ -1190,8 +1190,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
 
             stdout = StringIO()
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
             ):
                 with patch("agentsassemble.cli._request_json", side_effect=request_json):
                     with patch("sys.stdout", stdout):
@@ -1219,7 +1219,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "live-agents.discovered.json"
             stdout = StringIO()
-            with patch("agentsassemble.live_agent_discovery.shutil.which", return_value=None):
+            with patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", return_value=None):
                 with patch("agentsassemble.cli._request_json", side_effect=AssertionError("session should not start")):
                     with patch("sys.stdout", stdout):
                         exit_code = main(["live-agent", "auto-join", "--output", str(output_path), "--json"])
@@ -1239,8 +1239,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 return f"/opt/bin/{command}" if command == "claude" else None
 
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
             ):
                 with patch("sys.stderr", StringIO()) as stderr:
                     exit_code = main(
@@ -1270,8 +1270,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 return f"/opt/bin/{command}" if command in {"claude", "codex", "antigravity"} else None
 
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
                 patch("sys.stdout", StringIO()) as stdout,
             ):
                 exit_code = main(
@@ -1321,7 +1321,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
     def test_live_agent_discover_returns_one_when_no_supported_cli_is_found(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "live-agents.discovered.json"
-            with patch("agentsassemble.live_agent_discovery.shutil.which", return_value=None):
+            with patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", return_value=None):
                 with patch("sys.stdout", StringIO()):
                     exit_code = main(["live-agent", "discover", "--output", str(output_path), "--json"])
 
@@ -1335,7 +1335,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             def resolver(command):
                 return f"/opt/bin/{command}" if command == "antigravity" else None
 
-            with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
+            with patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver):
                 with patch("agentsassemble.cli.subprocess.Popen", side_effect=AssertionError("agent process started")):
                     with patch("agentsassemble.cli.subprocess.run", side_effect=AssertionError("command executed")):
                         with patch("agentsassemble.cli._request_json", side_effect=AssertionError("room contacted")):
@@ -1369,8 +1369,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                     headers={"Content-Type": "application/json"},
                 )
                 with (
-                    patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                    patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                    patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                    patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
                 ):
                     with patch.object(subprocess, "Popen", side_effect=AssertionError("agent process started")):
                         with patch.object(subprocess, "run", side_effect=AssertionError("command executed")):
@@ -1449,8 +1449,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                     headers={"Content-Type": "application/json"},
                 )
                 with (
-                    patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                    patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                    patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                    patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
                 ):
                     with patch.object(subprocess, "Popen", side_effect=AssertionError("agent process started")):
                         with patch.object(subprocess, "run", side_effect=AssertionError("command executed")):
@@ -1485,8 +1485,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                     headers={"Content-Type": "application/json"},
                 )
                 with (
-                    patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=lambda command: "/opt/bin/claude" if command == "claude" else None),
-                    patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                    patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=lambda command: "/opt/bin/claude" if command == "claude" else None),
+                    patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
                 ):
                     with urllib.request.urlopen(request) as response:
                         payload = json.loads(response.read().decode("utf-8"))
@@ -1515,7 +1515,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                     data=json.dumps({}).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                 )
-                with patch("agentsassemble.live_agent_discovery.shutil.which", return_value=None):
+                with patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", return_value=None):
                     with urllib.request.urlopen(request) as response:
                         payload = json.loads(response.read().decode("utf-8"))
             finally:

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.live_agent_finalization import finalize_live_agent_meeting
+from agentsassemble.legacy.live_agent.runtime.finalization import finalize_live_agent_meeting
 from agentsassemble.legacy.meeting.core.events import append_live_event, read_live_events, write_live_state
 from agentsassemble.persona_cards import PersonaCard, PersonaLoreEntry, save_persona_card
 

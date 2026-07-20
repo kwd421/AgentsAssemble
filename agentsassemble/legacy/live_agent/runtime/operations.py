@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from agentsassemble.live_agent_context import LIVE_AGENT_CONTEXT_DURABILITY, LIVE_AGENT_JOIN_SEMANTICS
+from agentsassemble.legacy.live_agent.runtime.context import LIVE_AGENT_CONTEXT_DURABILITY, LIVE_AGENT_JOIN_SEMANTICS
 from agentsassemble.sandbox_launcher import SANDBOX_ENFORCEMENT_LEVELS
 
 OPERATION_TEXT_LIMIT = 500

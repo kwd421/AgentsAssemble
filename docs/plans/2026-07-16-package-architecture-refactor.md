@@ -1684,3 +1684,13 @@ module churn were deliberately avoided rather than forgotten.
   tree handling, timeout behavior, persisted formats, diagnostics, and control
   payloads are unchanged. Conversation flow, runner, rounds, and turns remain
   frozen outside this package wave.
+- 2026-07-20: Retained resident room integration and operator tooling moved to
+  `legacy/live_agent/runtime/`: context projection, continuity proof,
+  discovery, finalization, frontend room creation, join brief, meeting binding,
+  persona smoke, play presets, preflight, probe, review checkpoints, room
+  administration, roster projection, and full smoke orchestration. These
+  modules compose the resident runtime but do not define the unsettled
+  conversation policy. Current imports and patch seams use their package
+  owners; fifteen root modules remain explicit compatibility exports. Room
+  creation, readiness, probe, roster, finalization, and smoke behavior are
+  unchanged.

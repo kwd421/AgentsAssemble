@@ -14,7 +14,7 @@ from unittest import mock
 from agentsassemble import cli
 from agentsassemble.gui import model_catalog_payload as cli_gui_model_catalog_payload
 from agentsassemble.persistence.local.identity.repository import IdentityStore
-from agentsassemble.live_agent_context import live_agent_context_contract
+from agentsassemble.legacy.live_agent.runtime.context import live_agent_context_contract
 from agentsassemble.live_agent_runner import (
     SUPPORTED_RESIDENT_CONNECTION_KINDS,
     ResidentAgentConfig,

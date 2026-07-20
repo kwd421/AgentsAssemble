@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentsassemble.live_agent_smoke import (
+from agentsassemble.legacy.live_agent.runtime.smoke import (
     MAX_SESSION_SMOKE_SOAK_CYCLES,
     MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS,
     run_live_agent_official_round_smoke,

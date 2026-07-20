@@ -12,7 +12,7 @@ from agentsassemble.providers.kiro_resident import (
     extract_kiro_session_ids,
     kiro_provider_connection_check,
 )
-from agentsassemble.live_agent_context import live_agent_context_contract
+from agentsassemble.legacy.live_agent.runtime.context import live_agent_context_contract
 from agentsassemble.live_agent_runner import ResidentAgentConfig, load_group_configs
 
 

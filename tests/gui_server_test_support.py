@@ -64,10 +64,10 @@ from agentsassemble.legacy.meeting.core.events import read_live_events_after, re
 from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
 from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation, read_live_agent_operations
-from agentsassemble.live_agent_meetings import start_live_agent_meeting
+from agentsassemble.legacy.live_agent.runtime.meetings import start_live_agent_meeting
 from agentsassemble.legacy.live_agent.runtime.processes import LiveAgentProcessSupervisor
 from agentsassemble.legacy.live_agent.runtime.session_runs import LiveAgentSessionRunController
-from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
+from agentsassemble.legacy.live_agent.runtime.smoke import LiveAgentSmokeFailed
 from agentsassemble.live_session_transport import terminal_sessions_supported
 from agentsassemble.admission.invite import (
     compatibility_public_invite_runtime,

@@ -107,17 +107,17 @@ from agentsassemble.live_agents import (
 )
 from agentsassemble.live_agent_flow import FlowOptions, LiveAgentFlowClient
 from agentsassemble.live_agent_flow_resources import FlowResourceRecorder
-from agentsassemble.live_agent_continuity_proof import (
+from agentsassemble.legacy.live_agent.runtime.continuity_proof import (
     run_live_agent_continuity_proof,
     run_live_agent_continuity_proof_batch,
 )
 from agentsassemble.diagnostics.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG
 from agentsassemble.application.room_native_cli_smoke import run_room_native_cli_smoke
 from agentsassemble.room_repository_factory import RoomRepositoryUnavailable
-from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
+from agentsassemble.legacy.live_agent.runtime.preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.legacy.live_agent.runtime.processes import clean_live_agent_group_id
 from agentsassemble.lobby_promotion import promote_lobby_events_to_official
-from agentsassemble.live_agent_roster import (
+from agentsassemble.legacy.live_agent.runtime.roster import (
     safe_live_agent_roster_agent,
     safe_live_agent_roster_number,
     safe_live_agent_roster_payload,
@@ -125,7 +125,7 @@ from agentsassemble.live_agent_roster import (
 )
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.live_meeting_memory import compact_live_meeting_memory
-from agentsassemble.live_agent_discovery import (
+from agentsassemble.legacy.live_agent.runtime.discovery import (
     add_session_bundle_outputs,
     apply_discovery_approval_filter,
     build_discovered_live_agent_config,
@@ -135,7 +135,7 @@ from agentsassemble.live_agent_discovery import (
     fill_discovery_next_command_output,
     validate_distinct_session_bundle_paths,
 )
-from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
+from agentsassemble.legacy.live_agent.runtime.join_brief import build_live_agent_join_brief
 from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
     RemoteBridgeResidentCommandRunner,
@@ -149,7 +149,7 @@ from agentsassemble.live_agent_runner import (
     should_reply_to_event,
 )
 from agentsassemble.legacy.live_agent.runtime.timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL, live_agent_poll_sleep_seconds
-from agentsassemble.live_agent_smoke import (
+from agentsassemble.legacy.live_agent.runtime.smoke import (
     MAX_SESSION_SMOKE_LOBBY_PROBES,
     MAX_SESSION_SMOKE_SOAK_CYCLES,
     MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS,
@@ -2485,7 +2485,7 @@ def _live_agent_continuity_proof_group_exit_code(result: dict[str, object]) -> i
 
 
 def _run_live_agent_persona_smoke(args: argparse.Namespace) -> int:
-    from agentsassemble.live_agent_persona_smoke import run_live_agent_persona_smoke
+    from agentsassemble.legacy.live_agent.runtime.persona_smoke import run_live_agent_persona_smoke
 
     result = run_live_agent_persona_smoke(
         output_root=Path(args.output_root),

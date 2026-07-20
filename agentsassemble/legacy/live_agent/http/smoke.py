@@ -17,7 +17,7 @@ from agentsassemble.legacy.live_agent.smoke import (
     session_smoke_error_details,
     session_smoke_operation_details,
 )
-from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
+from agentsassemble.legacy.live_agent.runtime.smoke import LiveAgentSmokeFailed
 
 
 ReadOperationPayload = Callable[[RequestContext, str], dict[str, object] | None]

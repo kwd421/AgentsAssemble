@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.live_agent_continuity_proof import (
+from agentsassemble.legacy.live_agent.runtime.continuity_proof import (
     _continuity_code,
     _first_reply_ready_normalized,
     fixed_continuity_code_factory,

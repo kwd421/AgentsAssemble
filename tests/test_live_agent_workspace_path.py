@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.cli import _close_command_runner, _command_runner_for_config
-from agentsassemble.live_agent_preflight import preflight_live_agent_config
+from agentsassemble.legacy.live_agent.runtime.preflight import preflight_live_agent_config
 from agentsassemble.live_agent_runner import load_group_configs
 
 

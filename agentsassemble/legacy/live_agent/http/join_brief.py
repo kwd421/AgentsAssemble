@@ -6,7 +6,7 @@ from collections.abc import Callable
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.live_agent_join_brief import live_agent_join_brief_payload
+from agentsassemble.legacy.live_agent.runtime.join_brief import live_agent_join_brief_payload
 
 
 RequestServerUrl = Callable[[RequestContext], str]

@@ -1,7 +1,7 @@
 import unittest
 
 from agentsassemble.legacy.live_agent.runtime.quota import quota_viewer_for_host, quota_viewer_for_session
-from agentsassemble.live_agent_roster import safe_live_agent_roster_payload
+from agentsassemble.legacy.live_agent.runtime.roster import safe_live_agent_roster_payload
 
 
 class LiveAgentRosterPayloadTests(unittest.TestCase):

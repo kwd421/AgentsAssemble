@@ -6,7 +6,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
+from agentsassemble.legacy.live_agent.runtime.smoke import LiveAgentSmokeFailed
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 

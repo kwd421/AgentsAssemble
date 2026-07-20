@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.live_agent_smoke import (
+from agentsassemble.legacy.live_agent.runtime.smoke import (
     LiveAgentSmokeFailed,
     SESSION_SMOKE_ROLE_TEXT,
     _kill_session_smoke_process_group,
@@ -146,7 +146,7 @@ def _session_smoke_lobby_reply_events(
 class LiveAgentSmokeTests(unittest.TestCase):
     def setUp(self):
         terminal_support = patch(
-            "agentsassemble.live_agent_smoke.terminal_sessions_supported",
+            "agentsassemble.legacy.live_agent.runtime.smoke.terminal_sessions_supported",
             return_value=False,
             create=True,
         )
@@ -318,7 +318,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertIn("--last-observed-event-id=evt-1", error_heartbeat)
 
     def test_session_smoke_recover_killer_uses_non_graceful_signal(self):
-        with patch("agentsassemble.live_agent_smoke.os.killpg") as killpg:
+        with patch("agentsassemble.legacy.live_agent.runtime.smoke.os.killpg") as killpg:
             _kill_session_smoke_process_group(1234)
 
         killpg.assert_called_once_with(1234, signal.SIGKILL)
@@ -328,9 +328,9 @@ class LiveAgentSmokeTests(unittest.TestCase):
             SIGTERM = signal.SIGTERM
 
         self.assertEqual(_session_smoke_kill_signal(TermOnlySignal), signal.SIGTERM)
-        with patch("agentsassemble.live_agent_smoke.os.killpg", side_effect=AttributeError):
-            with patch("agentsassemble.live_agent_smoke._session_smoke_kill_signal", return_value=signal.SIGTERM):
-                with patch("agentsassemble.live_agent_smoke.os.kill") as kill:
+        with patch("agentsassemble.legacy.live_agent.runtime.smoke.os.killpg", side_effect=AttributeError):
+            with patch("agentsassemble.legacy.live_agent.runtime.smoke._session_smoke_kill_signal", return_value=signal.SIGTERM):
+                with patch("agentsassemble.legacy.live_agent.runtime.smoke.os.kill") as kill:
                     _kill_session_smoke_process_group(1234)
 
         kill.assert_called_once_with(1234, signal.SIGTERM)
@@ -826,7 +826,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             state["root"] = Path(temp_dir) / "room"
-            with patch("agentsassemble.live_agent_smoke.terminal_sessions_supported", return_value=True, create=True):
+            with patch("agentsassemble.legacy.live_agent.runtime.smoke.terminal_sessions_supported", return_value=True, create=True):
                 result = run_live_agent_session_smoke(
                     server="http://room.local",
                     group_id="session-smoke",
@@ -864,7 +864,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
             return {"groups": []}
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch("agentsassemble.live_agent_smoke.terminal_sessions_supported", return_value=True, create=True):
+            with patch("agentsassemble.legacy.live_agent.runtime.smoke.terminal_sessions_supported", return_value=True, create=True):
                 with self.assertRaisesRegex(LiveAgentSmokeFailed, "start did not become ready"):
                     run_live_agent_session_smoke(
                         server="http://room.local",
@@ -2784,7 +2784,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             with patch(
-                "agentsassemble.live_agent_smoke.time.time",
+                "agentsassemble.legacy.live_agent.runtime.smoke.time.time",
                 side_effect=[1000.001, 1000.002, 1000.003, 1000.004, 1001.001, 1001.002, 1001.003, 1001.004],
             ):
                 first = run_once(root)

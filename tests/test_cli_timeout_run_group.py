@@ -381,7 +381,7 @@ class CliTimeoutRunGroupTests(unittest.TestCase):
                     patch("agentsassemble.cli.load_group_configs", return_value=configs),
                     patch("agentsassemble.cli._SelfServiceResidentSupervisor", RecordingSupervisor),
                     patch(
-                        "agentsassemble.live_agent_preflight.shutil.which",
+                        "agentsassemble.legacy.live_agent.runtime.preflight.shutil.which",
                         side_effect=lambda command: command if command == sys.executable else None,
                     ),
                     patch("sys.stdout", stdout),

@@ -23,7 +23,7 @@ from agentsassemble.features.side_chat.routes import register_side_chat_routes
 from agentsassemble.features.social.routes import (
     register_room_friend_profile_routes,
 )
-from agentsassemble.live_agent_context import live_agent_context_contract
+from agentsassemble.legacy.live_agent.runtime.context import live_agent_context_contract
 from agentsassemble.legacy.admission_projection import LiveAgentLegacyAdmissionProjection
 from agentsassemble.live_agent_flow import FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
 from agentsassemble.web.routes.providers import (
@@ -88,10 +88,10 @@ from agentsassemble.application.session_run_monitor import (
     PeriodicSessionRunMonitor,
     safe_monitor_error_type,
 )
-from agentsassemble.live_agent_join_brief import live_agent_join_brief_payload
+from agentsassemble.legacy.live_agent.runtime.join_brief import live_agent_join_brief_payload
 from agentsassemble.legacy.live_agent.runtime.launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_runner import load_group_configs
-from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
+from agentsassemble.legacy.live_agent.runtime.roster import filter_live_agent_roster, safe_live_agent_roster_payload
 from agentsassemble.legacy.live_agent.health import (
     DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
     MIN_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
@@ -160,7 +160,7 @@ from agentsassemble.legacy.live_agent.runtime.operations import append_live_agen
 from agentsassemble.legacy.live_agent.runtime.processes import (
     LiveAgentProcessSupervisor,
 )
-from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
+from agentsassemble.legacy.live_agent.runtime.probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.legacy.live_agent.runtime.sessions import (
     recover_live_agent_session,
     restart_live_agent_session,
@@ -172,7 +172,7 @@ from agentsassemble.legacy.live_agent.runtime.sessions import (
     stop_live_agent_session,
 )
 from agentsassemble.legacy.live_agent.runtime.session_runs import LiveAgentSessionRunController
-from agentsassemble.live_agent_smoke import (
+from agentsassemble.legacy.live_agent.runtime.smoke import (
     LiveAgentSmokeFailed,
     run_live_agent_official_round_smoke,
     run_live_agent_real_session_smoke,

@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentsassemble.gui import live_agent_turn_preset_payload
-from agentsassemble.live_agent_play_presets import available_play_presets, build_play_preset_turns
+from agentsassemble.legacy.live_agent.runtime.play_presets import available_play_presets, build_play_preset_turns
 
 
 def _meeting() -> dict[str, object]:

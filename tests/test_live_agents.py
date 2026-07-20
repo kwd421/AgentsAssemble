@@ -4,7 +4,7 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from agentsassemble.live_agent_context import live_agent_context_contract
+from agentsassemble.legacy.live_agent.runtime.context import live_agent_context_contract
 from agentsassemble.live_agents import (
     connect_live_agent,
     heartbeat_live_agent,

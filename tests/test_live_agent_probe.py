@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.live_agent_probe import PROBE_REPLY_EVENT_TAIL_LIMIT, run_live_agent_probe
+from agentsassemble.legacy.live_agent.runtime.probe import PROBE_REPLY_EVENT_TAIL_LIMIT, run_live_agent_probe
 from agentsassemble.legacy.meeting.core.events import append_lobby_event_to_file, read_lobby_events
 
 

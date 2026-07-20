@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentsassemble.live_agent_preflight import preflight_live_agent_config
+from agentsassemble.legacy.live_agent.runtime.preflight import preflight_live_agent_config
 
 
 @dataclass(frozen=True)

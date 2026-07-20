@@ -26,8 +26,8 @@ class GuiServerDiscoveryWorkroomTests(unittest.TestCase):
                 return f"/opt/bin/{command}" if command in {"claude", "codex", "antigravity"} else None
 
             with (
-                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
             ):
                 report = live_agent_discovery_payload(
                     root,
@@ -72,8 +72,8 @@ class GuiServerDiscoveryWorkroomTests(unittest.TestCase):
             try:
                 server_url = f"http://127.0.0.1:{server.server_port}"
                 with (
-                    patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                    patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                    patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                    patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
                 ):
                     request = Request(
                         f"{server_url}/api/live-agent-discovery",
@@ -127,8 +127,8 @@ class GuiServerDiscoveryWorkroomTests(unittest.TestCase):
             try:
                 server_url = f"http://127.0.0.1:{server.server_port}"
                 with (
-                    patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
-                    patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                    patch("agentsassemble.legacy.live_agent.runtime.discovery.shutil.which", side_effect=resolver),
+                    patch("agentsassemble.legacy.live_agent.runtime.discovery.terminal_sessions_supported", return_value=True),
                 ):
                     request = Request(
                         f"{server_url}/api/live-agent-discovery",

@@ -7,8 +7,8 @@ from pathlib import Path
 
 from agentsassemble.legacy.meeting.operation_projection import meeting_finalize_operation_details
 from agentsassemble.legacy.meeting.records import safe_meeting_dir
-from agentsassemble.live_agent_finalization import finalize_live_agent_meeting
-from agentsassemble.live_agent_meetings import start_live_agent_meeting
+from agentsassemble.legacy.live_agent.runtime.finalization import finalize_live_agent_meeting
+from agentsassemble.legacy.live_agent.runtime.meetings import start_live_agent_meeting
 from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 

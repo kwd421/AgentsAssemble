@@ -12,7 +12,7 @@ from agentsassemble.config import (
     permissions_from_config,
     providers_from_config,
 )
-from agentsassemble.live_agent_meetings import start_live_agent_meeting
+from agentsassemble.legacy.live_agent.runtime.meetings import start_live_agent_meeting
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.legacy.live_agent.runtime.sessions import (
     check_live_agent_session,

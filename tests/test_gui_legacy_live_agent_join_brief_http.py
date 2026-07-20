@@ -11,7 +11,7 @@ from agentsassemble.legacy.live_agent.http.join_brief import (
     register_legacy_live_agent_join_brief_route,
 )
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
-from agentsassemble.live_agent_join_brief import live_agent_join_brief_payload
+from agentsassemble.legacy.live_agent.runtime.join_brief import live_agent_join_brief_payload
 
 
 class FakeHandler:

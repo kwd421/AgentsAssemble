@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
+from agentsassemble.legacy.live_agent.runtime.preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_runner import ResidentAgentConfig
 
 
@@ -500,7 +500,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with patch("agentsassemble.live_agent_preflight.terminal_sessions_supported", return_value=False):
+            with patch("agentsassemble.legacy.live_agent.runtime.preflight.terminal_sessions_supported", return_value=False):
                 report = preflight_live_agent_config(
                     config_path,
                     command_resolver=lambda command: "/usr/local/bin/claude" if command == "claude" else None,
@@ -1050,7 +1050,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with patch("agentsassemble.live_agent_preflight.terminal_sessions_supported", return_value=True):
+            with patch("agentsassemble.legacy.live_agent.runtime.preflight.terminal_sessions_supported", return_value=True):
                 report = preflight_live_agent_config(
                     config_path,
                     command_resolver=lambda command: "/usr/local/bin/cursor-agent" if command == "cursor-agent" else None,
@@ -1155,7 +1155,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with patch("agentsassemble.live_agent_preflight.terminal_sessions_supported", return_value=True):
+            with patch("agentsassemble.legacy.live_agent.runtime.preflight.terminal_sessions_supported", return_value=True):
                 report = preflight_live_agent_config(
                     config_path,
                     command_resolver=(

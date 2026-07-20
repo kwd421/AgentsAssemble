@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from agentsassemble.legacy.meeting_admission import MEETING_UNSAFE_PERMISSIONS
-from agentsassemble.live_agent_finalization import _pending_turn_requests
+from agentsassemble.legacy.live_agent.runtime.finalization import _pending_turn_requests
 from agentsassemble.legacy.meeting.core.events import read_live_events
 
 

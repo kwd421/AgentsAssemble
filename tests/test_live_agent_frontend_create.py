@@ -11,7 +11,7 @@ from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
     reset_identity_store_registry,
 )
-from agentsassemble.live_agent_frontend_create import (
+from agentsassemble.legacy.live_agent.runtime.frontend_create import (
     _clean_reply_char_limit,
     ensure_frontend_meeting,
     frontend_live_agent_check_payload,

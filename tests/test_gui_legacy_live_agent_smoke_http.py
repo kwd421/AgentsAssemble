@@ -12,7 +12,7 @@ from agentsassemble.legacy.live_agent.http.smoke import (
     register_legacy_live_agent_smoke_routes,
 )
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
-from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
+from agentsassemble.legacy.live_agent.runtime.smoke import LiveAgentSmokeFailed
 
 
 class FakeHandler:

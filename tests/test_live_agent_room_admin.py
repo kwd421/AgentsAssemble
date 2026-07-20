@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.live_agent_frontend_create import frontend_live_agent_create_payload
-from agentsassemble.live_agent_room_admin import (
+from agentsassemble.legacy.live_agent.runtime.frontend_create import frontend_live_agent_create_payload
+from agentsassemble.legacy.live_agent.runtime.room_admin import (
     LegacyLiveAgentRoomSessionService,
     delete_live_agent_session_payload,
     expel_live_agent_from_room_payload,

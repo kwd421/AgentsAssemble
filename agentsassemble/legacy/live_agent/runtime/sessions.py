@@ -9,8 +9,8 @@ from pathlib import Path
 
 from agentsassemble.config import load_council_config
 from agentsassemble.character_mode import character_mode_snapshot, clean_persona_card_id
-from agentsassemble.live_agent_meetings import start_live_agent_meeting
-from agentsassemble.live_agent_preflight import preflight_live_agent_config
+from agentsassemble.legacy.live_agent.runtime.meetings import start_live_agent_meeting
+from agentsassemble.legacy.live_agent.runtime.preflight import preflight_live_agent_config
 from agentsassemble.legacy.live_agent.runtime.processes import clean_live_agent_group_id
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
