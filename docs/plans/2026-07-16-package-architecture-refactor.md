@@ -1385,3 +1385,10 @@ module churn were deliberately avoided rather than forgotten.
   a metadata-tracked compatibility export. Constants, redaction patterns,
   counts, reason classification, diagnostic filtering, and public values are
   unchanged.
+- 2026-07-20: Retained resident lobby/live cursor and event observation health
+  moved mechanically to `legacy/live_agent/observation_health.py`. GUI
+  compatibility and aggregate health import the owned policy directly; root
+  `legacy_live_agent_observation_health.py` remains a metadata-tracked
+  compatibility export. Event selection, official-turn correlation, stale
+  status thresholds, diagnostic filtering, and public health fields are
+  unchanged.

@@ -103,7 +103,7 @@ from agentsassemble.legacy_live_agent_discovery import (
     discovery_operation_details as _discovery_operation_details,
     live_agent_discovery_payload,
 )
-from agentsassemble.legacy_live_agent_observation_health import (
+from agentsassemble.legacy.live_agent.observation_health import (
     latest_live_agent_turn_request_for_agent as _latest_live_agent_turn_request_for_agent,
     latest_lobby_event as _latest_lobby_event,
     live_agent_live_observation_status as _live_agent_live_observation_status,

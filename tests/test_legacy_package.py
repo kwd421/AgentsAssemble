@@ -5,6 +5,7 @@ import unittest
 import agentsassemble.legacy_live_agent_engagement as compatibility_engagement
 import agentsassemble.legacy_live_agent_diagnostics as compatibility_diagnostics
 import agentsassemble.legacy_live_agent_health as compatibility_health
+import agentsassemble.legacy_live_agent_observation_health as compatibility_observation_health
 import agentsassemble.legacy_live_agent_presence as compatibility_presence
 import agentsassemble.legacy_live_agent_presence_projection as compatibility_presence_projection
 import agentsassemble.legacy_live_agent_preflight as compatibility_preflight
@@ -19,6 +20,7 @@ import agentsassemble.legacy_live_agent_session_service as compatibility_session
 from agentsassemble.legacy.live_agent import engagement as owned_engagement
 from agentsassemble.legacy.live_agent import diagnostics as owned_diagnostics
 from agentsassemble.legacy.live_agent import health as owned_health
+from agentsassemble.legacy.live_agent import observation_health as owned_observation_health
 from agentsassemble.legacy.live_agent import presence as owned_presence
 from agentsassemble.legacy.live_agent import presence_projection as owned_presence_projection
 from agentsassemble.legacy.live_agent import preflight as owned_preflight
@@ -70,6 +72,19 @@ class LegacyPackageTests(unittest.TestCase):
                 self.assertIs(
                     getattr(compatibility_health, name),
                     getattr(owned_health, name),
+                )
+
+    def test_live_agent_observation_health_root_module_exports_owned_policy(self) -> None:
+        for name in (
+            "latest_live_agent_turn_request_for_agent",
+            "latest_lobby_event",
+            "live_agent_live_observation_status",
+            "live_agent_observation_health_summary",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_observation_health, name),
+                    getattr(owned_observation_health, name),
                 )
 
     def test_live_agent_preflight_root_module_exports_owned_service(self) -> None:
