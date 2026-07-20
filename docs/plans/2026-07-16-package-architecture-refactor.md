@@ -1559,3 +1559,8 @@ module churn were deliberately avoided rather than forgotten.
   metadata-tracked compatibility export. Explicit provider approval and config
   gates, transport and smoke errors, safe audit details, degraded status, and
   response payloads are unchanged.
+- 2026-07-20: Route ownership and React parity inventories now scan the owned
+  `legacy/live_agent/http/` registrars in addition to root compatibility
+  modules and current `web/routes/`. This is an inventory-boundary update
+  required by the route moves; expected route sets and runtime registration
+  behavior are unchanged.
