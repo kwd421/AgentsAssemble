@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
-from agentsassemble.legacy_live_agent_diagnostics import live_agent_session_readiness_payload
+from agentsassemble.legacy.live_agent.diagnostics import live_agent_session_readiness_payload
 from agentsassemble.legacy_meeting_operation_projection import (
     review_checkpoint_operation_details,
     review_checkpoint_request_operation_details,

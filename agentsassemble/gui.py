@@ -194,7 +194,7 @@ from agentsassemble.legacy_live_agent_queries import (
     live_agent_room_payload,
     require_live_agent as _live_agent_for_id,
 )
-from agentsassemble.legacy_live_agent_diagnostics import (
+from agentsassemble.legacy.live_agent.diagnostics import (
     live_agent_operations_payload,
     live_agent_process_events_payload,
     live_agent_session_check_payload,

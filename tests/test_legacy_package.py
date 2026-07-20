@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 import agentsassemble.legacy_live_agent_engagement as compatibility_engagement
+import agentsassemble.legacy_live_agent_diagnostics as compatibility_diagnostics
 import agentsassemble.legacy_live_agent_presence as compatibility_presence
 import agentsassemble.legacy_live_agent_presence_projection as compatibility_presence_projection
 import agentsassemble.legacy_live_agent_preflight as compatibility_preflight
@@ -15,6 +16,7 @@ import agentsassemble.legacy_live_agent_session_projection as compatibility_sess
 import agentsassemble.legacy_live_agent_session_run_service as compatibility_session_run_service
 import agentsassemble.legacy_live_agent_session_service as compatibility_session_service
 from agentsassemble.legacy.live_agent import engagement as owned_engagement
+from agentsassemble.legacy.live_agent import diagnostics as owned_diagnostics
 from agentsassemble.legacy.live_agent import presence as owned_presence
 from agentsassemble.legacy.live_agent import presence_projection as owned_presence_projection
 from agentsassemble.legacy.live_agent import preflight as owned_preflight
@@ -29,6 +31,20 @@ from agentsassemble.legacy.live_agent import session_service as owned_session_se
 
 
 class LegacyPackageTests(unittest.TestCase):
+    def test_live_agent_diagnostics_root_module_exports_owned_service(self) -> None:
+        for name in (
+            "LegacyLiveAgentDiagnosticQueryService",
+            "live_agent_operations_payload",
+            "live_agent_session_readiness_payload",
+            "session_process_groups_snapshot",
+            "session_run_readiness_overlay",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_diagnostics, name),
+                    getattr(owned_diagnostics, name),
+                )
+
     def test_live_agent_engagement_root_module_exports_owned_service(self) -> None:
         self.assertIs(
             compatibility_engagement.LegacyLiveAgentEngagementService,

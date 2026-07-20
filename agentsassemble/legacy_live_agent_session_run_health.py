@@ -6,7 +6,7 @@ import math
 import re
 from pathlib import Path
 
-from agentsassemble.legacy_live_agent_diagnostics import (
+from agentsassemble.legacy.live_agent.diagnostics import (
     session_readiness_by_target,
     session_run_readiness_overlay,
 )

@@ -97,7 +97,7 @@ from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.legacy_codex_session_compat import (
     LegacyCodexSessionCompatibilityService,
 )
-from agentsassemble.legacy_live_agent_diagnostics import (
+from agentsassemble.legacy.live_agent.diagnostics import (
     LegacyLiveAgentDiagnosticQueryService,
 )
 from agentsassemble.legacy_live_agent_discovery import LegacyLiveAgentDiscoveryService

@@ -1369,3 +1369,11 @@ module churn were deliberately avoided rather than forgotten.
   compatibility export. Group payloads, provider/connection mismatch states,
   reconnect timestamp rules, safe identities, and public response fields are
   unchanged.
+- 2026-07-20: Retained resident diagnostic histories, process/session reads,
+  readiness composition, and session-run readiness overlay moved mechanically
+  to `legacy/live_agent/diagnostics.py`. GUI composition, the legacy read HTTP
+  route, review checkpoint, Codex compatibility, and session-run health import
+  the owned query facade directly; root `legacy_live_agent_diagnostics.py`
+  remains a metadata-tracked compatibility export. Query filters, bounded
+  history, process snapshots, readiness overlays, errors, and HTTP payloads are
+  unchanged.

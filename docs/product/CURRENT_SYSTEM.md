@@ -306,8 +306,8 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Legacy lobby POST/SSE compatibility | `gui_legacy_lobby_http.py`; do not attach new canonical behavior here |
 | Legacy meeting read/lifecycle/workroom/SSE compatibility | `gui_legacy_meeting_http.py`, query projection in `legacy_meeting_queries.py`, record semantics in `legacy_meeting_records.py` |
 | Legacy resident room/return-packet reads | `legacy_live_agent_queries.py`, `gui_legacy_live_agent_read_http.py` |
-| Legacy resident diagnostic histories | `legacy_live_agent_diagnostics.py`, `gui_legacy_live_agent_read_http.py` |
-| Legacy resident process/connection projections | safe process and connection projection in `legacy/live_agent/process_projection.py` with root compatibility export; diagnostic composition in `legacy_live_agent_diagnostics.py` |
+| Legacy resident diagnostic histories | read facade, process/session history, and readiness overlay in `legacy/live_agent/diagnostics.py` with root compatibility export; HTTP in `gui_legacy_live_agent_read_http.py` |
+| Legacy resident process/connection projections | safe process and connection projection in `legacy/live_agent/process_projection.py` with root compatibility export; diagnostic composition in `legacy/live_agent/diagnostics.py` |
 | Legacy resident process mutations | redacted error and operation-detail policy in `legacy/live_agent/process_control.py`; mutation service in `legacy/live_agent/process_service.py`; root compatibility exports; HTTP in `gui_legacy_live_agent_process_http.py` |
 | Legacy resident session policy | status, summary, and redacted error policy in `legacy/live_agent/session_control.py`; bounded operation payloads in `legacy/live_agent/session_projection.py`; root compatibility exports |
 | Legacy resident session mutations | group/session lifecycle in `legacy/live_agent/session_service.py`; durable run lifecycle in `legacy/live_agent/session_run_service.py`; root compatibility exports; HTTP in `gui_legacy_live_agent_session_http.py` and `gui_legacy_live_agent_session_run_http.py` |

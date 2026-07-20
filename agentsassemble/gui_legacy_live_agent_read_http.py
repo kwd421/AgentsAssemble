@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.legacy_live_agent_diagnostics import LegacyLiveAgentDiagnosticQueryService
+from agentsassemble.legacy.live_agent.diagnostics import LegacyLiveAgentDiagnosticQueryService
 from agentsassemble.legacy_live_agent_health_queries import LegacyLiveAgentHealthQueryService
 from agentsassemble.legacy_live_agent_queries import LegacyLiveAgentQueryService
 from agentsassemble.legacy_live_agent_roster_queries import LegacyLiveAgentRosterQueryService
