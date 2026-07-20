@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentsassemble.legacy_live_agent_health import (
+from agentsassemble.legacy.live_agent.health import (
     is_diagnostic_agent,
     is_diagnostic_process_group,
     safe_health_identity,

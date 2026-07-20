@@ -92,7 +92,7 @@ from agentsassemble.live_agent_join_brief import live_agent_join_brief_payload
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
-from agentsassemble.legacy_live_agent_health import (
+from agentsassemble.legacy.live_agent.health import (
     DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
     MIN_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
     safe_health_identity as _safe_session_run_health_identity,

@@ -1377,3 +1377,11 @@ module churn were deliberately avoided rather than forgotten.
   remains a metadata-tracked compatibility export. Query filters, bounded
   history, process snapshots, readiness overlays, errors, and HTTP payloads are
   unchanged.
+- 2026-07-20: Shared safe status, monitor, process-reason, identity, timestamp,
+  and diagnostic-record policy for retained residents moved mechanically to
+  `legacy/live_agent/health.py`. GUI composition, diagnostic/process
+  projection, aggregate health, observation health, and session-run health
+  import the owned policy directly; root `legacy_live_agent_health.py` remains
+  a metadata-tracked compatibility export. Constants, redaction patterns,
+  counts, reason classification, diagnostic filtering, and public values are
+  unchanged.

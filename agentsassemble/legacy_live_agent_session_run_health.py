@@ -10,7 +10,7 @@ from agentsassemble.legacy.live_agent.diagnostics import (
     session_readiness_by_target,
     session_run_readiness_overlay,
 )
-from agentsassemble.legacy_live_agent_health import (
+from agentsassemble.legacy.live_agent.health import (
     DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
     MIN_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
     safe_health_identity,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agentsassemble.legacy_live_agent_health import safe_health_identity
+from agentsassemble.legacy.live_agent.health import safe_health_identity
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agents import read_live_agents
 from agentsassemble.meeting_events import clean_lobby_text

@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentsassemble.legacy_live_agent_health import (
+from agentsassemble.legacy.live_agent.health import (
     LIVE_AGENT_ADMISSION_HEALTH_STATUSES,
     diagnostic_agent_group_ids,
     is_diagnostic_agent,
