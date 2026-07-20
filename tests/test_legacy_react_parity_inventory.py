@@ -117,6 +117,7 @@ def _parse_gui_routes(path: Path) -> set[Route]:
         *sorted((path.parent / "web" / "routes").rglob("*.py")),
         *sorted((path.parent / "legacy" / "live_agent" / "http").glob("*.py")),
         *sorted((path.parent / "legacy" / "meeting" / "http").glob("*.py")),
+        *sorted((path.parent / "legacy" / "diagnostics" / "http").glob("*.py")),
         *sorted((path.parent / "features").rglob("routes.py")),
     )
     for module_path in route_modules:

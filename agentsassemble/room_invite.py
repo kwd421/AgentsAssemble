@@ -1,6 +1,8 @@
 """Compatibility exports for agentsassemble.admission.invite."""
 
 from agentsassemble.admission.invite import (
+    SESSION_TOKEN_PREFIX,
+    SESSION_TOKEN_TTL_SECONDS,
     active_sessions_summary,
     clear_runtime_public_url,
     compatibility_public_invite_runtime,
@@ -30,6 +32,8 @@ from agentsassemble.admission.invite import (
 )
 
 __all__ = [
+    'SESSION_TOKEN_PREFIX',
+    'SESSION_TOKEN_TTL_SECONDS',
     'active_sessions_summary',
     'clear_runtime_public_url',
     'compatibility_public_invite_runtime',
