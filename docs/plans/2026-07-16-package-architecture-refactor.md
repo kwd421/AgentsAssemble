@@ -1520,3 +1520,9 @@ module churn were deliberately avoided rather than forgotten.
   compatibility export. Request-server mapping, safe operation audit,
   discovery execution, status calculation, and response payloads are
   unchanged.
+- 2026-07-20: The retained resident configuration-preflight HTTP registrar
+  moved mechanically to `legacy/live_agent/http/preflight.py`. Legacy GUI
+  composition imports the owned registrar directly; root
+  `gui_legacy_live_agent_preflight_http.py` remains a metadata-tracked
+  compatibility export. Request-server mapping, safe diagnostic projection,
+  operation audit, errors, and response payloads are unchanged.

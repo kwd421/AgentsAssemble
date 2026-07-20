@@ -32,7 +32,7 @@ from agentsassemble.legacy.live_agent.http.official_reply import (
     LegacyLiveAgentOfficialReplyHttpDeps,
     register_legacy_live_agent_official_reply_route,
 )
-from agentsassemble.gui_legacy_live_agent_preflight_http import (
+from agentsassemble.legacy.live_agent.http.preflight import (
     LegacyLiveAgentPreflightHttpDeps,
     register_legacy_live_agent_preflight_route,
 )
