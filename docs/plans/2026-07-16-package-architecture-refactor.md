@@ -1539,3 +1539,9 @@ module churn were deliberately avoided rather than forgotten.
   compatibility export. Legacy and run-id route aliases, operation-payload
   mapping, retry/ensure server mapping, typed errors, and response payloads
   are unchanged.
+- 2026-07-20: The retained resident group and per-agent session mutation HTTP
+  registrar moved mechanically to `legacy/live_agent/http/session.py`.
+  Legacy GUI composition imports the owned registrar directly; root
+  `gui_legacy_live_agent_session_http.py` remains a metadata-tracked
+  compatibility export. Route set, operation-payload mapping, server URL
+  injection, typed errors, and response payloads are unchanged.

@@ -61,7 +61,7 @@ from agentsassemble.legacy.live_agent.http.room_session import (
 from agentsassemble.legacy.live_agent.http.self_managed import (
     register_legacy_self_managed_agent_routes,
 )
-from agentsassemble.gui_legacy_live_agent_session_http import (
+from agentsassemble.legacy.live_agent.http.session import (
     LegacySessionHttpDeps,
     register_legacy_session_mutation_routes,
 )
