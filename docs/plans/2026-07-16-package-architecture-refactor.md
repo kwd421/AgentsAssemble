@@ -1405,3 +1405,11 @@ module churn were deliberately avoided rather than forgotten.
   directly; root `legacy_live_agent_roster_queries.py` remains a
   metadata-tracked compatibility export. Roster ordering, admission details,
   quota filtering, owner/session evidence, and public payloads are unchanged.
+- 2026-07-20: Retained resident aggregate health query facade moved
+  mechanically to `legacy/live_agent/health_queries.py` after its health,
+  observation, session-run, process, and roster dependencies acquired stable
+  owners. GUI composition, the legacy read HTTP route, and readiness service
+  import the owned facade directly; root `legacy_live_agent_health_queries.py`
+  remains a metadata-tracked compatibility export. Aggregate counts,
+  readiness/memory overlays, diagnostics, filtering, and HTTP payloads are
+  unchanged.

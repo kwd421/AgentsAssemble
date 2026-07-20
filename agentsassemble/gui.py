@@ -98,7 +98,7 @@ from agentsassemble.legacy.live_agent.health import (
     safe_health_identity as _safe_session_run_health_identity,
     safe_process_group_id as _safe_process_group_id,
 )
-from agentsassemble.legacy_live_agent_health_queries import live_agent_health_payload
+from agentsassemble.legacy.live_agent.health_queries import live_agent_health_payload
 from agentsassemble.legacy_live_agent_discovery import (
     discovery_operation_details as _discovery_operation_details,
     live_agent_discovery_payload,

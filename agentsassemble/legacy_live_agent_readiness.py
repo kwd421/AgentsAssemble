@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentsassemble.legacy_live_agent_health_queries import LegacyLiveAgentHealthQueryService
+from agentsassemble.legacy.live_agent.health_queries import LegacyLiveAgentHealthQueryService
 from agentsassemble.legacy_live_agent_readiness_projection import (
     OFFICIAL_ROUND_SMOKE_ERROR,
     SESSION_SMOKE_ERROR,

@@ -102,7 +102,7 @@ from agentsassemble.legacy.live_agent.diagnostics import (
 )
 from agentsassemble.legacy_live_agent_discovery import LegacyLiveAgentDiscoveryService
 from agentsassemble.legacy.live_agent.engagement import LegacyLiveAgentEngagementService
-from agentsassemble.legacy_live_agent_health_queries import (
+from agentsassemble.legacy.live_agent.health_queries import (
     LegacyLiveAgentHealthQueryService,
 )
 from agentsassemble.legacy_live_agent_official_reply import (
