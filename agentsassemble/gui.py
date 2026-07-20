@@ -294,7 +294,7 @@ from agentsassemble.legacy_codex_session_compat import (
     codex_session_join_payload as _legacy_codex_session_join_payload,
 )
 from agentsassemble.meeting import run_demo_meeting
-from agentsassemble.provider_health import provider_health_payload, provider_health_report
+from agentsassemble.diagnostics.provider_health import provider_health_payload, provider_health_report
 from agentsassemble.provider_login import ProviderLoginService
 from agentsassemble.application.public_tunnel import PublicTunnelManager
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime

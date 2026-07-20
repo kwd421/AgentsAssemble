@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from agentsassemble.diagnostic_report_projection import looks_sensitive_operator_diagnostic_text
+from agentsassemble.diagnostics.report_projection import looks_sensitive_operator_diagnostic_text
 from agentsassemble.meeting_events import clean_lobby_text
 
 

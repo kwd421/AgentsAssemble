@@ -87,7 +87,7 @@ from agentsassemble.legacy.meeting.http.official_round import (
 from agentsassemble.legacy.meeting.http.official_turn import (
     register_legacy_official_turn_routes,
 )
-from agentsassemble.gui_legacy_provider_health_http import (
+from agentsassemble.legacy.diagnostics.http.provider_health import (
     register_legacy_provider_health_route,
 )
 from agentsassemble.legacy.meeting.http.review_checkpoint import (

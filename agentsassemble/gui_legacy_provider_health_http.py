@@ -1,27 +1,7 @@
-"""HTTP route for retained provider configuration diagnostics."""
+"""Compatibility exports for provider-health HTTP diagnostics."""
 
-from __future__ import annotations
+from agentsassemble.legacy.diagnostics.http.provider_health import (
+    register_legacy_provider_health_route,
+)
 
-from http import HTTPStatus
-
-from agentsassemble.diagnostic_report_projection import safe_diagnostic_report_payload
-from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.provider_health import ProviderHealthReporter, provider_health_payload
-
-
-def register_legacy_provider_health_route(
-    router: Router,
-    *,
-    reporter: ProviderHealthReporter,
-) -> None:
-    @router.post("/api/provider-health")
-    def provider_health(ctx: RequestContext) -> None:
-        payload = ctx.read_json_body()
-        if payload is None:
-            return
-        try:
-            report = provider_health_payload(payload, report_builder=reporter)
-        except ValueError as error:
-            ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
-            return
-        ctx.send_json(safe_diagnostic_report_payload(report))
+__all__ = ["register_legacy_provider_health_route"]

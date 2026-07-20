@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
 
-from agentsassemble.diagnostic_report_projection import safe_diagnostic_report_payload
+from agentsassemble.diagnostics.report_projection import safe_diagnostic_report_payload
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.legacy.live_agent.preflight import LegacyLiveAgentPreflightService
 

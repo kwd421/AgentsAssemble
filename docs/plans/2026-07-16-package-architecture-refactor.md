@@ -1580,3 +1580,14 @@ module churn were deliberately avoided rather than forgotten.
   directly. The nine former root modules are explicit metadata-tracked
   compatibility exports. Record formats, locks, query projection, operation
   audit, command ordering, timeouts, errors, and HTTP behavior are unchanged.
+- 2026-07-20: Provider configuration health reporting, public-safe diagnostic
+  projection, and the retained provider-health HTTP registrar moved
+  mechanically to `diagnostics/provider_health.py`,
+  `diagnostics/report_projection.py`, and
+  `legacy/diagnostics/http/provider_health.py`. The HTTP registrar remains
+  under `legacy/` because it depends on the web router; public-safe text
+  sensitivity policy moved to `diagnostics/sensitive_text.py` so current
+  diagnostics do not import legacy process policy. Production CLI/GUI, resident
+  diagnostics, and behavior tests import the owned modules directly; the three
+  root modules remain metadata-tracked compatibility exports. Probe modes,
+  network/auth checks, redaction, errors, and response payloads are unchanged.

@@ -1671,6 +1671,34 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_gui_legacy_review_checkpoint_http.py",),
         introduced_in="Milestone 6.60 legacy review-checkpoint HTTP move",
     ),
+    "diagnostic_report_projection.py": CompatibilityShim(
+        replacement_import="agentsassemble.diagnostics.report_projection",
+        removal_gate=(
+            "No direct imports use agentsassemble.diagnostic_report_projection "
+            "for one compatibility window."
+        ),
+        known_callers=("tests/test_diagnostics_package.py",),
+        introduced_in="Milestone 7.1 diagnostic projection package",
+    ),
+    "provider_health.py": CompatibilityShim(
+        replacement_import="agentsassemble.diagnostics.provider_health",
+        removal_gate=(
+            "No direct imports or monkeypatch targets use "
+            "agentsassemble.provider_health for one compatibility window."
+        ),
+        known_callers=("tests/test_provider_health.py",),
+        introduced_in="Milestone 7.1 provider health diagnostic package",
+    ),
+    "gui_legacy_provider_health_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.diagnostics.http.provider_health",
+        removal_gate=(
+            "No direct imports use "
+            "agentsassemble.gui_legacy_provider_health_http for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_gui_legacy_provider_health_http.py",),
+        introduced_in="Milestone 7.1 provider health HTTP package",
+    ),
     "postgres_room_mutations.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.postgres.room.mutations",
         removal_gate=(

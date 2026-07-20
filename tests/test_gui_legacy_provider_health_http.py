@@ -4,7 +4,12 @@ from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from agentsassemble.gui_legacy_provider_health_http import register_legacy_provider_health_route
+from agentsassemble.gui_legacy_provider_health_http import (
+    register_legacy_provider_health_route as compatibility_register,
+)
+from agentsassemble.legacy.diagnostics.http.provider_health import (
+    register_legacy_provider_health_route,
+)
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
 
 
@@ -24,6 +29,9 @@ class FakeHandler:
 
 
 class LegacyProviderHealthRouteTests(unittest.TestCase):
+    def test_root_module_exports_owned_registrar(self) -> None:
+        self.assertIs(compatibility_register, register_legacy_provider_health_route)
+
     def dispatch(self, body: bytes, *, reporter) -> FakeHandler:
         router = Router()
         register_legacy_provider_health_route(router, reporter=reporter)

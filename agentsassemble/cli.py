@@ -176,7 +176,7 @@ from agentsassemble.persona_cards import (
     render_persona_prompt,
     scan_persona_lore,
 )
-from agentsassemble.provider_health import provider_health_report
+from agentsassemble.diagnostics.provider_health import provider_health_report
 from agentsassemble.release_health import (
     DEFAULT_RELEASE_HEALTH_TIMEOUT_SECONDS,
     ReleaseHealthSelectionError,

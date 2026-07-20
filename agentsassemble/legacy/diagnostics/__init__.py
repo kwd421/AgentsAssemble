@@ -1,0 +1,1 @@
+"""Retained diagnostic compatibility behavior."""
