@@ -161,7 +161,7 @@ from agentsassemble.live_session_transport import JsonlLiveSession, TerminalLive
 from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 from agentsassemble.memory_capsules import memory_capsule_gate_report
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
-from agentsassemble.cli_http_errors import CliHttpError
+from agentsassemble.web.cli_errors import CliHttpError
 from agentsassemble.multi_host_invites import (
     create_lan_invite_packet,
     resolve_lan_invite_secret_ref,
@@ -1741,7 +1741,7 @@ def _run_ws_resident_command(args: argparse.Namespace, config: ResidentAgentConf
     WebSocket (run_provider_ws_resident) instead of the HTTP poll runner. Reuses
     the provider's command runner as the brain + the runner's prompt envelope."""
     from agentsassemble.room_engagement import resolve_engagement, room_uses_floor
-    from agentsassemble.ws_resident import run_provider_ws_resident
+    from agentsassemble.legacy.live_agent.room_resident import run_provider_ws_resident
     from agentsassemble.web.room_client import (
         fetch_room_conversation_mode,
         join_room_session,
@@ -1844,7 +1844,7 @@ def _run_live_agent_resident(args: argparse.Namespace) -> int:
 def _run_ws_group_resident(config) -> int:
     """Run one group member over the governed WebSocket resident loop."""
     from agentsassemble.room_engagement import resolve_engagement, room_uses_floor
-    from agentsassemble.ws_resident import run_provider_ws_resident
+    from agentsassemble.legacy.live_agent.room_resident import run_provider_ws_resident
     from agentsassemble.web.room_client import (
         fetch_room_conversation_mode,
         join_room_session,

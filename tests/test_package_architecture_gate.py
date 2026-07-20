@@ -71,7 +71,7 @@ class PackageArchitectureGateTests(unittest.TestCase):
         graph = _synthetic_graph(
             {
                 "agentsassemble.room.service": (
-                    "agentsassemble.gui_room_http",
+                    "agentsassemble.legacy.meeting.http.room_composition",
                     "agentsassemble.legacy_live_agent",
                 ),
                 "agentsassemble.web.routes": (
@@ -85,7 +85,7 @@ class PackageArchitectureGateTests(unittest.TestCase):
                 "agentsassemble.room.service": "room",
                 "agentsassemble.web.routes": "web",
                 "agentsassemble.application.compose": "application",
-                "agentsassemble.gui_room_http": "web",
+                "agentsassemble.legacy.meeting.http.room_composition": "web",
                 "agentsassemble.legacy_live_agent": "legacy",
                 "agentsassemble.postgres_room_repository": "persistence",
             },
@@ -97,7 +97,7 @@ class PackageArchitectureGateTests(unittest.TestCase):
         violations = dependency_direction_violations(graph)
 
         self.assertIn(
-            "agentsassemble.room.service imports web module agentsassemble.gui_room_http",
+            "agentsassemble.room.service imports web module agentsassemble.legacy.meeting.http.room_composition",
             violations,
         )
         self.assertIn(

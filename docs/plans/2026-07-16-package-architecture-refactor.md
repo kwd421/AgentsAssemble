@@ -1663,3 +1663,14 @@ module churn were deliberately avoided rather than forgotten.
   thought streaming remain deliberately frozen. Invite semantics, attendee
   lifecycle, membership projection, settings files, and vote behavior are
   unchanged.
+- 2026-07-20: The remaining flat room/resident HTTP composition acquired
+  owners. Common CLI HTTP errors moved to `web/`; retained room composition,
+  room lifecycle compatibility, moderation/media compatibility, disabled flow
+  control, legacy Codex-session routes, and the resident WebSocket wrapper
+  moved under the corresponding `legacy/meeting/http` or
+  `legacy/live_agent` package. This deliberately differs from the generated
+  map's provisional `web/` suggestion: the implementations directly compose
+  legacy file-room or resident services, and placing them in current web would
+  misstate dependency direction. Seven root modules remain explicit exports,
+  including the historically imported `gui_room_http` service names. Routes,
+  authorization, payloads, and resident behavior are unchanged.

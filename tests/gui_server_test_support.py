@@ -55,7 +55,7 @@ from agentsassemble.gui import (
     _attach_session_auto_rounds_if_requested,
     send_lobby_message_to_remote_bridge,
 )
-from agentsassemble.gui_room_http import register_room_routes
+from agentsassemble.legacy.meeting.http.room_composition import register_room_routes
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
 from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.agent_sessions import room_sse_frames_after_cursor

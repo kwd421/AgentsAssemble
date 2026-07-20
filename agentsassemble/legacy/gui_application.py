@@ -14,7 +14,7 @@ from pathlib import Path
 
 from agentsassemble.application.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event
 from agentsassemble.application.gui import SessionRunMonitor
-from agentsassemble.gui_legacy_codex_session_http import (
+from agentsassemble.legacy.live_agent.http.codex_session import (
     LegacyCodexSessionHttpDeps,
     register_legacy_codex_session_routes,
 )

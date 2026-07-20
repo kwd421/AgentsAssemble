@@ -37,7 +37,7 @@ from agentsassemble.application.gui_factory import (
     build_gui_application_services,
 )
 from agentsassemble.web.routes.attachments import register_attachment_routes
-from agentsassemble.gui_live_agent_flow_http import register_live_agent_flow_routes
+from agentsassemble.legacy.live_agent.http.flow import register_live_agent_flow_routes
 from agentsassemble.legacy.gui_application import (
     LegacyGuiApplication,
     LegacyGuiPatchHooks,
@@ -48,7 +48,7 @@ from agentsassemble.legacy.gui_application import (
 )
 from agentsassemble.web.routes.observability import register_observability_routes
 from agentsassemble.web.routes.public_invite import register_public_invite_admin_routes
-from agentsassemble.gui_room_http import _local_agent_session_turn_adapter, register_room_routes
+from agentsassemble.legacy.meeting.http.room_composition import _local_agent_session_turn_adapter, register_room_routes
 from agentsassemble.web.routes.room_settings import register_room_settings_routes
 from agentsassemble.web.static import (
     ReactStaticTransport,

@@ -29,7 +29,7 @@ from tests.gui_server_test_support import (
     write_live_state,
 )
 from agentsassemble.cli import _request_json
-from agentsassemble.cli_http_errors import CliHttpError
+from agentsassemble.web.cli_errors import CliHttpError
 
 
 class GuiServerSessionLifecycleTests(unittest.TestCase):

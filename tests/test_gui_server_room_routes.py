@@ -574,7 +574,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             with patch(
-                "agentsassemble.gui_room_http._local_agent_session_command_runner",
+                "agentsassemble.legacy.meeting.http.room_composition._local_agent_session_command_runner",
                 side_effect=lambda command: calls.append(command) or {"returncode": 0},
             ):
                 resumed = _dispatch_room_route(
@@ -661,7 +661,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             )
 
             with patch(
-                "agentsassemble.gui_room_http._local_agent_session_turn_command_streamer",
+                "agentsassemble.legacy.meeting.http.room_composition._local_agent_session_turn_command_streamer",
                 side_effect=fake_turn_command_streamer,
             ):
                 turned = _dispatch_room_route(
@@ -730,7 +730,7 @@ class GuiServerRoomRouteTests(unittest.TestCase):
             )
 
             with patch(
-                "agentsassemble.gui_room_http._local_agent_session_turn_command_streamer",
+                "agentsassemble.legacy.meeting.http.room_composition._local_agent_session_turn_command_streamer",
                 side_effect=fake_turn_command_streamer,
             ):
                 first = _dispatch_room_route(

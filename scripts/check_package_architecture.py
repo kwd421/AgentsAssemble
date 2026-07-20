@@ -48,6 +48,48 @@ class CompatibilityShim:
 # boundaries. Historical presence in the root baseline does not exempt a moved
 # module from recording its replacement, callers, and removal gate here.
 ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
+    "cli_http_errors.py": CompatibilityShim(
+        replacement_import="agentsassemble.web.cli_errors",
+        removal_gate="No direct imports use agentsassemble.cli_http_errors for one compatibility window.",
+        known_callers=("tests/test_cli_timeout_session_ensure.py",),
+        introduced_in="Milestone 6.64 retained HTTP ownership wave",
+    ),
+    "gui_legacy_codex_session_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.live_agent.http.codex_session",
+        removal_gate="No direct imports use agentsassemble.gui_legacy_codex_session_http for one compatibility window.",
+        known_callers=("agentsassemble/gui.py",),
+        introduced_in="Milestone 6.64 retained HTTP ownership wave",
+    ),
+    "gui_live_agent_flow_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.live_agent.http.flow",
+        removal_gate="No direct imports use agentsassemble.gui_live_agent_flow_http for one compatibility window.",
+        known_callers=("agentsassemble/gui.py",),
+        introduced_in="Milestone 6.64 retained HTTP ownership wave",
+    ),
+    "gui_room_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.http.room_composition",
+        removal_gate="No direct imports or patches use agentsassemble.gui_room_http for one compatibility window.",
+        known_callers=("agentsassemble/gui.py", "tests/test_gui_server_room_routes.py"),
+        introduced_in="Milestone 6.64 retained HTTP ownership wave",
+    ),
+    "gui_room_lifecycle_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.http.room_lifecycle_compat",
+        removal_gate="No direct imports use agentsassemble.gui_room_lifecycle_http for one compatibility window.",
+        known_callers=("agentsassemble/gui.py",),
+        introduced_in="Milestone 6.64 retained HTTP ownership wave",
+    ),
+    "gui_room_moderation_media_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.http.room_moderation_media",
+        removal_gate="No direct imports use agentsassemble.gui_room_moderation_media_http for one compatibility window.",
+        known_callers=("agentsassemble/gui.py",),
+        introduced_in="Milestone 6.64 retained HTTP ownership wave",
+    ),
+    "ws_resident.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.live_agent.room_resident",
+        removal_gate="No direct imports use agentsassemble.ws_resident for one compatibility window.",
+        known_callers=("tests/test_ws_resident.py",),
+        introduced_in="Milestone 6.64 retained HTTP ownership wave",
+    ),
     "room_attendee.py": CompatibilityShim(
         replacement_import="agentsassemble.application.room_attendee",
         removal_gate="No direct imports use agentsassemble.room_attendee for one compatibility window.",

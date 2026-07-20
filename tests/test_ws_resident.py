@@ -17,11 +17,11 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 
-import agentsassemble.ws_resident as ws_resident
+import agentsassemble.legacy.live_agent.room_resident as ws_resident
 from agentsassemble.gui import _make_handler
 from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.admission.invite import create_room_invite, join_room_with_invite, reset_state
-from agentsassemble.ws_resident import run_provider_ws_resident, run_ws_resident
+from agentsassemble.legacy.live_agent.room_resident import run_provider_ws_resident, run_ws_resident
 
 
 def _resident_config(agent_id: str, *, engagement_mode: str = "always") -> ResidentAgentConfig:
@@ -576,7 +576,7 @@ class WsLaunchWiringTests(unittest.TestCase):
         args = self._args("--session-token", "tok-123", "--max-ticks", "2")
         config = config_from_args(args)
         with mock.patch("agentsassemble.web.room_client.fetch_room_conversation_mode", lambda *a, **k: "quiet"), \
-             mock.patch("agentsassemble.ws_resident.run_provider_ws_resident", fake_run):
+             mock.patch("agentsassemble.legacy.live_agent.room_resident.run_provider_ws_resident", fake_run):
             rc = cli._run_ws_resident_command(args, config)
         self.assertEqual(rc, 0)
         self.assertEqual(seen["token"], "tok-123")
@@ -602,7 +602,7 @@ class WsLaunchWiringTests(unittest.TestCase):
         ])
         config = config_from_args(args)
         with mock.patch("agentsassemble.web.room_client.fetch_room_conversation_mode", lambda *a, **k: "free"), \
-             mock.patch("agentsassemble.ws_resident.run_provider_ws_resident",
+             mock.patch("agentsassemble.legacy.live_agent.room_resident.run_provider_ws_resident",
                         lambda server, token, cfg, runner, *, max_replies=0, engagement_mode=None, use_floor=False:
                         seen.update(engagement_mode=engagement_mode, use_floor=use_floor) or 0):
             cli._run_ws_resident_command(args, config)
@@ -623,7 +623,7 @@ class WsLaunchWiringTests(unittest.TestCase):
         ])
         config = config_from_args(args)
         with mock.patch("agentsassemble.web.room_client.fetch_room_conversation_mode", lambda *a, **k: "ordered"), \
-             mock.patch("agentsassemble.ws_resident.run_provider_ws_resident",
+             mock.patch("agentsassemble.legacy.live_agent.room_resident.run_provider_ws_resident",
                         lambda server, token, cfg, runner, *, max_replies=0, engagement_mode=None, use_floor=False:
                         seen.update(engagement_mode=engagement_mode, use_floor=use_floor) or 0):
             cli._run_ws_resident_command(args, config)
@@ -647,7 +647,7 @@ class WsLaunchWiringTests(unittest.TestCase):
                      "meeting_id": "room-from-join",
                  },
              ) as _j, \
-             mock.patch("agentsassemble.ws_resident.run_provider_ws_resident",
+             mock.patch("agentsassemble.legacy.live_agent.room_resident.run_provider_ws_resident",
                         lambda server, token, cfg, runner, *, max_replies=0, engagement_mode=None, use_floor=False:
                         seen.update(
                             token=token,

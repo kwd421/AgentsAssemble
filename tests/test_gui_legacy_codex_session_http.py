@@ -4,7 +4,7 @@ from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from agentsassemble.gui_legacy_codex_session_http import (
+from agentsassemble.legacy.live_agent.http.codex_session import (
     LegacyCodexSessionHttpDeps,
     register_legacy_codex_session_routes,
 )

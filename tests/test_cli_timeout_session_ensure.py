@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from agentsassemble.cli import build_parser, main
-from agentsassemble.cli_http_errors import CliHttpError
+from agentsassemble.web.cli_errors import CliHttpError
 from agentsassemble.cli_legacy_live_agent_sessions import (
     LegacySessionCliRuntime,
     wait_for_session_after_control,

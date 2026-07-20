@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from agentsassemble.application.cli.common import MAX_LIVE_AGENT_ROUND_BATCH
-from agentsassemble.cli_http_errors import CliHttpError
+from agentsassemble.web.cli_errors import CliHttpError
 
 
 SESSION_BOUND_PROBE_HTTP_WINDOWS = 25
