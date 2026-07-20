@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from agentsassemble.admission.maintenance import AdmissionWorkflowSelection
-from agentsassemble.room_invite_repository_factory import build_invite_session_repository
+from agentsassemble.admission.repository_factory import build_invite_session_repository
 from agentsassemble.room_repository_factory import RoomRepositorySettings
 
 

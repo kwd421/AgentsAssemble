@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.room_settings import room_settings_payload, update_room_settings
+from agentsassemble.room.settings import room_settings_payload, update_room_settings
 
 
 class RoomSettingsTests(unittest.TestCase):

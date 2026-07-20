@@ -20,7 +20,7 @@ from urllib.request import Request, urlopen
 import agentsassemble.ws_resident as ws_resident
 from agentsassemble.gui import _make_handler
 from agentsassemble.live_agent_runner import ResidentAgentConfig
-from agentsassemble.room_invite import create_room_invite, join_room_with_invite, reset_state
+from agentsassemble.admission.invite import create_room_invite, join_room_with_invite, reset_state
 from agentsassemble.ws_resident import run_provider_ws_resident, run_ws_resident
 
 

@@ -16,7 +16,7 @@ from agentsassemble.admission.repository import (
 from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,
 )
-from agentsassemble.room_invite import (
+from agentsassemble.admission.invite import (
     active_sessions_summary,
     configure_room_invite_store,
     create_room_invite,
@@ -35,7 +35,7 @@ from agentsassemble.room_invite import (
 class TestRoomInviteRepositoryConfiguration(unittest.TestCase):
     def test_facade_fails_closed_before_repository_configuration(self) -> None:
         with patch(
-            "agentsassemble.room_invite._invite_application",
+            "agentsassemble.admission.invite._invite_application",
             InviteApplicationService(UnconfiguredInviteSessionRepository()),
         ):
             with self.assertRaises(InviteRepositoryNotConfigured):
@@ -364,7 +364,7 @@ class TestRoomInviteCreateJoinFlow(unittest.TestCase):
                 meeting_id="test-meeting",
                 agent_id="guest-1",
             )
-            with patch("agentsassemble.room_invite.SESSION_TOKEN_TTL_SECONDS", -1):
+            with patch("agentsassemble.admission.invite.SESSION_TOKEN_TTL_SECONDS", -1):
                 join_result = join_room_with_invite(invite["invite_token"], meeting_id="test-meeting")
             session_token = str(join_result["session_token"])
             self.assertIsNone(verify_session_token(session_token))

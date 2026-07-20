@@ -8,7 +8,7 @@ from unittest.mock import patch
 from agentsassemble.persistence.local.admission.repository import (
     JsonInviteSessionRepository,
 )
-from agentsassemble.room_invite_repository_factory import (
+from agentsassemble.admission.repository_factory import (
     build_invite_session_repository,
 )
 from agentsassemble.room_repository_factory import (
@@ -59,7 +59,7 @@ class RoomInviteRepositoryFactoryTests(unittest.TestCase):
             postgres_dsn="postgresql://user:secret@example.invalid/rooms",
         )
         with patch(
-            "agentsassemble.room_invite_repository_factory._postgres_repository_type",
+            "agentsassemble.admission.repository_factory._postgres_repository_type",
             return_value=FakePostgresRepository,
         ):
             repository = build_invite_session_repository(Path("/tmp/unused"), settings)
@@ -78,7 +78,7 @@ class RoomInviteRepositoryFactoryTests(unittest.TestCase):
             postgres_dsn="postgresql://user:secret@example.invalid/rooms",
         )
         with patch(
-            "agentsassemble.room_invite_repository_factory._postgres_repository_type",
+            "agentsassemble.admission.repository_factory._postgres_repository_type",
             return_value=FakePostgresRepository,
         ):
             repository = build_invite_session_repository(

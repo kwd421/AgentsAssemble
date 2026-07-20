@@ -6,7 +6,7 @@ from pathlib import Path
 
 from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.room_admission import RoomAdmissionService
-from agentsassemble.room_invite import (
+from agentsassemble.admission.invite import (
     configure_room_invite_store,
     create_room_invite,
     inspect_room_invite,

@@ -40,8 +40,8 @@ from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.room_admission import RoomAdmissionService
 from agentsassemble.admission.coordinator import RoomAdmissionCoordinator
-from agentsassemble.room_invite import verify_session_token
-from agentsassemble.room_invite import compatibility_public_invite_runtime
+from agentsassemble.admission.invite import verify_session_token
+from agentsassemble.admission.invite import compatibility_public_invite_runtime
 from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.persistence.local.admission.repository import (
     MemoryInviteSessionRepository,

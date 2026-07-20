@@ -6,7 +6,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from agentsassemble.room_invite import (
+from agentsassemble.admission.invite import (
     create_room_invite,
     generate_runtime_host_token,
     get_host_token,

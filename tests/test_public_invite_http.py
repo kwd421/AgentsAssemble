@@ -13,7 +13,7 @@ from uuid import uuid4
 from agentsassemble.gui import _make_handler
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.application.public_tunnel import PublicTunnelManager
-from agentsassemble.room_invite import get_public_url, reset_state, set_runtime_host_token, set_runtime_public_url
+from agentsassemble.admission.invite import get_public_url, reset_state, set_runtime_host_token, set_runtime_public_url
 from agentsassemble.room_store import RoomStore
 
 

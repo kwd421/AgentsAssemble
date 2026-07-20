@@ -48,9 +48,9 @@ def _imported_modules(relative_path: str) -> set[str]:
 class InviteCompatibilityBoundaryTests(unittest.TestCase):
     def test_current_invite_application_does_not_depend_on_global_facade(self) -> None:
         offenders = {
-            relative_path: "agentsassemble.room_invite"
+            relative_path: "agentsassemble.admission.invite"
             for relative_path in CURRENT_INVITE_APPLICATION_MODULES
-            if "agentsassemble.room_invite" in _imported_modules(relative_path)
+            if "agentsassemble.admission.invite" in _imported_modules(relative_path)
         }
 
         self.assertEqual(offenders, {})

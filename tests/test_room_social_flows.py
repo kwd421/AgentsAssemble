@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from agentsassemble.gui import _make_handler
-from agentsassemble.room_invite import reset_state
+from agentsassemble.admission.invite import reset_state
 from agentsassemble.room.realtime import RoomRealtimeController
 from agentsassemble.web.room_client import WsRoomClient
 from tests.room_realtime_test_support import memory_room_access_services

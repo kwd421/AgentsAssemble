@@ -21,7 +21,7 @@ from agentsassemble.room.realtime import (
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
 from agentsassemble.room.moderation import is_room_member_muted, set_room_member_muted
 from agentsassemble.room_store import RoomStore
-from agentsassemble.room_settings import update_room_settings as update_legacy_room_settings
+from agentsassemble.room.settings import update_room_settings as update_legacy_room_settings
 from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
 )

@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 import agentsassemble.features.mafia.routes as mafia_http
 from agentsassemble.gui import _make_handler
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
-from agentsassemble.room_invite import reset_state, set_runtime_public_url
+from agentsassemble.admission.invite import reset_state, set_runtime_public_url
 
 
 class FakeHandler:

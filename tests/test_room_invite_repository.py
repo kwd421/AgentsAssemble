@@ -563,7 +563,7 @@ class JsonInviteSessionRepositoryTests(
         self.path.write_text(
             json.dumps(
                 {
-                    "schema": "agentsassemble.room_invite_state.v999",
+                    "schema": "agentsassemble.admission.invite_state.v999",
                     "invite_secret": "",
                     "sessions": {},
                     "pending_invites": {},

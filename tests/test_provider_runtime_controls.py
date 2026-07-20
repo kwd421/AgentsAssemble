@@ -23,8 +23,8 @@ from agentsassemble.providers.capabilities import (
 )
 from agentsassemble.providers.secrets import ProviderSecretStore
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
-from agentsassemble.room_attendee import _leave_room, _orientation_text, parse_agent_invite_url
-from agentsassemble.room_attendee import AgentAttendee
+from agentsassemble.application.room_attendee import _leave_room, _orientation_text, parse_agent_invite_url
+from agentsassemble.application.room_attendee import AgentAttendee
 from agentsassemble.providers.windows_conpty import WindowsConPtyRuntime
 from agentsassemble.providers.live_cli import _terminal_query_response
 from agentsassemble.providers.live_cli_transcripts import _antigravity_user_request
@@ -497,9 +497,9 @@ class ProviderRuntimeControlTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as temp_dir,
-            patch("agentsassemble.room_attendee.runtime_from_config", side_effect=capture),
-            patch("agentsassemble.room_attendee.OpenCodeServerProcess", return_value=opencode_server),
-            patch("agentsassemble.room_attendee.PROVIDER_SECRETS.get", return_value="deepseek-secret"),
+            patch("agentsassemble.application.room_attendee.runtime_from_config", side_effect=capture),
+            patch("agentsassemble.application.room_attendee.OpenCodeServerProcess", return_value=opencode_server),
+            patch("agentsassemble.application.room_attendee.PROVIDER_SECRETS.get", return_value="deepseek-secret"),
         ):
             workspace = Path(temp_dir)
             for provider_id in ("claude", "grok", "antigravity", "opencode", "deepseek"):
@@ -554,7 +554,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         )
         attendee._runtime = Runtime()
         attendee._opencode_server = OpenCodeServer()
-        with patch("agentsassemble.room_attendee._leave_room", side_effect=lambda *_: calls.append("leave")):
+        with patch("agentsassemble.application.room_attendee._leave_room", side_effect=lambda *_: calls.append("leave")):
             report = attendee._cleanup(session_token="session-secret", temporary=Temporary())
 
         self.assertEqual(calls, ["runtime", "opencode", "leave", "temporary"])
@@ -576,7 +576,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
 
         with (
             patch(
-                "agentsassemble.room_attendee.join_room_session",
+                "agentsassemble.application.room_attendee.join_room_session",
                 return_value={
                     "session_token": "session-secret",
                     "agent_id": "claude-guest",
@@ -585,9 +585,9 @@ class ProviderRuntimeControlTests(unittest.TestCase):
                     "guide": {},
                 },
             ),
-            patch("agentsassemble.room_attendee.connect_room_ws", return_value=object()) as connect,
-            patch("agentsassemble.room_attendee.RoomAgentBridge", return_value=bridge),
-            patch("agentsassemble.room_attendee._leave_room"),
+            patch("agentsassemble.application.room_attendee.connect_room_ws", return_value=object()) as connect,
+            patch("agentsassemble.application.room_attendee.RoomAgentBridge", return_value=bridge),
+            patch("agentsassemble.application.room_attendee._leave_room"),
         ):
             result = attendee.run()
 
@@ -604,7 +604,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
 
         with (
             patch(
-                "agentsassemble.room_attendee.join_room_session",
+                "agentsassemble.application.room_attendee.join_room_session",
                 return_value={
                     "session_token": "session-secret",
                     "agent_id": "claude-guest",
@@ -613,8 +613,8 @@ class ProviderRuntimeControlTests(unittest.TestCase):
                     "guide": {},
                 },
             ),
-            patch("agentsassemble.room_attendee.connect_room_ws") as connect,
-            patch("agentsassemble.room_attendee._leave_room"),
+            patch("agentsassemble.application.room_attendee.connect_room_ws") as connect,
+            patch("agentsassemble.application.room_attendee._leave_room"),
         ):
             with self.assertRaisesRegex(ValueError, "must name the provider"):
                 attendee.run()
@@ -625,7 +625,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
     def test_leave_treats_an_already_revoked_session_as_complete(self):
         revoked = HTTPError("https://room.example/api/room-invite/leave", 401, "Unauthorized", {}, None)
 
-        with patch("agentsassemble.room_attendee.urlopen", side_effect=revoked):
+        with patch("agentsassemble.application.room_attendee.urlopen", side_effect=revoked):
             _leave_room("https://room.example", "session-secret")
 
     def test_windows_runtime_keeps_one_process_and_stops_it(self):

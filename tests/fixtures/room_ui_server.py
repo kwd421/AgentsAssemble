@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT))
 from http.server import ThreadingHTTPServer
 
 from agentsassemble.gui import _make_handler
-from agentsassemble.room_invite import PUBLIC_URL_ENV
+from agentsassemble.admission.invite import PUBLIC_URL_ENV
 from agentsassemble.providers.bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.room.realtime import NativeCliProviderSpec, RoomRealtimeController
 from tests.room_realtime_test_support import memory_room_access_services

@@ -5688,7 +5688,7 @@ def run_room_command(args: argparse.Namespace) -> int:
             )
         return 0
     if args.room_command == "attend":
-        from agentsassemble.room_attendee import run_attendee_from_cli
+        from agentsassemble.application.room_attendee import run_attendee_from_cli
 
         return run_attendee_from_cli(
             provider_id=str(args.provider),

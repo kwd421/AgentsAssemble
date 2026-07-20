@@ -1652,3 +1652,14 @@ module churn were deliberately avoided rather than forgotten.
   eight root modules are explicit compatibility exports. Event formats,
   artifacts, locks, meeting phases, retry behavior, CLI demo behavior, and
   public outputs are unchanged.
+- 2026-07-20: Stable room-adjacent ownership moved in one verified wave.
+  Invite token/session compatibility now lives under `admission/`; the native
+  attendee process composition lives under `application/`; room membership,
+  legacy file-backed settings, and vote tallying live under `room/`. Current
+  callers and patch targets use those owners while six root modules remain
+  explicit compatibility exports. The two room policies that previously used
+  the retained meeting text cleaner now use the behavior-equivalent current
+  `room.text` contract. Autonomous engagement, routing, floor selection, and
+  thought streaming remain deliberately frozen. Invite semantics, attendee
+  lifecycle, membership projection, settings files, and vote behavior are
+  unchanged.

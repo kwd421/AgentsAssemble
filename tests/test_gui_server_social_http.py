@@ -18,7 +18,7 @@ from agentsassemble.features.social.routes import (
 )
 from agentsassemble.gui import _make_handler
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
-from agentsassemble.room_invite import reset_state, set_runtime_public_url
+from agentsassemble.admission.invite import reset_state, set_runtime_public_url
 
 
 class _FakeHandler:

@@ -14,7 +14,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
-from agentsassemble.room_invite import reset_state, set_runtime_host_token
+from agentsassemble.admission.invite import reset_state, set_runtime_host_token
 from agentsassemble.room_store import RoomStore
 
 

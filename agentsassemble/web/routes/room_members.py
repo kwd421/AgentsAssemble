@@ -5,7 +5,7 @@ from http import HTTPStatus
 
 from agentsassemble.live_agents import read_live_agents
 from agentsassemble.room.moderation import set_room_member_muted
-from agentsassemble.room_members import room_members_payload, upsert_room_member
+from agentsassemble.room.members import room_members_payload, upsert_room_member
 from agentsassemble.web.router import RequestContext, Router
 
 

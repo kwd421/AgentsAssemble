@@ -23,7 +23,7 @@ from agentsassemble.admission.repository import (
 from agentsassemble.admission.workflow_record import validate_admission_workflow_record
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
-ROOM_INVITE_STORE_SCHEMA = "agentsassemble.room_invite_state.v1"
+ROOM_INVITE_STORE_SCHEMA = "agentsassemble.admission.invite_state.v1"
 
 
 _RepositoryState = tuple[

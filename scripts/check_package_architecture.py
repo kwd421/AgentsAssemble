@@ -48,6 +48,42 @@ class CompatibilityShim:
 # boundaries. Historical presence in the root baseline does not exempt a moved
 # module from recording its replacement, callers, and removal gate here.
 ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
+    "room_attendee.py": CompatibilityShim(
+        replacement_import="agentsassemble.application.room_attendee",
+        removal_gate="No direct imports use agentsassemble.room_attendee for one compatibility window.",
+        known_callers=("agentsassemble/cli.py",),
+        introduced_in="Milestone 6.63 stable room ownership wave",
+    ),
+    "room_invite.py": CompatibilityShim(
+        replacement_import="agentsassemble.admission.invite",
+        removal_gate="No direct imports use agentsassemble.room_invite for one compatibility window.",
+        known_callers=("tests/test_room_invite.py",),
+        introduced_in="Milestone 6.63 stable room ownership wave",
+    ),
+    "room_invite_repository_factory.py": CompatibilityShim(
+        replacement_import="agentsassemble.admission.repository_factory",
+        removal_gate="No direct imports use agentsassemble.room_invite_repository_factory for one compatibility window.",
+        known_callers=("agentsassemble/gui.py",),
+        introduced_in="Milestone 6.63 stable room ownership wave",
+    ),
+    "room_members.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.members",
+        removal_gate="No direct imports or patches use agentsassemble.room_members for one compatibility window.",
+        known_callers=("tests/test_room_members.py",),
+        introduced_in="Milestone 6.63 stable room ownership wave",
+    ),
+    "room_settings.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.settings",
+        removal_gate="No direct imports use agentsassemble.room_settings for one compatibility window.",
+        known_callers=("tests/test_room_settings.py",),
+        introduced_in="Milestone 6.63 stable room ownership wave",
+    ),
+    "room_votes.py": CompatibilityShim(
+        replacement_import="agentsassemble.room.votes",
+        removal_gate="No direct imports use agentsassemble.room_votes for one compatibility window.",
+        known_callers=("tests/test_room_votes.py",),
+        introduced_in="Milestone 6.63 stable room ownership wave",
+    ),
     "legacy_turn_results.py": CompatibilityShim(
         replacement_import="agentsassemble.legacy.meeting.core.turn_results",
         removal_gate="No direct imports use agentsassemble.legacy_turn_results for one compatibility window.",

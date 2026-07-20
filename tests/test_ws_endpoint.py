@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
-from agentsassemble.room_invite import (
+from agentsassemble.admission.invite import (
     create_room_invite,
     join_room_with_invite,
     reset_state,

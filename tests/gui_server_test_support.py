@@ -69,7 +69,7 @@ from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 from agentsassemble.live_session_transport import terminal_sessions_supported
-from agentsassemble.room_invite import (
+from agentsassemble.admission.invite import (
     compatibility_public_invite_runtime,
     create_room_invite,
     join_room_with_invite,

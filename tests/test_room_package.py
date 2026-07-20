@@ -11,7 +11,7 @@ import agentsassemble.room_errors as compatibility_errors
 import agentsassemble.room_event_broker as compatibility_event_broker
 import agentsassemble.room_global_settings as compatibility_global_settings
 import agentsassemble.room_agent_lifecycle as compatibility_lifecycle
-import agentsassemble.room_members as compatibility_members
+import agentsassemble.room.members as compatibility_members
 import agentsassemble.room_projection as compatibility_projection
 import agentsassemble.room_realtime as compatibility_realtime
 import agentsassemble.room_repository as compatibility_repository

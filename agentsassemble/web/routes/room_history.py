@@ -15,7 +15,7 @@ from agentsassemble.room.speech import (
     ensure_lobby_say_allowed,
     governed_lobby_say,
 )
-from agentsassemble.room_votes import vote_summary
+from agentsassemble.room.votes import vote_summary
 from agentsassemble.web.router import RequestContext, Router
 
 

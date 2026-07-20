@@ -51,7 +51,7 @@ from agentsassemble.room.channels import (
     rename_channel,
     reorder_channels,
 )
-from agentsassemble.room_invite import (
+from agentsassemble.admission.invite import (
     active_sessions_summary,
     create_room_invite,
     get_public_url,
@@ -61,7 +61,7 @@ from agentsassemble.room_invite import (
     revoke_session,
     revoke_sessions_for_participant,
 )
-from agentsassemble.room_members import (
+from agentsassemble.room.members import (
     is_room_member_muted,
     remove_room_member,
     room_members_payload,
@@ -83,7 +83,7 @@ from agentsassemble.application.room_users import (
     set_room_archived,
     user_for_participant,
 )
-from agentsassemble.room_votes import vote_summary
+from agentsassemble.room.votes import vote_summary
 from agentsassemble.application.stable_entry import stable_entry_url
 from agentsassemble.voice_presence import (
     join_voice,

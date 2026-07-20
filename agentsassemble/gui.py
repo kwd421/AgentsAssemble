@@ -311,7 +311,7 @@ from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
 )
 from agentsassemble.room.moderation import is_room_member_muted
-from agentsassemble.room_members import mark_thinking, room_members_payload
+from agentsassemble.room.members import mark_thinking, room_members_payload
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room_repository_factory import (
     DEFAULT_POSTGRES_DSN_ENV,
@@ -320,7 +320,7 @@ from agentsassemble.room_repository_factory import (
     build_room_repository,
 )
 from agentsassemble.admission.repository import InviteSessionRepository
-from agentsassemble.room_invite_repository_factory import build_invite_session_repository
+from agentsassemble.admission.repository_factory import build_invite_session_repository
 from agentsassemble.room.speech import (
     ActorIdentity,
     GovernedLobbySayRejected,
@@ -331,7 +331,7 @@ from agentsassemble.web.room_session import (
     WsSayRejected,
 )
 from agentsassemble.application.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
-from agentsassemble.room_invite import (
+from agentsassemble.admission.invite import (
     compatibility_public_invite_runtime,
 )
 from agentsassemble.legacy.meeting.core.events import (
