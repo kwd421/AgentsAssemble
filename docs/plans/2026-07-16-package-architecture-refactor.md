@@ -1482,3 +1482,9 @@ module churn were deliberately avoided rather than forgotten.
   `gui_legacy_live_agent_speech_http.py` remains a metadata-tracked
   compatibility export. Endpoint registration, JSON validation, service
   delegation, errors, and response payloads are unchanged.
+- 2026-07-20: The retained resident official/review reply HTTP registrar moved
+  mechanically to `legacy/live_agent/http/official_reply.py`. Legacy GUI
+  composition imports the owned registrar directly; root
+  `gui_legacy_live_agent_official_reply_http.py` remains a metadata-tracked
+  compatibility export. Operation-payload validation, service delegation,
+  errors, and response payloads are unchanged.
