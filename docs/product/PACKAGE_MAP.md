@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `b16680ae0dc93b59`
+Source fingerprint: `4c6c8056d917408e`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 507
+- Python modules: 508
 - Top-level package modules: 303
-- Domains: admission=28, application=69, diagnostics=14, features=19, identity=9, legacy=82, persistence=58, providers=84, room=80, web=64
-- Classifications: compatibility=123, current=293, legacy=79, optional=12
+- Domains: admission=28, application=69, diagnostics=14, features=19, identity=9, legacy=83, persistence=58, providers=84, room=80, web=64
+- Classifications: compatibility=124, current=293, legacy=79, optional=12
 
 ## Classification Rules
 
@@ -135,7 +135,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.gui_legacy_live_agent_official_reply_http` | `agentsassemble/gui_legacy_live_agent_official_reply_http.py` | 40 | web | current | `agentsassemble.legacy_live_agent_official_reply`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_live_agent_official_reply_http.py` | `web/` | planned-move |
 | `agentsassemble.gui_legacy_live_agent_preflight_http` | `agentsassemble/gui_legacy_live_agent_preflight_http.py` | 69 | web | current | `agentsassemble.diagnostic_report_projection`, `agentsassemble.legacy.live_agent.preflight`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_live_agent_preflight_http.py` | `web/` | planned-move |
 | `agentsassemble.gui_legacy_live_agent_presence_http` | `agentsassemble/gui_legacy_live_agent_presence_http.py` | 50 | web | current | `agentsassemble.legacy_live_agent_presence`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_live_agent_presence_http.py` | `web/` | planned-move |
-| `agentsassemble.gui_legacy_live_agent_probe_http` | `agentsassemble/gui_legacy_live_agent_probe_http.py` | 41 | web | current | `agentsassemble.legacy_live_agent_probe`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_live_agent_probe_http.py` | `web/` | planned-move |
+| `agentsassemble.gui_legacy_live_agent_probe_http` | `agentsassemble/gui_legacy_live_agent_probe_http.py` | 41 | web | current | `agentsassemble.legacy.live_agent.probe`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_live_agent_probe_http.py` | `web/` | planned-move |
 | `agentsassemble.gui_legacy_live_agent_process_http` | `agentsassemble/gui_legacy_live_agent_process_http.py` | 50 | web | current | `agentsassemble.legacy_live_agent_process_service`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_live_agent_process_http.py` | `web/` | planned-move |
 | `agentsassemble.gui_legacy_live_agent_read_http` | `agentsassemble/gui_legacy_live_agent_read_http.py` | 149 | web | current | `agentsassemble.legacy_live_agent_diagnostics`, `agentsassemble.legacy_live_agent_health_queries`, `agentsassemble.legacy_live_agent_queries`, `agentsassemble.legacy_live_agent_roster_queries`, `agentsassemble.live_agent_sessions`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_live_agent_read_http.py` | `web/` | planned-move |
 | `agentsassemble.gui_legacy_live_agent_readiness_http` | `agentsassemble/gui_legacy_live_agent_readiness_http.py` | 72 | web | current | `agentsassemble.legacy_live_agent_readiness`, `agentsassemble.legacy_live_agent_readiness_projection`, `agentsassemble.web.router` | 1 | - | test-import:1 | `tests/test_gui_legacy_live_agent_readiness_http.py` | `web/` | planned-move |
@@ -186,6 +186,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.legacy.live_agent` | `agentsassemble/legacy/live_agent/__init__.py` | 1 | legacy | legacy | - | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.engagement` | `agentsassemble/legacy/live_agent/engagement.py` | 91 | legacy | legacy | `agentsassemble.live_agent_operations`, `agentsassemble.live_agents` | 4 | - | test-import:2 | `tests/test_legacy_live_agent_engagement.py`, `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.preflight` | `agentsassemble/legacy/live_agent/preflight.py` | 24 | legacy | legacy | `agentsassemble.live_agent_preflight` | 4 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | in-target-package |
+| `agentsassemble.legacy.live_agent.probe` | `agentsassemble/legacy/live_agent/probe.py` | 103 | legacy | legacy | `agentsassemble.live_agent_operations`, `agentsassemble.live_agent_probe` | 4 | - | test-import:2 | `tests/test_legacy_live_agent_probe.py`, `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.meeting_admission` | `agentsassemble/legacy/meeting_admission.py` | 115 | legacy | legacy | `agentsassemble.models` | 2 | `call:frozenset@9` | test-import:1 | `tests/test_admission_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy_codex_session_compat` | `agentsassemble/legacy_codex_session_compat.py` | 446 | legacy | compatibility | `agentsassemble.codex_sessions`, `agentsassemble.config`, `agentsassemble.legacy_live_agent_diagnostics`, `agentsassemble.legacy_live_agent_session_control`, `agentsassemble.legacy_meeting_records`, `agentsassemble.legacy_turn_scheduler`, `agentsassemble.live_agent_processes`, `agentsassemble.live_agents`, +1 | 3 | - | test-import:2 | `tests/test_gui_legacy_codex_session_http.py`, `tests/test_legacy_codex_session_compat.py` | `legacy/` | compatibility-shim |
 | `agentsassemble.legacy_live_agent_diagnostics` | `agentsassemble/legacy_live_agent_diagnostics.py` | 277 | legacy | legacy | `agentsassemble.legacy_live_agent_health`, `agentsassemble.legacy_live_agent_process_projection`, `agentsassemble.live_agent_operations`, `agentsassemble.live_agent_processes`, `agentsassemble.live_agent_session_runs`, `agentsassemble.live_agent_sessions` | 6 | - | - | - | `legacy/` | planned-move |
@@ -198,7 +199,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.legacy_live_agent_preflight` | `agentsassemble/legacy_live_agent_preflight.py` | 10 | legacy | compatibility | `agentsassemble.legacy.live_agent.preflight` | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | compatibility-shim |
 | `agentsassemble.legacy_live_agent_presence` | `agentsassemble/legacy_live_agent_presence.py` | 167 | legacy | legacy | `agentsassemble.legacy_live_agent_presence_projection`, `agentsassemble.legacy_live_agent_queries`, `agentsassemble.live_agent_operations`, `agentsassemble.live_agents`, `agentsassemble.meeting_events` | 3 | - | test-import:1 | `tests/test_legacy_live_agent_presence.py` | `legacy/` | planned-move |
 | `agentsassemble.legacy_live_agent_presence_projection` | `agentsassemble/legacy_live_agent_presence_projection.py` | 54 | legacy | legacy | `agentsassemble.legacy_live_agent_roster_queries`, `agentsassemble.live_agent_context`, `agentsassemble.meeting_events` | 1 | - | - | - | `legacy/` | planned-move |
-| `agentsassemble.legacy_live_agent_probe` | `agentsassemble/legacy_live_agent_probe.py` | 103 | legacy | legacy | `agentsassemble.live_agent_operations`, `agentsassemble.live_agent_probe` | 3 | - | test-import:1 | `tests/test_legacy_live_agent_probe.py` | `legacy/` | planned-move |
+| `agentsassemble.legacy_live_agent_probe` | `agentsassemble/legacy_live_agent_probe.py` | 12 | legacy | compatibility | `agentsassemble.legacy.live_agent.probe` | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | compatibility-shim |
 | `agentsassemble.legacy_live_agent_process_control` | `agentsassemble/legacy_live_agent_process_control.py` | 140 | legacy | legacy | `agentsassemble.meeting_events` | 3 | - | test-import:1 | `tests/test_legacy_live_agent_process_control.py` | `legacy/` | planned-move |
 | `agentsassemble.legacy_live_agent_process_projection` | `agentsassemble/legacy_live_agent_process_projection.py` | 139 | legacy | legacy | `agentsassemble.legacy_live_agent_health`, `agentsassemble.live_agent_processes`, `agentsassemble.live_agents`, `agentsassemble.meeting_events` | 3 | - | - | - | `legacy/` | planned-move |
 | `agentsassemble.legacy_live_agent_process_service` | `agentsassemble/legacy_live_agent_process_service.py` | 196 | legacy | legacy | `agentsassemble.legacy_live_agent_process_control` | 2 | - | test-import:1 | `tests/test_legacy_live_agent_process_service.py` | `legacy/` | planned-move |

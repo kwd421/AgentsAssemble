@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.legacy_live_agent_probe import (
+from agentsassemble.legacy.live_agent.probe import (
     LegacyLiveAgentProbeService,
     probe_timeout_seconds,
 )

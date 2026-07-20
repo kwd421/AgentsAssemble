@@ -246,7 +246,7 @@ from agentsassemble.legacy_live_agent_presence import (
 from agentsassemble.legacy.live_agent.engagement import (
     update_live_agent_engagement_payload,
 )
-from agentsassemble.legacy_live_agent_probe import (
+from agentsassemble.legacy.live_agent.probe import (
     live_agent_probe_payload,
 )
 from agentsassemble.legacy_live_agent_official_reply import (

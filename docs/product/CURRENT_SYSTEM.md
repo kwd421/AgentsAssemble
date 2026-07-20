@@ -313,6 +313,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Legacy resident health aggregation | `legacy_live_agent_health_queries.py`; observation cursor/event policy in `legacy_live_agent_observation_health.py`; durable run/monitor policy in `legacy_live_agent_session_run_health.py` |
 | Legacy resident preflight | service in `legacy/live_agent/preflight.py` with root compatibility export; safe response projection in `diagnostic_report_projection.py`; HTTP in `gui_legacy_live_agent_preflight_http.py` |
 | Legacy resident engagement mutation | service and operation audit in `legacy/live_agent/engagement.py` with root compatibility export; HTTP in `gui_legacy_live_agent_engagement_http.py` |
+| Legacy resident reply probe | execution, timeout normalization, and bounded operation audit in `legacy/live_agent/probe.py` with root compatibility export; HTTP in `gui_legacy_live_agent_probe_http.py` |
 | Legacy resident local CLI discovery | `legacy_live_agent_discovery.py`, HTTP in `gui_legacy_live_agent_discovery_http.py` |
 | Remaining legacy resident smoke compatibility | `gui.py`; classify and extract one verified family at a time |
 | Room-global settings | `room_global_settings.py`, `room_settings_service.py`, repository methods; HTTP in `web/routes/room_settings.py` with root compatibility export |

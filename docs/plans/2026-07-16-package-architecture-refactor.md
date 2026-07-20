@@ -1322,3 +1322,10 @@ module churn were deliberately avoided rather than forgotten.
   compatibility export. Previous/current mode audit fields, invalid-input
   recording, resident storage mutation, errors, and HTTP payloads are
   unchanged.
+- 2026-07-20: Retained resident reply-probe execution, timeout normalization,
+  and bounded operation diagnostics moved mechanically to
+  `legacy/live_agent/probe.py`. GUI composition, the legacy HTTP route, and
+  behavior tests import the owned service directly; root
+  `legacy_live_agent_probe.py` remains a metadata-tracked compatibility
+  export. Probe runner injection, timeout defaults and bounds, diagnostic
+  fields, error mapping, and HTTP payloads are unchanged.
