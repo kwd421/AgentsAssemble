@@ -1513,3 +1513,10 @@ module churn were deliberately avoided rather than forgotten.
   compatibility export. Endpoint registration, operation-payload mapping,
   service delegation, typed error details, and response payloads are
   unchanged.
+- 2026-07-20: The retained local resident CLI discovery HTTP registrar moved
+  mechanically to `legacy/live_agent/http/discovery.py`. Legacy GUI
+  composition imports the owned registrar directly; root
+  `gui_legacy_live_agent_discovery_http.py` remains a metadata-tracked
+  compatibility export. Request-server mapping, safe operation audit,
+  discovery execution, status calculation, and response payloads are
+  unchanged.

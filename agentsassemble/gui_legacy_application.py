@@ -18,7 +18,7 @@ from agentsassemble.gui_legacy_codex_session_http import (
     LegacyCodexSessionHttpDeps,
     register_legacy_codex_session_routes,
 )
-from agentsassemble.gui_legacy_live_agent_discovery_http import (
+from agentsassemble.legacy.live_agent.http.discovery import (
     LegacyLiveAgentDiscoveryHttpDeps,
     register_legacy_live_agent_discovery_route,
 )
