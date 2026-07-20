@@ -991,7 +991,7 @@ class GuiServerTurnTests(unittest.TestCase):
             responder.start()
             try:
                 with patch(
-                    "agentsassemble.legacy_official_rounds.finalize_live_agent_meeting",
+                    "agentsassemble.legacy.meeting.official_rounds.finalize_live_agent_meeting",
                     return_value=finalized,
                 ) as finalize_meeting:
                     rounds_request = Request(
@@ -1086,7 +1086,7 @@ class GuiServerTurnTests(unittest.TestCase):
             responder.start()
             try:
                 with patch(
-                    "agentsassemble.legacy_official_rounds.finalize_live_agent_meeting",
+                    "agentsassemble.legacy.meeting.official_rounds.finalize_live_agent_meeting",
                     return_value={"status": "finalized", "meeting_id": "m1", "official_event_count": 1},
                 ) as finalize_meeting:
                     rounds_request = Request(

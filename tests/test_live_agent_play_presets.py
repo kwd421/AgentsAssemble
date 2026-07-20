@@ -62,7 +62,7 @@ class LiveAgentPlayPresetTests(unittest.TestCase):
 
             sequence_response = {"status": "answered", "answered_count": 1, "timeout_count": 0, "skipped_count": 0, "results": []}
             with patch(
-                "agentsassemble.legacy_official_rounds.live_agent_turn_sequence_payload",
+                "agentsassemble.legacy.meeting.official_rounds.live_agent_turn_sequence_payload",
                 return_value=sequence_response,
             ) as sequence_payload:
                 result = live_agent_turn_preset_payload(

@@ -859,7 +859,7 @@ class GuiServerSessionLifecycleTests(unittest.TestCase):
                 with (
                     patch("agentsassemble.gui.live_agent_turn_rounds_payload", return_value=auto_rounds) as rounds_payload,
                     patch(
-                        "agentsassemble.legacy_official_rounds.finalize_live_agent_meeting",
+                        "agentsassemble.legacy.meeting.official_rounds.finalize_live_agent_meeting",
                         return_value=finalized,
                     ) as finalize_meeting,
                 ):
