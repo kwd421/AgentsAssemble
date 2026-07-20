@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.legacy_room_migration import find_legacy_message_imports, migrate_legacy_messages
+from agentsassemble.legacy.room.migration import find_legacy_message_imports, migrate_legacy_messages
 from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
     reset_identity_store_registry,

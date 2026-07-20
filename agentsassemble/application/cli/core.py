@@ -12,7 +12,7 @@ from agentsassemble.application.cli.common import (
     parse_positive_int,
 )
 from agentsassemble.release_health import DEFAULT_RELEASE_HEALTH_TIMEOUT_SECONDS
-from agentsassemble.room_repository_factory import (
+from agentsassemble.application.room_repository_factory import (
     DEFAULT_POSTGRES_DSN_ENV,
     ROOM_REPOSITORY_BACKENDS,
 )

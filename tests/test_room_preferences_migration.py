@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from agentsassemble.cli import build_parser, run_room_command
 from agentsassemble.persistence.local.identity.repository import IdentityStore
-from agentsassemble.room_preferences_migration import (
+from agentsassemble.legacy.room.preferences_migration import (
     PLAN_FILENAME,
     LegacyRoomPreferencesMigrationError,
     migrate_legacy_room_preferences,
@@ -197,7 +197,7 @@ class LegacyRoomPreferencesMigrationTests(unittest.TestCase):
             migrate_legacy_room_preferences(root, user_id=user_id)
 
             with patch(
-                "agentsassemble.room_preferences_migration._verify_expected",
+                "agentsassemble.legacy.room.preferences_migration._verify_expected",
                 side_effect=LegacyRoomPreferencesMigrationError("injected failure"),
             ), self.assertRaisesRegex(LegacyRoomPreferencesMigrationError, "injected"):
                 migrate_legacy_room_preferences(root, user_id=user_id, apply=True)
@@ -220,7 +220,7 @@ class LegacyRoomPreferencesMigrationTests(unittest.TestCase):
             migrate_legacy_room_preferences(root, user_id=user_id)
 
             with patch(
-                "agentsassemble.room_preferences_migration._verify_committed",
+                "agentsassemble.legacy.room.preferences_migration._verify_committed",
                 side_effect=RuntimeError("injected post-commit failure"),
             ), self.assertRaisesRegex(
                 LegacyRoomPreferencesMigrationError,

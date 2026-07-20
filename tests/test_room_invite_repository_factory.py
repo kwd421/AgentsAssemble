@@ -11,7 +11,7 @@ from agentsassemble.persistence.local.admission.repository import (
 from agentsassemble.admission.repository_factory import (
     build_invite_session_repository,
 )
-from agentsassemble.room_repository_factory import (
+from agentsassemble.application.room_repository_factory import (
     RoomRepositoryConfigurationError,
     RoomRepositorySettings,
 )

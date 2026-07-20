@@ -279,7 +279,7 @@ class CliTimeoutCoreTests(unittest.TestCase):
         self.assertEqual(kwargs["room_postgres_dsn_env"], "ROOM_DATABASE_SECRET")
 
     def test_gui_reports_unavailable_repository_without_traceback(self):
-        from agentsassemble.room_repository_factory import RoomRepositoryUnavailable
+        from agentsassemble.application.room_repository_factory import RoomRepositoryUnavailable
 
         with patch(
             "agentsassemble.cli.serve_gui",

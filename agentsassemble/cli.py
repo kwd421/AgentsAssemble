@@ -113,7 +113,7 @@ from agentsassemble.legacy.live_agent.runtime.continuity_proof import (
 )
 from agentsassemble.diagnostics.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG
 from agentsassemble.application.room_native_cli_smoke import run_room_native_cli_smoke
-from agentsassemble.room_repository_factory import RoomRepositoryUnavailable
+from agentsassemble.application.room_repository_factory import RoomRepositoryUnavailable
 from agentsassemble.legacy.live_agent.runtime.preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.legacy.live_agent.runtime.processes import clean_live_agent_group_id
 from agentsassemble.lobby_promotion import promote_lobby_events_to_official
@@ -5436,7 +5436,7 @@ def run_sessions_command(args: argparse.Namespace) -> int:
 
 def run_room_command(args: argparse.Namespace) -> int:
     if args.room_command == "migrate-legacy-messages":
-        from agentsassemble.legacy_room_migration import migrate_legacy_messages
+        from agentsassemble.legacy.room.migration import migrate_legacy_messages
 
         try:
             result = migrate_legacy_messages(Path(args.output_root), apply=bool(args.apply))
@@ -5456,11 +5456,11 @@ def run_room_command(args: argparse.Namespace) -> int:
                 print(f"backup: {result['backup_dir']}")
         return 0
     if args.room_command == "migrate-postgres":
-        from agentsassemble.room_repository_factory import (
+        from agentsassemble.application.room_repository_factory import (
             RoomRepositoryConfigurationError,
             RoomRepositorySettings,
         )
-        from agentsassemble.room_repository_migration import (
+        from agentsassemble.legacy.room.repository_migration import (
             RoomRepositoryTransferError,
             migrate_sqlite_rooms_to_postgres,
         )
@@ -5497,7 +5497,7 @@ def run_room_command(args: argparse.Namespace) -> int:
                 print("target is not safe to apply")
         return 0 if result.get("status") in {"ready", "applied"} else 1
     if args.room_command == "migrate-room-settings":
-        from agentsassemble.room_settings_migration import (
+        from agentsassemble.legacy.room.settings_migration import (
             LegacyRoomSettingsMigrationError,
             migrate_legacy_room_settings,
         )
@@ -5531,7 +5531,7 @@ def run_room_command(args: argparse.Namespace) -> int:
                 print("Run the same command with --apply after reviewing the dry-run plan.")
         return 0 if result.get("status") in {"ready", "applied", "already_applied", "not_needed"} else 1
     if args.room_command == "migrate-room-preferences":
-        from agentsassemble.room_preferences_migration import (
+        from agentsassemble.legacy.room.preferences_migration import (
             LegacyRoomPreferencesMigrationError,
             migrate_legacy_room_preferences,
         )
@@ -5568,7 +5568,7 @@ def run_room_command(args: argparse.Namespace) -> int:
             purge_admission_workflows,
         )
         from agentsassemble.admission.repository import InviteRepositoryError
-        from agentsassemble.room_repository_factory import (
+        from agentsassemble.application.room_repository_factory import (
             RoomRepositoryConfigurationError,
             RoomRepositoryUnavailable,
         )

@@ -1694,3 +1694,12 @@ module churn were deliberately avoided rather than forgotten.
   owners; fifteen root modules remain explicit compatibility exports. Room
   creation, readiness, probe, roster, finalization, and smoke behavior are
   unchanged.
+- 2026-07-20: Legacy room source inspection and one-shot migrations moved to
+  `legacy/room/`; concrete backend selection moved to
+  `application/room_repository_factory.py`. This differs from the package
+  map's provisional `room/` target because the migrations intentionally read
+  retired JSON/global preference formats and must not make the current Room
+  domain depend on legacy sources or concrete persistence. Eight root modules
+  remain explicit compatibility exports. Migration validation, dry-run/apply
+  behavior, expected-source checks, transaction boundaries, and backend
+  selection are unchanged.

@@ -313,7 +313,7 @@ from agentsassemble.persistence.local.identity.registry import (
 from agentsassemble.room.moderation import is_room_member_muted
 from agentsassemble.room.members import mark_thinking, room_members_payload
 from agentsassemble.room.repository import RoomRepository
-from agentsassemble.room_repository_factory import (
+from agentsassemble.application.room_repository_factory import (
     DEFAULT_POSTGRES_DSN_ENV,
     RoomRepositorySettings,
     build_postgres_application_database,

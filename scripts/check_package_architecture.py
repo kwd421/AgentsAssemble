@@ -2071,6 +2071,26 @@ for _root_name, _replacement_name, _known_caller in (
         introduced_in="Milestone 6.66 resident room integration package",
     )
 
+for _root_name, _replacement_import, _known_caller in (
+    ("legacy_room_migration.py", "agentsassemble.legacy.room.migration", "tests/test_legacy_room_migration.py"),
+    ("legacy_room_preferences_source.py", "agentsassemble.legacy.room.preferences_source", "tests/test_room_preferences_migration.py"),
+    ("legacy_room_settings_document.py", "agentsassemble.legacy.room.settings_document", "tests/test_room_settings_migration.py"),
+    ("legacy_room_settings_source.py", "agentsassemble.legacy.room.settings_source", "tests/test_room_settings_migration.py"),
+    ("room_preferences_migration.py", "agentsassemble.legacy.room.preferences_migration", "tests/test_room_preferences_migration.py"),
+    ("room_repository_migration.py", "agentsassemble.legacy.room.repository_migration", "tests/test_room_repository_migration.py"),
+    ("room_settings_migration.py", "agentsassemble.legacy.room.settings_migration", "tests/test_room_settings_migration.py"),
+    ("room_repository_factory.py", "agentsassemble.application.room_repository_factory", "tests/test_room_repository_factory.py"),
+):
+    ROOT_COMPATIBILITY_SHIMS[_root_name] = CompatibilityShim(
+        replacement_import=_replacement_import,
+        removal_gate=(
+            f"No direct imports or patches use agentsassemble.{_root_name.removesuffix('.py')} "
+            "for one compatibility window."
+        ),
+        known_callers=(_known_caller,),
+        introduced_in="Milestone 6.67 legacy room migration package",
+    )
+
 
 def current_top_level_modules(repository_root: Path) -> frozenset[str]:
     package_root = Path(repository_root) / "agentsassemble"

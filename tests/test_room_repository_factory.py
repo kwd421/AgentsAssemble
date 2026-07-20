@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.room_repository_factory import (
+from agentsassemble.application.room_repository_factory import (
     DEFAULT_POSTGRES_DSN_ENV,
     RoomRepositoryConfigurationError,
     RoomRepositorySettings,
@@ -74,10 +74,10 @@ class RoomRepositorySettingsTests(unittest.TestCase):
             postgres_dsn="postgresql://hidden@example/rooms",
         )
         with patch(
-            "agentsassemble.room_repository_factory._postgres_repository_type",
+            "agentsassemble.application.room_repository_factory._postgres_repository_type",
             return_value=FakePostgresRepository,
         ), patch(
-            "agentsassemble.room_repository_factory.require_postgres_room_schema"
+            "agentsassemble.application.room_repository_factory.require_postgres_room_schema"
         ) as require_schema:
             repository = build_room_repository(Path("/tmp/output"), settings)
 
@@ -98,10 +98,10 @@ class RoomRepositorySettingsTests(unittest.TestCase):
             postgres_dsn="postgresql://hidden@example/rooms",
         )
         with patch(
-            "agentsassemble.room_repository_factory._postgres_repository_type",
+            "agentsassemble.application.room_repository_factory._postgres_repository_type",
             return_value=FakePostgresRepository,
         ), patch(
-            "agentsassemble.room_repository_factory.require_postgres_room_schema"
+            "agentsassemble.application.room_repository_factory.require_postgres_room_schema"
         ) as require_schema:
             repository = build_room_repository(
                 Path("/tmp/output"),
@@ -123,7 +123,7 @@ class RoomRepositorySettingsTests(unittest.TestCase):
             postgres_dsn="postgresql://hidden@example/rooms",
         )
         with patch(
-            "agentsassemble.room_repository_factory._postgres_application_database_type",
+            "agentsassemble.application.room_repository_factory._postgres_application_database_type",
             return_value=FakeApplicationDatabase,
         ):
             database = build_postgres_application_database(settings)
@@ -138,10 +138,10 @@ class RoomRepositorySettingsTests(unittest.TestCase):
             postgres_dsn="postgresql://hidden@example/rooms",
         )
         with patch(
-            "agentsassemble.room_repository_factory._postgres_repository_type",
+            "agentsassemble.application.room_repository_factory._postgres_repository_type",
             return_value=object,
         ), patch(
-            "agentsassemble.room_repository_factory.require_postgres_room_schema",
+            "agentsassemble.application.room_repository_factory.require_postgres_room_schema",
             side_effect=PostgresRoomSchemaNotReady("authority is not activated"),
         ):
             with self.assertRaisesRegex(RoomRepositoryUnavailable, "not activated") as raised:

@@ -9,7 +9,7 @@ from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.persistence.local.admission.repository import (
     JsonInviteSessionRepository,
 )
-from agentsassemble.room_repository_factory import (
+from agentsassemble.application.room_repository_factory import (
     RoomRepositoryConfigurationError,
     RoomRepositorySettings,
     RoomRepositoryUnavailable,

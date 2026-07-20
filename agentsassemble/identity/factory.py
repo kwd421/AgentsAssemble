@@ -9,7 +9,7 @@ from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.persistence.local.identity.registry import (
     identity_store_for_output_root,
 )
-from agentsassemble.room_repository_factory import (
+from agentsassemble.application.room_repository_factory import (
     RoomRepositoryConfigurationError,
     RoomRepositorySettings,
     RoomRepositoryUnavailable,

@@ -15,13 +15,13 @@ from uuid import uuid4
 
 from agentsassemble.cli import build_parser, run_room_command
 from agentsassemble.room_attention import AttentionEvaluation
-from agentsassemble.room_repository_factory import (
+from agentsassemble.application.room_repository_factory import (
     DEFAULT_POSTGRES_DSN_ENV,
     RoomRepositorySettings,
     RoomRepositoryUnavailable,
     build_room_repository,
 )
-from agentsassemble.room_repository_migration import (
+from agentsassemble.legacy.room.repository_migration import (
     RoomRepositoryTransferError,
     _TableSpec,
     _normalized_rows,
@@ -64,7 +64,7 @@ class RoomRepositoryMigrationCliTests(unittest.TestCase):
 
         stdout = StringIO()
         with patch.dict(os.environ, {DEFAULT_POSTGRES_DSN_ENV: secret_dsn}), patch(
-            "agentsassemble.room_repository_migration.migrate_sqlite_rooms_to_postgres",
+            "agentsassemble.legacy.room.repository_migration.migrate_sqlite_rooms_to_postgres",
             return_value=result,
         ) as migrate, patch("sys.stdout", stdout):
             exit_code = run_room_command(args)
@@ -82,7 +82,7 @@ class RoomRepositoryMigrationCliTests(unittest.TestCase):
 
         stderr = StringIO()
         with patch.dict(os.environ, {}, clear=True), patch(
-            "agentsassemble.room_repository_migration.migrate_sqlite_rooms_to_postgres"
+            "agentsassemble.legacy.room.repository_migration.migrate_sqlite_rooms_to_postgres"
         ) as migrate, patch("sys.stderr", stderr):
             exit_code = run_room_command(args)
 
@@ -121,7 +121,7 @@ class RoomRepositoryMigrationCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             _build_source(Path(temp_dir))
             with patch(
-                "agentsassemble.room_repository_migration._postgres_driver",
+                "agentsassemble.legacy.room.repository_migration._postgres_driver",
                 return_value=(BrokenDriver, object(), object()),
             ), self.assertRaises(RoomRepositoryTransferError) as raised:
                 migrate_sqlite_rooms_to_postgres(

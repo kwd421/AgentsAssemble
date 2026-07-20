@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
-from agentsassemble.room_repository_factory import RoomRepositorySettings, build_room_repository
+from agentsassemble.application.room_repository_factory import RoomRepositorySettings, build_room_repository
 from tests.room_repository_contract import RoomRepositoryContractMixin
 
 

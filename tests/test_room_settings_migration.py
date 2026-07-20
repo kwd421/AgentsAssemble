@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentsassemble.cli import build_parser, run_room_command
-from agentsassemble.room_settings_migration import (
+from agentsassemble.legacy.room.settings_migration import (
     MIGRATION_META_KEY,
     PLAN_FILENAME,
     LegacyRoomSettingsMigrationError,
@@ -228,7 +228,7 @@ class LegacyRoomSettingsMigrationTests(unittest.TestCase):
             migrate_legacy_room_settings(root)
 
             with patch(
-                "agentsassemble.room_settings_migration._verify_expected",
+                "agentsassemble.legacy.room.settings_migration._verify_expected",
                 side_effect=LegacyRoomSettingsMigrationError("injected verification failure"),
             ), self.assertRaisesRegex(LegacyRoomSettingsMigrationError, "injected"):
                 migrate_legacy_room_settings(root, apply=True)

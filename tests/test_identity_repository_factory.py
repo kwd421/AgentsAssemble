@@ -11,7 +11,7 @@ from agentsassemble.persistence.local.identity.registry import (
     reset_identity_store_registry,
 )
 from agentsassemble.persistence.local.identity.repository import IdentityStore
-from agentsassemble.room_repository_factory import (
+from agentsassemble.application.room_repository_factory import (
     RoomRepositoryConfigurationError,
     RoomRepositorySettings,
 )

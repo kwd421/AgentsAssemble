@@ -9,7 +9,7 @@ from agentsassemble.application.cli.common import (
     parse_positive_int,
 )
 from agentsassemble.diagnostics.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG
-from agentsassemble.room_repository_factory import (
+from agentsassemble.application.room_repository_factory import (
     DEFAULT_POSTGRES_DSN_ENV,
     ROOM_REPOSITORY_BACKENDS,
 )

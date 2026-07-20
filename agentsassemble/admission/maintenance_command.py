@@ -6,7 +6,7 @@ from pathlib import Path
 
 from agentsassemble.admission.maintenance import AdmissionWorkflowSelection
 from agentsassemble.admission.repository_factory import build_invite_session_repository
-from agentsassemble.room_repository_factory import RoomRepositorySettings
+from agentsassemble.application.room_repository_factory import RoomRepositorySettings
 
 
 def purge_admission_workflows(

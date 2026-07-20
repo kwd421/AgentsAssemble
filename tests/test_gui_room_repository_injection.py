@@ -12,7 +12,7 @@ from agentsassemble.agent_sessions import create_agent_session_payload
 from agentsassemble.gui import _build_gui_application_services, _make_handler, serve_gui
 from agentsassemble.room.realtime import RoomRealtimeController
 from tests.room_realtime_test_support import memory_room_access_services
-from agentsassemble.room_repository_factory import (
+from agentsassemble.application.room_repository_factory import (
     RoomRepositoryConfigurationError,
     RoomRepositorySettings,
 )
