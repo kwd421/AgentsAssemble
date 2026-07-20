@@ -12,7 +12,7 @@ from agentsassemble.admission.preflight import RoomAdmissionService
 from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.admission.session_service import RoomSessionService
 from agentsassemble.application.transaction import ApplicationTransactionBoundary
-from agentsassemble.attachments import FileAttachmentStore
+from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.admission.projection import LegacyAdmissionProjection

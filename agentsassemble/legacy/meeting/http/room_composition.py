@@ -41,7 +41,7 @@ from agentsassemble.legacy.meeting.core.events import (
     read_lobby_events,
     read_lobby_events_after,
 )
-from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
+from agentsassemble.admission.lan_invite import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.room.channels import (
     ChannelError,
     add_channel,
@@ -85,7 +85,7 @@ from agentsassemble.application.room_users import (
 )
 from agentsassemble.room.votes import vote_summary
 from agentsassemble.application.stable_entry import stable_entry_url
-from agentsassemble.voice_presence import (
+from agentsassemble.room.voice_presence import (
     join_voice,
     leave_all_voice,
     leave_voice,

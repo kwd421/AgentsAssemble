@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from agentsassemble.attachments import (
+from agentsassemble.room.attachments import (
     AttachmentError,
     normalize_attachment_references,
 )

@@ -97,7 +97,7 @@ from agentsassemble.room.turn_coordinator import RoomTurnCoordinator
 from agentsassemble.room.turn_context import build_room_turn_packet
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room.types import RoomCommand, RoomEvent
-from agentsassemble.voice_presence import leave_all_voice
+from agentsassemble.room.voice_presence import leave_all_voice
 
 AMBIENT_AGENT_RELAY_DEPTH = 2
 AGENT_RUNTIME_PROFILE_KEYS = frozenset(

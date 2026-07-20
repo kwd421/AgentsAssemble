@@ -20,7 +20,7 @@ from agentsassemble.admission.invite import (
     set_runtime_host_token,
 )
 from agentsassemble.room_store import RoomStore
-from agentsassemble.voice_presence import (
+from agentsassemble.room.voice_presence import (
     join_voice,
     leave_all_voice,
     leave_voice,

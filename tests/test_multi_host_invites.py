@@ -2,7 +2,7 @@ import json
 import unittest
 from datetime import UTC, datetime, timedelta
 
-from agentsassemble.multi_host_invites import (
+from agentsassemble.admission.lan_invite import (
     LAN_INVITE_MODE,
     NATIVE_REMOTE_ROOM_CLIENT_KIND,
     create_lan_invite_packet,

@@ -2128,6 +2128,24 @@ for _root_name, _replacement_import, _known_caller in (
         introduced_in="Milestone 6.69 CLI diagnostics ownership wave",
     )
 
+for _root_name, _replacement_import, _known_caller in (
+    ("attachments.py", "agentsassemble.room.attachments", "tests/test_attachments.py"),
+    ("voice_presence.py", "agentsassemble.room.voice_presence", "tests/test_voice_presence.py"),
+    ("multi_host_invites.py", "agentsassemble.admission.lan_invite", "tests/test_multi_host_invites.py"),
+    ("remote_room_client_packet.py", "agentsassemble.admission.remote_room_client_packet", "tests/test_remote_room_client_packet.py"),
+    ("local_resources.py", "agentsassemble.diagnostics.local_resources", "tests/test_local_resources.py"),
+    ("mcp_server.py", "agentsassemble.legacy.live_agent.mcp_server", "tests/test_mcp_server.py"),
+):
+    ROOT_COMPATIBILITY_SHIMS[_root_name] = CompatibilityShim(
+        replacement_import=_replacement_import,
+        removal_gate=(
+            f"No direct imports or patches use agentsassemble.{_root_name.removesuffix('.py')} "
+            "for one compatibility window."
+        ),
+        known_callers=(_known_caller,),
+        introduced_in="Milestone 6.70 shared room support ownership wave",
+    )
+
 
 def current_top_level_modules(repository_root: Path) -> frozenset[str]:
     package_root = Path(repository_root) / "agentsassemble"

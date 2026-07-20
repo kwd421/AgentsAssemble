@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.attachments import (
+from agentsassemble.room.attachments import (
     MAX_ATTACHMENT_BYTES,
     MAX_ATTACHMENTS_PER_EVENT,
     AttachmentError,

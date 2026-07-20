@@ -7,7 +7,7 @@ from uuid import UUID
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.identity.repository import device_auth_key
 from agentsassemble.admission.projection import LegacyAdmissionParticipant
-from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
+from agentsassemble.admission.lan_invite import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.identity.pairing import normalize_pairing_origin
 from agentsassemble.admission.coordinator import AdmissionIdempotencyConflict
 from agentsassemble.application.stable_entry import stable_entry_url

@@ -1,7 +1,7 @@
 import unittest
 
 from agentsassemble.cli import build_parser
-from agentsassemble.mcp_server import McpParticipantContext, McpRoomClient, build_tool_registry
+from agentsassemble.legacy.live_agent.mcp_server import McpParticipantContext, McpRoomClient, build_tool_registry
 from agentsassemble.legacy.live_agent.runtime.join_brief import build_live_agent_join_brief
 
 

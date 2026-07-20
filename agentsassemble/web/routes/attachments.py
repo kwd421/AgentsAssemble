@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from agentsassemble.attachments import (
+from agentsassemble.room.attachments import (
     AttachmentError,
     INLINE_SAFE_IMAGE_TYPES,
 )

@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from http import HTTPStatus
 
-from agentsassemble.attachments import AttachmentError
+from agentsassemble.room.attachments import AttachmentError
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.legacy.meeting.lobby_commands import LegacyLobbyCommandService
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text

@@ -34,7 +34,7 @@ from agentsassemble.application.room_users import (
     normalize_participant_type,
     resolve_device_user,
 )
-from agentsassemble.multi_host_invites import (
+from agentsassemble.admission.lan_invite import (
     NATIVE_REMOTE_ROOM_CLIENT_KIND,
     resolve_lan_invite_secret_ref,
     verify_lan_invite_token,

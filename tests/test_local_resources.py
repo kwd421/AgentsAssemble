@@ -3,7 +3,7 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from agentsassemble.local_resources import LocalResourceMonitor, collect_local_resource_snapshot
+from agentsassemble.diagnostics.local_resources import LocalResourceMonitor, collect_local_resource_snapshot
 
 
 def _ps_result(output: str, returncode: int = 0):

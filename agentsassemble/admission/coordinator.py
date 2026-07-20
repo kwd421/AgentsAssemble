@@ -23,7 +23,7 @@ from agentsassemble.identity.repository import (
     device_auth_key,
     normalize_participant_type,
 )
-from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
+from agentsassemble.admission.lan_invite import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 

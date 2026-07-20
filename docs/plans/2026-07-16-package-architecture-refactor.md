@@ -1723,3 +1723,12 @@ module churn were deliberately avoided rather than forgotten.
   root-relative `REPO_ROOT` calculation; it was adjusted for the package depth
   so release checks still execute from the repository root. CLI arguments,
   benchmark workloads, thresholds, and report payloads are unchanged.
+- 2026-07-20: Shared room support acquired explicit owners: attachment storage
+  and voice presence moved to `room/`; signed LAN invites and native remote
+  attendee packets moved to `admission/`; local resource inspection moved to
+  `diagnostics/`. The MCP resident process moved to `legacy/live_agent/`
+  because it directly runs the retained polling/engagement path rather than a
+  current application service. Admission packet cleaners now use the current
+  room text contract. Six root exports remain; media persistence, invite
+  signatures, packet validation, voice state, diagnostics, and MCP behavior
+  are unchanged.

@@ -29,7 +29,7 @@ from agentsassemble.admission.invite_service import InviteApplicationService
 from agentsassemble.admission.preflight import RoomAdmissionService
 from agentsassemble.admission.projection import LegacyAdmissionProjection
 from agentsassemble.admission.session_service import RoomSessionService
-from agentsassemble.attachments import FileAttachmentStore
+from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.identity.repository import IdentityBackend, device_auth_key
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime

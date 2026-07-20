@@ -12,7 +12,7 @@ import mimetypes
 from http import HTTPStatus
 from pathlib import Path
 
-from agentsassemble.attachments import (
+from agentsassemble.room.attachments import (
     INLINE_SAFE_IMAGE_TYPES,
     attachment_content_disposition,
 )

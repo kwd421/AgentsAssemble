@@ -162,7 +162,7 @@ from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 from agentsassemble.memory_capsules import memory_capsule_gate_report
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
 from agentsassemble.web.cli_errors import CliHttpError
-from agentsassemble.multi_host_invites import (
+from agentsassemble.admission.lan_invite import (
     create_lan_invite_packet,
     resolve_lan_invite_secret_ref,
     verify_lan_invite_token,
@@ -708,7 +708,7 @@ def run_mcp_command(args: argparse.Namespace) -> int:
         return 2
     try:
         if args.mcp_command == "serve":
-            from agentsassemble.mcp_server import serve_mcp
+            from agentsassemble.legacy.live_agent.mcp_server import serve_mcp
 
             serve_mcp(
                 profile=args.profile,

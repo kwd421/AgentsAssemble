@@ -11,7 +11,7 @@ from agentsassemble.legacy.live_agent.runtime.room_admin import (
 )
 from agentsassemble.legacy.live_agent.runtime.operations import read_live_agent_operations
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
-from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
+from agentsassemble.admission.lan_invite import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.admission.invite import create_room_invite, join_room_with_invite, reset_state, verify_session_token
 
 from tests.test_live_agent_frontend_create import FakeSupervisor, write_meeting

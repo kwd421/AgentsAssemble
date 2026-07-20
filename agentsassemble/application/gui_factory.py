@@ -25,7 +25,7 @@ from agentsassemble.application.room_users import (
     configure_room_users_backend,
     release_room_users_backend,
 )
-from agentsassemble.attachments import FileAttachmentStore
+from agentsassemble.room.attachments import FileAttachmentStore
 from agentsassemble.identity.pairing import OperatorPairingService
 from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.persistence.local.admission.repository import (

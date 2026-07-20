@@ -36,7 +36,7 @@ from agentsassemble.room.speech import (
     ensure_lobby_say_allowed,
     governed_channel_say,
 )
-from agentsassemble.voice_presence import (
+from agentsassemble.room.voice_presence import (
     join_voice,
     leave_all_voice,
     leave_voice,
