@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `e5eaa4b3afcbbfee`
+Source fingerprint: `cb51d131467113f2`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -128,7 +128,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.diagnostics.provider_health` | `agentsassemble/diagnostics/provider_health.py` | 919 | diagnostics | current | `agentsassemble.config`, `agentsassemble.models`, `agentsassemble.providers.adapters.registry` | 4 | - | test-import:1, monkeypatch:1 | `tests/test_provider_health.py` | `diagnostics/` | in-target-package |
 | `agentsassemble.diagnostics.release_health` | `agentsassemble/diagnostics/release_health.py` | 768 | diagnostics | current | `agentsassemble.diagnostics.room_event_benchmark_contract` | 4 | `call:compile@23` | test-import:1 | `tests/test_release_health.py` | `diagnostics/` | in-target-package |
 | `agentsassemble.diagnostics.report_projection` | `agentsassemble/diagnostics/report_projection.py` | 54 | diagnostics | current | `agentsassemble.diagnostics.sensitive_text` | 4 | - | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | in-target-package |
-| `agentsassemble.diagnostics.room_event_benchmark_contract` | `agentsassemble/diagnostics/room_event_benchmark_contract.py` | 5 | diagnostics | current | - | 2 | - | - | - | `diagnostics/` | in-target-package |
+| `agentsassemble.diagnostics.room_event_benchmark_contract` | `agentsassemble/diagnostics/room_event_benchmark_contract.py` | 4 | diagnostics | current | - | 2 | - | - | - | `diagnostics/` | in-target-package |
 | `agentsassemble.diagnostics.sensitive_text` | `agentsassemble/diagnostics/sensitive_text.py` | 37 | diagnostics | current | - | 2 | - | - | - | `diagnostics/` | in-target-package |
 | `agentsassemble.evidence` | `agentsassemble/evidence.py` | 19 | application | compatibility | `agentsassemble.legacy.meeting.support.evidence` | 0 | - | - | - | `application/` | compatibility-shim |
 | `agentsassemble.features` | `agentsassemble/features/__init__.py` | 1 | features | optional | - | 0 | - | - | - | `features/` | in-target-package |
@@ -212,7 +212,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.legacy.gui_application` | `agentsassemble/legacy/gui_application.py` | 478 | legacy | legacy | `agentsassemble.application.agent_sessions`, `agentsassemble.application.gui`, `agentsassemble.legacy.diagnostics.http.provider_health`, `agentsassemble.legacy.live_agent.diagnostics`, `agentsassemble.legacy.live_agent.discovery`, `agentsassemble.legacy.live_agent.engagement`, `agentsassemble.legacy.live_agent.health_queries`, `agentsassemble.legacy.live_agent.http.codex_session`, +48 | 2 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent` | `agentsassemble/legacy/live_agent/__init__.py` | 1 | legacy | legacy | - | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli` | `agentsassemble/legacy/live_agent/cli/__init__.py` | 1 | legacy | legacy | - | 0 | - | - | - | `legacy/` | in-target-package |
-| `agentsassemble.legacy.live_agent.cli.command_format` | `agentsassemble/legacy/live_agent/cli/command_format.py` | 588 | legacy | legacy | - | 1 | - | test-import:1 | `tests/test_cli_legacy_live_agent_format.py` | `legacy/` | in-target-package |
+| `agentsassemble.legacy.live_agent.cli.command_format` | `agentsassemble/legacy/live_agent/cli/command_format.py` | 587 | legacy | legacy | - | 1 | - | test-import:1 | `tests/test_cli_legacy_live_agent_format.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli.common` | `agentsassemble/legacy/live_agent/cli/common.py` | 71 | legacy | legacy | `agentsassemble.application.cli.common`, `agentsassemble.legacy.live_agent.runtime.smoke`, `agentsassemble.live_agent_runner` | 3 | `call:list@19` | - | - | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli.parser` | `agentsassemble/legacy/live_agent/cli/parser.py` | 1163 | legacy | legacy | `agentsassemble.application.cli.common`, `agentsassemble.legacy.live_agent.cli.common`, `agentsassemble.legacy.live_agent.runtime.timing`, `agentsassemble.models` | 2 | - | test-import:1 | `tests/test_application_cli_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli.process_commands` | `agentsassemble/legacy/live_agent/cli/process_commands.py` | 299 | legacy | legacy | `agentsassemble.legacy.live_agent.runtime.processes` | 2 | - | - | - | `legacy/` | in-target-package |
