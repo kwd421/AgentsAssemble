@@ -58,7 +58,7 @@ from agentsassemble.gui_legacy_live_agent_readiness_http import (
 from agentsassemble.legacy.live_agent.http.room_session import (
     register_legacy_room_session_route,
 )
-from agentsassemble.gui_legacy_live_agent_self_managed_http import (
+from agentsassemble.legacy.live_agent.http.self_managed import (
     register_legacy_self_managed_agent_routes,
 )
 from agentsassemble.gui_legacy_live_agent_session_http import (
