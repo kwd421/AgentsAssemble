@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from subprocess import TimeoutExpired
 
-from agentsassemble.adapters.codex import CodexAdapter
+from agentsassemble.providers.adapters.codex import CodexAdapter
 from agentsassemble.models import get_research_depth, ResearchSteering, Role
 
 

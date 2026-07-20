@@ -4,9 +4,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import agentsassemble.adapters.registry as registry_module
-from agentsassemble.adapters.base import ProviderAdapter
-from agentsassemble.adapters.registry import ProviderCapabilities, default_provider_registry
+import agentsassemble.providers.adapters.registry as registry_module
+from agentsassemble.providers.adapters.base import ProviderAdapter
+from agentsassemble.providers.adapters.registry import ProviderCapabilities, default_provider_registry
 from agentsassemble.meeting import run_demo_meeting
 
 

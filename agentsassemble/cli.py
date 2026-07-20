@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from agentsassemble.bridges.claude_code_bridge import CLAUDE_PRINT_MODE_DISABLED_MESSAGE, serve_bridge
+from agentsassemble.providers.bridges.claude_code_bridge import CLAUDE_PRINT_MODE_DISABLED_MESSAGE, serve_bridge
 from agentsassemble.application.agent_sessions import (
     CODEX_APP_SERVER_SMOKE_COMMANDS,
     clean_agent_session_provider_kind,

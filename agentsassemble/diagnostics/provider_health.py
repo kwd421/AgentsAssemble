@@ -10,7 +10,7 @@ from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from agentsassemble.adapters.registry import default_provider_registry, validate_binding
+from agentsassemble.providers.adapters.registry import default_provider_registry, validate_binding
 from agentsassemble.config import (
     agent_bindings_from_config,
     load_agent_runtime_config,

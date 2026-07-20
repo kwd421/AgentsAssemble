@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
+from agentsassemble.providers.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.models import ProviderConfig, Role
 
 

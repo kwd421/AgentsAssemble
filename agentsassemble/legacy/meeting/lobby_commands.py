@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
+from agentsassemble.providers.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.config import load_agent_runtime_config, providers_from_config
 from agentsassemble.legacy.meeting.queries import list_meetings
 from agentsassemble.legacy.meeting.records import read_meeting_record

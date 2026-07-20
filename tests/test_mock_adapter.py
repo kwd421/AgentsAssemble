@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.adapters.mock import MockAdapter
+from agentsassemble.providers.adapters.mock import MockAdapter
 from agentsassemble.models import ResearchSteering, Role, get_research_depth
 
 

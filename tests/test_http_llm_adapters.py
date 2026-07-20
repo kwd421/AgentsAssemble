@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.adapters.http_llm import (
+from agentsassemble.providers.adapters.http_llm import (
     AnthropicMessagesAdapter,
     GeminiGenerateContentAdapter,
     GrokChatAdapter,

@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from agentsassemble.legacy.meeting_admission import build_admission_decisions
-from agentsassemble.adapters import default_provider_registry
-from agentsassemble.adapters.registry import ProviderRegistry, ResolvedAgentAdapter
+from agentsassemble.providers.adapters import default_provider_registry
+from agentsassemble.providers.adapters.registry import ProviderRegistry, ResolvedAgentAdapter
 from agentsassemble.config import (
     agent_bindings_from_config,
     load_agent_runtime_config,

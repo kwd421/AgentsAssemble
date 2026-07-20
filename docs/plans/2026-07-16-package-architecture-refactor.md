@@ -1626,11 +1626,20 @@ module churn were deliberately avoided rather than forgotten.
   handler and canonical WebSocket client and therefore is an integration
   application rather than a leaf diagnostic policy. Current CLI/parser and
   smoke composition import the owned paths directly; four root modules remain
-  explicit compatibility
-  exports. The two smoke modules replaced their legacy lobby-text import with
+  explicit compatibility exports. The two smoke modules replaced their legacy
+  lobby-text import with
   the behavior-equivalent current room text contract. Benchmark workloads,
   provider commands, approval gates, latency thresholds, TUI/no-reply checks,
   result files, and CLI output are unchanged. The legacy event scheduler
   benchmark and its release-health projection remain outside this wave because
   moving either into current diagnostics would create a forbidden current-to-
   legacy dependency.
+- 2026-07-20: The historical `adapters/` and `bridges/` provider packages were
+  consolidated under `providers/adapters/` and `providers/bridges/`. Current
+  meeting, diagnostic, CLI, and test code imports the provider-owned paths;
+  monkeypatch targets were moved to the runtime owner rather than left on a
+  passive shim. The old package and submodule paths remain explicit
+  compatibility exports. Adapter request formats, provider registration,
+  Codex execution, HTTP auth handling, local one-shot legacy behavior, remote
+  bridge redaction, and the fail-closed Claude print-mode prohibition are
+  unchanged.

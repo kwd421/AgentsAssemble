@@ -1,17 +1,17 @@
 import unittest
 
-from agentsassemble.adapters.base import ProviderAdapter
-from agentsassemble.adapters.registry import ProviderRegistry, default_provider_registry
-from agentsassemble.adapters.http_llm import (
+from agentsassemble.providers.adapters.base import ProviderAdapter
+from agentsassemble.providers.adapters.registry import ProviderRegistry, default_provider_registry
+from agentsassemble.providers.adapters.http_llm import (
     AnthropicMessagesAdapter,
     GeminiGenerateContentAdapter,
     GrokChatAdapter,
     LocalOpenAICompatibleAdapter,
 )
-from agentsassemble.adapters.codex_live import CodexLiveSessionAdapter
-from agentsassemble.adapters.local_cli import LocalCliAdapter
-from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
-from agentsassemble.adapters.unsupported import UnsupportedProviderAdapter
+from agentsassemble.providers.adapters.codex_live import CodexLiveSessionAdapter
+from agentsassemble.providers.adapters.local_cli import LocalCliAdapter
+from agentsassemble.providers.adapters.remote_bridge import RemoteBridgeAdapter
+from agentsassemble.providers.adapters.unsupported import UnsupportedProviderAdapter
 from agentsassemble.models import AgentBinding, PermissionProfile, ProviderCapabilities, ProviderConfig, Role
 
 

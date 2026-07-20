@@ -38,6 +38,10 @@ import agentsassemble.room_bridge_process as compatibility_bridge_process
 import agentsassemble.room_provider_sync_cursor as compatibility_sync_cursor
 import agentsassemble.room_api_provider as compatibility_api
 import agentsassemble.windows_conpty as compatibility_windows_conpty
+from agentsassemble import adapters as compatibility_adapters
+from agentsassemble.bridges import claude_code_bridge as compatibility_claude_bridge
+from agentsassemble.providers import adapters as owned_adapters
+from agentsassemble.providers.bridges import claude_code_bridge as owned_claude_bridge
 from agentsassemble.providers import api as owned_api
 from agentsassemble.providers import agent_bridge as owned_agent_bridge
 from agentsassemble.providers import antigravity_resident as owned_antigravity_resident
@@ -78,6 +82,28 @@ from agentsassemble.providers import windows_conpty as owned_windows_conpty
 
 
 class ProviderPackageTests(unittest.TestCase):
+    def test_adapter_compatibility_package_exports_provider_owner(self) -> None:
+        for name in (
+            "CodexAdapter",
+            "CodexLiveSessionAdapter",
+            "MockAdapter",
+            "ProviderAdapter",
+            "ProviderRegistry",
+            "ResolvedAgentAdapter",
+            "UnsupportedProviderAdapter",
+            "default_provider_registry",
+        ):
+            self.assertIs(
+                getattr(compatibility_adapters, name),
+                getattr(owned_adapters, name),
+            )
+
+    def test_claude_bridge_compatibility_module_exports_provider_owner(self) -> None:
+        self.assertIs(
+            compatibility_claude_bridge.run_bridge_request,
+            owned_claude_bridge.run_bridge_request,
+        )
+
     def test_room_provider_sync_cursor_exports_owned_provider_cursor(self) -> None:
         for name in (
             "ProviderSyncCursorParityError",

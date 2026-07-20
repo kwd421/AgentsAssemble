@@ -1,1 +1,1 @@
-"""Bridge helpers for external user-owned agent sessions."""
+"""Compatibility exports for provider bridges now owned by providers."""

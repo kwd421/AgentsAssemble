@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.adapters.codex import CodexAdapter
+from agentsassemble.providers.adapters.codex import CodexAdapter
 from agentsassemble.artifact_public import render_decision, render_transcript
 from agentsassemble.meeting_context import build_diagnostics, build_decision_context, public_debate_rounds, public_synthesis
 

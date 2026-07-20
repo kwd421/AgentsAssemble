@@ -2,7 +2,7 @@ import subprocess
 import unittest
 import json
 
-from agentsassemble.adapters.local_cli import LocalCliAdapter, LocalCliError
+from agentsassemble.providers.adapters.local_cli import LocalCliAdapter, LocalCliError
 from agentsassemble.models import ProviderConfig, ResearchSteering, Role, get_research_depth
 
 

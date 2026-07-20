@@ -7,7 +7,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from agentsassemble.bridges.claude_code_bridge import (
+from agentsassemble.providers.bridges.claude_code_bridge import (
     CLAUDE_PRINT_MODE_DISABLED_MESSAGE,
     _handler,
     require_bridge_token,
@@ -60,7 +60,7 @@ class ClaudeCodeBridgeTests(unittest.TestCase):
 
             request = Request(health_url, headers={"Authorization": "Bearer bridge-token"}, method="GET")
             with patch(
-                "agentsassemble.bridges.claude_code_bridge.run_bridge_request",
+                "agentsassemble.providers.bridges.claude_code_bridge.run_bridge_request",
                 side_effect=AssertionError("health check must not run Claude"),
             ):
                 with urlopen(request, timeout=4) as response:

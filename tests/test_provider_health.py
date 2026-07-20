@@ -1580,7 +1580,7 @@ class ProviderHealthTests(unittest.TestCase):
             )
 
             with patch("agentsassemble.diagnostics.provider_health.os.environ", PresenceOnlyEnv()):
-                with patch("agentsassemble.adapters.http_llm.os.environ", PresenceOnlyEnv()):
+                with patch("agentsassemble.providers.adapters.http_llm.os.environ", PresenceOnlyEnv()):
                     report = provider_health_report(config_path)
 
             self.assertEqual(report["status"], "ok")
@@ -1613,7 +1613,7 @@ class ProviderHealthTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with patch("agentsassemble.adapters.registry.LocalCliAdapter", side_effect=AssertionError("no adapter construction")):
+            with patch("agentsassemble.providers.adapters.registry.LocalCliAdapter", side_effect=AssertionError("no adapter construction")):
                 report = provider_health_report(config_path, command_resolver=lambda command: "/usr/local/bin/fake-agent")
 
             self.assertEqual(report["status"], "ok")

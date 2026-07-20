@@ -4,9 +4,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from agentsassemble.adapters.base import ProviderAdapter
-from agentsassemble.adapters.local_cli import LocalCliError
-from agentsassemble.adapters.registry import ProviderCapabilities, default_provider_registry
+from agentsassemble.providers.adapters.base import ProviderAdapter
+from agentsassemble.providers.adapters.local_cli import LocalCliError
+from agentsassemble.providers.adapters.registry import ProviderCapabilities, default_provider_registry
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.meeting_phases import run_debate_phase, run_research_phase, synthesize_meeting
 from agentsassemble.models import CouncilConfig, MeetingRound, ResearchDepth, ResearchSteering, Role
