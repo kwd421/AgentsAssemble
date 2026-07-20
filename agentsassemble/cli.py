@@ -47,19 +47,21 @@ from agentsassemble.providers.claude_resident import claude_code_print_mode_resi
 from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
 # Keep these imports public for callers that historically imported validators
 # and choice lists from ``agentsassemble.cli``.
-from agentsassemble.cli_parser_common import (
+from agentsassemble.application.cli.common import (
     LIVE_AGENT_CONNECTION_KIND_CHOICES,
     LIVE_AGENT_DELEGATE_CONNECTION_KIND_CHOICES,
-    LIVE_AGENT_RESIDENT_CONNECTION_KIND_CHOICES,
     MAX_LIVE_AGENT_ROUND_BATCH,
-    _add_session_auto_restart_args,
-    _add_session_finalize_after_rounds_arg,
-    _add_session_readiness_wait_args,
     _hide_subparser_from_help,
     parse_codex_timeout,
     parse_nonnegative_float,
     parse_nonnegative_int,
     parse_positive_int,
+)
+from agentsassemble.legacy.live_agent.cli.common import (
+    LIVE_AGENT_RESIDENT_CONNECTION_KIND_CHOICES,
+    _add_session_auto_restart_args,
+    _add_session_finalize_after_rounds_arg,
+    _add_session_readiness_wait_args,
     parse_session_smoke_lobby_probe_count,
     parse_session_smoke_soak_cycle_count,
     parse_session_smoke_soak_interval_seconds,
@@ -204,11 +206,11 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.metavar = "{demo,gui,frontend-info,lobby,release-health,providers,api-call,memory-capsule,persona,room}"
 
-    from agentsassemble.cli_parser_core import register_core_parsers
-    from agentsassemble.cli_parser_live_agent import register_live_agent_parsers
-    from agentsassemble.cli_parser_persona import register_persona_parsers
-    from agentsassemble.cli_parser_room import register_room_parsers
-    from agentsassemble.cli_parser_sessions import register_sessions_parsers
+    from agentsassemble.application.cli.core import register_core_parsers
+    from agentsassemble.legacy.live_agent.cli.parser import register_live_agent_parsers
+    from agentsassemble.application.cli.persona import register_persona_parsers
+    from agentsassemble.application.cli.room import register_room_parsers
+    from agentsassemble.legacy.live_agent.cli.sessions import register_sessions_parsers
 
     register_core_parsers(subparsers)
     register_live_agent_parsers(subparsers)

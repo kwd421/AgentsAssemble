@@ -1600,3 +1600,14 @@ module churn were deliberately avoided rather than forgotten.
   responsibilities are already separated under `legacy/meeting/` and
   `legacy/live_agent/`. Construction order, patch seams, routes, and behavior
   are unchanged.
+- 2026-07-20: The six parser-definition modules behind the stable
+  `agentsassemble.cli:main` entrypoint acquired explicit package owners.
+  Current core, room, and persona parsers plus shared scalar validators live
+  under `application/cli/`; hidden resident and historical Codex-session
+  parsers plus their provider-specific limits live under
+  `legacy/live_agent/cli/`. This split was required because placing resident
+  smoke and runner dependencies under `application/` violated the current-core
+  dependency direction. The CLI imports both owners directly; root parser
+  modules remain explicit metadata-tracked compatibility exports. Subcommand
+  names, help visibility, arguments, choices, defaults, validation, and
+  argparse error behavior are unchanged.

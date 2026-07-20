@@ -1615,6 +1615,60 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_web_transport_package.py",),
         introduced_in="Milestone 4.4 WebSocket HTTP transport move",
     ),
+    "cli_parser_common.py": CompatibilityShim(
+        replacement_import="agentsassemble.application.cli.common",
+        removal_gate=(
+            "No direct imports use agentsassemble.cli_parser_common for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_application_cli_package.py",),
+        introduced_in="Milestone 7.3 CLI parser package",
+    ),
+    "cli_parser_core.py": CompatibilityShim(
+        replacement_import="agentsassemble.application.cli.core",
+        removal_gate=(
+            "No direct imports use agentsassemble.cli_parser_core for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_application_cli_package.py",),
+        introduced_in="Milestone 7.3 CLI parser package",
+    ),
+    "cli_parser_live_agent.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.live_agent.cli.parser",
+        removal_gate=(
+            "No direct imports use agentsassemble.cli_parser_live_agent for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_application_cli_package.py",),
+        introduced_in="Milestone 7.3 CLI parser package",
+    ),
+    "cli_parser_persona.py": CompatibilityShim(
+        replacement_import="agentsassemble.application.cli.persona",
+        removal_gate=(
+            "No direct imports use agentsassemble.cli_parser_persona for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_application_cli_package.py",),
+        introduced_in="Milestone 7.3 CLI parser package",
+    ),
+    "cli_parser_room.py": CompatibilityShim(
+        replacement_import="agentsassemble.application.cli.room",
+        removal_gate=(
+            "No direct imports use agentsassemble.cli_parser_room for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_application_cli_package.py",),
+        introduced_in="Milestone 7.3 CLI parser package",
+    ),
+    "cli_parser_sessions.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.live_agent.cli.sessions",
+        removal_gate=(
+            "No direct imports use agentsassemble.cli_parser_sessions for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_application_cli_package.py",),
+        introduced_in="Milestone 7.3 CLI parser package",
+    ),
     "gui_legacy_lobby_http.py": CompatibilityShim(
         replacement_import="agentsassemble.legacy.meeting.http.lobby",
         removal_gate=(

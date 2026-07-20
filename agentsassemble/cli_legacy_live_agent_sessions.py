@@ -7,7 +7,7 @@ import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from agentsassemble.cli_parser_common import MAX_LIVE_AGENT_ROUND_BATCH
+from agentsassemble.application.cli.common import MAX_LIVE_AGENT_ROUND_BATCH
 from agentsassemble.cli_http_errors import CliHttpError
 
 
