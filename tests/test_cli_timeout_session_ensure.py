@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from agentsassemble.cli import build_parser, main
 from agentsassemble.web.cli_errors import CliHttpError
-from agentsassemble.cli_legacy_live_agent_sessions import (
+from agentsassemble.legacy.live_agent.cli.session_commands import (
     LegacySessionCliRuntime,
     wait_for_session_after_control,
 )

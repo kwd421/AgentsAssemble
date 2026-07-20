@@ -1713,3 +1713,13 @@ module churn were deliberately avoided rather than forgotten.
   rather than the retained meeting helper. Seven root compatibility exports
   remain. Commands, validation, environment handling, login auditing, and
   provider output behavior are unchanged.
+- 2026-07-20: Resident CLI command implementations moved under
+  `legacy/live_agent/cli/`, current release-health projection moved under
+  `diagnostics/`, and the benchmark that directly exercises retained lobby and
+  flow behavior moved under `legacy/diagnostics/`. The shared benchmark
+  thresholds are now a two-constant current diagnostic contract so the web
+  health projection does not import legacy execution code. Six root modules
+  remain compatibility boundaries. A targeted test exposed the former
+  root-relative `REPO_ROOT` calculation; it was adjusted for the package depth
+  so release checks still execute from the repository root. CLI arguments,
+  benchmark workloads, thresholds, and report payloads are unchanged.

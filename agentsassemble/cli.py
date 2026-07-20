@@ -66,7 +66,7 @@ from agentsassemble.legacy.live_agent.cli.common import (
     parse_session_smoke_soak_cycle_count,
     parse_session_smoke_soak_interval_seconds,
 )
-from agentsassemble.cli_legacy_live_agent_sessions import (
+from agentsassemble.legacy.live_agent.cli.session_commands import (
     LegacySessionCliRuntime,
     SESSION_BOUND_PROBE_HTTP_WINDOWS,
     format_session_start,
@@ -77,12 +77,12 @@ from agentsassemble.cli_legacy_live_agent_sessions import (
     validate_session_auto_restart_args,
     wait_for_session_after_control,
 )
-from agentsassemble.cli_legacy_live_agent_processes import (
+from agentsassemble.legacy.live_agent.cli.process_commands import (
     LegacyProcessCliRuntime,
     run_legacy_process_command,
 )
-from agentsassemble.cli_legacy_live_agent_smoke import LegacySmokeCliRuntime, run_legacy_smoke_command
-from agentsassemble.cli_legacy_live_agent_format import (
+from agentsassemble.legacy.live_agent.cli.smoke_commands import LegacySmokeCliRuntime, run_legacy_smoke_command
+from agentsassemble.legacy.live_agent.cli.command_format import (
     _format_live_agent_probe,
     _format_live_agent_readiness,
     _format_live_agent_real_session_smoke,
@@ -179,7 +179,7 @@ from agentsassemble.persona_cards import (
     scan_persona_lore,
 )
 from agentsassemble.diagnostics.provider_health import provider_health_report
-from agentsassemble.release_health import (
+from agentsassemble.diagnostics.release_health import (
     DEFAULT_RELEASE_HEALTH_TIMEOUT_SECONDS,
     ReleaseHealthSelectionError,
     release_health_catalog_payload,
@@ -1491,7 +1491,7 @@ def _run_live_agent_flow(args: argparse.Namespace) -> int:
 
 
 def _run_live_agent_room_benchmark(args: argparse.Namespace) -> int:
-    from agentsassemble.room_event_benchmark import RoomEventBenchmarkOptions, run_room_event_benchmark
+    from agentsassemble.legacy.diagnostics.room_event_benchmark import RoomEventBenchmarkOptions, run_room_event_benchmark
 
     output_root = Path(args.output_root) if args.output_root else None
     sse_samples = int(args.sse_samples)

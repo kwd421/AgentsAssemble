@@ -5,7 +5,7 @@ from typing import Protocol
 
 from agentsassemble.admission.projection import LegacyAdmissionProjection
 from agentsassemble.local_resources import cached_local_resource_snapshot
-from agentsassemble.release_health import (
+from agentsassemble.diagnostics.release_health import (
     release_health_catalog_payload,
     release_health_queue_payload,
 )

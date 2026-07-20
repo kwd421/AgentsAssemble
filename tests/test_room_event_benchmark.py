@@ -8,7 +8,7 @@ from pathlib import Path
 
 from agentsassemble.cli import build_parser, main
 from agentsassemble.gui import _make_handler
-from agentsassemble.room_event_benchmark import (
+from agentsassemble.legacy.diagnostics.room_event_benchmark import (
     RoomEventBenchmarkOptions,
     SCHEDULER_ANCHOR_IMPROVEMENT_FLOOR,
     SCHEDULER_IMBALANCE_MARGIN,

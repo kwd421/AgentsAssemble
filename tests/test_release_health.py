@@ -63,7 +63,7 @@ def benchmark_payload(*, predicate_p99_ms: float = 12.5, anchor_share_improvemen
 
 class ReleaseHealthTests(unittest.TestCase):
     def test_catalog_matches_v0_1_release_check_order_without_command_details(self):
-        from agentsassemble.release_health import RELEASE_HEALTH_CHECK_IDS, release_health_catalog_payload
+        from agentsassemble.diagnostics.release_health import RELEASE_HEALTH_CHECK_IDS, release_health_catalog_payload
 
         payload = release_health_catalog_payload(now=datetime(2026, 5, 29, 0, 0, tzinfo=UTC))
 
@@ -94,7 +94,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertNotIn(str(ROOT), json.dumps(payload, ensure_ascii=False))
 
     def test_catalog_exposes_order_default_run_and_safety_class_without_command_details(self):
-        from agentsassemble.release_health import RELEASE_HEALTH_SAFETY_CLASSES, release_health_catalog_payload
+        from agentsassemble.diagnostics.release_health import RELEASE_HEALTH_SAFETY_CLASSES, release_health_catalog_payload
 
         payload = release_health_catalog_payload(now=datetime(2026, 5, 29, 0, 0, tzinfo=UTC))
         checks = payload["checks"]
@@ -125,7 +125,7 @@ class ReleaseHealthTests(unittest.TestCase):
             self.assertNotIn(forbidden, serialized)
 
     def test_queue_projection_merges_latest_result_without_output_details(self):
-        from agentsassemble.release_health import release_health_queue_payload
+        from agentsassemble.diagnostics.release_health import release_health_queue_payload
 
         latest = {
             "status": "failed",
@@ -193,7 +193,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(unsafe_time_payload["source"]["latest_completed_at"], "")
 
     def test_latest_release_health_report_round_trips_under_output_root(self):
-        from agentsassemble.release_health import (
+        from agentsassemble.diagnostics.release_health import (
             load_latest_release_health_report,
             write_latest_release_health_report,
         )
@@ -213,7 +213,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(loaded, report)
 
     def test_safety_class_values_are_closed_vocabulary(self):
-        from agentsassemble.release_health import RELEASE_HEALTH_CHECKS, RELEASE_HEALTH_SAFETY_CLASSES
+        from agentsassemble.diagnostics.release_health import RELEASE_HEALTH_CHECKS, RELEASE_HEALTH_SAFETY_CLASSES
 
         self.assertEqual(
             RELEASE_HEALTH_SAFETY_CLASSES,
@@ -230,7 +230,7 @@ class ReleaseHealthTests(unittest.TestCase):
             self.assertIn(check.safety_class, RELEASE_HEALTH_SAFETY_CLASSES)
 
     def test_default_release_health_selection_excludes_optional_room_event_benchmark(self):
-        from agentsassemble.release_health import validate_release_health_check_selection
+        from agentsassemble.diagnostics.release_health import validate_release_health_check_selection
 
         selected = validate_release_health_check_selection()
 
@@ -249,7 +249,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertFalse(any(check.id == "room_event_benchmark" for check in selected))
 
     def test_explicit_check_room_event_benchmark_selects_only_benchmark(self):
-        from agentsassemble.release_health import validate_release_health_check_selection
+        from agentsassemble.diagnostics.release_health import validate_release_health_check_selection
 
         selected = validate_release_health_check_selection(check_ids=["room_event_benchmark"])
 
@@ -257,7 +257,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertTrue(selected[0].optional)
 
     def test_room_event_benchmark_check_uses_cli_invocation_and_does_not_start_providers(self):
-        from agentsassemble.release_health import run_release_health_checks
+        from agentsassemble.diagnostics.release_health import run_release_health_checks
 
         calls = []
 
@@ -331,7 +331,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(save_args.output_root, ".agentsassemble-test")
 
     def test_runner_uses_fixed_commands_and_reports_summary(self):
-        from agentsassemble.release_health import run_release_health_checks
+        from agentsassemble.diagnostics.release_health import run_release_health_checks
 
         calls = []
 
@@ -355,7 +355,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertNotIn(str(ROOT), serialized)
 
     def test_runner_rejects_unknown_check_ids_before_running(self):
-        from agentsassemble.release_health import ReleaseHealthSelectionError, run_release_health_checks
+        from agentsassemble.diagnostics.release_health import ReleaseHealthSelectionError, run_release_health_checks
 
         def fake_runner(argv, **kwargs):
             raise AssertionError("unknown checks must fail before any process is started")
@@ -364,7 +364,7 @@ class ReleaseHealthTests(unittest.TestCase):
             run_release_health_checks(check_ids=["not_a_check"], runner=fake_runner)
 
     def test_sanitizer_redacts_paths_env_assignments_and_truncates_tail(self):
-        from agentsassemble.release_health import sanitize_release_health_output
+        from agentsassemble.diagnostics.release_health import sanitize_release_health_output
 
         home = Path.home()
         raw = "\n".join(
@@ -386,7 +386,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertIn("ordinary line", sanitize_release_health_output(raw, repo_root=ROOT, limit=500))
 
     def test_timeout_is_failed_without_traceback_or_command_echo(self):
-        from agentsassemble.release_health import run_release_health_checks
+        from agentsassemble.diagnostics.release_health import run_release_health_checks
 
         def fake_runner(argv, **kwargs):
             raise subprocess.TimeoutExpired(cmd=argv, timeout=1.0, output="partial stdout", stderr=f"{ROOT}/private.log")
@@ -406,7 +406,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertNotIn(str(ROOT), json.dumps(result, ensure_ascii=False))
 
     def test_missing_tool_is_skipped_without_crashing(self):
-        from agentsassemble.release_health import run_release_health_checks
+        from agentsassemble.diagnostics.release_health import run_release_health_checks
 
         def fake_runner(argv, **kwargs):
             raise FileNotFoundError(argv[0])
@@ -423,7 +423,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(payload["summary"], {"total": 1, "passed": 0, "failed": 0, "skipped": 1, "ok": True})
 
     def test_room_event_benchmark_result_includes_structured_summary(self):
-        from agentsassemble.release_health import run_release_health_checks
+        from agentsassemble.diagnostics.release_health import run_release_health_checks
 
         def fake_runner(argv, **kwargs):
             return Completed(stdout=json.dumps(benchmark_payload()))
@@ -487,7 +487,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(summary["floors"], {"flow_anchor_share_improvement": 0.25})
 
     def test_room_event_benchmark_summary_marks_unparsed_when_stdout_is_not_json(self):
-        from agentsassemble.release_health import run_release_health_checks
+        from agentsassemble.diagnostics.release_health import run_release_health_checks
 
         def fake_runner(argv, **kwargs):
             return Completed(stdout="not json")
@@ -503,7 +503,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(result["benchmark_summary"], {"status": "unparsed"})
 
     def test_room_event_benchmark_summary_omits_paths_commands_and_unknown_future_fields(self):
-        from agentsassemble.release_health import run_release_health_checks
+        from agentsassemble.diagnostics.release_health import run_release_health_checks
 
         def fake_runner(argv, **kwargs):
             return Completed(stdout=json.dumps(benchmark_payload()))
@@ -535,7 +535,7 @@ class ReleaseHealthTests(unittest.TestCase):
             self.assertNotIn(forbidden, serialized)
 
     def test_room_event_benchmark_regression_signal_counts_ceiling_breach_without_failing_check(self):
-        from agentsassemble.release_health import run_release_health_checks
+        from agentsassemble.diagnostics.release_health import run_release_health_checks
 
         def fake_runner(argv, **kwargs):
             return Completed(stdout=json.dumps(benchmark_payload(predicate_p99_ms=100.0)))
@@ -570,7 +570,7 @@ class ReleaseHealthTests(unittest.TestCase):
         )
 
     def test_room_event_benchmark_regression_signal_counts_anchor_improvement_floor_breach(self):
-        from agentsassemble.release_health import run_release_health_checks
+        from agentsassemble.diagnostics.release_health import run_release_health_checks
 
         def fake_runner(argv, **kwargs):
             return Completed(stdout=json.dumps(benchmark_payload(anchor_share_improvement=0.1)))

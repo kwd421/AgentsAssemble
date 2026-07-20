@@ -3,7 +3,7 @@ import json
 import unittest
 from contextlib import redirect_stdout
 
-from agentsassemble.cli_legacy_live_agent_format import (
+from agentsassemble.legacy.live_agent.cli.command_format import (
     _format_live_agent_readiness,
     _format_live_agent_real_session_smoke,
     _format_live_agent_session_smoke,

@@ -2110,6 +2110,24 @@ for _root_name, _replacement_import, _known_caller in (
         introduced_in="Milestone 6.68 provider support ownership wave",
     )
 
+for _root_name, _replacement_import, _known_caller in (
+    ("cli_legacy_live_agent_format.py", "agentsassemble.legacy.live_agent.cli.command_format", "agentsassemble/cli.py"),
+    ("cli_legacy_live_agent_processes.py", "agentsassemble.legacy.live_agent.cli.process_commands", "agentsassemble/cli.py"),
+    ("cli_legacy_live_agent_sessions.py", "agentsassemble.legacy.live_agent.cli.session_commands", "agentsassemble/cli.py"),
+    ("cli_legacy_live_agent_smoke.py", "agentsassemble.legacy.live_agent.cli.smoke_commands", "agentsassemble/cli.py"),
+    ("release_health.py", "agentsassemble.diagnostics.release_health", "tests/test_release_health.py"),
+    ("room_event_benchmark.py", "agentsassemble.legacy.diagnostics.room_event_benchmark", "tests/test_room_event_benchmark.py"),
+):
+    ROOT_COMPATIBILITY_SHIMS[_root_name] = CompatibilityShim(
+        replacement_import=_replacement_import,
+        removal_gate=(
+            f"No direct imports or patches use agentsassemble.{_root_name.removesuffix('.py')} "
+            "for one compatibility window."
+        ),
+        known_callers=(_known_caller,),
+        introduced_in="Milestone 6.69 CLI diagnostics ownership wave",
+    )
+
 
 def current_top_level_modules(repository_root: Path) -> frozenset[str]:
     package_root = Path(repository_root) / "agentsassemble"
