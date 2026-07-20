@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.legacy_live_agent_session_service import (
+from agentsassemble.legacy.live_agent.session_service import (
     LegacyLiveAgentSessionMutationService,
     LegacySessionMutationError,
 )

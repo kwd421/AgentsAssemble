@@ -122,11 +122,11 @@ from agentsassemble.legacy_live_agent_roster_queries import (
 from agentsassemble.legacy.live_agent.session_control import (
     session_check_error_message,
 )
-from agentsassemble.legacy_live_agent_session_service import (
+from agentsassemble.legacy.live_agent.session_service import (
     LegacyLiveAgentSessionMutationService,
     LegacySessionMutationActions,
 )
-from agentsassemble.legacy_live_agent_session_run_service import (
+from agentsassemble.legacy.live_agent.session_run_service import (
     LegacyLiveAgentSessionRunMutationService,
     LegacySessionRunActions,
 )

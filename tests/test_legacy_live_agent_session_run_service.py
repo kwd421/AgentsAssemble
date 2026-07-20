@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.legacy_live_agent_session_run_service import (
+from agentsassemble.legacy.live_agent.session_run_service import (
     LegacyLiveAgentSessionRunMutationService,
     LegacySessionRunActions,
     LegacySessionRunMutationError,

@@ -143,7 +143,7 @@ from agentsassemble.legacy.live_agent.session_projection import (
     session_start_operation_details as _session_start_operation_details,
     session_stop_operation_details as _session_stop_operation_details,
 )
-from agentsassemble.legacy_live_agent_session_run_service import LegacySessionRunActions
+from agentsassemble.legacy.live_agent.session_run_service import LegacySessionRunActions
 from agentsassemble.live_agent_settings import (
     update_live_agent_config_options,
     update_live_agent_config_poll_interval,

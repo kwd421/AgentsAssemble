@@ -11,6 +11,8 @@ import agentsassemble.legacy_live_agent_process_control as compatibility_process
 import agentsassemble.legacy_live_agent_process_service as compatibility_process_service
 import agentsassemble.legacy_live_agent_session_control as compatibility_session_control
 import agentsassemble.legacy_live_agent_session_projection as compatibility_session_projection
+import agentsassemble.legacy_live_agent_session_run_service as compatibility_session_run_service
+import agentsassemble.legacy_live_agent_session_service as compatibility_session_service
 from agentsassemble.legacy.live_agent import engagement as owned_engagement
 from agentsassemble.legacy.live_agent import presence as owned_presence
 from agentsassemble.legacy.live_agent import presence_projection as owned_presence_projection
@@ -20,6 +22,8 @@ from agentsassemble.legacy.live_agent import process_control as owned_process_co
 from agentsassemble.legacy.live_agent import process_service as owned_process_service
 from agentsassemble.legacy.live_agent import session_control as owned_session_control
 from agentsassemble.legacy.live_agent import session_projection as owned_session_projection
+from agentsassemble.legacy.live_agent import session_run_service as owned_session_run_service
+from agentsassemble.legacy.live_agent import session_service as owned_session_service
 
 
 class LegacyPackageTests(unittest.TestCase):
@@ -120,6 +124,34 @@ class LegacyPackageTests(unittest.TestCase):
                     getattr(compatibility_session_projection, name),
                     getattr(owned_session_projection, name),
                 )
+
+    def test_live_agent_session_root_modules_export_owned_services(self) -> None:
+        for compatibility, owned, names in (
+            (
+                compatibility_session_service,
+                owned_session_service,
+                (
+                    "LegacyLiveAgentSessionMutationService",
+                    "LegacySessionMutationActions",
+                    "LegacySessionMutationError",
+                ),
+            ),
+            (
+                compatibility_session_run_service,
+                owned_session_run_service,
+                (
+                    "LegacyLiveAgentSessionRunMutationService",
+                    "LegacySessionRunActions",
+                    "LegacySessionRunMutationError",
+                ),
+            ),
+        ):
+            for name in names:
+                with self.subTest(module=owned.__name__, name=name):
+                    self.assertIs(
+                        getattr(compatibility, name),
+                        getattr(owned, name),
+                    )
 
 
 if __name__ == "__main__":

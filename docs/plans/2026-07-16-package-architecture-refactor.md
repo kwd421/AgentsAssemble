@@ -1353,3 +1353,12 @@ module churn were deliberately avoided rather than forgotten.
   modules remain metadata-tracked compatibility exports. Status degradation,
   summaries, redaction, recoverable meeting IDs, counts, and operation payloads
   are unchanged. Session mutation services remain a separate next commit.
+- 2026-07-20: Retained resident group/session lifecycle mutations and durable
+  session-run mutations moved mechanically to
+  `legacy/live_agent/session_service.py` and `session_run_service.py`. Both
+  services retain their separate action and typed-error contracts while using
+  the colocated session policy and projection modules. GUI composition, legacy
+  HTTP routes, and behavior tests import the owned services directly; root
+  service modules remain metadata-tracked compatibility exports. Lifecycle
+  actions, operation audit, retry/reconcile behavior, errors, and HTTP payloads
+  are unchanged.
