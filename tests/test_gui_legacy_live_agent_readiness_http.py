@@ -5,6 +5,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from agentsassemble.gui_legacy_live_agent_readiness_http import (
+    register_legacy_live_agent_readiness_route as compatibility_register,
+)
+from agentsassemble.legacy.live_agent.http.readiness import (
     LegacyLiveAgentReadinessHttpDeps,
     register_legacy_live_agent_readiness_route,
 )
@@ -58,6 +61,9 @@ def _dispatch(router: Router) -> FakeHandler:
 
 
 class LegacyLiveAgentReadinessRouteTests(unittest.TestCase):
+    def test_root_module_exports_owned_registrar(self) -> None:
+        self.assertIs(compatibility_register, register_legacy_live_agent_readiness_route)
+
     def test_registers_only_readiness(self) -> None:
         router = Router()
         register_legacy_live_agent_readiness_route(

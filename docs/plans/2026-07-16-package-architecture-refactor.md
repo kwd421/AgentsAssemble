@@ -1526,3 +1526,9 @@ module churn were deliberately avoided rather than forgotten.
   `gui_legacy_live_agent_preflight_http.py` remains a metadata-tracked
   compatibility export. Request-server mapping, safe diagnostic projection,
   operation audit, errors, and response payloads are unchanged.
+- 2026-07-20: The retained aggregate resident readiness HTTP registrar moved
+  mechanically to `legacy/live_agent/http/readiness.py`. Legacy GUI
+  composition imports the owned registrar directly; root
+  `gui_legacy_live_agent_readiness_http.py` remains a metadata-tracked
+  compatibility export. Local-server mapping, transport errors, safe operation
+  details, degraded status, audit, and response payloads are unchanged.

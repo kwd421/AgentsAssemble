@@ -219,7 +219,7 @@ These families already have a clear module owner and should not move back into
 | `legacy/live_agent/http/preflight.py` | Compatibility | Configuration-only resident preflight and redacted diagnostics; root HTTP module is a compatibility export | `tests/test_gui_legacy_live_agent_preflight_http.py`, `tests/test_live_agent_preflight.py`, `tests/test_gui_server_readiness_probes.py` |
 | `legacy/live_agent/http/discovery.py` | Compatibility | Local CLI discovery and generated resident config bundles backed by `legacy/live_agent/discovery.py`; root HTTP module is a compatibility export | `tests/test_gui_legacy_live_agent_discovery_http.py`, `tests/test_live_agent_discovery.py` |
 | `gui_legacy_live_agent_smoke_http.py` | Compatibility | Basic, official-round, durable session, and approval-gated real-provider smoke execution | `tests/test_gui_legacy_live_agent_smoke_http.py`, `tests/test_gui_server_smoke_routes.py`, `tests/test_gui_server_real_session_smoke.py` |
-| `gui_legacy_live_agent_readiness_http.py` | Compatibility | Aggregate readiness orchestration over health, smoke, and bounded resident probes | `tests/test_gui_legacy_live_agent_readiness_http.py`, `tests/test_gui_server_readiness_probes.py` |
+| `legacy/live_agent/http/readiness.py` | Compatibility | Aggregate readiness orchestration over health, smoke, and bounded resident probes; root HTTP module is a compatibility export | `tests/test_gui_legacy_live_agent_readiness_http.py`, `tests/test_gui_server_readiness_probes.py` |
 
 `gui_room_http.py` is a compatibility coordinator and re-export surface. It
 registers the room subdomains and retains historical service names. It is not

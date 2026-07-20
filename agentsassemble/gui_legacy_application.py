@@ -51,7 +51,7 @@ from agentsassemble.gui_legacy_live_agent_read_http import (
     LegacyLiveAgentReadDeps,
     register_legacy_live_agent_read_routes,
 )
-from agentsassemble.gui_legacy_live_agent_readiness_http import (
+from agentsassemble.legacy.live_agent.http.readiness import (
     LegacyLiveAgentReadinessHttpDeps,
     register_legacy_live_agent_readiness_route,
 )
