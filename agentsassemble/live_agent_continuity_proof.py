@@ -14,7 +14,7 @@ from agentsassemble.providers.cursor_resident import CursorResidentCommandRunner
 from agentsassemble.providers.hermes_resident import HermesResidentCommandRunner, hermes_error_category
 from agentsassemble.providers.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.live_agent_runner import ResidentAgentConfig
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.providers.antigravity_resident import (
     AntigravityResidentCommandRunner,
     antigravity_error_category,

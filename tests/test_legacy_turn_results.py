@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from agentsassemble.legacy_turn_results import turn_sequence_result, turn_sequence_status
+from agentsassemble.legacy.meeting.core.turn_results import turn_sequence_result, turn_sequence_status
 
 
 class LegacyTurnResultTests(unittest.TestCase):

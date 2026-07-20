@@ -11,7 +11,7 @@ from agentsassemble.live_agent_flow import FLOW_SPEAKING_ACTIONS
 from agentsassemble.live_agents import heartbeat_live_agent, read_live_agents
 from agentsassemble.legacy.live_agent.queries import require_live_agent
 from agentsassemble.lobby_queries import read_lobby
-from agentsassemble.meeting_events import LOBBY_KINDS, clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import LOBBY_KINDS, clean_lobby_text
 from agentsassemble.features.social.direct_messages import append_live_agent_dm_reply
 from agentsassemble.room.speech import (
     ActorIdentity,

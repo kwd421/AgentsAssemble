@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from threading import Lock
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 _REVIEW_CHECKPOINT_ARTIFACT_LOCK = Lock()
 _REVIEW_CHECKPOINT_ARTIFACT_LOCKS: dict[str, Lock] = {}

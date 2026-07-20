@@ -7,7 +7,7 @@ from agentsassemble.legacy_codex_session_compat import (
     LegacyCodexSessionCompatibilityService,
     LegacyCodexSessionError,
 )
-from agentsassemble.meeting_events import write_live_state
+from agentsassemble.legacy.meeting.core.events import write_live_state
 
 
 class EmptySupervisor:

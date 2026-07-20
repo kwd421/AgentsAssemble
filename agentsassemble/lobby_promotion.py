@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 
 from agentsassemble.live_agent_operations import append_live_agent_operation, redact_sensitive_operation_text
-from agentsassemble.meeting_events import append_live_event, clean_lobby_text, read_live_events, read_lobby_events
+from agentsassemble.legacy.meeting.core.events import append_live_event, clean_lobby_text, read_live_events, read_lobby_events
 
 
 MAX_LOBBY_PROMOTION_EVENT_IDS = 20

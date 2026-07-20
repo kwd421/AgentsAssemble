@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.meeting_phases import compact_live_research_summary
+from agentsassemble.legacy.meeting.core.phases import compact_live_research_summary
 
 
 class LiveResearchSummaryTests(unittest.TestCase):

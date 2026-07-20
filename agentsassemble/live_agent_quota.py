@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 LIVE_AGENT_QUOTA_FIELDS = ("quota_5h", "quota_1w", "quota_state", "quota_windows")
 LIVE_AGENT_QUOTA_STATES = {"ok", "low", "exhausted", "unknown", ""}

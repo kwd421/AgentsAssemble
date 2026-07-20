@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Literal
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 AttentionOutcome = Literal["selected", "eligible", "silent"]

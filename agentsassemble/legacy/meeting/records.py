@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 def safe_meeting_dir(output_root: Path, meeting_id: str) -> Path:

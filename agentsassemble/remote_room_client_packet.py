@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 def build_remote_room_client_packet(

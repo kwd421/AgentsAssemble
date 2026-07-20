@@ -5,7 +5,7 @@ from pathlib import Path
 
 from agentsassemble.live_agent_context import live_agent_context_contract_with_join_semantics
 from agentsassemble.legacy.live_agent.roster_queries import live_agent_register_admission_details
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 def registration_operation_details(

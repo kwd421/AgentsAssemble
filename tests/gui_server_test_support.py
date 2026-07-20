@@ -59,9 +59,9 @@ from agentsassemble.gui_room_http import register_room_routes
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
 from agentsassemble.persistence.local.identity.repository import IdentityStore
 from agentsassemble.agent_sessions import room_sse_frames_after_cursor
-from agentsassemble.meeting_events import append_live_event, read_live_events, write_live_state
-from agentsassemble.meeting_events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after
-from agentsassemble.meeting import run_demo_meeting
+from agentsassemble.legacy.meeting.core.events import append_live_event, read_live_events, write_live_state
+from agentsassemble.legacy.meeting.core.events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after
+from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
 from agentsassemble.live_agent_meetings import start_live_agent_meeting

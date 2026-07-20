@@ -5,7 +5,7 @@ import time
 import unittest
 from pathlib import Path
 
-from agentsassemble.meeting_events import append_live_event, write_live_state
+from agentsassemble.legacy.meeting.core.events import append_live_event, write_live_state
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,7 +24,7 @@ def write_record(meeting_dir: Path, name: str = "live_state.json", **overrides):
 
 class MeetingLifecycleTests(unittest.TestCase):
     def test_archived_when_no_state_files_exist(self):
-        from agentsassemble.meeting_lifecycle import project_meeting_lifecycle
+        from agentsassemble.legacy.meeting.core.lifecycle import project_meeting_lifecycle
 
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"
@@ -35,7 +35,7 @@ class MeetingLifecycleTests(unittest.TestCase):
         self.assertEqual(payload["state"], "archived")
 
     def test_unknown_when_record_is_malformed(self):
-        from agentsassemble.meeting_lifecycle import project_meeting_lifecycle
+        from agentsassemble.legacy.meeting.core.lifecycle import project_meeting_lifecycle
 
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"
@@ -48,7 +48,7 @@ class MeetingLifecycleTests(unittest.TestCase):
         self.assertIn("malformed", payload["attention"])
 
     def test_preparing_when_running_without_bindings_or_events(self):
-        from agentsassemble.meeting_lifecycle import project_meeting_lifecycle
+        from agentsassemble.legacy.meeting.core.lifecycle import project_meeting_lifecycle
 
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"
@@ -60,7 +60,7 @@ class MeetingLifecycleTests(unittest.TestCase):
         self.assertEqual(payload["state"], "preparing")
 
     def test_waiting_for_agents_when_bindings_present_without_presence(self):
-        from agentsassemble.meeting_lifecycle import project_meeting_lifecycle
+        from agentsassemble.legacy.meeting.core.lifecycle import project_meeting_lifecycle
 
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"
@@ -80,7 +80,7 @@ class MeetingLifecycleTests(unittest.TestCase):
         self.assertEqual(payload["role_hints"][0]["admission_status"], "waiting_for_agent")
 
     def test_running_official_turns_when_official_message_is_recorded(self):
-        from agentsassemble.meeting_lifecycle import project_meeting_lifecycle
+        from agentsassemble.legacy.meeting.core.lifecycle import project_meeting_lifecycle
 
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"
@@ -103,7 +103,7 @@ class MeetingLifecycleTests(unittest.TestCase):
         self.assertNotIn("official content", json.dumps(payload, ensure_ascii=False))
 
     def test_blocked_by_pending_turns_when_request_is_unanswered(self):
-        from agentsassemble.meeting_lifecycle import project_meeting_lifecycle
+        from agentsassemble.legacy.meeting.core.lifecycle import project_meeting_lifecycle
 
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"
@@ -126,7 +126,7 @@ class MeetingLifecycleTests(unittest.TestCase):
         self.assertNotIn("private request text", json.dumps(payload, ensure_ascii=False))
 
     def test_stopped_when_running_state_is_stale(self):
-        from agentsassemble.meeting_lifecycle import STALE_RUNNING_SECONDS, project_meeting_lifecycle
+        from agentsassemble.legacy.meeting.core.lifecycle import STALE_RUNNING_SECONDS, project_meeting_lifecycle
 
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"
@@ -141,7 +141,7 @@ class MeetingLifecycleTests(unittest.TestCase):
         self.assertEqual(payload["status_source"], "stale_running_inference")
 
     def test_finalized_when_final_record_is_complete(self):
-        from agentsassemble.meeting_lifecycle import project_meeting_lifecycle
+        from agentsassemble.legacy.meeting.core.lifecycle import project_meeting_lifecycle
 
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"
@@ -153,7 +153,7 @@ class MeetingLifecycleTests(unittest.TestCase):
         self.assertEqual(payload["state"], "finalized")
 
     def test_role_hints_only_emit_safe_permission_flags_and_violation_count(self):
-        from agentsassemble.meeting_lifecycle import project_meeting_lifecycle
+        from agentsassemble.legacy.meeting.core.lifecycle import project_meeting_lifecycle
 
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"
@@ -218,7 +218,7 @@ class MeetingLifecycleTests(unittest.TestCase):
             self.assertNotIn(forbidden, serialized)
 
     def test_payload_does_not_leak_secrets_or_raw_paths(self):
-        from agentsassemble.meeting_lifecycle import project_meeting_lifecycle
+        from agentsassemble.legacy.meeting.core.lifecycle import project_meeting_lifecycle
 
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import agentsassemble.providers.adapters.registry as registry_module
 from agentsassemble.providers.adapters.base import ProviderAdapter
 from agentsassemble.providers.adapters.registry import ProviderCapabilities, default_provider_registry
-from agentsassemble.meeting import run_demo_meeting
+from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 
 
 class DemoMeetingTests(unittest.TestCase):
@@ -265,7 +265,7 @@ class DemoMeetingTests(unittest.TestCase):
 """,
                 encoding="utf-8",
             )
-            with patch("agentsassemble.meeting_setup.default_provider_registry", registry_with_failing_free_chat):
+            with patch("agentsassemble.legacy.meeting.core.setup.default_provider_registry", registry_with_failing_free_chat):
                 result = run_demo_meeting(
                     adapter_name="mock",
                     output_root=root,
@@ -811,7 +811,7 @@ class DemoMeetingTests(unittest.TestCase):
     def test_agenda_is_written_before_research_can_fail(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            with patch("agentsassemble.meeting.run_research_phase", side_effect=RuntimeError("research stopped")):
+            with patch("agentsassemble.legacy.meeting.core.runner.run_research_phase", side_effect=RuntimeError("research stopped")):
                 with self.assertRaisesRegex(RuntimeError, "research stopped"):
                     run_demo_meeting(adapter_name="mock", output_root=root)
 

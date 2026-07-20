@@ -4,7 +4,7 @@ import math
 
 from agentsassemble.live_agent_context import live_agent_context_contract
 from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 def live_agent_join_brief_payload(

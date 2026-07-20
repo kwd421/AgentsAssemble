@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agentsassemble.live_agent_runner import ResidentAgentConfig, load_group_configs
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 APPROVAL_REQUIRED_MESSAGE = "Live-agent session run requires current operator approval before relaunching real providers."

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.meeting_events import (
+from agentsassemble.legacy.meeting.core.events import (
     append_live_event,
     append_lobby_event_to_file,
     append_side_chat_event_to_file,

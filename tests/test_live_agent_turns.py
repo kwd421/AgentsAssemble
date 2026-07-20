@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.live_agent_turns import wait_for_official_turn_reply
-from agentsassemble.meeting_events import append_live_event, read_live_events
+from agentsassemble.legacy.meeting.core.events import append_live_event, read_live_events
 
 
 class LiveAgentTurnsTests(unittest.TestCase):

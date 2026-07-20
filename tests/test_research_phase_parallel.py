@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from agentsassemble.meeting_phases import run_research_phase
+from agentsassemble.legacy.meeting.core.phases import run_research_phase
 from agentsassemble.models import CouncilConfig, ResearchDepth, ResearchSteering, Role
 
 

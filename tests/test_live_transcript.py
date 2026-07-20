@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.live_transcript import projected_live_transcript_text, render_live_transcript
-from agentsassemble.meeting_events import append_live_event, read_live_events
+from agentsassemble.legacy.meeting.core.events import append_live_event, read_live_events
 
 
 class LiveTranscriptTests(unittest.TestCase):

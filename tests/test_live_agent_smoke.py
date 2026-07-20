@@ -27,7 +27,7 @@ from agentsassemble.live_agent_smoke import (
     _session_smoke_artifact_status,
     _session_smoke_self_service_script,
 )
-from agentsassemble.meeting_events import append_live_event
+from agentsassemble.legacy.meeting.core.events import append_live_event
 
 
 SESSION_SMOKE_AGENT_IDS = [

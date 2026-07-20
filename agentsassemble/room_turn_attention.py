@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterable
 from typing import Protocol
 from uuid import uuid4
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 from agentsassemble.room_attention import AttentionLeaseConflict, attention_lease_is_expired
 from agentsassemble.room.repository import RoomRepository

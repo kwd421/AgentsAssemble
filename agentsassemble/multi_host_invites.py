@@ -11,7 +11,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit, urlunsplit
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 LAN_INVITE_SCHEMA = "agentsassemble.lan_invite.v1"

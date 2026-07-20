@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 def update_live_agent_config_poll_interval(

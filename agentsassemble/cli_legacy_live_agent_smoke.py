@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 SMOKE_COMMANDS = {"smoke", "session-smoke", "real-session-smoke", "official-round-smoke"}

@@ -3,8 +3,8 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
-from agentsassemble.meeting_events import append_live_event, read_live_events
-from agentsassemble.meeting_phases import compact_spoken_message, run_debate_phase
+from agentsassemble.legacy.meeting.core.events import append_live_event, read_live_events
+from agentsassemble.legacy.meeting.core.phases import compact_spoken_message, run_debate_phase
 from agentsassemble.models import CouncilConfig, MeetingRound, Role, RoundTurnControl
 
 

@@ -11,7 +11,7 @@ from agentsassemble.application.agent_sessions import (
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.live_agent_room_admin import expel_live_agent_from_room_payload
 from agentsassemble.live_agents import read_live_agents
-from agentsassemble.meeting_events import (
+from agentsassemble.legacy.meeting.core.events import (
     append_lobby_event_to_file,
     read_lobby_events,
     read_lobby_events_after,

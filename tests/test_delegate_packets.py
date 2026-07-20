@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.artifact_packets import build_return_packet
-from agentsassemble.meeting import run_demo_meeting
+from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 
 
 class DelegatePacketTests(unittest.TestCase):

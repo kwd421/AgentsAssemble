@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import Lock
 
 from agentsassemble.live_transcript import official_live_transcript_events
-from agentsassemble.meeting_events import clean_lobby_text, read_live_events
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text, read_live_events
 
 
 ROLLING_SUMMARY_LIMIT = 20

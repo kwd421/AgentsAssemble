@@ -7,7 +7,7 @@ from agentsassemble.legacy.meeting.official_turns import LegacyOfficialTurnServi
 from agentsassemble.legacy.meeting.turn_scheduler import meeting_turn_lock
 from agentsassemble.live_agent_operations import read_live_agent_operations
 from agentsassemble.live_agents import connect_live_agent
-from agentsassemble.meeting_events import read_live_events, write_live_state
+from agentsassemble.legacy.meeting.core.events import read_live_events, write_live_state
 
 
 class LegacyOfficialTurnServiceTests(unittest.TestCase):

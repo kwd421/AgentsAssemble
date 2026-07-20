@@ -14,7 +14,7 @@ from agentsassemble.live_meeting_memory import (
     render_rolling_summary,
     write_live_meeting_memory_artifacts,
 )
-from agentsassemble.meeting_events import append_live_event, read_live_events
+from agentsassemble.legacy.meeting.core.events import append_live_event, read_live_events
 
 
 class LiveMeetingMemoryTests(unittest.TestCase):

@@ -17,7 +17,7 @@ from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
-from agentsassemble.meeting_events import clean_lobby_text, write_live_state
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text, write_live_state
 from agentsassemble.room_invite import create_room_invite
 
 

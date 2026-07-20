@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentsassemble.meeting_events import (
+from agentsassemble.legacy.meeting.core.events import (
     append_side_chat_event_to_file,
     clean_lobby_text,
     read_side_chat_events,

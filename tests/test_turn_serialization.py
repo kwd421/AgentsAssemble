@@ -8,7 +8,7 @@ from agentsassemble.live_agent_runner import (
     ResidentAgentConfig,
     _latest_human_reply_candidate,
 )
-from agentsassemble.meeting_events import append_lobby_event_to_file
+from agentsassemble.legacy.meeting.core.events import append_lobby_event_to_file
 
 MEETING = "turn-test-room"
 

@@ -9,8 +9,8 @@ from agentsassemble.artifacts import write_public_artifacts
 from agentsassemble.live_meeting_memory import build_live_meeting_memory, write_live_meeting_memory_artifacts
 from agentsassemble.live_agent_turns import LIVE_AGENT_TURN_CANCELLED_KIND, official_turn_cancellation
 from agentsassemble.live_transcript import official_live_transcript_events, render_live_transcript
-from agentsassemble.meeting_events import append_live_event, clean_lobby_text, read_live_events, write_live_state
-from agentsassemble.meeting_record import derive_failure_state
+from agentsassemble.legacy.meeting.core.events import append_live_event, clean_lobby_text, read_live_events, write_live_state
+from agentsassemble.legacy.meeting.core.record import derive_failure_state
 
 
 def finalize_live_agent_meeting(

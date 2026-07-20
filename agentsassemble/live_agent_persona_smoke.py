@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from agentsassemble.character_mode import character_mode_snapshot, clean_persona_card_id
 from agentsassemble.live_agent_finalization import finalize_live_agent_meeting
-from agentsassemble.meeting_events import append_live_event, write_live_state
+from agentsassemble.legacy.meeting.core.events import append_live_event, write_live_state
 from agentsassemble.models import AgentBinding
 from agentsassemble.persona_cards import load_persona_card, render_persona_prompt, save_persona_card
 

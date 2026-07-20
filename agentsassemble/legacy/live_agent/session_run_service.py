@@ -10,7 +10,7 @@ from agentsassemble.legacy.live_agent.session_control import (
     session_start_operation_status,
 )
 from agentsassemble.legacy.live_agent.session_projection import session_start_operation_details
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 class LegacySessionRunMutationError(ValueError):

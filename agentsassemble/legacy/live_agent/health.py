@@ -6,7 +6,7 @@ import math
 import re
 from pathlib import Path
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS = 30.0

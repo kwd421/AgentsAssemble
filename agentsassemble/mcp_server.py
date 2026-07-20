@@ -11,7 +11,7 @@ from typing import Callable
 
 from agentsassemble.live_agent_runner import official_turn_request_candidate
 from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL, live_agent_poll_sleep_seconds
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.room_engagement import (
     chain_depth as shared_chain_depth,
     events_after as shared_events_after,

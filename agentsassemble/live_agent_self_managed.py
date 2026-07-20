@@ -27,7 +27,7 @@ from typing import Any, Callable
 
 from agentsassemble.live_agent_operations import append_live_agent_operation
 from agentsassemble.live_agents import read_live_agents, set_live_agent_status
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 def _agent_record(output_root: Path, agent_id: str) -> dict[str, object]:

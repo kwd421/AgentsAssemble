@@ -10,7 +10,7 @@ from agentsassemble.legacy.meeting.records import safe_meeting_dir
 from agentsassemble.live_agent_finalization import finalize_live_agent_meeting
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_operations import append_live_agent_operation
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 def live_agent_meeting_start_payload(output_root: Path, payload: dict[str, object]) -> dict[str, object]:

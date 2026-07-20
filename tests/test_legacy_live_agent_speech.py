@@ -8,7 +8,7 @@ from agentsassemble.legacy.live_agent.speech import (
     LegacyLiveAgentSpeechService,
 )
 from agentsassemble.live_agents import connect_live_agent
-from agentsassemble.meeting_events import append_lobby_event_to_file, read_lobby_events
+from agentsassemble.legacy.meeting.core.events import append_lobby_event_to_file, read_lobby_events
 
 
 class LegacyLiveAgentSpeechServiceTests(unittest.TestCase):

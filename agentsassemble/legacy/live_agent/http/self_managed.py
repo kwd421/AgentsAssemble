@@ -6,7 +6,7 @@ from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.live_agent_self_managed import LegacySelfManagedAgentService
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 def register_legacy_self_managed_agent_routes(

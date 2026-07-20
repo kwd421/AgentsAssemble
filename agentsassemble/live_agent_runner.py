@@ -47,7 +47,7 @@ from agentsassemble.live_agent_flow import (
     parse_flow_decision,
 )
 from agentsassemble.character_mode import clean_first_message_index, clean_persona_card_id, normalize_character_mode
-from agentsassemble.meeting_events import ROOM_TOPIC_LIMIT
+from agentsassemble.legacy.meeting.core.events import ROOM_TOPIC_LIMIT
 from agentsassemble.models import ENGAGEMENT_MODES, ProviderConfig, Role
 from agentsassemble.persona_cards import load_persona_card, persona_prompt_lines, render_persona_prompt
 from agentsassemble.remote_bridge_config import (

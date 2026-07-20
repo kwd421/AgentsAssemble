@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.meeting_events import (
+from agentsassemble.legacy.meeting.core.events import (
     append_live_event,
     append_lobby_event_to_file,
     append_side_chat_event_to_file,
@@ -215,7 +215,7 @@ class MeetingEventsTests(unittest.TestCase):
                 return file
 
             with (
-                patch("agentsassemble.meeting_events.JSONL_TAIL_BLOCK_BYTES", 256),
+                patch("agentsassemble.legacy.meeting.core.events.JSONL_TAIL_BLOCK_BYTES", 256),
                 patch.object(Path, "read_text", read_text_guard),
                 patch.object(Path, "open", open_guard),
             ):
@@ -281,7 +281,7 @@ class MeetingEventsTests(unittest.TestCase):
                 return file
 
             with (
-                patch("agentsassemble.meeting_events.JSONL_TAIL_BLOCK_BYTES", 256),
+                patch("agentsassemble.legacy.meeting.core.events.JSONL_TAIL_BLOCK_BYTES", 256),
                 patch.object(Path, "read_text", read_text_guard),
                 patch.object(Path, "open", open_guard),
             ):

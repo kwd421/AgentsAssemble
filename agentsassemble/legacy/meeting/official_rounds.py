@@ -29,7 +29,7 @@ from agentsassemble.live_agent_rounds import (
     remaining_official_round_ids,
 )
 from agentsassemble.live_agents import read_live_agents
-from agentsassemble.meeting_events import clean_lobby_text, write_live_state
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text, write_live_state
 
 
 MAX_LIVE_AGENT_ROUND_BATCH = 8

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.meeting import run_demo_meeting
+from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 from agentsassemble.models import ProviderConfig
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentsassemble.meeting_events import (
+from agentsassemble.legacy.meeting.core.events import (
     clean_lobby_text,
     iter_lobby_events_newest_first,
     read_lobby_events,

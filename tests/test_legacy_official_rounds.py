@@ -11,7 +11,7 @@ from agentsassemble.legacy.meeting.official_rounds import (
 )
 from agentsassemble.live_agent_operations import read_live_agent_operations
 from agentsassemble.live_agents import connect_live_agent
-from agentsassemble.meeting_events import write_live_state
+from agentsassemble.legacy.meeting.core.events import write_live_state
 
 
 class LegacyOfficialRoundServiceTests(unittest.TestCase):

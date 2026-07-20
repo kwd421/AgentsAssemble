@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from agentsassemble.diagnostics.sensitive_text import looks_sensitive_diagnostic_text
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 def process_start_error_message(error: Exception) -> str:

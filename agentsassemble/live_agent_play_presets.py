@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from agentsassemble.live_agent_rounds import build_official_round_turns
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 PLAY_PRESETS: dict[str, dict[str, str]] = {

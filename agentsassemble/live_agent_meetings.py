@@ -9,9 +9,9 @@ from agentsassemble.artifacts import write_agenda
 from agentsassemble.character_mode import character_mode_snapshot
 from agentsassemble.config import load_council_config
 from agentsassemble.live_agents import connect_live_agent, read_live_agents, update_live_agent_engagement
-from agentsassemble.meeting import _moderator_control_snapshot
-from agentsassemble.meeting_events import append_live_event, clean_lobby_text, write_live_state
-from agentsassemble.meeting_setup import prepare_meeting_setup
+from agentsassemble.legacy.meeting.core.runner import _moderator_control_snapshot
+from agentsassemble.legacy.meeting.core.events import append_live_event, clean_lobby_text, write_live_state
+from agentsassemble.legacy.meeting.core.setup import prepare_meeting_setup
 from agentsassemble.memory import load_memory_context
 from agentsassemble.models import AgentBinding, ProviderConfig, Role
 

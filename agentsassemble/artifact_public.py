@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentsassemble.meeting_context import public_caveats, public_synthesis
+from agentsassemble.legacy.meeting.core.context import public_caveats, public_synthesis
 
 
 def render_agenda(meeting: dict[str, Any]) -> str:

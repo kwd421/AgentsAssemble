@@ -29,7 +29,7 @@ from agentsassemble.legacy.live_agent.session_projection import (
     session_start_operation_details,
     session_stop_operation_details,
 )
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 SessionAction = Callable[..., dict[str, object]]

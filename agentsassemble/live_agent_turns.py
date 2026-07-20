@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from agentsassemble.meeting_events import read_live_events
+from agentsassemble.legacy.meeting.core.events import read_live_events
 
 LIVE_AGENT_TURN_CANCELLED_KIND = "live_agent_turn_cancelled"
 

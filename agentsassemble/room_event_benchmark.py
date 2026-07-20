@@ -22,7 +22,7 @@ from agentsassemble.live_agent_flow import (
     DEFAULT_FLOW_FAIRNESS_START_ORDER,
     flow_should_yield_for_fairness,
 )
-from agentsassemble.meeting_events import (
+from agentsassemble.legacy.meeting.core.events import (
     append_live_event,
     append_lobby_event_to_file,
     read_live_events,

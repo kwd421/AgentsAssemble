@@ -48,6 +48,54 @@ class CompatibilityShim:
 # boundaries. Historical presence in the root baseline does not exempt a moved
 # module from recording its replacement, callers, and removal gate here.
 ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
+    "legacy_turn_results.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.core.turn_results",
+        removal_gate="No direct imports use agentsassemble.legacy_turn_results for one compatibility window.",
+        known_callers=("tests/test_legacy_turn_results.py",),
+        introduced_in="Milestone 6.62 retained meeting engine package",
+    ),
+    "meeting.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.core.runner",
+        removal_gate="No direct imports or patches use agentsassemble.meeting for one compatibility window.",
+        known_callers=("tests/test_demo_meeting.py",),
+        introduced_in="Milestone 6.62 retained meeting engine package",
+    ),
+    "meeting_context.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.core.context",
+        removal_gate="No direct imports use agentsassemble.meeting_context for one compatibility window.",
+        known_callers=("tests/test_decision_context.py",),
+        introduced_in="Milestone 6.62 retained meeting engine package",
+    ),
+    "meeting_events.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.core.events",
+        removal_gate="No direct imports or patches use agentsassemble.meeting_events for one compatibility window.",
+        known_callers=("tests/test_meeting_events.py",),
+        introduced_in="Milestone 6.62 retained meeting engine package",
+    ),
+    "meeting_lifecycle.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.core.lifecycle",
+        removal_gate="No direct imports use agentsassemble.meeting_lifecycle for one compatibility window.",
+        known_callers=("tests/test_meeting_lifecycle.py",),
+        introduced_in="Milestone 6.62 retained meeting engine package",
+    ),
+    "meeting_phases.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.core.phases",
+        removal_gate="No direct imports use agentsassemble.meeting_phases for one compatibility window.",
+        known_callers=("tests/test_debate_turn_control.py",),
+        introduced_in="Milestone 6.62 retained meeting engine package",
+    ),
+    "meeting_record.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.core.record",
+        removal_gate="No direct imports use agentsassemble.meeting_record for one compatibility window.",
+        known_callers=("tests/test_demo_meeting.py",),
+        introduced_in="Milestone 6.62 retained meeting engine package",
+    ),
+    "meeting_setup.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.core.setup",
+        removal_gate="No direct imports or patches use agentsassemble.meeting_setup for one compatibility window.",
+        known_callers=("tests/test_meeting_setup.py",),
+        introduced_in="Milestone 6.62 retained meeting engine package",
+    ),
     "canonical_room_benchmark.py": CompatibilityShim(
         replacement_import="agentsassemble.diagnostics.canonical_room_benchmark",
         removal_gate=(

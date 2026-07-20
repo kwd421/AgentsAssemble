@@ -7,7 +7,7 @@ from pathlib import Path
 
 from agentsassemble.live_agent_frontend_create import frontend_live_agent_login_payload
 from agentsassemble.live_agent_operations import append_live_agent_operation
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 ProviderLoginLauncher = Callable[[list[str]], object]

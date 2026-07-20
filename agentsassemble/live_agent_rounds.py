@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 DEFAULT_MAX_OFFICIAL_ROUND_TURNS = 12

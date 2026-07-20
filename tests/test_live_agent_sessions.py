@@ -25,7 +25,7 @@ from agentsassemble.live_agent_sessions import (
     session_ensure_action,
 )
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
-from agentsassemble.meeting_events import write_live_state
+from agentsassemble.legacy.meeting.core.events import write_live_state
 
 
 class FakeSessionSupervisor:

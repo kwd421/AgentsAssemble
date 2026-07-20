@@ -22,7 +22,7 @@ from agentsassemble.live_agent_turns import (
 )
 from agentsassemble.live_agents import heartbeat_live_agent
 from agentsassemble.live_meeting_memory import write_live_meeting_memory_artifacts
-from agentsassemble.meeting_events import (
+from agentsassemble.legacy.meeting.core.events import (
     append_live_event,
     clean_lobby_text,
     read_live_events,

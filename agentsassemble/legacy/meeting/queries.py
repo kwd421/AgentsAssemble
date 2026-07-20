@@ -16,8 +16,8 @@ from agentsassemble.legacy.meeting.records import (
 from agentsassemble.live_agents import read_live_agents
 from agentsassemble.live_meeting_memory import projected_live_meeting_memory_artifacts
 from agentsassemble.live_transcript import projected_live_transcript_text
-from agentsassemble.meeting_events import ROOM_TOPIC_LIMIT, clean_lobby_text, read_live_events
-from agentsassemble.meeting_lifecycle import infer_live_status, project_meeting_lifecycle
+from agentsassemble.legacy.meeting.core.events import ROOM_TOPIC_LIMIT, clean_lobby_text, read_live_events
+from agentsassemble.legacy.meeting.core.lifecycle import infer_live_status, project_meeting_lifecycle
 
 
 TAB_LABELS = {"lobby": "로비", "live": "실황", "board": "작전판", "archive": "아카이브"}

@@ -123,7 +123,7 @@ from agentsassemble.live_agent_roster import (
     safe_live_agent_roster_payload,
     safe_live_agent_roster_text,
 )
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.live_meeting_memory import compact_live_meeting_memory
 from agentsassemble.live_agent_discovery import (
     add_session_bundle_outputs,
@@ -158,7 +158,7 @@ from agentsassemble.live_agent_smoke import (
 )
 from agentsassemble.live_agent_sessions import session_ensure_action
 from agentsassemble.live_session_transport import JsonlLiveSession, TerminalLiveSession
-from agentsassemble.meeting import run_demo_meeting
+from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 from agentsassemble.memory_capsules import memory_capsule_gate_report
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
 from agentsassemble.cli_http_errors import CliHttpError

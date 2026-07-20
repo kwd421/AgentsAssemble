@@ -23,7 +23,7 @@ from agentsassemble.gui import _make_handler
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_runner import LiveAgentRunner, ResidentAgentConfig
 from agentsassemble.live_agents import read_live_agents
-from agentsassemble.meeting_events import read_live_events
+from agentsassemble.legacy.meeting.core.events import read_live_events
 
 
 def config(**overrides):

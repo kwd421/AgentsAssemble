@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.meeting_setup import prepare_meeting_setup
+from agentsassemble.legacy.meeting.core.setup import prepare_meeting_setup
 from agentsassemble.models import Role
 
 

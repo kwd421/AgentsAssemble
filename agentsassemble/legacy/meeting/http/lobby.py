@@ -11,7 +11,7 @@ from http import HTTPStatus
 from agentsassemble.attachments import AttachmentError
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.legacy.meeting.lobby_commands import LegacyLobbyCommandService
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 def register_legacy_lobby_routes(

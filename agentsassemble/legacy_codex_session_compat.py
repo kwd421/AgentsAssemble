@@ -23,7 +23,7 @@ from agentsassemble.legacy.meeting.records import read_meeting_record
 from agentsassemble.legacy.meeting.turn_scheduler import meeting_turn_lock
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor, clean_live_agent_group_id
 from agentsassemble.live_agents import read_live_agents
-from agentsassemble.meeting_events import clean_lobby_text, read_live_events, write_live_state
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text, read_live_events, write_live_state
 
 
 EnsureSession = Callable[..., dict[str, object]]

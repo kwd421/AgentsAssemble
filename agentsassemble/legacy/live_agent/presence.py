@@ -11,7 +11,7 @@ from agentsassemble.legacy.live_agent.presence_projection import (
 from agentsassemble.legacy.live_agent.queries import require_live_agent
 from agentsassemble.live_agent_operations import append_live_agent_operation
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 @dataclass(frozen=True)

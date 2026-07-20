@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from agentsassemble.live_session_transport import terminal_sessions_supported
-from agentsassemble.meeting_events import read_live_events, read_live_events_after, write_live_state
+from agentsassemble.legacy.meeting.core.events import read_live_events, read_live_events_after, write_live_state
 
 
 RequestJson = Callable[..., dict[str, object]]

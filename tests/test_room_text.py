@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from agentsassemble.meeting_events import (
+from agentsassemble.legacy.meeting.core.events import (
     clean_lobby_text,
     has_room_visible_text as legacy_has_room_visible_text,
 )

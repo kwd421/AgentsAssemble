@@ -1643,3 +1643,12 @@ module churn were deliberately avoided rather than forgotten.
   Codex execution, HTTP auth handling, local one-shot legacy behavior, remote
   bridge redaction, and the fail-closed Claude print-mode prohibition are
   unchanged.
+- 2026-07-20: The retained meeting engine's event store, context projection,
+  record model, phases, setup, lifecycle, runner, and turn-result helpers moved
+  to `legacy/meeting/core/`. Current room, admission, application, provider,
+  and web packages had already removed direct imports of this engine before the
+  move, so packaging it does not introduce a current-to-legacy dependency.
+  Legacy composition and behavior tests import the owned paths directly; the
+  eight root modules are explicit compatibility exports. Event formats,
+  artifacts, locks, meeting phases, retry behavior, CLI demo behavior, and
+  public outputs are unchanged.

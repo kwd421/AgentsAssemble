@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.meeting_events import LobbyEvent
+from agentsassemble.legacy.meeting.core.events import LobbyEvent
 from agentsassemble.room_engagement import should_reply_to_event
 from agentsassemble.room_votes import vote_summary
 

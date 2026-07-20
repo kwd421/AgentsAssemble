@@ -14,10 +14,10 @@ from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.models import AgentBinding
 from agentsassemble.persona_cards import load_persona_card
-from agentsassemble.meeting_setup import prepare_meeting_setup
+from agentsassemble.legacy.meeting.core.setup import prepare_meeting_setup
 
 SUPPORTED_SESSION_CONNECTION_KINDS = frozenset({"local_cli", "live_session", "terminal_session", "remote_bridge", "self_service"})
 SESSION_PROCESS_STATUSES = frozenset({"running", "restarting", "error", "unknown", "stopped"})

@@ -11,7 +11,7 @@ from agentsassemble.live_agent_context import (
 from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
 from agentsassemble.live_agent_quota import quota_fields_for_viewer
 from agentsassemble.live_agents import PRESENCE_ERROR_REDACTED, _looks_sensitive_presence_error
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 SAFE_LIVE_AGENT_ROSTER_FIELDS = (

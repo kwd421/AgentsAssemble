@@ -18,7 +18,7 @@ from typing import Callable
 from agentsassemble.live_agents import LIVE_AGENT_STATE, heartbeat_live_agent, read_live_agents
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_runner import ResidentAgentConfig, load_group_configs
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 RECENT_LIFECYCLE_EVENT_LIMIT = 5

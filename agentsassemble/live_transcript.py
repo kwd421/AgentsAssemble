@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.meeting_events import read_live_events
+from agentsassemble.legacy.meeting.core.events import read_live_events
 
 
 OFFICIAL_TRANSCRIPT_KINDS = {"message", "synthesis", "promoted_context"}

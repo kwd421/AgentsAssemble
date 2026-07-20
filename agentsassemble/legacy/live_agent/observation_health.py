@@ -17,7 +17,7 @@ from agentsassemble.live_agent_turns import (
     is_review_checkpoint_reply_event,
 )
 from agentsassemble.lobby_queries import read_lobby
-from agentsassemble.meeting_events import clean_lobby_text, read_live_events
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text, read_live_events
 
 
 def live_agent_observation_health_summary(

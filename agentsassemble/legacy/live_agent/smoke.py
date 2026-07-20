@@ -17,7 +17,7 @@ from agentsassemble.live_agent_smoke import (
     run_live_agent_session_smoke,
     run_live_agent_smoke,
 )
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 RequestJson = Callable[..., dict[str, object]]

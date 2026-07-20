@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Mapping
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.providers.launch_specs import NativeCliProviderSpec
 
 

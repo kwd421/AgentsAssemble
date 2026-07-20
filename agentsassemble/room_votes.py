@@ -7,7 +7,7 @@ per voter wins, so re-voting just changes your choice.
 """
 from __future__ import annotations
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 def vote_summary(events: list[dict[str, object]], vote_id: str) -> dict[str, object]:

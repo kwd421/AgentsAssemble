@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 SESSION_ENSURE_REASONS = {

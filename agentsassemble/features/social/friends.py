@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 ROOM_FRIENDS_FILE = "room_friends.json"
 ROOM_FRIEND_TYPES = {"human", "subscription_ai", "api", "local", "remote", "unknown"}

@@ -8,7 +8,7 @@ from pathlib import Path
 from agentsassemble.legacy.live_agent.health import safe_health_identity
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agents import read_live_agents
-from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 
 def live_agent_processes_payload(
