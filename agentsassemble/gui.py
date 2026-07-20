@@ -120,7 +120,7 @@ from agentsassemble.legacy.live_agent.process_control import (
     process_stop_running_error_message as _process_stop_running_error_message,
     process_stop_running_operation_status as _process_stop_running_operation_status,
 )
-from agentsassemble.legacy_live_agent_session_control import (
+from agentsassemble.legacy.live_agent.session_control import (
     session_check_operation_status as _session_check_operation_status,
     session_check_operation_summary as _session_check_operation_summary,
     session_ensure_error_message as _session_ensure_error_message,
@@ -138,7 +138,7 @@ from agentsassemble.legacy_live_agent_session_control import (
     session_stop_operation_status as _session_stop_operation_status,
     session_stop_operation_summary as _session_stop_operation_summary,
 )
-from agentsassemble.legacy_live_agent_session_projection import (
+from agentsassemble.legacy.live_agent.session_projection import (
     session_check_operation_details as _session_check_operation_details,
     session_start_operation_details as _session_start_operation_details,
     session_stop_operation_details as _session_stop_operation_details,

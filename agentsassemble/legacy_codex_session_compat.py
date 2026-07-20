@@ -18,7 +18,7 @@ from agentsassemble.codex_sessions import (
 )
 from agentsassemble.config import load_council_config
 from agentsassemble.legacy_live_agent_diagnostics import session_process_groups_snapshot
-from agentsassemble.legacy_live_agent_session_control import session_start_operation_status
+from agentsassemble.legacy.live_agent.session_control import session_start_operation_status
 from agentsassemble.legacy_meeting_records import read_meeting_record
 from agentsassemble.legacy_turn_scheduler import meeting_turn_lock
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor, clean_live_agent_group_id

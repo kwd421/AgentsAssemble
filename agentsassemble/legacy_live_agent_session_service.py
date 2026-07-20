@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentsassemble.legacy_live_agent_session_control import (
+from agentsassemble.legacy.live_agent.session_control import (
     session_check_error_message,
     session_check_operation_status,
     session_check_operation_summary,
@@ -24,7 +24,7 @@ from agentsassemble.legacy_live_agent_session_control import (
     session_stop_operation_status,
     session_stop_operation_summary,
 )
-from agentsassemble.legacy_live_agent_session_projection import (
+from agentsassemble.legacy.live_agent.session_projection import (
     session_check_operation_details,
     session_start_operation_details,
     session_stop_operation_details,

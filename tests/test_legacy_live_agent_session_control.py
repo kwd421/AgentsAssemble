@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.legacy_live_agent_session_control import (
+from agentsassemble.legacy.live_agent.session_control import (
     session_check_operation_status,
     session_ensure_operation_summary,
     session_recover_operation_summary,

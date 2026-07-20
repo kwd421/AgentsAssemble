@@ -119,7 +119,7 @@ from agentsassemble.legacy_live_agent_readiness import LegacyLiveAgentReadinessS
 from agentsassemble.legacy_live_agent_roster_queries import (
     LegacyLiveAgentRosterQueryService,
 )
-from agentsassemble.legacy_live_agent_session_control import (
+from agentsassemble.legacy.live_agent.session_control import (
     session_check_error_message,
 )
 from agentsassemble.legacy_live_agent_session_service import (

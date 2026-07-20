@@ -4,12 +4,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentsassemble.legacy_live_agent_session_control import (
+from agentsassemble.legacy.live_agent.session_control import (
     session_ensure_error_message,
     session_start_error_details,
     session_start_operation_status,
 )
-from agentsassemble.legacy_live_agent_session_projection import session_start_operation_details
+from agentsassemble.legacy.live_agent.session_projection import session_start_operation_details
 from agentsassemble.meeting_events import clean_lobby_text
 
 

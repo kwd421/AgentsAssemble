@@ -9,6 +9,8 @@ import agentsassemble.legacy_live_agent_preflight as compatibility_preflight
 import agentsassemble.legacy_live_agent_probe as compatibility_probe
 import agentsassemble.legacy_live_agent_process_control as compatibility_process_control
 import agentsassemble.legacy_live_agent_process_service as compatibility_process_service
+import agentsassemble.legacy_live_agent_session_control as compatibility_session_control
+import agentsassemble.legacy_live_agent_session_projection as compatibility_session_projection
 from agentsassemble.legacy.live_agent import engagement as owned_engagement
 from agentsassemble.legacy.live_agent import presence as owned_presence
 from agentsassemble.legacy.live_agent import presence_projection as owned_presence_projection
@@ -16,6 +18,8 @@ from agentsassemble.legacy.live_agent import preflight as owned_preflight
 from agentsassemble.legacy.live_agent import probe as owned_probe
 from agentsassemble.legacy.live_agent import process_control as owned_process_control
 from agentsassemble.legacy.live_agent import process_service as owned_process_service
+from agentsassemble.legacy.live_agent import session_control as owned_session_control
+from agentsassemble.legacy.live_agent import session_projection as owned_session_projection
 
 
 class LegacyPackageTests(unittest.TestCase):
@@ -92,6 +96,29 @@ class LegacyPackageTests(unittest.TestCase):
                 self.assertIs(
                     getattr(compatibility_process_service, name),
                     getattr(owned_process_service, name),
+                )
+
+    def test_live_agent_session_policy_root_modules_export_owned_services(self) -> None:
+        for name in (
+            "session_start_operation_status",
+            "session_ensure_operation_summary",
+            "session_start_error_details",
+            "session_stop_error_message",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_session_control, name),
+                    getattr(owned_session_control, name),
+                )
+        for name in (
+            "session_check_operation_details",
+            "session_start_operation_details",
+            "session_stop_operation_details",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_session_projection, name),
+                    getattr(owned_session_projection, name),
                 )
 
 

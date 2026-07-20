@@ -1345,3 +1345,11 @@ module churn were deliberately avoided rather than forgotten.
   modules. Root process modules remain metadata-tracked compatibility exports.
   Start/stop/restart/recover actions, safe diagnostic fields, operation status,
   exception behavior, and HTTP payloads are unchanged.
+- 2026-07-20: Retained resident session status/summary/error policy and bounded
+  operation projection moved mechanically to
+  `legacy/live_agent/session_control.py` and `session_projection.py`. Existing
+  session mutation services, GUI composition, Codex compatibility, and
+  behavior tests import the owned modules directly; root session policy
+  modules remain metadata-tracked compatibility exports. Status degradation,
+  summaries, redaction, recoverable meeting IDs, counts, and operation payloads
+  are unchanged. Session mutation services remain a separate next commit.

@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.legacy_live_agent_session_projection import (
+from agentsassemble.legacy.live_agent.session_projection import (
     session_start_operation_details,
     session_stop_operation_details,
 )
