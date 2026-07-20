@@ -1398,3 +1398,10 @@ module churn were deliberately avoided rather than forgotten.
   `legacy_live_agent_session_run_health.py` remains a metadata-tracked
   compatibility export. Readiness overlays, retry counts, attention markers,
   monitor status, bounded errors, and public health payloads are unchanged.
+- 2026-07-20: Retained resident roster reads, quota-field removal, and
+  admission-evidence projection moved mechanically to
+  `legacy/live_agent/roster_queries.py`. GUI composition, the legacy read HTTP
+  route, presence audit, and aggregate health import the owned query facade
+  directly; root `legacy_live_agent_roster_queries.py` remains a
+  metadata-tracked compatibility export. Roster ordering, admission details,
+  quota filtering, owner/session evidence, and public payloads are unchanged.

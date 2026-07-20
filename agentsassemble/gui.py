@@ -232,7 +232,7 @@ from agentsassemble.legacy_live_agent_smoke import (
     session_smoke_soak_cycle_count as _payload_session_smoke_soak_cycle_count,
     session_smoke_soak_interval_seconds as _payload_session_smoke_soak_interval_seconds,
 )
-from agentsassemble.legacy_live_agent_roster_queries import (
+from agentsassemble.legacy.live_agent.roster_queries import (
     live_agent_roster_admission_details as _live_agent_roster_admission_details,
     live_agent_roster_with_admission_evidence as _live_agent_roster_with_admission_evidence,
     live_agent_without_quota_fields as _live_agent_without_quota_fields,

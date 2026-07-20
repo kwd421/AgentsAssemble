@@ -13,6 +13,7 @@ import agentsassemble.legacy_live_agent_probe as compatibility_probe
 import agentsassemble.legacy_live_agent_process_control as compatibility_process_control
 import agentsassemble.legacy_live_agent_process_projection as compatibility_process_projection
 import agentsassemble.legacy_live_agent_process_service as compatibility_process_service
+import agentsassemble.legacy_live_agent_roster_queries as compatibility_roster_queries
 import agentsassemble.legacy_live_agent_session_control as compatibility_session_control
 import agentsassemble.legacy_live_agent_session_projection as compatibility_session_projection
 import agentsassemble.legacy_live_agent_session_run_service as compatibility_session_run_service
@@ -29,6 +30,7 @@ from agentsassemble.legacy.live_agent import probe as owned_probe
 from agentsassemble.legacy.live_agent import process_control as owned_process_control
 from agentsassemble.legacy.live_agent import process_projection as owned_process_projection
 from agentsassemble.legacy.live_agent import process_service as owned_process_service
+from agentsassemble.legacy.live_agent import roster_queries as owned_roster_queries
 from agentsassemble.legacy.live_agent import session_control as owned_session_control
 from agentsassemble.legacy.live_agent import session_projection as owned_session_projection
 from agentsassemble.legacy.live_agent import session_run_service as owned_session_run_service
@@ -165,6 +167,19 @@ class LegacyPackageTests(unittest.TestCase):
                 self.assertIs(
                     getattr(compatibility_process_projection, name),
                     getattr(owned_process_projection, name),
+                )
+
+    def test_live_agent_roster_root_module_exports_owned_queries(self) -> None:
+        for name in (
+            "LegacyLiveAgentRosterQueryService",
+            "live_agent_register_admission_details",
+            "live_agent_roster_with_admission_evidence",
+            "live_agents_payload",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_roster_queries, name),
+                    getattr(owned_roster_queries, name),
                 )
 
     def test_live_agent_session_policy_root_modules_export_owned_services(self) -> None:

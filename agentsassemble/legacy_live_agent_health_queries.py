@@ -22,7 +22,7 @@ from agentsassemble.legacy.live_agent.process_projection import (
     agent_connection_evidence,
     safe_agent_connection_identity,
 )
-from agentsassemble.legacy_live_agent_roster_queries import live_agent_roster_with_admission_evidence
+from agentsassemble.legacy.live_agent.roster_queries import live_agent_roster_with_admission_evidence
 from agentsassemble.legacy.live_agent.session_run_health import (
     live_agent_session_run_health_summary,
     live_agent_session_run_monitor_health_summary,
