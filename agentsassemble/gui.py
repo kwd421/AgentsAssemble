@@ -249,7 +249,7 @@ from agentsassemble.legacy.live_agent.engagement import (
 from agentsassemble.legacy.live_agent.probe import (
     live_agent_probe_payload,
 )
-from agentsassemble.legacy_live_agent_official_reply import (
+from agentsassemble.legacy.live_agent.official_reply import (
     live_agent_official_turn_payload,
 )
 from agentsassemble.legacy.live_agent.speech import (

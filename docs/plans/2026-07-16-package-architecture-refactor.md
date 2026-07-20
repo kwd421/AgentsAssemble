@@ -1440,3 +1440,11 @@ module churn were deliberately avoided rather than forgotten.
   export. Identity stamping, flow metadata, duplicate and turn-conflict
   handling, smoke redaction, heartbeat updates, errors, and response payloads
   are unchanged.
+- 2026-07-20: Retained resident official/review reply recording moved
+  mechanically to `legacy/live_agent/official_reply.py`. GUI composition and
+  the legacy official-reply HTTP route import the owned service directly;
+  root `legacy_live_agent_official_reply.py` remains a metadata-tracked
+  compatibility export. The single append lock, request matching,
+  cancellation and idempotency checks, official artifact/shared-memory
+  refresh, heartbeat, operation audit, errors, and response payloads are
+  unchanged.

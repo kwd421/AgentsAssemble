@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.legacy_live_agent_official_reply import LegacyLiveAgentOfficialReplyService
+from agentsassemble.legacy.live_agent.official_reply import LegacyLiveAgentOfficialReplyService
 from agentsassemble.live_agent_operations import read_live_agent_operations
 
 
@@ -27,7 +27,7 @@ class LegacyLiveAgentOfficialReplyServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             with patch(
-                "agentsassemble.legacy_live_agent_official_reply.live_agent_official_turn_payload",
+                "agentsassemble.legacy.live_agent.official_reply.live_agent_official_turn_payload",
                 return_value=result,
             ):
                 returned = LegacyLiveAgentOfficialReplyService(root).reply(
@@ -56,7 +56,7 @@ class LegacyLiveAgentOfficialReplyServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             with patch(
-                "agentsassemble.legacy_live_agent_official_reply.live_agent_official_turn_payload",
+                "agentsassemble.legacy.live_agent.official_reply.live_agent_official_turn_payload",
                 return_value=result,
             ):
                 LegacyLiveAgentOfficialReplyService(root).reply("agent-a", {})
@@ -77,7 +77,7 @@ class LegacyLiveAgentOfficialReplyServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             with patch(
-                "agentsassemble.legacy_live_agent_official_reply.live_agent_official_turn_payload",
+                "agentsassemble.legacy.live_agent.official_reply.live_agent_official_turn_payload",
                 side_effect=ValueError("Matching official turn request was not found."),
             ):
                 with self.assertRaisesRegex(ValueError, "Matching official turn request"):

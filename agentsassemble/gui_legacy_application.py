@@ -105,7 +105,7 @@ from agentsassemble.legacy.live_agent.engagement import LegacyLiveAgentEngagemen
 from agentsassemble.legacy.live_agent.health_queries import (
     LegacyLiveAgentHealthQueryService,
 )
-from agentsassemble.legacy_live_agent_official_reply import (
+from agentsassemble.legacy.live_agent.official_reply import (
     LegacyLiveAgentOfficialReplyService,
 )
 from agentsassemble.legacy.live_agent.preflight import LegacyLiveAgentPreflightService

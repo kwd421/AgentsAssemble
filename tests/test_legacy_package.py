@@ -8,6 +8,7 @@ import agentsassemble.legacy_live_agent_discovery as compatibility_discovery
 import agentsassemble.legacy_live_agent_health as compatibility_health
 import agentsassemble.legacy_live_agent_health_queries as compatibility_health_queries
 import agentsassemble.legacy_live_agent_observation_health as compatibility_observation_health
+import agentsassemble.legacy_live_agent_official_reply as compatibility_official_reply
 import agentsassemble.legacy_live_agent_presence as compatibility_presence
 import agentsassemble.legacy_live_agent_presence_projection as compatibility_presence_projection
 import agentsassemble.legacy_live_agent_preflight as compatibility_preflight
@@ -31,6 +32,7 @@ from agentsassemble.legacy.live_agent import discovery as owned_discovery
 from agentsassemble.legacy.live_agent import health as owned_health
 from agentsassemble.legacy.live_agent import health_queries as owned_health_queries
 from agentsassemble.legacy.live_agent import observation_health as owned_observation_health
+from agentsassemble.legacy.live_agent import official_reply as owned_official_reply
 from agentsassemble.legacy.live_agent import presence as owned_presence
 from agentsassemble.legacy.live_agent import presence_projection as owned_presence_projection
 from agentsassemble.legacy.live_agent import preflight as owned_preflight
@@ -51,6 +53,21 @@ from agentsassemble.legacy.live_agent import speech as owned_speech
 
 
 class LegacyPackageTests(unittest.TestCase):
+    def test_live_agent_official_reply_root_module_exports_owned_service(self) -> None:
+        for name in (
+            "OFFICIAL_REPLY_LOCK",
+            "LegacyLiveAgentOfficialReplyService",
+            "live_agent_official_turn_payload",
+            "live_agent_reply_for_request",
+            "matching_live_agent_turn_request",
+            "refresh_live_meeting_memory_after_official_reply",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_official_reply, name),
+                    getattr(owned_official_reply, name),
+                )
+
     def test_live_agent_speech_root_module_exports_owned_service(self) -> None:
         for name in (
             "LegacyLiveAgentLobbySpeechDeps",

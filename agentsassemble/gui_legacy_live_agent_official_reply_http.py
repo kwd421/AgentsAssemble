@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.legacy_live_agent_official_reply import LegacyLiveAgentOfficialReplyService
+from agentsassemble.legacy.live_agent.official_reply import LegacyLiveAgentOfficialReplyService
 
 
 ReadOperationPayload = Callable[
