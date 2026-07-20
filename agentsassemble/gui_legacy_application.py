@@ -36,7 +36,7 @@ from agentsassemble.gui_legacy_live_agent_preflight_http import (
     LegacyLiveAgentPreflightHttpDeps,
     register_legacy_live_agent_preflight_route,
 )
-from agentsassemble.gui_legacy_live_agent_presence_http import (
+from agentsassemble.legacy.live_agent.http.presence import (
     register_legacy_live_agent_presence_routes,
 )
 from agentsassemble.legacy.live_agent.http.probe import (

@@ -1500,3 +1500,9 @@ module churn were deliberately avoided rather than forgotten.
   `gui_legacy_live_agent_self_managed_http.py` remains a metadata-tracked
   compatibility export. JSON validation, service delegation, bounded agent
   identity in errors, and response payloads are unchanged.
+- 2026-07-20: The retained resident registration, heartbeat, and leave HTTP
+  registrar moved mechanically to `legacy/live_agent/http/presence.py`.
+  Legacy GUI composition imports the owned registrar directly; root
+  `gui_legacy_live_agent_presence_http.py` remains a metadata-tracked
+  compatibility export. Endpoint registration, invalid-JSON audit policy,
+  service delegation, errors, and response payloads are unchanged.
