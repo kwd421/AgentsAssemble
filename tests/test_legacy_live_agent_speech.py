@@ -3,7 +3,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from agentsassemble.legacy_live_agent_speech import (
+from agentsassemble.legacy.live_agent.speech import (
     LegacyLiveAgentLobbySpeechDeps,
     LegacyLiveAgentSpeechService,
 )

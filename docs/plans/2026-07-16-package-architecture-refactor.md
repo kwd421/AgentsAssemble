@@ -1433,3 +1433,10 @@ module churn were deliberately avoided rather than forgotten.
   owned query module directly; root `legacy_live_agent_queries.py` remains a
   metadata-tracked compatibility export. Event limits, visibility rules,
   memory/DM/side-chat projection, errors, and public payloads are unchanged.
+- 2026-07-20: Retained resident lobby and direct-message speech moved
+  mechanically to `legacy/live_agent/speech.py`. GUI composition and the
+  legacy speech HTTP route import the owned service directly; root
+  `legacy_live_agent_speech.py` remains a metadata-tracked compatibility
+  export. Identity stamping, flow metadata, duplicate and turn-conflict
+  handling, smoke redaction, heartbeat updates, errors, and response payloads
+  are unchanged.

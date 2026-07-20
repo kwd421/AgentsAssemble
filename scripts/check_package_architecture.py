@@ -639,6 +639,15 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_legacy_package.py",),
         introduced_in="Milestone 6.40 legacy resident query facade move",
     ),
+    "legacy_live_agent_speech.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.live_agent.speech",
+        removal_gate=(
+            "No direct imports use agentsassemble.legacy_live_agent_speech "
+            "for one compatibility window."
+        ),
+        known_callers=("tests/test_legacy_package.py",),
+        introduced_in="Milestone 6.41 legacy resident speech service move",
+    ),
     "legacy_live_agent_presence.py": CompatibilityShim(
         replacement_import="agentsassemble.legacy.live_agent.presence",
         removal_gate=(

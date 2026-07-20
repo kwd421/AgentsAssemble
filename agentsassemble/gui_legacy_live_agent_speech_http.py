@@ -5,7 +5,7 @@ from collections.abc import Callable
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.legacy_live_agent_speech import LegacyLiveAgentSpeechService
+from agentsassemble.legacy.live_agent.speech import LegacyLiveAgentSpeechService
 
 
 def register_legacy_live_agent_speech_routes(

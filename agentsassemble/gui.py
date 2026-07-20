@@ -252,7 +252,7 @@ from agentsassemble.legacy.live_agent.probe import (
 from agentsassemble.legacy_live_agent_official_reply import (
     live_agent_official_turn_payload,
 )
-from agentsassemble.legacy_live_agent_speech import (
+from agentsassemble.legacy.live_agent.speech import (
     LegacyLiveAgentLobbySpeechDeps,
     LegacyLiveAgentSpeechService,
     flow_turn_conflict as _flow_turn_conflict,

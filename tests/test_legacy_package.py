@@ -24,6 +24,7 @@ import agentsassemble.legacy_live_agent_session_projection as compatibility_sess
 import agentsassemble.legacy_live_agent_session_run_service as compatibility_session_run_service
 import agentsassemble.legacy_live_agent_session_run_health as compatibility_session_run_health
 import agentsassemble.legacy_live_agent_session_service as compatibility_session_service
+import agentsassemble.legacy_live_agent_speech as compatibility_speech
 from agentsassemble.legacy.live_agent import engagement as owned_engagement
 from agentsassemble.legacy.live_agent import diagnostics as owned_diagnostics
 from agentsassemble.legacy.live_agent import discovery as owned_discovery
@@ -46,9 +47,25 @@ from agentsassemble.legacy.live_agent import session_projection as owned_session
 from agentsassemble.legacy.live_agent import session_run_service as owned_session_run_service
 from agentsassemble.legacy.live_agent import session_run_health as owned_session_run_health
 from agentsassemble.legacy.live_agent import session_service as owned_session_service
+from agentsassemble.legacy.live_agent import speech as owned_speech
 
 
 class LegacyPackageTests(unittest.TestCase):
+    def test_live_agent_speech_root_module_exports_owned_service(self) -> None:
+        for name in (
+            "LegacyLiveAgentLobbySpeechDeps",
+            "LegacyLiveAgentSpeechService",
+            "existing_live_agent_lobby_reply",
+            "flow_reply_post_elapsed_ms",
+            "flow_turn_conflict",
+            "live_agent_lobby_flow_metadata",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_speech, name),
+                    getattr(owned_speech, name),
+                )
+
     def test_live_agent_diagnostics_root_module_exports_owned_service(self) -> None:
         for name in (
             "LegacyLiveAgentDiagnosticQueryService",
