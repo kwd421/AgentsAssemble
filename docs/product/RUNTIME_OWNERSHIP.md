@@ -40,7 +40,7 @@ features.
 | Meeting/config session composition | `live_agent_sessions.py` | compatibility freeze |
 | Legacy provider smoke | `live_agent_smoke.py` | replace with canonical smoke before deletion |
 | Disabled flow supervisor | `LiveAgentFlowSupervisor` | retain 410 tombstone until callers are removed |
-| Legacy lobby HTTP/SSE | `gui_legacy_lobby_http.py` | compatibility freeze |
+| Legacy lobby HTTP/SSE | `legacy/meeting/http/lobby.py` | compatibility freeze; root module is an explicit export |
 
 Deletion requires evidence that the GUI, CLI, release health, documentation,
 and tests no longer consume the legacy contract. Do not deeply refactor a

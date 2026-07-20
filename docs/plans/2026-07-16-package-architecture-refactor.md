@@ -1564,3 +1564,11 @@ module churn were deliberately avoided rather than forgotten.
   modules and current `web/routes/`. This is an inventory-boundary update
   required by the route moves; expected route sets and runtime registration
   behavior are unchanged.
+- 2026-07-20: Retained lobby, meeting read/SSE, meeting lifecycle,
+  official-turn, official-round, and review-checkpoint HTTP registrars moved
+  mechanically to `legacy/meeting/http/`. Legacy GUI composition and behavior
+  tests import the owned registrars directly; the six root HTTP modules remain
+  metadata-tracked compatibility exports. Endpoint sets, registration order,
+  JSON validation, service delegation, status/error mapping, and response
+  payloads are unchanged. Route ownership inventories now include the owned
+  meeting HTTP package so static verification follows the runtime owner.

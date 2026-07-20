@@ -76,21 +76,21 @@ from agentsassemble.legacy.live_agent.http.smoke import (
 from agentsassemble.legacy.live_agent.http.speech import (
     register_legacy_live_agent_speech_routes,
 )
-from agentsassemble.gui_legacy_lobby_http import register_legacy_lobby_routes
-from agentsassemble.gui_legacy_meeting_http import register_legacy_meeting_routes
-from agentsassemble.gui_legacy_meeting_lifecycle_http import (
+from agentsassemble.legacy.meeting.http.lobby import register_legacy_lobby_routes
+from agentsassemble.legacy.meeting.http.meeting import register_legacy_meeting_routes
+from agentsassemble.legacy.meeting.http.lifecycle import (
     register_legacy_meeting_lifecycle_routes,
 )
-from agentsassemble.gui_legacy_official_round_http import (
+from agentsassemble.legacy.meeting.http.official_round import (
     register_legacy_official_round_routes,
 )
-from agentsassemble.gui_legacy_official_turn_http import (
+from agentsassemble.legacy.meeting.http.official_turn import (
     register_legacy_official_turn_routes,
 )
 from agentsassemble.gui_legacy_provider_health_http import (
     register_legacy_provider_health_route,
 )
-from agentsassemble.gui_legacy_review_checkpoint_http import (
+from agentsassemble.legacy.meeting.http.review_checkpoint import (
     register_legacy_review_checkpoint_route,
 )
 from agentsassemble.web.router import RequestContext, Router

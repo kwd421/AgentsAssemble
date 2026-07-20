@@ -1533,6 +1533,62 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_web_transport_package.py",),
         introduced_in="Milestone 4.4 WebSocket HTTP transport move",
     ),
+    "gui_legacy_lobby_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.http.lobby",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_legacy_lobby_http for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_legacy_meeting_http_package.py",),
+        introduced_in="Milestone 6.60 legacy lobby HTTP move",
+    ),
+    "gui_legacy_meeting_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.http.meeting",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_legacy_meeting_http for "
+            "one compatibility window."
+        ),
+        known_callers=("tests/test_legacy_meeting_http_package.py",),
+        introduced_in="Milestone 6.60 legacy meeting read HTTP move",
+    ),
+    "gui_legacy_meeting_lifecycle_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.http.lifecycle",
+        removal_gate=(
+            "No direct imports use "
+            "agentsassemble.gui_legacy_meeting_lifecycle_http for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_gui_legacy_meeting_lifecycle_http.py",),
+        introduced_in="Milestone 6.60 legacy meeting lifecycle HTTP move",
+    ),
+    "gui_legacy_official_round_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.http.official_round",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_legacy_official_round_http "
+            "for one compatibility window."
+        ),
+        known_callers=("tests/test_gui_legacy_official_round_http.py",),
+        introduced_in="Milestone 6.60 legacy official-round HTTP move",
+    ),
+    "gui_legacy_official_turn_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.http.official_turn",
+        removal_gate=(
+            "No direct imports use agentsassemble.gui_legacy_official_turn_http "
+            "for one compatibility window."
+        ),
+        known_callers=("tests/test_gui_legacy_official_turn_http.py",),
+        introduced_in="Milestone 6.60 legacy official-turn HTTP move",
+    ),
+    "gui_legacy_review_checkpoint_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.meeting.http.review_checkpoint",
+        removal_gate=(
+            "No direct imports use "
+            "agentsassemble.gui_legacy_review_checkpoint_http for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_gui_legacy_review_checkpoint_http.py",),
+        introduced_in="Milestone 6.60 legacy review-checkpoint HTTP move",
+    ),
     "postgres_room_mutations.py": CompatibilityShim(
         replacement_import="agentsassemble.persistence.postgres.room.mutations",
         removal_gate=(

@@ -5,7 +5,12 @@ from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from agentsassemble.gui_legacy_meeting_lifecycle_http import register_legacy_meeting_lifecycle_routes
+from agentsassemble.gui_legacy_meeting_lifecycle_http import (
+    register_legacy_meeting_lifecycle_routes as compatibility_register,
+)
+from agentsassemble.legacy.meeting.http.lifecycle import (
+    register_legacy_meeting_lifecycle_routes,
+)
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
 
 
@@ -49,6 +54,9 @@ class FakeService:
 
 
 class LegacyMeetingLifecycleRouteTests(unittest.TestCase):
+    def test_root_module_exports_owned_registrar(self) -> None:
+        self.assertIs(compatibility_register, register_legacy_meeting_lifecycle_routes)
+
     def setUp(self) -> None:
         self.service = FakeService()
         self.router = Router()

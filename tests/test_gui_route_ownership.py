@@ -16,6 +16,9 @@ GUI_ROUTE_MODULES = (
     *sorted(
         (REPOSITORY_ROOT / "agentsassemble" / "legacy" / "live_agent" / "http").glob("*.py")
     ),
+    *sorted(
+        (REPOSITORY_ROOT / "agentsassemble" / "legacy" / "meeting" / "http").glob("*.py")
+    ),
     *sorted((REPOSITORY_ROOT / "agentsassemble" / "features").rglob("routes.py")),
 )
 DYNAMIC_ROUTE_HELPERS = {

@@ -1,0 +1,1 @@
+"""Retained meeting compatibility behavior."""
