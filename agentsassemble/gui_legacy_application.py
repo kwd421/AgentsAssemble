@@ -47,7 +47,7 @@ from agentsassemble.legacy.live_agent.http.process import (
     LegacyProcessHttpDeps,
     register_legacy_process_mutation_routes,
 )
-from agentsassemble.gui_legacy_live_agent_read_http import (
+from agentsassemble.legacy.live_agent.http.read import (
     LegacyLiveAgentReadDeps,
     register_legacy_live_agent_read_routes,
 )

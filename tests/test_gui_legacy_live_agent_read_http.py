@@ -4,6 +4,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from agentsassemble.gui_legacy_live_agent_read_http import (
+    register_legacy_live_agent_read_routes as compatibility_register,
+)
+from agentsassemble.legacy.live_agent.http.read import (
     LegacyLiveAgentReadDeps,
     register_legacy_live_agent_read_routes,
 )
@@ -117,6 +120,9 @@ def _dispatch(router: Router, path: str) -> FakeHandler:
 
 
 class LegacyLiveAgentReadRoutesTests(unittest.TestCase):
+    def test_root_module_exports_owned_registrar(self) -> None:
+        self.assertIs(compatibility_register, register_legacy_live_agent_read_routes)
+
     def test_registers_only_the_legacy_read_projection_routes(self) -> None:
         router = Router()
         register_legacy_live_agent_read_routes(router, deps=_deps())

@@ -1545,3 +1545,10 @@ module churn were deliberately avoided rather than forgotten.
   `gui_legacy_live_agent_session_http.py` remains a metadata-tracked
   compatibility export. Route set, operation-payload mapping, server URL
   injection, typed errors, and response payloads are unchanged.
+- 2026-07-20: The retained resident room, roster, health, readiness,
+  process-history, operation-history, and session-run read-only HTTP registrar
+  moved mechanically to `legacy/live_agent/http/read.py`. Legacy GUI
+  composition imports the owned registrar directly; root
+  `gui_legacy_live_agent_read_http.py` remains a metadata-tracked
+  compatibility export. Route set, query parsing, not-found and storage error
+  mapping, facade delegation, and response payloads are unchanged.
