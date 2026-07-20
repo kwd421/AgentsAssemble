@@ -7,7 +7,7 @@ from pathlib import Path
 
 from agentsassemble.legacy.live_agent.health import safe_health_identity
 from agentsassemble.legacy.live_agent.runtime.processes import LiveAgentProcessSupervisor
-from agentsassemble.live_agents import read_live_agents
+from agentsassemble.legacy.live_agent.state import read_live_agents
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 

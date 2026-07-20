@@ -148,7 +148,7 @@ from agentsassemble.legacy.live_agent.runtime.settings import (
     update_live_agent_config_options,
     update_live_agent_config_poll_interval,
 )
-from agentsassemble.live_agents import (
+from agentsassemble.legacy.live_agent.state import (
     heartbeat_live_agent,
     read_live_agents,
     update_live_agent_cooldown,
@@ -179,7 +179,7 @@ from agentsassemble.legacy.live_agent.runtime.smoke import (
     run_live_agent_session_smoke,
     run_live_agent_smoke,
 )
-from agentsassemble.lobby_queries import (
+from agentsassemble.legacy.meeting.support.lobby_queries import (
     LOBBY_HISTORY_MAX_PAGE_LIMIT,
     LOBBY_HISTORY_PAGE_LIMIT,
     read_lobby,
@@ -2981,6 +2981,7 @@ def _make_handler(
         lobby_payload_with_attachments=lobby_payload_with_attachments,
         public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
         history_page_limit=_history_page_limit,
+        read_legacy_agents=read_live_agents,
     )
     route_table = Router()
 

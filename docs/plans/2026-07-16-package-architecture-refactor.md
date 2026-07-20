@@ -1732,3 +1732,14 @@ module churn were deliberately avoided rather than forgotten.
   room text contract. Six root exports remain; media persistence, invite
   signatures, packet validation, voice state, diagnostics, and MCP behavior
   are unchanged.
+- 2026-07-20: Legacy meeting artifact, decision, evidence, transcript, lobby,
+  memory, and persona-artifact helpers moved together under
+  `legacy/meeting/support/`; the retained `live_agents.json` state owner moved
+  to `legacy/live_agent/state.py`. Eighteen root modules remain explicit
+  compatibility exports. The move exposed one current-web dependency on that
+  legacy state reader, so `GuiDeps` now accepts a read-only legacy-agent
+  projection callable and `gui.py` injects the same existing implementation.
+  The canonical roster route no longer imports legacy storage directly.
+  Artifact formats, decisions, memory files, roster merge behavior, and HTTP
+  payloads are unchanged. Shared `models`, `config`, `persona_cards`, and
+  `character_mode` remain at root pending an intentional cross-domain split.

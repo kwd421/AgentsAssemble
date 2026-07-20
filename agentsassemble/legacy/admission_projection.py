@@ -11,7 +11,7 @@ from agentsassemble.admission.projection import (
     LegacyAdmissionParticipant,
     LegacyAdmissionProjection,
 )
-from agentsassemble.live_agents import connect_live_agent
+from agentsassemble.legacy.live_agent.state import connect_live_agent
 
 
 class LiveAgentLegacyAdmissionProjection:

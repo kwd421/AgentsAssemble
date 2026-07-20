@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.persona_artifact_contract import (
+from agentsassemble.legacy.meeting.support.persona_artifact_contract import (
     apply_persona_artifact_contract_report,
     scan_persona_artifact_text,
 )

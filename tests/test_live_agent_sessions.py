@@ -24,7 +24,7 @@ from agentsassemble.legacy.live_agent.runtime.sessions import (
     stop_live_agent_session,
     session_ensure_action,
 )
-from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
+from agentsassemble.legacy.live_agent.state import connect_live_agent, heartbeat_live_agent, read_live_agents
 from agentsassemble.legacy.meeting.core.events import write_live_state
 
 
@@ -966,7 +966,7 @@ class LiveAgentSessionStartTests(unittest.TestCase):
 
     def test_start_session_example_configs_match_demo_council(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            from agentsassemble.live_agents import heartbeat_live_agent
+            from agentsassemble.legacy.live_agent.state import heartbeat_live_agent
 
             root = Path(temp_dir)
 
@@ -1399,7 +1399,7 @@ class LiveAgentSessionStartTests(unittest.TestCase):
 
     def test_start_session_returns_starting_when_group_is_not_running_even_if_agents_connected(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            from agentsassemble.live_agents import heartbeat_live_agent
+            from agentsassemble.legacy.live_agent.state import heartbeat_live_agent
 
             root = Path(temp_dir)
             council_config = _write_council_config(root, ["architect"])

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from agentsassemble.legacy.live_agent.presence import LegacyLiveAgentPresenceService
 from agentsassemble.legacy.live_agent.runtime.operations import read_live_agent_operations
-from agentsassemble.live_agents import connect_live_agent, read_live_agents
+from agentsassemble.legacy.live_agent.state import connect_live_agent, read_live_agents
 
 
 class LegacyLiveAgentPresenceServiceTests(unittest.TestCase):

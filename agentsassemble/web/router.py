@@ -69,6 +69,7 @@ class GuiDeps:
     lobby_payload_with_attachments: Callable[..., dict[str, object]] | None = None
     public_lobby_allows_room_scope: Callable[[dict[str, object]], bool] | None = None
     history_page_limit: Callable[[dict[str, list[str]]], int] | None = None
+    read_legacy_agents: Callable[[Path], list[dict[str, object]]] | None = None
 
     @property
     def rooms(self) -> RoomRepository:
@@ -97,6 +98,10 @@ class GuiDeps:
         if service is None:
             raise RuntimeError("GUI room session service is not configured.")
         return service
+
+    def legacy_agents(self) -> list[dict[str, object]]:
+        reader = self.read_legacy_agents
+        return [] if reader is None else reader(self.output_root)
 
     @property
     def admission_preflight(self) -> RoomAdmissionService:

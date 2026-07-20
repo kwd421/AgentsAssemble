@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.evidence import apply_evidence_gate
+from agentsassemble.legacy.meeting.support.evidence import apply_evidence_gate
 from agentsassemble.models import get_research_depth
 
 

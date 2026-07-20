@@ -28,7 +28,7 @@ from agentsassemble.live_agent_rounds import (
     completed_official_round_ids,
     remaining_official_round_ids,
 )
-from agentsassemble.live_agents import read_live_agents
+from agentsassemble.legacy.live_agent.state import read_live_agents
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text, write_live_state
 
 

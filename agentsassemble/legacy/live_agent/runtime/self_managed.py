@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
-from agentsassemble.live_agents import read_live_agents, set_live_agent_status
+from agentsassemble.legacy.live_agent.state import read_live_agents, set_live_agent_status
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 

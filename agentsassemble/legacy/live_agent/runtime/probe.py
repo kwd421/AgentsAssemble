@@ -4,7 +4,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from agentsassemble.live_agents import read_live_agents
+from agentsassemble.legacy.live_agent.state import read_live_agents
 from agentsassemble.legacy.meeting.core.events import append_lobby_event_to_file, read_lobby_events
 
 MAX_PROBE_TIMEOUT_SECONDS = 240.0

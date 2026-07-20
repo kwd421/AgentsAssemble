@@ -13,9 +13,9 @@ from agentsassemble.legacy.meeting.records import (
     read_meeting_record,
     safe_meeting_dir,
 )
-from agentsassemble.live_agents import read_live_agents
-from agentsassemble.live_meeting_memory import projected_live_meeting_memory_artifacts
-from agentsassemble.live_transcript import projected_live_transcript_text
+from agentsassemble.legacy.live_agent.state import read_live_agents
+from agentsassemble.legacy.meeting.support.live_meeting_memory import projected_live_meeting_memory_artifacts
+from agentsassemble.legacy.meeting.support.live_transcript import projected_live_transcript_text
 from agentsassemble.legacy.meeting.core.events import ROOM_TOPIC_LIMIT, clean_lobby_text, read_live_events
 from agentsassemble.legacy.meeting.core.lifecycle import infer_live_status, project_meeting_lifecycle
 

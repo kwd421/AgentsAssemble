@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
+from agentsassemble.legacy.live_agent.state import connect_live_agent, heartbeat_live_agent, read_live_agents
 from agentsassemble.legacy.live_agent.runtime.processes import (
     LiveAgentProcessSupervisor as _LiveAgentProcessSupervisor,
     read_live_agent_process_event_history,

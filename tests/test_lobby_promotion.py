@@ -31,8 +31,8 @@ def _meeting_record(meeting_id: str = "resident-m1") -> dict[str, object]:
 
 class LobbyPromotionTests(unittest.TestCase):
     def test_promote_appends_official_context_event_without_attachments_or_sensitive_text(self):
-        from agentsassemble.live_transcript import render_live_transcript
-        from agentsassemble.lobby_promotion import promote_lobby_events_to_official
+        from agentsassemble.legacy.meeting.support.live_transcript import render_live_transcript
+        from agentsassemble.legacy.meeting.support.lobby_promotion import promote_lobby_events_to_official
 
         with tempfile.TemporaryDirectory() as temp_dir:
             output_root = Path(temp_dir)
@@ -109,7 +109,7 @@ class LobbyPromotionTests(unittest.TestCase):
             self.assertNotIn("/Users/me", operation_text)
 
     def test_promote_rejects_side_chat_event_id_without_appending(self):
-        from agentsassemble.lobby_promotion import promote_lobby_events_to_official
+        from agentsassemble.legacy.meeting.support.lobby_promotion import promote_lobby_events_to_official
 
         with tempfile.TemporaryDirectory() as temp_dir:
             output_root = Path(temp_dir)
@@ -127,7 +127,7 @@ class LobbyPromotionTests(unittest.TestCase):
             self.assertEqual(read_live_events(meeting_dir, limit=None), [])
 
     def test_promote_refuses_duplicate_using_full_live_event_scan(self):
-        from agentsassemble.lobby_promotion import promote_lobby_events_to_official
+        from agentsassemble.legacy.meeting.support.lobby_promotion import promote_lobby_events_to_official
 
         with tempfile.TemporaryDirectory() as temp_dir:
             output_root = Path(temp_dir)
@@ -151,7 +151,7 @@ class LobbyPromotionTests(unittest.TestCase):
             self.assertEqual(len(promoted), 1)
 
     def test_promote_caps_event_count_per_call(self):
-        from agentsassemble.lobby_promotion import promote_lobby_events_to_official
+        from agentsassemble.legacy.meeting.support.lobby_promotion import promote_lobby_events_to_official
 
         with tempfile.TemporaryDirectory() as temp_dir:
             output_root = Path(temp_dir)
@@ -172,7 +172,7 @@ class LobbyPromotionTests(unittest.TestCase):
             self.assertEqual(read_live_events(meeting_dir, limit=None), [])
 
     def test_promote_batch_refuses_atomically_when_any_id_is_invalid(self):
-        from agentsassemble.lobby_promotion import promote_lobby_events_to_official
+        from agentsassemble.legacy.meeting.support.lobby_promotion import promote_lobby_events_to_official
 
         with tempfile.TemporaryDirectory() as temp_dir:
             output_root = Path(temp_dir)

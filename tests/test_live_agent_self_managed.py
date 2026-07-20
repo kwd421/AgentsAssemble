@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.live_agents import connect_live_agent, read_live_agents
+from agentsassemble.legacy.live_agent.state import connect_live_agent, read_live_agents
 from agentsassemble.legacy.live_agent.runtime.self_managed import (
     LegacySelfManagedAgentService,
     resume_self_managed_agent_payload,

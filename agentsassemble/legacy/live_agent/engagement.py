@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
-from agentsassemble.live_agents import (
+from agentsassemble.legacy.live_agent.state import (
     read_live_agents,
     update_live_agent_engagement,
 )

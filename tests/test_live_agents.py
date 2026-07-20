@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from agentsassemble.legacy.live_agent.runtime.context import live_agent_context_contract
-from agentsassemble.live_agents import (
+from agentsassemble.legacy.live_agent.state import (
     connect_live_agent,
     heartbeat_live_agent,
     read_live_agents,
@@ -660,7 +660,7 @@ class LiveAgentPresenceTests(unittest.TestCase):
                 update_live_agent_engagement(root, "missing-agent", "watch")
 
     def test_update_live_agent_poll_interval_preserves_presence_and_heartbeat(self):
-        from agentsassemble.live_agents import update_live_agent_poll_interval
+        from agentsassemble.legacy.live_agent.state import update_live_agent_poll_interval
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -679,7 +679,7 @@ class LiveAgentPresenceTests(unittest.TestCase):
         self.assertEqual(heartbeat["last_seen_at"], pinged.isoformat())
 
     def test_update_live_agent_poll_interval_rejects_invalid_or_missing_agent(self):
-        from agentsassemble.live_agents import update_live_agent_poll_interval
+        from agentsassemble.legacy.live_agent.state import update_live_agent_poll_interval
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

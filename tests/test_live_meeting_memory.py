@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.live_meeting_memory import (
+from agentsassemble.legacy.meeting.support.live_meeting_memory import (
     build_live_meeting_memory,
     load_live_meeting_memory_context,
     projected_live_meeting_memory_artifacts,
@@ -356,7 +356,7 @@ class LiveMeetingMemoryTests(unittest.TestCase):
                 },
             )
 
-            with patch("agentsassemble.live_meeting_memory.read_live_events", wraps=read_live_events) as read_mock:
+            with patch("agentsassemble.legacy.meeting.support.live_meeting_memory.read_live_events", wraps=read_live_events) as read_mock:
                 first = load_live_meeting_memory_context(meeting_dir, meeting={"meeting_id": "resident-m1", "topic": "Runtime"})
                 second = load_live_meeting_memory_context(meeting_dir, meeting={"meeting_id": "resident-m1", "topic": "Runtime"})
 

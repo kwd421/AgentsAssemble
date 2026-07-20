@@ -14,7 +14,7 @@ from agentsassemble.legacy.live_agent.runtime.sessions import (
     resume_live_agent_session_agent,
     stop_live_agent_session_agent,
 )
-from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
+from agentsassemble.legacy.live_agent.state import connect_live_agent, heartbeat_live_agent, read_live_agents
 
 
 def _write_two_agent_session_configs(root: Path) -> tuple[Path, Path, Path]:

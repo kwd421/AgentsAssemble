@@ -10,7 +10,7 @@ from agentsassemble.application.agent_sessions import (
 )
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.legacy.live_agent.runtime.room_admin import expel_live_agent_from_room_payload
-from agentsassemble.live_agents import read_live_agents
+from agentsassemble.legacy.live_agent.state import read_live_agents
 from agentsassemble.legacy.meeting.core.events import (
     append_lobby_event_to_file,
     read_lobby_events,

@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.live_transcript import projected_live_transcript_text, render_live_transcript
+from agentsassemble.legacy.meeting.support.live_transcript import projected_live_transcript_text, render_live_transcript
 from agentsassemble.legacy.meeting.core.events import append_live_event, read_live_events
 
 

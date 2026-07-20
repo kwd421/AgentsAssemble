@@ -2146,6 +2146,42 @@ for _root_name, _replacement_import, _known_caller in (
         introduced_in="Milestone 6.70 shared room support ownership wave",
     )
 
+for _meeting_support_name in (
+    "artifact_packets",
+    "artifact_public",
+    "artifacts",
+    "decision_gate",
+    "decision_status",
+    "delegate_packets",
+    "evidence",
+    "live_meeting_memory",
+    "live_transcript",
+    "lobby_promotion",
+    "lobby_queries",
+    "memory",
+    "memory_capsules",
+    "persona_artifact_contract",
+    "stance_match",
+    "task_scope_report",
+    "templates",
+):
+    ROOT_COMPATIBILITY_SHIMS[f"{_meeting_support_name}.py"] = CompatibilityShim(
+        replacement_import=f"agentsassemble.legacy.meeting.support.{_meeting_support_name}",
+        removal_gate=(
+            f"No direct imports or patches use agentsassemble.{_meeting_support_name} "
+            "for one compatibility window."
+        ),
+        known_callers=(f"tests/test_{_meeting_support_name}.py",),
+        introduced_in="Milestone 6.71 legacy meeting support package",
+    )
+
+ROOT_COMPATIBILITY_SHIMS["live_agents.py"] = CompatibilityShim(
+    replacement_import="agentsassemble.legacy.live_agent.state",
+    removal_gate="No direct imports or patches use agentsassemble.live_agents for one compatibility window.",
+    known_callers=("tests/test_live_agents.py",),
+    introduced_in="Milestone 6.71 legacy resident state package",
+)
+
 
 def current_top_level_modules(repository_root: Path) -> frozenset[str]:
     package_root = Path(repository_root) / "agentsassemble"

@@ -100,7 +100,7 @@ from agentsassemble.diagnostics.cli import (
 )
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
-from agentsassemble.live_agents import (
+from agentsassemble.legacy.live_agent.state import (
     PRESENCE_ATTENTION_REDACTED,
     SAFE_PRESENCE_ATTENTION_CODES,
     _looks_sensitive_presence_error,
@@ -116,7 +116,7 @@ from agentsassemble.application.room_native_cli_smoke import run_room_native_cli
 from agentsassemble.application.room_repository_factory import RoomRepositoryUnavailable
 from agentsassemble.legacy.live_agent.runtime.preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.legacy.live_agent.runtime.processes import clean_live_agent_group_id
-from agentsassemble.lobby_promotion import promote_lobby_events_to_official
+from agentsassemble.legacy.meeting.support.lobby_promotion import promote_lobby_events_to_official
 from agentsassemble.legacy.live_agent.runtime.roster import (
     safe_live_agent_roster_agent,
     safe_live_agent_roster_number,
@@ -124,7 +124,7 @@ from agentsassemble.legacy.live_agent.runtime.roster import (
     safe_live_agent_roster_text,
 )
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
-from agentsassemble.live_meeting_memory import compact_live_meeting_memory
+from agentsassemble.legacy.meeting.support.live_meeting_memory import compact_live_meeting_memory
 from agentsassemble.legacy.live_agent.runtime.discovery import (
     add_session_bundle_outputs,
     apply_discovery_approval_filter,
@@ -159,7 +159,7 @@ from agentsassemble.legacy.live_agent.runtime.smoke import (
 from agentsassemble.legacy.live_agent.runtime.sessions import session_ensure_action
 from agentsassemble.providers.live_session_transport import JsonlLiveSession, TerminalLiveSession
 from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
-from agentsassemble.memory_capsules import memory_capsule_gate_report
+from agentsassemble.legacy.meeting.support.memory_capsules import memory_capsule_gate_report
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
 from agentsassemble.web.cli_errors import CliHttpError
 from agentsassemble.admission.lan_invite import (

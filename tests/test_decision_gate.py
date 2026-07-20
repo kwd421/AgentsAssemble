@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.decision_gate import derive_decision_gate
+from agentsassemble.legacy.meeting.support.decision_gate import derive_decision_gate
 
 
 def research(role_id="role", status="complete", retry_status="not_needed"):

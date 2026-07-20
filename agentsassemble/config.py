@@ -23,7 +23,7 @@ from agentsassemble.models import (
     normalize_engagement_mode,
     normalize_meeting_mode,
 )
-from agentsassemble.templates import DEMO_MEETING_TEMPLATE
+from agentsassemble.legacy.meeting.support.templates import DEMO_MEETING_TEMPLATE
 
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "configs" / "demo-council.json"

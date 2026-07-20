@@ -14,7 +14,7 @@ from agentsassemble.config import load_agent_runtime_config, providers_from_conf
 from agentsassemble.legacy.meeting.queries import list_meetings
 from agentsassemble.legacy.meeting.records import read_meeting_record
 from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
-from agentsassemble.lobby_promotion import LOBBY_PROMOTION_OPERATION, promote_lobby_events_to_official
+from agentsassemble.legacy.meeting.support.lobby_promotion import LOBBY_PROMOTION_OPERATION, promote_lobby_events_to_official
 from agentsassemble.legacy.meeting.core.events import LOBBY_KINDS, clean_lobby_text
 from agentsassemble.models import ProviderConfig, Role
 from agentsassemble.room.speech import (

@@ -20,8 +20,8 @@ from agentsassemble.live_agent_turns import (
     is_review_checkpoint_reply_event,
     official_turn_cancellation,
 )
-from agentsassemble.live_agents import heartbeat_live_agent
-from agentsassemble.live_meeting_memory import write_live_meeting_memory_artifacts
+from agentsassemble.legacy.live_agent.state import heartbeat_live_agent
+from agentsassemble.legacy.meeting.support.live_meeting_memory import write_live_meeting_memory_artifacts
 from agentsassemble.legacy.meeting.core.events import (
     append_live_event,
     clean_lobby_text,

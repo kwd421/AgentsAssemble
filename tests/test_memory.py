@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.memory import (
+from agentsassemble.legacy.meeting.support.memory import (
     load_memory_context,
     write_memory_artifacts,
 )

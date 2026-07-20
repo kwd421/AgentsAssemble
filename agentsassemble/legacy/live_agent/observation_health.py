@@ -16,7 +16,7 @@ from agentsassemble.live_agent_turns import (
     is_official_turn_reply_event,
     is_review_checkpoint_reply_event,
 )
-from agentsassemble.lobby_queries import read_lobby
+from agentsassemble.legacy.meeting.support.lobby_queries import read_lobby
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text, read_live_events
 
 

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.artifact_packets import build_return_packet
+from agentsassemble.legacy.meeting.support.artifact_packets import build_return_packet
 from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 
 

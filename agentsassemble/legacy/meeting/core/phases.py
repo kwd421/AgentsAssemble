@@ -4,11 +4,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
 
-from agentsassemble.artifacts import write_research, write_role_files
-from agentsassemble.evidence import apply_evidence_gate, summarize_evidence_gates
+from agentsassemble.legacy.meeting.support.artifacts import write_research, write_role_files
+from agentsassemble.legacy.meeting.support.evidence import apply_evidence_gate, summarize_evidence_gates
 from agentsassemble.legacy.meeting.core.context import build_decision_context
 from agentsassemble.models import CouncilConfig, ResearchDepth, ResearchSteering
-from agentsassemble.templates import DEMO_MEETING_TEMPLATE
+from agentsassemble.legacy.meeting.support.templates import DEMO_MEETING_TEMPLATE
 
 
 def start_role_sessions(

@@ -13,7 +13,7 @@ from agentsassemble.legacy.meeting.records import (
 )
 from agentsassemble.legacy.live_agent.runtime.quota import LIVE_AGENT_QUOTA_FIELDS
 from agentsassemble.legacy.live_agent.runtime.roster import filter_live_agent_roster, safe_live_agent_roster_payload
-from agentsassemble.live_agents import read_live_agents
+from agentsassemble.legacy.live_agent.state import read_live_agents
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 

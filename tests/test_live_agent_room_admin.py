@@ -10,7 +10,7 @@ from agentsassemble.legacy.live_agent.runtime.room_admin import (
     expel_live_agent_from_room_payload,
 )
 from agentsassemble.legacy.live_agent.runtime.operations import read_live_agent_operations
-from agentsassemble.live_agents import connect_live_agent, read_live_agents
+from agentsassemble.legacy.live_agent.state import connect_live_agent, read_live_agents
 from agentsassemble.admission.lan_invite import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.admission.invite import create_room_invite, join_room_with_invite, reset_state, verify_session_token
 

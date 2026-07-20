@@ -3,13 +3,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.task_scope_report import (
+from agentsassemble.legacy.meeting.support.task_scope_report import (
     build_task_scope_report,
     render_task_scope_report_markdown,
     write_task_scope_report,
 )
-from agentsassemble.artifact_packets import build_return_packet
-from agentsassemble.artifacts import write_public_artifacts
+from agentsassemble.legacy.meeting.support.artifact_packets import build_return_packet
+from agentsassemble.legacy.meeting.support.artifacts import write_public_artifacts
 
 
 def _meeting_with_tasks(tasks: dict[str, str]) -> dict[str, object]:

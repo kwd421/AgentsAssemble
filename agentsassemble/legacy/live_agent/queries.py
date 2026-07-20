@@ -11,9 +11,9 @@ from uuid import NAMESPACE_URL, uuid5
 from agentsassemble.legacy.meeting.queries import LegacyMeetingQueryService
 from agentsassemble.legacy.meeting.records import read_meeting_record, safe_meeting_dir
 from agentsassemble.legacy.live_agent.runtime.probe import PROBE_REPLY_EVENT_TAIL_LIMIT
-from agentsassemble.live_agents import read_live_agents
-from agentsassemble.live_meeting_memory import load_live_meeting_memory_context
-from agentsassemble.lobby_queries import read_lobby
+from agentsassemble.legacy.live_agent.state import read_live_agents
+from agentsassemble.legacy.meeting.support.live_meeting_memory import load_live_meeting_memory_context
+from agentsassemble.legacy.meeting.support.lobby_queries import read_lobby
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text, read_live_events
 from agentsassemble.features.social.direct_messages import read_live_agent_dm_events
 from agentsassemble.features.side_chat.service import read_side_chat

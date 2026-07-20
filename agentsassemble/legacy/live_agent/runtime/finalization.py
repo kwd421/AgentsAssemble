@@ -5,10 +5,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.artifacts import write_public_artifacts
-from agentsassemble.live_meeting_memory import build_live_meeting_memory, write_live_meeting_memory_artifacts
+from agentsassemble.legacy.meeting.support.artifacts import write_public_artifacts
+from agentsassemble.legacy.meeting.support.live_meeting_memory import build_live_meeting_memory, write_live_meeting_memory_artifacts
 from agentsassemble.live_agent_turns import LIVE_AGENT_TURN_CANCELLED_KIND, official_turn_cancellation
-from agentsassemble.live_transcript import official_live_transcript_events, render_live_transcript
+from agentsassemble.legacy.meeting.support.live_transcript import official_live_transcript_events, render_live_transcript
 from agentsassemble.legacy.meeting.core.events import append_live_event, clean_lobby_text, read_live_events, write_live_state
 from agentsassemble.legacy.meeting.core.record import derive_failure_state
 

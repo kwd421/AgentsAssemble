@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.decision_status import derive_decision_status
+from agentsassemble.legacy.meeting.support.decision_status import derive_decision_status
 
 
 class DecisionStatusTests(unittest.TestCase):

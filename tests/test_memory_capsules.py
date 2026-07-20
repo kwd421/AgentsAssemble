@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentsassemble.cli import build_parser, main
-from agentsassemble.memory_capsules import REQUIRED_CAPSULE_FILES, memory_capsule_gate_report
+from agentsassemble.legacy.meeting.support.memory_capsules import REQUIRED_CAPSULE_FILES, memory_capsule_gate_report
 
 
 def _write_valid_capsule(root: Path, **overrides: object) -> None:

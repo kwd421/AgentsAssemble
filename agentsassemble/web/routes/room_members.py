@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from agentsassemble.live_agents import read_live_agents
 from agentsassemble.room.moderation import set_room_member_muted
 from agentsassemble.room.members import room_members_payload, upsert_room_member
 from agentsassemble.web.router import RequestContext, Router
@@ -16,7 +15,7 @@ def room_members_response(
     """Project canonical and retained resident members for HTTP clients."""
     return room_members_payload(
         ctx.deps.output_root,
-        read_live_agents(ctx.deps.output_root),
+        ctx.deps.legacy_agents(),
         meeting_id=meeting_id,
         sessions=ctx.deps.sessions.active_summary(),
         repository=ctx.deps.rooms,

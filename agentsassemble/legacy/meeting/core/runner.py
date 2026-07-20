@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
-from agentsassemble.artifacts import write_agenda, write_public_artifacts, write_room_artifacts
+from agentsassemble.legacy.meeting.support.artifacts import write_agenda, write_public_artifacts, write_room_artifacts
 from agentsassemble.config import load_council_config
 from agentsassemble.character_mode import character_mode_snapshot
-from agentsassemble.decision_gate import derive_decision_gate
-from agentsassemble.decision_status import derive_decision_status
+from agentsassemble.legacy.meeting.support.decision_gate import derive_decision_gate
+from agentsassemble.legacy.meeting.support.decision_status import derive_decision_status
 from agentsassemble.legacy.meeting.core.phases import (
     free_chat_synthesis_record,
     moderator_disabled_synthesis_record,
@@ -24,7 +24,7 @@ from agentsassemble.legacy.meeting.core.phases import (
 from agentsassemble.legacy.meeting.core.record import assemble_meeting_record, derive_failure_state
 from agentsassemble.legacy.meeting.core.setup import prepare_meeting_setup
 from agentsassemble.legacy.meeting.core.events import MeetingEventLog, append_live_event, write_live_state
-from agentsassemble.memory import load_memory_context, write_memory_artifacts
+from agentsassemble.legacy.meeting.support.memory import load_memory_context, write_memory_artifacts
 from agentsassemble.models import (
     MeetingResult,
     ModeratorConfig,
@@ -33,7 +33,7 @@ from agentsassemble.models import (
     get_research_depth,
     normalize_meeting_mode,
 )
-from agentsassemble.templates import DEMO_MEETING_TEMPLATE
+from agentsassemble.legacy.meeting.support.templates import DEMO_MEETING_TEMPLATE
 
 
 def run_demo_meeting(

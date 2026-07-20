@@ -21,7 +21,7 @@ from agentsassemble.legacy.live_agent.runtime.frontend_create import (
 )
 from agentsassemble.legacy.live_agent.runtime.operations import read_live_agent_operations
 from agentsassemble.legacy.live_agent.runtime.sessions import resume_live_agent_session_agent
-from agentsassemble.live_agents import connect_live_agent, read_live_agents
+from agentsassemble.legacy.live_agent.state import connect_live_agent, read_live_agents
 from agentsassemble.application.room_users import (
     configure_room_users_store,
     reset_state as reset_room_users_state,

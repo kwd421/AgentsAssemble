@@ -22,7 +22,7 @@ from agentsassemble.legacy.live_agent.session_control import session_start_opera
 from agentsassemble.legacy.meeting.records import read_meeting_record
 from agentsassemble.legacy.meeting.turn_scheduler import meeting_turn_lock
 from agentsassemble.legacy.live_agent.runtime.processes import LiveAgentProcessSupervisor, clean_live_agent_group_id
-from agentsassemble.live_agents import read_live_agents
+from agentsassemble.legacy.live_agent.state import read_live_agents
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text, read_live_events, write_live_state
 
 
