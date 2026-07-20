@@ -1463,3 +1463,10 @@ module churn were deliberately avoided rather than forgotten.
   `gui_legacy_live_agent_engagement_http.py` remains a metadata-tracked
   compatibility export. Endpoint, JSON validation, operation audit, errors,
   and response payloads are unchanged.
+- 2026-07-20: The retained frontend-created resident session deletion HTTP
+  registrar moved mechanically to `legacy/live_agent/http/room_session.py`.
+  Legacy GUI composition imports the owned registrar directly; root
+  `gui_legacy_live_agent_room_session_http.py` remains a metadata-tracked
+  compatibility export. Session ownership checks, process/config/binding
+  cleanup, audit, errors, and response payloads remain owned by the unchanged
+  room-admin service.
