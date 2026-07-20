@@ -820,6 +820,16 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_gui_legacy_live_agent_read_http.py",),
         introduced_in="Milestone 6.58 legacy resident read HTTP move",
     ),
+    "gui_legacy_live_agent_smoke_http.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.live_agent.http.smoke",
+        removal_gate=(
+            "No direct imports use "
+            "agentsassemble.gui_legacy_live_agent_smoke_http for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_gui_legacy_live_agent_smoke_http.py",),
+        introduced_in="Milestone 6.59 legacy resident smoke HTTP move",
+    ),
     "legacy_live_agent_presence.py": CompatibilityShim(
         replacement_import="agentsassemble.legacy.live_agent.presence",
         removal_gate=(

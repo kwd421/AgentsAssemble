@@ -69,7 +69,7 @@ from agentsassemble.legacy.live_agent.http.session_run import (
     LegacySessionRunHttpDeps,
     register_legacy_session_run_basic_routes,
 )
-from agentsassemble.gui_legacy_live_agent_smoke_http import (
+from agentsassemble.legacy.live_agent.http.smoke import (
     LegacyLiveAgentSmokeHttpDeps,
     register_legacy_live_agent_smoke_routes,
 )

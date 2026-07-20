@@ -1552,3 +1552,10 @@ module churn were deliberately avoided rather than forgotten.
   `gui_legacy_live_agent_read_http.py` remains a metadata-tracked
   compatibility export. Route set, query parsing, not-found and storage error
   mapping, facade delegation, and response payloads are unchanged.
+- 2026-07-20: The retained basic, official-round, durable-session, and
+  approval-gated real-provider smoke HTTP registrar moved mechanically to
+  `legacy/live_agent/http/smoke.py`. Legacy GUI composition imports the owned
+  registrar directly; root `gui_legacy_live_agent_smoke_http.py` remains a
+  metadata-tracked compatibility export. Explicit provider approval and config
+  gates, transport and smoke errors, safe audit details, degraded status, and
+  response payloads are unchanged.
