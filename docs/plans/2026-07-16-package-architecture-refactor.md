@@ -1420,3 +1420,9 @@ module churn were deliberately avoided rather than forgotten.
   directly. Root readiness modules remain metadata-tracked compatibility
   exports. Launch approval, probe/smoke execution, health composition,
   operation details, redaction, errors, and HTTP payloads are unchanged.
+- 2026-07-20: Retained resident local CLI discovery and bounded operation
+  details moved mechanically to `legacy/live_agent/discovery.py`. GUI
+  composition and the legacy discovery HTTP route import the owned service
+  directly; root `legacy_live_agent_discovery.py` remains a metadata-tracked
+  compatibility export. Command resolution, Codex session discovery, process
+  projection, operation details, errors, and HTTP payloads are unchanged.

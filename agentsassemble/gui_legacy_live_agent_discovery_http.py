@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.legacy_live_agent_discovery import (
+from agentsassemble.legacy.live_agent.discovery import (
     LegacyLiveAgentDiscoveryService,
     discovery_operation_details,
 )

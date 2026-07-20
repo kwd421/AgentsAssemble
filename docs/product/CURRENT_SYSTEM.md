@@ -318,7 +318,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Legacy resident preflight | service in `legacy/live_agent/preflight.py` with root compatibility export; safe response projection in `diagnostic_report_projection.py`; HTTP in `gui_legacy_live_agent_preflight_http.py` |
 | Legacy resident engagement mutation | service and operation audit in `legacy/live_agent/engagement.py` with root compatibility export; HTTP in `gui_legacy_live_agent_engagement_http.py` |
 | Legacy resident reply probe | execution, timeout normalization, and bounded operation audit in `legacy/live_agent/probe.py` with root compatibility export; HTTP in `gui_legacy_live_agent_probe_http.py` |
-| Legacy resident local CLI discovery | `legacy_live_agent_discovery.py`, HTTP in `gui_legacy_live_agent_discovery_http.py` |
+| Legacy resident local CLI discovery | service and bounded operation details in `legacy/live_agent/discovery.py` with root compatibility export; HTTP in `gui_legacy_live_agent_discovery_http.py` |
 | Remaining legacy resident smoke compatibility | `gui.py`; classify and extract one verified family at a time |
 | Room-global settings | `room_global_settings.py`, `room_settings_service.py`, repository methods; HTTP in `web/routes/room_settings.py` with root compatibility export |
 | User-owned room notification/read preferences | validation in `room_user_preferences.py`; local persistence in `identity_room_preferences.py`; hosted persistence in `postgres_identity_preferences.py`; composition in `room_settings_service.py` |

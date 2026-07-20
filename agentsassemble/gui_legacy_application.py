@@ -100,7 +100,7 @@ from agentsassemble.legacy_codex_session_compat import (
 from agentsassemble.legacy.live_agent.diagnostics import (
     LegacyLiveAgentDiagnosticQueryService,
 )
-from agentsassemble.legacy_live_agent_discovery import LegacyLiveAgentDiscoveryService
+from agentsassemble.legacy.live_agent.discovery import LegacyLiveAgentDiscoveryService
 from agentsassemble.legacy.live_agent.engagement import LegacyLiveAgentEngagementService
 from agentsassemble.legacy.live_agent.health_queries import (
     LegacyLiveAgentHealthQueryService,

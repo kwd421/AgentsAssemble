@@ -4,6 +4,7 @@ import unittest
 
 import agentsassemble.legacy_live_agent_engagement as compatibility_engagement
 import agentsassemble.legacy_live_agent_diagnostics as compatibility_diagnostics
+import agentsassemble.legacy_live_agent_discovery as compatibility_discovery
 import agentsassemble.legacy_live_agent_health as compatibility_health
 import agentsassemble.legacy_live_agent_health_queries as compatibility_health_queries
 import agentsassemble.legacy_live_agent_observation_health as compatibility_observation_health
@@ -24,6 +25,7 @@ import agentsassemble.legacy_live_agent_session_run_health as compatibility_sess
 import agentsassemble.legacy_live_agent_session_service as compatibility_session_service
 from agentsassemble.legacy.live_agent import engagement as owned_engagement
 from agentsassemble.legacy.live_agent import diagnostics as owned_diagnostics
+from agentsassemble.legacy.live_agent import discovery as owned_discovery
 from agentsassemble.legacy.live_agent import health as owned_health
 from agentsassemble.legacy.live_agent import health_queries as owned_health_queries
 from agentsassemble.legacy.live_agent import observation_health as owned_observation_health
@@ -57,6 +59,18 @@ class LegacyPackageTests(unittest.TestCase):
                 self.assertIs(
                     getattr(compatibility_diagnostics, name),
                     getattr(owned_diagnostics, name),
+                )
+
+    def test_live_agent_discovery_root_module_exports_owned_service(self) -> None:
+        for name in (
+            "LegacyLiveAgentDiscoveryService",
+            "discovery_operation_details",
+            "live_agent_discovery_payload",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_discovery, name),
+                    getattr(owned_discovery, name),
                 )
 
     def test_live_agent_engagement_root_module_exports_owned_service(self) -> None:
