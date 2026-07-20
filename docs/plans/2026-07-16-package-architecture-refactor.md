@@ -1506,3 +1506,10 @@ module churn were deliberately avoided rather than forgotten.
   `gui_legacy_live_agent_presence_http.py` remains a metadata-tracked
   compatibility export. Endpoint registration, invalid-JSON audit policy,
   service delegation, errors, and response payloads are unchanged.
+- 2026-07-20: The retained resident process-group mutation HTTP registrar
+  moved mechanically to `legacy/live_agent/http/process.py`. Legacy GUI
+  composition imports the owned registrar directly; root
+  `gui_legacy_live_agent_process_http.py` remains a metadata-tracked
+  compatibility export. Endpoint registration, operation-payload mapping,
+  service delegation, typed error details, and response payloads are
+  unchanged.

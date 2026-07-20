@@ -43,7 +43,7 @@ from agentsassemble.legacy.live_agent.http.probe import (
     LegacyLiveAgentProbeHttpDeps,
     register_legacy_live_agent_probe_route,
 )
-from agentsassemble.gui_legacy_live_agent_process_http import (
+from agentsassemble.legacy.live_agent.http.process import (
     LegacyProcessHttpDeps,
     register_legacy_process_mutation_routes,
 )

@@ -1,6 +1,9 @@
 import unittest
 
 from agentsassemble.gui_legacy_live_agent_process_http import (
+    register_legacy_process_mutation_routes as compatibility_register,
+)
+from agentsassemble.legacy.live_agent.http.process import (
     LegacyProcessHttpDeps,
     register_legacy_process_mutation_routes,
 )
@@ -8,6 +11,9 @@ from agentsassemble.web.router import Router
 
 
 class GuiLegacyLiveAgentProcessHttpTests(unittest.TestCase):
+    def test_root_module_exports_owned_registrar(self) -> None:
+        self.assertIs(compatibility_register, register_legacy_process_mutation_routes)
+
     def test_process_registrar_owns_exact_and_dynamic_mutations(self) -> None:
         router = Router()
         register_legacy_process_mutation_routes(
