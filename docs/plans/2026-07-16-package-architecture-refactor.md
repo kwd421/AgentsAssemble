@@ -1329,3 +1329,11 @@ module churn were deliberately avoided rather than forgotten.
   `legacy_live_agent_probe.py` remains a metadata-tracked compatibility
   export. Probe runner injection, timeout defaults and bounds, diagnostic
   fields, error mapping, and HTTP payloads are unchanged.
+- 2026-07-20: Retained resident registration, heartbeat, leave behavior, and
+  bounded operation-audit projection moved mechanically to
+  `legacy/live_agent/presence.py` and `presence_projection.py`. The service
+  imports its colocated projection directly; GUI composition, the legacy HTTP
+  route, and behavior tests import the owned service. Root presence modules
+  remain metadata-tracked compatibility exports. Roster mutation, admission
+  audit details, heartbeat metadata, leave cursors, errors, and HTTP payloads
+  are unchanged.

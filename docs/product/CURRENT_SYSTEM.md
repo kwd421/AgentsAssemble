@@ -309,6 +309,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Legacy resident diagnostic histories | `legacy_live_agent_diagnostics.py`, `gui_legacy_live_agent_read_http.py` |
 | Legacy resident process/connection projections | `legacy_live_agent_process_projection.py`, `legacy_live_agent_diagnostics.py` |
 | Legacy resident readiness | `legacy_live_agent_diagnostics.py`, `gui_legacy_live_agent_read_http.py` |
+| Legacy resident presence | registration, heartbeat, leave, and audit projection in `legacy/live_agent/presence.py` and `presence_projection.py` with root compatibility exports; HTTP in `gui_legacy_live_agent_presence_http.py` |
 | Legacy resident roster and admission projections | `legacy_live_agent_roster_queries.py`, `gui_legacy_live_agent_read_http.py` |
 | Legacy resident health aggregation | `legacy_live_agent_health_queries.py`; observation cursor/event policy in `legacy_live_agent_observation_health.py`; durable run/monitor policy in `legacy_live_agent_session_run_health.py` |
 | Legacy resident preflight | service in `legacy/live_agent/preflight.py` with root compatibility export; safe response projection in `diagnostic_report_projection.py`; HTTP in `gui_legacy_live_agent_preflight_http.py` |

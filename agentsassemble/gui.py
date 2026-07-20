@@ -238,7 +238,7 @@ from agentsassemble.legacy_live_agent_roster_queries import (
     live_agent_without_quota_fields as _live_agent_without_quota_fields,
     live_agents_payload,
 )
-from agentsassemble.legacy_live_agent_presence import (
+from agentsassemble.legacy.live_agent.presence import (
     connect_live_agent_payload,
     live_agent_heartbeat_payload,
     live_agent_leave_payload,
