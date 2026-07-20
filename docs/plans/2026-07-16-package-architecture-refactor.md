@@ -364,6 +364,28 @@ In particular, it must state clearly that automatic startup purge, forced
 top-level-file-count reduction, mass test movement, and unsettled conversation
 module churn were deliberately avoided rather than forgotten.
 
+## Milestone Completion Status
+
+As of 2026-07-20, implementation milestones 0 through 7 are complete for the
+approved refactor scope:
+
+- correctness residue, package inventory, the flat-module gate, dependency
+  direction, and cycle reporting are implemented;
+- persistence, admission, identity, current web/application/provider/room
+  owners, and retained legacy owners have been established and imported by
+  production code;
+- every moved root module is an explicit compatibility export with replacement,
+  known-caller, introduction-wave, and removal-gate metadata;
+- the generated package map has no `planned-move` entries.
+
+The absence of `planned-move` is not a claim that every root file should be
+deleted. Nine conversation-policy modules are `deferred-policy` under the
+frozen-product decision. Four shared provider/meeting modules are
+`retained-migration` pending an intentional contract split. Existing migration
+packages and stable entrypoints are also retained by design. Final verification
+and the review report remain the release-evidence phase, not another ownership
+milestone.
+
 ## Progress Log
 
 - 2026-07-16: External review was grounded against commit `29a7e0fa`.
@@ -1743,3 +1765,10 @@ module churn were deliberately avoided rather than forgotten.
   Artifact formats, decisions, memory files, roster merge behavior, and HTTP
   payloads are unchanged. Shared `models`, `config`, `persona_cards`, and
   `character_mode` remain at root pending an intentional cross-domain split.
+- 2026-07-20: Milestone 7 ownership cleanup closed with no generated
+  `planned-move` entries. The package-map generator now explicitly identifies
+  the nine frozen conversation-policy modules and the four cross-domain
+  provider/meeting modules retained for a later contract split. The empty
+  internal CLI-format shim is classified as a compatibility export rather than
+  a product module. `CURRENT_SYSTEM.md` now records the package owners,
+  compatibility inventory, cycle report, and intentional root residue.

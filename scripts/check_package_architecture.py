@@ -66,7 +66,7 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
     "live_agent_quota.py": CompatibilityShim(
         "agentsassemble.legacy.live_agent.runtime.quota",
         "No direct imports use the root quota module for one compatibility window.",
-        ("tests/test_live_agent_quota.py",), "Milestone 6.65 resident runtime package",
+        ("tests/test_live_agent_sessions.py",), "Milestone 6.65 resident runtime package",
     ),
     "live_agent_self_managed.py": CompatibilityShim(
         "agentsassemble.legacy.live_agent.runtime.self_managed",
@@ -156,7 +156,7 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
     "room_members.py": CompatibilityShim(
         replacement_import="agentsassemble.room.members",
         removal_gate="No direct imports or patches use agentsassemble.room_members for one compatibility window.",
-        known_callers=("tests/test_room_members.py",),
+        known_callers=("tests/test_room_members_presence.py",),
         introduced_in="Milestone 6.63 stable room ownership wave",
     ),
     "room_settings.py": CompatibilityShim(
@@ -2050,9 +2050,9 @@ for _root_name, _replacement_name, _known_caller in (
     ("live_agent_discovery.py", "discovery", "tests/test_live_agent_discovery.py"),
     ("live_agent_finalization.py", "finalization", "tests/test_live_agent_finalization.py"),
     ("live_agent_frontend_create.py", "frontend_create", "tests/test_live_agent_frontend_create.py"),
-    ("live_agent_join_brief.py", "join_brief", "tests/test_live_agent_join_brief.py"),
-    ("live_agent_meetings.py", "meetings", "tests/test_live_agent_meetings.py"),
-    ("live_agent_persona_smoke.py", "persona_smoke", "tests/test_live_agent_persona_smoke.py"),
+    ("live_agent_join_brief.py", "join_brief", "tests/test_gui_legacy_live_agent_join_brief_http.py"),
+    ("live_agent_meetings.py", "meetings", "tests/test_live_agent_sessions.py"),
+    ("live_agent_persona_smoke.py", "persona_smoke", "tests/test_live_agent_smoke.py"),
     ("live_agent_play_presets.py", "play_presets", "tests/test_live_agent_play_presets.py"),
     ("live_agent_preflight.py", "preflight", "tests/test_live_agent_preflight.py"),
     ("live_agent_probe.py", "probe", "tests/test_live_agent_probe.py"),
@@ -2093,10 +2093,10 @@ for _root_name, _replacement_import, _known_caller in (
 
 for _root_name, _replacement_import, _known_caller in (
     ("codex_sessions.py", "agentsassemble.legacy.live_agent.codex_sessions", "tests/test_codex_sessions.py"),
-    ("provider_login.py", "agentsassemble.legacy.live_agent.provider_login", "tests/test_provider_login.py"),
-    ("live_session_adapter.py", "agentsassemble.providers.live_session_adapter", "tests/test_live_session_adapter.py"),
+    ("provider_login.py", "agentsassemble.legacy.live_agent.provider_login", "tests/test_gui_server_provider_http.py"),
+    ("live_session_adapter.py", "agentsassemble.providers.live_session_adapter", "tests/test_live_session_transport.py"),
     ("live_session_transport.py", "agentsassemble.providers.live_session_transport", "tests/test_live_session_transport.py"),
-    ("remote_bridge_config.py", "agentsassemble.providers.remote_bridge_config", "tests/test_remote_bridge_config.py"),
+    ("remote_bridge_config.py", "agentsassemble.providers.remote_bridge_config", "tests/test_remote_bridge_adapter.py"),
     ("sandbox_launcher.py", "agentsassemble.providers.sandbox_launcher", "tests/test_sandbox_launcher.py"),
     ("speech_policy.py", "agentsassemble.providers.speech_policy", "tests/test_speech_policy.py"),
 ):
@@ -2132,7 +2132,7 @@ for _root_name, _replacement_import, _known_caller in (
     ("attachments.py", "agentsassemble.room.attachments", "tests/test_attachments.py"),
     ("voice_presence.py", "agentsassemble.room.voice_presence", "tests/test_voice_presence.py"),
     ("multi_host_invites.py", "agentsassemble.admission.lan_invite", "tests/test_multi_host_invites.py"),
-    ("remote_room_client_packet.py", "agentsassemble.admission.remote_room_client_packet", "tests/test_remote_room_client_packet.py"),
+    ("remote_room_client_packet.py", "agentsassemble.admission.remote_room_client_packet", "tests/test_multi_host_invites.py"),
     ("local_resources.py", "agentsassemble.diagnostics.local_resources", "tests/test_local_resources.py"),
     ("mcp_server.py", "agentsassemble.legacy.live_agent.mcp_server", "tests/test_mcp_server.py"),
 ):
@@ -2146,24 +2146,24 @@ for _root_name, _replacement_import, _known_caller in (
         introduced_in="Milestone 6.70 shared room support ownership wave",
     )
 
-for _meeting_support_name in (
-    "artifact_packets",
-    "artifact_public",
-    "artifacts",
-    "decision_gate",
-    "decision_status",
-    "delegate_packets",
-    "evidence",
-    "live_meeting_memory",
-    "live_transcript",
-    "lobby_promotion",
-    "lobby_queries",
-    "memory",
-    "memory_capsules",
-    "persona_artifact_contract",
-    "stance_match",
-    "task_scope_report",
-    "templates",
+for _meeting_support_name, _known_caller in (
+    ("artifact_packets", "tests/test_delegate_packets.py"),
+    ("artifact_public", "tests/test_public_provider_artifacts.py"),
+    ("artifacts", "tests/test_task_scope_report.py"),
+    ("decision_gate", "tests/test_decision_gate.py"),
+    ("decision_status", "tests/test_decision_status.py"),
+    ("delegate_packets", "tests/test_delegate_packets.py"),
+    ("evidence", "tests/test_evidence_gate.py"),
+    ("live_meeting_memory", "tests/test_live_meeting_memory.py"),
+    ("live_transcript", "tests/test_live_transcript.py"),
+    ("lobby_promotion", "tests/test_lobby_promotion.py"),
+    ("lobby_queries", "tests/test_gui_server_lobby_social.py"),
+    ("memory", "tests/test_memory.py"),
+    ("memory_capsules", "tests/test_memory_capsules.py"),
+    ("persona_artifact_contract", "tests/test_persona_artifact_contract.py"),
+    ("stance_match", "tests/test_decision_gate.py"),
+    ("task_scope_report", "tests/test_task_scope_report.py"),
+    ("templates", "tests/test_demo_meeting.py"),
 ):
     ROOT_COMPATIBILITY_SHIMS[f"{_meeting_support_name}.py"] = CompatibilityShim(
         replacement_import=f"agentsassemble.legacy.meeting.support.{_meeting_support_name}",
@@ -2171,7 +2171,7 @@ for _meeting_support_name in (
             f"No direct imports or patches use agentsassemble.{_meeting_support_name} "
             "for one compatibility window."
         ),
-        known_callers=(f"tests/test_{_meeting_support_name}.py",),
+        known_callers=(_known_caller,),
         introduced_in="Milestone 6.71 legacy meeting support package",
     )
 

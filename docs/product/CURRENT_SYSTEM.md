@@ -2,7 +2,7 @@
 
 Status: current starting point
 
-Updated: 2026-07-16
+Updated: 2026-07-20
 
 Read this file before changing rooms, Agent Sessions, providers, invites,
 moderation, media, or the React room UI. It is intentionally short. Follow its
@@ -56,6 +56,22 @@ Do not add a provider-specific browser socket, parallel room event store,
 polling-based live UI, or a second participant registry.
 
 Detailed current implementation: `docs/live-cli-room-current-architecture.md`.
+
+## Package Ownership
+
+Current domain code is owned by `room/`, `admission/`, `identity/`,
+`providers/`, `web/`, `application/`, `diagnostics/`, and `persistence/`.
+Retained meeting and resident implementations are owned below `legacy/`.
+Historical root imports remain explicit compatibility exports recorded by
+`scripts/check_package_architecture.py`; new flat product modules are rejected.
+
+`docs/product/PACKAGE_MAP.md` is the generated inventory and
+`docs/product/PACKAGE_CYCLES.md` is the generated cycle report. The remaining
+root conversation-policy modules are intentionally frozen while autonomous
+participation semantics are unsettled. `models.py`, `config.py`,
+`persona_cards.py`, and `character_mode.py` remain explicit cross-domain
+migration residue until their provider and retained-meeting contracts are
+split deliberately.
 
 ## Current Browser Identity And Admission
 

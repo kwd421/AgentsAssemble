@@ -48,6 +48,29 @@ FROZEN_POLICY_TERMS = (
     "scheduled_wakeup",
 )
 
+FROZEN_POLICY_MODULES = frozenset(
+    {
+        "agentsassemble.live_agent_flow",
+        "agentsassemble.live_agent_flow_resources",
+        "agentsassemble.live_agent_rounds",
+        "agentsassemble.live_agent_runner",
+        "agentsassemble.live_agent_turns",
+        "agentsassemble.room_engagement",
+        "agentsassemble.room_floor_policy",
+        "agentsassemble.room_routing",
+        "agentsassemble.room_thought",
+    }
+)
+
+RETAINED_CROSS_DOMAIN_MODULES = frozenset(
+    {
+        "agentsassemble.character_mode",
+        "agentsassemble.config",
+        "agentsassemble.models",
+        "agentsassemble.persona_cards",
+    }
+)
+
 
 @dataclass(frozen=True)
 class ModuleSource:
@@ -433,8 +456,12 @@ def _migration_status(
         return "retained-entrypoint"
     if classification == "compatibility":
         return "compatibility-shim"
+    if module.name in RETAINED_CROSS_DOMAIN_MODULES:
+        return "retained-migration"
     stem = module.path.stem
-    if domain != "persistence" and any(term in stem for term in FROZEN_POLICY_TERMS):
+    if module.name in FROZEN_POLICY_MODULES or (
+        domain != "persistence" and any(term in stem for term in FROZEN_POLICY_TERMS)
+    ):
         return "deferred-policy"
     parts = Path(module.relative_path).parts
     if len(parts) > 2 and parts[1] in EXISTING_PACKAGES:
