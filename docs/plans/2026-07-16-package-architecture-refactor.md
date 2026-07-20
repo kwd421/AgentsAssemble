@@ -1476,3 +1476,9 @@ module churn were deliberately avoided rather than forgotten.
   `gui_legacy_live_agent_join_brief_http.py` remains a metadata-tracked
   compatibility export. Server URL mapping, side-effect-free packet creation,
   validation, errors, and response payloads are unchanged.
+- 2026-07-20: The retained resident lobby and direct-message speech HTTP
+  registrar moved mechanically to `legacy/live_agent/http/speech.py`. Legacy
+  GUI composition imports the owned registrar directly; root
+  `gui_legacy_live_agent_speech_http.py` remains a metadata-tracked
+  compatibility export. Endpoint registration, JSON validation, service
+  delegation, errors, and response payloads are unchanged.

@@ -73,7 +73,7 @@ from agentsassemble.gui_legacy_live_agent_smoke_http import (
     LegacyLiveAgentSmokeHttpDeps,
     register_legacy_live_agent_smoke_routes,
 )
-from agentsassemble.gui_legacy_live_agent_speech_http import (
+from agentsassemble.legacy.live_agent.http.speech import (
     register_legacy_live_agent_speech_routes,
 )
 from agentsassemble.gui_legacy_lobby_http import register_legacy_lobby_routes
