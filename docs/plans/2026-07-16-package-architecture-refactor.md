@@ -1315,3 +1315,10 @@ module churn were deliberately avoided rather than forgotten.
   `legacy_live_agent_preflight.py` remains a metadata-tracked compatibility
   export. Config-path defaults, server override behavior, diagnostic
   projection, operation recording, errors, and HTTP payloads are unchanged.
+- 2026-07-20: Retained resident engagement-mode mutation and operation audit
+  moved mechanically to `legacy/live_agent/engagement.py`. GUI composition,
+  the legacy HTTP route, and behavior tests import the owned service directly;
+  root `legacy_live_agent_engagement.py` remains a metadata-tracked
+  compatibility export. Previous/current mode audit fields, invalid-input
+  recording, resident storage mutation, errors, and HTTP payloads are
+  unchanged.

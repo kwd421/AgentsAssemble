@@ -4,7 +4,7 @@ from __future__ import annotations
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.legacy_live_agent_engagement import LegacyLiveAgentEngagementService
+from agentsassemble.legacy.live_agent.engagement import LegacyLiveAgentEngagementService
 
 
 def register_legacy_live_agent_engagement_route(

@@ -243,7 +243,7 @@ from agentsassemble.legacy_live_agent_presence import (
     live_agent_heartbeat_payload,
     live_agent_leave_payload,
 )
-from agentsassemble.legacy_live_agent_engagement import (
+from agentsassemble.legacy.live_agent.engagement import (
     update_live_agent_engagement_payload,
 )
 from agentsassemble.legacy_live_agent_probe import (
