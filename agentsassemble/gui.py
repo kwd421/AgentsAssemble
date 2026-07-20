@@ -217,7 +217,7 @@ from agentsassemble.legacy.live_agent.readiness_projection import (
     readiness_health_operation_details as _readiness_health_operation_details,
     safe_readiness_probe_result as _safe_readiness_probe_result,
 )
-from agentsassemble.legacy_live_agent_smoke import (
+from agentsassemble.legacy.live_agent.smoke import (
     LegacyLiveAgentSmokeService,
     live_agent_real_session_smoke_payload as _resident_live_agent_real_session_smoke_payload,
     live_agent_session_smoke_payload as _resident_live_agent_session_smoke_payload,

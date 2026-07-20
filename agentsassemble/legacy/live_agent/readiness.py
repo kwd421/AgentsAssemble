@@ -19,7 +19,7 @@ from agentsassemble.legacy.live_agent.readiness_projection import (
     safe_readiness_session_smoke_result,
     safe_readiness_smoke_result,
 )
-from agentsassemble.legacy_live_agent_smoke import (
+from agentsassemble.legacy.live_agent.smoke import (
     LegacyLiveAgentSmokeService,
     session_smoke_soak_cycle_count,
     session_smoke_soak_interval_seconds,

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.legacy_live_agent_smoke import (
+from agentsassemble.legacy.live_agent.smoke import (
     LegacyLiveAgentSmokeService,
     official_round_smoke_operation_details,
     real_session_smoke_error_details,

@@ -130,7 +130,7 @@ from agentsassemble.legacy.live_agent.session_run_service import (
     LegacyLiveAgentSessionRunMutationService,
     LegacySessionRunActions,
 )
-from agentsassemble.legacy_live_agent_smoke import LegacyLiveAgentSmokeService
+from agentsassemble.legacy.live_agent.smoke import LegacyLiveAgentSmokeService
 from agentsassemble.legacy.live_agent.speech import LegacyLiveAgentSpeechService
 from agentsassemble.legacy_lobby_commands import LegacyLobbyCommandService
 from agentsassemble.legacy_meeting_lifecycle import LegacyMeetingLifecycleService

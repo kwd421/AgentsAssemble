@@ -26,6 +26,7 @@ import agentsassemble.legacy_live_agent_session_run_service as compatibility_ses
 import agentsassemble.legacy_live_agent_session_run_health as compatibility_session_run_health
 import agentsassemble.legacy_live_agent_session_service as compatibility_session_service
 import agentsassemble.legacy_live_agent_speech as compatibility_speech
+import agentsassemble.legacy_live_agent_smoke as compatibility_smoke
 from agentsassemble.legacy.live_agent import engagement as owned_engagement
 from agentsassemble.legacy.live_agent import diagnostics as owned_diagnostics
 from agentsassemble.legacy.live_agent import discovery as owned_discovery
@@ -50,9 +51,34 @@ from agentsassemble.legacy.live_agent import session_run_service as owned_sessio
 from agentsassemble.legacy.live_agent import session_run_health as owned_session_run_health
 from agentsassemble.legacy.live_agent import session_service as owned_session_service
 from agentsassemble.legacy.live_agent import speech as owned_speech
+from agentsassemble.legacy.live_agent import smoke as owned_smoke
 
 
 class LegacyPackageTests(unittest.TestCase):
+    def test_live_agent_smoke_root_module_exports_owned_service(self) -> None:
+        for name in (
+            "LegacyLiveAgentSmokeService",
+            "live_agent_official_round_smoke_payload",
+            "live_agent_real_session_smoke_payload",
+            "live_agent_session_smoke_payload",
+            "live_agent_smoke_payload",
+            "official_round_smoke_operation_details",
+            "real_session_smoke_error_details",
+            "real_session_smoke_has_explicit_configs",
+            "real_session_smoke_operation_details",
+            "request_json",
+            "safe_real_session_smoke_result",
+            "session_smoke_error_details",
+            "session_smoke_operation_details",
+            "session_smoke_soak_cycle_count",
+            "session_smoke_soak_interval_seconds",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_smoke, name),
+                    getattr(owned_smoke, name),
+                )
+
     def test_live_agent_official_reply_root_module_exports_owned_service(self) -> None:
         for name in (
             "OFFICIAL_REPLY_LOCK",

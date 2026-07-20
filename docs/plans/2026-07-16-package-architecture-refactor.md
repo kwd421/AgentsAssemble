@@ -1448,3 +1448,10 @@ module churn were deliberately avoided rather than forgotten.
   cancellation and idempotency checks, official artifact/shared-memory
   refresh, heartbeat, operation audit, errors, and response payloads are
   unchanged.
+- 2026-07-20: Retained resident smoke input normalization, runner composition,
+  and bounded result projection moved mechanically to
+  `legacy/live_agent/smoke.py`. GUI composition, readiness orchestration, and
+  the legacy smoke HTTP route import the owned facade directly; root
+  `legacy_live_agent_smoke.py` remains a metadata-tracked compatibility
+  export. Provider approval gates, timeouts, soak limits, runner calls,
+  redaction, errors, and response payloads are unchanged.

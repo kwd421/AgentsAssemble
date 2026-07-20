@@ -321,6 +321,7 @@ Detailed product policy: `docs/product/OPERATING_MODEL.md`.
 | Legacy resident local CLI discovery | service and bounded operation details in `legacy/live_agent/discovery.py` with root compatibility export; HTTP in `gui_legacy_live_agent_discovery_http.py` |
 | Legacy resident lobby and DM speech | speech service, flow metadata, and duplicate/turn-conflict policy in `legacy/live_agent/speech.py` with root compatibility export; HTTP in `gui_legacy_live_agent_speech_http.py` |
 | Legacy resident official/review replies | idempotent official reply service, shared-memory refresh, and operation audit in `legacy/live_agent/official_reply.py` with root compatibility export; HTTP in `gui_legacy_live_agent_official_reply_http.py` |
+| Legacy resident smoke facade | smoke input normalization, execution composition, and bounded diagnostic projection in `legacy/live_agent/smoke.py` with root compatibility export; HTTP in `gui_legacy_live_agent_smoke_http.py` |
 | Remaining legacy resident smoke compatibility | `gui.py`; classify and extract one verified family at a time |
 | Room-global settings | `room_global_settings.py`, `room_settings_service.py`, repository methods; HTTP in `web/routes/room_settings.py` with root compatibility export |
 | User-owned room notification/read preferences | validation in `room_user_preferences.py`; local persistence in `identity_room_preferences.py`; hosted persistence in `postgres_identity_preferences.py`; composition in `room_settings_service.py` |
