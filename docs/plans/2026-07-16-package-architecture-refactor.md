@@ -1488,3 +1488,9 @@ module churn were deliberately avoided rather than forgotten.
   `gui_legacy_live_agent_official_reply_http.py` remains a metadata-tracked
   compatibility export. Operation-payload validation, service delegation,
   errors, and response payloads are unchanged.
+- 2026-07-20: The retained resident reply-probe HTTP registrar moved
+  mechanically to `legacy/live_agent/http/probe.py`. Legacy GUI composition
+  imports the owned registrar directly; root
+  `gui_legacy_live_agent_probe_http.py` remains a metadata-tracked
+  compatibility export. Operation-payload validation, missing-agent status,
+  service delegation, errors, and response payloads are unchanged.

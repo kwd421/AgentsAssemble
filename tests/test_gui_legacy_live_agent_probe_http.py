@@ -4,6 +4,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from agentsassemble.gui_legacy_live_agent_probe_http import (
+    register_legacy_live_agent_probe_route as compatibility_register,
+)
+from agentsassemble.legacy.live_agent.http.probe import (
     LegacyLiveAgentProbeHttpDeps,
     register_legacy_live_agent_probe_route,
 )
@@ -37,6 +40,9 @@ class FakeProbeService:
 
 
 class LegacyLiveAgentProbeRouteTests(unittest.TestCase):
+    def test_root_module_exports_owned_registrar(self) -> None:
+        self.assertIs(compatibility_register, register_legacy_live_agent_probe_route)
+
     def setUp(self) -> None:
         self.service = FakeProbeService()
         self.payload: dict[str, object] | None = {"timeout_seconds": 3}
