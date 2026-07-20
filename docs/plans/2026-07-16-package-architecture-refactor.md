@@ -1,6 +1,6 @@
 # Package Architecture And Correctness Residue Refactor
 
-Status: active
+Status: complete for the approved refactor scope
 
 Started: 2026-07-16
 
@@ -385,6 +385,13 @@ frozen-product decision. Four shared provider/meeting modules are
 packages and stable entrypoints are also retained by design. Final verification
 and the review report remain the release-evidence phase, not another ownership
 milestone.
+
+Final release evidence is recorded in
+`docs/reports/2026-07-20-package-architecture-refactor-progress.md`. It includes
+the full and strict Python suites, PostgreSQL contracts with zero skips,
+frontend tests/build/Playwright, exact-model real-provider session smoke, and a
+60-second shared-room pause/resume/kick smoke. Deferred conversation policy and
+agent-only invite consumption remain explicitly outside this completed scope.
 
 ## Progress Log
 

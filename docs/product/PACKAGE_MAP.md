@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `f9857d7f9d34b0bb`
+Source fingerprint: `e5eaa4b3afcbbfee`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -650,7 +650,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.room_friend_dms` | `agentsassemble/room_friend_dms.py` | 32 | features | compatibility | `agentsassemble.features.social.direct_messages` | 0 | - | test-import:1 | `tests/test_feature_routes_package.py` | `features/optional/` | compatibility-shim |
 | `agentsassemble.room_friends` | `agentsassemble/room_friends.py` | 28 | features | compatibility | `agentsassemble.features.social.friends` | 0 | - | test-import:1 | `tests/test_feature_routes_package.py` | `features/friends/` | compatibility-shim |
 | `agentsassemble.room_global_settings` | `agentsassemble/room_global_settings.py` | 36 | room | compatibility | `agentsassemble.room.global_settings` | 0 | - | test-import:1 | `tests/test_room_package.py` | `room/` | compatibility-shim |
-| `agentsassemble.room_invite` | `agentsassemble/room_invite.py` | 59 | admission | compatibility | `agentsassemble.admission.invite` | 0 | - | test-import:3 | `tests/test_gui_router.py`, `tests/test_gui_server_provider_http.py`, `tests/test_host_account.py` | `admission/` | compatibility-shim |
+| `agentsassemble.room_invite` | `agentsassemble/room_invite.py` | 63 | admission | compatibility | `agentsassemble.admission.invite` | 0 | - | test-import:3 | `tests/test_gui_router.py`, `tests/test_gui_server_provider_http.py`, `tests/test_host_account.py` | `admission/` | compatibility-shim |
 | `agentsassemble.room_invite_application` | `agentsassemble/room_invite_application.py` | 40 | admission | compatibility | `agentsassemble.admission.invite_service` | 0 | - | test-import:1 | `tests/test_admission_invite_service_package.py` | `admission/` | compatibility-shim |
 | `agentsassemble.room_invite_repository` | `agentsassemble/room_invite_repository.py` | 34 | admission | compatibility | `agentsassemble.admission.repository`, `agentsassemble.admission.workflow_record`, `agentsassemble.persistence.local.admission.repository` | 0 | - | test-import:2 | `tests/test_admission_repository_contracts.py`, `tests/test_local_admission_persistence_package.py` | `admission/` | compatibility-shim |
 | `agentsassemble.room_invite_repository_factory` | `agentsassemble/room_invite_repository_factory.py` | 9 | admission | compatibility | `agentsassemble.admission.repository_factory` | 0 | - | - | - | `admission/` | compatibility-shim |
