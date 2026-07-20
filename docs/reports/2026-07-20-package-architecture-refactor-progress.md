@@ -215,6 +215,19 @@ git diff --check
 Playwright covers operator/invite pairing, stable rejoin identity, failed
 join/incognito separation, desktop streaming, and mobile Agent Session control.
 
+### Remote CI
+
+GitHub Actions run
+`https://github.com/kwd421/AgentsAssemble/actions/runs/29726198019` on commit
+`70b6d8ba71479f8103487c2d65137200171d3f23` completed successfully. All seven
+jobs passed: Python 3.11, Python 3.13, mandatory PostgreSQL contracts, frontend
+build, frontend E2E, Ubuntu runtime contracts, and Windows runtime contracts.
+
+The only commit after that run is the documentation-only commit that records
+this result. Its workflow result cannot be embedded into the same commit
+without creating another documentation commit and another workflow run; the
+delivery report records the final pushed commit's status separately.
+
 ## 8. Real Provider Session Smoke
 
 A clean temporary provider workspace and isolated room state were served through
