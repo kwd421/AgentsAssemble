@@ -14,7 +14,7 @@ from agentsassemble.legacy.meeting.operation_projection import (
     shared_memory_operation_details,
 )
 from agentsassemble.legacy.meeting.records import read_meeting_record, safe_meeting_dir
-from agentsassemble.live_agent_operations import append_live_agent_operation
+from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
 from agentsassemble.live_agent_turns import (
     is_official_turn_reply_event,
     is_review_checkpoint_reply_event,

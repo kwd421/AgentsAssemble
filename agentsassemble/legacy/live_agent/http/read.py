@@ -11,7 +11,7 @@ from agentsassemble.legacy.live_agent.diagnostics import LegacyLiveAgentDiagnost
 from agentsassemble.legacy.live_agent.health_queries import LegacyLiveAgentHealthQueryService
 from agentsassemble.legacy.live_agent.queries import LegacyLiveAgentQueryService
 from agentsassemble.legacy.live_agent.roster_queries import LegacyLiveAgentRosterQueryService
-from agentsassemble.live_agent_sessions import LiveAgentSessionNotFoundError
+from agentsassemble.legacy.live_agent.runtime.sessions import LiveAgentSessionNotFoundError
 
 
 @dataclass(frozen=True)

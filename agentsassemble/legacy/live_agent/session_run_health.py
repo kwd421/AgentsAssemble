@@ -19,7 +19,7 @@ from agentsassemble.legacy.live_agent.health import (
     safe_health_reason,
     safe_health_timestamp,
 )
-from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
+from agentsassemble.legacy.live_agent.runtime.session_runs import LiveAgentSessionRunController
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.application.session_run_monitor import PeriodicSessionRunMonitor
 

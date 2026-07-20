@@ -6,7 +6,7 @@ from http import HTTPStatus
 from typing import Protocol
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.live_agent_quota import quota_viewer_for_host, quota_viewer_for_session
+from agentsassemble.legacy.live_agent.runtime.quota import quota_viewer_for_host, quota_viewer_for_session
 from agentsassemble.legacy.meeting.core.events import ROOM_TOPIC_LIMIT, clean_lobby_text
 
 

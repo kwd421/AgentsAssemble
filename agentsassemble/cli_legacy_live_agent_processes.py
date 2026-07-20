@@ -6,7 +6,7 @@ import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from agentsassemble.live_agent_processes import clean_live_agent_group_id
+from agentsassemble.legacy.live_agent.runtime.processes import clean_live_agent_group_id
 
 
 @dataclass(frozen=True)

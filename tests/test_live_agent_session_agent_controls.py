@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 
 from agentsassemble.gui import _make_handler
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
-from agentsassemble.live_agent_sessions import (
+from agentsassemble.legacy.live_agent.runtime.sessions import (
     resume_live_agent_session_agent,
     stop_live_agent_session_agent,
 )

@@ -21,7 +21,7 @@ from agentsassemble.legacy.meeting.official_turns import (
 )
 from agentsassemble.legacy.meeting.turn_scheduler import meeting_turn_lock
 from agentsassemble.live_agent_finalization import finalize_live_agent_meeting
-from agentsassemble.live_agent_operations import append_live_agent_operation
+from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
 from agentsassemble.live_agent_play_presets import build_play_preset_turns
 from agentsassemble.live_agent_rounds import (
     build_official_round_turns,

@@ -20,7 +20,7 @@ from agentsassemble.providers.grok_resident import (
     grok_error_category,
 )
 from agentsassemble.gui import _make_handler
-from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
+from agentsassemble.legacy.live_agent.runtime.processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_runner import LiveAgentRunner, ResidentAgentConfig
 from agentsassemble.live_agents import read_live_agents
 from agentsassemble.legacy.meeting.core.events import read_live_events

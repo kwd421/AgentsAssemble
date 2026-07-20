@@ -8,7 +8,7 @@ from agentsassemble.legacy.live_agent.session_run_service import (
     LegacySessionRunActions,
     LegacySessionRunMutationError,
 )
-from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
+from agentsassemble.legacy.live_agent.runtime.session_runs import LiveAgentSessionRunController
 
 
 class LegacyLiveAgentSessionRunMutationServiceTests(unittest.TestCase):

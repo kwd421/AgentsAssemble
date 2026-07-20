@@ -31,7 +31,7 @@ from agentsassemble.live_session_adapter import (
     InvokeLiveSessionAdapter,
     RuntimeManagedRoomTurnAdapter,
 )
-from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL, live_agent_poll_sleep_seconds
+from agentsassemble.legacy.live_agent.runtime.timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL, live_agent_poll_sleep_seconds
 from agentsassemble.live_agent_flow import (
     DEFAULT_FLOW_FAIRNESS_MAX_LEAD,
     DEFAULT_FLOW_FAIRNESS_MIN_GAP,

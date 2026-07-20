@@ -5,9 +5,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentsassemble.live_agent_operations import append_live_agent_operation
+from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
 from agentsassemble.live_agents import delete_live_agent, detach_live_agent_from_meeting, read_live_agents
-from agentsassemble.live_agent_processes import clean_live_agent_group_id
+from agentsassemble.legacy.live_agent.runtime.processes import clean_live_agent_group_id
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text, write_live_state
 from agentsassemble.multi_host_invites import NATIVE_REMOTE_ROOM_CLIENT_KIND
 from agentsassemble.admission.invite import revoke_sessions_for_participant

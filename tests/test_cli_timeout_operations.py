@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from agentsassemble.cli import build_parser, main
 from agentsassemble.gui import _make_handler
-from agentsassemble.live_agent_operations import append_live_agent_operation
+from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
 
 
 class CliTimeoutOperationsTests(unittest.TestCase):

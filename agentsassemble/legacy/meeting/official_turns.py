@@ -16,7 +16,7 @@ from agentsassemble.legacy.meeting.operation_projection import (
 from agentsassemble.legacy.meeting.records import safe_meeting_dir
 from agentsassemble.legacy.meeting.core.turn_results import turn_sequence_result, turn_sequence_status
 from agentsassemble.legacy.meeting.turn_scheduler import meeting_turn_lock
-from agentsassemble.live_agent_operations import append_live_agent_operation
+from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
 from agentsassemble.live_agent_turns import wait_for_official_turn_reply
 from agentsassemble.legacy.meeting.core.events import append_live_event, clean_lobby_text, read_live_events
 

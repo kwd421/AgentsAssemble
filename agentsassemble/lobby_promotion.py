@@ -4,7 +4,7 @@ import re
 import threading
 from pathlib import Path
 
-from agentsassemble.live_agent_operations import append_live_agent_operation, redact_sensitive_operation_text
+from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation, redact_sensitive_operation_text
 from agentsassemble.legacy.meeting.core.events import append_live_event, clean_lobby_text, read_live_events, read_lobby_events
 
 

@@ -7,13 +7,13 @@ from pathlib import Path
 
 from agentsassemble.legacy.live_agent.health import live_agent_process_health_reason, safe_health_identity
 from agentsassemble.legacy.live_agent.process_projection import live_agent_processes_payload
-from agentsassemble.live_agent_operations import read_live_agent_operation_history
-from agentsassemble.live_agent_processes import (
+from agentsassemble.legacy.live_agent.runtime.operations import read_live_agent_operation_history
+from agentsassemble.legacy.live_agent.runtime.processes import (
     LiveAgentProcessSupervisor,
     read_live_agent_process_event_history,
 )
-from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
-from agentsassemble.live_agent_sessions import check_live_agent_session, live_agent_session_readiness_summary
+from agentsassemble.legacy.live_agent.runtime.session_runs import LiveAgentSessionRunController
+from agentsassemble.legacy.live_agent.runtime.sessions import check_live_agent_session, live_agent_session_readiness_summary
 
 
 @dataclass(frozen=True)

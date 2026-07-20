@@ -14,8 +14,8 @@ from uuid import uuid4
 
 from agentsassemble.identity.repository import IdentityBackend
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
-from agentsassemble.live_agent_processes import clean_live_agent_group_id
-from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
+from agentsassemble.legacy.live_agent.runtime.processes import clean_live_agent_group_id
+from agentsassemble.legacy.live_agent.runtime.timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text, write_live_state
 from agentsassemble.admission.invite import create_room_invite

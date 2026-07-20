@@ -13,9 +13,9 @@ from agentsassemble.cli import main
 from agentsassemble.config import load_agent_runtime_config, load_council_config
 from agentsassemble.gui import _make_handler
 from agentsassemble.live_agent_discovery import build_discovered_live_agent_config, build_discovered_session_bundle
-from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
+from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation, read_live_agent_operations
 from agentsassemble.live_agent_runner import load_group_configs
-from agentsassemble.live_agent_sessions import start_live_agent_session
+from agentsassemble.legacy.live_agent.runtime.sessions import start_live_agent_session
 
 
 class LiveAgentDiscoveryTests(unittest.TestCase):

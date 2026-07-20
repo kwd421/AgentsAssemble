@@ -284,7 +284,7 @@ class GuiServerSessionLifecycleTests(unittest.TestCase):
                     method="POST",
                 )
                 with patch(
-                    "agentsassemble.live_agent_sessions.preflight_live_agent_config",
+                    "agentsassemble.legacy.live_agent.runtime.sessions.preflight_live_agent_config",
                     return_value={"status": "ok", "summary": {"agents": 1}},
                 ):
                     with urlopen(request, timeout=4) as response:

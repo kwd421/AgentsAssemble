@@ -1,6 +1,6 @@
 import unittest
 
-from agentsassemble.live_agent_quota import quota_viewer_for_host, quota_viewer_for_session
+from agentsassemble.legacy.live_agent.runtime.quota import quota_viewer_for_host, quota_viewer_for_session
 from agentsassemble.live_agent_roster import safe_live_agent_roster_payload
 
 

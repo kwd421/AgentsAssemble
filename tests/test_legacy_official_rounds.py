@@ -9,7 +9,7 @@ from agentsassemble.legacy.meeting.official_rounds import (
     LegacyOfficialRoundService,
     _live_agent_turn_rounds_payload_locked,
 )
-from agentsassemble.live_agent_operations import read_live_agent_operations
+from agentsassemble.legacy.live_agent.runtime.operations import read_live_agent_operations
 from agentsassemble.live_agents import connect_live_agent
 from agentsassemble.legacy.meeting.core.events import write_live_state
 

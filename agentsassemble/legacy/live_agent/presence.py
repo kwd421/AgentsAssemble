@@ -9,7 +9,7 @@ from agentsassemble.legacy.live_agent.presence_projection import (
     registration_operation_details,
 )
 from agentsassemble.legacy.live_agent.queries import require_live_agent
-from agentsassemble.live_agent_operations import append_live_agent_operation
+from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 

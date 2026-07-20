@@ -14,8 +14,8 @@ from agentsassemble.legacy.meeting.operation_projection import (
 )
 from agentsassemble.legacy.meeting.records import read_meeting_record, safe_meeting_dir
 from agentsassemble.legacy.meeting.core.turn_results import turn_sequence_result, turn_sequence_status
-from agentsassemble.live_agent_operations import append_live_agent_operation
-from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor, clean_live_agent_group_id
+from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
+from agentsassemble.legacy.live_agent.runtime.processes import LiveAgentProcessSupervisor, clean_live_agent_group_id
 from agentsassemble.live_agent_review_checkpoints import write_review_checkpoint_artifacts
 from agentsassemble.live_agent_turns import wait_for_review_checkpoint_reply
 from agentsassemble.legacy.meeting.core.events import append_live_event, clean_lobby_text

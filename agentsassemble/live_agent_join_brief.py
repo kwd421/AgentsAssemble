@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 
 from agentsassemble.live_agent_context import live_agent_context_contract
-from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
+from agentsassemble.legacy.live_agent.runtime.timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 

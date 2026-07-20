@@ -4,7 +4,7 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
+from agentsassemble.legacy.live_agent.runtime.session_runs import LiveAgentSessionRunController
 
 
 class LiveAgentSessionRunControllerTests(unittest.TestCase):

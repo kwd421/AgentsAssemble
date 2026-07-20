@@ -25,7 +25,7 @@ from agentsassemble.legacy.live_agent.smoke import (
     session_smoke_soak_interval_seconds,
 )
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
-from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
+from agentsassemble.legacy.live_agent.runtime.processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 from agentsassemble.application.session_run_monitor import PeriodicSessionRunMonitor
 

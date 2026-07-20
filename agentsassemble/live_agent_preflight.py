@@ -61,7 +61,7 @@ from agentsassemble.live_agent_runner import (
     live_agent_nonnegative_int,
     resident_connection_kind_error,
 )
-from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
+from agentsassemble.legacy.live_agent.runtime.timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.remote_bridge_config import remote_bridge_auth_ref_available, remote_bridge_endpoint_error
 from agentsassemble.sandbox_launcher import sandbox_launcher_for
 

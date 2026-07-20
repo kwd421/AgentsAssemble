@@ -9,7 +9,7 @@ from agentsassemble.live_agent_context import (
     safe_live_agent_sandbox_enforcement,
 )
 from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
-from agentsassemble.live_agent_quota import quota_fields_for_viewer
+from agentsassemble.legacy.live_agent.runtime.quota import quota_fields_for_viewer
 from agentsassemble.live_agents import PRESENCE_ERROR_REDACTED, _looks_sensitive_presence_error
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 

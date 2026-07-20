@@ -5,7 +5,7 @@ from pathlib import Path
 
 from agentsassemble.legacy.meeting.operation_projection import review_checkpoint_request_operation_details
 from agentsassemble.legacy.meeting.review_checkpoint import LegacyReviewCheckpointService
-from agentsassemble.live_agent_operations import read_live_agent_operations
+from agentsassemble.legacy.live_agent.runtime.operations import read_live_agent_operations
 
 
 class LegacyReviewCheckpointServiceTests(unittest.TestCase):

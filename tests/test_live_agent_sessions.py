@@ -14,7 +14,7 @@ from agentsassemble.config import (
 )
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_runner import load_group_configs
-from agentsassemble.live_agent_sessions import (
+from agentsassemble.legacy.live_agent.runtime.sessions import (
     check_live_agent_session,
     live_agent_session_readiness_summary,
     recover_live_agent_session,

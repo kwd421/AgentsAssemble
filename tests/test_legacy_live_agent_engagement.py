@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.legacy.live_agent.engagement import LegacyLiveAgentEngagementService
-from agentsassemble.live_agent_operations import read_live_agent_operations
+from agentsassemble.legacy.live_agent.runtime.operations import read_live_agent_operations
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
 
 

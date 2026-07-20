@@ -10,7 +10,7 @@ from typing import Any
 
 from agentsassemble.live_agent_context import live_agent_context_contract, live_agent_context_contract_with_join_semantics
 from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
-from agentsassemble.live_agent_quota import LIVE_AGENT_QUOTA_FIELDS, clean_live_agent_quota_fields
+from agentsassemble.legacy.live_agent.runtime.quota import LIVE_AGENT_QUOTA_FIELDS, clean_live_agent_quota_fields
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.models import ENGAGEMENT_MODES, normalize_engagement_mode
 from agentsassemble.remote_bridge_config import remote_bridge_endpoint_error

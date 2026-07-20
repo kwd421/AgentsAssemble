@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
-import agentsassemble.live_agent_operations as live_agent_operations
-from agentsassemble.live_agent_operations import (
+import agentsassemble.legacy.live_agent.runtime.operations as live_agent_operations
+from agentsassemble.legacy.live_agent.runtime.operations import (
     append_live_agent_operation,
     read_live_agent_operation_history,
     read_live_agent_operations,

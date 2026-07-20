@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentsassemble.legacy.live_agent.official_reply import LegacyLiveAgentOfficialReplyService
-from agentsassemble.live_agent_operations import read_live_agent_operations
+from agentsassemble.legacy.live_agent.runtime.operations import read_live_agent_operations
 
 
 class LegacyLiveAgentOfficialReplyServiceTests(unittest.TestCase):

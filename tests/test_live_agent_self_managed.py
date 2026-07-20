@@ -4,12 +4,12 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
-from agentsassemble.live_agent_self_managed import (
+from agentsassemble.legacy.live_agent.runtime.self_managed import (
     LegacySelfManagedAgentService,
     resume_self_managed_agent_payload,
     stop_self_managed_agent_payload,
 )
-from agentsassemble.live_agent_operations import read_live_agent_operations
+from agentsassemble.legacy.live_agent.runtime.operations import read_live_agent_operations
 
 
 def _register(root: Path, **overrides):

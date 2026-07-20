@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agentsassemble.live_agent_frontend_create import frontend_live_agent_login_payload
-from agentsassemble.live_agent_operations import append_live_agent_operation
+from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 

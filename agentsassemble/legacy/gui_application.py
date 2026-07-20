@@ -138,11 +138,11 @@ from agentsassemble.legacy.meeting.queries import LegacyMeetingQueryService
 from agentsassemble.legacy.meeting.official_rounds import LegacyOfficialRoundService
 from agentsassemble.legacy.meeting.official_turns import LegacyOfficialTurnService
 from agentsassemble.legacy.meeting.review_checkpoint import LegacyReviewCheckpointService
-from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
+from agentsassemble.legacy.live_agent.runtime.processes import LiveAgentProcessSupervisor
 from agentsassemble.legacy.live_agent.presence import LegacyLiveAgentPresenceService
 from agentsassemble.live_agent_room_admin import LegacyLiveAgentRoomSessionService
-from agentsassemble.live_agent_self_managed import LegacySelfManagedAgentService
-from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
+from agentsassemble.legacy.live_agent.runtime.self_managed import LegacySelfManagedAgentService
+from agentsassemble.legacy.live_agent.runtime.session_runs import LiveAgentSessionRunController
 from agentsassemble.room.repository import RoomRepository
 
 

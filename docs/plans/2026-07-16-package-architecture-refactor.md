@@ -1674,3 +1674,13 @@ module churn were deliberately avoided rather than forgotten.
   misstate dependency direction. Seven root modules remain explicit exports,
   including the historically imported `gui_room_http` service names. Routes,
   authorization, payloads, and resident behavior are unchanged.
+- 2026-07-20: The retained resident process/session runtime moved as one
+  lifecycle-coherent family to `legacy/live_agent/runtime/`: timing, settings,
+  quota, launch policy, process ownership, session/group state, durable
+  session runs, self-managed stop/resume, and operation records. Moving these
+  together keeps process handles, session state, and cleanup failure paths
+  locally readable. Current callers and tests use the owned modules; nine root
+  modules remain explicit compatibility exports. Provider commands, process
+  tree handling, timeout behavior, persisted formats, diagnostics, and control
+  payloads are unchanged. Conversation flow, runner, rounds, and turns remain
+  frozen outside this package wave.

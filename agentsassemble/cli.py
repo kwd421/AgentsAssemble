@@ -115,7 +115,7 @@ from agentsassemble.diagnostics.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CON
 from agentsassemble.application.room_native_cli_smoke import run_room_native_cli_smoke
 from agentsassemble.room_repository_factory import RoomRepositoryUnavailable
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
-from agentsassemble.live_agent_processes import clean_live_agent_group_id
+from agentsassemble.legacy.live_agent.runtime.processes import clean_live_agent_group_id
 from agentsassemble.lobby_promotion import promote_lobby_events_to_official
 from agentsassemble.live_agent_roster import (
     safe_live_agent_roster_agent,
@@ -148,7 +148,7 @@ from agentsassemble.live_agent_runner import (
     resident_connection_kind_error,
     should_reply_to_event,
 )
-from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL, live_agent_poll_sleep_seconds
+from agentsassemble.legacy.live_agent.runtime.timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL, live_agent_poll_sleep_seconds
 from agentsassemble.live_agent_smoke import (
     MAX_SESSION_SMOKE_LOBBY_PROBES,
     MAX_SESSION_SMOKE_SOAK_CYCLES,
@@ -156,7 +156,7 @@ from agentsassemble.live_agent_smoke import (
     LiveAgentSmokeFailed,
     run_live_agent_smoke,
 )
-from agentsassemble.live_agent_sessions import session_ensure_action
+from agentsassemble.legacy.live_agent.runtime.sessions import session_ensure_action
 from agentsassemble.live_session_transport import JsonlLiveSession, TerminalLiveSession
 from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 from agentsassemble.memory_capsules import memory_capsule_gate_report

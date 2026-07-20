@@ -19,8 +19,8 @@ from agentsassemble.live_agent_frontend_create import (
     frontend_live_agent_login_payload,
     frontend_live_agent_options_payload,
 )
-from agentsassemble.live_agent_operations import read_live_agent_operations
-from agentsassemble.live_agent_sessions import resume_live_agent_session_agent
+from agentsassemble.legacy.live_agent.runtime.operations import read_live_agent_operations
+from agentsassemble.legacy.live_agent.runtime.sessions import resume_live_agent_session_agent
 from agentsassemble.live_agents import connect_live_agent, read_live_agents
 from agentsassemble.application.room_users import (
     configure_room_users_store,

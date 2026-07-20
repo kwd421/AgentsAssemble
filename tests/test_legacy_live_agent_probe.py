@@ -6,7 +6,7 @@ from agentsassemble.legacy.live_agent.probe import (
     LegacyLiveAgentProbeService,
     probe_timeout_seconds,
 )
-from agentsassemble.live_agent_operations import read_live_agent_operations
+from agentsassemble.legacy.live_agent.runtime.operations import read_live_agent_operations
 
 
 class LegacyLiveAgentProbeServiceTests(unittest.TestCase):

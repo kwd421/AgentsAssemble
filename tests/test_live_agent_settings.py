@@ -6,7 +6,7 @@ from pathlib import Path
 
 class LiveAgentSettingsTests(unittest.TestCase):
     def test_update_live_agent_config_poll_interval_updates_only_selected_agent(self):
-        from agentsassemble.live_agent_settings import update_live_agent_config_poll_interval
+        from agentsassemble.legacy.live_agent.runtime.settings import update_live_agent_config_poll_interval
 
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"
@@ -35,7 +35,7 @@ class LiveAgentSettingsTests(unittest.TestCase):
         self.assertEqual(updated["agents"][1]["poll_interval"], 1)
 
     def test_update_live_agent_config_poll_interval_rejects_missing_agent_and_invalid_value(self):
-        from agentsassemble.live_agent_settings import update_live_agent_config_poll_interval
+        from agentsassemble.legacy.live_agent.runtime.settings import update_live_agent_config_poll_interval
 
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"
@@ -51,7 +51,7 @@ class LiveAgentSettingsTests(unittest.TestCase):
 
 
     def test_update_live_agent_config_options_sets_and_clears_permission_and_fast(self):
-        from agentsassemble.live_agent_settings import update_live_agent_config_options
+        from agentsassemble.legacy.live_agent.runtime.settings import update_live_agent_config_options
 
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"
@@ -86,7 +86,7 @@ class LiveAgentSettingsTests(unittest.TestCase):
             self.assertNotIn("fast_mode", cleared["agents"][0])
 
     def test_update_live_agent_config_options_leaves_unspecified_fields(self):
-        from agentsassemble.live_agent_settings import update_live_agent_config_options
+        from agentsassemble.legacy.live_agent.runtime.settings import update_live_agent_config_options
 
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"

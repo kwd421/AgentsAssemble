@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
+from agentsassemble.legacy.live_agent.runtime.timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 
 
 DEFAULT_INVITE_CONFIG_PATH = Path(".agentsassemble") / "codex-live-session.local.json"

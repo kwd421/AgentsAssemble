@@ -21,7 +21,7 @@ from agentsassemble.legacy.live_agent.cli.common import (
     parse_session_smoke_soak_cycle_count,
     parse_session_smoke_soak_interval_seconds,
 )
-from agentsassemble.live_agent_timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
+from agentsassemble.legacy.live_agent.runtime.timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
 
 

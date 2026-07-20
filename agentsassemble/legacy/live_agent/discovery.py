@@ -15,7 +15,7 @@ from agentsassemble.live_agent_discovery import (
     fill_discovery_next_command_output,
     validate_distinct_session_bundle_paths,
 )
-from agentsassemble.live_agent_processes import clean_live_agent_group_id
+from agentsassemble.legacy.live_agent.runtime.processes import clean_live_agent_group_id
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 

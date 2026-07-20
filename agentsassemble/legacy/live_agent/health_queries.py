@@ -27,8 +27,8 @@ from agentsassemble.legacy.live_agent.session_run_health import (
     live_agent_session_run_health_summary,
     live_agent_session_run_monitor_health_summary,
 )
-from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
-from agentsassemble.live_agent_sessions import live_agent_session_readiness_summary
+from agentsassemble.legacy.live_agent.runtime.processes import LiveAgentProcessSupervisor
+from agentsassemble.legacy.live_agent.runtime.sessions import live_agent_session_readiness_summary
 from agentsassemble.live_agents import read_live_agents
 from agentsassemble.live_meeting_memory import build_live_meeting_memory
 from agentsassemble.legacy.meeting.core.events import read_live_events

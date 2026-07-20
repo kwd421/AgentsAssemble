@@ -5,7 +5,7 @@ from collections.abc import Callable
 from http import HTTPStatus
 
 from agentsassemble.web.router import RequestContext, Router
-from agentsassemble.live_agent_self_managed import LegacySelfManagedAgentService
+from agentsassemble.legacy.live_agent.runtime.self_managed import LegacySelfManagedAgentService
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 
 

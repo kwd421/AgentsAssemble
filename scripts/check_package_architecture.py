@@ -48,6 +48,51 @@ class CompatibilityShim:
 # boundaries. Historical presence in the root baseline does not exempt a moved
 # module from recording its replacement, callers, and removal gate here.
 ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
+    "live_agent_launch_policy.py": CompatibilityShim(
+        "agentsassemble.legacy.live_agent.runtime.launch_policy",
+        "No direct imports use the root launch-policy module for one compatibility window.",
+        ("agentsassemble/cli.py",), "Milestone 6.65 resident runtime package",
+    ),
+    "live_agent_operations.py": CompatibilityShim(
+        "agentsassemble.legacy.live_agent.runtime.operations",
+        "No direct imports use the root operation module for one compatibility window.",
+        ("agentsassemble/gui.py",), "Milestone 6.65 resident runtime package",
+    ),
+    "live_agent_processes.py": CompatibilityShim(
+        "agentsassemble.legacy.live_agent.runtime.processes",
+        "No direct imports or patches use the root process module for one compatibility window.",
+        ("tests/test_live_agent_processes.py",), "Milestone 6.65 resident runtime package",
+    ),
+    "live_agent_quota.py": CompatibilityShim(
+        "agentsassemble.legacy.live_agent.runtime.quota",
+        "No direct imports use the root quota module for one compatibility window.",
+        ("tests/test_live_agent_quota.py",), "Milestone 6.65 resident runtime package",
+    ),
+    "live_agent_self_managed.py": CompatibilityShim(
+        "agentsassemble.legacy.live_agent.runtime.self_managed",
+        "No direct imports use the root self-managed module for one compatibility window.",
+        ("tests/test_live_agent_self_managed.py",), "Milestone 6.65 resident runtime package",
+    ),
+    "live_agent_session_runs.py": CompatibilityShim(
+        "agentsassemble.legacy.live_agent.runtime.session_runs",
+        "No direct imports or patches use the root session-run module for one compatibility window.",
+        ("tests/test_live_agent_session_runs.py",), "Milestone 6.65 resident runtime package",
+    ),
+    "live_agent_sessions.py": CompatibilityShim(
+        "agentsassemble.legacy.live_agent.runtime.sessions",
+        "No direct imports or patches use the root sessions module for one compatibility window.",
+        ("tests/test_live_agent_sessions.py",), "Milestone 6.65 resident runtime package",
+    ),
+    "live_agent_settings.py": CompatibilityShim(
+        "agentsassemble.legacy.live_agent.runtime.settings",
+        "No direct imports use the root settings module for one compatibility window.",
+        ("tests/test_live_agent_settings.py",), "Milestone 6.65 resident runtime package",
+    ),
+    "live_agent_timing.py": CompatibilityShim(
+        "agentsassemble.legacy.live_agent.runtime.timing",
+        "No direct imports use the root timing module for one compatibility window.",
+        ("agentsassemble/cli.py",), "Milestone 6.65 resident runtime package",
+    ),
     "cli_http_errors.py": CompatibilityShim(
         replacement_import="agentsassemble.web.cli_errors",
         removal_gate="No direct imports use agentsassemble.cli_http_errors for one compatibility window.",

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.live_agent_launch_policy import resident_launch_approval_report
+from agentsassemble.legacy.live_agent.runtime.launch_policy import resident_launch_approval_report
 
 
 class LiveAgentLaunchPolicyTests(unittest.TestCase):

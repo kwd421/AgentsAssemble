@@ -11,7 +11,7 @@ from agentsassemble.legacy.live_agent.http.read import (
     register_legacy_live_agent_read_routes,
 )
 from agentsassemble.web.router import GuiDeps, RequestContext, Router
-from agentsassemble.live_agent_sessions import LiveAgentSessionNotFoundError
+from agentsassemble.legacy.live_agent.runtime.sessions import LiveAgentSessionNotFoundError
 
 
 class FakeHandler:
