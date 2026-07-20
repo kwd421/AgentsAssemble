@@ -1392,3 +1392,9 @@ module churn were deliberately avoided rather than forgotten.
   compatibility export. Event selection, official-turn correlation, stale
   status thresholds, diagnostic filtering, and public health fields are
   unchanged.
+- 2026-07-20: Retained durable session-run and periodic-monitor health
+  projection moved mechanically to `legacy/live_agent/session_run_health.py`.
+  Aggregate health imports the owned policy directly; root
+  `legacy_live_agent_session_run_health.py` remains a metadata-tracked
+  compatibility export. Readiness overlays, retry counts, attention markers,
+  monitor status, bounded errors, and public health payloads are unchanged.

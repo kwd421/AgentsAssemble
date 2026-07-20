@@ -16,6 +16,7 @@ import agentsassemble.legacy_live_agent_process_service as compatibility_process
 import agentsassemble.legacy_live_agent_session_control as compatibility_session_control
 import agentsassemble.legacy_live_agent_session_projection as compatibility_session_projection
 import agentsassemble.legacy_live_agent_session_run_service as compatibility_session_run_service
+import agentsassemble.legacy_live_agent_session_run_health as compatibility_session_run_health
 import agentsassemble.legacy_live_agent_session_service as compatibility_session_service
 from agentsassemble.legacy.live_agent import engagement as owned_engagement
 from agentsassemble.legacy.live_agent import diagnostics as owned_diagnostics
@@ -31,6 +32,7 @@ from agentsassemble.legacy.live_agent import process_service as owned_process_se
 from agentsassemble.legacy.live_agent import session_control as owned_session_control
 from agentsassemble.legacy.live_agent import session_projection as owned_session_projection
 from agentsassemble.legacy.live_agent import session_run_service as owned_session_run_service
+from agentsassemble.legacy.live_agent import session_run_health as owned_session_run_health
 from agentsassemble.legacy.live_agent import session_service as owned_session_service
 
 
@@ -215,6 +217,17 @@ class LegacyPackageTests(unittest.TestCase):
                         getattr(compatibility, name),
                         getattr(owned, name),
                     )
+
+    def test_live_agent_session_run_health_root_module_exports_owned_policy(self) -> None:
+        for name in (
+            "live_agent_session_run_health_summary",
+            "live_agent_session_run_monitor_health_summary",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_session_run_health, name),
+                    getattr(owned_session_run_health, name),
+                )
 
 
 if __name__ == "__main__":

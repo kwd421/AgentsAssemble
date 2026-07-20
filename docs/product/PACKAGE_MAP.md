@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `fe07f8adb55fd4db`
+Source fingerprint: `abd1d81df8002b1e`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 520
+- Python modules: 521
 - Top-level package modules: 303
-- Domains: admission=28, application=69, diagnostics=14, features=19, identity=9, legacy=95, persistence=58, providers=84, room=80, web=64
-- Classifications: compatibility=136, current=293, legacy=79, optional=12
+- Domains: admission=28, application=69, diagnostics=14, features=19, identity=9, legacy=96, persistence=58, providers=84, room=80, web=64
+- Classifications: compatibility=137, current=293, legacy=79, optional=12
 
 ## Classification Rules
 
@@ -197,6 +197,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.legacy.live_agent.process_service` | `agentsassemble/legacy/live_agent/process_service.py` | 196 | legacy | legacy | `agentsassemble.legacy.live_agent.process_control` | 3 | - | test-import:2 | `tests/test_legacy_live_agent_process_service.py`, `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.session_control` | `agentsassemble/legacy/live_agent/session_control.py` | 152 | legacy | legacy | `agentsassemble.meeting_events` | 6 | - | test-import:2 | `tests/test_legacy_live_agent_session_control.py`, `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.session_projection` | `agentsassemble/legacy/live_agent/session_projection.py` | 222 | legacy | legacy | `agentsassemble.meeting_events` | 4 | - | test-import:2 | `tests/test_legacy_live_agent_session_projection.py`, `tests/test_legacy_package.py` | `legacy/` | in-target-package |
+| `agentsassemble.legacy.live_agent.session_run_health` | `agentsassemble/legacy/live_agent/session_run_health.py` | 157 | legacy | legacy | `agentsassemble.application.session_run_monitor`, `agentsassemble.legacy.live_agent.diagnostics`, `agentsassemble.legacy.live_agent.health`, `agentsassemble.live_agent_session_runs`, `agentsassemble.meeting_events` | 2 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.session_run_service` | `agentsassemble/legacy/live_agent/session_run_service.py` | 273 | legacy | legacy | `agentsassemble.legacy.live_agent.session_control`, `agentsassemble.legacy.live_agent.session_projection`, `agentsassemble.meeting_events` | 4 | - | test-import:2 | `tests/test_legacy_live_agent_session_run_service.py`, `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.session_service` | `agentsassemble/legacy/live_agent/session_service.py` | 286 | legacy | legacy | `agentsassemble.legacy.live_agent.session_control`, `agentsassemble.legacy.live_agent.session_projection`, `agentsassemble.meeting_events` | 3 | - | test-import:2 | `tests/test_legacy_live_agent_session_service.py`, `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.meeting_admission` | `agentsassemble/legacy/meeting_admission.py` | 115 | legacy | legacy | `agentsassemble.models` | 2 | `call:frozenset@9` | test-import:1 | `tests/test_admission_package.py` | `legacy/` | in-target-package |
@@ -205,7 +206,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.legacy_live_agent_discovery` | `agentsassemble/legacy_live_agent_discovery.py` | 163 | legacy | legacy | `agentsassemble.codex_sessions`, `agentsassemble.live_agent_discovery`, `agentsassemble.live_agent_processes`, `agentsassemble.meeting_events` | 3 | - | - | - | `legacy/` | planned-move |
 | `agentsassemble.legacy_live_agent_engagement` | `agentsassemble/legacy_live_agent_engagement.py` | 10 | legacy | compatibility | `agentsassemble.legacy.live_agent.engagement` | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | compatibility-shim |
 | `agentsassemble.legacy_live_agent_health` | `agentsassemble/legacy_live_agent_health.py` | 60 | legacy | compatibility | `agentsassemble.legacy.live_agent.health` | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | compatibility-shim |
-| `agentsassemble.legacy_live_agent_health_queries` | `agentsassemble/legacy_live_agent_health_queries.py` | 345 | legacy | legacy | `agentsassemble.application.session_run_monitor`, `agentsassemble.legacy.live_agent.health`, `agentsassemble.legacy.live_agent.observation_health`, `agentsassemble.legacy.live_agent.process_projection`, `agentsassemble.legacy_live_agent_roster_queries`, `agentsassemble.legacy_live_agent_session_run_health`, `agentsassemble.live_agent_processes`, `agentsassemble.live_agent_roster`, +4 | 4 | - | - | - | `legacy/` | planned-move |
+| `agentsassemble.legacy_live_agent_health_queries` | `agentsassemble/legacy_live_agent_health_queries.py` | 345 | legacy | legacy | `agentsassemble.application.session_run_monitor`, `agentsassemble.legacy.live_agent.health`, `agentsassemble.legacy.live_agent.observation_health`, `agentsassemble.legacy.live_agent.process_projection`, `agentsassemble.legacy.live_agent.session_run_health`, `agentsassemble.legacy_live_agent_roster_queries`, `agentsassemble.live_agent_processes`, `agentsassemble.live_agent_roster`, +4 | 4 | - | - | - | `legacy/` | planned-move |
 | `agentsassemble.legacy_live_agent_observation_health` | `agentsassemble/legacy_live_agent_observation_health.py` | 18 | legacy | compatibility | `agentsassemble.legacy.live_agent.observation_health` | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | compatibility-shim |
 | `agentsassemble.legacy_live_agent_official_reply` | `agentsassemble/legacy_live_agent_official_reply.py` | 258 | legacy | legacy | `agentsassemble.legacy_live_agent_queries`, `agentsassemble.legacy_meeting_operation_projection`, `agentsassemble.legacy_meeting_records`, `agentsassemble.live_agent_operations`, `agentsassemble.live_agent_turns`, `agentsassemble.live_agents`, `agentsassemble.live_meeting_memory`, `agentsassemble.meeting_events`, +1 | 3 | `call:Lock@34` | test-import:1, monkeypatch:1 | `tests/test_legacy_live_agent_official_reply.py` | `legacy/` | planned-move |
 | `agentsassemble.legacy_live_agent_preflight` | `agentsassemble/legacy_live_agent_preflight.py` | 10 | legacy | compatibility | `agentsassemble.legacy.live_agent.preflight` | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | compatibility-shim |
@@ -221,7 +222,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.legacy_live_agent_roster_queries` | `agentsassemble/legacy_live_agent_roster_queries.py` | 147 | legacy | legacy | `agentsassemble.legacy_meeting_records`, `agentsassemble.live_agent_quota`, `agentsassemble.live_agent_roster`, `agentsassemble.live_agents`, `agentsassemble.meeting_events` | 5 | - | - | - | `legacy/` | planned-move |
 | `agentsassemble.legacy_live_agent_session_control` | `agentsassemble/legacy_live_agent_session_control.py` | 44 | legacy | compatibility | `agentsassemble.legacy.live_agent.session_control` | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | compatibility-shim |
 | `agentsassemble.legacy_live_agent_session_projection` | `agentsassemble/legacy_live_agent_session_projection.py` | 12 | legacy | compatibility | `agentsassemble.legacy.live_agent.session_projection` | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | compatibility-shim |
-| `agentsassemble.legacy_live_agent_session_run_health` | `agentsassemble/legacy_live_agent_session_run_health.py` | 157 | legacy | legacy | `agentsassemble.application.session_run_monitor`, `agentsassemble.legacy.live_agent.diagnostics`, `agentsassemble.legacy.live_agent.health`, `agentsassemble.live_agent_session_runs`, `agentsassemble.meeting_events` | 1 | - | - | - | `legacy/` | planned-move |
+| `agentsassemble.legacy_live_agent_session_run_health` | `agentsassemble/legacy_live_agent_session_run_health.py` | 10 | legacy | compatibility | `agentsassemble.legacy.live_agent.session_run_health` | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | compatibility-shim |
 | `agentsassemble.legacy_live_agent_session_run_service` | `agentsassemble/legacy_live_agent_session_run_service.py` | 12 | legacy | compatibility | `agentsassemble.legacy.live_agent.session_run_service` | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | compatibility-shim |
 | `agentsassemble.legacy_live_agent_session_service` | `agentsassemble/legacy_live_agent_session_service.py` | 12 | legacy | compatibility | `agentsassemble.legacy.live_agent.session_service` | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | compatibility-shim |
 | `agentsassemble.legacy_live_agent_smoke` | `agentsassemble/legacy_live_agent_smoke.py` | 380 | legacy | legacy | `agentsassemble.live_agent_smoke`, `agentsassemble.meeting_events` | 4 | - | - | - | `legacy/` | planned-move |

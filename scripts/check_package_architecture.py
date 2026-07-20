@@ -700,6 +700,16 @@ ROOT_COMPATIBILITY_SHIMS: dict[str, CompatibilityShim] = {
         known_callers=("tests/test_legacy_package.py",),
         introduced_in="Milestone 6.30 legacy resident session service move",
     ),
+    "legacy_live_agent_session_run_health.py": CompatibilityShim(
+        replacement_import="agentsassemble.legacy.live_agent.session_run_health",
+        removal_gate=(
+            "No direct imports use "
+            "agentsassemble.legacy_live_agent_session_run_health for one "
+            "compatibility window."
+        ),
+        known_callers=("tests/test_legacy_package.py",),
+        introduced_in="Milestone 6.35 legacy resident session-run health move",
+    ),
     "room_friends.py": CompatibilityShim(
         replacement_import="agentsassemble.features.social.friends",
         removal_gate=(
