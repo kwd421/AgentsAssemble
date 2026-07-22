@@ -4,6 +4,7 @@ from pathlib import Path
 
 from agentsassemble.room.moderation import set_room_member_muted
 from agentsassemble.room.members import read_room_members, room_members_payload, upsert_room_member
+from agentsassemble.room_store import RoomStore
 
 ROOM = "room-presence-test"
 
@@ -13,6 +14,8 @@ class RoomMembersPresenceTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.output_root = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
+        self.repository = RoomStore(self.output_root)
+        self.addCleanup(self.repository.close)
 
     def _saved_guest(self, participant_id, display_name, *, updated_at):
         upsert_room_member(
@@ -32,7 +35,9 @@ class RoomMembersPresenceTests(unittest.TestCase):
 
     def test_invite_member_without_live_session_shows_offline(self):
         self._saved_guest("guest-dead01", "유령", updated_at="2026-06-10T00:00:00+00:00")
-        payload = room_members_payload(self.output_root, [], meeting_id=ROOM, sessions=[])
+        payload = room_members_payload(
+            self.output_root, [], meeting_id=ROOM, sessions=[], repository=self.repository
+        )
         members = payload["members"]
         self.assertEqual(len(members), 1)
         self.assertEqual(members[0]["status"], "offline")
@@ -48,7 +53,9 @@ class RoomMembersPresenceTests(unittest.TestCase):
                 "joined_at": "2026-06-11T00:00:00+00:00",
             }
         ]
-        payload = room_members_payload(self.output_root, [], meeting_id=ROOM, sessions=sessions)
+        payload = room_members_payload(
+            self.output_root, [], meeting_id=ROOM, sessions=sessions, repository=self.repository
+        )
         members = payload["members"]
         self.assertEqual(len(members), 1)
         self.assertEqual(members[0]["status"], "online")
@@ -58,7 +65,9 @@ class RoomMembersPresenceTests(unittest.TestCase):
         self._saved_guest("guest-aaaa01", "친절한페이블찡", updated_at="2026-06-11T01:00:00+00:00")
         self._saved_guest("guest-aaaa02", "친절한페이블찡", updated_at="2026-06-11T02:00:00+00:00")
         self._saved_guest("guest-aaaa03", "친절한페이블찡", updated_at="2026-06-11T03:00:00+00:00")
-        payload = room_members_payload(self.output_root, [], meeting_id=ROOM, sessions=[])
+        payload = room_members_payload(
+            self.output_root, [], meeting_id=ROOM, sessions=[], repository=self.repository
+        )
         members = payload["members"]
         self.assertEqual(len(members), 1)
         self.assertEqual(members[0]["participant_id"], "guest-aaaa03")
@@ -76,7 +85,9 @@ class RoomMembersPresenceTests(unittest.TestCase):
                 "joined_at": "2026-06-11T05:00:00+00:00",
             }
         ]
-        payload = room_members_payload(self.output_root, [], meeting_id=ROOM, sessions=sessions)
+        payload = room_members_payload(
+            self.output_root, [], meeting_id=ROOM, sessions=sessions, repository=self.repository
+        )
         members = payload["members"]
         self.assertEqual(len(members), 1)
         self.assertEqual(members[0]["participant_id"], "user-stable-1")
@@ -99,7 +110,9 @@ class RoomMembersPresenceTests(unittest.TestCase):
                 "joined_at": "2026-06-11T05:01:00+00:00",
             },
         ]
-        payload = room_members_payload(self.output_root, [], meeting_id=ROOM, sessions=sessions)
+        payload = room_members_payload(
+            self.output_root, [], meeting_id=ROOM, sessions=sessions, repository=self.repository
+        )
         self.assertEqual(len(payload["members"]), 2)
         self.assertTrue(all(member["status"] == "online" for member in payload["members"]))
 
@@ -113,7 +126,9 @@ class RoomMembersPresenceTests(unittest.TestCase):
                 "status": "working",
             }
         ]
-        payload = room_members_payload(self.output_root, agents, meeting_id=ROOM, sessions=[])
+        payload = room_members_payload(
+            self.output_root, agents, meeting_id=ROOM, sessions=[], repository=self.repository
+        )
         members = payload["members"]
         self.assertEqual(len(members), 1)
         self.assertEqual(members[0]["status"], "working")
@@ -128,7 +143,9 @@ class RoomMembersPresenceTests(unittest.TestCase):
                 "joined_at": "2026-06-11T05:00:00+00:00",
             }
         ]
-        payload = room_members_payload(self.output_root, [], meeting_id=ROOM, sessions=sessions)
+        payload = room_members_payload(
+            self.output_root, [], meeting_id=ROOM, sessions=sessions, repository=self.repository
+        )
         members = payload["members"]
         self.assertEqual(len(members), 1)
         self.assertEqual(members[0]["role"], "agent")
@@ -137,7 +154,9 @@ class RoomMembersPresenceTests(unittest.TestCase):
     def test_collapse_does_not_rewrite_saved_store(self):
         self._saved_guest("guest-dddd01", "보관됨", updated_at="2026-06-11T01:00:00+00:00")
         self._saved_guest("guest-dddd02", "보관됨", updated_at="2026-06-11T02:00:00+00:00")
-        room_members_payload(self.output_root, [], meeting_id=ROOM, sessions=[])
+        room_members_payload(
+            self.output_root, [], meeting_id=ROOM, sessions=[], repository=self.repository
+        )
         saved = read_room_members(self.output_root, meeting_id=ROOM)
         self.assertEqual(len(saved), 2)
 
@@ -149,6 +168,8 @@ class RosterStreamSnapshotTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.output_root = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
+        self.repository = RoomStore(self.output_root)
+        self.addCleanup(self.repository.close)
 
     def test_roster_snapshot_signature_changes_only_with_roster(self):
         from agentsassemble.gui import _stream_snapshot_payload
@@ -157,16 +178,22 @@ class RosterStreamSnapshotTests(unittest.TestCase):
             self.output_root,
             {"meeting_id": ROOM, "participant_id": "guest-1", "display_name": "사람"},
         )
-        first = _stream_snapshot_payload(self.output_root, "roster", meeting_id=ROOM)
+        first = _stream_snapshot_payload(
+            self.output_root, "roster", meeting_id=ROOM, repository=self.repository
+        )
         self.assertEqual(first["stream"], "roster")
         self.assertEqual(len(first["members"]), 1)
-        again = _stream_snapshot_payload(self.output_root, "roster", meeting_id=ROOM)
+        again = _stream_snapshot_payload(
+            self.output_root, "roster", meeting_id=ROOM, repository=self.repository
+        )
         self.assertEqual(first["payload_signature"], again["payload_signature"])
 
         set_room_member_muted(
             self.output_root, meeting_id=ROOM, participant_id="guest-1", muted=True
         )
-        after_mute = _stream_snapshot_payload(self.output_root, "roster", meeting_id=ROOM)
+        after_mute = _stream_snapshot_payload(
+            self.output_root, "roster", meeting_id=ROOM, repository=self.repository
+        )
         self.assertNotEqual(first["payload_signature"], after_mute["payload_signature"])
         self.assertTrue(after_mute["members"][0]["muted"])
 
