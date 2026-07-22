@@ -131,6 +131,17 @@ from agentsassemble.legacy.live_agent.cli.resident_session_runners import (
     JsonlLiveSessionCommandRunner as _JsonlLiveSessionCommandRunner,
     TerminalLiveSessionCommandRunner as _TerminalLiveSessionCommandRunner,
 )
+from agentsassemble.legacy.live_agent.cli.resident_process import (
+    install_resident_shutdown_signal_handlers as _owned_install_resident_shutdown_signal_handlers,
+    process_group_pid as _owned_process_group_pid,
+    self_service_exit_error as _owned_self_service_exit_error,
+    self_service_process_env as _owned_self_service_process_env,
+    self_service_room_command_env as _owned_self_service_room_command_env,
+    send_process_stop_signal as _owned_send_process_stop_signal,
+    stop_signal as _owned_stop_signal,
+    supports_process_groups as _owned_supports_process_groups,
+    terminate_process as _owned_terminate_process,
+)
 from agentsassemble.legacy.live_agent.cli.session_commands import (
     LegacySessionCliRuntime,
     SESSION_BOUND_PROBE_HTTP_WINDOWS,
@@ -964,198 +975,69 @@ class _LocalCliCommandRunner:
 
 
 def _self_service_process_env(config: ResidentAgentConfig) -> dict[str, str]:
-    env = dict(os.environ)
-    command_env = _self_service_room_command_env(config)
-    env.update(
-        {
-            "AGENTSASSEMBLE_SERVER": config.server,
-            "AGENTSASSEMBLE_AGENT_ID": config.agent_id,
-            "AGENTSASSEMBLE_DISPLAY_NAME": config.display_name,
-            "AGENTSASSEMBLE_PROVIDER_KIND": config.provider_kind,
-            "AGENTSASSEMBLE_CONNECTION_KIND": config.connection_kind,
-            "AGENTSASSEMBLE_MEETING_ID": config.meeting_id,
-            "AGENTSASSEMBLE_ENGAGEMENT_MODE": config.engagement_mode,
-            "AGENTSASSEMBLE_MAX_CHAIN_DEPTH": str(config.max_chain_depth),
-            "AGENTSASSEMBLE_POLL_INTERVAL": str(config.poll_interval),
-            "AGENTSASSEMBLE_HEARTBEAT_INTERVAL": str(config.heartbeat_interval),
-            "AGENTSASSEMBLE_LEGACY_INTERNAL": "1",
-        }
+    return _owned_self_service_process_env(
+        config,
+        environ=os.environ,
+        executable=sys.executable,
     )
-    env.update(command_env)
-    return env
 
 
 def _self_service_room_command_env(config: ResidentAgentConfig) -> dict[str, str]:
-    base = [sys.executable, "-m", "agentsassemble.cli", "live-agent", "--legacy-internal"]
-    identity = ["--server", config.server, "--agent-id", config.agent_id]
-    return {
-        "AGENTSASSEMBLE_ROOM_COMMAND": shlex.join([*base, "room", *identity]),
-        "AGENTSASSEMBLE_WAIT_NEXT_COMMAND": shlex.join(
-            [
-                *base,
-                "wait-next",
-                *identity,
-                "--max-chain-depth",
-                str(config.max_chain_depth),
-                "--poll-interval",
-                str(config.poll_interval),
-                "--json",
-            ]
-        ),
-        "AGENTSASSEMBLE_WAIT_ROOM_EVENT_COMMAND": shlex.join(
-            [
-                *base,
-                "wait-room-event",
-                *identity,
-                "--max-chain-depth",
-                str(config.max_chain_depth),
-                "--poll-interval",
-                str(config.poll_interval),
-                "--json",
-            ]
-        ),
-        "AGENTSASSEMBLE_WAIT_OFFICIAL_TURN_COMMAND": shlex.join(
-            [
-                *base,
-                "wait-official-turn",
-                *identity,
-                "--poll-interval",
-                str(config.poll_interval),
-                "--json",
-            ]
-        ),
-        "AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE": shlex.join(
-            [
-                *base,
-                "say",
-                *identity,
-                "--source-event-id",
-                "{source_event_id}",
-                "--auto-chain-depth",
-                "{auto_chain_depth}",
-                "--",
-                "{message}",
-            ]
-        ),
-        "AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE": shlex.join(
-            [
-                *base,
-                "official-reply",
-                *identity,
-                "--meeting-id",
-                "{meeting_id}",
-                "--source-event-id",
-                "{source_event_id}",
-                "--",
-                "{message}",
-            ]
-        ),
-        "AGENTSASSEMBLE_DM_REPLY_COMMAND_TEMPLATE": shlex.join(
-            [
-                *base,
-                "dm-reply",
-                *identity,
-                "--source-event-id",
-                "{source_event_id}",
-                "--",
-                "{message}",
-            ]
-        ),
-        "AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE": shlex.join(
-            [
-                *base,
-                "heartbeat",
-                *identity,
-                "--status",
-                "{status}",
-                "--last-error={last_error}",
-                "--last-attention={last_attention}",
-                "--last-reply-at={last_reply_at}",
-                "--last-observed-event-id={last_observed_event_id}",
-                "--last-observed-live-event-id={last_observed_live_event_id}",
-                "--last-observed-dm-event-id={last_observed_dm_event_id}",
-                "--json",
-            ]
-        ),
-        "AGENTSASSEMBLE_LEAVE_COMMAND": shlex.join([*base, "leave", *identity, "--json"]),
-    }
+    return _owned_self_service_room_command_env(config, executable=sys.executable)
 
 
 def _self_service_exit_error(return_code: int) -> str:
-    return f"Self-service command exited with return code {return_code}."
+    return _owned_self_service_exit_error(return_code)
 
 
 def _terminate_process(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
-    _send_process_stop_signal(process, _stop_signal("SIGTERM"), force=False)
-    try:
-        process.wait(timeout=1)
-    except subprocess.TimeoutExpired:
-        _send_process_stop_signal(process, _stop_signal("SIGKILL"), force=True)
-        process.wait(timeout=1)
+    _owned_terminate_process(
+        process,
+        send_stop_signal=lambda target, stop_signal: _send_process_stop_signal(
+            target,
+            stop_signal,
+            force=False,
+        ),
+        send_kill_signal=lambda target, stop_signal: _send_process_stop_signal(
+            target,
+            stop_signal,
+            force=True,
+        ),
+        term_signal=_stop_signal("SIGTERM"),
+        kill_signal=_stop_signal("SIGKILL"),
+    )
 
 
 def _send_process_stop_signal(process: subprocess.Popen, stop_signal: int | None, *, force: bool) -> None:
-    process_group_pid = _process_group_pid(process)
-    if process_group_pid is not None and stop_signal is not None:
-        try:
-            os.killpg(process_group_pid, stop_signal)
-            return
-        except ProcessLookupError:
-            return
-        except OSError:
-            pass
-    try:
-        if force:
-            process.kill()
-        else:
-            process.terminate()
-    except ProcessLookupError:
-        return
+    _owned_send_process_stop_signal(
+        process,
+        stop_signal,
+        force=force,
+        process_group_pid=_process_group_pid(process),
+    )
 
 
 def _process_group_pid(process: subprocess.Popen) -> int | None:
-    if not _supports_process_groups():
-        return None
-    pgid = getattr(process, "_agentsassemble_process_group_pid", None)
-    return pgid if isinstance(pgid, int) and pgid > 0 else None
+    return _owned_process_group_pid(
+        process,
+        process_groups_supported=_supports_process_groups(),
+    )
 
 
 def _supports_process_groups() -> bool:
-    return hasattr(os, "killpg") and hasattr(os, "setsid")
+    return _owned_supports_process_groups()
 
 
 def _stop_signal(name: str) -> int | None:
-    value = getattr(signal, name, None)
-    return value if isinstance(value, int) else None
+    return _owned_stop_signal(name, signal_module=signal)
 
 
 def _install_resident_shutdown_signal_handlers(on_shutdown):
-    sigterm = _stop_signal("SIGTERM")
-    if sigterm is None or threading.current_thread() is not threading.main_thread():
-        return lambda: None
-
-    previous_handlers = {}
-
-    def handle_shutdown(signum, frame):
-        del signum, frame
-        on_shutdown()
-        raise KeyboardInterrupt()
-
-    try:
-        previous_handlers[sigterm] = signal.signal(sigterm, handle_shutdown)
-    except (OSError, RuntimeError, ValueError):
-        return lambda: None
-
-    def restore_signal_handlers() -> None:
-        for signum, previous_handler in previous_handlers.items():
-            try:
-                signal.signal(signum, previous_handler)
-            except (OSError, RuntimeError, ValueError):
-                pass
-
-    return restore_signal_handlers
+    return _owned_install_resident_shutdown_signal_handlers(
+        on_shutdown,
+        signal_module=signal,
+        threading_module=threading,
+    )
 
 
 def _validate_resident_config(config: ResidentAgentConfig) -> None:
