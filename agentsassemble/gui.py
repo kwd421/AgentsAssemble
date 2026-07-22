@@ -129,6 +129,14 @@ from agentsassemble.legacy.gui_session_probes import (
     session_reply_probe_summary as _owned_session_reply_probe_summary,
     write_live_agent_presence_state as _owned_write_live_agent_presence_state,
 )
+from agentsassemble.legacy.gui_processes import (
+    record_operation as _owned_record_operation,
+    recover_process_payload as _owned_recover_process_payload,
+    restart_process_payload as _owned_restart_process_payload,
+    start_process_payload as _owned_start_process_payload,
+    stop_process_payload as _owned_stop_process_payload,
+    stop_running_processes_payload as _owned_stop_running_processes_payload,
+)
 from agentsassemble.legacy.gui_session_runs import (
     LegacyGuiSessionRunMonitor as _OwnedLegacyGuiSessionRunMonitor,
     LegacyGuiSessionRunRuntime,
@@ -240,7 +248,6 @@ from agentsassemble.legacy.live_agent.state import (
     heartbeat_live_agent,
     read_live_agents,
 )
-from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
 from agentsassemble.legacy.live_agent.runtime.processes import (
     LiveAgentProcessSupervisor,
 )
@@ -277,7 +284,6 @@ from agentsassemble.legacy.live_agent.diagnostics import (
 )
 from agentsassemble.legacy.live_agent.process_projection import (
     live_agent_processes_payload,
-    process_payload_with_agent_connection_evidence as _process_payload_with_agent_connection_evidence,
 )
 from agentsassemble.legacy.live_agent.preflight import (
     live_agent_preflight_payload,
@@ -1543,25 +1549,12 @@ def start_live_agent_process_payload(
     default_server: str,
     output_root: Path | None = None,
 ) -> dict[str, object]:
-    config_path = Path(str(payload.get("config_path") or "configs/live-agents.example.json"))
-    server = str(payload.get("server") or default_server)
-    group_id = str(payload.get("group_id") or "").strip() or None
-    start_kwargs = {
-        "config_path": config_path,
-        "server": server,
-        "group_id": group_id,
-        "auto_restart": _payload_bool(payload.get("auto_restart")),
-        "max_restarts": _payload_nonnegative_int(payload.get("max_restarts"), 0),
-        "restart_backoff_seconds": _payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
-    }
-    stale_restart_after_seconds = _payload_nonnegative_float(payload.get("stale_restart_after_seconds"), 0.0)
-    if stale_restart_after_seconds > 0:
-        start_kwargs["stale_restart_after_seconds"] = stale_restart_after_seconds
-    if _payload_bool(payload.get("diagnostic")):
-        start_kwargs["diagnostic"] = True
-    group = process_supervisor.start_group(**start_kwargs)
-    response = {"group": group, "groups": process_supervisor.list_groups()}
-    return _process_payload_with_agent_connection_evidence(response, output_root)
+    return _owned_start_process_payload(
+        process_supervisor,
+        payload,
+        default_server=default_server,
+        output_root=output_root,
+    )
 
 
 def stop_live_agent_process_payload(
@@ -1570,9 +1563,11 @@ def stop_live_agent_process_payload(
     *,
     output_root: Path | None = None,
 ) -> dict[str, object]:
-    group = process_supervisor.stop_group(group_id)
-    response = {"group": group, "groups": process_supervisor.list_groups()}
-    return _process_payload_with_agent_connection_evidence(response, output_root)
+    return _owned_stop_process_payload(
+        process_supervisor,
+        group_id,
+        output_root=output_root,
+    )
 
 
 def stop_running_live_agent_processes_payload(
@@ -1580,9 +1575,10 @@ def stop_running_live_agent_processes_payload(
     *,
     output_root: Path | None = None,
 ) -> dict[str, object]:
-    result = process_supervisor.stop_running_groups()
-    response = {"result": result, "groups": process_supervisor.list_groups()}
-    return _process_payload_with_agent_connection_evidence(response, output_root)
+    return _owned_stop_running_processes_payload(
+        process_supervisor,
+        output_root=output_root,
+    )
 
 
 def restart_live_agent_process_payload(
@@ -1591,9 +1587,11 @@ def restart_live_agent_process_payload(
     *,
     output_root: Path | None = None,
 ) -> dict[str, object]:
-    group = process_supervisor.restart_group(group_id)
-    response = {"group": group, "groups": process_supervisor.list_groups()}
-    return _process_payload_with_agent_connection_evidence(response, output_root)
+    return _owned_restart_process_payload(
+        process_supervisor,
+        group_id,
+        output_root=output_root,
+    )
 
 
 def recover_live_agent_process_payload(
@@ -1602,9 +1600,11 @@ def recover_live_agent_process_payload(
     *,
     output_root: Path | None = None,
 ) -> dict[str, object]:
-    group = process_supervisor.recover_group(group_id)
-    response = {"group": group, "groups": process_supervisor.list_groups()}
-    return _process_payload_with_agent_connection_evidence(response, output_root)
+    return _owned_recover_process_payload(
+        process_supervisor,
+        group_id,
+        output_root=output_root,
+    )
 
 
 def record_live_agent_operation(
@@ -1617,7 +1617,7 @@ def record_live_agent_operation(
     error: str = "",
     details: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    return append_live_agent_operation(
+    return _owned_record_operation(
         output_root,
         operation=operation,
         status=status,
