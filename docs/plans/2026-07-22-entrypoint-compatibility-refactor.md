@@ -35,8 +35,17 @@ committed)
   Root `gui.py` retains server composition and measured compatibility exports
   and patch seams. The phase boundary passed all 1,024 `test_gui*.py` tests in
   468 seconds, package-map and architecture checks, and `git diff --check`.
-- Phase 4: in progress. Split `application.agent_sessions` by process, turn,
-  command, queue, and compatibility ownership without changing its import path.
+- Phase 4: complete as of 2026-07-23. `application.agent_sessions` is now a
+  package with a 457-line compatibility facade and focused service, process,
+  turn, command, queue, compatibility, and diagnostics owners. The original
+  module was 2,298 lines. The phase boundary passed 113 targeted Agent Session
+  and repository-injection tests, package-map and architecture checks, and an
+  approved real Codex app-server warm smoke: 2/2 turns finished, zero timeout,
+  zero context error, and `alive_after_detach=false`. The local Codex runtime
+  emitted three model-cache/refresh stderr errors and showed 4.0s/16.2s TTFO;
+  these did not fail the turns and are recorded rather than hidden.
+- Phase 5: in progress. Isolate process-global invite compatibility state from
+  current admission services and routes.
 
 ## Goal
 

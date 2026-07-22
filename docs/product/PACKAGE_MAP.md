@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `8b229f375a79d50c`
+Source fingerprint: `459ddc93b8c1cee0`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -61,7 +61,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.antigravity_resident` | `agentsassemble/antigravity_resident.py` | 40 | providers | compatibility | `agentsassemble.providers.antigravity_resident` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.application` | `agentsassemble/application/__init__.py` | 1 | application | current | - | 1 | - | test-import:3, monkeypatch:1 | `tests/test_application_package.py`, `tests/test_host_account.py`, `tests/test_package_architecture_gate.py`, `+1` | `application/` | in-target-package |
 | `agentsassemble.application.agent_bridge_entrypoint` | `agentsassemble/application/agent_bridge_entrypoint.py` | 51 | application | current | `agentsassemble.providers.agent_bridge`, `agentsassemble.providers.runtime_config`, `agentsassemble.providers.runtime_factory`, `agentsassemble.web.room_client` | 1 | - | test-import:1 | `tests/test_application_package.py` | `application/` | in-target-package |
-| `agentsassemble.application.agent_sessions` | `agentsassemble/application/agent_sessions/__init__.py` | 457 | application | current | `agentsassemble.application.agent_sessions.auto_queue`, `agentsassemble.application.agent_sessions.commands`, `agentsassemble.application.agent_sessions.compatibility`, `agentsassemble.application.agent_sessions.process`, `agentsassemble.application.agent_sessions.service`, `agentsassemble.application.agent_sessions.turn_commands`, `agentsassemble.application.agent_sessions.turns`, `agentsassemble.diagnostics.codex_app_server_smoke`, +7 | 12 | - | test-import:1 | `tests/test_application_package.py` | `application/` | in-target-package |
+| `agentsassemble.application.agent_sessions` | `agentsassemble/application/agent_sessions/__init__.py` | 441 | application | current | `agentsassemble.application.agent_sessions.auto_queue`, `agentsassemble.application.agent_sessions.commands`, `agentsassemble.application.agent_sessions.compatibility`, `agentsassemble.application.agent_sessions.process`, `agentsassemble.application.agent_sessions.service`, `agentsassemble.application.agent_sessions.turn_commands`, `agentsassemble.application.agent_sessions.turns`, `agentsassemble.diagnostics.codex_app_server_smoke`, +7 | 12 | - | test-import:1 | `tests/test_application_package.py` | `application/` | in-target-package |
 | `agentsassemble.application.agent_sessions.auto_queue` | `agentsassemble/application/agent_sessions/auto_queue.py` | 85 | application | current | `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | `call:Lock@17`, `call:set@19` | - | - | `application/` | in-target-package |
 | `agentsassemble.application.agent_sessions.commands` | `agentsassemble/application/agent_sessions/commands.py` | 205 | application | current | `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | - | - | - | `application/` | in-target-package |
 | `agentsassemble.application.agent_sessions.compatibility` | `agentsassemble/application/agent_sessions/compatibility.py` | 84 | application | compatibility | - | 1 | - | - | - | `application/` | compatibility-shim |

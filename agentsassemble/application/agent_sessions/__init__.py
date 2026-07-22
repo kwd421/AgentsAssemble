@@ -370,13 +370,6 @@ def run_codex_app_server_smoke(
 
 
 
-def _latest_public_event_id(events: list[dict[str, object]]) -> str:
-    for event in reversed(events):
-        if clean_lobby_text(event.get("type"), limit=64) == "message_final":
-            return clean_lobby_text(event.get("id"), limit=128)
-    return ""
-
-
 def _agent_session_trigger_event(events: list[dict[str, object]], trigger_event_id: str) -> dict[str, object]:
     public_messages = [
         event
@@ -445,13 +438,3 @@ def _next_ordered_agent_session(
             continue
         return candidates[(candidate_ids.index(participant_id) + 1) % len(candidates)]
     return candidates[0]
-
-
-def _latest_own_message_event_id(events: list[dict[str, object]], participant_id: str) -> str:
-    clean_participant = clean_lobby_text(participant_id, limit=128)
-    for event in reversed(events):
-        if clean_lobby_text(event.get("type"), limit=64) != "message_final":
-            continue
-        if clean_lobby_text(event.get("participant_id"), limit=128) == clean_participant:
-            return clean_lobby_text(event.get("id"), limit=128)
-    return ""
