@@ -4,7 +4,7 @@ from pathlib import Path
 
 from agentsassemble.room.moderation import set_room_member_muted
 from agentsassemble.room.members import read_room_members, room_members_payload, upsert_room_member
-from agentsassemble.room_store import RoomStore
+from agentsassemble.persistence.local.room.repository import RoomStore
 
 ROOM = "room-presence-test"
 
