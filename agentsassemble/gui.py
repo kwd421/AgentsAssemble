@@ -50,6 +50,16 @@ from agentsassemble.legacy.gui_hooks import (
 from agentsassemble.legacy.gui_autostart import (
     autostart_live_agent_group as _owned_autostart_live_agent_group,
 )
+from agentsassemble.legacy.gui_session_runs import (
+    LegacyGuiSessionRunMonitor as _OwnedLegacyGuiSessionRunMonitor,
+    LegacyGuiSessionRunRuntime,
+    assert_session_run_launch_approved as _owned_assert_session_run_launch_approved,
+    reconcile_session_runs as _owned_reconcile_session_runs,
+    reconcile_session_runs_on_startup as _owned_reconcile_session_runs_on_startup,
+    session_run_monitor_should_reconcile as _owned_session_run_monitor_should_reconcile,
+    session_run_reconcile_launch_policy_targets as _owned_session_run_reconcile_launch_policy_targets,
+    session_run_reconcile_request as _owned_session_run_reconcile_request,
+)
 from agentsassemble.web.routes.observability import register_observability_routes
 from agentsassemble.web.routes.public_invite import register_public_invite_admin_routes
 from agentsassemble.legacy.meeting.http.room_composition import _local_agent_session_turn_adapter, register_room_routes
@@ -904,12 +914,12 @@ def _reconcile_live_agent_session_runs_on_startup(
     *,
     default_server: str,
 ) -> list[dict[str, object]]:
-    return _reconcile_live_agent_session_runs(
+    return _owned_reconcile_session_runs_on_startup(
         output_root,
         process_supervisor,
         session_run_controller,
         default_server=default_server,
-        summary="reconciled durable live-agent session runs on GUI startup",
+        runtime=_legacy_gui_session_run_runtime(),
     )
 
 
@@ -923,58 +933,20 @@ def _reconcile_live_agent_session_runs(
     target_run_id: str = "",
     request_overrides: dict[str, object] | None = None,
 ) -> list[dict[str, object]]:
-    def ensure_from_run(run: dict[str, object]) -> dict[str, object]:
-        request = _session_run_reconcile_request(run)
-        if isinstance(request_overrides, dict):
-            request.update(request_overrides)
-        _assert_session_run_launch_approved(process_supervisor, request, default_server)
-        return live_agent_session_ensure_payload(
-            output_root,
-            process_supervisor,
-            request,
-            default_server=default_server,
-        )
-
-    results = session_run_controller.reconcile_active_runs(
-        ensure_from_run,
-        should_reconcile=lambda run: _session_run_monitor_should_reconcile(
-            output_root,
-            process_supervisor,
-            run,
-            target_run_id=target_run_id,
-        ),
+    return _owned_reconcile_session_runs(
+        output_root,
+        process_supervisor,
+        session_run_controller,
+        default_server=default_server,
+        summary=summary,
+        target_run_id=target_run_id,
+        request_overrides=request_overrides,
+        runtime=_legacy_gui_session_run_runtime(),
     )
-    if results:
-        failed_count = sum(1 for item in results if str(item.get("status") or "") == "failed")
-        degraded_count = sum(
-            1
-            for item in results
-            if str(item.get("status") or "") in {"running", "recovering", "starting", "degraded"}
-        )
-        status = "failed" if failed_count else "degraded" if degraded_count else "success"
-        record_live_agent_operation(
-            output_root,
-            operation="session_run.reconcile",
-            status=status,
-            summary=summary,
-            details={
-                "session_run_count": len(results),
-                "session_run_failed_count": failed_count,
-                "session_run_degraded_count": degraded_count,
-            },
-        )
-    return results
 
 
 def _session_run_reconcile_request(run: dict[str, object]) -> dict[str, object]:
-    request = dict(run.get("request") if isinstance(run.get("request"), dict) else {})
-    meeting_id = str(run.get("meeting_id") or "").strip()
-    group_id = str(run.get("group_id") or "").strip()
-    if meeting_id:
-        request["meeting_id"] = meeting_id
-    if group_id:
-        request["group_id"] = group_id
-    return request
+    return _owned_session_run_reconcile_request(run)
 
 
 def _session_run_reconcile_launch_policy_targets(
@@ -982,40 +954,11 @@ def _session_run_reconcile_launch_policy_targets(
     request: dict[str, object],
     default_server: str,
 ) -> list[tuple[object, str]]:
-    targets: list[tuple[object, str]] = []
-    seen: set[str] = set()
-
-    def add_target(config_path: object, server: object) -> None:
-        key = str(config_path or "").strip()
-        if not key or key in seen:
-            return
-        seen.add(key)
-        targets.append((config_path, str(server or default_server)))
-
-    request_server = str(request.get("server") or default_server)
-    add_target(request.get("live_agent_config_path"), request_server)
-
-    group_id = str(request.get("group_id") or "").strip()
-    snapshot_groups = getattr(process_supervisor, "snapshot_groups", None)
-    if not group_id or not callable(snapshot_groups):
-        return targets
-    try:
-        groups = snapshot_groups()
-    except Exception:
-        if not targets:
-            raise ValueError(APPROVAL_REQUIRED_MESSAGE)
-        return targets
-    if not isinstance(groups, list):
-        if not targets:
-            raise ValueError(APPROVAL_REQUIRED_MESSAGE)
-        return targets
-    for group in groups:
-        if not isinstance(group, dict):
-            continue
-        if str(group.get("group_id") or "").strip() != group_id:
-            continue
-        add_target(group.get("config_path"), group.get("server") or request_server)
-    return targets
+    return _owned_session_run_reconcile_launch_policy_targets(
+        process_supervisor,
+        request,
+        default_server,
+    )
 
 
 def _assert_session_run_launch_approved(
@@ -1023,14 +966,12 @@ def _assert_session_run_launch_approved(
     request: dict[str, object],
     default_server: str,
 ) -> None:
-    approved = _payload_bool(request.get("approve_real_providers"))
-    for config_path, server in _session_run_reconcile_launch_policy_targets(process_supervisor, request, default_server):
-        assert_resident_launch_approved(
-            config_path,
-            request=request,
-            server=server,
-            approved=approved,
-        )
+    _owned_assert_session_run_launch_approved(
+        process_supervisor,
+        request,
+        default_server,
+        payload_bool=_payload_bool,
+    )
 
 
 def _session_run_monitor_should_reconcile(
@@ -1040,34 +981,38 @@ def _session_run_monitor_should_reconcile(
     *,
     target_run_id: str = "",
 ) -> bool:
-    if target_run_id and str(run.get("run_id") or "") != target_run_id:
-        return False
-    if _operation_result_status(run.get("status")) != "ready":
-        return True
-    meeting_id = str(run.get("meeting_id") or "").strip()
-    group_id = str(run.get("group_id") or "").strip()
-    if not meeting_id or not group_id:
-        return True
-    try:
-        readiness = live_agent_session_readiness_payload(
-            output_root,
-            process_supervisor,
-            meeting_id=meeting_id,
-            group_id=group_id,
-        )
-    except (OSError, ValueError):
-        return True
-    if _operation_result_status(readiness.get("status")) != "ready":
-        return True
-    return _ready_session_requires_restart_for_stale_observation_lag(
+    return _owned_session_run_monitor_should_reconcile(
         output_root,
         process_supervisor,
-        {"meeting_id": meeting_id, "group_id": group_id},
-        readiness,
+        run,
+        target_run_id=target_run_id,
+        runtime=_legacy_gui_session_run_runtime(),
     )
 
 
-class LiveAgentSessionRunMonitor(PeriodicSessionRunMonitor):
+def _legacy_gui_session_run_runtime() -> LegacyGuiSessionRunRuntime:
+    return LegacyGuiSessionRunRuntime(
+        ensure_payload=lambda *args, **kwargs: live_agent_session_ensure_payload(
+            *args,
+            **kwargs,
+        ),
+        readiness_payload=lambda *args, **kwargs: live_agent_session_readiness_payload(
+            *args,
+            **kwargs,
+        ),
+        ready_session_requires_restart=lambda *args, **kwargs: _ready_session_requires_restart_for_stale_observation_lag(
+            *args,
+            **kwargs,
+        ),
+        record_operation=lambda *args, **kwargs: record_live_agent_operation(
+            *args,
+            **kwargs,
+        ),
+        payload_bool=_payload_bool,
+    )
+
+
+class LiveAgentSessionRunMonitor(_OwnedLegacyGuiSessionRunMonitor):
     def __init__(
         self,
         output_root: Path,
@@ -1077,33 +1022,13 @@ class LiveAgentSessionRunMonitor(PeriodicSessionRunMonitor):
         default_server: str,
         interval_seconds: float = DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
     ) -> None:
-        self.output_root = output_root
-        self.process_supervisor = process_supervisor
-        self.session_run_controller = session_run_controller
-        self.default_server = default_server
         super().__init__(
-            reconcile_runs=lambda: _reconcile_live_agent_session_runs(
-                self.output_root,
-                self.process_supervisor,
-                self.session_run_controller,
-                default_server=self.default_server,
-                summary="reconciled durable live-agent session runs during GUI runtime",
-            ),
-            report_failure=self._report_failure,
+            output_root,
+            process_supervisor,
+            session_run_controller,
+            default_server=default_server,
+            runtime=_legacy_gui_session_run_runtime(),
             interval_seconds=interval_seconds,
-            default_interval_seconds=DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
-            minimum_interval_seconds=MIN_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
-        )
-
-    def _report_failure(self, error: Exception) -> None:
-        error_type = safe_monitor_error_type(error)
-        record_live_agent_operation(
-            self.output_root,
-            operation="session_run.monitor",
-            status="failed",
-            summary="live-agent session-run monitor failed",
-            error=SESSION_RUN_MONITOR_ERROR,
-            details={"error_type": error_type},
         )
 
 
