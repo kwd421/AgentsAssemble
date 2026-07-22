@@ -40,10 +40,7 @@ from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.providers.bridge_process import NativeCliBridgeProcessManager
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.application.public_tunnel import PublicTunnelManager
-from agentsassemble.admission.invite import (
-    configure_room_invite_repository,
-    default_room_invite_store_path,
-)
+from agentsassemble.admission.repository_factory import default_room_invite_store_path
 from agentsassemble.room.realtime import (
     RoomRealtimeController,
     default_native_cli_provider_specs,
@@ -146,7 +143,6 @@ def build_gui_application_services(
     owns_room_realtime_controller = room_realtime_controller_override is None
 
     try:
-        configure_room_invite_repository(invite_repository)
         if owns_invite_repository:
             remember_cleanup("invite_repository.close", invite_repository.close)
         if owns_identity_backend:

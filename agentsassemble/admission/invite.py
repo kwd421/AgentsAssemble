@@ -24,7 +24,8 @@ from pathlib import Path
 from agentsassemble.admission.repository import (
     InviteSessionRepository,
 )
-from agentsassemble.admission.compat import InviteCompatibilityState
+from agentsassemble.admission.repository_factory import default_room_invite_store_path
+from agentsassemble.admission.compat import compatibility_invite_state
 from agentsassemble.identity.repository import (
     LOCAL_OPERATOR_PARTICIPANT_ID,
     LOCAL_OPERATOR_USER_ID,
@@ -68,8 +69,8 @@ from agentsassemble.admission.session_issuer import (
     session_token_fingerprint,
 )
 
-# Compatibility facade state lives behind one explicit process-local owner.
-_compatibility_state = InviteCompatibilityState()
+# Private alias retained temporarily for measured compatibility tests.
+_compatibility_state = compatibility_invite_state
 
 # --- Host token gate ---
 # Set AGENTSASSEMBLE_HOST_TOKEN to require auth for invite creation/management.
@@ -149,11 +150,6 @@ def _session_issuer() -> RoomSessionIssuer:
         token_prefix=SESSION_TOKEN_PREFIX,
         ttl_seconds=SESSION_TOKEN_TTL_SECONDS,
     )
-
-
-def default_room_invite_store_path(output_root: Path) -> Path:
-    """Return the local-first persistence path for public room invite state."""
-    return output_root / ".agentsassemble" / "room-invite-state.json"
 
 
 def configure_room_invite_store(path: str | os.PathLike[str] | None) -> None:

@@ -397,9 +397,8 @@ from agentsassemble.web.room_ws_composition import (
     build_ws_room_deps_factory,
 )
 from agentsassemble.application.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
-from agentsassemble.admission.invite import (
-    compatibility_public_invite_runtime,
-)
+from agentsassemble.admission.compat import configure_compatibility_invite_repository
+from agentsassemble.admission.invite import compatibility_public_invite_runtime
 from agentsassemble.legacy.meeting.core.events import (
     ROOM_TOPIC_LIMIT,
     append_live_event,
@@ -534,7 +533,7 @@ def _build_gui_application_services(
 ) -> GuiApplicationServices:
     """Select concrete GUI runtimes and delegate ownership composition."""
 
-    return build_gui_application_services(
+    services = build_gui_application_services(
         output_root,
         constructors=GuiRuntimeConstructors(
             process_supervisor=LiveAgentProcessSupervisor,
@@ -563,6 +562,8 @@ def _build_gui_application_services(
         public_invite_runtime_override=public_invite_runtime_override,
         attention_shadow_mode=attention_shadow_mode,
     )
+    configure_compatibility_invite_repository(services.invite_repository)
+    return services
 
 
 def serve_gui(

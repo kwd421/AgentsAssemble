@@ -16,6 +16,12 @@ from agentsassemble.application.room_repository_factory import (
 )
 
 
+def default_room_invite_store_path(output_root: Path) -> Path:
+    """Return the local-first persistence path for public room invite state."""
+
+    return output_root / ".agentsassemble" / "room-invite-state.json"
+
+
 def build_invite_session_repository(
     output_root: Path,
     settings: RoomRepositorySettings,
@@ -27,7 +33,7 @@ def build_invite_session_repository(
             raise RoomRepositoryConfigurationError(
                 "A PostgreSQL application database cannot be used with SQLite invite storage."
             )
-        path = Path(output_root) / ".agentsassemble" / "room-invite-state.json"
+        path = default_room_invite_store_path(output_root)
         return JsonInviteSessionRepository(path)
     if not settings.postgres_dsn:
         raise RoomRepositoryConfigurationError(

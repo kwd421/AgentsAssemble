@@ -35,3 +35,10 @@ class InviteCompatibilityState:
             self.repository,
             public_url=self.public_invite_runtime.public_url,
         )
+
+
+compatibility_invite_state = InviteCompatibilityState()
+
+
+def configure_compatibility_invite_repository(repository: InviteSessionRepository) -> None:
+    compatibility_invite_state.configure_repository(repository)
