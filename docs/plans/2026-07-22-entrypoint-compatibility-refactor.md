@@ -44,8 +44,22 @@ committed)
   zero context error, and `alive_after_detach=false`. The local Codex runtime
   emitted three model-cache/refresh stderr errors and showed 4.0s/16.2s TTFO;
   these did not fail the turns and are recorded rather than hidden.
-- Phase 5: in progress. Isolate process-global invite compatibility state from
-  current admission services and routes.
+- Phase 5: complete as of 2026-07-23. Process-global invite compatibility
+  state now lives in `admission.compat`; current application composition uses
+  injected repositories and only the root GUI/legacy facade wires historical
+  compatibility state. `character_mode`, `config`, and `models` were inspected
+  and retained because their remaining responsibilities share one change and
+  validation boundary. The proven persona boundaries were split into a stable
+  75-line facade plus models, values, rendering, storage, Risu codec, bounded
+  asset handling, and import orchestration modules. Invite/GUI behavior passed
+  107 targeted tests and persona behavior passed 59 targeted tests; package-map,
+  architecture, and diff checks passed after each move.
+- Phase 6: complete as a readiness assessment as of 2026-07-23. The generated
+  report has 281 tracked shims, 88 zero-code-caller candidates, 193 caller-
+  blocked entries, and no unexpected callers. No shim is removed in this
+  branch: every zero-caller candidate still requires one measured compatibility
+  window, which began with this report. Deleting them now would replace an
+  evidence gate with a line-count goal.
 
 ## Goal
 
