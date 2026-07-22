@@ -146,6 +146,11 @@ from agentsassemble.legacy.live_agent.cli.resident_ws import (
     run_ws_group_resident as _owned_run_ws_group_resident,
     run_ws_resident_command as _owned_run_ws_resident_command,
 )
+from agentsassemble.legacy.live_agent.cli.heartbeat import (
+    clean_heartbeat_attention as _owned_clean_heartbeat_attention,
+    heartbeat_payload as _owned_heartbeat_payload,
+    is_unreplaced_template_placeholder as _owned_is_unreplaced_template_placeholder,
+)
 from agentsassemble.legacy.live_agent.cli.session_commands import (
     LegacySessionCliRuntime,
     SESSION_BOUND_PROBE_HTTP_WINDOWS,
@@ -180,8 +185,6 @@ from agentsassemble.diagnostics.cli import (
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.legacy.live_agent.state import (
-    PRESENCE_ATTENTION_REDACTED,
-    SAFE_PRESENCE_ATTENTION_CODES,
     _looks_sensitive_presence_error,
 )
 from agentsassemble.diagnostics.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG
@@ -468,40 +471,15 @@ def _legacy_live_agent_cli_runtime() -> LegacyLiveAgentCliRuntime:
 
 
 def _heartbeat_payload(args: argparse.Namespace) -> dict[str, object]:
-    payload = {"status": args.status}
-    optional_fields = {
-        "last_error": getattr(args, "last_error", None),
-        "last_attention": getattr(args, "last_attention", None),
-        "last_reply_at": getattr(args, "last_reply_at", None),
-        "last_observed_event_id": getattr(args, "last_observed_event_id", None),
-        "last_observed_live_event_id": getattr(args, "last_observed_live_event_id", None),
-        "last_observed_dm_event_id": getattr(args, "last_observed_dm_event_id", None),
-    }
-    for key, value in optional_fields.items():
-        if value is None or _is_unreplaced_template_placeholder(value):
-            continue
-        if key == "last_attention":
-            attention = _clean_heartbeat_attention(value)
-            if attention:
-                payload[key] = attention
-            continue
-        payload[key] = value
-    return payload
+    return _owned_heartbeat_payload(args)
 
 
 def _clean_heartbeat_attention(value: object) -> str:
-    text = clean_lobby_text(value, limit=128)
-    if not text:
-        return ""
-    if text in SAFE_PRESENCE_ATTENTION_CODES:
-        return text
-    return PRESENCE_ATTENTION_REDACTED
+    return _owned_clean_heartbeat_attention(value)
 
 
 def _is_unreplaced_template_placeholder(value: object) -> bool:
-    if not isinstance(value, str):
-        return False
-    return bool(re.fullmatch(r"\{[A-Za-z0-9_]+\}", value.strip()))
+    return _owned_is_unreplaced_template_placeholder(value)
 
 
 
