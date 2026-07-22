@@ -9,6 +9,7 @@ from agentsassemble.web.static import REACT_APP_EXACT_PATHS
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 GUI_SOURCE = REPOSITORY_ROOT / "agentsassemble" / "gui.py"
+GUI_HANDLER_SOURCE = REPOSITORY_ROOT / "agentsassemble" / "web" / "gui_server.py"
 GUI_ROUTE_MODULES = (
     *sorted((REPOSITORY_ROOT / "agentsassemble").glob("gui*_http.py")),
     REPOSITORY_ROOT / "agentsassemble" / "web" / "websocket.py",
@@ -98,7 +99,6 @@ def _registered_exact_routes() -> set[tuple[str, str]]:
 
 
 def _legacy_exact_routes() -> set[tuple[str, str]]:
-    tree = ast.parse(GUI_SOURCE.read_text(encoding="utf-8"))
     routes: set[tuple[str, str]] = set()
 
     class LegacyRouteVisitor(ast.NodeVisitor):
@@ -125,7 +125,9 @@ def _legacy_exact_routes() -> set[tuple[str, str]]:
                 routes.update((self.method, path) for path in _literal_paths(node.comparators[0]))
             self.generic_visit(node)
 
-    LegacyRouteVisitor().visit(tree)
+    LegacyRouteVisitor().visit(
+        ast.parse(GUI_HANDLER_SOURCE.read_text(encoding="utf-8"))
+    )
     return routes
 
 
