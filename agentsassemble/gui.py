@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 import threading
 import time
@@ -60,6 +59,20 @@ from agentsassemble.legacy.gui_lobby import (
     lobby_payload_with_attachments as _owned_lobby_payload_with_attachments,
     public_lobby_allows_room_scope as _owned_public_lobby_allows_room_scope,
     single_lobby_meeting_id as _owned_single_lobby_meeting_id,
+)
+from agentsassemble.legacy.gui_payload import (
+    as_dict_list as _owned_as_dict_list,
+    index_by_id as _owned_index_by_id,
+    operation_group_id as _owned_operation_group_id,
+    operation_group_ids as _owned_operation_group_ids,
+    operation_result_status as _owned_operation_result_status,
+    operation_success_for_result as _owned_operation_success_for_result,
+    optional_str as _owned_optional_str,
+    payload_bool as _owned_payload_bool,
+    payload_nonnegative_float as _owned_payload_nonnegative_float,
+    payload_nonnegative_int as _owned_payload_nonnegative_int,
+    payload_optional_int as _owned_payload_optional_int,
+    safe_payload_strings as _owned_safe_payload_strings,
 )
 from agentsassemble.legacy.gui_session_runs import (
     LegacyGuiSessionRunMonitor as _OwnedLegacyGuiSessionRunMonitor,
@@ -2085,94 +2098,51 @@ def codex_session_join_payload(
 
 
 def _index_by_id(items: object) -> dict[str, dict[str, object]]:
-    return {str(item["id"]): item for item in _as_dict_list(items) if item.get("id")}
+    return _owned_index_by_id(items)
 
 
 def _as_dict_list(value: object) -> list[dict[str, object]]:
-    if isinstance(value, dict):
-        return [item for item in value.values() if isinstance(item, dict)]
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, dict)]
+    return _owned_as_dict_list(value)
 
 
 def _optional_str(value: object) -> str | None:
-    return value if isinstance(value, str) and value else None
+    return _owned_optional_str(value)
 
 
 def _operation_group_id(payload: dict[str, object], group: dict[str, object] | None = None) -> str:
-    if group is not None and group.get("group_id"):
-        return str(group["group_id"])
-    return str(payload.get("group_id") or "").strip()
+    return _owned_operation_group_id(payload, group)
 
 
 def _operation_group_ids(records: object) -> list[str]:
-    if not isinstance(records, list):
-        return []
-    group_ids = []
-    for record in records:
-        if not isinstance(record, dict):
-            continue
-        group_id = str(record.get("group_id") or "").strip()
-        if group_id:
-            group_ids.append(group_id)
-    return group_ids
+    return _owned_operation_group_ids(records)
 
 
 def _operation_result_status(value: object) -> str:
-    return str(value or "unknown").strip() or "unknown"
+    return _owned_operation_result_status(value)
 
 
 def _operation_success_for_result(value: object, *, success_values: set[str]) -> str:
-    return "success" if _operation_result_status(value) in success_values else "failed"
+    return _owned_operation_success_for_result(value, success_values=success_values)
 
 
 def _payload_bool(value: object) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return False
+    return _owned_payload_bool(value)
 
 
 def _payload_nonnegative_int(value: object, default: int) -> int:
-    try:
-        parsed = int(value)
-    except (OverflowError, TypeError, ValueError):
-        return default
-    return max(0, parsed)
+    return _owned_payload_nonnegative_int(value, default)
 
 
 def _payload_nonnegative_float(value: object, default: float) -> float:
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return default
-    if not math.isfinite(parsed):
-        return default
-    return max(0.0, parsed)
+    return _owned_payload_nonnegative_float(value, default)
 
 
 def _payload_optional_int(value: object) -> int | None:
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    return _owned_payload_optional_int(value)
 
 
 def _safe_payload_strings(value: object, *, limit: int) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    strings = []
-    for item in value:
-        if not isinstance(item, str):
-            continue
-        text = clean_lobby_text(item, limit=limit)
-        if text:
-            strings.append(text)
-    return strings
+    return _owned_safe_payload_strings(value, limit=limit)
 
 
 def _print_gui_startup_banner(
