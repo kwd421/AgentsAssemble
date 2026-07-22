@@ -83,6 +83,7 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
         return path in {
             "/api/ws-ticket",
             "/api/room-invite/admission",
+            "/api/room-invite/agent-join",
             "/api/room-invite/join",
             "/api/operator-pairing/redeem",
             "/api/room-invite/leave",

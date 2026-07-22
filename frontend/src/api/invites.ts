@@ -47,6 +47,7 @@ export interface RoomInviteAdmissionResponse {
     | "known_user"
     | "profile_required"
     | "pairing_required"
+    | "agent_client_required"
     | "invite_invalid"
     | "invite_expired";
   reason?: string;

@@ -164,6 +164,43 @@ describe("useRoomAdmission", () => {
     expect(apiMocks.joinRoomInvite).not.toHaveBeenCalled();
   });
 
+  it("explains agent-only invites without attempting a browser join", async () => {
+    apiMocks.preflightRoomInvite.mockResolvedValue({
+      status: "agent_client_required",
+      reason: "agent_client_required",
+      can_auto_join: false,
+      room_id: "room-2",
+      room_label: "Room Two",
+      invite_scope: "room",
+    });
+    const onRoomJoined = vi.fn();
+    const onResetToLobby = vi.fn();
+
+    const { result } = renderHook(() =>
+      useRoomAdmission({
+        guestInvite: null,
+        guestJoinToken: "agent-invite",
+        operatorPairingToken: "",
+        onPairingTokenConsumed: vi.fn(),
+        initialSession: null,
+        onRoomJoined,
+        onResetToLobby,
+      })
+    );
+
+    await waitFor(() => expect(apiMocks.preflightRoomInvite).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.admissionState).toMatchObject({
+      kind: "failed",
+      code: "agent_client_required",
+      retryable: false,
+      message: expect.stringContaining("에이전트 세션 전용"),
+    });
+    expect(apiMocks.joinRoomInvite).not.toHaveBeenCalled();
+  });
+
   it("keeps a matching valid session without consuming the invite again", async () => {
     apiMocks.preflightRoomInvite.mockResolvedValue({
       status: "existing_session",

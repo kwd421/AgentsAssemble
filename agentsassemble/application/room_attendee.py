@@ -5,7 +5,6 @@ import signal
 import sys
 import tempfile
 import threading
-import time
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit, urlunsplit
@@ -19,7 +18,7 @@ from agentsassemble.providers.runtime_config import ProviderRuntimeConfig, Provi
 from agentsassemble.providers.runtime_factory import runtime_from_config
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
-from agentsassemble.web.room_client import connect_room_ws, join_room_session
+from agentsassemble.web.room_client import connect_room_ws, join_agent_room_session
 
 
 class AgentAttendee:
@@ -63,12 +62,11 @@ class AgentAttendee:
         workspace.mkdir(parents=True, exist_ok=True)
         session_token = ""
         try:
-            joined = join_room_session(
+            joined = join_agent_room_session(
                 self.server_url,
                 self.invite_token,
                 display_name=self.display_name,
-                participant_type="agent",
-                device_token=f"agent-attendee-{int(time.time() * 1000)}",
+                provider_kind=self.definition.provider_kind,
                 timeout=10.0,
             )
             expected_kind = str(joined.get("provider_kind") or "manual")

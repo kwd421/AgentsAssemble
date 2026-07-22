@@ -115,74 +115,27 @@ def register_invite_admission_routes(router: Router) -> None:
         payload = ctx.read_json_body()
         if payload is None:
             return
-        token = str(payload.get("invite_token") or "").strip()
-        if not token:
-            ctx.send_error(HTTPStatus.BAD_REQUEST, "invite_token is required")
+        result = _admit_invite(
+            ctx,
+            payload,
+            consumer_client_type="browser",
+        )
+        if result is not None:
+            ctx.send_json(result)
+
+    @router.post("/api/room-invite/agent-join")
+    def room_agent_invite_join(ctx: RequestContext) -> None:
+        payload = ctx.read_json_body()
+        if payload is None:
             return
-        raw_request_id = str(payload.get("request_id") or "").strip()
-        if not raw_request_id:
-            ctx.send_error(
-                HTTPStatus.BAD_REQUEST,
-                "request_id is required",
-                code="request_id_required",
-            )
-            return
-        try:
-            parsed_request_id = UUID(raw_request_id)
-            request_id = str(parsed_request_id)
-        except (TypeError, ValueError, AttributeError):
-            ctx.send_error(
-                HTTPStatus.BAD_REQUEST,
-                "request_id must be a UUID",
-                code="request_id_invalid",
-            )
-            return
-        if raw_request_id != request_id or parsed_request_id.int == 0:
-            ctx.send_error(
-                HTTPStatus.BAD_REQUEST,
-                "request_id must be a canonical non-zero UUID",
-                code="request_id_invalid",
-            )
-            return
-        try:
-            result = ctx.deps.admission.admit(
-                invite_token=token,
-                request_id=request_id,
-                meeting_id=str(payload.get("meeting_id") or ""),
-                display_name=str(payload.get("display_name") or ""),
-                device_token=str(payload.get("device_token") or ""),
-                participant_type=str(payload.get("participant_type") or ""),
-                owner_display_name=str(payload.get("owner_display_name") or ""),
-            )
-        except AdmissionIdempotencyConflict as error:
-            ctx.send_error(
-                HTTPStatus.CONFLICT,
-                str(error),
-                code="idempotency_conflict",
-            )
-            return
-        if result.get("status") != "admitted":
-            reason = str(result.get("reason", "rejected"))
-            if reason == "room_unavailable":
-                ctx.send_error(HTTPStatus.GONE, "room was deleted or does not exist")
-                return
-            ctx.send_error(HTTPStatus.FORBIDDEN, reason)
-            return
-        participant_type = str(result.get("participant_type") or "human")
-        if participant_type != "human":
-            ctx.deps.admission_projection.participant_joined(
-                LegacyAdmissionParticipant(
-                    participant_id=str(result["agent_id"]),
-                    display_name=str(result["display_name"]),
-                    provider_kind=str(result.get("provider_kind") or "manual"),
-                    connection_kind=str(
-                        result.get("connection_kind") or NATIVE_REMOTE_ROOM_CLIENT_KIND
-                    ),
-                    room_id=str(result["meeting_id"]),
-                    owner_display_name=str(result.get("owner_display_name") or ""),
-                )
-            )
-        ctx.send_json(result)
+        result = _admit_invite(
+            ctx,
+            payload,
+            consumer_client_type="agent_bridge",
+            expected_provider_kind=str(payload.get("provider_kind") or ""),
+        )
+        if result is not None:
+            ctx.send_json(result)
 
     @router.post("/api/room-invite/admission")
     def room_invite_admission(ctx: RequestContext) -> None:
@@ -330,3 +283,96 @@ def register_invite_admission_routes(router: Router) -> None:
                 ctx.send_error(HTTPStatus.NOT_FOUND, "session not found")
         else:
             ctx.send_error(HTTPStatus.BAD_REQUEST, "invite_id or session_token required")
+
+
+def _admit_invite(
+    ctx: RequestContext,
+    payload: dict[str, object],
+    *,
+    consumer_client_type: str,
+    expected_provider_kind: str = "",
+) -> dict[str, object] | None:
+    token = str(payload.get("invite_token") or "").strip()
+    if not token:
+        ctx.send_error(HTTPStatus.BAD_REQUEST, "invite_token is required")
+        return None
+    request_id = _canonical_request_id(ctx, payload.get("request_id"))
+    if request_id is None:
+        return None
+    try:
+        result = ctx.deps.admission.admit(
+            invite_token=token,
+            request_id=request_id,
+            meeting_id=str(payload.get("meeting_id") or ""),
+            display_name=str(payload.get("display_name") or ""),
+            device_token=(
+                str(payload.get("device_token") or "")
+                if consumer_client_type == "browser"
+                else ""
+            ),
+            participant_type=(
+                str(payload.get("participant_type") or "")
+                if consumer_client_type == "browser"
+                else "agent"
+            ),
+            owner_display_name=str(payload.get("owner_display_name") or ""),
+            consumer_client_type=consumer_client_type,
+            expected_provider_kind=expected_provider_kind,
+        )
+    except AdmissionIdempotencyConflict as error:
+        ctx.send_error(
+            HTTPStatus.CONFLICT,
+            str(error),
+            code="idempotency_conflict",
+        )
+        return None
+    if result.get("status") != "admitted":
+        reason = str(result.get("reason", "rejected"))
+        if reason == "room_unavailable":
+            ctx.send_error(HTTPStatus.GONE, "room was deleted or does not exist")
+            return None
+        ctx.send_error(HTTPStatus.FORBIDDEN, reason, code=reason)
+        return None
+    if str(result.get("participant_type") or "human") != "human":
+        ctx.deps.admission_projection.participant_joined(
+            LegacyAdmissionParticipant(
+                participant_id=str(result["agent_id"]),
+                display_name=str(result["display_name"]),
+                provider_kind=str(result.get("provider_kind") or "manual"),
+                connection_kind=str(
+                    result.get("connection_kind") or NATIVE_REMOTE_ROOM_CLIENT_KIND
+                ),
+                room_id=str(result["meeting_id"]),
+                owner_display_name=str(result.get("owner_display_name") or ""),
+            )
+        )
+    return result
+
+
+def _canonical_request_id(ctx: RequestContext, value: object) -> str | None:
+    raw_request_id = str(value or "").strip()
+    if not raw_request_id:
+        ctx.send_error(
+            HTTPStatus.BAD_REQUEST,
+            "request_id is required",
+            code="request_id_required",
+        )
+        return None
+    try:
+        parsed_request_id = UUID(raw_request_id)
+        request_id = str(parsed_request_id)
+    except (TypeError, ValueError, AttributeError):
+        ctx.send_error(
+            HTTPStatus.BAD_REQUEST,
+            "request_id must be a UUID",
+            code="request_id_invalid",
+        )
+        return None
+    if raw_request_id != request_id or parsed_request_id.int == 0:
+        ctx.send_error(
+            HTTPStatus.BAD_REQUEST,
+            "request_id must be a canonical non-zero UUID",
+            code="request_id_invalid",
+        )
+        return None
+    return request_id

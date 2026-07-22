@@ -117,6 +117,115 @@ class RoomAdmissionCoordinatorTests(unittest.TestCase):
         self.assertEqual(rejected, {"status": "rejected", "reason": "room_unavailable"})
         self.assertEqual(admitted["status"], "admitted")
 
+    def test_browser_cannot_consume_agent_invite_before_native_attendee(self) -> None:
+        self.rooms.create_room("room-a", label="Room A")
+        invite = self.invites.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            agent_id="codex-guest",
+            display_name="Codex Guest",
+            max_uses=1,
+            participant_type="agent",
+            client_type="agent_bridge",
+            provider_kind="codex",
+        )
+
+        with patch.object(
+            self.repository,
+            "create_admission_workflow",
+            wraps=self.repository.create_admission_workflow,
+        ) as create_workflow:
+            rejected = self.coordinator.admit(
+                invite_token=str(invite["join_code"]),
+                request_id="browser-agent-invite",
+                consumer_client_type="browser",
+            )
+
+        self.assertEqual(
+            rejected,
+            {"status": "rejected", "reason": "agent_client_required"},
+        )
+        self.assertEqual(
+            self.repository.invite(str(invite["invite_id"]))["use_count"],
+            0,
+        )
+        create_workflow.assert_not_called()
+        self.assertEqual(self.repository.list_sessions(), [])
+        self.assertEqual(self.rooms.participants("room-a"), [])
+
+        admitted = self.coordinator.admit(
+            invite_token=str(invite["join_code"]),
+            request_id="native-agent-invite",
+            consumer_client_type="agent_bridge",
+            expected_provider_kind="codex",
+        )
+
+        self.assertEqual(admitted["status"], "admitted")
+        self.assertEqual(admitted["participant_type"], "remote")
+        self.assertEqual(admitted["client_type"], "agent_bridge")
+        repeated = self.coordinator.admit(
+            invite_token=str(invite["join_code"]),
+            request_id="native-agent-invite-repeat",
+            consumer_client_type="agent_bridge",
+            expected_provider_kind="codex",
+        )
+        self.assertEqual(
+            repeated,
+            {"status": "rejected", "reason": "token_already_used"},
+        )
+
+    def test_native_attendee_rejects_browser_invite_and_provider_mismatch(self) -> None:
+        self.rooms.create_room("room-a", label="Room A")
+        browser_invite = self.invites.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            max_uses=1,
+        )
+        agent_invite = self.invites.create(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            agent_id="codex-guest",
+            max_uses=1,
+            client_type="agent_bridge",
+            provider_kind="codex",
+        )
+
+        with patch.object(
+            self.repository,
+            "create_admission_workflow",
+            wraps=self.repository.create_admission_workflow,
+        ) as create_workflow:
+            wrong_scope = self.coordinator.admit(
+                invite_token=str(browser_invite["join_code"]),
+                request_id="native-browser-invite",
+                consumer_client_type="agent_bridge",
+                expected_provider_kind="codex",
+            )
+            wrong_provider = self.coordinator.admit(
+                invite_token=str(agent_invite["join_code"]),
+                request_id="native-provider-mismatch",
+                consumer_client_type="agent_bridge",
+                expected_provider_kind="grok",
+            )
+
+        self.assertEqual(
+            wrong_scope,
+            {"status": "rejected", "reason": "browser_client_required"},
+        )
+        self.assertEqual(
+            wrong_provider,
+            {"status": "rejected", "reason": "provider_kind_mismatch"},
+        )
+        self.assertEqual(
+            self.repository.invite(str(browser_invite["invite_id"]))["use_count"],
+            0,
+        )
+        self.assertEqual(
+            self.repository.invite(str(agent_invite["invite_id"]))["use_count"],
+            0,
+        )
+        create_workflow.assert_not_called()
+
     def test_single_use_invite_cannot_create_a_second_membership(self) -> None:
         self.rooms.create_room("room-a", label="Room A")
         invite = self.invites.create(

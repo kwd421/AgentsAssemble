@@ -24,6 +24,7 @@ from agentsassemble.identity.repository import (
     normalize_participant_type,
 )
 from agentsassemble.admission.lan_invite import NATIVE_REMOTE_ROOM_CLIENT_KIND
+from agentsassemble.providers.launch_specs import native_cli_provider_definition
 from agentsassemble.room.repository import RoomRepository
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
@@ -76,7 +77,10 @@ class RoomAdmissionCoordinator:
         device_token: str = "",
         participant_type: str = "",
         owner_display_name: str = "",
+        consumer_client_type: str = "browser",
+        expected_provider_kind: str = "",
     ) -> dict[str, object]:
+        clean_consumer_client_type = _consumer_client_type(consumer_client_type)
         clean_request_id = clean_lobby_text(request_id, limit=128) or f"legacy-{secrets.token_hex(12)}"
         token_fingerprint = hashlib.sha256(str(invite_token or "").encode("utf-8")).hexdigest()
         auth_key = device_auth_key(device_token)
@@ -103,6 +107,13 @@ class RoomAdmissionCoordinator:
                 )
                 if isinstance(prepared, dict):
                     return prepared
+                scope_rejection = _client_scope_rejection(
+                    prepared,
+                    consumer_client_type=clean_consumer_client_type,
+                    expected_provider_kind=expected_provider_kind,
+                )
+                if scope_rejection is not None:
+                    return scope_rejection
                 room, settings = self._room_context(prepared.meeting_id)
                 if not room:
                     return {"status": "rejected", "reason": "room_unavailable"}
@@ -123,6 +134,17 @@ class RoomAdmissionCoordinator:
                         "updated_at": moment,
                     },
                 )
+            else:
+                scope_rejection = _client_scope_rejection(
+                    _prepared_from_workflow(
+                        workflow,
+                        public_url=self._invites.public_url(),
+                    ),
+                    consumer_client_type=clean_consumer_client_type,
+                    expected_provider_kind=expected_provider_kind,
+                )
+                if scope_rejection is not None:
+                    return scope_rejection
             self._validate_retry(
                 workflow,
                 request_id=clean_request_id,
@@ -471,6 +493,38 @@ def _workflow_id(*, token_fingerprint: str, device_auth_key: str, request_id: st
         separators=(",", ":"),
     )
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _consumer_client_type(value: object) -> str:
+    client_type = clean_lobby_text(value, limit=32)
+    if client_type not in {"browser", "agent_bridge"}:
+        raise ValueError("consumer_client_type must be browser or agent_bridge")
+    return client_type
+
+
+def _client_scope_rejection(
+    prepared: PreparedInviteAdmission,
+    *,
+    consumer_client_type: str,
+    expected_provider_kind: str,
+) -> dict[str, object] | None:
+    if prepared.client_type != consumer_client_type:
+        reason = (
+            "agent_client_required"
+            if prepared.client_type == "agent_bridge"
+            else "browser_client_required"
+        )
+        return {"status": "rejected", "reason": reason}
+    if consumer_client_type != "agent_bridge":
+        return None
+    provider_kind = clean_lobby_text(expected_provider_kind, limit=64)
+    if not provider_kind:
+        return {"status": "rejected", "reason": "provider_kind_required"}
+    definition = native_cli_provider_definition(provider_kind)
+    canonical_provider_kind = definition.provider_kind if definition is not None else provider_kind
+    if canonical_provider_kind != prepared.provider_kind:
+        return {"status": "rejected", "reason": "provider_kind_mismatch"}
+    return None
 
 
 def _payload_hash(payload: dict[str, object]) -> str:

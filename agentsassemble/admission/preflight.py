@@ -58,6 +58,13 @@ class RoomAdmissionService:
             "room_label": clean_room_text(room.get("label"), limit=128) or room_id,
             "invite_scope": clean_room_text(invite.get("invite_scope"), limit=32) or "room",
         }
+        if clean_room_text(invite.get("client_type"), limit=32) == "agent_bridge":
+            return {
+                **base,
+                "status": "agent_client_required",
+                "reason": "agent_client_required",
+                "can_auto_join": False,
+            }
         if session and clean_room_text(session.get("meeting_id"), limit=128) == room_id:
             participant_id = clean_room_text(session.get("agent_id"), limit=128)
             return {

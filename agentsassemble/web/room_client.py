@@ -246,15 +246,53 @@ def join_room_session(
     important because the server may choose the real participant id/display name
     for reusable invites and stable device identities.
     """
-    body = {
-        "invite_token": invite_token,
-        "display_name": display_name,
-        "participant_type": participant_type,
-        "device_token": device_token,
-        "request_id": request_id or str(uuid4()),
-    }
+    return _join_room_session(
+        server_url,
+        path="/api/room-invite/join",
+        body={
+            "invite_token": invite_token,
+            "display_name": display_name,
+            "participant_type": participant_type,
+            "device_token": device_token,
+            "request_id": request_id or str(uuid4()),
+        },
+        timeout=timeout,
+    )
+
+
+def join_agent_room_session(
+    server_url: str,
+    invite_token: str,
+    *,
+    provider_kind: str,
+    display_name: str = "",
+    request_id: str = "",
+    timeout: float = 5.0,
+) -> dict[str, object]:
+    """Consume an Agent Bridge invite through the native attendee path."""
+
+    return _join_room_session(
+        server_url,
+        path="/api/room-invite/agent-join",
+        body={
+            "invite_token": invite_token,
+            "display_name": display_name,
+            "provider_kind": provider_kind,
+            "request_id": request_id or str(uuid4()),
+        },
+        timeout=timeout,
+    )
+
+
+def _join_room_session(
+    server_url: str,
+    *,
+    path: str,
+    body: dict[str, object],
+    timeout: float,
+) -> dict[str, object]:
     request = urllib.request.Request(
-        f"{server_url.rstrip('/')}/api/room-invite/join",
+        f"{server_url.rstrip('/')}{path}",
         data=json.dumps(body).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",

@@ -576,7 +576,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
 
         with (
             patch(
-                "agentsassemble.application.room_attendee.join_room_session",
+                "agentsassemble.application.room_attendee.join_agent_room_session",
                 return_value={
                     "session_token": "session-secret",
                     "agent_id": "claude-guest",
@@ -604,7 +604,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
 
         with (
             patch(
-                "agentsassemble.application.room_attendee.join_room_session",
+                "agentsassemble.application.room_attendee.join_agent_room_session",
                 return_value={
                     "session_token": "session-secret",
                     "agent_id": "claude-guest",

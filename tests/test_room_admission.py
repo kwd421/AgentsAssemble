@@ -132,6 +132,29 @@ class RoomAdmissionServiceTests(unittest.TestCase):
         self.assertEqual(invalid["reason"], "invite_not_found")
         self.assertEqual(expired["status"], "invite_expired")
 
+    def test_agent_invite_preflight_is_non_consuming_and_requires_native_client(self) -> None:
+        invite = create_room_invite(
+            room_url="http://127.0.0.1:8765",
+            meeting_id="room-a",
+            agent_id="codex-guest",
+            display_name="Codex Guest",
+            max_uses=1,
+            client_type="agent_bridge",
+            provider_kind="codex",
+        )
+        before_state = (self.root / "room-invite-state.json").read_bytes()
+
+        decision = self.service.resolve(
+            invite_token=str(invite["join_code"]),
+            device_token="browser-device-token",
+        )
+
+        self.assertEqual(decision["status"], "agent_client_required")
+        self.assertEqual(decision["reason"], "agent_client_required")
+        self.assertFalse(decision["can_auto_join"])
+        self.assertEqual((self.root / "room-invite-state.json").read_bytes(), before_state)
+        self.assertEqual(self.identities.count_users(), 0)
+
 
 class RoomInviteInspectionTests(unittest.TestCase):
     def setUp(self) -> None:

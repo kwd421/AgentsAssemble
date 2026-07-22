@@ -22,7 +22,13 @@ from agentsassemble.web.websocket_codec import (
     encode_text,
     parse_frame,
 )
-from agentsassemble.web.room_client import WsRoomClient, connect_room_ws, connect_room_ws_with_ticket, join_room_session
+from agentsassemble.web.room_client import (
+    WsRoomClient,
+    connect_room_ws,
+    connect_room_ws_with_ticket,
+    join_agent_room_session,
+    join_room_session,
+)
 
 
 class FakeSocket:
@@ -262,6 +268,33 @@ class LiveRoundTripTests(unittest.TestCase):
             self.assertEqual(joined.get("agent_id"), "runner")
             self.assertEqual(joined.get("display_name"), "runner")
             self.assertEqual(joined.get("meeting_id"), "room-join")
+
+    def test_join_agent_room_session_uses_native_admission_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            RoomStore(root).create_room("room-agent", label="Agent room")
+            base = self._start(root)
+            invite = create_room_invite(
+                room_url=base,
+                meeting_id="room-agent",
+                agent_id="remote-codex",
+                display_name="Remote Codex",
+                max_uses=1,
+                client_type="agent_bridge",
+                provider_kind="codex",
+            )
+
+            joined = join_agent_room_session(
+                base,
+                str(invite["invite_token"]),
+                display_name="Remote Codex",
+                provider_kind="codex",
+            )
+
+            self.assertTrue(str(joined.get("session_token") or "").startswith("aas1."))
+            self.assertEqual(joined.get("agent_id"), "remote-codex")
+            self.assertEqual(joined.get("client_type"), "agent_bridge")
+            self.assertEqual(joined.get("provider_kind"), "codex_live_session")
 
 
 class ConnectRoomWsTests(unittest.TestCase):

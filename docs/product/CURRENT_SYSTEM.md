@@ -87,6 +87,14 @@ server profile, and an unknown device sees the explicit guest profile form.
 Preflight does not consume the invite, create a user, change membership, or
 issue a session.
 
+Invite client scope is enforced before an admission workflow is created.
+Browser admission consumes only browser invites. Opening an `agent_bridge`
+invite in a browser returns `agent_client_required` without changing invite use,
+identity, participant, membership, workflow, or session state. The native
+`assemble room attend` client uses the separate Agent admission route and must
+match the provider kind bound to the signed invite; it cannot consume a browser
+invite.
+
 The mutating join uses one browser-generated request ID and a durable admission
 workflow. Invite consumption and the workflow's consumed phase commit together;
 identity, bounded session, participant, and membership phases can then resume

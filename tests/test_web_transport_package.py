@@ -120,6 +120,7 @@ class WebTransportPackageTests(unittest.TestCase):
             "WsRoomSayRejected",
             "connect_room_ws",
             "connect_room_ws_with_ticket",
+            "join_agent_room_session",
             "join_room_session",
         ):
             with self.subTest(name=name):

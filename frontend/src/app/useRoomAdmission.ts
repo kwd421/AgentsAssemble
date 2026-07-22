@@ -431,7 +431,9 @@ export function useRoomAdmission({
         const message =
           decision.status === "invite_expired"
             ? "초대 링크가 만료되었습니다."
-            : decision.reason || "유효하지 않은 초대 링크입니다.";
+            : decision.status === "agent_client_required"
+              ? "이 링크는 에이전트 세션 전용입니다. 터미널에서 AgentsAssemble 참가 명령으로 연결하세요."
+              : decision.reason || "유효하지 않은 초대 링크입니다.";
         dispatchAdmission({
           type: "failed",
           operation: "preflight",

@@ -220,6 +220,50 @@ class GuiServerRoomRouteTests(unittest.TestCase):
         self.assertEqual(conflict.sent_error[0], HTTPStatus.CONFLICT)
         self.assertEqual(conflict.sent_error_code, "idempotency_conflict")
 
+    def test_agent_invite_is_not_consumed_by_browser_join(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deps = _invite_route_dependencies(root)
+            deps.rooms.create_room("agent-room", label="Agent room")
+            invite = deps.invites.create(
+                room_url="http://127.0.0.1:8765",
+                meeting_id="agent-room",
+                agent_id="remote-codex",
+                display_name="Remote Codex",
+                max_uses=1,
+                participant_type="agent",
+                client_type="agent_bridge",
+                provider_kind="codex",
+            )
+
+            browser = _dispatch_room_route(
+                root,
+                path="/api/room-invite/join",
+                method="POST",
+                payload={
+                    "invite_token": invite["join_code"],
+                    "request_id": "da74df15-53d2-4700-9716-5732546b210a",
+                },
+                deps=deps,
+            )
+            attendee = _dispatch_room_route(
+                root,
+                path="/api/room-invite/agent-join",
+                method="POST",
+                payload={
+                    "invite_token": invite["join_code"],
+                    "request_id": "f7544248-ebc1-4486-8d97-b6ce59d5ca34",
+                    "provider_kind": "codex",
+                },
+                deps=deps,
+            )
+
+        self.assertEqual(browser.sent_error[0], HTTPStatus.FORBIDDEN)
+        self.assertEqual(browser.sent_error_code, "agent_client_required")
+        self.assertEqual(attendee.sent_json["status"], "admitted")
+        self.assertEqual(attendee.sent_json["client_type"], "agent_bridge")
+        self.assertEqual(attendee.sent_json["participant_type"], "remote")
+
     def test_legacy_projection_failure_does_not_rollback_agent_join_or_leave(self):
         def fail_projection(_root: Path, _payload: dict[str, object]) -> object:
             raise RuntimeError("secret path /tmp/private-token must stay hidden")
@@ -242,11 +286,12 @@ class GuiServerRoomRouteTests(unittest.TestCase):
 
             joined = _dispatch_room_route(
                 root,
-                path="/api/room-invite/join",
+                path="/api/room-invite/agent-join",
                 method="POST",
                 payload={
                     "invite_token": invite["join_code"],
                     "request_id": "3576aa31-2798-43e0-8737-0c3da3a806f4",
+                    "provider_kind": "codex",
                 },
                 deps=deps,
             )

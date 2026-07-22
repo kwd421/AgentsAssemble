@@ -233,6 +233,7 @@ surface rather than silently counted as React parity.
 | `/api/side-chat` | GET | exact | `fetchSideChat()` | yes | React side-chat read/write. |
 | `/api/side-chat` | POST | exact | `postSideChatMessage()` | yes | React side-chat read/write. |
 | `/api/room-invite/admission` | POST | exact | `preflightRoomInvite()` | yes | Side-effect-free preflight distinguishes an existing session or known device from a genuinely new guest before invite consumption. |
+| `/api/room-invite/agent-join` | POST | native attendee only | Python `join_agent_room_session()` | yes | Agent Bridge invites are consumed only by the native attendee path after signed client/provider scope validation; browser preflight rejects them without mutation. |
 | `/api/room-invite/create` | POST | exact | `createRoomInvite()` | yes | React invite modal creates scoped browser/remote-client invite links and AI entry packets without starting providers. |
 | `/api/room-invite/join` | POST | exact | `joinRoomInvite()` | yes | React `/join?token=` route exchanges an invite token for a single-room guest session. |
 | `/api/room-invite/leave` | POST | exact | `leaveRoomInvite()` | yes | React guest leave clears local guest state and best-effort revokes the room session. |

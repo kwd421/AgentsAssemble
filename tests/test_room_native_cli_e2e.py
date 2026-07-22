@@ -24,7 +24,7 @@ from agentsassemble.room.realtime import NativeCliProviderSpec, RoomRealtimeCont
 from agentsassemble.web.room_client import (
     connect_room_ws,
     connect_room_ws_with_ticket,
-    join_room_session,
+    join_agent_room_session,
 )
 from tests.room_realtime_test_support import memory_room_access_services
 
@@ -399,7 +399,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                     return runtime
 
                 def capture_join(*args, **kwargs):
-                    result = join_room_session(*args, **kwargs)
+                    result = join_agent_room_session(*args, **kwargs)
                     joined.update(result)
                     return result
 
@@ -410,7 +410,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
 
                 attendee._build_runtime = build_runtime
                 with (
-                    patch("agentsassemble.application.room_attendee.join_room_session", side_effect=capture_join),
+                    patch("agentsassemble.application.room_attendee.join_agent_room_session", side_effect=capture_join),
                     patch("agentsassemble.application.room_attendee.connect_room_ws", side_effect=capture_connect),
                 ):
                     exits: list[int] = []
@@ -457,12 +457,11 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                 self.assertFalse(self._pid_alive(provider_pid))
                 self.assertIsNone(access.sessions.verify(str(joined["session_token"])))
                 with self.assertRaises(HTTPError) as reused:
-                    join_room_session(
+                    join_agent_room_session(
                         base,
                         invite_token,
                         display_name="External Haiku",
-                        participant_type="agent",
-                        device_token="external-haiku-reuse",
+                        provider_kind="claude_code",
                         timeout=3.0,
                     )
                 self.assertEqual(reused.exception.code, 403)
