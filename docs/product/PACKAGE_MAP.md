@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `5a8cbbd213e2dd4f`
+Source fingerprint: `283ea047e5fc9b4c`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 695
+- Python modules: 696
 - Top-level package modules: 303
-- Domains: admission=32, application=108, diagnostics=25, features=19, identity=9, legacy=193, persistence=58, providers=101, room=85, web=65
-- Classifications: compatibility=295, current=236, legacy=152, optional=12
+- Domains: admission=32, application=109, diagnostics=25, features=19, identity=9, legacy=193, persistence=58, providers=101, room=85, web=65
+- Classifications: compatibility=295, current=237, legacy=152, optional=12
 
 ## Classification Rules
 
@@ -67,6 +67,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.application.cli.core` | `agentsassemble/application/cli/core.py` | 249 | application | current | `agentsassemble.application.cli.common`, `agentsassemble.application.room_repository_factory`, `agentsassemble.diagnostics.release_health` | 2 | - | test-import:1 | `tests/test_application_cli_package.py` | `application/` | in-target-package |
 | `agentsassemble.application.cli.core_commands` | `agentsassemble/application/cli/core_commands.py` | 176 | application | current | `agentsassemble.diagnostics.release_health`, `agentsassemble.web.frontend_runtime` | 1 | - | - | - | `application/` | in-target-package |
 | `agentsassemble.application.cli.persona` | `agentsassemble/application/cli/persona.py` | 64 | application | current | - | 2 | - | test-import:1 | `tests/test_application_cli_package.py` | `application/` | in-target-package |
+| `agentsassemble.application.cli.persona_commands` | `agentsassemble/application/cli/persona_commands.py` | 133 | application | current | `agentsassemble.persona_cards` | 1 | - | - | - | `application/` | in-target-package |
 | `agentsassemble.application.cli.room` | `agentsassemble/application/cli/room.py` | 225 | application | current | `agentsassemble.application.cli.common`, `agentsassemble.application.room_repository_factory`, `agentsassemble.diagnostics.live_cli_smoke` | 2 | - | test-import:1 | `tests/test_application_cli_package.py` | `application/` | in-target-package |
 | `agentsassemble.application.gui` | `agentsassemble/application/gui.py` | 200 | application | current | `agentsassemble.admission.coordinator`, `agentsassemble.admission.invite_service`, `agentsassemble.admission.preflight`, `agentsassemble.admission.projection`, `agentsassemble.admission.repository`, `agentsassemble.admission.session_service`, `agentsassemble.application.public_invite_runtime`, `agentsassemble.application.public_tunnel`, +8 | 4 | - | test-import:2 | `tests/test_application_package.py`, `tests/test_gui_application_services.py` | `application/` | in-target-package |
 | `agentsassemble.application.gui_factory` | `agentsassemble/application/gui_factory.py` | 325 | application | current | `agentsassemble.admission.coordinator`, `agentsassemble.admission.invite`, `agentsassemble.admission.invite_service`, `agentsassemble.admission.preflight`, `agentsassemble.admission.projection`, `agentsassemble.admission.repository`, `agentsassemble.admission.session_service`, `agentsassemble.application.gui`, +13 | 1 | - | test-import:1 | `tests/test_application_package.py` | `application/` | in-target-package |
@@ -94,7 +95,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.claude_resident` | `agentsassemble/claude_resident.py` | 26 | providers | compatibility | `agentsassemble.providers.claude_resident` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.claude_transcript` | `agentsassemble/claude_transcript.py` | 18 | providers | compatibility | `agentsassemble.providers.claude_transcript` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.cleanup_report` | `agentsassemble/cleanup_report.py` | 14 | diagnostics | compatibility | `agentsassemble.diagnostics.cleanup` | 0 | - | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | compatibility-shim |
-| `agentsassemble.cli` | `agentsassemble/cli.py` | 5651 | application | current | `agentsassemble.admission.lan_invite`, `agentsassemble.admission.maintenance_command`, `agentsassemble.admission.repository`, `agentsassemble.application.agent_sessions`, `agentsassemble.application.cli.common`, `agentsassemble.application.cli.core`, `agentsassemble.application.cli.core_commands`, `agentsassemble.application.cli.persona`, +65 | 0 | - | test-import:33, monkeypatch:18 | `tests/test_admission_workflow_maintenance.py`, `tests/test_agent_session_cli.py`, `tests/test_api_lane_runner.py`, `+30` | `root entrypoint` | retained-entrypoint |
+| `agentsassemble.cli` | `agentsassemble/cli.py` | 5532 | application | current | `agentsassemble.admission.lan_invite`, `agentsassemble.admission.maintenance_command`, `agentsassemble.admission.repository`, `agentsassemble.application.agent_sessions`, `agentsassemble.application.cli.common`, `agentsassemble.application.cli.core`, `agentsassemble.application.cli.core_commands`, `agentsassemble.application.cli.persona`, +66 | 0 | - | test-import:33, monkeypatch:18 | `tests/test_admission_workflow_maintenance.py`, `tests/test_agent_session_cli.py`, `tests/test_api_lane_runner.py`, `+30` | `root entrypoint` | retained-entrypoint |
 | `agentsassemble.cli_diagnostics` | `agentsassemble/cli_diagnostics.py` | 17 | diagnostics | compatibility | `agentsassemble.diagnostics.cli` | 0 | - | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | compatibility-shim |
 | `agentsassemble.cli_http_errors` | `agentsassemble/cli_http_errors.py` | 9 | web | compatibility | `agentsassemble.web.cli_errors` | 0 | - | - | - | `web/` | compatibility-shim |
 | `agentsassemble.cli_legacy_live_agent_format` | `agentsassemble/cli_legacy_live_agent_format.py` | 3 | application | compatibility | - | 0 | - | - | - | `application/` | compatibility-shim |
@@ -493,7 +494,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.persistence.postgres.room.rows` | `agentsassemble/persistence/postgres/room/rows.py` | 23 | persistence | current | - | 3 | - | test-import:1 | `tests/test_postgres_room_persistence_package.py` | `persistence/postgres/` | in-target-package |
 | `agentsassemble.persistence.postgres.schema` | `agentsassemble/persistence/postgres/schema.py` | 152 | persistence | current | - | 5 | - | test-import:1 | `tests/test_postgres_room_persistence_package.py` | `persistence/postgres/` | in-target-package |
 | `agentsassemble.persona_artifact_contract` | `agentsassemble/persona_artifact_contract.py` | 17 | application | compatibility | `agentsassemble.legacy.meeting.support.persona_artifact_contract` | 0 | - | - | - | `application/` | compatibility-shim |
-| `agentsassemble.persona_cards` | `agentsassemble/persona_cards.py` | 1660 | application | current | - | 6 | - | test-import:3 | `tests/test_live_agent_finalization.py`, `tests/test_persona_artifact_contract.py`, `tests/test_persona_cards.py` | `application/` | retained-migration |
+| `agentsassemble.persona_cards` | `agentsassemble/persona_cards.py` | 1660 | application | current | - | 7 | - | test-import:3 | `tests/test_live_agent_finalization.py`, `tests/test_persona_artifact_contract.py`, `tests/test_persona_cards.py` | `application/` | retained-migration |
 | `agentsassemble.postgres_application_database` | `agentsassemble/postgres_application_database.py` | 17 | persistence | compatibility | `agentsassemble.persistence.postgres.application_database` | 0 | - | test-import:2 | `tests/test_postgres_application_database.py`, `tests/test_postgres_cross_authority_transactions.py` | `persistence/postgres/` | compatibility-shim |
 | `agentsassemble.postgres_attention_repository` | `agentsassemble/postgres_attention_repository.py` | 37 | persistence | compatibility | `agentsassemble.persistence.postgres.room.attention` | 0 | - | test-import:1 | `tests/test_postgres_room_persistence_package.py` | `persistence/postgres/` | compatibility-shim |
 | `agentsassemble.postgres_connection_pool` | `agentsassemble/postgres_connection_pool.py` | 22 | persistence | compatibility | `agentsassemble.persistence.postgres.connection_pool` | 0 | - | test-import:2 | `tests/test_postgres_application_database.py`, `tests/test_postgres_connection_pool.py` | `persistence/postgres/` | compatibility-shim |
