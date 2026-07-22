@@ -21,14 +21,6 @@ from agentsassemble.application.agent_sessions import (
     clean_agent_session_provider_kind,
     run_codex_app_server_smoke,
 )
-from agentsassemble.providers.cursor_resident import (
-    CursorResidentCommandRunner,
-)
-from agentsassemble.providers.hermes_resident import HermesResidentCommandRunner
-from agentsassemble.providers.antigravity_resident import AntigravityResidentCommandRunner
-from agentsassemble.providers.codex_resident import CodexResidentCommandRunner
-from agentsassemble.providers.grok_resident import GrokResidentCommandRunner
-from agentsassemble.providers.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.legacy.live_agent.codex_sessions import (
     DEFAULT_INVITE_CONFIG_PATH,
     DEFAULT_LIVE_AGENT_CONFIG_PATH,
@@ -145,6 +137,9 @@ from agentsassemble.legacy.live_agent.cli.resident_process_runners import (
     LocalCliCommandRunner as _OwnedLocalCliCommandRunner,
     SelfServiceResidentSupervisor as _OwnedSelfServiceResidentSupervisor,
 )
+from agentsassemble.legacy.live_agent.cli.resident_runner_factory import (
+    command_runner_for_config as _owned_command_runner_for_config,
+)
 from agentsassemble.legacy.live_agent.cli.session_commands import (
     LegacySessionCliRuntime,
     SESSION_BOUND_PROBE_HTTP_WINDOWS,
@@ -192,7 +187,6 @@ from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.legacy.meeting.support.live_meeting_memory import compact_live_meeting_memory
 from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
-    RemoteBridgeResidentCommandRunner,
     ResidentAgentConfig,
     config_from_args,
     load_group_configs,
@@ -879,55 +873,11 @@ def _validate_resident_config(config: ResidentAgentConfig) -> None:
 
 
 def _command_runner_for_config(config: ResidentAgentConfig, *, output_root: str = ""):
-    if config.connection_kind == "self_service":
-        raise ValueError("self_service residents are supervised directly and do not use prompt-injection command runners.")
-    if config.connection_kind == "api_call":
-        return _ApiCatalogCommandRunner(config, output_root=output_root)
-    cwd = _resident_workspace_cwd(config)
-    if config.provider_kind == "codex_live_session" and config.connection_kind == "live_session":
-        return CodexResidentCommandRunner(config, cwd=cwd)
-    if config.provider_kind == "kiro_live_session" and config.connection_kind == "live_session":
-        return KiroResidentCommandRunner(config, cwd=cwd)
-    if config.provider_kind == "cursor_live_session" and config.connection_kind == "live_session":
-        return CursorResidentCommandRunner(config, cwd=cwd)
-    if config.provider_kind == "grok_live_session" and config.connection_kind == "live_session":
-        return GrokResidentCommandRunner(config, cwd=cwd)
-    if config.provider_kind == "antigravity_live_session" and config.connection_kind == "live_session":
-        return AntigravityResidentCommandRunner(config, cwd=cwd)
-    if config.provider_kind == "hermes_live_session" and config.connection_kind == "live_session":
-        return HermesResidentCommandRunner(config, cwd=cwd)
-    if config.provider_kind == "claude_code" and config.connection_kind == "terminal_session":
-        # Claude Code's interactive TUI: scrape the PTY, gate completion on the ⏺
-        # answer marker, and extract just the reply (see claude_resident). A longer
-        # idle floor tolerates mid-answer pauses while it streams.
-        from agentsassemble.providers.claude_resident import (
-            claude_answer_ready,
-            extract_claude_terminal_message,
-        )
-
-        return _TerminalLiveSessionCommandRunner(
-            idle_timeout_seconds=max(float(config.terminal_idle_timeout or 0.0), 1.0),
-            cwd=cwd,
-            message_extractor=extract_claude_terminal_message,
-            ready_predicate=claude_answer_ready,
-            submit_newline="\r",  # Claude Code's TUI submits on Enter (CR), not LF
-            submit_settle_seconds=0.4,  # let the typed prompt land in the input box first
-            warmup_idle_seconds=1.5,  # wait for the TUI to finish booting before first submit
-            # Stream claude's tool/reasoning steps by tailing its transcript JSONL
-            # (launched with a known --session-id so it's unambiguous across runs).
-            stream_config=config if getattr(config, "stream_thinking", False) else None,
-            # claude's own --permission-mode (default/plan/acceptEdits/bypassPermissions).
-            permission_mode=str(getattr(config, "permission_option", "") or ""),
-            # Per-agent fast toggle → claude's /fast runtime slash command.
-            fast_mode=bool(getattr(config, "fast_mode", False)),
-        )
-    if config.connection_kind == "live_session":
-        return _JsonlLiveSessionCommandRunner()
-    if config.connection_kind == "terminal_session":
-        return _TerminalLiveSessionCommandRunner(idle_timeout_seconds=config.terminal_idle_timeout, cwd=cwd)
-    if config.connection_kind == "remote_bridge":
-        return RemoteBridgeResidentCommandRunner(config)
-    return _LocalCliCommandRunner()
+    return _owned_command_runner_for_config(
+        config,
+        output_root=output_root,
+        local_cli_runner_factory=lambda: _LocalCliCommandRunner(),
+    )
 
 
 def _resident_workspace_cwd(config: ResidentAgentConfig) -> Path:
