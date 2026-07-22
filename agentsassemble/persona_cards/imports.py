@@ -7,7 +7,6 @@ from dataclasses import replace
 from datetime import UTC, datetime
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import shutil
@@ -31,111 +30,25 @@ from agentsassemble.persona_cards.values import (
     _text,
 )
 from agentsassemble.persona_cards.rendering import _keywords
+from agentsassemble.persona_cards.risu import (
+    RISU_ASSET_MARKER,
+    RISU_EOF_MARKER,
+    RISU_MODULE_MAGIC,
+    RISU_MODULE_VERSION,
+    decode_rpack,
+    ignored_risu_features,
+    persona_card_from_risu_module,
+    read_risum_module,
+    read_risum_module_bytes,
+)
 from agentsassemble.persona_cards.storage import save_persona_card
 
 
-RISU_MODULE_MAGIC = 111
-RISU_MODULE_VERSION = 0
-RISU_ASSET_MARKER = 1
-RISU_EOF_MARKER = 0
 DEFAULT_PERSONA_ROOT = "personas"
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 MAX_CARD_TEXT_CHUNK_BYTES = 5 * 1024 * 1024
 MAX_DATA_URI_BYTES = 50 * 1024 * 1024
 MAX_CHARX_TOTAL_ASSET_BYTES = 60 * 1024 * 1024
-
-
-def read_risum_module(path: Path, *, rpack_map_path: Path | None = None) -> RisuModulePayload:
-    data = Path(path).read_bytes()
-    return read_risum_module_bytes(data, rpack_map_path=rpack_map_path, source_path=str(path))
-
-
-def read_risum_module_bytes(
-    data: bytes,
-    *,
-    rpack_map_path: Path | None = None,
-    source_path: str = "",
-) -> RisuModulePayload:
-    if len(data) < 6:
-        raise ValueError("Risu module file is too small.")
-    if data[0] != RISU_MODULE_MAGIC:
-        raise ValueError("Risu module magic byte is invalid.")
-    if data[1] != RISU_MODULE_VERSION:
-        raise ValueError(f"Unsupported Risu module version: {data[1]}")
-    rpack_map = _load_rpack_map(rpack_map_path)
-    offset = 2
-    main_length = _read_uint32(data, offset)
-    offset += 4
-    main_encoded = _slice_record(data, offset, main_length, "main module payload")
-    offset += main_length
-    main_payload = json.loads(decode_rpack(main_encoded, rpack_map).decode("utf-8"))
-    if not isinstance(main_payload, dict) or main_payload.get("type") != "risuModule":
-        raise ValueError("Risu module payload must have type 'risuModule'.")
-    module = main_payload.get("module")
-    if not isinstance(module, dict):
-        raise ValueError("Risu module payload must contain a module object.")
-
-    assets: list[bytes] = []
-    while offset < len(data):
-        marker = data[offset]
-        offset += 1
-        if marker == RISU_EOF_MARKER:
-            break
-        if marker != RISU_ASSET_MARKER:
-            raise ValueError(f"Unsupported Risu module record marker: {marker}")
-        asset_length = _read_uint32(data, offset)
-        offset += 4
-        asset_encoded = _slice_record(data, offset, asset_length, "asset payload")
-        offset += asset_length
-        assets.append(decode_rpack(asset_encoded, rpack_map))
-
-    return RisuModulePayload(module=dict(module), asset_payloads=assets, source_path=source_path)
-
-
-def decode_rpack(data: bytes, map_data: bytes) -> bytes:
-    if len(map_data) < 512:
-        raise ValueError("Risu rpack map must contain at least 512 bytes.")
-    decode_map = map_data[256:512]
-    return bytes(decode_map[byte] for byte in data)
-
-
-def persona_card_from_risu_module(module: dict[str, Any], *, source_name: str = "") -> PersonaCard:
-    persona_id = _safe_persona_id(_text(module.get("id")) or _text(module.get("name")) or Path(source_name).stem)
-    lorebook_data = module.get("lorebook") if isinstance(module.get("lorebook"), list) else []
-    assets_data = module.get("assets") if isinstance(module.get("assets"), list) else []
-    ignored_features, ignored_payloads = _ignored_risu_features(module, lorebook_data)
-    display_name = _text(module.get("name")) or persona_id
-    return PersonaCard(
-        id=persona_id,
-        display_name=display_name,
-        description=_text(module.get("description")),
-        system_prompt=_text(module.get("systemPrompt") or module.get("system_prompt")),
-        personality=_text(module.get("personality")),
-        scenario=_text(module.get("scenario")),
-        first_message=_text(module.get("firstMessage") or module.get("first_message")),
-        alternate_greetings=_string_list(module.get("alternateGreetings") or module.get("alternate_greetings")),
-        group_only_greetings=_string_list(module.get("groupOnlyGreetings") or module.get("group_only_greetings")),
-        example_messages=_text(module.get("exampleMessage") or module.get("example_messages")),
-        post_history_instructions=_text(module.get("postHistoryInstructions") or module.get("post_history_instructions")),
-        lorebook=[PersonaLoreEntry.from_dict(entry) for entry in lorebook_data if isinstance(entry, dict)],
-        lore_settings=_lore_settings_from_risu_module(module),
-        assets=[
-            PersonaAsset(source_index=index, metadata=dict(asset) if isinstance(asset, dict) else {})
-            for index, asset in enumerate(assets_data)
-        ],
-        source={
-            "kind": "risu_module",
-            "source_name": source_name,
-            "imported_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        },
-        ignored_features=ignored_features,
-        ignored_payloads=ignored_payloads,
-        extra={
-            key: module[key]
-            for key in ("namespace", "hideIcon", "backgroundEmbedding")
-            if key in module
-        },
-    )
 
 
 def persona_card_from_ccv3(card: dict[str, Any], *, source_name: str = "") -> PersonaCard:
@@ -225,7 +138,7 @@ def import_charx_persona(
     if module_payload is not None and isinstance(card_payload.get("data"), dict):
         data = dict(card_payload["data"])
         module_lore = module_payload.module.get("lorebook")
-        module_ignored_features, module_ignored_payloads = _ignored_risu_features(
+        module_ignored_features, module_ignored_payloads = ignored_risu_features(
             module_payload.module,
             module_lore if isinstance(module_lore, list) else [],
         )
@@ -442,23 +355,6 @@ def _lore_settings_from_character_book(charbook: dict[str, Any]) -> dict[str, ob
             settings[target_key] = charbook[source_key]
     if "risu_fullWordMatching" in extensions:
         settings["full_word_matching"] = bool(extensions["risu_fullWordMatching"])
-    return settings
-
-
-def _lore_settings_from_risu_module(module: dict[str, Any]) -> dict[str, object]:
-    settings: dict[str, object] = {}
-    for source_key, target_key in (
-        ("scanDepth", "scan_depth"),
-        ("scan_depth", "scan_depth"),
-        ("tokenBudget", "token_budget"),
-        ("token_budget", "token_budget"),
-        ("recursiveScanning", "recursive_scanning"),
-        ("recursive_scanning", "recursive_scanning"),
-        ("fullWordMatching", "full_word_matching"),
-        ("full_word_matching", "full_word_matching"),
-    ):
-        if source_key in module:
-            settings[target_key] = module[source_key]
     return settings
 
 
@@ -736,68 +632,6 @@ def _asset_uri_kind(uri: str) -> str:
     if uri.startswith("__asset:"):
         return "__asset"
     return uri or "missing"
-
-
-def _ignored_risu_features(
-    module: dict[str, Any],
-    lorebook_data: list[Any],
-) -> tuple[dict[str, int], dict[str, object]]:
-    ignored: dict[str, int] = {}
-    payloads: dict[str, object] = {}
-    for key in ("regex", "trigger"):
-        value = module.get(key)
-        if isinstance(value, list) and value:
-            ignored[key] = len(value)
-            payloads[key] = value
-    if _text(module.get("cjs")):
-        ignored["cjs"] = 1
-        payloads["cjs"] = module.get("cjs")
-    for key in ("lowLevelAccess", "customModuleToggle", "mcp"):
-        value = module.get(key)
-        if value:
-            ignored[key] = 1
-            payloads[key] = value
-    regex_lore_count = sum(
-        1
-        for entry in lorebook_data
-        if isinstance(entry, dict) and (entry.get("useRegex") or entry.get("use_regex"))
-    )
-    if regex_lore_count:
-        ignored["lorebook_regex_matching"] = regex_lore_count
-    return ignored, payloads
-
-
-def _load_rpack_map(rpack_map_path: Path | None) -> bytes:
-    candidates: list[Path] = []
-    if rpack_map_path:
-        candidates.append(Path(rpack_map_path))
-    env_value = _text(os.environ.get("RISUAI_RPACK_MAP"))
-    if env_value:
-        candidates.append(Path(env_value))
-    home = Path.home()
-    candidates.extend(
-        [
-            Path("/tmp/risuai-src/src/ts/rpack/rpack_map.bin"),
-            home / "Projects" / "RisuAI" / "src" / "ts" / "rpack" / "rpack_map.bin",
-            home / "Downloads" / "RisuAI" / "src" / "ts" / "rpack" / "rpack_map.bin",
-        ]
-    )
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate.read_bytes()
-    raise ValueError("RisuAI rpack map is required. Pass --rpack-map or set RISUAI_RPACK_MAP.")
-
-
-def _read_uint32(data: bytes, offset: int) -> int:
-    if offset + 4 > len(data):
-        raise ValueError("Unexpected end of Risu module while reading length.")
-    return int.from_bytes(data[offset : offset + 4], "little")
-
-
-def _slice_record(data: bytes, offset: int, length: int, label: str) -> bytes:
-    if length < 0 or offset + length > len(data):
-        raise ValueError(f"Unexpected end of Risu module while reading {label}.")
-    return data[offset : offset + length]
 
 
 def _write_asset_payload(assets_dir: Path, index: int, payload: bytes) -> tuple[Path, str]:
