@@ -23,8 +23,8 @@ from pathlib import Path
 
 from agentsassemble.admission.repository import (
     InviteSessionRepository,
-    UnconfiguredInviteSessionRepository,
 )
+from agentsassemble.admission.compat import InviteCompatibilityState
 from agentsassemble.identity.repository import (
     LOCAL_OPERATOR_PARTICIPANT_ID,
     LOCAL_OPERATOR_USER_ID,
@@ -68,10 +68,8 @@ from agentsassemble.admission.session_issuer import (
     session_token_fingerprint,
 )
 
-# Compatibility facade state. Persistence and synchronization live in the
-# injected repository; only process-local host/public configuration remains.
-_repository: InviteSessionRepository = UnconfiguredInviteSessionRepository()
-_public_invite_runtime = PublicInviteRuntime()
+# Compatibility facade state lives behind one explicit process-local owner.
+_compatibility_state = InviteCompatibilityState()
 
 # --- Host token gate ---
 # Set AGENTSASSEMBLE_HOST_TOKEN to require auth for invite creation/management.
@@ -81,22 +79,22 @@ _public_invite_runtime = PublicInviteRuntime()
 
 def get_host_token() -> str:
     """Return configured host token, or empty string if not set."""
-    return _public_invite_runtime.host_token()
+    return _compatibility_state.public_invite_runtime.host_token()
 
 
 def has_runtime_host_token() -> bool:
     """Return True when the active host token was generated for this server run."""
-    return _public_invite_runtime.has_runtime_host_token()
+    return _compatibility_state.public_invite_runtime.has_runtime_host_token()
 
 
 def set_runtime_host_token(token: str) -> str:
     """Set the server-lifetime host token used by GUI bootstrap flows."""
-    return _public_invite_runtime.set_host_token(token)
+    return _compatibility_state.public_invite_runtime.set_host_token(token)
 
 
 def generate_runtime_host_token() -> str:
     """Generate and store a server-lifetime host token."""
-    return _public_invite_runtime.generate_host_token()
+    return _compatibility_state.public_invite_runtime.generate_host_token()
 
 
 def host_gate_required() -> bool:
@@ -106,7 +104,7 @@ def host_gate_required() -> bool:
     room is reachable from the internet and must not allow unauthenticated
     host operations.
     """
-    return _public_invite_runtime.host_gate_required()
+    return _compatibility_state.public_invite_runtime.host_gate_required()
 
 
 def verify_host_token(provided: str) -> bool:
@@ -116,44 +114,38 @@ def verify_host_token(provided: str) -> bool:
     are allowed (local/LAN backward-compatible mode). If a public URL is
     set but no host token is configured, all requests are rejected.
     """
-    return _public_invite_runtime.verify_host_token(provided)
+    return _compatibility_state.public_invite_runtime.verify_host_token(provided)
 
 
 def get_public_url() -> str:
     """Return configured public base URL for join links, or empty string."""
-    return _public_invite_runtime.public_url()
+    return _compatibility_state.public_invite_runtime.public_url()
 
 
 def set_runtime_public_url(url: str) -> str:
     """Set the server-lifetime public URL used for invite join links."""
-    return _public_invite_runtime.set_public_url(url)
+    return _compatibility_state.public_invite_runtime.set_public_url(url)
 
 
 def clear_runtime_public_url(expected_url: str = "") -> None:
     """Clear the runtime public URL, optionally only when it matches a value."""
-    _public_invite_runtime.clear_public_url(expected_url)
+    _compatibility_state.public_invite_runtime.clear_public_url(expected_url)
 
 
 def compatibility_public_invite_runtime() -> PublicInviteRuntime:
     """Return the process-default runtime used only by compatibility callers."""
 
-    return _public_invite_runtime
-
-
-_invite_application = InviteApplicationService(
-    _repository,
-    public_url=get_public_url,
-)
+    return _compatibility_state.public_invite_runtime
 
 
 def _get_invite_secret() -> str:
     """Return the repository-owned signing secret."""
-    return _invite_application.signing_secret()
+    return _compatibility_state.invite_application.signing_secret()
 
 
 def _session_issuer() -> RoomSessionIssuer:
     return RoomSessionIssuer(
-        _repository,
+        _compatibility_state.repository,
         token_prefix=SESSION_TOKEN_PREFIX,
         ttl_seconds=SESSION_TOKEN_TTL_SECONDS,
     )
@@ -173,19 +165,12 @@ def configure_room_invite_store(path: str | os.PathLike[str] | None) -> None:
 
 def configure_room_invite_repository(repository: InviteSessionRepository) -> None:
     """Install the server-scoped invite/session repository."""
-    global _repository, _invite_application
-    if not isinstance(repository, InviteSessionRepository):
-        raise TypeError("repository must implement InviteSessionRepository")
-    _repository = repository
-    _invite_application = InviteApplicationService(
-        repository,
-        public_url=get_public_url,
-    )
+    _compatibility_state.configure_repository(repository)
 
 
 def reload_room_invite_store() -> None:
     """Reload configured persistent state, simulating a server process restart."""
-    _repository.reload()
+    _compatibility_state.repository.reload()
 
 
 def create_room_invite(
@@ -204,7 +189,7 @@ def create_room_invite(
     created_by_user_id: str = "",
 ) -> dict[str, object]:
     """Compatibility facade for the process-default invite service."""
-    return _invite_application.create(
+    return _compatibility_state.invite_application.create(
         room_url=room_url,
         meeting_id=meeting_id,
         agent_id=agent_id,
@@ -222,7 +207,7 @@ def create_room_invite(
 
 def inspect_room_invite(token: str, *, meeting_id: str = "") -> dict[str, object]:
     """Compatibility facade for side-effect-free invite inspection."""
-    return _invite_application.inspect(token, meeting_id=meeting_id)
+    return _compatibility_state.invite_application.inspect(token, meeting_id=meeting_id)
 
 
 def join_room_with_invite(
@@ -250,9 +235,9 @@ def join_room_with_invite(
     join_code_fingerprint = hashlib.sha256(join_code.encode("utf-8")).hexdigest() if join_code else ""
     invite_id = _invite_fingerprint(token)
     invite_info = (
-        _repository.invite_for_join_code(join_code_fingerprint)
+        _compatibility_state.repository.invite_for_join_code(join_code_fingerprint)
         if join_code_fingerprint
-        else _repository.invite(invite_id)
+        else _compatibility_state.repository.invite(invite_id)
     )
     if join_code_fingerprint:
         invite_id = str((invite_info or {}).get("invite_id") or "")
@@ -304,7 +289,7 @@ def join_room_with_invite(
     nonce = str(claims.get("nonce") or "")
     nonce_fingerprint = _nonce_fingerprint(nonce)
 
-    consume_error = _repository.consume(
+    consume_error = _compatibility_state.repository.consume(
         invite_id=invite_id,
         nonce_fingerprint=nonce_fingerprint,
         reusable=reusable,
@@ -379,7 +364,7 @@ def join_room_with_invite(
         "operator": bool(stable_user and stable_user.get("is_operator")),
         "connection_kind": "native_cli_bridge" if invite_client_type == "agent_bridge" else NATIVE_REMOTE_ROOM_CLIENT_KIND,
         "expires_at": str(
-            (_repository.session(_session_fingerprint(session_token)) or {}).get("expires_at") or ""
+            (_compatibility_state.repository.session(_session_fingerprint(session_token)) or {}).get("expires_at") or ""
         ),
         "guide": _room_usage_guide(
             room_url=get_public_url() or str(claims.get("room_url") or ""),
@@ -483,20 +468,20 @@ def active_sessions_summary() -> list[dict[str, object]]:
 
 def revoke_invite(invite_id: str) -> bool:
     """Compatibility facade for revoking a pending invite."""
-    return _invite_application.revoke(invite_id)
+    return _compatibility_state.invite_application.revoke(invite_id)
 
 
 def revoke_room_access(meeting_id: str) -> dict[str, int]:
     clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
     return {
-        "revoked_invites": _repository.revoke_room_invites(clean_meeting_id),
+        "revoked_invites": _compatibility_state.repository.revoke_room_invites(clean_meeting_id),
         "revoked_sessions": _session_issuer().revoke_room(clean_meeting_id),
     }
 
 
 def pending_invites_summary() -> list[dict[str, object]]:
     """Compatibility facade for safe pending-invite summaries."""
-    return _invite_application.pending()
+    return _compatibility_state.invite_application.pending()
 
 
 def _issue_session_token(
@@ -531,13 +516,7 @@ def _issue_session_token(
 
 def reset_state() -> None:
     """Reset all in-memory state. For testing only."""
-    global _repository, _invite_application, _public_invite_runtime
-    _repository = MemoryInviteSessionRepository()
-    _invite_application = InviteApplicationService(
-        _repository,
-        public_url=get_public_url,
-    )
-    _public_invite_runtime = PublicInviteRuntime()
+    _compatibility_state.reset()
 
 
 def _session_fingerprint(token: str) -> str:

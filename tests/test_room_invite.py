@@ -35,7 +35,7 @@ from agentsassemble.admission.invite import (
 class TestRoomInviteRepositoryConfiguration(unittest.TestCase):
     def test_facade_fails_closed_before_repository_configuration(self) -> None:
         with patch(
-            "agentsassemble.admission.invite._invite_application",
+            "agentsassemble.admission.invite._compatibility_state.invite_application",
             InviteApplicationService(UnconfiguredInviteSessionRepository()),
         ):
             with self.assertRaises(InviteRepositoryNotConfigured):
