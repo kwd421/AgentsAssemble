@@ -78,6 +78,10 @@ from agentsassemble.legacy.meeting.cli.commands import (
 )
 from agentsassemble.legacy.room.cli_commands import run_legacy_room_command
 from agentsassemble.legacy.live_agent.cli.mcp_commands import run_mcp_command
+from agentsassemble.legacy.live_agent.cli.commands import (
+    LegacyLiveAgentCliRuntime,
+    run_live_agent_command as _run_live_agent_command,
+)
 from agentsassemble.legacy.live_agent.cli.common import (
     LIVE_AGENT_RESIDENT_CONNECTION_KIND_CHOICES,
     _add_session_auto_restart_args,
@@ -338,21 +342,18 @@ def _is_live_agent_wait_timeout(error: BaseException) -> bool:
 
 
 def run_live_agent_command(args: argparse.Namespace) -> int:
-    if (
-        str(getattr(args, "live_agent_command", "")) in LEGACY_LIVE_AGENT_RUNNABLE_COMMANDS
-        and not bool(getattr(args, "legacy_internal", False))
-        and os.environ.get("AGENTSASSEMBLE_LEGACY_INTERNAL") != "1"
-    ):
-        print("live-agent commands are legacy/internal; use Agent Session room commands instead.", file=sys.stderr)
-        return 2
-    try:
-        session_result = run_legacy_session_command(
-            args,
-            runtime=_legacy_session_cli_runtime(),
-        )
-        if session_result is not None:
-            return session_result
-        process_result = run_legacy_process_command(
+    return _run_live_agent_command(args, runtime=_legacy_live_agent_cli_runtime())
+
+
+def _legacy_live_agent_cli_runtime() -> LegacyLiveAgentCliRuntime:
+    return LegacyLiveAgentCliRuntime(
+        request_json=lambda *call_args, **call_kwargs: _request_json(*call_args, **call_kwargs),
+        server_url=_server_url,
+        heartbeat_payload=_heartbeat_payload,
+        session_command=lambda args: run_legacy_session_command(
+            args, runtime=_legacy_session_cli_runtime()
+        ),
+        process_command=lambda args: run_legacy_process_command(
             args,
             runtime=LegacyProcessCliRuntime(
                 request_json=lambda *call_args, **call_kwargs: _request_json(*call_args, **call_kwargs),
@@ -365,10 +366,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
                 print_wait_result=_print_live_agent_process_wait_result,
                 print_event_wait_result=_print_live_agent_process_event_wait_result,
             ),
-        )
-        if process_result is not None:
-            return process_result
-        smoke_result = run_legacy_smoke_command(
+        ),
+        smoke_command=lambda args: run_legacy_smoke_command(
             args,
             runtime=LegacySmokeCliRuntime(
                 request_json=lambda *call_args, **call_kwargs: _request_json(*call_args, **call_kwargs),
@@ -379,157 +378,51 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
                 format_session_smoke=_format_live_agent_session_smoke,
                 format_real_session_smoke=_format_live_agent_real_session_smoke,
             ),
-        )
-        if smoke_result is not None:
-            return smoke_result
-        diagnostic_result = run_diagnostic_command(
-            args,
-            runtime=_diagnostic_cli_runtime(),
-        )
-        if diagnostic_result is not None:
-            return diagnostic_result
-        if args.live_agent_command == "register":
-            payload = {
-                "agent_id": args.agent_id,
-                "display_name": args.display_name,
-                "provider_kind": args.provider_kind,
-                "connection_kind": args.connection_kind,
-                "session_id": args.session_id,
-                "endpoint": args.endpoint,
-                "meeting_id": args.meeting_id,
-                "engagement_mode": args.engagement_mode,
-                "capabilities": ["room_chat", "mentions"],
-            }
-            if args.join_semantics:
-                payload["join_semantics"] = args.join_semantics
-            persona_card_id = clean_persona_card_id(args.persona_card_id)
-            if persona_card_id:
-                payload["persona_card_id"] = persona_card_id
-            if args.character_mode:
-                payload["character_mode"] = args.character_mode
-            response = _request_json(_server_url(args.server, "/api/live-agents"), method="POST", payload=payload)
-            agent = response.get("agent", {}) if isinstance(response.get("agent"), dict) else {}
-            if args.as_json:
-                print(json.dumps(response, ensure_ascii=False, indent=2))
-            else:
-                print(f"Registered {agent.get('agent_id') or args.agent_id}")
-            return 0
-        if args.live_agent_command == "join-brief":
-            return _run_live_agent_join_brief(args)
-        if args.live_agent_command == "lan-invite":
-            return _run_live_agent_lan_invite(args)
-        if args.live_agent_command == "list":
-            return _run_live_agent_list(args)
-        if args.live_agent_command == "heartbeat":
-            agent_id = urllib.parse.quote(args.agent_id, safe="")
-            response = _request_json(
-                _server_url(args.server, f"/api/live-agents/{agent_id}/heartbeat"),
-                method="POST",
-                payload=_heartbeat_payload(args),
-            )
-            agent = response.get("agent", {}) if isinstance(response.get("agent"), dict) else {}
-            if args.as_json:
-                print(json.dumps(response, ensure_ascii=False, indent=2))
-            else:
-                print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('status') or args.status}")
-            return 0
-        if args.live_agent_command == "leave":
-            return _run_live_agent_leave(args)
-        if args.live_agent_command == "return-packet":
-            return _run_live_agent_return_packet(args)
-        if args.live_agent_command == "engagement":
-            return _run_live_agent_engagement(args)
-        if args.live_agent_command == "call":
-            return _run_live_agent_call(args)
-        if args.live_agent_command == "call-sequence":
-            return _run_live_agent_call_sequence(args)
-        if args.live_agent_command == "call-round":
-            return _run_live_agent_call_round(args)
-        if args.live_agent_command == "call-preset":
-            return _run_live_agent_call_preset(args)
-        if args.live_agent_command == "flow":
-            return _run_live_agent_flow(args)
-        if args.live_agent_command == "room-benchmark":
-            return _run_live_agent_room_benchmark(args)
-        if args.live_agent_command == "call-remaining-rounds":
-            return _run_live_agent_call_remaining_rounds(args)
-        if args.live_agent_command == "review-checkpoint":
-            return _run_live_agent_review_checkpoint(args)
-        if args.live_agent_command == "start-meeting":
-            return _run_live_agent_start_meeting(args)
-        if args.live_agent_command == "finalize-meeting":
-            return _run_live_agent_finalize_meeting(args)
-        if args.live_agent_command == "say":
-            agent_id = urllib.parse.quote(args.agent_id, safe="")
-            payload = {"message": " ".join(args.message), "kind": "message"}
-            if args.source_event_id:
-                payload["source_event_id"] = args.source_event_id
-            if args.auto_chain_depth is not None:
-                payload["auto_chain_depth"] = args.auto_chain_depth
-            if args.flow_id:
-                payload["flow_id"] = args.flow_id
-                payload["flow_action"] = "speak"
-                payload["flow_runtime_mode"] = "provider_tool_loop"
-            if args.flow_meeting_id:
-                payload["flow_meeting_id"] = args.flow_meeting_id
-            response = _request_json(
-                _server_url(args.server, f"/api/live-agents/{agent_id}/lobby"),
-                method="POST",
-                payload=payload,
-            )
-            event = response.get("event", {}) if isinstance(response.get("event"), dict) else {}
-            if args.as_json:
-                print(json.dumps(response, ensure_ascii=False, indent=2))
-            else:
-                print(f"Posted {event.get('id') or 'lobby message'}")
-            return 0
-        if args.live_agent_command == "dm-reply":
-            return _run_live_agent_dm_reply(args)
-        if args.live_agent_command in {"official-reply", "answer-turn"}:
-            return _run_live_agent_answer_turn(args)
-        if args.live_agent_command == "room":
-            agent_id = urllib.parse.quote(args.agent_id, safe="")
-            response = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/room"))
-            print(json.dumps(response, ensure_ascii=False, indent=2))
-            return 0
-        if args.live_agent_command == "read-since":
-            return _run_live_agent_read_since(args)
-        if args.live_agent_command == "wait-room-event":
-            return _run_live_agent_wait_room_event(args)
-        if args.live_agent_command in {"wait-official-turn", "wait-turn-request"}:
-            return _run_live_agent_wait_turn_request(args)
-        if args.live_agent_command == "wait-next":
-            return _run_live_agent_wait_next(args)
-        if args.live_agent_command == "health":
-            return _run_live_agent_health(args)
-        if args.live_agent_command == "local-resources":
-            return _run_live_agent_local_resources(args)
-        if args.live_agent_command == "preflight":
-            return _run_live_agent_preflight(args)
-        if args.live_agent_command == "discover":
-            return _run_live_agent_discover(args)
-        if args.live_agent_command == "auto-join":
-            return _run_live_agent_auto_join(args)
-        if args.live_agent_command == "continuity-proof":
-            return _run_live_agent_continuity_proof(args)
-        if args.live_agent_command == "continuity-proof-group":
-            return _run_live_agent_continuity_proof_group(args)
-        if args.live_agent_command == "persona-smoke":
-            return _run_live_agent_persona_smoke(args)
-        if args.live_agent_command == "operations":
-            return _run_live_agent_operations(args)
-        if args.live_agent_command == "session-runs":
-            return _run_live_agent_session_runs(args)
-        if args.live_agent_command == "delegate":
-            return _run_live_agent_delegate(args)
-        if args.live_agent_command == "run":
-            return _run_live_agent_resident(args)
-        if args.live_agent_command == "run-group":
-            return _run_live_agent_group(args)
-    except (OSError, subprocess.SubprocessError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 2
-    return 1
+        ),
+        diagnostic_command=lambda args: run_diagnostic_command(
+            args, runtime=_diagnostic_cli_runtime()
+        ),
+        handlers={
+            "join-brief": _run_live_agent_join_brief,
+            "lan-invite": _run_live_agent_lan_invite,
+            "list": _run_live_agent_list,
+            "leave": _run_live_agent_leave,
+            "return-packet": _run_live_agent_return_packet,
+            "engagement": _run_live_agent_engagement,
+            "call": _run_live_agent_call,
+            "call-sequence": _run_live_agent_call_sequence,
+            "call-round": _run_live_agent_call_round,
+            "call-preset": _run_live_agent_call_preset,
+            "flow": _run_live_agent_flow,
+            "room-benchmark": _run_live_agent_room_benchmark,
+            "call-remaining-rounds": _run_live_agent_call_remaining_rounds,
+            "review-checkpoint": _run_live_agent_review_checkpoint,
+            "start-meeting": _run_live_agent_start_meeting,
+            "finalize-meeting": _run_live_agent_finalize_meeting,
+            "dm-reply": _run_live_agent_dm_reply,
+            "official-reply": _run_live_agent_answer_turn,
+            "answer-turn": _run_live_agent_answer_turn,
+            "read-since": _run_live_agent_read_since,
+            "wait-room-event": _run_live_agent_wait_room_event,
+            "wait-official-turn": _run_live_agent_wait_turn_request,
+            "wait-turn-request": _run_live_agent_wait_turn_request,
+            "wait-next": _run_live_agent_wait_next,
+            "health": _run_live_agent_health,
+            "local-resources": _run_live_agent_local_resources,
+            "preflight": _run_live_agent_preflight,
+            "discover": _run_live_agent_discover,
+            "auto-join": _run_live_agent_auto_join,
+            "continuity-proof": _run_live_agent_continuity_proof,
+            "continuity-proof-group": _run_live_agent_continuity_proof_group,
+            "persona-smoke": _run_live_agent_persona_smoke,
+            "operations": _run_live_agent_operations,
+            "session-runs": _run_live_agent_session_runs,
+            "delegate": _run_live_agent_delegate,
+            "run": _run_live_agent_resident,
+            "run-group": _run_live_agent_group,
+        },
+        runnable_commands=LEGACY_LIVE_AGENT_RUNNABLE_COMMANDS,
+    )
 
 
 def _heartbeat_payload(args: argparse.Namespace) -> dict[str, object]:
