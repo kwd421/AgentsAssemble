@@ -1,6 +1,6 @@
 # Entrypoint And Compatibility Refactor
 
-Status: approved, in progress
+Status: complete
 
 Date: 2026-07-22
 
@@ -60,6 +60,15 @@ committed)
   branch: every zero-caller candidate still requires one measured compatibility
   window, which began with this report. Deleting them now would replace an
   evidence gate with a line-count goal.
+- Final gates: complete as of 2026-07-23. Both 3,845-test Python runs passed,
+  including the ResourceWarning-as-error run; the isolated PostgreSQL runner
+  passed 86 contracts with zero skips; 128 frontend tests, production build,
+  four Playwright scenarios, package-map, architecture, and diff checks passed.
+  The successful isolated canonical-WebSocket smoke ran Codex Luna, Claude
+  Sonnet 4.6, and Grok 4.5 at low reasoning for 12 public turns over 76.851
+  seconds, with same-PID continuity and successful pause/resume/kick cleanup.
+  A preceding persisted-observer run failed on an existing participant-ID
+  conflict and is recorded as a failure, not counted as evidence.
 
 ## Goal
 

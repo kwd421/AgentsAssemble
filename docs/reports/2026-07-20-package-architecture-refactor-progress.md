@@ -309,3 +309,140 @@ The following untracked user-owned paths were not modified, staged, or committed
 .superpowers/
 docs/plan-room-hygiene-bugfixes.md
 ```
+
+## 12. Entrypoint And Compatibility Refactor Completion (2026-07-23)
+
+The follow-up plan in
+`docs/plans/2026-07-22-entrypoint-compatibility-refactor.md` is complete through
+its shim-readiness assessment and final verification gates. The work preserved
+the canonical room protocol and provider behavior; it did not implement or
+redesign the deferred autonomous-conversation policy.
+
+### 12.1 Ownership result
+
+The large compatibility entrypoints now retain composition and measured export
+seams while workflows live under their owning packages:
+
+| Boundary | Before | Current | Current responsibility |
+| --- | ---: | ---: | --- |
+| `agentsassemble/cli.py` | 5,837 | 828 | parser composition, dispatch, compatibility exports |
+| `agentsassemble/gui.py` | 3,504 | 2,036 | server composition and measured compatibility patch seams |
+| `application/agent_sessions.py` | 2,298 | 440-line package facade | stable exports over focused process, turn, command, queue, service, and compatibility owners |
+| `persona_cards.py` | 1,660 | 75-line package facade | stable exports over models, values, rendering, storage, Risu codec, bounded assets, and import orchestration |
+| `check_package_architecture.py` | 2,499 | 433 | checker logic over data-driven shim metadata |
+
+`character_mode.py`, `config.py`, and `models.py` were inspected and retained.
+Their remaining code is cohesive policy/configuration/legacy DTO behavior with
+one validation boundary; splitting them only to lower line counts would scatter
+the next change. Persona handling was split because model normalization, lore
+rendering, JSON persistence, Risu decoding, and archive asset extraction have
+different side effects and failure modes.
+
+Current routes and services no longer own process-global invite state.
+`admission.compat` owns the historical singleton, while current composition
+injects repositories and the root GUI/legacy facade performs explicit
+compatibility wiring. A reset-order defect discovered during the move was fixed
+at its source: runtime URL state is reset before the compatibility application
+is rebuilt, so the rebuilt service cannot capture a stale URL callback.
+
+### 12.2 Compatibility retirement decision
+
+The generated retirement report currently records:
+
+```text
+tracked shims:          281
+zero-code-caller:        88
+caller-blocked:         193
+unexpected callers:      0
+```
+
+No shim was removed. This intentionally differs from a cosmetic root-file
+cleanup: every zero-caller candidate still requires one measured compatibility
+window. This report starts that window; it does not retroactively satisfy it.
+Deleting those modules in the same branch would violate the published removal
+gate.
+
+### 12.3 Defects found by the final gate
+
+The first full Python run found three failures with one cause. The legacy React
+parity appendix described `POST /api/room-invite/agent-join` as both
+`native attendee only` and React-wired. The actual endpoint is an exact POST
+used by the Python native attendee client, and browser consumption is forbidden.
+The appendix now records `exact`, no React wrapper, and `react_wired=no`.
+Adding a browser wrapper would have weakened the signed invite client-scope
+boundary, so no fallback route was added.
+
+The first real smoke invocation also failed and is not counted as success. It
+used `--observe-gui-port`, which deliberately reuses the persisted default
+`.agentsassemble` state so a person can inspect the room later. Existing
+participants with the same provider IDs caused the supplied smoke specs to be
+skipped and `agent.start` returned `Unknown configured agent: codex`. The plan
+requires isolated room state, so the valid run omitted the persistence/observer
+option. The harness still started a real HTTP server and used its canonical
+ticket-authenticated `/ws` path; only the state lifetime and fixed observer port
+differed.
+
+### 12.4 Final automated evidence
+
+```text
+python3 -m unittest discover -s tests -t .
+  3,845 passed, 74 optional-environment skips
+
+python3 -W error::ResourceWarning -m unittest discover -s tests -t .
+  3,845 passed, 74 optional-environment skips
+
+isolated UTF-8 PostgreSQL 17 + tests.run_postgres_contracts
+  86 passed, 0 skipped
+
+npm --prefix frontend test
+  22 files, 128 passed
+
+npm --prefix frontend run build
+  passed
+
+npm --prefix frontend run test:e2e
+  4 Playwright scenarios passed
+
+python3 scripts/generate_package_map.py --check
+python3 scripts/check_package_architecture.py
+git diff --check
+  passed
+```
+
+The PostgreSQL contract run used a temporary virtual environment and UTF-8
+cluster, stopped the server, and removed the temporary workspace afterward.
+
+### 12.5 Final real-provider evidence
+
+The successful isolated run used the actual configured provider commands and
+models with the lowest requested reasoning setting:
+
+| Provider | Requested/observed model | Transport | Same provider PID | Cleanup |
+| --- | --- | --- | --- | --- |
+| Codex | `gpt-5.6-luna` | PTY | yes | provider and bridge stopped |
+| Grok | `grok-4.5` | ACP stdio | yes | provider and bridge stopped |
+| Claude Code | `claude-sonnet-4-6` | PTY | yes | provider and bridge stopped |
+
+The shared topic was how three agents trapped in the Backrooms should conserve
+resources while finding an exit. The room produced 12 finalized public turns
+over four speaker cycles in 76.851 seconds. Warm turns showed both peer actors
+in every provider context; visible at-mentions and unexpected extra turns were
+zero. TTFO was p50 4,619.8 ms / p95 8,176.5 ms and turn completion was p50
+6,410.6 ms / p95 9,394.3 ms.
+
+Each provider completed five total turns including its control turn, retained
+the same provider and bridge PID through pause/backlog/resume, answered from the
+queued source event, cleared its backlog, and passed participant-kick cleanup.
+All three reported `alive_after_stop=false`; stderr byte, line, and warning
+counts were zero. Message provenance was `codex_session_jsonl`, `grok_acp`, and
+`claude_session_jsonl` respectively. No provider, model, reasoning level, or
+transport was silently substituted.
+
+### 12.6 Remaining work
+
+- Wait one real compatibility window, regenerate caller evidence, and review
+  the 88 zero-caller shim candidates in the documented domain order.
+- Decide whether a future observer smoke should accept an explicit isolated
+  persisted state root instead of sharing the normal `.agentsassemble` state.
+- Design autonomous participation, semantic silence, and provider-native media
+  separately; this refactor intentionally did not alter those unsettled rules.
