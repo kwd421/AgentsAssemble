@@ -114,6 +114,21 @@ from agentsassemble.legacy.gui_session_rounds import (
     session_auto_rounds_options as _owned_session_auto_rounds_options,
     skipped_session_auto_rounds_result as _owned_skipped_session_auto_rounds_result,
 )
+from agentsassemble.legacy.gui_session_probes import (
+    REAL_SESSION_SMOKE_PROBE_REDACTION,
+    REAL_SESSION_SMOKE_REPLY_REDACTION,
+    REDACTED_SOURCE_EVENT_IDS as REAL_SESSION_SMOKE_REDACTED_SOURCE_EVENT_IDS,
+    live_agent_engagement_snapshot as _owned_live_agent_engagement_snapshot,
+    read_live_agent_presence_state as _owned_read_live_agent_presence_state,
+    real_session_smoke_reply_message as _owned_real_session_smoke_reply_message,
+    redact_real_session_smoke_lobby_events as _owned_redact_real_session_smoke_lobby_events,
+    restore_live_agent_engagement_snapshot as _owned_restore_live_agent_engagement_snapshot,
+    run_session_bound_agent_probe as _owned_run_session_bound_agent_probe,
+    session_bound_agent_ids as _owned_session_bound_agent_ids,
+    session_bound_agent_reply_probe_payload as _owned_session_bound_agent_reply_probe_payload,
+    session_reply_probe_summary as _owned_session_reply_probe_summary,
+    write_live_agent_presence_state as _owned_write_live_agent_presence_state,
+)
 from agentsassemble.legacy.gui_session_runs import (
     LegacyGuiSessionRunMonitor as _OwnedLegacyGuiSessionRunMonitor,
     LegacyGuiSessionRunRuntime,
@@ -224,13 +239,12 @@ from agentsassemble.legacy.live_agent.session_run_service import LegacySessionRu
 from agentsassemble.legacy.live_agent.state import (
     heartbeat_live_agent,
     read_live_agents,
-    update_live_agent_engagement,
 )
 from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
 from agentsassemble.legacy.live_agent.runtime.processes import (
     LiveAgentProcessSupervisor,
 )
-from agentsassemble.legacy.live_agent.runtime.probe import run_live_agent_probe, safe_probe_timeout
+from agentsassemble.legacy.live_agent.runtime.probe import run_live_agent_probe
 from agentsassemble.legacy.live_agent.runtime.session_runs import LiveAgentSessionRunController
 from agentsassemble.legacy.live_agent.runtime.smoke import (
     LiveAgentSmokeFailed,
@@ -273,7 +287,6 @@ from agentsassemble.legacy.live_agent.readiness import (
 )
 from agentsassemble.legacy.live_agent.readiness_projection import (
     readiness_health_operation_details as _readiness_health_operation_details,
-    safe_readiness_probe_result as _safe_readiness_probe_result,
 )
 from agentsassemble.legacy.live_agent.smoke import (
     LegacyLiveAgentSmokeService,
@@ -407,7 +420,6 @@ from agentsassemble.web.sse_cadence import (
 
 SSE_ERROR_MESSAGE_LIMIT = 500
 REMOTE_LOBBY_REQUESTER = None
-REAL_SESSION_SMOKE_PROBE_REDACTION = "[redacted real session smoke probe]"
 
 
 def _safe_live_agent_flow_agents(
@@ -463,9 +475,7 @@ def _flow_events_for_state(
 
 def _parse_iso_datetime(value: object) -> datetime | None:
     return _owned_parse_iso_datetime(value)
-REAL_SESSION_SMOKE_REPLY_REDACTION = "[redacted real session smoke reply]"
 LIVE_AGENT_LOBBY_LOCK = _OWNED_LOBBY_APPEND_LOCK
-REAL_SESSION_SMOKE_REDACTED_SOURCE_EVENT_IDS: set[str] = set()
 SESSION_RUN_MONITOR_ERROR = "Live-agent session run monitor failed."
 SESSION_ENSURE_REASONS = {
     SESSION_ENSURE_REASON_RESIDENT_SESSION_ID_DRIFT,
@@ -1189,51 +1199,16 @@ def _session_bound_agent_reply_probe_payload(
     session: dict[str, object],
     payload: dict[str, object],
 ) -> dict[str, object]:
-    timeout_seconds = safe_probe_timeout(
-        _payload_nonnegative_float(payload.get("probe_timeout_seconds", payload.get("probe_timeout")), 12.0)
+    return _owned_session_bound_agent_reply_probe_payload(
+        output_root,
+        session,
+        payload,
+        run_probe=_run_session_bound_agent_probe,
     )
-    agent_ids = _session_bound_agent_ids(session)
-    if _operation_result_status(session.get("status")) != "ready":
-        return _session_reply_probe_summary(
-            agent_ids,
-            [],
-            timeout_seconds=timeout_seconds,
-            status="skipped",
-            reason="session_not_ready",
-        )
-    if not agent_ids:
-        return _session_reply_probe_summary(
-            agent_ids,
-            [],
-            timeout_seconds=timeout_seconds,
-            status="skipped",
-            reason="no_bound_agents",
-        )
-    probes = []
-    redact_probe_events = _payload_bool(payload.get("redact_probe_events"))
-    for agent_id in agent_ids:
-        try:
-            probe = _run_session_bound_agent_probe(
-                output_root,
-                agent_id,
-                timeout_seconds=timeout_seconds,
-                redact_events=redact_probe_events,
-            )
-        except ValueError:
-            probe = {"status": "failed", "agent_id": agent_id, "reason": "probe could not be run"}
-        probes.append(_safe_readiness_probe_result(probe))
-    status = "ok" if probes and all(_operation_result_status(probe.get("status")) == "ok" for probe in probes) else "failed"
-    return _session_reply_probe_summary(agent_ids, probes, timeout_seconds=timeout_seconds, status=status)
 
 
 def _session_bound_agent_ids(session: dict[str, object]) -> list[str]:
-    connection = session.get("connection") if isinstance(session.get("connection"), dict) else {}
-    for key in ("agent_ids", "connected_agent_ids"):
-        agent_ids = _safe_payload_strings(connection.get(key), limit=64)
-        if agent_ids:
-            return agent_ids
-    process = session.get("process") if isinstance(session.get("process"), dict) else {}
-    return _safe_payload_strings(process.get("agent_ids"), limit=64)
+    return _owned_session_bound_agent_ids(session)
 
 
 def _run_session_bound_agent_probe(
@@ -1243,92 +1218,31 @@ def _run_session_bound_agent_probe(
     timeout_seconds: float,
     redact_events: bool = False,
 ) -> dict[str, object]:
-    previous_engagement = _live_agent_engagement_snapshot(output_root, agent_id)
-    previous_mode = str(previous_engagement.get("engagement_mode") or "")
-    switch_for_probe = previous_mode in {"manual", "watch", "moderator_called"}
-    if switch_for_probe:
-        update_live_agent_engagement(output_root, agent_id, "human_only")
-    try:
-        result = run_live_agent_probe(output_root, agent_id, timeout_seconds=timeout_seconds)
-    finally:
-        if switch_for_probe:
-            _restore_live_agent_engagement_snapshot(output_root, agent_id, previous_engagement)
-    if redact_events:
-        source_event_id = str(result.get("source_event_id") or "").strip()
-        if source_event_id:
-            result["redaction"] = _redact_real_session_smoke_lobby_events(output_root, [source_event_id])
-    return result
+    return _owned_run_session_bound_agent_probe(
+        output_root,
+        agent_id,
+        timeout_seconds=timeout_seconds,
+        probe_runner=run_live_agent_probe,
+        redact_events=redact_events,
+    )
 
 
 def _redact_real_session_smoke_lobby_events(
     output_root: Path,
     source_event_ids: list[str],
 ) -> dict[str, object]:
-    source_ids = {str(value or "").strip() for value in source_event_ids}
-    source_ids.discard("")
-    result = {"probe_event_count": 0, "reply_event_count": 0}
-    if not source_ids:
-        return result
-    lobby_path = output_root / "lobby.jsonl"
-    with LIVE_AGENT_LOBBY_LOCK:
-        REAL_SESSION_SMOKE_REDACTED_SOURCE_EVENT_IDS.update(source_ids)
-        if not lobby_path.exists():
-            return result
-        changed = False
-        rewritten_lines: list[str] = []
-        for line in lobby_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                rewritten_lines.append(line)
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                rewritten_lines.append(line)
-                continue
-            if not isinstance(event, dict):
-                rewritten_lines.append(line)
-                continue
-            event_id = str(event.get("id") or "")
-            source_event_id = str(event.get("source_event_id") or "")
-            if event_id in source_ids:
-                result["probe_event_count"] += 1
-                if event.get("message") != REAL_SESSION_SMOKE_PROBE_REDACTION:
-                    event["message"] = REAL_SESSION_SMOKE_PROBE_REDACTION
-                    changed = True
-            elif source_event_id in source_ids and event.get("live_agent_endpoint") is True:
-                result["reply_event_count"] += 1
-                if event.get("message") != REAL_SESSION_SMOKE_REPLY_REDACTION:
-                    event["message"] = REAL_SESSION_SMOKE_REPLY_REDACTION
-                    changed = True
-            rewritten_lines.append(json.dumps(event, ensure_ascii=False, sort_keys=True))
-        if changed:
-            tmp_path = lobby_path.with_name(f"{lobby_path.name}.tmp")
-            tmp_path.write_text("\n".join(rewritten_lines) + ("\n" if rewritten_lines else ""), encoding="utf-8")
-            tmp_path.replace(lobby_path)
-    return result
+    return _owned_redact_real_session_smoke_lobby_events(
+        output_root,
+        source_event_ids,
+    )
 
 
 def _real_session_smoke_reply_message(source_event_id: str, message: str) -> str:
-    if source_event_id and source_event_id in REAL_SESSION_SMOKE_REDACTED_SOURCE_EVENT_IDS:
-        return REAL_SESSION_SMOKE_REPLY_REDACTION
-    return message
+    return _owned_real_session_smoke_reply_message(source_event_id, message)
 
 
 def _live_agent_engagement_snapshot(output_root: Path, agent_id: str) -> dict[str, object]:
-    clean_agent_id = str(agent_id or "").strip()
-    state = _read_live_agent_presence_state(output_root)
-    agents = state.get("agents")
-    if isinstance(agents, list):
-        for agent in agents:
-            if isinstance(agent, dict) and str(agent.get("agent_id") or "") == clean_agent_id:
-                snapshot: dict[str, object] = {"engagement_mode": str(agent.get("engagement_mode") or "")}
-                if "engagement_mode_updated_at" in agent:
-                    snapshot["engagement_mode_updated_at"] = str(agent.get("engagement_mode_updated_at") or "")
-                return snapshot
-    for agent in read_live_agents(output_root):
-        if str(agent.get("agent_id") or "") == clean_agent_id:
-            return {"engagement_mode": str(agent.get("engagement_mode") or "")}
-    return {"engagement_mode": ""}
+    return _owned_live_agent_engagement_snapshot(output_root, agent_id)
 
 
 def _restore_live_agent_engagement_snapshot(
@@ -1336,42 +1250,19 @@ def _restore_live_agent_engagement_snapshot(
     agent_id: str,
     snapshot: dict[str, object],
 ) -> None:
-    clean_agent_id = str(agent_id or "").strip()
-    if not clean_agent_id:
-        return
-    state = _read_live_agent_presence_state(output_root)
-    agents = state.get("agents")
-    if not isinstance(agents, list):
-        return
-    for agent in agents:
-        if not isinstance(agent, dict) or str(agent.get("agent_id") or "") != clean_agent_id:
-            continue
-        agent["engagement_mode"] = str(snapshot.get("engagement_mode") or "")
-        if "engagement_mode_updated_at" in snapshot:
-            agent["engagement_mode_updated_at"] = str(snapshot.get("engagement_mode_updated_at") or "")
-        else:
-            agent.pop("engagement_mode_updated_at", None)
-        _write_live_agent_presence_state(output_root, state)
-        return
+    _owned_restore_live_agent_engagement_snapshot(
+        output_root,
+        agent_id,
+        snapshot,
+    )
 
 
 def _read_live_agent_presence_state(output_root: Path) -> dict[str, object]:
-    path = output_root / "live_agents.json"
-    if not path.exists():
-        return {"agents": []}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {"agents": []}
-    return data if isinstance(data, dict) else {"agents": []}
+    return _owned_read_live_agent_presence_state(output_root)
 
 
 def _write_live_agent_presence_state(output_root: Path, state: dict[str, object]) -> None:
-    output_root.mkdir(parents=True, exist_ok=True)
-    path = output_root / "live_agents.json"
-    temp_path = path.with_suffix(".json.tmp")
-    temp_path.write_text(json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
-    temp_path.replace(path)
+    _owned_write_live_agent_presence_state(output_root, state)
 
 
 def _session_reply_probe_summary(
@@ -1382,28 +1273,13 @@ def _session_reply_probe_summary(
     status: str,
     reason: str = "",
 ) -> dict[str, object]:
-    ok_count = sum(1 for probe in probes if _operation_result_status(probe.get("status")) == "ok")
-    timeout_count = sum(1 for probe in probes if _operation_result_status(probe.get("status")) == "timeout")
-    skipped_count = sum(1 for probe in probes if _operation_result_status(probe.get("status")) == "skipped")
-    failed_count = sum(
-        1
-        for probe in probes
-        if _operation_result_status(probe.get("status")) not in {"ok", "timeout", "skipped"}
+    return _owned_session_reply_probe_summary(
+        agent_ids,
+        probes,
+        timeout_seconds=timeout_seconds,
+        status=status,
+        reason=reason,
     )
-    summary: dict[str, object] = {
-        "status": status,
-        "agent_ids": agent_ids,
-        "probe_count": len(probes),
-        "ok_count": ok_count,
-        "timeout_count": timeout_count,
-        "failed_count": failed_count,
-        "skipped_count": skipped_count,
-        "timeout_seconds": timeout_seconds,
-        "probes": probes,
-    }
-    if reason:
-        summary["reason"] = clean_lobby_text(reason, limit=128)
-    return summary
 
 
 def _skipped_session_auto_rounds_result(
