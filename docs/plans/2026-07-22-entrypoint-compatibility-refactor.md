@@ -13,6 +13,23 @@ Source of truth: `docs/product/CURRENT_SYSTEM.md`
 Review input: `/Users/seinel/Downloads/review.md` (local review artifact, not
 committed)
 
+## Progress
+
+- Phase 0: complete. Agent-only invite consumption and strict current
+  repository injection are enforced and covered by behavior tests.
+- Phase 1: complete. Compatibility metadata is data-driven and the retirement
+  report is generated from measured callers.
+- Phase 2: complete as of 2026-07-22. `agentsassemble/cli.py` moved from 5,837
+  to 828 lines. Command workflows, HTTP behavior, retained live-agent
+  operations, process handling, resident validation, and provider session
+  execution now live under their owning current or legacy packages.
+  The root retains parser/dispatch, dependency composition, and historical
+  patch/export seams whose callers are measured by the compatibility report.
+  The phase boundary passed 411 `test_cli_timeout_*` tests, package-map and
+  architecture checks, and `git diff --check`.
+- Phase 3: in progress. The next boundary is the root `gui.py` transport and
+  runtime composition split; no GUI behavior changes are part of that move.
+
 ## Goal
 
 Finish the maintainability work left after the package-ownership migration.
