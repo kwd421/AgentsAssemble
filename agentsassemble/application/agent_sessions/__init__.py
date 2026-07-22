@@ -11,11 +11,11 @@ from uuid import uuid4
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 from agentsassemble.room.repository import RoomRepository
-from agentsassemble.application.agent_session_process import (
+from agentsassemble.application.agent_sessions.process import (
     agent_session_process_result as _agent_session_process_result,
     build_agent_session_launch_plan,
 )
-from agentsassemble.application.agent_session_commands import (
+from agentsassemble.application.agent_sessions.commands import (
     active_room_members,
     clean_room_request_payload,
     merge_room_store_members,
@@ -25,12 +25,12 @@ from agentsassemble.application.agent_session_commands import (
     room_status_payload,
     stream_room_sse_frames,
 )
-from agentsassemble.application.agent_session_auto_queue import (
+from agentsassemble.application.agent_sessions.auto_queue import (
     AGENT_SESSION_AUTO_TURN_QUEUE_LIMIT,
     queue_agent_session_auto_turn_job,
     run_agent_session_auto_turn_job,
 )
-from agentsassemble.application.agent_session_turn_commands import (
+from agentsassemble.application.agent_sessions.turn_commands import (
     _agent_session_resume_mode,
     _default_agent_turn_jsonl_streamer,
     agent_session_codex_jsonl_turn_runner,
@@ -39,14 +39,14 @@ from agentsassemble.application.agent_session_turn_commands import (
     build_agent_session_plain_turn_command,
     build_agent_session_turn_command,
 )
-from agentsassemble.application.agent_session_compatibility import (
+from agentsassemble.application.agent_sessions.compatibility import (
     AgentSessionAdapter,
     AgyAgentSessionAdapter,
     ClaudeAgentSessionAdapter,
     GrokAgentSessionAdapter,
     UnsupportedAgentSessionAdapter,
 )
-from agentsassemble.application.agent_session_service import (
+from agentsassemble.application.agent_sessions.service import (
     create_agent_session as _create_agent_session,
     resume_agent_session as _resume_agent_session,
 )

@@ -9,7 +9,7 @@ import subprocess
 import time
 from typing import Callable, Iterable
 
-from agentsassemble.application.agent_session_process import build_agent_session_launch_plan
+from agentsassemble.application.agent_sessions.process import build_agent_session_launch_plan
 from agentsassemble.providers.codex_app_server import (
     DEFAULT_AGENT_TURN_TIMEOUT_SECONDS,
     _context_error_detected,
@@ -452,4 +452,3 @@ def _codex_jsonl_progress_text(item: dict[str, object], event_type: str) -> str:
         return ""
     text = clean_lobby_text(item.get("summary") or item.get("progress"), limit=1000)
     return text
-
