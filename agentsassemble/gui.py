@@ -137,6 +137,13 @@ from agentsassemble.legacy.gui_processes import (
     stop_process_payload as _owned_stop_process_payload,
     stop_running_processes_payload as _owned_stop_running_processes_payload,
 )
+from agentsassemble.legacy.gui_smoke import (
+    aggregate_readiness_payload as _owned_aggregate_readiness_payload,
+    basic_smoke_payload as _owned_basic_smoke_payload,
+    official_round_smoke_payload as _owned_official_round_smoke_payload,
+    real_session_smoke_payload as _owned_real_session_smoke_payload,
+    session_smoke_payload as _owned_session_smoke_payload,
+)
 from agentsassemble.legacy.gui_session_runs import (
     LegacyGuiSessionRunMonitor as _OwnedLegacyGuiSessionRunMonitor,
     LegacyGuiSessionRunRuntime,
@@ -288,16 +295,10 @@ from agentsassemble.legacy.live_agent.process_projection import (
 from agentsassemble.legacy.live_agent.preflight import (
     live_agent_preflight_payload,
 )
-from agentsassemble.legacy.live_agent.readiness import (
-    live_agent_readiness_payload as _resident_live_agent_readiness_payload,
-)
 from agentsassemble.legacy.live_agent.readiness_projection import (
     readiness_health_operation_details as _readiness_health_operation_details,
 )
 from agentsassemble.legacy.live_agent.smoke import (
-    LegacyLiveAgentSmokeService,
-    live_agent_real_session_smoke_payload as _resident_live_agent_real_session_smoke_payload,
-    live_agent_session_smoke_payload as _resident_live_agent_session_smoke_payload,
     official_round_smoke_operation_details as _official_round_smoke_operation_details,
     real_session_smoke_error_details as _real_session_smoke_error_details,
     real_session_smoke_has_explicit_configs as _real_session_smoke_has_explicit_configs,
@@ -1460,11 +1461,11 @@ def live_agent_review_checkpoint_payload(
 
 def live_agent_smoke_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
     """Compatibility seam used by aggregate readiness until that route moves."""
-    return run_live_agent_smoke(
-        server=default_server,
-        group_id=str(payload.get("group_id") or ""),
-        timeout_seconds=_payload_nonnegative_float(payload.get("timeout"), 12.0),
+    return _owned_basic_smoke_payload(
+        payload,
+        default_server=default_server,
         request_json=_request_json,
+        runner=run_live_agent_smoke,
     )
 
 
@@ -1475,12 +1476,12 @@ def live_agent_official_round_smoke_payload(
     default_server: str,
 ) -> dict[str, object]:
     """Compatibility seam used by aggregate readiness until that route moves."""
-    return run_live_agent_official_round_smoke(
-        output_root=output_root,
-        server=default_server,
-        group_id=str(payload.get("group_id") or ""),
-        timeout_seconds=_payload_nonnegative_float(payload.get("timeout"), 12.0),
+    return _owned_official_round_smoke_payload(
+        output_root,
+        payload,
+        default_server=default_server,
         request_json=_request_json,
+        runner=run_live_agent_official_round_smoke,
     )
 
 
@@ -1491,7 +1492,7 @@ def live_agent_session_smoke_payload(
     default_server: str,
 ) -> dict[str, object]:
     """Compatibility seam used by aggregate readiness until that route moves."""
-    return _resident_live_agent_session_smoke_payload(
+    return _owned_session_smoke_payload(
         output_root,
         payload,
         default_server=default_server,
@@ -1507,7 +1508,7 @@ def live_agent_real_session_smoke_payload(
     default_server: str,
 ) -> dict[str, object]:
     """Compatibility seam retained for direct imports and tests."""
-    return _resident_live_agent_real_session_smoke_payload(
+    return _owned_real_session_smoke_payload(
         output_root,
         payload,
         default_server=default_server,
@@ -1524,20 +1525,20 @@ def live_agent_readiness_payload(
     default_server: str,
     session_run_monitor: LiveAgentSessionRunMonitor | None = None,
 ) -> dict[str, object]:
-    smoke = LegacyLiveAgentSmokeService(
-        output_root,
-        basic_smoke_runner=lambda **kwargs: run_live_agent_smoke(**kwargs),
-        official_round_smoke_runner=lambda **kwargs: run_live_agent_official_round_smoke(**kwargs),
-        session_smoke_runner=lambda **kwargs: run_live_agent_session_smoke(**kwargs),
-        real_session_smoke_runner=lambda **kwargs: run_live_agent_real_session_smoke(**kwargs),
-    )
-    return _resident_live_agent_readiness_payload(
+    return _owned_aggregate_readiness_payload(
         output_root,
         process_supervisor,
         payload,
         default_server=default_server,
         session_run_monitor=session_run_monitor,
-        smoke=smoke,
+        basic_smoke_runner=lambda **kwargs: run_live_agent_smoke(**kwargs),
+        official_round_smoke_runner=lambda **kwargs: run_live_agent_official_round_smoke(
+            **kwargs,
+        ),
+        session_smoke_runner=lambda **kwargs: run_live_agent_session_smoke(**kwargs),
+        real_session_smoke_runner=lambda **kwargs: run_live_agent_real_session_smoke(
+            **kwargs,
+        ),
         probe_runner=lambda *args, **kwargs: run_live_agent_probe(*args, **kwargs),
     )
 
