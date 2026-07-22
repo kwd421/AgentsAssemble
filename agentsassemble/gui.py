@@ -94,6 +94,16 @@ from agentsassemble.legacy.gui_session_readiness import (
     stale_observation_restart_count as _owned_stale_observation_restart_count,
     stale_observation_restart_decision as _owned_stale_observation_restart_decision,
 )
+from agentsassemble.legacy.gui_session_lifecycle import (
+    ensure_session_payload as _owned_ensure_session_payload,
+    recover_session_payload as _owned_recover_session_payload,
+    restart_session_payload as _owned_restart_session_payload,
+    resume_session_agent_payload as _owned_resume_session_agent_payload,
+    resume_session_payload as _owned_resume_session_payload,
+    start_session_payload as _owned_start_session_payload,
+    stop_session_agent_payload as _owned_stop_session_agent_payload,
+    stop_session_payload as _owned_stop_session_payload,
+)
 from agentsassemble.legacy.gui_session_runs import (
     LegacyGuiSessionRunMonitor as _OwnedLegacyGuiSessionRunMonitor,
     LegacyGuiSessionRunRuntime,
@@ -218,16 +228,6 @@ from agentsassemble.legacy.live_agent.runtime.processes import (
     LiveAgentProcessSupervisor,
 )
 from agentsassemble.legacy.live_agent.runtime.probe import run_live_agent_probe, safe_probe_timeout
-from agentsassemble.legacy.live_agent.runtime.sessions import (
-    recover_live_agent_session,
-    restart_live_agent_session,
-    resume_live_agent_session_agent,
-    resume_live_agent_session,
-    session_ensure_action,
-    start_live_agent_session,
-    stop_live_agent_session_agent,
-    stop_live_agent_session,
-)
 from agentsassemble.legacy.live_agent.runtime.session_runs import LiveAgentSessionRunController
 from agentsassemble.legacy.live_agent.runtime.smoke import (
     LiveAgentSmokeFailed,
@@ -872,28 +872,13 @@ def live_agent_session_start_payload(
     *,
     default_server: str,
 ) -> dict[str, object]:
-    council_config_path = str(payload.get("council_config_path") or payload.get("council_config") or "").strip()
-    agent_config_path = str(payload.get("agent_config_path") or payload.get("agent_config") or "").strip()
-    live_agent_config_path = str(payload.get("live_agent_config_path") or payload.get("live_agent_config") or "").strip()
-    if not live_agent_config_path:
-        raise ValueError("Live agent config path is required.")
-    session = start_live_agent_session(
+    return _owned_start_session_payload(
         output_root,
         process_supervisor,
-        server=str(payload.get("server") or default_server),
-        council_config_path=Path(council_config_path) if council_config_path else None,
-        agent_config_path=Path(agent_config_path) if agent_config_path else None,
-        live_agent_config_path=Path(live_agent_config_path),
-        meeting_id=str(payload.get("meeting_id") or ""),
-        group_id=str(payload.get("group_id") or ""),
-        connect_timeout_seconds=_payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
-        auto_restart=_payload_bool(payload.get("auto_restart")),
-        max_restarts=_payload_nonnegative_int(payload.get("max_restarts"), 0),
-        restart_backoff_seconds=_payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
-        stale_restart_after_seconds=_payload_nonnegative_float(payload.get("stale_restart_after_seconds"), 0.0),
-        diagnostic=_payload_bool(payload.get("diagnostic")),
+        payload,
+        default_server=default_server,
+        attach_auto_rounds=_attach_session_auto_rounds_if_requested,
     )
-    return _attach_session_auto_rounds_if_requested(output_root, session, payload)
 
 
 def live_agent_session_resume_payload(
@@ -903,23 +888,13 @@ def live_agent_session_resume_payload(
     *,
     default_server: str,
 ) -> dict[str, object]:
-    live_agent_config_path = str(payload.get("live_agent_config_path") or payload.get("live_agent_config") or "").strip()
-    if not live_agent_config_path:
-        raise ValueError("Live agent config path is required.")
-    session = resume_live_agent_session(
+    return _owned_resume_session_payload(
         output_root,
         process_supervisor,
-        server=str(payload.get("server") or default_server),
-        live_agent_config_path=Path(live_agent_config_path),
-        meeting_id=str(payload.get("meeting_id") or ""),
-        group_id=str(payload.get("group_id") or ""),
-        connect_timeout_seconds=_payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
-        auto_restart=_payload_bool(payload.get("auto_restart")),
-        max_restarts=_payload_nonnegative_int(payload.get("max_restarts"), 0),
-        restart_backoff_seconds=_payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
-        stale_restart_after_seconds=_payload_nonnegative_float(payload.get("stale_restart_after_seconds"), 0.0),
+        payload,
+        default_server=default_server,
+        attach_auto_rounds=_attach_session_auto_rounds_if_requested,
     )
-    return _attach_session_auto_rounds_if_requested(output_root, session, payload)
 
 
 def live_agent_session_resume_agent_payload(
@@ -929,22 +904,13 @@ def live_agent_session_resume_agent_payload(
     *,
     default_server: str,
 ) -> dict[str, object]:
-    live_agent_config_path = str(payload.get("live_agent_config_path") or payload.get("live_agent_config") or "").strip()
-    session = resume_live_agent_session_agent(
+    return _owned_resume_session_agent_payload(
         output_root,
         process_supervisor,
-        server=str(payload.get("server") or default_server),
-        live_agent_config_path=Path(live_agent_config_path) if live_agent_config_path else None,
-        meeting_id=str(payload.get("meeting_id") or ""),
-        group_id=str(payload.get("group_id") or ""),
-        agent_id=str(payload.get("agent_id") or ""),
-        connect_timeout_seconds=_payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
-        auto_restart=_payload_bool(payload.get("auto_restart")),
-        max_restarts=_payload_nonnegative_int(payload.get("max_restarts"), 0),
-        restart_backoff_seconds=_payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
-        stale_restart_after_seconds=_payload_nonnegative_float(payload.get("stale_restart_after_seconds"), 0.0),
+        payload,
+        default_server=default_server,
+        attach_auto_rounds=_attach_session_auto_rounds_if_requested,
     )
-    return _attach_session_auto_rounds_if_requested(output_root, session, payload)
 
 
 def live_agent_session_ensure_payload(
@@ -954,59 +920,13 @@ def live_agent_session_ensure_payload(
     *,
     default_server: str,
 ) -> dict[str, object]:
-    payload = _live_agent_session_payload_with_group_owner(process_supervisor, payload)
-    current = _live_agent_session_optional_readiness_payload(output_root, process_supervisor, payload)
-    action = session_ensure_action(current)
-    stale_observation_restart_count = 0
-    ensure_reason = ""
-    if action == "none" and _ready_session_requires_restart_for_resident_session_drift(
+    return _owned_ensure_session_payload(
         output_root,
         process_supervisor,
         payload,
-        current,
         default_server=default_server,
-    ):
-        action = "restart"
-        ensure_reason = SESSION_ENSURE_REASON_RESIDENT_SESSION_ID_DRIFT
-    if action == "none":
-        stale_observation_restart_count, ensure_reason = _stale_observation_restart_decision(
-            output_root,
-            process_supervisor,
-            payload,
-            current,
-        )
-        if stale_observation_restart_count > 0:
-            action = "restart"
-    if action == "none":
-        session = _attach_session_auto_rounds_if_requested(output_root, dict(current) if isinstance(current, dict) else {}, payload)
-    elif action == "start":
-        session = live_agent_session_start_payload(
-            output_root,
-            process_supervisor,
-            payload,
-            default_server=default_server,
-        )
-    elif action == "restart":
-        session = live_agent_session_restart_payload(
-            output_root,
-            process_supervisor,
-            payload,
-            restart_count=stale_observation_restart_count if stale_observation_restart_count > 0 else None,
-        )
-    elif action == "recover":
-        session = live_agent_session_recover_payload(output_root, process_supervisor, payload)
-    else:
-        session = live_agent_session_resume_payload(
-            output_root,
-            process_supervisor,
-            payload,
-            default_server=default_server,
-        )
-    ensured = _live_agent_session_ensured_readiness_payload(output_root, process_supervisor, payload, session)
-    ensured["action"] = action
-    if ensure_reason:
-        ensured["ensure_reason"] = ensure_reason
-    return ensured
+        attach_auto_rounds=_attach_session_auto_rounds_if_requested,
+    )
 
 
 def _live_agent_session_payload_with_group_owner(
@@ -1181,18 +1101,13 @@ def live_agent_session_restart_payload(
     *,
     restart_count: int | None = None,
 ) -> dict[str, object]:
-    group_id = str(payload.get("group_id") or "").strip()
-    if not group_id:
-        raise ValueError("Live agent group id is required.")
-    session = restart_live_agent_session(
+    return _owned_restart_session_payload(
         output_root,
         process_supervisor,
-        meeting_id=str(payload.get("meeting_id") or ""),
-        group_id=group_id,
-        connect_timeout_seconds=_payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
+        payload,
         restart_count=restart_count,
+        attach_auto_rounds=_attach_session_auto_rounds_if_requested,
     )
-    return _attach_session_auto_rounds_if_requested(output_root, session, payload)
 
 
 def live_agent_session_recover_payload(
@@ -1200,17 +1115,12 @@ def live_agent_session_recover_payload(
     process_supervisor: LiveAgentProcessSupervisor,
     payload: dict[str, object],
 ) -> dict[str, object]:
-    group_id = str(payload.get("group_id") or "").strip()
-    if not group_id:
-        raise ValueError("Live agent group id is required.")
-    session = recover_live_agent_session(
+    return _owned_recover_session_payload(
         output_root,
         process_supervisor,
-        meeting_id=str(payload.get("meeting_id") or ""),
-        group_id=group_id,
-        connect_timeout_seconds=_payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
+        payload,
+        attach_auto_rounds=_attach_session_auto_rounds_if_requested,
     )
-    return _attach_session_auto_rounds_if_requested(output_root, session, payload)
 
 
 def live_agent_session_stop_payload(
@@ -1218,14 +1128,10 @@ def live_agent_session_stop_payload(
     process_supervisor: LiveAgentProcessSupervisor,
     payload: dict[str, object],
 ) -> dict[str, object]:
-    group_id = str(payload.get("group_id") or "").strip()
-    if not group_id:
-        raise ValueError("Live agent group id is required.")
-    return stop_live_agent_session(
+    return _owned_stop_session_payload(
         output_root,
         process_supervisor,
-        meeting_id=str(payload.get("meeting_id") or ""),
-        group_id=group_id,
+        payload,
     )
 
 
@@ -1234,12 +1140,10 @@ def live_agent_session_stop_agent_payload(
     process_supervisor: LiveAgentProcessSupervisor,
     payload: dict[str, object],
 ) -> dict[str, object]:
-    return stop_live_agent_session_agent(
+    return _owned_stop_session_agent_payload(
         output_root,
         process_supervisor,
-        meeting_id=str(payload.get("meeting_id") or ""),
-        group_id=str(payload.get("group_id") or ""),
-        agent_id=str(payload.get("agent_id") or ""),
+        payload,
     )
 
 
