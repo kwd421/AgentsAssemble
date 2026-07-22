@@ -91,6 +91,11 @@ from agentsassemble.legacy.live_agent.cli.common import (
     parse_session_smoke_soak_cycle_count,
     parse_session_smoke_soak_interval_seconds,
 )
+from agentsassemble.legacy.live_agent.cli.presence_commands import (
+    LegacyPresenceCliRuntime,
+    leave_payload as _leave_payload,
+    run_legacy_presence_command,
+)
 from agentsassemble.legacy.live_agent.cli.session_commands import (
     LegacySessionCliRuntime,
     SESSION_BOUND_PROBE_HTTP_WINDOWS,
@@ -140,12 +145,6 @@ from agentsassemble.application.room_native_cli_smoke import run_room_native_cli
 from agentsassemble.application.room_repository_factory import RoomRepositoryUnavailable
 from agentsassemble.legacy.live_agent.runtime.preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.legacy.live_agent.runtime.processes import clean_live_agent_group_id
-from agentsassemble.legacy.live_agent.runtime.roster import (
-    safe_live_agent_roster_agent,
-    safe_live_agent_roster_number,
-    safe_live_agent_roster_payload,
-    safe_live_agent_roster_text,
-)
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.legacy.meeting.support.live_meeting_memory import compact_live_meeting_memory
 from agentsassemble.legacy.live_agent.runtime.discovery import (
@@ -158,7 +157,6 @@ from agentsassemble.legacy.live_agent.runtime.discovery import (
     fill_discovery_next_command_output,
     validate_distinct_session_bundle_paths,
 )
-from agentsassemble.legacy.live_agent.runtime.join_brief import build_live_agent_join_brief
 from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
     RemoteBridgeResidentCommandRunner,
@@ -184,11 +182,6 @@ from agentsassemble.providers.live_session_transport import JsonlLiveSession, Te
 from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
 from agentsassemble.web.cli_errors import CliHttpError
-from agentsassemble.admission.lan_invite import (
-    create_lan_invite_packet,
-    resolve_lan_invite_secret_ref,
-    verify_lan_invite_token,
-)
 from agentsassemble.persona_cards import (
     load_persona_card,
 )
@@ -382,13 +375,16 @@ def _legacy_live_agent_cli_runtime() -> LegacyLiveAgentCliRuntime:
         diagnostic_command=lambda args: run_diagnostic_command(
             args, runtime=_diagnostic_cli_runtime()
         ),
+        presence_command=lambda args: run_legacy_presence_command(
+            args,
+            runtime=LegacyPresenceCliRuntime(
+                request_json=lambda *call_args, **call_kwargs: _request_json(
+                    *call_args, **call_kwargs
+                ),
+                server_url=_server_url,
+            ),
+        ),
         handlers={
-            "join-brief": _run_live_agent_join_brief,
-            "lan-invite": _run_live_agent_lan_invite,
-            "list": _run_live_agent_list,
-            "leave": _run_live_agent_leave,
-            "return-packet": _run_live_agent_return_packet,
-            "engagement": _run_live_agent_engagement,
             "call": _run_live_agent_call,
             "call-sequence": _run_live_agent_call_sequence,
             "call-round": _run_live_agent_call_round,
@@ -461,324 +457,6 @@ def _is_unreplaced_template_placeholder(value: object) -> bool:
         return False
     return bool(re.fullmatch(r"\{[A-Za-z0-9_]+\}", value.strip()))
 
-
-def _run_live_agent_leave(args: argparse.Namespace) -> int:
-    agent_id = urllib.parse.quote(args.agent_id, safe="")
-    response = _request_json(
-        _server_url(args.server, f"/api/live-agents/{agent_id}/leave"),
-        method="POST",
-        payload=_leave_payload(args),
-    )
-    safe_response = _safe_leave_response(response)
-    agent = safe_response.get("agent", {}) if isinstance(safe_response.get("agent"), dict) else {}
-    if args.as_json:
-        print(json.dumps(safe_response, ensure_ascii=False, indent=2))
-    else:
-        print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('status') or 'offline'}")
-    return 0
-
-
-def _safe_leave_response(response: dict[str, object]) -> dict[str, object]:
-    safe: dict[str, object] = {}
-    agent = response.get("agent")
-    if isinstance(agent, dict):
-        safe["agent"] = safe_live_agent_roster_agent(agent)
-    agents = response.get("agents")
-    if isinstance(agents, list):
-        safe["agents"] = safe_live_agent_roster_payload({"agents": agents}).get("agents", [])
-    return safe
-
-
-def _leave_payload(args: argparse.Namespace) -> dict[str, object]:
-    payload = {
-        "status": "offline",
-        "last_error": "",
-    }
-    for key, arg_name in (
-        ("last_observed_event_id", "last_observed_event_id"),
-        ("last_observed_live_event_id", "last_observed_live_event_id"),
-        ("last_observed_dm_event_id", "last_observed_dm_event_id"),
-    ):
-        value = getattr(args, arg_name, None)
-        if value is not None:
-            payload[key] = value
-    return payload
-
-
-def _run_live_agent_join_brief(args: argparse.Namespace) -> int:
-    payload = _live_agent_join_brief_payload(args)
-    if args.as_json:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-    else:
-        _print_live_agent_join_brief(payload)
-    return 0
-
-
-def _live_agent_join_brief_payload(args: argparse.Namespace) -> dict[str, object]:
-    return build_live_agent_join_brief(
-        server=args.server,
-        agent_id=args.agent_id,
-        display_name=args.display_name,
-        provider_kind=args.provider_kind,
-        connection_kind=args.connection_kind,
-        meeting_id=args.meeting_id,
-        engagement_mode=args.engagement_mode,
-        timeout=args.timeout,
-        poll_interval=args.poll_interval,
-        max_chain_depth=args.max_chain_depth,
-    )
-
-
-def _print_live_agent_join_brief(payload: dict[str, object]) -> None:
-    agent = payload.get("agent") if isinstance(payload.get("agent"), dict) else {}
-    commands = payload.get("commands") if isinstance(payload.get("commands"), dict) else {}
-    templates = payload.get("templates") if isinstance(payload.get("templates"), dict) else {}
-    agent_id = str(agent.get("agent_id") or "agent")
-    print(f"Live-agent join brief for {agent_id}")
-    _print_join_brief_command("Register", commands.get("register"))
-    _print_join_brief_command("Wait loop", commands.get("wait_next"))
-    _print_join_brief_command("Read diff", commands.get("read_since"))
-    _print_join_brief_command("Room snapshot", commands.get("room"))
-    _print_join_brief_command("Roster gate", commands.get("roster_gate"))
-    _print_join_brief_command("Leave", commands.get("leave"))
-    _print_join_brief_command("Lobby reply template", templates.get("say"))
-    _print_join_brief_command("Official reply template", templates.get("official_reply"))
-    _print_join_brief_command("Heartbeat template", templates.get("heartbeat"))
-    print("Run Register first, then loop Wait and fill one reply template for each returned action.")
-
-
-def _print_join_brief_command(label: str, value: object) -> None:
-    if not isinstance(value, list):
-        return
-    command = [str(item) for item in value]
-    print(f"{label}:")
-    print(f"  {shlex.join(command)}")
-
-
-def _run_live_agent_lan_invite(args: argparse.Namespace) -> int:
-    secret = resolve_lan_invite_secret_ref(args.secret_ref)
-    if not secret:
-        raise ValueError("LAN invite secret is not available.")
-    if args.lan_invite_command == "create":
-        packet = create_lan_invite_packet(
-            room_url=args.server,
-            meeting_id=args.meeting_id,
-            agent_id=args.agent_id,
-            display_name=args.display_name,
-            provider_kind=args.provider_kind,
-            secret=secret,
-            ttl_seconds=args.ttl_seconds,
-        )
-        if args.as_json:
-            print(json.dumps(packet, ensure_ascii=False, indent=2))
-        else:
-            print(f"LAN invite for {packet.get('meeting_id')}: {packet.get('token')}")
-        return 0
-    if args.lan_invite_command == "verify":
-        report = verify_lan_invite_token(
-            args.token,
-            secret=secret,
-            expected_meeting_id=args.expected_meeting_id,
-            expected_agent_id=args.expected_agent_id,
-        )
-        if args.as_json:
-            print(json.dumps(report, ensure_ascii=False, indent=2))
-        else:
-            print(f"LAN invite verification: {report.get('status')} ({report.get('identity_status')})")
-        return 0 if report.get("status") == "ok" else 1
-    return 1
-
-
-def _run_live_agent_list(args: argparse.Namespace) -> int:
-    try:
-        payload = _request_json(_server_url(args.server, _live_agent_list_path(args)))
-    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
-        raise ValueError(_live_agent_list_fetch_error(error)) from error
-    safe_payload = _safe_live_agent_list_payload(payload)
-    _print_live_agent_list_payload(safe_payload, as_json=args.as_json)
-    if args.require_match and _live_agent_list_payload_empty(safe_payload):
-        return 1
-    if args.require_all_agents and _live_agent_list_missing_required_agents(safe_payload, args.agent_ids):
-        return 1
-    if args.fail_on_attention and _live_agent_list_payload_needs_attention(safe_payload):
-        return 1
-    if args.require_host_approved and _live_agent_list_payload_has_unapproved_agents(safe_payload):
-        return 1
-    return 0
-
-
-def _live_agent_list_path(args: argparse.Namespace) -> str:
-    query: list[tuple[str, str]] = [("safe", "1")]
-    meeting_id = str(getattr(args, "meeting_id", "") or "").strip()
-    if meeting_id:
-        query.append(("meeting_id", meeting_id))
-    for agent_id in getattr(args, "agent_ids", []) or []:
-        clean_agent_id = str(agent_id or "").strip()
-        if clean_agent_id:
-            query.append(("agent_id", clean_agent_id))
-    for status in getattr(args, "statuses", []) or []:
-        clean_status = str(status or "").strip()
-        if clean_status:
-            query.append(("status", clean_status))
-    return f"/api/live-agents?{urllib.parse.urlencode(query)}"
-
-
-def _live_agent_list_fetch_error(error: Exception) -> str:
-    message = clean_lobby_text(error, limit=500)
-    if message and not _looks_sensitive_presence_error(message):
-        return f"Live-agent roster fetch failed: {message}"
-    return "Live-agent roster fetch failed: details redacted."
-
-
-def _print_live_agent_list_payload(payload: dict[str, object], *, as_json: bool) -> None:
-    safe_payload = _safe_live_agent_list_payload(payload)
-    if as_json:
-        print(json.dumps(safe_payload, ensure_ascii=False, indent=2))
-        return
-    agents = safe_payload.get("agents") if isinstance(safe_payload.get("agents"), list) else []
-    if not agents:
-        print("no live agents")
-        return
-    for item in agents:
-        if isinstance(item, dict):
-            print(_format_live_agent_roster_agent(item))
-
-
-def _safe_live_agent_list_payload(payload: dict[str, object]) -> dict[str, object]:
-    return safe_live_agent_roster_payload(payload)
-
-
-def _safe_live_agent_roster_text(value: object, *, limit: int, default: str = "") -> str:
-    return safe_live_agent_roster_text(value, limit=limit, default=default)
-
-
-def _safe_live_agent_roster_number(value: object) -> int | float:
-    return safe_live_agent_roster_number(value)
-
-
-def _format_live_agent_roster_agent(agent: dict[str, object]) -> str:
-    agent_id = _safe_live_agent_roster_text(agent.get("agent_id"), limit=64, default="-")
-    display_name = _safe_live_agent_roster_text(agent.get("display_name"), limit=128, default="-")
-    provider_kind = _safe_live_agent_roster_text(agent.get("provider_kind"), limit=64, default="unknown")
-    connection_kind = _safe_live_agent_roster_text(agent.get("connection_kind"), limit=64, default="unknown")
-    status = _safe_live_agent_roster_text(agent.get("status"), limit=64, default="unknown")
-    parts = [agent_id, display_name, f"{provider_kind}/{connection_kind}", status]
-    suffix_parts = []
-    _append_live_agent_roster_text(suffix_parts, "meeting", agent.get("meeting_id"))
-    _append_live_agent_roster_text(suffix_parts, "join", agent.get("join_semantics"))
-    _append_live_agent_roster_text(suffix_parts, "context", agent.get("context_durability"))
-    _append_live_agent_roster_text(suffix_parts, "sandbox", agent.get("sandbox_enforcement"))
-    _append_live_agent_roster_text(suffix_parts, "admission", agent.get("admission_status"))
-    _append_live_agent_roster_bool(suffix_parts, "host_approved", agent.get("host_approved_binding"))
-    _append_live_agent_roster_text(suffix_parts, "admission_source", agent.get("admission_evidence_source"))
-    _append_live_agent_roster_text(suffix_parts, "binding_role", agent.get("binding_role_id"))
-    _append_live_agent_roster_text(suffix_parts, "binding_provider", agent.get("binding_provider_id"))
-    _append_live_agent_roster_text(suffix_parts, "binding_kind", agent.get("binding_provider_kind"))
-    _append_live_agent_roster_text(suffix_parts, "binding_profile", agent.get("binding_permission_profile_id"))
-    _append_live_agent_roster_text(suffix_parts, "binding_join", agent.get("binding_join_mode"))
-    _append_live_agent_roster_list(suffix_parts, "binding_conflicts", agent.get("binding_conflicts"))
-    _append_live_agent_roster_text(suffix_parts, "engagement", agent.get("engagement_mode"))
-    _append_live_agent_roster_seconds(suffix_parts, "heartbeat_age", agent.get("heartbeat_age_seconds"))
-    _append_live_agent_roster_seconds(suffix_parts, "stale_after", agent.get("stale_after_seconds"))
-    _append_live_agent_roster_text(suffix_parts, "cursor", agent.get("last_observed_event_id"))
-    _append_live_agent_roster_text(suffix_parts, "official_cursor", agent.get("last_observed_live_event_id"))
-    suffix = f" {' '.join(suffix_parts)}" if suffix_parts else ""
-    return f"{' '.join(parts)}{suffix}"
-
-
-def _append_live_agent_roster_text(parts: list[str], label: str, value: object) -> None:
-    text = _safe_live_agent_roster_text(value, limit=128)
-    if text:
-        parts.append(f"{label}={text}")
-
-
-def _append_live_agent_roster_bool(parts: list[str], label: str, value: object) -> None:
-    if isinstance(value, bool):
-        parts.append(f"{label}={'yes' if value else 'no'}")
-
-
-def _append_live_agent_roster_list(parts: list[str], label: str, value: object) -> None:
-    if not isinstance(value, list):
-        return
-    items = [_safe_live_agent_roster_text(item, limit=64) for item in value]
-    text = ",".join(item for item in items if item)
-    if text:
-        parts.append(f"{label}={text}")
-
-
-def _append_live_agent_roster_seconds(parts: list[str], label: str, value: object) -> None:
-    if value in (None, ""):
-        return
-    seconds = _safe_nonnegative_float(value)
-    parts.append(f"{label}={_format_seconds(seconds)}")
-
-
-def _live_agent_list_payload_needs_attention(payload: dict[str, object]) -> bool:
-    agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
-    return any(isinstance(item, dict) and _live_agent_roster_agent_needs_attention(item) for item in agents)
-
-
-def _live_agent_list_payload_has_unapproved_agents(payload: dict[str, object]) -> bool:
-    agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
-    return any(isinstance(item, dict) and item.get("host_approved_binding") is not True for item in agents)
-
-
-def _live_agent_list_payload_empty(payload: dict[str, object]) -> bool:
-    agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
-    return not any(isinstance(item, dict) for item in agents)
-
-
-def _live_agent_list_missing_required_agents(payload: dict[str, object], agent_ids: list[str]) -> bool:
-    required = {
-        clean_lobby_text(agent_id, limit=64)
-        for agent_id in agent_ids
-        if clean_lobby_text(agent_id, limit=64)
-    }
-    if not required:
-        return False
-    agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
-    returned = {
-        str(item.get("agent_id") or "")
-        for item in agents
-        if isinstance(item, dict) and str(item.get("agent_id") or "")
-    }
-    return not required.issubset(returned)
-
-
-def _live_agent_roster_agent_needs_attention(agent: dict[str, object]) -> bool:
-    status = str(agent.get("status") or "").strip().casefold()
-    return status not in {"online", "working"}
-
-
-def _run_live_agent_engagement(args: argparse.Namespace) -> int:
-    agent_id = urllib.parse.quote(args.agent_id, safe="")
-    payload = {"engagement_mode": args.engagement_mode}
-    response = _request_json(
-        _server_url(args.server, f"/api/live-agents/{agent_id}/engagement"),
-        method="POST",
-        payload=payload,
-    )
-    if args.as_json:
-        print(json.dumps(response, ensure_ascii=False, indent=2))
-    else:
-        agent = response.get("agent", {}) if isinstance(response.get("agent"), dict) else {}
-        print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('engagement_mode') or args.engagement_mode}")
-    return 0
-
-
-def _run_live_agent_return_packet(args: argparse.Namespace) -> int:
-    agent_id = urllib.parse.quote(args.agent_id, safe="")
-    query_values = {}
-    if args.meeting_id:
-        query_values["meeting_id"] = args.meeting_id
-    query_values["source_event_id"] = args.source_event_id
-    query = urllib.parse.urlencode(query_values)
-    response = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/return-packet?{query}"))
-    if args.as_json:
-        print(json.dumps(response, ensure_ascii=False, indent=2))
-    else:
-        print(str(response.get("markdown") or "").strip())
-    return 0
 
 
 def _run_live_agent_call(args: argparse.Namespace) -> int:

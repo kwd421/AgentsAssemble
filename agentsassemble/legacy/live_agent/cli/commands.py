@@ -27,6 +27,7 @@ class LegacyLiveAgentCliRuntime:
     process_command: OptionalCommandHandler
     smoke_command: OptionalCommandHandler
     diagnostic_command: OptionalCommandHandler
+    presence_command: OptionalCommandHandler
     handlers: Mapping[str, CommandHandler]
     runnable_commands: Collection[str]
 
@@ -54,6 +55,7 @@ def run_live_agent_command(
             runtime.process_command,
             runtime.smoke_command,
             runtime.diagnostic_command,
+            runtime.presence_command,
         ):
             result = nested_handler(args)
             if result is not None:
