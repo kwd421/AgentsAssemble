@@ -41,12 +41,8 @@ from agentsassemble.web.routes.attachments import register_attachment_routes
 from agentsassemble.legacy.live_agent.http.flow import register_live_agent_flow_routes
 from agentsassemble.legacy.gui_application import (
     LegacyGuiApplication,
-    LegacyGuiPatchHooks,
-    LegacyProcessHooks,
-    LegacySessionHooks,
-    LegacySessionRunHooks,
-    LegacySmokeHooks,
 )
+from agentsassemble.legacy.gui_hooks import build_legacy_gui_patch_hooks
 from agentsassemble.web.routes.observability import register_observability_routes
 from agentsassemble.web.routes.public_invite import register_public_invite_admin_routes
 from agentsassemble.legacy.meeting.http.room_composition import _local_agent_session_turn_adapter, register_room_routes
@@ -2939,106 +2935,50 @@ def _make_handler(
         read_operation_payload=_read_operation_payload,
         record_operation=record_live_agent_operation,
         speech=_legacy_live_agent_speech_service(output_root),
-        hooks=LegacyGuiPatchHooks(
+        hooks=build_legacy_gui_patch_hooks(
             turn_request=live_agent_turn_request_payload,
             provider_health_report=lambda *args, **kwargs: provider_health_report(
                 *args,
                 **kwargs,
             ),
-            smoke=LegacySmokeHooks(
-                probe=lambda *args, **kwargs: run_live_agent_probe(*args, **kwargs),
-                basic=lambda *args, **kwargs: run_live_agent_smoke(*args, **kwargs),
-                official_round=lambda *args, **kwargs: run_live_agent_official_round_smoke(
-                    *args,
-                    **kwargs,
-                ),
-                session=lambda *args, **kwargs: run_live_agent_session_smoke(
-                    *args,
-                    **kwargs,
-                ),
-                real_session=lambda *args, **kwargs: run_live_agent_real_session_smoke(
-                    *args,
-                    **kwargs,
-                ),
+            probe=lambda *args, **kwargs: run_live_agent_probe(*args, **kwargs),
+            basic_smoke=lambda *args, **kwargs: run_live_agent_smoke(*args, **kwargs),
+            official_round_smoke=lambda *args, **kwargs: run_live_agent_official_round_smoke(
+                *args,
+                **kwargs,
             ),
-            session=LegacySessionHooks(
-                start=lambda *args, **kwargs: live_agent_session_start_payload(
-                    *args,
-                    **kwargs,
-                ),
-                ensure=lambda *args, **kwargs: live_agent_session_ensure_payload(
-                    *args,
-                    **kwargs,
-                ),
-                resume=lambda *args, **kwargs: live_agent_session_resume_payload(
-                    *args,
-                    **kwargs,
-                ),
-                resume_agent=lambda *args, **kwargs: live_agent_session_resume_agent_payload(
-                    *args,
-                    **kwargs,
-                ),
-                agent_timing=lambda *args, **kwargs: live_agent_session_agent_timing_payload(
-                    *args,
-                    **kwargs,
-                ),
-                agent_options=lambda *args, **kwargs: live_agent_session_agent_options_payload(
-                    *args,
-                    **kwargs,
-                ),
-                check=lambda *args, **kwargs: live_agent_session_check_payload(
-                    *args,
-                    **kwargs,
-                ),
-                restart=lambda *args, **kwargs: live_agent_session_restart_payload(
-                    *args,
-                    **kwargs,
-                ),
-                recover=lambda *args, **kwargs: live_agent_session_recover_payload(
-                    *args,
-                    **kwargs,
-                ),
-                stop=lambda *args, **kwargs: live_agent_session_stop_payload(
-                    *args,
-                    **kwargs,
-                ),
-                stop_agent=lambda *args, **kwargs: live_agent_session_stop_agent_payload(
-                    *args,
-                    **kwargs,
-                ),
+            session_smoke=lambda *args, **kwargs: run_live_agent_session_smoke(
+                *args,
+                **kwargs,
             ),
-            process=LegacyProcessHooks(
-                start=lambda *args, **kwargs: start_live_agent_process_payload(
-                    *args,
-                    **kwargs,
-                ),
-                stop_running=lambda *args, **kwargs: stop_running_live_agent_processes_payload(
-                    *args,
-                    **kwargs,
-                ),
-                stop=lambda *args, **kwargs: stop_live_agent_process_payload(
-                    *args,
-                    **kwargs,
-                ),
-                restart=lambda *args, **kwargs: restart_live_agent_process_payload(
-                    *args,
-                    **kwargs,
-                ),
-                recover=lambda *args, **kwargs: recover_live_agent_process_payload(
-                    *args,
-                    **kwargs,
-                ),
+            real_session_smoke=lambda *args, **kwargs: run_live_agent_real_session_smoke(
+                *args,
+                **kwargs,
             ),
-            session_run=LegacySessionRunHooks(
-                should_reconcile=_legacy_session_run_should_reconcile,
-                reconcile=_legacy_session_run_reconcile,
-                assert_launch_approved=_legacy_session_run_assert_launch_approved,
-                ensure=lambda payload, *, default_server: live_agent_session_ensure_payload(
-                    output_root,
-                    live_agent_process_supervisor,
-                    payload,
-                    default_server=default_server,
-                ),
+            session_start=lambda *args, **kwargs: live_agent_session_start_payload(*args, **kwargs),
+            session_ensure=lambda *args, **kwargs: live_agent_session_ensure_payload(*args, **kwargs),
+            session_resume=lambda *args, **kwargs: live_agent_session_resume_payload(*args, **kwargs),
+            session_resume_agent=lambda *args, **kwargs: live_agent_session_resume_agent_payload(*args, **kwargs),
+            session_agent_timing=lambda *args, **kwargs: live_agent_session_agent_timing_payload(*args, **kwargs),
+            session_agent_options=lambda *args, **kwargs: live_agent_session_agent_options_payload(*args, **kwargs),
+            session_check=lambda *args, **kwargs: live_agent_session_check_payload(*args, **kwargs),
+            session_restart=lambda *args, **kwargs: live_agent_session_restart_payload(*args, **kwargs),
+            session_recover=lambda *args, **kwargs: live_agent_session_recover_payload(*args, **kwargs),
+            session_stop=lambda *args, **kwargs: live_agent_session_stop_payload(*args, **kwargs),
+            session_stop_agent=lambda *args, **kwargs: live_agent_session_stop_agent_payload(*args, **kwargs),
+            process_start=lambda *args, **kwargs: start_live_agent_process_payload(*args, **kwargs),
+            process_stop_running=lambda *args, **kwargs: stop_running_live_agent_processes_payload(*args, **kwargs),
+            process_stop=lambda *args, **kwargs: stop_live_agent_process_payload(*args, **kwargs),
+            process_restart=lambda *args, **kwargs: restart_live_agent_process_payload(*args, **kwargs),
+            process_recover=lambda *args, **kwargs: recover_live_agent_process_payload(*args, **kwargs),
+            session_run_should_reconcile=_legacy_session_run_should_reconcile,
+            session_run_reconcile=_legacy_session_run_reconcile,
+            session_run_assert_launch_approved=_legacy_session_run_assert_launch_approved,
+            session_run_ensure=lambda payload, *, default_server: live_agent_session_ensure_payload(
+                output_root,
+                live_agent_process_supervisor,
+                payload,
+                default_server=default_server,
             ),
         ),
         session_run_actions_override=legacy_session_run_actions_override,

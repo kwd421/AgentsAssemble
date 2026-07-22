@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `c6d57566e19155b3`
+Source fingerprint: `7225c02e9ece2408`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 721
+- Python modules: 722
 - Top-level package modules: 303
-- Domains: admission=32, application=114, diagnostics=25, features=19, identity=9, legacy=212, persistence=58, providers=101, room=85, web=66
-- Classifications: compatibility=295, current=243, legacy=171, optional=12
+- Domains: admission=32, application=114, diagnostics=25, features=19, identity=9, legacy=213, persistence=58, providers=101, room=85, web=66
+- Classifications: compatibility=295, current=243, legacy=172, optional=12
 
 ## Classification Rules
 
@@ -153,7 +153,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.frontend_runtime` | `agentsassemble/frontend_runtime.py` | 18 | web | compatibility | `agentsassemble.web.frontend_runtime` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.grok_acp_runtime` | `agentsassemble/grok_acp_runtime.py` | 6 | providers | compatibility | `agentsassemble.providers.grok_acp` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.grok_resident` | `agentsassemble/grok_resident.py` | 44 | providers | compatibility | `agentsassemble.providers.grok_resident` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
-| `agentsassemble.gui` | `agentsassemble/gui.py` | 3167 | application | current | `agentsassemble.admission.invite`, `agentsassemble.admission.repository`, `agentsassemble.admission.repository_factory`, `agentsassemble.application.agent_sessions`, `agentsassemble.application.gui`, `agentsassemble.application.gui_factory`, `agentsassemble.application.gui_runtime`, `agentsassemble.application.public_invite_runtime`, +85 | 3 | `call:RLock@711`, `call:set@712` | test-import:43, monkeypatch:17 | `tests/fixtures/room_ui_server.py`, `tests/gui_server_test_support.py`, `tests/test_api_lane_runner.py`, `+49` | `root entrypoint` | retained-entrypoint |
+| `agentsassemble.gui` | `agentsassemble/gui.py` | 3107 | application | current | `agentsassemble.admission.invite`, `agentsassemble.admission.repository`, `agentsassemble.admission.repository_factory`, `agentsassemble.application.agent_sessions`, `agentsassemble.application.gui`, `agentsassemble.application.gui_factory`, `agentsassemble.application.gui_runtime`, `agentsassemble.application.public_invite_runtime`, +86 | 3 | `call:RLock@707`, `call:set@708` | test-import:43, monkeypatch:17 | `tests/fixtures/room_ui_server.py`, `tests/gui_server_test_support.py`, `tests/test_api_lane_runner.py`, `+49` | `root entrypoint` | retained-entrypoint |
 | `agentsassemble.gui_application` | `agentsassemble/gui_application.py` | 14 | web | compatibility | `agentsassemble.application.gui` | 0 | - | test-import:1 | `tests/test_application_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.gui_attachment_http` | `agentsassemble/gui_attachment_http.py` | 4 | web | compatibility | `agentsassemble.web.routes.attachments` | 0 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.gui_legacy_application` | `agentsassemble/gui_legacy_application.py` | 19 | web | compatibility | `agentsassemble.legacy.gui_application` | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `web/` | compatibility-shim |
@@ -216,7 +216,8 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.legacy.diagnostics.http` | `agentsassemble/legacy/diagnostics/http/__init__.py` | 1 | legacy | legacy | - | 0 | - | - | - | `legacy/` | in-target-package |
 | `agentsassemble.legacy.diagnostics.http.provider_health` | `agentsassemble/legacy/diagnostics/http/provider_health.py` | 27 | legacy | legacy | `agentsassemble.diagnostics.provider_health`, `agentsassemble.diagnostics.report_projection`, `agentsassemble.web.router` | 2 | - | test-import:1 | `tests/test_gui_legacy_provider_health_http.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.diagnostics.room_event_benchmark` | `agentsassemble/legacy/diagnostics/room_event_benchmark.py` | 538 | legacy | legacy | `agentsassemble.diagnostics.room_event_benchmark_contract`, `agentsassemble.legacy.meeting.core.events`, `agentsassemble.live_agent_flow`, `agentsassemble.web.sse_cadence` | 2 | - | test-import:1 | `tests/test_room_event_benchmark.py` | `legacy/` | in-target-package |
-| `agentsassemble.legacy.gui_application` | `agentsassemble/legacy/gui_application.py` | 478 | legacy | legacy | `agentsassemble.application.agent_sessions`, `agentsassemble.application.gui`, `agentsassemble.legacy.diagnostics.http.provider_health`, `agentsassemble.legacy.live_agent.diagnostics`, `agentsassemble.legacy.live_agent.discovery`, `agentsassemble.legacy.live_agent.engagement`, `agentsassemble.legacy.live_agent.health_queries`, `agentsassemble.legacy.live_agent.http.codex_session`, +48 | 2 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | in-target-package |
+| `agentsassemble.legacy.gui_application` | `agentsassemble/legacy/gui_application.py` | 478 | legacy | legacy | `agentsassemble.application.agent_sessions`, `agentsassemble.application.gui`, `agentsassemble.legacy.diagnostics.http.provider_health`, `agentsassemble.legacy.live_agent.diagnostics`, `agentsassemble.legacy.live_agent.discovery`, `agentsassemble.legacy.live_agent.engagement`, `agentsassemble.legacy.live_agent.health_queries`, `agentsassemble.legacy.live_agent.http.codex_session`, +48 | 3 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | in-target-package |
+| `agentsassemble.legacy.gui_hooks` | `agentsassemble/legacy/gui_hooks.py` | 81 | legacy | legacy | `agentsassemble.legacy.gui_application` | 1 | - | - | - | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent` | `agentsassemble/legacy/live_agent/__init__.py` | 1 | legacy | legacy | - | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli` | `agentsassemble/legacy/live_agent/cli/__init__.py` | 1 | legacy | legacy | - | 0 | - | - | - | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli.codex_session_commands` | `agentsassemble/legacy/live_agent/cli/codex_session_commands.py` | 168 | legacy | legacy | `agentsassemble.config`, `agentsassemble.legacy.live_agent.codex_sessions`, `agentsassemble.legacy.live_agent.runtime.processes` | 1 | - | - | - | `legacy/` | in-target-package |
