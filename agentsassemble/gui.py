@@ -55,6 +55,7 @@ from agentsassemble.legacy.gui_flow import (
     safe_live_agent_flow_agents as _owned_safe_live_agent_flow_agents,
 )
 from agentsassemble.legacy.gui_lobby import (
+    LOBBY_APPEND_LOCK as _OWNED_LOBBY_APPEND_LOCK,
     append_lobby_event as _owned_append_lobby_event,
     lobby_payload_with_attachments as _owned_lobby_payload_with_attachments,
     public_lobby_allows_room_scope as _owned_public_lobby_allows_room_scope,
@@ -463,7 +464,7 @@ def _flow_events_for_state(
 def _parse_iso_datetime(value: object) -> datetime | None:
     return _owned_parse_iso_datetime(value)
 REAL_SESSION_SMOKE_REPLY_REDACTION = "[redacted real session smoke reply]"
-LIVE_AGENT_LOBBY_LOCK = threading.RLock()
+LIVE_AGENT_LOBBY_LOCK = _OWNED_LOBBY_APPEND_LOCK
 REAL_SESSION_SMOKE_REDACTED_SOURCE_EVENT_IDS: set[str] = set()
 SESSION_RUN_MONITOR_ERROR = "Live-agent session run monitor failed."
 SESSION_ENSURE_REASONS = {

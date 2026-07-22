@@ -15,7 +15,7 @@ from agentsassemble.legacy.meeting.core.events import (
 from agentsassemble.room.attachments import normalize_attachment_references
 
 
-_LOBBY_APPEND_LOCK = threading.RLock()
+LOBBY_APPEND_LOCK = threading.RLock()
 
 
 def append_lobby_event(
@@ -27,7 +27,7 @@ def append_lobby_event(
     identity_backend: IdentityBackend | None = None,
     identity_backend_factory: Callable[[Path], IdentityBackend],
 ) -> dict[str, object]:
-    with _LOBBY_APPEND_LOCK:
+    with LOBBY_APPEND_LOCK:
         appended = append_lobby_event_to_file(
             output_root / "lobby.jsonl",
             event,

@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `55fdd18aa5ab9ca2`
+Source fingerprint: `3c6769ee6ac799db`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -153,7 +153,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.frontend_runtime` | `agentsassemble/frontend_runtime.py` | 18 | web | compatibility | `agentsassemble.web.frontend_runtime` | 0 | - | test-import:1 | `tests/test_web_transport_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.grok_acp_runtime` | `agentsassemble/grok_acp_runtime.py` | 6 | providers | compatibility | `agentsassemble.providers.grok_acp` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.grok_resident` | `agentsassemble/grok_resident.py` | 44 | providers | compatibility | `agentsassemble.providers.grok_resident` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
-| `agentsassemble.gui` | `agentsassemble/gui.py` | 2242 | application | current | `agentsassemble.admission.invite`, `agentsassemble.admission.repository`, `agentsassemble.admission.repository_factory`, `agentsassemble.application.agent_sessions`, `agentsassemble.application.gui`, `agentsassemble.application.gui_factory`, `agentsassemble.application.gui_runtime`, `agentsassemble.application.public_invite_runtime`, +91 | 3 | `call:RLock@466`, `call:set@467` | test-import:43, monkeypatch:17 | `tests/fixtures/room_ui_server.py`, `tests/gui_server_test_support.py`, `tests/test_api_lane_runner.py`, `+49` | `root entrypoint` | retained-entrypoint |
+| `agentsassemble.gui` | `agentsassemble/gui.py` | 2243 | application | current | `agentsassemble.admission.invite`, `agentsassemble.admission.repository`, `agentsassemble.admission.repository_factory`, `agentsassemble.application.agent_sessions`, `agentsassemble.application.gui`, `agentsassemble.application.gui_factory`, `agentsassemble.application.gui_runtime`, `agentsassemble.application.public_invite_runtime`, +91 | 3 | `call:set@468` | test-import:44, monkeypatch:17 | `tests/fixtures/room_ui_server.py`, `tests/gui_server_test_support.py`, `tests/test_api_lane_runner.py`, `+49` | `root entrypoint` | retained-entrypoint |
 | `agentsassemble.gui_application` | `agentsassemble/gui_application.py` | 14 | web | compatibility | `agentsassemble.application.gui` | 0 | - | test-import:1 | `tests/test_application_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.gui_attachment_http` | `agentsassemble/gui_attachment_http.py` | 4 | web | compatibility | `agentsassemble.web.routes.attachments` | 0 | - | test-import:1 | `tests/test_web_routes_package.py` | `web/` | compatibility-shim |
 | `agentsassemble.gui_legacy_application` | `agentsassemble/gui_legacy_application.py` | 19 | web | compatibility | `agentsassemble.legacy.gui_application` | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `web/` | compatibility-shim |

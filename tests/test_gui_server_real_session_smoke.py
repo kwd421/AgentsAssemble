@@ -17,9 +17,28 @@ from tests.gui_server_test_support import (
     unittest,
     urlopen,
 )
+from agentsassemble.gui import LIVE_AGENT_LOBBY_LOCK
 
 
 class GuiServerProcessSmokeTests(unittest.TestCase):
+
+    def test_lobby_append_waits_for_smoke_redaction_lock(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            appended = threading.Event()
+
+            def append_message() -> None:
+                append_lobby_event(root, {"name": "human", "message": "serialized"})
+                appended.set()
+
+            with LIVE_AGENT_LOBBY_LOCK:
+                thread = threading.Thread(target=append_message)
+                thread.start()
+                self.assertFalse(appended.wait(0.05))
+            thread.join(timeout=1)
+
+        self.assertTrue(appended.is_set())
+        self.assertFalse(thread.is_alive())
 
     def test_live_agent_real_session_smoke_endpoint_rejects_missing_approval_without_launching(self):
         with tempfile.TemporaryDirectory() as temp_dir:
