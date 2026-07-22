@@ -29,7 +29,9 @@ from agentsassemble.application.cli.common import (
 )
 from agentsassemble.application.cli.core_commands import (
     frontend_info_payload,
+    run_demo_command,
     run_frontend_info_command,
+    run_gui_command,
     run_release_health_command,
 )
 from agentsassemble.application.cli.persona_commands import (
@@ -193,7 +195,6 @@ from agentsassemble.diagnostics.cli import (
 from agentsassemble.gui import serve_gui
 from agentsassemble.diagnostics.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG
 from agentsassemble.application.room_native_cli_smoke import run_room_native_cli_smoke
-from agentsassemble.application.room_repository_factory import RoomRepositoryUnavailable
 from agentsassemble.legacy.live_agent.runtime.preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.legacy.meeting.support.live_meeting_memory import compact_live_meeting_memory
@@ -254,49 +255,9 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.command == "demo":
-        run_demo_meeting(
-            adapter_name=args.adapter,
-            output_root=Path(args.output_root),
-            reporter=lambda message: print(message, flush=True),
-            codex_timeout_seconds=args.codex_timeout,
-            codex_search_enabled=not args.no_codex_search,
-            research_depth=args.research_depth,
-            research_steering=args.research_steering,
-            council_config_path=args.council_config,
-            agent_config_path=args.agent_config,
-            meeting_mode="free_chat" if args.meeting_mode == "free-chat" else args.meeting_mode,
-            moderator_enabled=None if args.moderator is None else args.moderator == "on",
-            follow_up_of=args.follow_up_of,
-            follow_up_from=args.follow_up_from,
-            follow_up_note=args.follow_up_note,
-        )
-        return 0
+        return run_demo_command(args, run_demo_meeting=run_demo_meeting)
     if args.command == "gui":
-        try:
-            serve_gui(
-                host=args.host,
-                port=args.port,
-                output_root=Path(args.output_root),
-                room_repository_backend=args.room_repository_backend,
-                room_postgres_dsn_env=args.room_postgres_dsn_env,
-                attention_shadow_mode=args.attention_shadow_mode,
-                public_url=args.public_url,
-                host_token=args.host_token,
-                unsafe_expose_control_plane=args.unsafe_expose_control_plane,
-                start_public_tunnel=args.start_public_tunnel,
-                live_agent_config=Path(args.live_agent_config) if args.live_agent_config else None,
-                live_agent_group_id=args.live_agent_group_id,
-                live_agent_auto_restart=args.live_agent_auto_restart,
-                live_agent_max_restarts=args.live_agent_max_restarts,
-                live_agent_restart_backoff_seconds=args.live_agent_restart_backoff_seconds,
-                live_agent_stale_restart_after_seconds=args.live_agent_stale_restart_after_seconds,
-            )
-        except (ValueError, RoomRepositoryUnavailable) as error:
-            print(f"error: {error}", file=sys.stderr)
-            if "non-loopback GUI bind" in str(error):
-                print("hint: bind to 127.0.0.1 and use the authenticated public tunnel", file=sys.stderr)
-            return 2
-        return 0
+        return run_gui_command(args, serve_gui=serve_gui)
     if args.command == "frontend-info":
         return run_frontend_info_command(args)
     if args.command == "lobby":

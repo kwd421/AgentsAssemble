@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `15acbef4cbb9bdb0`
+Source fingerprint: `e0d20eb84c499f10`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -66,7 +66,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.application.cli.api_commands` | `agentsassemble/application/cli/api_commands.py` | 53 | application | current | `agentsassemble.persistence.local.identity.registry`, `agentsassemble.providers`, `agentsassemble.providers.api`, `agentsassemble.providers.catalog` | 1 | - | - | - | `application/` | in-target-package |
 | `agentsassemble.application.cli.common` | `agentsassemble/application/cli/common.py` | 54 | application | current | - | 9 | - | test-import:1 | `tests/test_application_cli_package.py` | `application/` | in-target-package |
 | `agentsassemble.application.cli.core` | `agentsassemble/application/cli/core.py` | 249 | application | current | `agentsassemble.application.cli.common`, `agentsassemble.application.room_repository_factory`, `agentsassemble.diagnostics.release_health` | 2 | - | test-import:1 | `tests/test_application_cli_package.py` | `application/` | in-target-package |
-| `agentsassemble.application.cli.core_commands` | `agentsassemble/application/cli/core_commands.py` | 176 | application | current | `agentsassemble.diagnostics.release_health`, `agentsassemble.web.frontend_runtime` | 1 | - | - | - | `application/` | in-target-package |
+| `agentsassemble.application.cli.core_commands` | `agentsassemble/application/cli/core_commands.py` | 235 | application | current | `agentsassemble.application.room_repository_factory`, `agentsassemble.diagnostics.release_health`, `agentsassemble.web.frontend_runtime` | 1 | - | - | - | `application/` | in-target-package |
 | `agentsassemble.application.cli.http` | `agentsassemble/application/cli/http.py` | 91 | application | current | `agentsassemble.web.cli_errors` | 1 | - | - | - | `application/` | in-target-package |
 | `agentsassemble.application.cli.persona` | `agentsassemble/application/cli/persona.py` | 64 | application | current | - | 2 | - | test-import:1 | `tests/test_application_cli_package.py` | `application/` | in-target-package |
 | `agentsassemble.application.cli.persona_commands` | `agentsassemble/application/cli/persona_commands.py` | 133 | application | current | `agentsassemble.persona_cards` | 1 | - | - | - | `application/` | in-target-package |
@@ -99,7 +99,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.claude_resident` | `agentsassemble/claude_resident.py` | 26 | providers | compatibility | `agentsassemble.providers.claude_resident` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.claude_transcript` | `agentsassemble/claude_transcript.py` | 18 | providers | compatibility | `agentsassemble.providers.claude_transcript` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.cleanup_report` | `agentsassemble/cleanup_report.py` | 14 | diagnostics | compatibility | `agentsassemble.diagnostics.cleanup` | 0 | - | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | compatibility-shim |
-| `agentsassemble.cli` | `agentsassemble/cli.py` | 867 | application | current | `agentsassemble.application.agent_sessions`, `agentsassemble.application.cli.api_commands`, `agentsassemble.application.cli.common`, `agentsassemble.application.cli.core`, `agentsassemble.application.cli.core_commands`, `agentsassemble.application.cli.http`, `agentsassemble.application.cli.persona`, `agentsassemble.application.cli.persona_commands`, +46 | 0 | - | test-import:33, monkeypatch:18 | `tests/test_admission_workflow_maintenance.py`, `tests/test_agent_session_cli.py`, `tests/test_api_lane_runner.py`, `+30` | `root entrypoint` | retained-entrypoint |
+| `agentsassemble.cli` | `agentsassemble/cli.py` | 828 | application | current | `agentsassemble.application.agent_sessions`, `agentsassemble.application.cli.api_commands`, `agentsassemble.application.cli.common`, `agentsassemble.application.cli.core`, `agentsassemble.application.cli.core_commands`, `agentsassemble.application.cli.http`, `agentsassemble.application.cli.persona`, `agentsassemble.application.cli.persona_commands`, +45 | 0 | - | test-import:33, monkeypatch:18 | `tests/test_admission_workflow_maintenance.py`, `tests/test_agent_session_cli.py`, `tests/test_api_lane_runner.py`, `+30` | `root entrypoint` | retained-entrypoint |
 | `agentsassemble.cli_diagnostics` | `agentsassemble/cli_diagnostics.py` | 17 | diagnostics | compatibility | `agentsassemble.diagnostics.cli` | 0 | - | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | compatibility-shim |
 | `agentsassemble.cli_http_errors` | `agentsassemble/cli_http_errors.py` | 9 | web | compatibility | `agentsassemble.web.cli_errors` | 0 | - | - | - | `web/` | compatibility-shim |
 | `agentsassemble.cli_legacy_live_agent_format` | `agentsassemble/cli_legacy_live_agent_format.py` | 3 | application | compatibility | - | 0 | - | - | - | `application/` | compatibility-shim |
