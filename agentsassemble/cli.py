@@ -38,7 +38,6 @@ from agentsassemble.legacy.live_agent.codex_sessions import (
     read_agent_config,
     write_agent_config,
 )
-from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
 # Keep these imports public for callers that historically imported validators
 # and choice lists from ``agentsassemble.cli``.
 from agentsassemble.application.cli.common import (
@@ -142,6 +141,10 @@ from agentsassemble.legacy.live_agent.cli.resident_process import (
     supports_process_groups as _owned_supports_process_groups,
     terminate_process as _owned_terminate_process,
 )
+from agentsassemble.legacy.live_agent.cli.resident_process_runners import (
+    LocalCliCommandRunner as _OwnedLocalCliCommandRunner,
+    SelfServiceResidentSupervisor as _OwnedSelfServiceResidentSupervisor,
+)
 from agentsassemble.legacy.live_agent.cli.session_commands import (
     LegacySessionCliRuntime,
     SESSION_BOUND_PROBE_HTTP_WINDOWS,
@@ -208,9 +211,6 @@ from agentsassemble.legacy.live_agent.runtime.sessions import session_ensure_act
 from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
 from agentsassemble.web.cli_errors import CliHttpError
-from agentsassemble.persona_cards import (
-    load_persona_card,
-)
 from agentsassemble.diagnostics.provider_health import provider_health_report
 
 
@@ -773,7 +773,7 @@ def _run_live_agent_delegate(args: argparse.Namespace) -> int:
     )
 
 
-class _SelfServiceResidentSupervisor:
+class _SelfServiceResidentSupervisor(_OwnedSelfServiceResidentSupervisor):
     def __init__(
         self,
         config: ResidentAgentConfig,
@@ -783,195 +783,29 @@ class _SelfServiceResidentSupervisor:
         stop_event: threading.Event | None = None,
         isolate_process_group: bool = True,
     ) -> None:
-        self.config = config
-        self.request_json = request_json
-        self.sleep_fn = sleep_fn
-        self.stop_event = stop_event or threading.Event()
-        self.isolate_process_group = isolate_process_group
-        self.process: subprocess.Popen | None = None
-        self.closed = False
-        self.last_heartbeat_at = 0.0
-        self._lock = threading.Lock()
-
-    def run(self) -> int:
-        self._register()
-        self._heartbeat("online")
-        keep_error_presence = False
-        try:
-            process = self._start_process()
-            return self._supervise(process)
-        except subprocess.CalledProcessError as error:
-            if not self.stop_event.is_set():
-                keep_error_presence = self._heartbeat_safely("error", last_error=_self_service_exit_error(error.returncode))
-            raise
-        finally:
-            self.close()
-            if not keep_error_presence:
-                self._heartbeat_final_offline()
-
-    def close(self) -> None:
-        with self._lock:
-            self.closed = True
-            process = self.process
-        if process is not None:
-            _terminate_process(process)
-
-    def _start_process(self) -> subprocess.Popen:
-        if not self.config.command:
-            raise ValueError("self_service resident requires --command.")
-        with self._lock:
-            if self.closed:
-                raise RuntimeError("Self-service resident supervisor is closed.")
-        process = subprocess.Popen(
-            self.config.command,
-            stdin=subprocess.DEVNULL,
-            env=_self_service_process_env(self.config),
-            start_new_session=self.isolate_process_group and _supports_process_groups(),
-        )
-        if self.isolate_process_group and _supports_process_groups():
-            process_group_pid = getattr(process, "pid", None)
-            if isinstance(process_group_pid, int) and process_group_pid > 0:
-                setattr(process, "_agentsassemble_process_group_pid", process_group_pid)
-        with self._lock:
-            if self.closed:
-                should_close = True
-            else:
-                self.process = process
-                should_close = False
-        if should_close:
-            _terminate_process(process)
-            raise RuntimeError("Self-service resident supervisor is closed.")
-        return process
-
-    def _supervise(self, process: subprocess.Popen) -> int:
-        ticks = 0
-        while not self.stop_event.is_set():
-            return_code = process.poll()
-            if return_code is not None:
-                if return_code:
-                    raise subprocess.CalledProcessError(return_code, self.config.command)
-                return 0
-            ticks += 1
-            if self.config.max_ticks and ticks >= self.config.max_ticks:
-                return 0
-            self._heartbeat_if_due()
-            self.sleep_fn(self.config.poll_interval)
-        return 0
-
-    def _register(self) -> None:
-        persona_card_id = clean_persona_card_id(self.config.persona_id)
-        if not persona_card_id and self.config.persona_path:
-            try:
-                persona_card_id = clean_persona_card_id(load_persona_card(Path(self.config.persona_path)).id)
-            except (OSError, ValueError, json.JSONDecodeError):
-                persona_card_id = ""
-        character_mode = normalize_character_mode(
-            self.config.character_mode,
-            has_card=bool(persona_card_id or self.config.persona_path),
-        )
-        self.request_json(
-            _server_url(self.config.server, "/api/live-agents"),
-            method="POST",
-            payload={
-                "agent_id": self.config.agent_id,
-                "display_name": self.config.display_name,
-                "provider_kind": self.config.provider_kind,
-                "connection_kind": self.config.connection_kind,
-                "session_id": self.config.session_id,
-                "endpoint": self.config.endpoint,
-                "meeting_id": self.config.meeting_id,
-                "engagement_mode": self.config.engagement_mode,
-                "persona_card_id": persona_card_id,
-                "character_mode": character_mode,
-                "capabilities": ["room_chat", "mentions", "self_service"],
-            },
+        super().__init__(
+            config,
+            request_json=request_json,
+            sleep_fn=sleep_fn,
+            process_env=lambda resident_config: _self_service_process_env(resident_config),
+            process_factory=lambda *args, **kwargs: subprocess.Popen(*args, **kwargs),
+            terminate_process=lambda process: _terminate_process(process),
+            supports_process_groups=lambda: _supports_process_groups(),
+            server_url=_server_url,
+            monotonic=lambda: time.monotonic(),
+            exit_error=_self_service_exit_error,
+            stop_event=stop_event,
+            isolate_process_group=isolate_process_group,
         )
 
-    def _heartbeat(self, status: str, **metadata: object) -> None:
-        payload = {"status": status, **metadata}
-        if self.config.session_id:
-            payload.setdefault("session_id", self.config.session_id)
-        self.request_json(
-            _server_url(self.config.server, f"/api/live-agents/{urllib.parse.quote(self.config.agent_id, safe='')}/heartbeat"),
-            method="POST",
-            payload=payload,
-        )
-        self.last_heartbeat_at = time.monotonic()
 
-    def _heartbeat_if_due(self) -> None:
-        if self.config.heartbeat_interval <= 0:
-            return
-        if time.monotonic() - self.last_heartbeat_at >= self.config.heartbeat_interval:
-            self._heartbeat_safely("online", preserve_status=True)
-
-    def _heartbeat_safely(self, status: str, **metadata: object) -> bool:
-        try:
-            self._heartbeat(status, **metadata)
-        except Exception:
-            return False
-        return True
-
-    def _heartbeat_final_offline(self) -> None:
-        self._heartbeat_safely("offline")
-
-
-class _LocalCliCommandRunner:
+class _LocalCliCommandRunner(_OwnedLocalCliCommandRunner):
     def __init__(self) -> None:
-        self.process: subprocess.Popen | None = None
-        self.closed = False
-        self._lock = threading.Lock()
-
-    def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
-        if not command:
-            raise ValueError("Delegate command is required.")
-        with self._lock:
-            if self.closed:
-                raise RuntimeError("Local CLI runner is closed.")
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=_supports_process_groups(),
+        super().__init__(
+            process_factory=lambda *args, **kwargs: subprocess.Popen(*args, **kwargs),
+            terminate_process=lambda process: _terminate_process(process),
+            supports_process_groups=lambda: _supports_process_groups(),
         )
-        if _supports_process_groups():
-            process_group_pid = getattr(process, "pid", None)
-            if isinstance(process_group_pid, int) and process_group_pid > 0:
-                setattr(process, "_agentsassemble_process_group_pid", process_group_pid)
-        with self._lock:
-            if self.closed:
-                should_close = True
-            else:
-                self.process = process
-                should_close = False
-        if should_close:
-            _terminate_process(process)
-            raise RuntimeError("Local CLI runner is closed.")
-        try:
-            try:
-                stdout, stderr = process.communicate(input=prompt, timeout=timeout_seconds)
-            except subprocess.TimeoutExpired as error:
-                _terminate_process(process)
-                stdout, stderr = process.communicate()
-                raise subprocess.TimeoutExpired(command, timeout_seconds, output=stdout, stderr=stderr) from error
-            if process.returncode:
-                raise subprocess.CalledProcessError(process.returncode, command, output=stdout, stderr=stderr)
-            return stdout
-        except BaseException:
-            _terminate_process(process)
-            raise
-        finally:
-            with self._lock:
-                if self.process is process:
-                    self.process = None
-
-    def close(self) -> None:
-        with self._lock:
-            self.closed = True
-            process = self.process
-        if process is not None:
-            _terminate_process(process)
 
 
 def _self_service_process_env(config: ResidentAgentConfig) -> dict[str, str]:
