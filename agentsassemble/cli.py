@@ -140,6 +140,12 @@ from agentsassemble.legacy.live_agent.cli.resident_process_runners import (
 from agentsassemble.legacy.live_agent.cli.resident_runner_factory import (
     command_runner_for_config as _owned_command_runner_for_config,
 )
+from agentsassemble.legacy.live_agent.cli.resident_ws import (
+    config_with_joined_room_session as _owned_config_with_joined_room_session,
+    joined_room_session_token as _owned_joined_room_session_token,
+    run_ws_group_resident as _owned_run_ws_group_resident,
+    run_ws_resident_command as _owned_run_ws_resident_command,
+)
 from agentsassemble.legacy.live_agent.cli.session_commands import (
     LegacySessionCliRuntime,
     SESSION_BOUND_PROBE_HTTP_WINDOWS,
@@ -500,85 +506,24 @@ def _is_unreplaced_template_placeholder(value: object) -> bool:
 
 
 def _joined_room_session_token(joined: object) -> str:
-    if isinstance(joined, dict):
-        return str(joined.get("session_token") or "")
-    return str(joined or "")
+    return _owned_joined_room_session_token(joined)
 
 
 def _config_with_joined_room_session(config: ResidentAgentConfig, joined: object) -> ResidentAgentConfig:
-    if not isinstance(joined, dict):
-        return config
-    updates: dict[str, str] = {}
-    for field, key in (
-        ("agent_id", "agent_id"),
-        ("display_name", "display_name"),
-        ("meeting_id", "meeting_id"),
-    ):
-        value = str(joined.get(key) or "").strip()
-        if value:
-            updates[field] = value
-    if not updates:
-        return config
-    from dataclasses import replace
-
-    return replace(config, **updates)
+    return _owned_config_with_joined_room_session(config, joined)
 
 
 def _run_ws_resident_command(args: argparse.Namespace, config: ResidentAgentConfig) -> int:
-    """One-command WS launch: connect the provider agent over the governed
-    WebSocket (run_provider_ws_resident) instead of the HTTP poll runner. Reuses
-    the provider's command runner as the brain + the runner's prompt envelope."""
-    from agentsassemble.room_engagement import resolve_engagement, room_uses_floor
-    from agentsassemble.legacy.live_agent.room_resident import run_provider_ws_resident
-    from agentsassemble.web.room_client import (
-        fetch_room_conversation_mode,
-        join_room_session,
-        meeting_id_from_invite_token,
+    return _owned_run_ws_resident_command(
+        args,
+        config,
+        command_runner_for_config=lambda *call_args, **call_kwargs: _command_runner_for_config(
+            *call_args,
+            **call_kwargs,
+        ),
+        install_shutdown_handlers=lambda callback: _install_resident_shutdown_signal_handlers(callback),
+        close_command_runner=lambda runner: _close_command_runner(runner),
     )
-
-    invite_token = str(getattr(args, "invite_token", "") or "")
-    session_token = str(getattr(args, "session_token", "") or "")
-    if not session_token:
-        if not invite_token:
-            raise ValueError("--transport ws requires --session-token or --invite-token.")
-        joined_session = join_room_session(
-            config.server,
-            invite_token,
-            display_name=config.display_name or config.agent_id,
-            participant_type="agent",
-            device_token=config.agent_id,
-        )
-        session_token = _joined_room_session_token(joined_session)
-        config = _config_with_joined_room_session(config, joined_session)
-    # The room's conversation mode (quiet/free/ordered) drives how the agent
-    # engages. Resolve the room id: explicit --meeting-id, else read it from the
-    # invite token — without it the fetch can't find the room (the bug that made
-    # free/ordered silently no-op).
-    meeting_id = str(config.meeting_id or "") or meeting_id_from_invite_token(invite_token)
-    if meeting_id and not config.meeting_id:
-        from dataclasses import replace
-
-        config = replace(config, meeting_id=meeting_id)
-    conversation_mode = fetch_room_conversation_mode(config.server, meeting_id)
-    effective_engagement = resolve_engagement(conversation_mode, config.engagement_mode)
-    use_floor = room_uses_floor(conversation_mode)
-    command_runner = _command_runner_for_config(config, output_root=str(getattr(args, "output_root", "") or ""))
-    restore_signal_handlers = _install_resident_shutdown_signal_handlers(lambda: _close_command_runner(command_runner))
-    try:
-        replies = run_provider_ws_resident(
-            config.server,
-            session_token,
-            config,
-            command_runner,
-            max_replies=int(getattr(config, "max_ticks", 0) or 0),  # 0 = run until killed
-            engagement_mode=effective_engagement,
-            use_floor=use_floor,
-        )
-    finally:
-        restore_signal_handlers()
-        _close_command_runner(command_runner)
-    print(f"WS resident agent stopped after posting {replies} replies")
-    return 0
 
 
 def _run_live_agent_resident(args: argparse.Namespace) -> int:
@@ -586,48 +531,14 @@ def _run_live_agent_resident(args: argparse.Namespace) -> int:
 
 
 def _run_ws_group_resident(config) -> int:
-    """Run one group member over the governed WebSocket resident loop."""
-    from agentsassemble.room_engagement import resolve_engagement, room_uses_floor
-    from agentsassemble.legacy.live_agent.room_resident import run_provider_ws_resident
-    from agentsassemble.web.room_client import (
-        fetch_room_conversation_mode,
-        join_room_session,
-        meeting_id_from_invite_token,
+    return _owned_run_ws_group_resident(
+        config,
+        command_runner_for_config=lambda *call_args, **call_kwargs: _command_runner_for_config(
+            *call_args,
+            **call_kwargs,
+        ),
+        close_command_runner=lambda runner: _close_command_runner(runner),
     )
-
-    invite_token = str(getattr(config, "invite_token", "") or "")
-    if not invite_token:
-        raise ValueError(f"{config.agent_id}: ws transport requires invite_token in group config.")
-    joined_session = join_room_session(
-        config.server,
-        invite_token,
-        display_name=config.display_name or config.agent_id,
-        participant_type="agent",
-        device_token=config.agent_id,
-    )
-    session_token = _joined_room_session_token(joined_session)
-    config = _config_with_joined_room_session(config, joined_session)
-    meeting_id = str(config.meeting_id or "") or meeting_id_from_invite_token(invite_token)
-    if meeting_id and not config.meeting_id:
-        from dataclasses import replace
-
-        config = replace(config, meeting_id=meeting_id)
-    conversation_mode = fetch_room_conversation_mode(config.server, meeting_id)
-    effective_engagement = resolve_engagement(conversation_mode, config.engagement_mode)
-    use_floor = room_uses_floor(conversation_mode)
-    command_runner = _command_runner_for_config(config)
-    try:
-        return run_provider_ws_resident(
-            config.server,
-            session_token,
-            config,
-            command_runner,
-            max_replies=int(config.max_ticks or 0),
-            engagement_mode=effective_engagement,
-            use_floor=use_floor,
-        )
-    finally:
-        _close_command_runner(command_runner)
 
 
 def _run_live_agent_group(args: argparse.Namespace) -> int:
