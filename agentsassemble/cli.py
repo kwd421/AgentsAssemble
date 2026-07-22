@@ -65,7 +65,15 @@ from agentsassemble.application.cli.persona_commands import (
     parse_persona_slot_values as _parse_persona_slot_values,
     run_persona_command,
 )
-from agentsassemble.legacy.meeting.cli.commands import run_lobby_command
+from agentsassemble.application.cli.api_commands import run_api_call_command
+from agentsassemble.application.cli.provider_commands import (
+    run_providers_command as _run_providers_command,
+)
+from agentsassemble.legacy.meeting.cli.commands import (
+    run_lobby_command,
+    run_memory_capsule_command,
+)
+from agentsassemble.legacy.live_agent.cli.mcp_commands import run_mcp_command
 from agentsassemble.legacy.live_agent.cli.common import (
     LIVE_AGENT_RESIDENT_CONNECTION_KIND_CHOICES,
     _add_session_auto_restart_args,
@@ -105,7 +113,6 @@ from agentsassemble.legacy.live_agent.cli.command_format import (
 from agentsassemble.diagnostics.cli import (
     DiagnosticCliRuntime,
     run_diagnostic_command,
-    run_provider_health_command,
 )
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
@@ -167,7 +174,6 @@ from agentsassemble.legacy.live_agent.runtime.smoke import (
 from agentsassemble.legacy.live_agent.runtime.sessions import session_ensure_action
 from agentsassemble.providers.live_session_transport import JsonlLiveSession, TerminalLiveSession
 from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
-from agentsassemble.legacy.meeting.support.memory_capsules import memory_capsule_gate_report
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
 from agentsassemble.web.cli_errors import CliHttpError
 from agentsassemble.admission.lan_invite import (
@@ -290,13 +296,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def run_providers_command(args: argparse.Namespace) -> int:
-    try:
-        if args.providers_command == "health":
-            return run_provider_health_command(args, runtime=_diagnostic_cli_runtime())
-    except (OSError, ValueError, json.JSONDecodeError) as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 2
-    return 1
+    return _run_providers_command(args, runtime=_diagnostic_cli_runtime())
 
 
 def _diagnostic_cli_runtime() -> DiagnosticCliRuntime:
@@ -331,95 +331,6 @@ def _is_live_agent_wait_timeout(error: BaseException) -> bool:
     if isinstance(error, urllib.error.URLError):
         return isinstance(getattr(error, "reason", None), TimeoutError)
     return False
-
-
-def run_api_call_command(args: argparse.Namespace) -> int:
-    """API-provider lane: read a prompt on stdin, call an OpenAI-compatible model,
-    print the reply on stdout, and record token usage. Designed to be a live-agent
-    `command` so the runner's envelope/heartbeat/meta-filter wrap it unchanged."""
-    from agentsassemble.providers import api as room_api_provider
-    from agentsassemble.providers import catalog as provider_catalog
-    from agentsassemble.persistence.local.identity.registry import (
-        identity_store_for_output_root,
-    )
-
-    if getattr(args, "catalog", False):
-        print(json.dumps(provider_catalog.catalog_payload(), ensure_ascii=False, indent=2))
-        return 0
-
-    prompt = sys.stdin.read()
-    if not prompt.strip():
-        print("error: empty prompt on stdin", file=sys.stderr)
-        return 2
-
-    store = None
-    if args.output_root:
-        try:
-            store = identity_store_for_output_root(Path(args.output_root))
-        except (OSError, ValueError):
-            store = None  # usage accounting is best-effort; never block the reply
-
-    try:
-        text = room_api_provider.run_api_call(
-            args.provider,
-            args.model,
-            prompt,
-            store=store,
-            user_id=args.user_id,
-            participant_id=args.participant_id,
-            meeting_id=args.meeting_id,
-            system=args.system,
-            key_source=args.key_source,
-            timeout=args.timeout,
-        )
-    except room_api_provider.ApiProviderError as error:
-        print(f"error[{error.category}]: {error}", file=sys.stderr)
-        return 2
-    print(text)
-    return 0
-
-
-def run_memory_capsule_command(args: argparse.Namespace) -> int:
-    try:
-        if args.memory_capsule_command == "gate":
-            report = memory_capsule_gate_report(Path(args.path))
-            if args.as_json:
-                print(json.dumps(report, ensure_ascii=False, indent=2))
-            else:
-                print(f"Memory capsule gate: {report['status']}")
-                for check in report.get("checks", []):
-                    if isinstance(check, dict):
-                        print(f"- {check.get('status', 'unknown')}: {check.get('message', '')}")
-            return 0 if report.get("status") == "ok" else 1
-    except OSError as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 2
-    return 1
-
-
-def run_mcp_command(args: argparse.Namespace) -> int:
-    if not bool(getattr(args, "legacy_internal", False)):
-        print("MCP is a legacy/internal room adapter; use Agent Session room commands instead.", file=sys.stderr)
-        return 2
-    try:
-        if args.mcp_command == "serve":
-            from agentsassemble.legacy.live_agent.mcp_server import serve_mcp
-
-            serve_mcp(
-                profile=args.profile,
-                server=args.server,
-                agent_id=args.agent_id,
-                meeting_id=args.meeting_id,
-                display_name=args.display_name,
-                provider_kind=args.provider_kind,
-                connection_kind=args.connection_kind,
-                engagement_mode=args.engagement_mode,
-            )
-            return 0
-    except (RuntimeError, ValueError) as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 2
-    return 1
 
 
 def run_live_agent_command(args: argparse.Namespace) -> int:
