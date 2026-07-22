@@ -16,6 +16,14 @@ from scripts.check_package_architecture import (
     unexpected_top_level_modules,
     validate_compatibility_shims,
 )
+from scripts.compatibility_shims import (
+    SHIM_RETIREMENT_RELATIVE_PATH,
+    CompatibilityShim,
+    CompatibilityShimUsage,
+    analyze_compatibility_shim_usage,
+    render_shim_retirement_report,
+    unexpected_compatibility_callers,
+)
 from scripts.generate_package_map import ModuleSource, PackageGraph, load_package_graph
 
 
@@ -49,8 +57,42 @@ class PackageArchitectureGateTests(unittest.TestCase):
         for filename, shim in ROOT_COMPATIBILITY_SHIMS.items():
             with self.subTest(filename=filename):
                 self.assertIn(shim.replacement_import, graph.modules)
-                for caller in shim.known_callers:
+                for caller in shim.allowed_callers:
                     self.assertTrue((ROOT / caller).is_file(), caller)
+
+    def test_current_shim_callers_are_explicitly_allowed(self) -> None:
+        graph = load_package_graph(ROOT)
+        usage = analyze_compatibility_shim_usage(
+            ROOT,
+            graph,
+            ROOT_COMPATIBILITY_SHIMS,
+        )
+
+        self.assertEqual(
+            unexpected_compatibility_callers(ROOT_COMPATIBILITY_SHIMS, usage),
+            (),
+        )
+
+    def test_new_shim_caller_is_rejected(self) -> None:
+        shims = {
+            "old.py": CompatibilityShim(
+                replacement_import="agentsassemble.room.new",
+                removal_gate="No callers remain.",
+                allowed_callers=("tests/allowed.py",),
+                introduced_in="test",
+                export_policy="historical-import-compatibility",
+            )
+        }
+        usage = {
+            "old.py": CompatibilityShimUsage(
+                production_imports=("agentsassemble/application/new.py",),
+            )
+        }
+
+        self.assertEqual(
+            unexpected_compatibility_callers(shims, usage),
+            ("agentsassemble/application/new.py uses old.py",),
+        )
 
     def test_package_map_tracks_every_current_top_level_module(self) -> None:
         package_map = (ROOT / "docs" / "product" / "PACKAGE_MAP.md").read_text(
@@ -138,6 +180,21 @@ class PackageArchitectureGateTests(unittest.TestCase):
             load_cycle_baseline(ROOT),
         )
         actual = (ROOT / CYCLE_REPORT_RELATIVE_PATH).read_text(encoding="utf-8")
+
+        self.assertEqual(actual, expected)
+
+    def test_committed_shim_retirement_report_matches_current_callers(self) -> None:
+        graph = load_package_graph(ROOT)
+        usage = analyze_compatibility_shim_usage(
+            ROOT,
+            graph,
+            ROOT_COMPATIBILITY_SHIMS,
+        )
+        expected = render_shim_retirement_report(
+            ROOT_COMPATIBILITY_SHIMS,
+            usage,
+        )
+        actual = (ROOT / SHIM_RETIREMENT_RELATIVE_PATH).read_text(encoding="utf-8")
 
         self.assertEqual(actual, expected)
 

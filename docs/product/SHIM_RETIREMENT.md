@@ -1,0 +1,307 @@
+# Compatibility Shim Retirement
+
+Status: generated architecture report
+
+Generator: `python3 scripts/check_package_architecture.py --write-shim-report`
+
+Source fingerprint: `8549a8134adedecd`
+
+- Tracked shims: 281
+- Zero code callers: 88
+- Blocked by code callers: 193
+- Unexpected callers: 0
+
+Generated package-map and retirement-report references are excluded from
+documentation evidence. A zero-code-caller entry is a review candidate, not
+permission to delete it; its compatibility window and export policy still apply.
+
+## Unexpected Callers
+
+- None
+
+## Zero Code Callers
+
+- `artifact_packets.py` -> `agentsassemble.legacy.meeting.support.artifact_packets`; docs: `docs/superpowers/plans/2026-05-11-local-verifiable-council-workflow.md`; gate: No direct imports or patches use agentsassemble.artifact_packets for one compatibility window.
+- `artifact_public.py` -> `agentsassemble.legacy.meeting.support.artifact_public`; docs: `docs/superpowers/audits/2026-05-13-live-room-completion-audit.md`, `docs/superpowers/plans/2026-05-11-council-reliability-gates.md`, `docs/superpowers/plans/2026-05-11-live-room-council-foundation.md`; gate: No direct imports or patches use agentsassemble.artifact_public for one compatibility window.
+- `artifacts.py` -> `agentsassemble.legacy.meeting.support.artifacts`; docs: `docs/research-log.md`; gate: No direct imports or patches use agentsassemble.artifacts for one compatibility window.
+- `attachments.py` -> `agentsassemble.room.attachments`; docs: `docs/product/V1_COMPLETION_AUDIT.md`; gate: No direct imports or patches use agentsassemble.attachments for one compatibility window.
+- `cli_http_errors.py` -> `agentsassemble.web.cli_errors`; docs: none; gate: No direct imports use agentsassemble.cli_http_errors for one compatibility window.
+- `cli_legacy_live_agent_format.py` -> `agentsassemble.legacy.live_agent.cli.command_format`; docs: none; gate: No direct imports or patches use agentsassemble.cli_legacy_live_agent_format for one compatibility window.
+- `cli_legacy_live_agent_processes.py` -> `agentsassemble.legacy.live_agent.cli.process_commands`; docs: none; gate: No direct imports or patches use agentsassemble.cli_legacy_live_agent_processes for one compatibility window.
+- `cli_legacy_live_agent_sessions.py` -> `agentsassemble.legacy.live_agent.cli.session_commands`; docs: none; gate: No direct imports or patches use agentsassemble.cli_legacy_live_agent_sessions for one compatibility window.
+- `cli_legacy_live_agent_smoke.py` -> `agentsassemble.legacy.live_agent.cli.smoke_commands`; docs: none; gate: No direct imports or patches use agentsassemble.cli_legacy_live_agent_smoke for one compatibility window.
+- `codex_sessions.py` -> `agentsassemble.legacy.live_agent.codex_sessions`; docs: none; gate: No direct imports or patches use agentsassemble.codex_sessions for one compatibility window.
+- `decision_gate.py` -> `agentsassemble.legacy.meeting.support.decision_gate`; docs: `docs/superpowers/plans/2026-05-11-council-reliability-gates.md`; gate: No direct imports or patches use agentsassemble.decision_gate for one compatibility window.
+- `decision_status.py` -> `agentsassemble.legacy.meeting.support.decision_status`; docs: none; gate: No direct imports or patches use agentsassemble.decision_status for one compatibility window.
+- `delegate_packets.py` -> `agentsassemble.legacy.meeting.support.delegate_packets`; docs: `docs/superpowers/plans/2026-05-11-local-verifiable-council-workflow.md`; gate: No direct imports or patches use agentsassemble.delegate_packets for one compatibility window.
+- `evidence.py` -> `agentsassemble.legacy.meeting.support.evidence`; docs: `docs/research-log.md`; gate: No direct imports or patches use agentsassemble.evidence for one compatibility window.
+- `gui_legacy_codex_session_http.py` -> `agentsassemble.legacy.live_agent.http.codex_session`; docs: none; gate: No direct imports use agentsassemble.gui_legacy_codex_session_http for one compatibility window.
+- `gui_live_agent_flow_http.py` -> `agentsassemble.legacy.live_agent.http.flow`; docs: none; gate: No direct imports use agentsassemble.gui_live_agent_flow_http for one compatibility window.
+- `gui_room_lifecycle_http.py` -> `agentsassemble.legacy.meeting.http.room_lifecycle_compat`; docs: none; gate: No direct imports use agentsassemble.gui_room_lifecycle_http for one compatibility window.
+- `gui_room_moderation_media_http.py` -> `agentsassemble.legacy.meeting.http.room_moderation_media`; docs: none; gate: No direct imports use agentsassemble.gui_room_moderation_media_http for one compatibility window.
+- `legacy_room_migration.py` -> `agentsassemble.legacy.room.migration`; docs: none; gate: No direct imports or patches use agentsassemble.legacy_room_migration for one compatibility window.
+- `legacy_room_preferences_source.py` -> `agentsassemble.legacy.room.preferences_source`; docs: none; gate: No direct imports or patches use agentsassemble.legacy_room_preferences_source for one compatibility window.
+- `legacy_room_settings_document.py` -> `agentsassemble.legacy.room.settings_document`; docs: none; gate: No direct imports or patches use agentsassemble.legacy_room_settings_document for one compatibility window.
+- `legacy_room_settings_source.py` -> `agentsassemble.legacy.room.settings_source`; docs: none; gate: No direct imports or patches use agentsassemble.legacy_room_settings_source for one compatibility window.
+- `legacy_turn_results.py` -> `agentsassemble.legacy.meeting.core.turn_results`; docs: none; gate: No direct imports use agentsassemble.legacy_turn_results for one compatibility window.
+- `live_agent_context.py` -> `agentsassemble.legacy.live_agent.runtime.context`; docs: `docs/product/V1_COMPLETION_AUDIT.md`, `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_agent_context for one compatibility window.
+- `live_agent_continuity_proof.py` -> `agentsassemble.legacy.live_agent.runtime.continuity_proof`; docs: none; gate: No direct imports or patches use agentsassemble.live_agent_continuity_proof for one compatibility window.
+- `live_agent_discovery.py` -> `agentsassemble.legacy.live_agent.runtime.discovery`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_agent_discovery for one compatibility window.
+- `live_agent_finalization.py` -> `agentsassemble.legacy.live_agent.runtime.finalization`; docs: `docs/server-governed-speech-matrix.md`; gate: No direct imports or patches use agentsassemble.live_agent_finalization for one compatibility window.
+- `live_agent_frontend_create.py` -> `agentsassemble.legacy.live_agent.runtime.frontend_create`; docs: `docs/rooms-as-server-objects-spec.md`; gate: No direct imports or patches use agentsassemble.live_agent_frontend_create for one compatibility window.
+- `live_agent_join_brief.py` -> `agentsassemble.legacy.live_agent.runtime.join_brief`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_agent_join_brief for one compatibility window.
+- `live_agent_launch_policy.py` -> `agentsassemble.legacy.live_agent.runtime.launch_policy`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports use the root launch-policy module for one compatibility window.
+- `live_agent_meetings.py` -> `agentsassemble.legacy.live_agent.runtime.meetings`; docs: `docs/server-governed-speech-matrix.md`; gate: No direct imports or patches use agentsassemble.live_agent_meetings for one compatibility window.
+- `live_agent_operations.py` -> `agentsassemble.legacy.live_agent.runtime.operations`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports use the root operation module for one compatibility window.
+- `live_agent_persona_smoke.py` -> `agentsassemble.legacy.live_agent.runtime.persona_smoke`; docs: `docs/server-governed-speech-matrix.md`; gate: No direct imports or patches use agentsassemble.live_agent_persona_smoke for one compatibility window.
+- `live_agent_play_presets.py` -> `agentsassemble.legacy.live_agent.runtime.play_presets`; docs: none; gate: No direct imports or patches use agentsassemble.live_agent_play_presets for one compatibility window.
+- `live_agent_preflight.py` -> `agentsassemble.legacy.live_agent.runtime.preflight`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_agent_preflight for one compatibility window.
+- `live_agent_probe.py` -> `agentsassemble.legacy.live_agent.runtime.probe`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_agent_probe for one compatibility window.
+- `live_agent_processes.py` -> `agentsassemble.legacy.live_agent.runtime.processes`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`, `docs/superpowers/plans/2026-05-19-process-recover.md`; gate: No direct imports or patches use the root process module for one compatibility window.
+- `live_agent_quota.py` -> `agentsassemble.legacy.live_agent.runtime.quota`; docs: none; gate: No direct imports use the root quota module for one compatibility window.
+- `live_agent_review_checkpoints.py` -> `agentsassemble.legacy.live_agent.runtime.review_checkpoints`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_agent_review_checkpoints for one compatibility window.
+- `live_agent_room_admin.py` -> `agentsassemble.legacy.live_agent.runtime.room_admin`; docs: `docs/plan-room-hygiene-bugfixes.md`; gate: No direct imports or patches use agentsassemble.live_agent_room_admin for one compatibility window.
+- `live_agent_roster.py` -> `agentsassemble.legacy.live_agent.runtime.roster`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_agent_roster for one compatibility window.
+- `live_agent_self_managed.py` -> `agentsassemble.legacy.live_agent.runtime.self_managed`; docs: none; gate: No direct imports use the root self-managed module for one compatibility window.
+- `live_agent_session_runs.py` -> `agentsassemble.legacy.live_agent.runtime.session_runs`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use the root session-run module for one compatibility window.
+- `live_agent_sessions.py` -> `agentsassemble.legacy.live_agent.runtime.sessions`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`, `docs/superpowers/plans/2026-05-19-live-agent-restart-session.md`, `docs/superpowers/plans/2026-05-19-live-agent-resume-session.md`, `docs/superpowers/plans/2026-05-19-live-agent-session-check.md`, +1; gate: No direct imports or patches use the root sessions module for one compatibility window.
+- `live_agent_settings.py` -> `agentsassemble.legacy.live_agent.runtime.settings`; docs: none; gate: No direct imports use the root settings module for one compatibility window.
+- `live_agent_smoke.py` -> `agentsassemble.legacy.live_agent.runtime.smoke`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`, `docs/superpowers/plans/2026-05-19-live-agent-session-smoke.md`; gate: No direct imports or patches use agentsassemble.live_agent_smoke for one compatibility window.
+- `live_agent_timing.py` -> `agentsassemble.legacy.live_agent.runtime.timing`; docs: none; gate: No direct imports use the root timing module for one compatibility window.
+- `live_agents.py` -> `agentsassemble.legacy.live_agent.state`; docs: `docs/plan-room-hygiene-bugfixes.md`, `docs/product/V1_COMPLETION_AUDIT.md`, `docs/server-governed-speech-matrix.md`, `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_agents for one compatibility window.
+- `live_meeting_memory.py` -> `agentsassemble.legacy.meeting.support.live_meeting_memory`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_meeting_memory for one compatibility window.
+- `live_session_adapter.py` -> `agentsassemble.providers.live_session_adapter`; docs: none; gate: No direct imports or patches use agentsassemble.live_session_adapter for one compatibility window.
+- `live_session_transport.py` -> `agentsassemble.providers.live_session_transport`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_session_transport for one compatibility window.
+- `live_transcript.py` -> `agentsassemble.legacy.meeting.support.live_transcript`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_transcript for one compatibility window.
+- `lobby_promotion.py` -> `agentsassemble.legacy.meeting.support.lobby_promotion`; docs: `docs/server-governed-speech-matrix.md`; gate: No direct imports or patches use agentsassemble.lobby_promotion for one compatibility window.
+- `lobby_queries.py` -> `agentsassemble.legacy.meeting.support.lobby_queries`; docs: none; gate: No direct imports or patches use agentsassemble.lobby_queries for one compatibility window.
+- `local_resources.py` -> `agentsassemble.diagnostics.local_resources`; docs: none; gate: No direct imports or patches use agentsassemble.local_resources for one compatibility window.
+- `mcp_server.py` -> `agentsassemble.legacy.live_agent.mcp_server`; docs: none; gate: No direct imports or patches use agentsassemble.mcp_server for one compatibility window.
+- `meeting.py` -> `agentsassemble.legacy.meeting.core.runner`; docs: `docs/research-log.md`, `docs/server-governed-speech-matrix.md`, `docs/superpowers/plans/2026-05-11-council-reliability-gates.md`, `docs/superpowers/plans/2026-05-11-live-room-council-foundation.md`, +1; gate: No direct imports or patches use agentsassemble.meeting for one compatibility window.
+- `meeting_context.py` -> `agentsassemble.legacy.meeting.core.context`; docs: none; gate: No direct imports use agentsassemble.meeting_context for one compatibility window.
+- `meeting_events.py` -> `agentsassemble.legacy.meeting.core.events`; docs: `docs/server-governed-speech-matrix.md`, `docs/superpowers/audits/2026-05-11-live-room-council-foundation-audit.md`, `docs/superpowers/audits/2026-05-13-live-room-completion-audit.md`, `docs/superpowers/plans/2026-05-11-live-room-council-foundation.md`, +1; gate: No direct imports or patches use agentsassemble.meeting_events for one compatibility window.
+- `meeting_lifecycle.py` -> `agentsassemble.legacy.meeting.core.lifecycle`; docs: none; gate: No direct imports use agentsassemble.meeting_lifecycle for one compatibility window.
+- `meeting_phases.py` -> `agentsassemble.legacy.meeting.core.phases`; docs: `docs/superpowers/audits/2026-05-11-live-room-council-foundation-audit.md`, `docs/superpowers/audits/2026-05-13-live-room-completion-audit.md`, `docs/superpowers/plans/2026-05-11-council-reliability-gates.md`, `docs/superpowers/plans/2026-05-11-live-room-council-foundation.md`, +1; gate: No direct imports use agentsassemble.meeting_phases for one compatibility window.
+- `meeting_record.py` -> `agentsassemble.legacy.meeting.core.record`; docs: `docs/superpowers/plans/2026-05-11-council-reliability-gates.md`, `docs/superpowers/plans/2026-05-11-local-verifiable-council-workflow.md`; gate: No direct imports use agentsassemble.meeting_record for one compatibility window.
+- `meeting_setup.py` -> `agentsassemble.legacy.meeting.core.setup`; docs: none; gate: No direct imports or patches use agentsassemble.meeting_setup for one compatibility window.
+- `memory.py` -> `agentsassemble.legacy.meeting.support.memory`; docs: `docs/live-agent-ops.md`; gate: No direct imports or patches use agentsassemble.memory for one compatibility window.
+- `memory_capsules.py` -> `agentsassemble.legacy.meeting.support.memory_capsules`; docs: none; gate: No direct imports or patches use agentsassemble.memory_capsules for one compatibility window.
+- `multi_host_invites.py` -> `agentsassemble.admission.lan_invite`; docs: none; gate: No direct imports or patches use agentsassemble.multi_host_invites for one compatibility window.
+- `persona_artifact_contract.py` -> `agentsassemble.legacy.meeting.support.persona_artifact_contract`; docs: none; gate: No direct imports or patches use agentsassemble.persona_artifact_contract for one compatibility window.
+- `provider_login.py` -> `agentsassemble.legacy.live_agent.provider_login`; docs: none; gate: No direct imports or patches use agentsassemble.provider_login for one compatibility window.
+- `release_health.py` -> `agentsassemble.diagnostics.release_health`; docs: `docs/product/PACKAGE_CYCLE_BASELINE.txt`; gate: No direct imports or patches use agentsassemble.release_health for one compatibility window.
+- `remote_bridge_config.py` -> `agentsassemble.providers.remote_bridge_config`; docs: none; gate: No direct imports or patches use agentsassemble.remote_bridge_config for one compatibility window.
+- `remote_room_client_packet.py` -> `agentsassemble.admission.remote_room_client_packet`; docs: none; gate: No direct imports or patches use agentsassemble.remote_room_client_packet for one compatibility window.
+- `room_attendee.py` -> `agentsassemble.application.room_attendee`; docs: none; gate: No direct imports use agentsassemble.room_attendee for one compatibility window.
+- `room_event_benchmark.py` -> `agentsassemble.legacy.diagnostics.room_event_benchmark`; docs: `docs/product/PACKAGE_CYCLE_BASELINE.txt`, `docs/product/V1_COMPLETION_AUDIT.md`, `docs/server-governed-speech-matrix.md`; gate: No direct imports or patches use agentsassemble.room_event_benchmark for one compatibility window.
+- `room_invite_repository_factory.py` -> `agentsassemble.admission.repository_factory`; docs: none; gate: No direct imports use agentsassemble.room_invite_repository_factory for one compatibility window.
+- `room_members.py` -> `agentsassemble.room.members`; docs: none; gate: No direct imports or patches use agentsassemble.room_members for one compatibility window.
+- `room_preferences_migration.py` -> `agentsassemble.legacy.room.preferences_migration`; docs: none; gate: No direct imports or patches use agentsassemble.room_preferences_migration for one compatibility window.
+- `room_repository_factory.py` -> `agentsassemble.application.room_repository_factory`; docs: none; gate: No direct imports or patches use agentsassemble.room_repository_factory for one compatibility window.
+- `room_repository_migration.py` -> `agentsassemble.legacy.room.repository_migration`; docs: none; gate: No direct imports or patches use agentsassemble.room_repository_migration for one compatibility window.
+- `room_settings.py` -> `agentsassemble.room.settings`; docs: none; gate: No direct imports use agentsassemble.room_settings for one compatibility window.
+- `room_settings_migration.py` -> `agentsassemble.legacy.room.settings_migration`; docs: none; gate: No direct imports or patches use agentsassemble.room_settings_migration for one compatibility window.
+- `room_votes.py` -> `agentsassemble.room.votes`; docs: none; gate: No direct imports use agentsassemble.room_votes for one compatibility window.
+- `sandbox_launcher.py` -> `agentsassemble.providers.sandbox_launcher`; docs: none; gate: No direct imports or patches use agentsassemble.sandbox_launcher for one compatibility window.
+- `speech_policy.py` -> `agentsassemble.providers.speech_policy`; docs: `docs/superpowers/plans/2026-05-11-local-verifiable-council-workflow.md`; gate: No direct imports or patches use agentsassemble.speech_policy for one compatibility window.
+- `stance_match.py` -> `agentsassemble.legacy.meeting.support.stance_match`; docs: none; gate: No direct imports or patches use agentsassemble.stance_match for one compatibility window.
+- `task_scope_report.py` -> `agentsassemble.legacy.meeting.support.task_scope_report`; docs: none; gate: No direct imports or patches use agentsassemble.task_scope_report for one compatibility window.
+- `templates.py` -> `agentsassemble.legacy.meeting.support.templates`; docs: none; gate: No direct imports or patches use agentsassemble.templates for one compatibility window.
+- `voice_presence.py` -> `agentsassemble.room.voice_presence`; docs: none; gate: No direct imports or patches use agentsassemble.voice_presence for one compatibility window.
+- `ws_resident.py` -> `agentsassemble.legacy.live_agent.room_resident`; docs: none; gate: No direct imports use agentsassemble.ws_resident for one compatibility window.
+
+## Blocked
+
+- `agent_sessions.py`; callers: `tests/gui_server_test_support.py`, `tests/test_agent_session_cli.py`, `tests/test_agent_session_room_store.py`, `tests/test_application_package.py`, +1; docs: `docs/reports/2026-07-11-ai-maintainability-audit.md`
+- `antigravity_resident.py`; callers: `tests/test_provider_package.py`; docs: `docs/product/PACKAGE_CYCLE_BASELINE.txt`
+- `application_transaction.py`; callers: `tests/test_application_package.py`; docs: none
+- `bridge_protocol.py`; callers: `tests/test_provider_package.py`; docs: none
+- `bridge_report_tracker.py`; callers: `tests/test_provider_package.py`; docs: none
+- `bridge_stop_confirmation.py`; callers: `tests/test_room_package.py`; docs: none
+- `canonical_room_benchmark.py`; callers: `tests/test_canonical_room_benchmark.py`, `tests/test_diagnostics_package.py`; docs: none
+- `claude_resident.py`; callers: `tests/test_provider_package.py`; docs: none
+- `claude_transcript.py`; callers: `tests/test_provider_package.py`; docs: none
+- `cleanup_report.py`; callers: `tests/test_diagnostics_package.py`; docs: none
+- `cli_diagnostics.py`; callers: `tests/test_diagnostics_package.py`; docs: none
+- `cli_parser_common.py`; callers: `tests/test_application_cli_package.py`; docs: none
+- `cli_parser_core.py`; callers: `tests/test_application_cli_package.py`; docs: none
+- `cli_parser_live_agent.py`; callers: `tests/test_application_cli_package.py`; docs: none
+- `cli_parser_persona.py`; callers: `tests/test_application_cli_package.py`; docs: none
+- `cli_parser_room.py`; callers: `tests/test_application_cli_package.py`; docs: none
+- `cli_parser_sessions.py`; callers: `tests/test_application_cli_package.py`; docs: none
+- `codex_app_server_live_runtime.py`; callers: `tests/test_provider_package.py`; docs: none
+- `codex_app_server_runtime.py`; callers: `tests/test_provider_package.py`; docs: none
+- `codex_resident.py`; callers: `tests/test_provider_package.py`; docs: `docs/product/PACKAGE_CYCLE_BASELINE.txt`
+- `codex_session_ids.py`; callers: `tests/test_provider_package.py`; docs: none
+- `codex_stream.py`; callers: `tests/test_provider_package.py`; docs: none
+- `cursor_resident.py`; callers: `tests/test_provider_package.py`; docs: `docs/product/PACKAGE_CYCLE_BASELINE.txt`
+- `deepseek_runtime.py`; callers: `tests/test_provider_package.py`; docs: none
+- `diagnostic_report_projection.py`; callers: `tests/test_diagnostics_package.py`; docs: none
+- `frontend_runtime.py`; callers: `tests/test_web_transport_package.py`; docs: none
+- `grok_acp_runtime.py`; callers: `tests/test_provider_package.py`; docs: none
+- `grok_resident.py`; callers: `tests/test_provider_package.py`; docs: `docs/product/PACKAGE_CYCLE_BASELINE.txt`
+- `gui_application.py`; callers: `tests/test_application_package.py`; docs: none
+- `gui_attachment_http.py`; callers: `tests/test_web_routes_package.py`; docs: none
+- `gui_legacy_application.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `gui_legacy_live_agent_discovery_http.py`; callers: `tests/test_gui_legacy_live_agent_discovery_http.py`; docs: none
+- `gui_legacy_live_agent_engagement_http.py`; callers: `tests/test_gui_legacy_live_agent_engagement_http.py`; docs: none
+- `gui_legacy_live_agent_join_brief_http.py`; callers: `tests/test_gui_legacy_live_agent_join_brief_http.py`; docs: none
+- `gui_legacy_live_agent_official_reply_http.py`; callers: `tests/test_gui_legacy_live_agent_official_reply_http.py`; docs: none
+- `gui_legacy_live_agent_preflight_http.py`; callers: `tests/test_gui_legacy_live_agent_preflight_http.py`; docs: none
+- `gui_legacy_live_agent_presence_http.py`; callers: `tests/test_gui_legacy_live_agent_presence_http.py`; docs: none
+- `gui_legacy_live_agent_probe_http.py`; callers: `tests/test_gui_legacy_live_agent_probe_http.py`; docs: none
+- `gui_legacy_live_agent_process_http.py`; callers: `tests/test_gui_legacy_live_agent_process_http.py`; docs: none
+- `gui_legacy_live_agent_read_http.py`; callers: `tests/test_gui_legacy_live_agent_read_http.py`; docs: none
+- `gui_legacy_live_agent_readiness_http.py`; callers: `tests/test_gui_legacy_live_agent_readiness_http.py`; docs: none
+- `gui_legacy_live_agent_room_session_http.py`; callers: `tests/test_gui_legacy_live_agent_room_session_http.py`; docs: none
+- `gui_legacy_live_agent_self_managed_http.py`; callers: `tests/test_gui_legacy_live_agent_self_managed_http.py`; docs: none
+- `gui_legacy_live_agent_session_http.py`; callers: `tests/test_gui_legacy_live_agent_session_http.py`; docs: none
+- `gui_legacy_live_agent_session_run_http.py`; callers: `tests/test_gui_legacy_live_agent_session_run_http.py`; docs: none
+- `gui_legacy_live_agent_smoke_http.py`; callers: `tests/test_gui_legacy_live_agent_smoke_http.py`; docs: none
+- `gui_legacy_live_agent_speech_http.py`; callers: `tests/test_gui_legacy_live_agent_speech_http.py`; docs: none
+- `gui_legacy_lobby_http.py`; callers: `tests/test_legacy_meeting_http_package.py`; docs: none
+- `gui_legacy_meeting_http.py`; callers: `tests/test_legacy_meeting_http_package.py`; docs: none
+- `gui_legacy_meeting_lifecycle_http.py`; callers: `tests/test_gui_legacy_meeting_lifecycle_http.py`; docs: none
+- `gui_legacy_official_round_http.py`; callers: `tests/test_gui_legacy_official_round_http.py`; docs: none
+- `gui_legacy_official_turn_http.py`; callers: `tests/test_gui_legacy_official_turn_http.py`; docs: none
+- `gui_legacy_provider_health_http.py`; callers: `tests/test_gui_legacy_provider_health_http.py`; docs: none
+- `gui_legacy_review_checkpoint_http.py`; callers: `tests/test_gui_legacy_review_checkpoint_http.py`; docs: none
+- `gui_mafia_http.py`; callers: `tests/test_feature_routes_package.py`; docs: none
+- `gui_observability_http.py`; callers: `tests/test_web_routes_package.py`; docs: `docs/product/PACKAGE_CYCLE_BASELINE.txt`
+- `gui_provider_http.py`; callers: `tests/test_web_routes_package.py`; docs: none
+- `gui_public_invite_http.py`; callers: `tests/test_web_routes_package.py`; docs: none
+- `gui_request_security.py`; callers: `tests/test_web_transport_package.py`; docs: none
+- `gui_response.py`; callers: `tests/test_web_transport_package.py`; docs: none
+- `gui_retired_http.py`; callers: `tests/test_web_routes_package.py`; docs: none
+- `gui_room_agent_http.py`; callers: `tests/test_web_routes_package.py`; docs: none
+- `gui_room_http.py`; callers: `tests/test_gui_server_room_routes.py`; docs: `docs/server-governed-speech-matrix.md`
+- `gui_room_invite_http.py`; callers: `tests/test_web_routes_package.py`; docs: none
+- `gui_room_settings_http.py`; callers: `tests/test_web_routes_package.py`; docs: none
+- `gui_router.py`; callers: `tests/test_web_transport_package.py`; docs: none
+- `gui_side_chat_http.py`; callers: `tests/test_feature_routes_package.py`; docs: none
+- `gui_social_http.py`; callers: `tests/test_feature_routes_package.py`; docs: none
+- `gui_static_transport.py`; callers: `tests/test_web_transport_package.py`; docs: none
+- `gui_ws_http.py`; callers: `tests/test_web_transport_package.py`; docs: none
+- `hermes_resident.py`; callers: `tests/test_provider_package.py`; docs: `docs/product/PACKAGE_CYCLE_BASELINE.txt`
+- `identity_repository_factory.py`; callers: `tests/test_identity_repository_factory.py`; docs: none
+- `identity_room_preferences.py`; callers: `tests/test_local_identity_persistence_package.py`; docs: none
+- `identity_store.py`; callers: `tests/test_identity_repository_package.py`, `tests/test_local_identity_persistence_package.py`; docs: `docs/plans/2026-07-15-browser-identity-admission.md`, `docs/reports/2026-07-15-browser-identity-admission.md`, `docs/rooms-as-server-objects-spec.md`
+- `kiro_resident.py`; callers: `tests/test_provider_package.py`; docs: `docs/product/PACKAGE_CYCLE_BASELINE.txt`
+- `legacy_live_agent_diagnostics.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_discovery.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_engagement.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_health.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_health_queries.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_observation_health.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_official_reply.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_preflight.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_presence.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_presence_projection.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_probe.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_process_control.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_process_projection.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_process_service.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_queries.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_readiness.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_readiness_projection.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_roster_queries.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_session_control.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_session_projection.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_session_run_health.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_session_run_service.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_session_service.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_smoke.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_live_agent_speech.py`; callers: `tests/test_legacy_package.py`; docs: none
+- `legacy_lobby_commands.py`; callers: `tests/test_legacy_meeting_package.py`; docs: none
+- `legacy_meeting_lifecycle.py`; callers: `tests/test_legacy_meeting_package.py`; docs: none
+- `legacy_meeting_operation_projection.py`; callers: `tests/test_legacy_meeting_package.py`; docs: none
+- `legacy_meeting_queries.py`; callers: `tests/test_legacy_meeting_package.py`; docs: none
+- `legacy_meeting_records.py`; callers: `tests/test_legacy_meeting_package.py`; docs: none
+- `legacy_official_rounds.py`; callers: `tests/test_legacy_meeting_package.py`; docs: none
+- `legacy_official_turns.py`; callers: `tests/test_legacy_meeting_package.py`; docs: none
+- `legacy_review_checkpoint.py`; callers: `tests/test_legacy_meeting_package.py`; docs: none
+- `legacy_turn_scheduler.py`; callers: `tests/test_legacy_meeting_package.py`; docs: none
+- `live_cli.py`; callers: `tests/test_provider_package.py`; docs: none
+- `live_cli_output.py`; callers: `tests/test_provider_package.py`; docs: none
+- `live_cli_smoke.py`; callers: `tests/test_diagnostics_package.py`, `tests/test_live_cli_smoke.py`; docs: none
+- `live_cli_transcripts.py`; callers: `tests/test_provider_package.py`; docs: none
+- `mafia_game.py`; callers: `tests/test_feature_routes_package.py`, `tests/test_mafia_game.py`; docs: none
+- `native_cli_providers.py`; callers: `tests/test_provider_package.py`; docs: none
+- `opencode_runtime.py`; callers: `tests/test_provider_package.py`; docs: none
+- `operator_pairing.py`; callers: `tests/test_identity_pairing_package.py`; docs: none
+- `postgres_application_database.py`; callers: `tests/test_postgres_application_database.py`, `tests/test_postgres_cross_authority_transactions.py`; docs: none
+- `postgres_attention_repository.py`; callers: `tests/test_postgres_room_persistence_package.py`; docs: none
+- `postgres_connection_pool.py`; callers: `tests/test_postgres_application_database.py`, `tests/test_postgres_connection_pool.py`; docs: none
+- `postgres_identity_preferences.py`; callers: `tests/test_postgres_identity_persistence_package.py`; docs: none
+- `postgres_identity_repository.py`; callers: `tests/test_postgres_cross_authority_transactions.py`, `tests/test_postgres_identity_persistence_package.py`, `tests/test_postgres_identity_repository.py`; docs: none
+- `postgres_identity_roster.py`; callers: `tests/test_postgres_identity_persistence_package.py`; docs: none
+- `postgres_identity_usage.py`; callers: `tests/test_postgres_identity_persistence_package.py`; docs: none
+- `postgres_identity_users.py`; callers: `tests/test_postgres_identity_persistence_package.py`; docs: none
+- `postgres_invite_repository.py`; callers: `tests/test_postgres_admission_persistence_package.py`, `tests/test_postgres_cross_authority_transactions.py`, `tests/test_postgres_invite_repository.py`; docs: none
+- `postgres_room_mutations.py`; callers: `tests/test_postgres_room_persistence_package.py`; docs: none
+- `postgres_room_queries.py`; callers: `tests/test_postgres_room_persistence_package.py`; docs: none
+- `postgres_room_repository.py`; callers: `tests/test_postgres_cross_authority_transactions.py`, `tests/test_postgres_room_persistence_package.py`, `tests/test_postgres_room_repository.py`, `tests/test_room_repository_migration.py`; docs: none
+- `postgres_room_rows.py`; callers: `tests/test_postgres_room_persistence_package.py`; docs: none
+- `postgres_room_schema.py`; callers: `tests/test_postgres_application_database.py`, `tests/test_postgres_cross_authority_transactions.py`, `tests/test_postgres_identity_repository.py`, `tests/test_postgres_invite_repository.py`, +5; docs: none
+- `process_environment.py`; callers: `tests/test_provider_package.py`; docs: none
+- `provider_auth.py`; callers: `tests/test_provider_package.py`; docs: none
+- `provider_capabilities.py`; callers: `tests/test_provider_package.py`; docs: none
+- `provider_catalog.py`; callers: `tests/test_provider_package.py`; docs: none
+- `provider_health.py`; callers: `tests/test_provider_health.py`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- `provider_model_verification.py`; callers: `tests/test_provider_package.py`; docs: none
+- `provider_runtime_config.py`; callers: `tests/test_provider_package.py`; docs: none
+- `provider_runtime_contracts.py`; callers: `tests/test_provider_package.py`; docs: none
+- `provider_runtime_factory.py`; callers: `tests/test_provider_package.py`; docs: none
+- `provider_secrets.py`; callers: `tests/test_provider_package.py`; docs: none
+- `provider_sessions.py`; callers: `tests/test_provider_package.py`; docs: none
+- `public_invite_runtime.py`; callers: `tests/test_application_package.py`; docs: none
+- `public_tunnel.py`; callers: `tests/test_application_package.py`; docs: none
+- `room_admission.py`; callers: `tests/test_admission_package.py`, `tests/test_gui_application_services.py`, `tests/test_gui_server_room_routes.py`, `tests/test_room_admission.py`; docs: none
+- `room_admission_coordinator.py`; callers: `tests/test_admission_coordinator_package.py`; docs: none
+- `room_admission_saga.py`; callers: `tests/test_admission_coordinator_package.py`; docs: none
+- `room_admission_workflow_maintenance.py`; callers: `tests/test_admission_maintenance_package.py`; docs: none
+- `room_admission_workflow_maintenance_command.py`; callers: `tests/test_admission_maintenance_package.py`; docs: none
+- `room_agent_bridge.py`; callers: `tests/test_application_package.py`, `tests/test_provider_package.py`; docs: none
+- `room_agent_lifecycle.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_api_provider.py`; callers: `tests/test_provider_package.py`; docs: none
+- `room_bridge_process.py`; callers: `tests/test_provider_package.py`; docs: none
+- `room_channels.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_command_uow.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_commands.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_context.py`; callers: `tests/test_agent_session_cli.py`, `tests/test_room_package.py`; docs: none
+- `room_database.py`; callers: `tests/test_local_room_persistence_package.py`, `tests/test_room_attention_reconciliation.py`, `tests/test_room_turn_coordinator.py`, `tests/test_room_unification.py`; docs: none
+- `room_errors.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_event_broker.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_friend_dms.py`; callers: `tests/test_feature_routes_package.py`; docs: `docs/server-governed-speech-matrix.md`
+- `room_friends.py`; callers: `tests/test_feature_routes_package.py`; docs: none
+- `room_global_settings.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_invite.py`; callers: `tests/test_gui_router.py`, `tests/test_gui_server_provider_http.py`, `tests/test_host_account.py`; docs: `docs/server-governed-speech-matrix.md`
+- `room_invite_application.py`; callers: `tests/test_admission_invite_service_package.py`; docs: none
+- `room_invite_repository.py`; callers: `tests/test_admission_repository_contracts.py`, `tests/test_local_admission_persistence_package.py`; docs: none
+- `room_native_cli_smoke.py`; callers: `tests/test_application_package.py`, `tests/test_room_native_cli_e2e.py`; docs: none
+- `room_projection.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_provider_sync_cursor.py`; callers: `tests/test_provider_package.py`; docs: none
+- `room_realtime.py`; callers: `tests/test_room_package.py`; docs: `docs/reports/2026-07-11-ai-maintainability-audit.md`
+- `room_repository.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_repository_records.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_session_issuer.py`; callers: `tests/test_admission_session_package.py`; docs: none
+- `room_session_service.py`; callers: `tests/test_admission_session_package.py`; docs: none
+- `room_setting_values.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_settings_service.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_speech.py`; callers: `tests/test_room_package.py`; docs: `docs/server-governed-speech-matrix.md`
+- `room_store.py`; callers: `tests/gui_server_test_support.py`, `tests/test_agent_session_room_store.py`, `tests/test_gui_room_repository_injection.py`, `tests/test_gui_server_room_settings_http.py`, +24; docs: none
+- `room_turn_context.py`; callers: `tests/test_agent_session_room_store.py`, `tests/test_room_package.py`; docs: none
+- `room_turn_coordinator.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_types.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_user_preferences.py`; callers: `tests/test_room_package.py`; docs: none
+- `room_users.py`; callers: `tests/test_application_package.py`; docs: none
+- `room_websocket.py`; callers: `tests/test_web_transport_package.py`; docs: none
+- `session_run_monitor.py`; callers: `tests/test_application_package.py`; docs: none
+- `side_chat.py`; callers: `tests/test_feature_routes_package.py`; docs: none
+- `sqlite_attention_repository.py`; callers: `tests/test_local_room_persistence_package.py`; docs: none
+- `sse_cadence.py`; callers: `tests/test_web_transport_package.py`; docs: none
+- `stable_entry.py`; callers: `tests/test_application_package.py`; docs: none
+- `user_profile.py`; callers: `tests/test_feature_routes_package.py`; docs: none
+- `windows_conpty.py`; callers: `tests/test_provider_package.py`; docs: none
+- `ws_room_client.py`; callers: `tests/test_web_transport_package.py`; docs: none
+- `ws_room_session.py`; callers: `tests/test_web_transport_package.py`; docs: `docs/server-governed-speech-matrix.md`
