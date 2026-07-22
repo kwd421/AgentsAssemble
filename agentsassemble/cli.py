@@ -23,8 +23,6 @@ from agentsassemble.application.agent_sessions import (
 )
 from agentsassemble.providers.cursor_resident import (
     CursorResidentCommandRunner,
-    cursor_generic_resident_guard_error,
-    cursor_terminal_session_superseded_error,
 )
 from agentsassemble.providers.hermes_resident import HermesResidentCommandRunner
 from agentsassemble.providers.antigravity_resident import AntigravityResidentCommandRunner
@@ -40,7 +38,6 @@ from agentsassemble.legacy.live_agent.codex_sessions import (
     read_agent_config,
     write_agent_config,
 )
-from agentsassemble.providers.claude_resident import claude_code_print_mode_resident_error
 from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
 # Keep these imports public for callers that historically imported validators
 # and choice lists from ``agentsassemble.cli``.
@@ -125,6 +122,11 @@ from agentsassemble.legacy.live_agent.cli.resident_commands import (
     run_legacy_resident_command,
     run_legacy_resident_group_command,
 )
+from agentsassemble.legacy.live_agent.cli.resident_runtime import (
+    ApiCatalogCommandRunner as _ApiCatalogCommandRunner,
+    resident_workspace_cwd as _owned_resident_workspace_cwd,
+    validate_resident_config as _owned_validate_resident_config,
+)
 from agentsassemble.legacy.live_agent.cli.session_commands import (
     LegacySessionCliRuntime,
     SESSION_BOUND_PROBE_HTTP_WINDOWS,
@@ -174,11 +176,9 @@ from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
     RemoteBridgeResidentCommandRunner,
     ResidentAgentConfig,
-    SUPPORTED_RESIDENT_CONNECTION_KINDS,
     config_from_args,
     load_group_configs,
     official_turn_request_candidate,
-    resident_connection_kind_error,
     should_reply_to_event,
 )
 from agentsassemble.legacy.live_agent.runtime.timing import DEFAULT_LIVE_AGENT_POLL_INTERVAL, live_agent_poll_sleep_seconds
@@ -1109,55 +1109,6 @@ class _LocalCliCommandRunner:
             _terminate_process(process)
 
 
-class _ApiCatalogCommandRunner:
-    """In-process runner for the API-provider lane (connection_kind=api_call).
-
-    Unlike the CLI residents, there's no subprocess: this calls the OpenAI-
-    compatible adapter (room_api_provider) directly, so the LiveAgentRunner's
-    envelope / heartbeat / meta-filter / turn-CAS wrap the model reply unchanged.
-    Token usage is recorded best-effort to the local identity store when
-    output_root is set (local-first: the resident shares the server's output_root).
-    http_post is injectable for tests."""
-
-    def __init__(self, config: ResidentAgentConfig, *, output_root: str = "", http_post=None) -> None:
-        self.config = config
-        self.output_root = str(output_root or "")
-        self._http_post = http_post
-
-    def _store(self):
-        if not self.output_root:
-            return None
-        try:
-            from agentsassemble.persistence.local.identity.registry import (
-                identity_store_for_output_root,
-            )
-
-            return identity_store_for_output_root(Path(self.output_root))
-        except (OSError, ValueError):
-            return None  # usage accounting is best-effort; never block the reply
-
-    def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
-        from agentsassemble.providers import api as room_api_provider
-
-        try:
-            return room_api_provider.run_api_call(
-                self.config.provider_kind,
-                self.config.model_id,
-                prompt,
-                store=self._store(),
-                participant_id=self.config.agent_id,
-                meeting_id=self.config.meeting_id,
-                key_source=str(getattr(self.config, "key_source", "") or ""),
-                timeout=timeout_seconds,
-                http_post=self._http_post,
-            )
-        except room_api_provider.ApiProviderError as error:
-            raise RuntimeError(f"API provider call failed [{error.category}]: {error}") from error
-
-    def close(self) -> None:
-        return None
-
-
 def _self_service_process_env(config: ResidentAgentConfig) -> dict[str, str]:
     env = dict(os.environ)
     command_env = _self_service_room_command_env(config)
@@ -1354,60 +1305,7 @@ def _install_resident_shutdown_signal_handlers(on_shutdown):
 
 
 def _validate_resident_config(config: ResidentAgentConfig) -> None:
-    if config.connection_kind not in SUPPORTED_RESIDENT_CONNECTION_KINDS:
-        raise ValueError(resident_connection_kind_error())
-    if config.connection_kind == "api_call":
-        # API-provider lane: --provider-kind is a catalog provider id and --model
-        # must exist in that provider's catalog. No --command (the call is in-process).
-        from agentsassemble.providers import catalog as provider_catalog
-
-        if not provider_catalog.get_provider(config.provider_kind):
-            raise ValueError(
-                f"api_call resident requires a known catalog provider as --provider-kind; got {config.provider_kind!r}. "
-                f"Known: {', '.join(provider_catalog.list_providers())}."
-            )
-        if not provider_catalog.get_model(config.provider_kind, config.model_id):
-            raise ValueError(
-                f"api_call resident requires a known --model for provider {config.provider_kind!r}; got {config.model_id!r}."
-            )
-        return
-    if config.provider_kind == "codex_live_session" and config.connection_kind != "live_session":
-        raise ValueError("codex_live_session resident requires live_session connection_kind.")
-    if config.provider_kind == "kiro_live_session" and config.connection_kind != "live_session":
-        raise ValueError("kiro_live_session resident requires live_session connection_kind.")
-    if config.provider_kind == "cursor_live_session" and config.connection_kind != "live_session":
-        raise ValueError("cursor_live_session resident requires live_session connection_kind.")
-    if config.provider_kind == "grok_live_session" and config.connection_kind != "live_session":
-        raise ValueError("grok_live_session resident requires live_session connection_kind.")
-    if config.provider_kind == "antigravity_live_session" and config.connection_kind != "live_session":
-        raise ValueError("antigravity_live_session resident requires live_session connection_kind.")
-    if config.provider_kind == "hermes_live_session" and config.connection_kind != "live_session":
-        raise ValueError("hermes_live_session resident requires live_session connection_kind.")
-    cursor_superseded_error = cursor_terminal_session_superseded_error(
-        config.provider_kind,
-        config.connection_kind,
-        config.command,
-    )
-    if cursor_superseded_error:
-        raise ValueError(cursor_superseded_error)
-    cursor_generic_error = cursor_generic_resident_guard_error(config.provider_kind, config.connection_kind)
-    if cursor_generic_error:
-        raise ValueError(cursor_generic_error)
-    claude_command_error = claude_code_print_mode_resident_error(
-        config.provider_kind,
-        config.connection_kind,
-        config.command,
-    )
-    if claude_command_error:
-        raise ValueError(claude_command_error)
-    if config.connection_kind == "remote_bridge":
-        if not config.endpoint:
-            raise ValueError("Remote bridge resident requires --endpoint.")
-        if not config.auth_ref:
-            raise ValueError("Remote bridge resident requires --auth-ref.")
-        return
-    if config.connection_kind in {"local_cli", "live_session", "terminal_session", "self_service", "codex_resume", "manual"} and not config.command:
-        raise ValueError(f"{config.connection_kind} resident requires --command.")
+    _owned_validate_resident_config(config)
 
 
 def _command_runner_for_config(config: ResidentAgentConfig, *, output_root: str = ""):
@@ -1463,13 +1361,7 @@ def _command_runner_for_config(config: ResidentAgentConfig, *, output_root: str 
 
 
 def _resident_workspace_cwd(config: ResidentAgentConfig) -> Path:
-    workspace_path = str(getattr(config, "workspace_path", "") or "").strip()
-    if not workspace_path:
-        return Path.cwd()
-    path = Path(workspace_path).expanduser()
-    if not path.exists() or not path.is_dir():
-        raise ValueError("Workspace folder was not found.")
-    return path
+    return _owned_resident_workspace_cwd(config)
 
 
 def _close_command_runner(command_runner) -> None:
