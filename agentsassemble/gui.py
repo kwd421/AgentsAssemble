@@ -104,6 +104,10 @@ from agentsassemble.legacy.gui_session_lifecycle import (
     stop_session_agent_payload as _owned_stop_session_agent_payload,
     stop_session_payload as _owned_stop_session_payload,
 )
+from agentsassemble.legacy.gui_session_settings import (
+    agent_options_payload as _owned_agent_options_payload,
+    agent_timing_payload as _owned_agent_timing_payload,
+)
 from agentsassemble.legacy.gui_session_runs import (
     LegacyGuiSessionRunMonitor as _OwnedLegacyGuiSessionRunMonitor,
     LegacyGuiSessionRunRuntime,
@@ -211,17 +215,10 @@ from agentsassemble.legacy.live_agent.session_projection import (
     session_stop_operation_details as _session_stop_operation_details,
 )
 from agentsassemble.legacy.live_agent.session_run_service import LegacySessionRunActions
-from agentsassemble.legacy.live_agent.runtime.settings import (
-    update_live_agent_config_options,
-    update_live_agent_config_poll_interval,
-)
 from agentsassemble.legacy.live_agent.state import (
     heartbeat_live_agent,
     read_live_agents,
-    update_live_agent_cooldown,
     update_live_agent_engagement,
-    update_live_agent_options,
-    update_live_agent_poll_interval,
 )
 from agentsassemble.legacy.live_agent.runtime.operations import append_live_agent_operation
 from agentsassemble.legacy.live_agent.runtime.processes import (
@@ -1151,81 +1148,14 @@ def live_agent_session_agent_timing_payload(
     output_root: Path,
     payload: dict[str, object],
 ) -> dict[str, object]:
-    agent_id = clean_lobby_text(payload.get("agent_id"), limit=64)
-    if not agent_id:
-        raise ValueError("Agent id is required.")
-    if not any(str(agent.get("agent_id") or "") == agent_id for agent in read_live_agents(output_root)):
-        raise ValueError(f"Live agent {agent_id} was not found.")
-
-    live_agent_config_path = str(payload.get("live_agent_config_path") or payload.get("live_agent_config") or "").strip()
-    config_result: dict[str, object] = {}
-    if live_agent_config_path:
-        config_result = update_live_agent_config_poll_interval(
-            Path(live_agent_config_path),
-            agent_id,
-            payload.get("poll_interval"),
-            payload.get("cooldown") if "cooldown" in payload else None,
-        )
-    agent = update_live_agent_poll_interval(output_root, agent_id, payload.get("poll_interval"))
-    if "cooldown" in payload:
-        agent = update_live_agent_cooldown(output_root, agent_id, payload.get("cooldown"))
-    return {
-        "status": "updated",
-        "agent_id": agent_id,
-        "poll_interval": agent.get("poll_interval"),
-        "cooldown": agent.get("cooldown"),
-        "config_path": str(config_result.get("config_path") or live_agent_config_path),
-        "agent": agent,
-    }
+    return _owned_agent_timing_payload(output_root, payload)
 
 
 def live_agent_session_agent_options_payload(
     output_root: Path,
     payload: dict[str, object],
 ) -> dict[str, object]:
-    """Edit an existing agent's permission_option / fast_mode (post-creation).
-
-    Writes both the room agent record and, when a saved group config is known, the
-    config file so the change survives a RESUME/START. Takes effect on next launch
-    — a running resident keeps its launch-time config until restarted."""
-    agent_id = clean_lobby_text(payload.get("agent_id"), limit=64)
-    if not agent_id:
-        raise ValueError("Agent id is required.")
-    if not any(str(agent.get("agent_id") or "") == agent_id for agent in read_live_agents(output_root)):
-        raise ValueError(f"Live agent {agent_id} was not found.")
-    has_permission = "permission_option" in payload
-    has_fast = "fast_mode" in payload
-    if not has_permission and not has_fast:
-        raise ValueError("Nothing to update: provide permission_option and/or fast_mode.")
-    permission_option = payload.get("permission_option") if has_permission else None
-    fast_mode = payload.get("fast_mode") if has_fast else None
-
-    live_agent_config_path = str(
-        payload.get("live_agent_config_path") or payload.get("live_agent_config") or ""
-    ).strip()
-    config_result: dict[str, object] = {}
-    if live_agent_config_path:
-        config_result = update_live_agent_config_options(
-            Path(live_agent_config_path),
-            agent_id,
-            permission_option=permission_option,
-            fast_mode=fast_mode,
-        )
-    agent = update_live_agent_options(
-        output_root,
-        agent_id,
-        permission_option=permission_option,
-        fast_mode=fast_mode,
-    )
-    return {
-        "status": "updated",
-        "agent_id": agent_id,
-        "permission_option": agent.get("permission_option"),
-        "fast_mode": bool(agent.get("fast_mode")),
-        "config_path": str(config_result.get("config_path") or live_agent_config_path),
-        "applies_on": "next_start",
-        "agent": agent,
-    }
+    return _owned_agent_options_payload(output_root, payload)
 
 
 def _session_auto_rounds_options(payload: dict[str, object]) -> dict[str, object]:
