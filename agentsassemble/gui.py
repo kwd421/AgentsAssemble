@@ -47,6 +47,9 @@ from agentsassemble.legacy.gui_hooks import (
     build_legacy_gui_patch_hooks,
     register_legacy_gui_routes,
 )
+from agentsassemble.legacy.gui_autostart import (
+    autostart_live_agent_group as _owned_autostart_live_agent_group,
+)
 from agentsassemble.web.routes.observability import register_observability_routes
 from agentsassemble.web.routes.public_invite import register_public_invite_admin_routes
 from agentsassemble.legacy.meeting.http.room_composition import _local_agent_session_turn_adapter, register_room_routes
@@ -880,47 +883,17 @@ def _autostart_live_agent_group(
     restart_backoff_seconds: float = 5.0,
     stale_restart_after_seconds: float = 0.0,
 ) -> None:
-    try:
-        group = process_supervisor.start_group(
-            config_path=config_path,
-            server=server_url,
-            group_id=group_id.strip() or None,
-            auto_restart=auto_restart,
-            max_restarts=max_restarts,
-            restart_backoff_seconds=restart_backoff_seconds,
-            stale_restart_after_seconds=stale_restart_after_seconds,
-        )
-    except Exception as error:
-        record_live_agent_operation(
-            output_root,
-            operation="process.autostart",
-            status="failed",
-            target_id=group_id,
-            error=str(error),
-            details={
-                "group_id": group_id,
-                "auto_restart": bool(auto_restart),
-                "max_restarts": max_restarts,
-                "restart_backoff_seconds": restart_backoff_seconds,
-                "stale_restart_after_seconds": stale_restart_after_seconds,
-            },
-        )
-        print("Live-agent autostart failed; inspect recent operations for details.")
-        return
-    record_live_agent_operation(
+    _owned_autostart_live_agent_group(
         output_root,
-        operation="process.autostart",
-        status="success",
-        target_id=str(group.get("group_id") or group_id),
-        summary="autostarted live-agent process group",
-        details={
-            "group_id": str(group.get("group_id") or group_id),
-            "group_status": str(group.get("status") or ""),
-            "auto_restart": bool(auto_restart),
-            "max_restarts": max_restarts,
-            "restart_backoff_seconds": restart_backoff_seconds,
-            "stale_restart_after_seconds": stale_restart_after_seconds,
-        },
+        process_supervisor,
+        config_path=config_path,
+        server_url=server_url,
+        group_id=group_id,
+        auto_restart=auto_restart,
+        max_restarts=max_restarts,
+        restart_backoff_seconds=restart_backoff_seconds,
+        stale_restart_after_seconds=stale_restart_after_seconds,
+        record_operation=record_live_agent_operation,
     )
 
 
