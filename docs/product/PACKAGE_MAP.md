@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `0215f280603d2ad6`
+Source fingerprint: `396cc1f6d567c253`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 742
+- Python modules: 743
 - Top-level package modules: 303
-- Domains: admission=32, application=118, diagnostics=26, features=19, identity=9, legacy=226, persistence=58, providers=101, room=85, web=68
-- Classifications: compatibility=295, current=250, legacy=185, optional=12
+- Domains: admission=32, application=119, diagnostics=26, features=19, identity=9, legacy=226, persistence=58, providers=101, room=85, web=68
+- Classifications: compatibility=296, current=250, legacy=185, optional=12
 
 ## Classification Rules
 
@@ -63,9 +63,10 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.application.agent_bridge_entrypoint` | `agentsassemble/application/agent_bridge_entrypoint.py` | 51 | application | current | `agentsassemble.providers.agent_bridge`, `agentsassemble.providers.runtime_config`, `agentsassemble.providers.runtime_factory`, `agentsassemble.web.room_client` | 1 | - | test-import:1 | `tests/test_application_package.py` | `application/` | in-target-package |
 | `agentsassemble.application.agent_session_auto_queue` | `agentsassemble/application/agent_session_auto_queue.py` | 85 | application | current | `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | `call:Lock@17`, `call:set@19` | - | - | `application/` | in-target-package |
 | `agentsassemble.application.agent_session_commands` | `agentsassemble/application/agent_session_commands.py` | 205 | application | current | `agentsassemble.room.repository`, `agentsassemble.room.text` | 1 | - | - | - | `application/` | in-target-package |
+| `agentsassemble.application.agent_session_compatibility` | `agentsassemble/application/agent_session_compatibility.py` | 84 | application | compatibility | - | 1 | - | - | - | `application/` | compatibility-shim |
 | `agentsassemble.application.agent_session_process` | `agentsassemble/application/agent_session_process.py` | 141 | application | current | `agentsassemble.providers.codex_app_server`, `agentsassemble.room.repository`, `agentsassemble.room.text` | 2 | - | - | - | `application/` | in-target-package |
 | `agentsassemble.application.agent_session_turn_commands` | `agentsassemble/application/agent_session_turn_commands.py` | 455 | application | current | `agentsassemble.application.agent_session_process`, `agentsassemble.providers.codex_app_server`, `agentsassemble.room.text`, `agentsassemble.room.turn_context` | 1 | - | - | - | `application/` | in-target-package |
-| `agentsassemble.application.agent_sessions` | `agentsassemble/application/agent_sessions.py` | 1112 | application | current | `agentsassemble.application.agent_session_auto_queue`, `agentsassemble.application.agent_session_commands`, `agentsassemble.application.agent_session_process`, `agentsassemble.application.agent_session_turn_commands`, `agentsassemble.diagnostics.codex_app_server_smoke`, `agentsassemble.providers.codex_app_server`, `agentsassemble.providers.process_environment`, `agentsassemble.providers.sync_cursor`, +4 | 12 | - | test-import:1 | `tests/test_application_package.py` | `application/` | in-target-package |
+| `agentsassemble.application.agent_sessions` | `agentsassemble/application/agent_sessions.py` | 1045 | application | current | `agentsassemble.application.agent_session_auto_queue`, `agentsassemble.application.agent_session_commands`, `agentsassemble.application.agent_session_compatibility`, `agentsassemble.application.agent_session_process`, `agentsassemble.application.agent_session_turn_commands`, `agentsassemble.diagnostics.codex_app_server_smoke`, `agentsassemble.providers.codex_app_server`, `agentsassemble.providers.process_environment`, +5 | 12 | - | test-import:1 | `tests/test_application_package.py` | `application/` | in-target-package |
 | `agentsassemble.application.cli` | `agentsassemble/application/cli/__init__.py` | 1 | application | current | - | 0 | - | - | - | `application/` | in-target-package |
 | `agentsassemble.application.cli.api_commands` | `agentsassemble/application/cli/api_commands.py` | 53 | application | current | `agentsassemble.persistence.local.identity.registry`, `agentsassemble.providers`, `agentsassemble.providers.api`, `agentsassemble.providers.catalog` | 1 | - | - | - | `application/` | in-target-package |
 | `agentsassemble.application.cli.common` | `agentsassemble/application/cli/common.py` | 54 | application | current | - | 9 | - | test-import:1 | `tests/test_application_cli_package.py` | `application/` | in-target-package |
