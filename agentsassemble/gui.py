@@ -108,6 +108,11 @@ from agentsassemble.legacy.gui_session_settings import (
     agent_options_payload as _owned_agent_options_payload,
     agent_timing_payload as _owned_agent_timing_payload,
 )
+from agentsassemble.legacy.gui_session_rounds import (
+    attach_session_auto_rounds_if_requested as _owned_attach_session_auto_rounds_if_requested,
+    session_auto_rounds_options as _owned_session_auto_rounds_options,
+    skipped_session_auto_rounds_result as _owned_skipped_session_auto_rounds_result,
+)
 from agentsassemble.legacy.gui_session_runs import (
     LegacyGuiSessionRunMonitor as _OwnedLegacyGuiSessionRunMonitor,
     LegacyGuiSessionRunRuntime,
@@ -1159,14 +1164,7 @@ def live_agent_session_agent_options_payload(
 
 
 def _session_auto_rounds_options(payload: dict[str, object]) -> dict[str, object]:
-    return {
-        "timeout_seconds": _payload_nonnegative_float(
-            payload.get("round_timeout_seconds", payload.get("timeout_seconds", payload.get("timeout"))),
-            30.0,
-        ),
-        "max_rounds": _payload_bounded_round_count(payload.get("round_max_rounds", payload.get("max_rounds"))),
-        "stop_on_timeout": _payload_bool(payload.get("round_stop_on_timeout", payload.get("stop_on_timeout"))),
-    }
+    return _owned_session_auto_rounds_options(payload)
 
 
 def _attach_session_auto_rounds_if_requested(
@@ -1174,45 +1172,15 @@ def _attach_session_auto_rounds_if_requested(
     session: dict[str, object],
     payload: dict[str, object],
 ) -> dict[str, object]:
-    reply_probe = None
-    if _payload_bool(payload.get("probe_bound_agents")):
-        reply_probe = _session_bound_agent_reply_probe_payload(output_root, session, payload)
-        session["reply_probe"] = reply_probe
-    if not _payload_bool(payload.get("run_remaining_rounds")):
-        if _payload_bool(payload.get("finalize_after_rounds")):
-            session["finalization"] = _skipped_rounds_finalization_result(
-                str(session.get("meeting_id") or ""),
-                reason="rounds_not_requested",
-            )
-        return session
-    auto_rounds_options = _session_auto_rounds_options(payload)
-    if _operation_result_status(session.get("status")) != "ready":
-        session["auto_rounds"] = _skipped_session_auto_rounds_result(
-            session,
-            auto_rounds_options,
-            reason="session_not_ready",
-        )
-    elif reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
-        session["auto_rounds"] = _skipped_session_auto_rounds_result(
-            session,
-            auto_rounds_options,
-            reason="probe_not_ready",
-        )
-    else:
-        session["auto_rounds"] = live_agent_turn_rounds_payload(
-            output_root,
-            str(session.get("meeting_id") or ""),
-            auto_rounds_options,
-        )
-    finalization = _rounds_finalization_result_if_requested(
+    return _owned_attach_session_auto_rounds_if_requested(
         output_root,
-        str(session.get("meeting_id") or ""),
-        session["auto_rounds"],
+        session,
         payload,
+        reply_probe=_session_bound_agent_reply_probe_payload,
+        rounds_payload=live_agent_turn_rounds_payload,
+        rounds_finalization=_rounds_finalization_result_if_requested,
+        skipped_finalization=_skipped_rounds_finalization_result,
     )
-    if finalization is not None:
-        session["finalization"] = finalization
-    return session
 
 
 def _session_bound_agent_reply_probe_payload(
@@ -1443,22 +1411,11 @@ def _skipped_session_auto_rounds_result(
     *,
     reason: str = "session_not_ready",
 ) -> dict[str, object]:
-    return {
-        "status": "skipped",
-        "reason": clean_lobby_text(reason, limit=128),
-        "meeting_id": clean_lobby_text(session.get("meeting_id"), limit=128),
-        "round_count": 0,
-        "answered_round_count": 0,
-        "completed_round_count": 0,
-        "timeout_round_count": 0,
-        "skipped_round_count": 0,
-        "stopped_round_count": 0,
-        "stopped": False,
-        "stop_on_timeout": _payload_bool(options.get("stop_on_timeout")),
-        "timeout_seconds": _payload_nonnegative_float(options.get("timeout_seconds"), 0.0),
-        "max_rounds": _payload_bounded_round_count(options.get("max_rounds")),
-        "results": [],
-    }
+    return _owned_skipped_session_auto_rounds_result(
+        session,
+        options,
+        reason=reason,
+    )
 
 
 def room_friend_direct_dm_payload(
