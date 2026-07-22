@@ -27,8 +27,16 @@ committed)
   patch/export seams whose callers are measured by the compatibility report.
   The phase boundary passed 411 `test_cli_timeout_*` tests, package-map and
   architecture checks, and `git diff --check`.
-- Phase 3: in progress. The next boundary is the root `gui.py` transport and
-  runtime composition split; no GUI behavior changes are part of that move.
+- Phase 3: complete as of 2026-07-23. `agentsassemble/gui.py` moved from 3,504
+  to 2,035 lines. HTTP transport, runtime lifecycle, current and legacy route
+  registration, SSE projection, room WebSocket composition, legacy flow,
+  lobby persistence, Agent Session lifecycle/readiness/settings/probes/rounds,
+  process control, and smoke projection now live with their owning packages.
+  Root `gui.py` retains server composition and measured compatibility exports
+  and patch seams. The phase boundary passed all 1,024 `test_gui*.py` tests in
+  468 seconds, package-map and architecture checks, and `git diff --check`.
+- Phase 4: in progress. Split `application.agent_sessions` by process, turn,
+  command, queue, and compatibility ownership without changing its import path.
 
 ## Goal
 
