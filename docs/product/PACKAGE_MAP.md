@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `5cc9a7f31f2b5fd6`
+Source fingerprint: `29bfb01853f27f36`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 748
+- Python modules: 749
 - Top-level package modules: 302
-- Domains: admission=33, application=123, diagnostics=26, features=19, identity=9, legacy=226, persistence=58, providers=101, room=85, web=68
-- Classifications: compatibility=297, current=254, legacy=185, optional=12
+- Domains: admission=33, application=124, diagnostics=26, features=19, identity=9, legacy=226, persistence=58, providers=101, room=85, web=68
+- Classifications: compatibility=297, current=255, legacy=185, optional=12
 
 ## Classification Rules
 
@@ -541,9 +541,10 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.persistence.postgres.room.rows` | `agentsassemble/persistence/postgres/room/rows.py` | 23 | persistence | current | - | 3 | - | test-import:1 | `tests/test_postgres_room_persistence_package.py` | `persistence/postgres/` | in-target-package |
 | `agentsassemble.persistence.postgres.schema` | `agentsassemble/persistence/postgres/schema.py` | 152 | persistence | current | - | 5 | - | test-import:1 | `tests/test_postgres_room_persistence_package.py` | `persistence/postgres/` | in-target-package |
 | `agentsassemble.persona_artifact_contract` | `agentsassemble/persona_artifact_contract.py` | 17 | application | compatibility | `agentsassemble.legacy.meeting.support.persona_artifact_contract` | 0 | - | - | - | `application/` | compatibility-shim |
-| `agentsassemble.persona_cards` | `agentsassemble/persona_cards/__init__.py` | 1303 | application | current | `agentsassemble.persona_cards.models`, `agentsassemble.persona_cards.values` | 7 | - | test-import:3 | `tests/test_live_agent_finalization.py`, `tests/test_persona_artifact_contract.py`, `tests/test_persona_cards.py` | `application/` | retained-migration |
-| `agentsassemble.persona_cards.models` | `agentsassemble/persona_cards/models.py` | 320 | application | current | `agentsassemble.persona_cards.values` | 1 | - | - | - | `application/` | planned-move |
-| `agentsassemble.persona_cards.values` | `agentsassemble/persona_cards/values.py` | 89 | application | current | - | 2 | - | - | - | `application/` | planned-move |
+| `agentsassemble.persona_cards` | `agentsassemble/persona_cards/__init__.py` | 845 | application | current | `agentsassemble.persona_cards.models`, `agentsassemble.persona_cards.rendering`, `agentsassemble.persona_cards.values` | 7 | - | test-import:3 | `tests/test_live_agent_finalization.py`, `tests/test_persona_artifact_contract.py`, `tests/test_persona_cards.py` | `application/` | retained-migration |
+| `agentsassemble.persona_cards.models` | `agentsassemble/persona_cards/models.py` | 320 | application | current | `agentsassemble.persona_cards.values` | 2 | - | - | - | `application/` | planned-move |
+| `agentsassemble.persona_cards.rendering` | `agentsassemble/persona_cards/rendering.py` | 488 | application | current | `agentsassemble.persona_cards.models`, `agentsassemble.persona_cards.values` | 1 | - | - | - | `application/` | planned-move |
+| `agentsassemble.persona_cards.values` | `agentsassemble/persona_cards/values.py` | 89 | application | current | - | 3 | - | - | - | `application/` | planned-move |
 | `agentsassemble.postgres_application_database` | `agentsassemble/postgres_application_database.py` | 17 | persistence | compatibility | `agentsassemble.persistence.postgres.application_database` | 0 | - | test-import:2 | `tests/test_postgres_application_database.py`, `tests/test_postgres_cross_authority_transactions.py` | `persistence/postgres/` | compatibility-shim |
 | `agentsassemble.postgres_attention_repository` | `agentsassemble/postgres_attention_repository.py` | 37 | persistence | compatibility | `agentsassemble.persistence.postgres.room.attention` | 0 | - | test-import:1 | `tests/test_postgres_room_persistence_package.py` | `persistence/postgres/` | compatibility-shim |
 | `agentsassemble.postgres_connection_pool` | `agentsassemble/postgres_connection_pool.py` | 22 | persistence | compatibility | `agentsassemble.persistence.postgres.connection_pool` | 0 | - | test-import:2 | `tests/test_postgres_application_database.py`, `tests/test_postgres_connection_pool.py` | `persistence/postgres/` | compatibility-shim |
