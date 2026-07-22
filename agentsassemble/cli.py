@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
-import shlex
 import signal
 import subprocess
 import sys
@@ -19,15 +17,6 @@ from agentsassemble.application.agent_sessions import (
     CODEX_APP_SERVER_SMOKE_COMMANDS,
     clean_agent_session_provider_kind,
     run_codex_app_server_smoke,
-)
-from agentsassemble.legacy.live_agent.codex_sessions import (
-    DEFAULT_INVITE_CONFIG_PATH,
-    DEFAULT_LIVE_AGENT_CONFIG_PATH,
-    build_codex_live_agent_config,
-    build_codex_live_invite_config,
-    list_codex_sessions,
-    read_agent_config,
-    write_agent_config,
 )
 # Keep these imports public for callers that historically imported validators
 # and choice lists from ``agentsassemble.cli``.
@@ -159,6 +148,11 @@ from agentsassemble.legacy.live_agent.cli.heartbeat import (
     heartbeat_payload as _owned_heartbeat_payload,
     is_unreplaced_template_placeholder as _owned_is_unreplaced_template_placeholder,
 )
+from agentsassemble.legacy.live_agent.cli.codex_session_commands import (
+    CodexSessionCliRuntime,
+    codex_live_agent_config_next_commands as _owned_codex_live_agent_config_next_commands,
+    run_codex_session_command,
+)
 from agentsassemble.legacy.live_agent.cli.session_commands import (
     LegacySessionCliRuntime,
     SESSION_BOUND_PROBE_HTTP_WINDOWS,
@@ -190,7 +184,6 @@ from agentsassemble.diagnostics.cli import (
     DiagnosticCliRuntime,
     run_diagnostic_command,
 )
-from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.legacy.live_agent.state import (
     _looks_sensitive_presence_error,
@@ -199,7 +192,6 @@ from agentsassemble.diagnostics.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CON
 from agentsassemble.application.room_native_cli_smoke import run_room_native_cli_smoke
 from agentsassemble.application.room_repository_factory import RoomRepositoryUnavailable
 from agentsassemble.legacy.live_agent.runtime.preflight import preflight_live_agent_config, resident_config_setup_error
-from agentsassemble.legacy.live_agent.runtime.processes import clean_live_agent_group_id
 from agentsassemble.legacy.meeting.core.events import clean_lobby_text
 from agentsassemble.legacy.meeting.support.live_meeting_memory import compact_live_meeting_memory
 from agentsassemble.live_agent_runner import (
@@ -841,82 +833,16 @@ def _http_error_details(error: urllib.error.HTTPError) -> tuple[str, str]:
 
 
 def run_sessions_command(args: argparse.Namespace) -> int:
-    if not bool(getattr(args, "legacy_internal", False)):
-        print("sessions is a legacy/internal Codex discovery path; use assemble room resume for Agent Sessions.", file=sys.stderr)
-        return 2
-    if args.sessions_command == "list":
-        sessions = list_codex_sessions(limit=args.limit)
-        if args.as_json:
-            print(json.dumps(sessions, ensure_ascii=False, indent=2))
-        else:
-            for index, session in enumerate(sessions, start=1):
-                print(f"{index:>2}  {session['updated_at']}  {session['id']}  {session['thread_name']}")
-        return 0
-    if args.sessions_command == "invite":
-        try:
-            if args.server:
-                response = _request_json(
-                    _server_url(args.server, "/api/codex-sessions/invite"),
-                    method="POST",
-                    payload={
-                        "session_id": args.session_id,
-                        "role_id": args.role_id,
-                        "meeting_id": args.meeting_id,
-                    },
-                )
-                if args.as_json:
-                    print(json.dumps(response, ensure_ascii=False, indent=2))
-                else:
-                    binding = response.get("binding") if isinstance(response.get("binding"), dict) else {}
-                    print(f"Invited {binding.get('role_id') or args.role_id} as {binding.get('agent_id') or 'Codex live session'}")
-                return 0
-            role_ids = [role.id for role in load_council_config().roles]
-            output_path = Path(args.output)
-            config = build_codex_live_invite_config(
-                session_id=args.session_id,
-                role_id=args.role_id,
-                role_ids=role_ids,
-                existing=read_agent_config(output_path),
-            )
-            write_agent_config(output_path, config)
-        except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
-            print(f"error: {error}", file=sys.stderr)
-            return 2
-        print(f"Wrote {output_path}")
-        return 0
-    if args.sessions_command == "live-agent-config":
-        try:
-            output_path = Path(args.output)
-            config = build_codex_live_agent_config(
-                read_agent_config(args.input_path),
-                server=args.server,
-                meeting_id=args.meeting_id,
-                engagement_mode=args.engagement_mode,
-            )
-            write_agent_config(output_path, config)
-        except (OSError, ValueError, json.JSONDecodeError) as error:
-            print(f"error: {error}", file=sys.stderr)
-            return 2
-        next_commands = _codex_live_agent_config_next_commands(
-            input_path=str(args.input_path),
-            output_path=str(output_path),
-            server=str(args.server),
-            meeting_id=str(args.meeting_id),
-        )
-        if args.as_json:
-            print(
-                json.dumps(
-                    {"output": str(output_path), "config": config, "next_commands": next_commands},
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-        else:
-            print(f"Wrote {output_path}")
-            print("Next preflight: " + shlex.join(next_commands["preflight"]))
-            print("Next ensure-session: " + shlex.join(next_commands["ensure_session"]))
-        return 0
-    return 1
+    return run_codex_session_command(
+        args,
+        runtime=CodexSessionCliRuntime(
+            request_json=lambda *call_args, **call_kwargs: _request_json(
+                *call_args,
+                **call_kwargs,
+            ),
+            server_url=_server_url,
+        ),
+    )
 
 
 def run_room_command(args: argparse.Namespace) -> int:
@@ -944,41 +870,12 @@ def _codex_live_agent_config_next_commands(
     server: str,
     meeting_id: str,
 ) -> dict[str, list[str]]:
-    group_id = clean_live_agent_group_id(Path(output_path).stem)
-    ensure_session = [
-        "python3",
-        "-m",
-        "agentsassemble.cli",
-        "live-agent",
-        "--legacy-internal",
-        "ensure-session",
-        "--server",
-        server,
-    ]
-    if meeting_id:
-        ensure_session.extend(["--meeting-id", meeting_id])
-    ensure_session.extend(["--group-id", group_id])
-    ensure_session.extend(
-        [
-            "--agent-config",
-            input_path,
-            "--live-agent-config",
-            output_path,
-        ]
+    return _owned_codex_live_agent_config_next_commands(
+        input_path=input_path,
+        output_path=output_path,
+        server=server,
+        meeting_id=meeting_id,
     )
-    return {
-        "preflight": [
-            "python3",
-            "-m",
-            "agentsassemble.cli",
-            "live-agent",
-            "--legacy-internal",
-            "preflight",
-            "--config",
-            output_path,
-        ],
-        "ensure_session": ensure_session,
-    }
 
 
 if __name__ == "__main__":
