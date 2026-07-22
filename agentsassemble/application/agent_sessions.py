@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import deque
 import json
 import hashlib
 import os
@@ -8,10 +7,9 @@ import select
 import statistics
 import subprocess
 import tempfile
-import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Iterable, Protocol, cast
+from typing import Any, Callable, Iterable, Protocol
 from uuid import uuid4
 
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
@@ -34,6 +32,11 @@ from agentsassemble.application.agent_session_commands import (
     room_sse_frames_after_cursor,
     room_status_payload,
     stream_room_sse_frames,
+)
+from agentsassemble.application.agent_session_auto_queue import (
+    AGENT_SESSION_AUTO_TURN_QUEUE_LIMIT,
+    queue_agent_session_auto_turn_job,
+    run_agent_session_auto_turn_job,
 )
 from agentsassemble.providers.sync_cursor import (
     ProviderSyncCursorParityError,
@@ -112,7 +115,6 @@ CODEX_APP_SERVER_SMOKE_COMMANDS = {
     "codex-app-server-warm",
     "codex-app-server-two-agent",
 }
-AGENT_SESSION_AUTO_TURN_QUEUE_LIMIT = 20
 ROOM_MEMORY_EMPTY = {
     "summary": "",
     "decisions": [],
@@ -120,11 +122,6 @@ ROOM_MEMORY_EMPTY = {
     "up_to_event_id": "",
     "compacted_at": "",
 }
-_AUTO_TURN_QUEUE_LOCK = threading.Lock()
-_AUTO_TURN_QUEUES: dict[str, deque[dict[str, object]]] = {}
-_AUTO_TURN_WORKERS: set[str] = set()
-
-
 def resume_agent_session_payload(
     output_root: Path,
     payload: dict[str, object],
@@ -778,97 +775,29 @@ def enqueue_agent_session_auto_turn_for_lobby_event(
     )
     if not _ordered_agent_session_candidates(store, room_id):
         return {"status": "no_agent_session", "room_event": room_event}
-    job = {
+    job: dict[str, object] = {
         "output_root": output_root,
         "room_id": room_id,
         "trigger_event_id": room_event["id"],
-        "turn_runner": turn_runner,
-        "turn_command_runner": turn_command_runner,
-        "turn_command_streamer": turn_command_streamer,
-        "turn_adapter": turn_adapter,
         "repository": store,
     }
+    job["execute"] = lambda: run_next_agent_session_turn_payload(
+        output_root,
+        {
+            "room_id": room_id,
+            "trigger_event_id": room_event["id"],
+        },
+        turn_runner=turn_runner,
+        turn_command_runner=turn_command_runner,
+        turn_command_streamer=turn_command_streamer,
+        turn_adapter=turn_adapter,
+        repository=store,
+    )
     if not run_background:
-        result = _run_agent_session_auto_turn_job(job)
+        result = run_agent_session_auto_turn_job(job)
         return {**result, "room_event": room_event}
-    queued = _queue_agent_session_auto_turn_job(job)
+    queued = queue_agent_session_auto_turn_job(job)
     return {**queued, "room_event": room_event}
-
-
-def _queue_agent_session_auto_turn_job(job: dict[str, object]) -> dict[str, object]:
-    room_id = str(job["room_id"])
-    with _AUTO_TURN_QUEUE_LOCK:
-        queue = _AUTO_TURN_QUEUES.setdefault(room_id, deque())
-        if len(queue) >= AGENT_SESSION_AUTO_TURN_QUEUE_LIMIT:
-            repository = _auto_turn_job_repository(job)
-            repository.append_event(
-                room_id,
-                "error",
-                actor_id="agent_session_auto_turn",
-                content="Agent Session auto-turn queue is full.",
-                trigger_event_id=job.get("trigger_event_id", ""),
-            )
-            return {"status": "queue_full", "trigger_event_id": job.get("trigger_event_id", "")}
-        queue.append(job)
-        should_start = room_id not in _AUTO_TURN_WORKERS
-        if should_start:
-            _AUTO_TURN_WORKERS.add(room_id)
-    if should_start:
-        thread = threading.Thread(
-            target=_drain_agent_session_auto_turn_queue,
-            args=(room_id,),
-            daemon=True,
-            name=f"agent-session-auto-turn-{room_id}",
-        )
-        thread.start()
-    return {"status": "queued", "trigger_event_id": job.get("trigger_event_id", "")}
-
-
-def _drain_agent_session_auto_turn_queue(room_id: str) -> None:
-    while True:
-        with _AUTO_TURN_QUEUE_LOCK:
-            queue = _AUTO_TURN_QUEUES.get(room_id)
-            if not queue:
-                _AUTO_TURN_WORKERS.discard(room_id)
-                _AUTO_TURN_QUEUES.pop(room_id, None)
-                return
-            job = queue.popleft()
-        _run_agent_session_auto_turn_job(job)
-
-
-def _run_agent_session_auto_turn_job(job: dict[str, object]) -> dict[str, object]:
-    output_root = Path(job["output_root"])
-    room_id = str(job["room_id"])
-    repository = _auto_turn_job_repository(job)
-    try:
-        return run_next_agent_session_turn_payload(
-            output_root,
-            {
-                "room_id": room_id,
-                "trigger_event_id": job.get("trigger_event_id", ""),
-            },
-            turn_runner=job.get("turn_runner"),  # type: ignore[arg-type]
-            turn_command_runner=job.get("turn_command_runner"),  # type: ignore[arg-type]
-            turn_command_streamer=job.get("turn_command_streamer"),  # type: ignore[arg-type]
-            turn_adapter=job.get("turn_adapter"),  # type: ignore[arg-type]
-            repository=repository,
-        )
-    except Exception as error:  # pragma: no cover - defensive for background worker
-        repository.append_event(
-            room_id,
-            "error",
-            actor_id="agent_session_auto_turn",
-            content=clean_lobby_text(str(error), limit=1000),
-            trigger_event_id=job.get("trigger_event_id", ""),
-        )
-        return {"status": "error", "turn_status": "error", "message": str(error)}
-
-
-def _auto_turn_job_repository(job: dict[str, object]) -> RoomRepository:
-    repository = job.get("repository")
-    if repository is None:
-        raise RuntimeError("Agent Session auto-turn job has no room repository.")
-    return cast(RoomRepository, repository)
 
 
 def agent_session_codex_jsonl_turn_runner(
