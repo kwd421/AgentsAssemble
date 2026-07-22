@@ -31,6 +31,7 @@ from agentsassemble.web.routes.providers import (
     provider_catalog_payload,
     register_provider_routes,
 )
+from agentsassemble.web.routes.gui import register_current_gui_routes
 from agentsassemble.application.gui import ApplicationDatabase, GuiApplicationServices
 from agentsassemble.application.gui_runtime import GuiRuntimeDependencies, serve_gui_runtime
 from agentsassemble.application.gui_factory import (
@@ -42,7 +43,10 @@ from agentsassemble.legacy.live_agent.http.flow import register_live_agent_flow_
 from agentsassemble.legacy.gui_application import (
     LegacyGuiApplication,
 )
-from agentsassemble.legacy.gui_hooks import build_legacy_gui_patch_hooks
+from agentsassemble.legacy.gui_hooks import (
+    build_legacy_gui_patch_hooks,
+    register_legacy_gui_routes,
+)
 from agentsassemble.web.routes.observability import register_observability_routes
 from agentsassemble.web.routes.public_invite import register_public_invite_admin_routes
 from agentsassemble.legacy.meeting.http.room_composition import _local_agent_session_turn_adapter, register_room_routes
@@ -2718,8 +2722,6 @@ def _make_handler(
 
     live_agent_process_supervisor = services.process_supervisor
     live_agent_session_run_controller = services.session_run_controller
-    live_agent_flow_supervisor = services.flow_supervisor
-    invite_tunnel_manager = services.public_tunnel_manager
     # Single-use tickets bind a verified session to a /ws open. Browsers cannot
     # set Authorization on ``new WebSocket``.
     ws_ticket_store = services.ws_ticket_store
@@ -2984,18 +2986,6 @@ def _make_handler(
         session_run_actions_override=legacy_session_run_actions_override,
     )
 
-    register_ws_ticket_route(
-        route_table,
-        ws_ticket_store=ws_ticket_store,
-        is_local_operator=lambda ctx: ctx.is_local_operator(),
-    )
-    register_attachment_routes(route_table)
-    register_retired_legacy_routes(route_table)
-    register_room_routes(route_table)
-    register_room_settings_routes(route_table)
-    register_side_chat_routes(route_table)
-    legacy_application.register_meeting_routes(route_table)
-
     def _room_friend_direct_dm(ctx: RequestContext, payload: dict[str, object]) -> dict[str, object]:
         return room_friend_direct_dm_payload(
             ctx.deps.output_root,
@@ -3004,57 +2994,25 @@ def _make_handler(
             default_server=ctx.request_server_url(),
         )
 
-    register_room_friend_profile_routes(route_table, post_direct_dm=_room_friend_direct_dm)
-
-    def _provider_credentials_allowed(ctx: RequestContext) -> bool:
-        if not ctx.is_local_operator() and not ctx.require_moderator():
-            return False
-        if ctx.uses_loopback_host():
-            return True
-        forwarded = str(ctx.headers.get("X-Forwarded-Proto") or "").lower()
-        public_scheme = urlparse(services.public_invite.public_url()).scheme.lower()
-        if forwarded != "https" and public_scheme != "https":
-            ctx.send_error(
-                HTTPStatus.FORBIDDEN,
-                "HTTPS is required for remote credential management",
-            )
-            return False
-        return True
-
-    register_provider_routes(
+    register_current_gui_routes(
         route_table,
-        credentials_allowed=_provider_credentials_allowed,
-        is_local_operator=lambda ctx: ctx.is_local_operator(),
-        login_service=ProviderLoginService(
+        services=services,
+        provider_login_service=ProviderLoginService(
             output_root=output_root,
             command_launcher=live_agent_login_launcher,
             command_resolver=live_agent_login_command_resolver,
         ),
-    )
-
-    register_public_invite_admin_routes(
-        route_table,
-        tunnel=invite_tunnel_manager,
-        is_local_operator=lambda ctx: ctx.is_local_operator(),
-        local_server_url=lambda ctx: ctx.local_server_url(),
-    )
-
-    register_live_agent_flow_routes(
-        route_table,
-        flow=live_agent_flow_supervisor,
-        is_loopback_request=lambda ctx: ctx.uses_loopback_host(),
+        post_direct_dm=_room_friend_direct_dm,
         read_operation_payload=_read_operation_payload,
         record_operation=record_live_agent_operation,
     )
-
-    register_observability_routes(
+    register_legacy_gui_routes(
         route_table,
-        processes=live_agent_process_supervisor,
-        admission_projection=services.legacy_admission_projection,
+        legacy_application=legacy_application,
+        flow=services.flow_supervisor,
+        read_operation_payload=_read_operation_payload,
+        record_operation=record_live_agent_operation,
     )
-    legacy_application.register_live_agent_routes(route_table)
-
-    register_mafia_routes(route_table, read_operation_payload=_read_operation_payload)
 
     static_transport = ReactStaticTransport(
         frontend_root=react_app_root,

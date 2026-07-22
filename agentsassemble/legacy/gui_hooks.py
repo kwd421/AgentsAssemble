@@ -4,12 +4,16 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from agentsassemble.legacy.gui_application import (
+    LegacyGuiApplication,
     LegacyGuiPatchHooks,
     LegacyProcessHooks,
     LegacySessionHooks,
     LegacySessionRunHooks,
     LegacySmokeHooks,
 )
+from agentsassemble.legacy.live_agent.http.flow import register_live_agent_flow_routes
+from agentsassemble.legacy.meeting.http.room_composition import register_room_routes
+from agentsassemble.web.router import Router
 
 
 def build_legacy_gui_patch_hooks(
@@ -79,3 +83,23 @@ def build_legacy_gui_patch_hooks(
             ensure=session_run_ensure,
         ),
     )
+
+
+def register_legacy_gui_routes(
+    route_table: Router,
+    *,
+    legacy_application: LegacyGuiApplication,
+    flow: object,
+    read_operation_payload: Callable[..., dict[str, object] | None],
+    record_operation: Callable[..., object],
+) -> None:
+    register_room_routes(route_table)
+    legacy_application.register_meeting_routes(route_table)
+    register_live_agent_flow_routes(
+        route_table,
+        flow=flow,
+        is_loopback_request=lambda ctx: ctx.uses_loopback_host(),
+        read_operation_payload=read_operation_payload,
+        record_operation=record_operation,
+    )
+    legacy_application.register_live_agent_routes(route_table)
