@@ -31,6 +31,7 @@ class LegacyLiveAgentCliRuntime:
     operations_command: OptionalCommandHandler
     meeting_command: OptionalCommandHandler
     discovery_command: OptionalCommandHandler
+    room_interaction_command: OptionalCommandHandler
     handlers: Mapping[str, CommandHandler]
     runnable_commands: Collection[str]
 
@@ -62,6 +63,7 @@ def run_live_agent_command(
             runtime.operations_command,
             runtime.meeting_command,
             runtime.discovery_command,
+            runtime.room_interaction_command,
         ):
             result = nested_handler(args)
             if result is not None:
