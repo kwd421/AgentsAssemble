@@ -36,15 +36,24 @@ class ApplicationPackageTests(unittest.TestCase):
             owned_room_smoke.run_room_native_cli_smoke,
         )
 
-    def test_agent_session_root_module_exports_owned_service(self) -> None:
-        self.assertIs(
-            compatibility_agent_sessions.AgentSessionProcessService,
-            owned_agent_sessions.AgentSessionProcessService,
+    def test_agent_session_root_module_is_explicit_local_compatibility(self) -> None:
+        self.assertTrue(
+            issubclass(
+                compatibility_agent_sessions.AgentSessionProcessService,
+                owned_agent_sessions.AgentSessionProcessService,
+            )
         )
-        self.assertIs(
+        self.assertIsNot(
             compatibility_agent_sessions.run_agent_session_turn_payload,
             owned_agent_sessions.run_agent_session_turn_payload,
         )
+
+    def test_owned_agent_session_entrypoint_requires_repository(self) -> None:
+        with self.assertRaises(TypeError):
+            owned_agent_sessions.create_agent_session_payload(
+                ROOT / ".agentsassemble",
+                {"room_id": "room-a", "agent_id": "agent-a"},
+            )
 
     def test_agent_bridge_root_command_uses_application_entrypoint(self) -> None:
         self.assertIs(

@@ -17,12 +17,15 @@ from uuid import uuid4
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 from agentsassemble.room.repository import RoomRepository
+from agentsassemble.application.room_repository_factory import (
+    RoomRepositorySettings,
+    build_room_repository,
+)
 from agentsassemble.providers.sync_cursor import (
     ProviderSyncCursorParityError,
     assert_provider_sync_cursor_parity,
     provider_sync_session_fields,
 )
-from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.providers.codex_app_server import (
     CODEX_APP_SERVER_IDLE_COMPLETION_GRACE_SECONDS,
     CODEX_APP_SERVER_INFERRED_TURN_COMPLETED_METHOD,
@@ -114,9 +117,9 @@ def resume_agent_session_payload(
     *,
     command_runner: CommandRunner | None = None,
     process_service: "AgentSessionProcessService | None" = None,
-    repository: RoomRepository | None = None,
+    repository: RoomRepository,
 ) -> dict[str, object]:
-    store = repository or RoomStore(output_root)
+    store = repository
     room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
     agent_id = clean_lobby_text(payload.get("agent_id") or payload.get("agent"), limit=128)
     session_id = clean_lobby_text(payload.get("session_id") or payload.get("session"), limit=128) or agent_id
@@ -198,9 +201,9 @@ def create_agent_session_payload(
     *,
     command_runner: CommandRunner | None = None,
     process_service: "AgentSessionProcessService | None" = None,
-    repository: RoomRepository | None = None,
+    repository: RoomRepository,
 ) -> dict[str, object]:
-    store = repository or RoomStore(output_root)
+    store = repository
     room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
     agent_id = clean_lobby_text(payload.get("agent_id") or payload.get("agent"), limit=128)
     session_id = clean_lobby_text(payload.get("session_id") or payload.get("session"), limit=128) or agent_id
@@ -334,7 +337,7 @@ class AgentSessionProcessService:
         output_root: Path,
         payload: dict[str, object],
         *,
-        repository: RoomRepository | None = None,
+        repository: RoomRepository,
     ) -> dict[str, object]:
         return run_agent_session_turn_payload(
             output_root,
@@ -355,9 +358,9 @@ def run_agent_session_turn_payload(
     turn_command_runner: AgentTurnCommandRunner | None = None,
     turn_command_streamer: AgentTurnCommandStreamer | None = None,
     turn_adapter: AgentTurnAdapter | None = None,
-    repository: RoomRepository | None = None,
+    repository: RoomRepository,
 ) -> dict[str, object]:
-    store = repository or RoomStore(output_root)
+    store = repository
     room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
     agent_id = clean_lobby_text(payload.get("agent_id") or payload.get("agent") or payload.get("participant_id"), limit=128)
     session_id = clean_lobby_text(payload.get("session_id") or payload.get("session"), limit=128) or agent_id
@@ -678,9 +681,9 @@ def run_next_agent_session_turn_payload(
     turn_command_runner: AgentTurnCommandRunner | None = None,
     turn_command_streamer: AgentTurnCommandStreamer | None = None,
     turn_adapter: AgentTurnAdapter | None = None,
-    repository: RoomRepository | None = None,
+    repository: RoomRepository,
 ) -> dict[str, object]:
-    store = repository or RoomStore(output_root)
+    store = repository
     room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
     if not room_id:
         raise ValueError("room_id is required.")
@@ -743,12 +746,12 @@ def enqueue_agent_session_auto_turn_for_lobby_event(
     turn_command_streamer: AgentTurnCommandStreamer | None = None,
     turn_adapter: AgentTurnAdapter | None = None,
     run_background: bool = True,
-    repository: RoomRepository | None = None,
+    repository: RoomRepository,
 ) -> dict[str, object]:
     room_message = _room_store_message_from_lobby_event(lobby_event)
     if not room_message:
         return {"status": "ignored", "reason": "not_human_room_message"}
-    store = repository or RoomStore(output_root)
+    store = repository
     room_id = str(room_message["room_id"])
     store.create_room(room_id)
     room_event = store.append_event(
@@ -1032,7 +1035,10 @@ def run_codex_app_server_smoke(
         workspace.mkdir(parents=True, exist_ok=True)
         room_id = f"{clean_smoke}-{uuid4().hex[:8]}"
         manager = CodexAppServerRuntimeManager()
-        store = RoomStore(output_root)
+        store = build_room_repository(
+            output_root,
+            RoomRepositorySettings(backend="sqlite"),
+        )
         store.create_room(room_id, label=clean_smoke)
         metrics: dict[str, object] = _empty_codex_app_server_smoke_metrics()
         errors: list[str] = []
@@ -1056,6 +1062,7 @@ def run_codex_app_server_smoke(
                     "workspace": session["workspace"],
                     "runtime_sharing_policy": session.get("runtime_sharing_policy", DEFAULT_CODEX_APP_SERVER_RUNTIME_SHARING_POLICY),
                 },
+                repository=store,
             )
         started_at = time.monotonic()
         rss_start = 0
@@ -1073,9 +1080,10 @@ def run_codex_app_server_smoke(
                         "timeout_seconds": _codex_app_server_smoke_timeout_seconds(clean_smoke),
                     },
                     turn_adapter=lambda runtime_session, packet: manager.send_turn(runtime_session, packet),
+                    repository=store,
                 )
                 if clean_smoke == "codex-app-server-restart-recovery" and index == 0:
-                    persisted = RoomStore(output_root).session(room_id, session["session_id"])
+                    persisted = store.session(room_id, session["session_id"])
                     manager.detach_session(persisted, shutdown_unused=True)
                 turn_diagnostics = result.get("diagnostics") if isinstance(result.get("diagnostics"), list) else []
                 packet = result.get("packet") if isinstance(result.get("packet"), dict) else {}
@@ -1992,9 +2000,9 @@ def room_sse_frames_after_cursor(
     room_id: str,
     *,
     cursor: str = "",
-    repository: RoomRepository | None = None,
+    repository: RoomRepository,
 ) -> list[str]:
-    store = repository or RoomStore(output_root)
+    store = repository
     events = store.read_events(room_id, after=cursor)
     if not events:
         return ["event: heartbeat\ndata: {}\n\n"]
@@ -2018,7 +2026,7 @@ def stream_room_sse_frames(
     cursor: str = "",
     max_iterations: int | None = None,
     wait: Callable[[], None] | None = None,
-    repository: RoomRepository | None = None,
+    repository: RoomRepository,
 ):
     current_cursor = cursor
     iterations = 0
@@ -2169,9 +2177,9 @@ def room_status_payload(
     output_root: Path,
     room_id: str,
     *,
-    repository: RoomRepository | None = None,
+    repository: RoomRepository,
 ) -> dict[str, object]:
-    store = repository or RoomStore(output_root)
+    store = repository
     payload = store.room_payload(room_id)
     payload["active_participants"] = store.active_participants(room_id)
     return payload
@@ -2182,9 +2190,9 @@ def room_action_payload(
     payload: dict[str, object],
     action: str,
     *,
-    repository: RoomRepository | None = None,
+    repository: RoomRepository,
 ) -> dict[str, object]:
-    store = repository or RoomStore(output_root)
+    store = repository
     room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
     participant_id = clean_lobby_text(payload.get("participant_id") or payload.get("agent_id"), limit=128)
     reason = clean_lobby_text(payload.get("reason"), limit=500)
@@ -2205,9 +2213,9 @@ def room_lifecycle_payload(
     payload: dict[str, object],
     action: str,
     *,
-    repository: RoomRepository | None = None,
+    repository: RoomRepository,
 ) -> dict[str, object]:
-    store = repository or RoomStore(output_root)
+    store = repository
     room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
     status = "archived" if action == "archive" else "closed"
     room = store.set_room_status(room_id, status)
@@ -2218,9 +2226,9 @@ def active_room_members(
     output_root: Path,
     room_id: str,
     *,
-    repository: RoomRepository | None = None,
+    repository: RoomRepository,
 ) -> list[dict[str, object]]:
-    return (repository or RoomStore(output_root)).active_participants(room_id)
+    return repository.active_participants(room_id)
 
 
 def merge_room_store_members(
@@ -2228,11 +2236,11 @@ def merge_room_store_members(
     meeting_id: str,
     existing_members: list[dict[str, object]],
     *,
-    repository: RoomRepository | None = None,
+    repository: RoomRepository,
 ) -> list[dict[str, object]]:
     if not meeting_id:
         return existing_members
-    store = repository or RoomStore(output_root)
+    store = repository
     participants = store.participants(meeting_id)
     room_participant_ids = {str(participant.get("participant_id") or "") for participant in participants}
     active = [
