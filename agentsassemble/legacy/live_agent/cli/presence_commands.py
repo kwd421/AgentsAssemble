@@ -329,9 +329,10 @@ def _run_engagement(args: argparse.Namespace, runtime: LegacyPresenceCliRuntime)
 
 def _run_return_packet(args: argparse.Namespace, runtime: LegacyPresenceCliRuntime) -> int:
     agent_id = urllib.parse.quote(args.agent_id, safe="")
-    query_values = {"source_event_id": args.source_event_id}
+    query_values: dict[str, object] = {}
     if args.meeting_id:
         query_values["meeting_id"] = args.meeting_id
+    query_values["source_event_id"] = args.source_event_id
     query = urllib.parse.urlencode(query_values)
     response = runtime.request_json(
         runtime.server_url(args.server, f"/api/live-agents/{agent_id}/return-packet?{query}")

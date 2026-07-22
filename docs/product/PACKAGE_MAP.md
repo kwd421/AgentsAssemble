@@ -4,17 +4,17 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `42b6814e0dc1886f`
+Source fingerprint: `a82bfa0f7ffd9633`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
 
 ## Summary
 
-- Python modules: 703
+- Python modules: 704
 - Top-level package modules: 303
-- Domains: admission=32, application=112, diagnostics=25, features=19, identity=9, legacy=197, persistence=58, providers=101, room=85, web=65
-- Classifications: compatibility=295, current=240, legacy=156, optional=12
+- Domains: admission=32, application=112, diagnostics=25, features=19, identity=9, legacy=198, persistence=58, providers=101, room=85, web=65
+- Classifications: compatibility=295, current=240, legacy=157, optional=12
 
 ## Classification Rules
 
@@ -98,7 +98,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.claude_resident` | `agentsassemble/claude_resident.py` | 26 | providers | compatibility | `agentsassemble.providers.claude_resident` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.claude_transcript` | `agentsassemble/claude_transcript.py` | 18 | providers | compatibility | `agentsassemble.providers.claude_transcript` | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | compatibility-shim |
 | `agentsassemble.cleanup_report` | `agentsassemble/cleanup_report.py` | 14 | diagnostics | compatibility | `agentsassemble.diagnostics.cleanup` | 0 | - | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | compatibility-shim |
-| `agentsassemble.cli` | `agentsassemble/cli.py` | 4681 | application | current | `agentsassemble.application.agent_sessions`, `agentsassemble.application.cli.api_commands`, `agentsassemble.application.cli.common`, `agentsassemble.application.cli.core`, `agentsassemble.application.cli.core_commands`, `agentsassemble.application.cli.persona`, `agentsassemble.application.cli.persona_commands`, `agentsassemble.application.cli.provider_commands`, +60 | 0 | - | test-import:33, monkeypatch:18 | `tests/test_admission_workflow_maintenance.py`, `tests/test_agent_session_cli.py`, `tests/test_api_lane_runner.py`, `+30` | `root entrypoint` | retained-entrypoint |
+| `agentsassemble.cli` | `agentsassemble/cli.py` | 3861 | application | current | `agentsassemble.application.agent_sessions`, `agentsassemble.application.cli.api_commands`, `agentsassemble.application.cli.common`, `agentsassemble.application.cli.core`, `agentsassemble.application.cli.core_commands`, `agentsassemble.application.cli.persona`, `agentsassemble.application.cli.persona_commands`, `agentsassemble.application.cli.provider_commands`, +61 | 0 | - | test-import:33, monkeypatch:18 | `tests/test_admission_workflow_maintenance.py`, `tests/test_agent_session_cli.py`, `tests/test_api_lane_runner.py`, `+30` | `root entrypoint` | retained-entrypoint |
 | `agentsassemble.cli_diagnostics` | `agentsassemble/cli_diagnostics.py` | 17 | diagnostics | compatibility | `agentsassemble.diagnostics.cli` | 0 | - | test-import:1 | `tests/test_diagnostics_package.py` | `diagnostics/` | compatibility-shim |
 | `agentsassemble.cli_http_errors` | `agentsassemble/cli_http_errors.py` | 9 | web | compatibility | `agentsassemble.web.cli_errors` | 0 | - | - | - | `web/` | compatibility-shim |
 | `agentsassemble.cli_legacy_live_agent_format` | `agentsassemble/cli_legacy_live_agent_format.py` | 3 | application | compatibility | - | 0 | - | - | - | `application/` | compatibility-shim |
@@ -218,11 +218,12 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.legacy.live_agent` | `agentsassemble/legacy/live_agent/__init__.py` | 1 | legacy | legacy | - | 0 | - | test-import:1 | `tests/test_legacy_package.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli` | `agentsassemble/legacy/live_agent/cli/__init__.py` | 1 | legacy | legacy | - | 0 | - | - | - | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli.command_format` | `agentsassemble/legacy/live_agent/cli/command_format.py` | 587 | legacy | legacy | - | 1 | - | test-import:1 | `tests/test_cli_legacy_live_agent_format.py` | `legacy/` | in-target-package |
-| `agentsassemble.legacy.live_agent.cli.commands` | `agentsassemble/legacy/live_agent/cli/commands.py` | 167 | legacy | legacy | `agentsassemble.character_mode` | 1 | - | - | - | `legacy/` | in-target-package |
+| `agentsassemble.legacy.live_agent.cli.commands` | `agentsassemble/legacy/live_agent/cli/commands.py` | 169 | legacy | legacy | `agentsassemble.character_mode` | 1 | - | - | - | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli.common` | `agentsassemble/legacy/live_agent/cli/common.py` | 71 | legacy | legacy | `agentsassemble.application.cli.common`, `agentsassemble.legacy.live_agent.runtime.smoke`, `agentsassemble.live_agent_runner` | 3 | `call:list@19` | - | - | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli.mcp_commands` | `agentsassemble/legacy/live_agent/cli/mcp_commands.py` | 33 | legacy | legacy | `agentsassemble.legacy.live_agent.mcp_server` | 1 | - | - | - | `legacy/` | in-target-package |
+| `agentsassemble.legacy.live_agent.cli.operations_commands` | `agentsassemble/legacy/live_agent/cli/operations_commands.py` | 884 | legacy | legacy | - | 1 | - | - | - | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli.parser` | `agentsassemble/legacy/live_agent/cli/parser.py` | 1163 | legacy | legacy | `agentsassemble.application.cli.common`, `agentsassemble.legacy.live_agent.cli.common`, `agentsassemble.legacy.live_agent.runtime.timing`, `agentsassemble.models` | 2 | - | test-import:1 | `tests/test_application_cli_package.py` | `legacy/` | in-target-package |
-| `agentsassemble.legacy.live_agent.cli.presence_commands` | `agentsassemble/legacy/live_agent/cli/presence_commands.py` | 357 | legacy | legacy | `agentsassemble.admission.lan_invite`, `agentsassemble.legacy.live_agent.runtime.join_brief`, `agentsassemble.legacy.live_agent.runtime.roster`, `agentsassemble.legacy.live_agent.state`, `agentsassemble.legacy.meeting.core.events` | 1 | - | - | - | `legacy/` | in-target-package |
+| `agentsassemble.legacy.live_agent.cli.presence_commands` | `agentsassemble/legacy/live_agent/cli/presence_commands.py` | 358 | legacy | legacy | `agentsassemble.admission.lan_invite`, `agentsassemble.legacy.live_agent.runtime.join_brief`, `agentsassemble.legacy.live_agent.runtime.roster`, `agentsassemble.legacy.live_agent.state`, `agentsassemble.legacy.meeting.core.events` | 1 | - | - | - | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli.process_commands` | `agentsassemble/legacy/live_agent/cli/process_commands.py` | 299 | legacy | legacy | `agentsassemble.legacy.live_agent.runtime.processes` | 2 | - | - | - | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli.session_commands` | `agentsassemble/legacy/live_agent/cli/session_commands.py` | 523 | legacy | legacy | `agentsassemble.application.cli.common`, `agentsassemble.web.cli_errors` | 2 | - | test-import:1 | `tests/test_cli_timeout_session_ensure.py` | `legacy/` | in-target-package |
 | `agentsassemble.legacy.live_agent.cli.sessions` | `agentsassemble/legacy/live_agent/cli/sessions.py` | 40 | legacy | legacy | `agentsassemble.application.cli.common`, `agentsassemble.legacy.live_agent.codex_sessions` | 2 | - | test-import:1 | `tests/test_application_cli_package.py` | `legacy/` | in-target-package |
