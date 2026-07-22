@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
 import signal
 import subprocess
 import sys
 import threading
 import time
 import urllib.error
-import urllib.parse
 from pathlib import Path
 
 from agentsassemble.providers.bridges.claude_code_bridge import CLAUDE_PRINT_MODE_DISABLED_MESSAGE, serve_bridge
@@ -153,6 +151,14 @@ from agentsassemble.legacy.live_agent.cli.codex_session_commands import (
     codex_live_agent_config_next_commands as _owned_codex_live_agent_config_next_commands,
     run_codex_session_command,
 )
+from agentsassemble.legacy.live_agent.cli.resident_setup import (
+    duplicate_resident_agent_id_errors as _owned_duplicate_resident_agent_id_errors,
+    heartbeat_resident_worker_error as _owned_heartbeat_resident_worker_error,
+    resident_config_setup_error as _owned_resident_config_setup_error,
+    resident_group_config_errors as _owned_resident_group_config_errors,
+    resident_worker_error_message as _owned_resident_worker_error_message,
+    should_heartbeat_resident_worker_error as _owned_should_heartbeat_resident_worker_error,
+)
 from agentsassemble.legacy.live_agent.cli.session_commands import (
     LegacySessionCliRuntime,
     SESSION_BOUND_PROBE_HTTP_WINDOWS,
@@ -185,9 +191,6 @@ from agentsassemble.diagnostics.cli import (
     run_diagnostic_command,
 )
 from agentsassemble.gui import serve_gui
-from agentsassemble.legacy.live_agent.state import (
-    _looks_sensitive_presence_error,
-)
 from agentsassemble.diagnostics.live_cli_smoke import DEFAULT_LIVE_CLI_SMOKE_CONFIG
 from agentsassemble.application.room_native_cli_smoke import run_room_native_cli_smoke
 from agentsassemble.application.room_repository_factory import RoomRepositoryUnavailable
@@ -547,64 +550,46 @@ def _legacy_resident_cli_runtime() -> LegacyResidentCliRuntime:
 
 
 def _should_heartbeat_resident_worker_error(config: ResidentAgentConfig, error: BaseException) -> bool:
-    return not (config.connection_kind == "self_service" and isinstance(error, subprocess.CalledProcessError))
+    return _owned_should_heartbeat_resident_worker_error(config, error)
 
 
 def _heartbeat_resident_worker_error(config: ResidentAgentConfig, error: BaseException) -> None:
-    try:
-        _request_json(
-            _server_url(config.server, f"/api/live-agents/{urllib.parse.quote(config.agent_id, safe='')}/heartbeat"),
-            method="POST",
-            payload={"status": "error", "last_error": _resident_worker_error_message(error)},
-            timeout_seconds=2.0,
-        )
-    except Exception:
-        return
+    _owned_heartbeat_resident_worker_error(
+        config,
+        error,
+        request_json=lambda *call_args, **call_kwargs: _request_json(
+            *call_args,
+            **call_kwargs,
+        ),
+        server_url=_server_url,
+    )
 
 
 def _resident_worker_error_message(error: BaseException) -> str:
-    message = str(error).strip()
-    if message and _looks_sensitive_presence_error(message):
-        return "Resident worker error details redacted."
-    error_type = type(error).__name__
-    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", error_type):
-        return f"Resident worker failed with {error_type}."
-    return "Resident worker failed."
+    return _owned_resident_worker_error_message(error)
 
 
 def _resident_group_config_errors(configs: list[ResidentAgentConfig]) -> dict[str, str]:
-    errors = _duplicate_resident_agent_id_errors(configs)
-    for config in configs:
-        if config.agent_id in errors:
-            continue
-        try:
-            setup_error = _resident_config_setup_error(config)
-            if setup_error:
-                errors[config.agent_id] = setup_error
-        except Exception as error:
-            errors[config.agent_id] = str(error)
-    return errors
+    return _owned_resident_group_config_errors(
+        configs,
+        setup_error=lambda config: _resident_config_setup_error(config),
+    )
 
 
 def _duplicate_resident_agent_id_errors(configs: list[ResidentAgentConfig]) -> dict[str, str]:
-    counts: dict[str, int] = {}
-    for config in configs:
-        if config.agent_id:
-            counts[config.agent_id] = counts.get(config.agent_id, 0) + 1
-    return {
-        agent_id: "Duplicate agent id in resident group config."
-        for agent_id, count in counts.items()
-        if count > 1
-    }
+    return _owned_duplicate_resident_agent_id_errors(configs)
 
 
 def _resident_config_setup_error(config: ResidentAgentConfig) -> str:
-    _validate_resident_config(config)
-    if config.connection_kind == "remote_bridge":
-        probe_runner = _command_runner_for_config(config)
-        _close_command_runner(probe_runner)
-        return ""
-    return resident_config_setup_error(config)
+    return _owned_resident_config_setup_error(
+        config,
+        validate_config=lambda resident_config: _validate_resident_config(resident_config),
+        command_runner_for_config=lambda resident_config: _command_runner_for_config(
+            resident_config
+        ),
+        close_command_runner=lambda runner: _close_command_runner(runner),
+        provider_setup_error=resident_config_setup_error,
+    )
 
 
 def _write_live_agent_discovery_outputs(
