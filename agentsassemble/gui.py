@@ -12,7 +12,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from agentsassemble.room.attachments import AttachmentError
 from agentsassemble.legacy.live_agent.codex_sessions import list_codex_sessions
 from agentsassemble.features.mafia.routes import register_mafia_routes
 from agentsassemble.features.side_chat.routes import register_side_chat_routes
@@ -197,10 +196,7 @@ from agentsassemble.web.router import (
 )
 from agentsassemble.web.websocket import handle_ws_upgrade, register_ws_ticket_route
 from agentsassemble.web.gui_server import make_gui_http_handler
-from agentsassemble.room.realtime import (
-    RoomCommandRejected,
-    RoomRealtimeController,
-)
+from agentsassemble.room.realtime import RoomRealtimeController
 from agentsassemble.application.session_run_monitor import (
     PeriodicSessionRunMonitor,
     safe_monitor_error_type,
@@ -396,14 +392,9 @@ from agentsassemble.application.room_repository_factory import (
 )
 from agentsassemble.admission.repository import InviteSessionRepository
 from agentsassemble.admission.repository_factory import build_invite_session_repository
-from agentsassemble.room.speech import (
-    ActorIdentity,
-    GovernedLobbySayRejected,
-    governed_lobby_say,
-)
-from agentsassemble.web.room_session import (
-    WsRoomDeps,
-    WsSayRejected,
+from agentsassemble.web.room_ws_composition import (
+    RoomWsComposition,
+    build_ws_room_deps_factory,
 )
 from agentsassemble.application.agent_sessions import enqueue_agent_session_auto_turn_for_lobby_event, room_sse_frames_after_cursor
 from agentsassemble.admission.invite import (
@@ -1802,103 +1793,27 @@ def _make_handler(
             identity_backend=services.identity_backend,
         )
 
-    def _ws_room_deps(channel, handler) -> WsRoomDeps:
-        # Reuse the proven SSE snapshot machinery + the governed say append path,
-        # so the WS transport behaves exactly like the HTTP/SSE one (no pub/sub yet).
-        def read_lobby_after(meeting_id: str, after_id: str) -> tuple[list, str]:
-            payload = _stream_snapshot_payload(
-                output_root,
-                "lobby",
-                meeting_id=meeting_id,
-                last_event_id=after_id or None,
-                repository=room_repository,
-            )
-            events = list(payload.get("events", []))
-            return events, (_last_payload_event_id(payload) or after_id)
-
-        def read_roster(meeting_id: str) -> tuple[list, str]:
-            payload = _stream_snapshot_payload(
-                output_root,
-                "roster",
-                meeting_id=meeting_id,
-                last_event_id=None,
-                repository=room_repository,
-                sessions=services.sessions.active_summary(),
-            )
-            return list(payload.get("members", [])), str(_payload_signature(payload) or "")
-
-        def read_side_chat_after(meeting_id: str, after_id: str) -> tuple[list, str]:
-            payload = _stream_snapshot_payload(
-                output_root,
-                "side_chat",
-                meeting_id=meeting_id,
-                last_event_id=after_id or None,
-                repository=room_repository,
-            )
-            events = list(payload.get("events", []))
-            return events, (_last_payload_event_id(payload) or after_id)
-
-        def post_say(identity: dict, payload: dict) -> dict:
-            try:
-                resolved = lobby_payload_with_attachments(output_root, dict(payload))
-            except AttachmentError as error:
-                raise WsSayRejected(str(error), category="bad_message") from error
-            try:
-                event = governed_lobby_say(
-                    output_root,
-                    identity=ActorIdentity.from_mapping(identity),
-                    payload=resolved,
-                    append_lobby_event=append_server_lobby_event,
-                    public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
-                    is_muted=is_room_member_muted,
-                )
-                enqueue_agent_session_auto_turn_for_lobby_event(
-                    output_root,
-                    event,
-                    turn_adapter=_local_agent_session_turn_adapter,
-                    repository=room_repository,
-                )
-                return event
-            except GovernedLobbySayRejected as rejected:
-                raise WsSayRejected(str(rejected), category=rejected.category) from rejected
-
-        def set_thinking(identity: dict, on: bool) -> None:
-            # Ephemeral "generating a reply" flag → the roster carries a `thinking`
-            # bool that the roster push delivers, lighting up the typing indicator.
-            mark_thinking(
-                str(identity.get("meeting_id") or ""),
-                str(identity.get("agent_id") or ""),
-                on,
-            )
-
-        def execute_command(identity: dict, message: dict) -> dict[str, object]:
-            try:
-                return room_realtime_controller.handle_command(
-                    identity,
-                    message,
-                    server_url=_local_server_url(handler.server.server_address),
-                    ticket_issuer=lambda bridge_identity: ws_ticket_store.issue(bridge_identity),
-                )
-            except RoomCommandRejected as rejected:
-                from agentsassemble.web.room_session import WsCommandRejected
-
-                raise WsCommandRejected(str(rejected), code=rejected.code) from rejected
-
-        return WsRoomDeps(
-            read_lobby_after=read_lobby_after,
-            read_roster=read_roster,
-            read_side_chat_after=read_side_chat_after,
-            post_say=post_say,
-            is_muted=lambda meeting_id, agent_id: is_room_member_muted(output_root, meeting_id, agent_id),
-            set_thinking=set_thinking,
-            is_session_active=lambda session_token: bool(services.sessions.verify(session_token)),
-            room_snapshot=lambda identity, after_seq: room_realtime_controller.snapshot(
-                identity,
-                after_seq=after_seq,
+    ws_room_deps_factory = build_ws_room_deps_factory(
+        output_root=output_root,
+        services=services,
+        room_repository=room_repository,
+        composition=RoomWsComposition(
+            stream_snapshot_payload=lambda *args, **kwargs: _stream_snapshot_payload(
+                *args,
+                **kwargs,
             ),
-            execute_command=execute_command,
-            on_subscribe=lambda identity, streams, after_seq: channel.subscribe(streams),
-        )
+            last_payload_event_id=_last_payload_event_id,
+            payload_signature=_payload_signature,
+            lobby_payload_with_attachments=lobby_payload_with_attachments,
+            append_lobby_event=append_lobby_event,
+            public_lobby_allows_room_scope=_public_lobby_allows_room_scope,
+            is_muted=is_room_member_muted,
+            enqueue_auto_turn=enqueue_agent_session_auto_turn_for_lobby_event,
+            turn_adapter=_local_agent_session_turn_adapter,
+            mark_thinking=mark_thinking,
+            local_server_url=_local_server_url,
+        ),
+    )
     # R2: route-table dispatcher. Migrated domains register here; do_GET/do_POST
     # try the table first and fall back to the legacy if-chains below.
     route_deps = GuiDeps(
@@ -2093,7 +2008,7 @@ def _make_handler(
         static_transport=static_transport,
         ws_ticket_store=ws_ticket_store,
         room_realtime_controller=room_realtime_controller,
-        ws_room_deps_factory=_ws_room_deps,
+        ws_room_deps_factory=ws_room_deps_factory,
         room_repository=room_repository,
         stream_snapshot_payload=lambda *args, **kwargs: _stream_snapshot_payload(
             *args,
