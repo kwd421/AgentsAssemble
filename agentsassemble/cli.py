@@ -12,7 +12,6 @@ import threading
 import time
 import urllib.error
 import urllib.parse
-import urllib.request
 from pathlib import Path
 
 from agentsassemble.providers.bridges.claude_code_bridge import CLAUDE_PRINT_MODE_DISABLED_MESSAGE, serve_bridge
@@ -53,6 +52,15 @@ from agentsassemble.application.cli.persona_commands import (
 from agentsassemble.application.cli.api_commands import run_api_call_command
 from agentsassemble.application.cli.provider_commands import (
     run_providers_command as _run_providers_command,
+)
+from agentsassemble.application.cli.http import (
+    http_error_details as _owned_http_error_details,
+    operation_http_timeout as _owned_operation_http_timeout,
+    probe_http_timeout as _owned_probe_http_timeout,
+    real_session_smoke_http_timeout as _owned_real_session_smoke_http_timeout,
+    request_json as _owned_request_json,
+    server_url as _owned_server_url,
+    session_smoke_http_timeout as _owned_session_smoke_http_timeout,
 )
 from agentsassemble.application.cli.room_commands import (
     RoomCliRuntime,
@@ -213,7 +221,6 @@ from agentsassemble.legacy.live_agent.runtime.smoke import (
 from agentsassemble.legacy.live_agent.runtime.sessions import session_ensure_action
 from agentsassemble.legacy.meeting.core.runner import run_demo_meeting
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
-from agentsassemble.web.cli_errors import CliHttpError
 from agentsassemble.diagnostics.provider_health import provider_health_report
 
 
@@ -784,15 +791,15 @@ def _run_delegate_command(command: list[str], prompt: str, *, timeout_seconds: i
 
 
 def _server_url(server: str, path: str) -> str:
-    return f"{server.rstrip('/')}{path}"
+    return _owned_server_url(server, path)
 
 
 def _probe_http_timeout(probe_timeout_seconds: float) -> float:
-    return max(10.0, float(probe_timeout_seconds) + 2.0)
+    return _owned_probe_http_timeout(probe_timeout_seconds)
 
 
 def _operation_http_timeout(wait_seconds: float, *, windows: int = 1) -> float:
-    return max(10.0, float(wait_seconds) * max(1, int(windows)) + 6.0)
+    return _owned_operation_http_timeout(wait_seconds, windows=windows)
 
 
 def _session_smoke_http_timeout(
@@ -802,29 +809,16 @@ def _session_smoke_http_timeout(
     soak_cycle_count: int = 0,
     soak_interval_seconds: float = 0.0,
 ) -> float:
-    timeout = max(0.0, float(wait_seconds))
-    probes = max(1, int(lobby_probe_count))
-    soak_cycles = max(0, int(soak_cycle_count))
-    soak_interval = max(0.0, float(soak_interval_seconds))
-    return (
-        _operation_http_timeout(timeout)
-        + _operation_http_timeout(timeout, windows=4)
-        + (timeout * probes)
-        + 10.0
-        + _operation_http_timeout(timeout)
-        + _operation_http_timeout(timeout)
-        + (timeout * probes)
-        + timeout
-        + _operation_http_timeout(timeout)
-        + (timeout * probes)
-        + (soak_cycles * (10.0 + timeout + soak_interval))
-        + 20.0
+    return _owned_session_smoke_http_timeout(
+        wait_seconds,
+        lobby_probe_count=lobby_probe_count,
+        soak_cycle_count=soak_cycle_count,
+        soak_interval_seconds=soak_interval_seconds,
     )
 
 
 def _real_session_smoke_http_timeout(wait_seconds: float) -> float:
-    timeout = max(0.0, float(wait_seconds))
-    return _operation_http_timeout(timeout, windows=25) + 22.0
+    return _owned_real_session_smoke_http_timeout(wait_seconds)
 
 
 def _request_json(
@@ -834,36 +828,16 @@ def _request_json(
     payload: dict[str, object] | None = None,
     timeout_seconds: float = 10.0,
 ) -> dict[str, object]:
-    data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    headers = {"Content-Type": "application/json"} if payload is not None else {}
-    request = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            loaded = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as error:
-        try:
-            message, code = _http_error_details(error)
-        finally:
-            error.close()
-        raise CliHttpError(
-            message,
-            status_code=int(error.code or 0),
-            code=code,
-        ) from error
-    return loaded if isinstance(loaded, dict) else {}
+    return _owned_request_json(
+        url,
+        method=method,
+        payload=payload,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 def _http_error_details(error: urllib.error.HTTPError) -> tuple[str, str]:
-    body = error.read().decode("utf-8", errors="replace")
-    if body:
-        try:
-            payload = json.loads(body)
-        except json.JSONDecodeError:
-            payload = {}
-        if isinstance(payload, dict) and payload.get("error"):
-            return str(payload["error"]), str(payload.get("code") or "")
-        return body.strip(), ""
-    return str(error), ""
+    return _owned_http_error_details(error)
 
 
 def run_sessions_command(args: argparse.Namespace) -> int:
