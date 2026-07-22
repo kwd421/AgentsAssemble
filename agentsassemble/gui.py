@@ -13,10 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from agentsassemble.room.attachments import (
-    AttachmentError,
-    normalize_attachment_references,
-)
+from agentsassemble.room.attachments import AttachmentError
 from agentsassemble.legacy.live_agent.codex_sessions import list_codex_sessions
 from agentsassemble.features.mafia.routes import register_mafia_routes
 from agentsassemble.features.side_chat.routes import register_side_chat_routes
@@ -57,6 +54,12 @@ from agentsassemble.legacy.gui_flow import (
     parse_iso_datetime as _owned_parse_iso_datetime,
     restored_flow_state as _owned_restored_flow_state,
     safe_live_agent_flow_agents as _owned_safe_live_agent_flow_agents,
+)
+from agentsassemble.legacy.gui_lobby import (
+    append_lobby_event as _owned_append_lobby_event,
+    lobby_payload_with_attachments as _owned_lobby_payload_with_attachments,
+    public_lobby_allows_room_scope as _owned_public_lobby_allows_room_scope,
+    single_lobby_meeting_id as _owned_single_lobby_meeting_id,
 )
 from agentsassemble.legacy.gui_session_runs import (
     LegacyGuiSessionRunMonitor as _OwnedLegacyGuiSessionRunMonitor,
@@ -336,9 +339,7 @@ from agentsassemble.web.frontend_runtime import (
 from agentsassemble.features.social.direct_messages import enqueue_room_friend_direct_dm
 from agentsassemble.identity.factory import build_identity_repository
 from agentsassemble.identity.repository import IdentityBackend
-from agentsassemble.persistence.local.identity.registry import (
-    identity_store_for_output_root,
-)
+from agentsassemble.persistence.local.identity.registry import identity_store_for_output_root
 from agentsassemble.room.moderation import is_room_member_muted
 from agentsassemble.room.members import mark_thinking, room_members_payload
 from agentsassemble.room.repository import RoomRepository
@@ -364,10 +365,8 @@ from agentsassemble.admission.invite import (
     compatibility_public_invite_runtime,
 )
 from agentsassemble.legacy.meeting.core.events import (
-    FLOW_METADATA_KEYS,
     ROOM_TOPIC_LIMIT,
     append_live_event,
-    append_lobby_event_to_file,
     clean_lobby_text,
     read_live_events_after,
     read_lobby_events_after,
@@ -763,51 +762,33 @@ def append_lobby_event(
     allow_flow_metadata: bool = False,
     identity_backend: IdentityBackend | None = None,
 ) -> dict[str, object]:
-    with LIVE_AGENT_LOBBY_LOCK:
-        appended = append_lobby_event_to_file(
-            output_root / "lobby.jsonl",
-            event,
-            live_agent_endpoint=live_agent_endpoint,
-            allow_flow_metadata=allow_flow_metadata,
-        )
-    room_id = clean_lobby_text(appended.get("flow_meeting_id"), limit=128)
-    if room_id:
-        try:
-            (identity_backend or identity_store_for_output_root(output_root)).touch_room(
-                room_id
-            )
-        except Exception:
-            pass
-    return appended
+    return _owned_append_lobby_event(
+        output_root,
+        event,
+        live_agent_endpoint=live_agent_endpoint,
+        allow_flow_metadata=allow_flow_metadata,
+        identity_backend=identity_backend,
+        identity_backend_factory=identity_store_for_output_root,
+    )
 
 
 def lobby_payload_with_attachments(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
-    event = dict(payload)
-    if "flow_meeting_id" in event:
-        event["flow_meeting_id"] = clean_lobby_text(event.get("flow_meeting_id"), limit=128)
-    if not clean_lobby_text(event.get("flow_meeting_id"), limit=128):
-        implicit_meeting_id = _single_lobby_meeting_id(output_root)
-        if implicit_meeting_id:
-            event["flow_meeting_id"] = implicit_meeting_id
-    if "attachments" in event:
-        event["attachments"] = normalize_attachment_references(output_root, event.get("attachments"))
-    return event
+    return _owned_lobby_payload_with_attachments(
+        output_root,
+        payload,
+        list_meetings=list_meetings,
+    )
 
 
 def _single_lobby_meeting_id(output_root: Path) -> str:
-    meeting_ids = [
-        clean_lobby_text(meeting.get("meeting_id"), limit=128)
-        for meeting in list_meetings(output_root)
-    ]
-    meeting_ids = [meeting_id for meeting_id in meeting_ids if meeting_id]
-    return meeting_ids[0] if len(meeting_ids) == 1 else ""
+    return _owned_single_lobby_meeting_id(
+        output_root,
+        list_meetings=list_meetings,
+    )
 
 
 def _public_lobby_allows_room_scope(payload: dict[str, object]) -> bool:
-    if not clean_lobby_text(payload.get("flow_meeting_id"), limit=128):
-        return False
-    control_keys = FLOW_METADATA_KEYS - {"flow_meeting_id"}
-    return not any(clean_lobby_text(payload.get(key), limit=128) for key in control_keys)
+    return _owned_public_lobby_allows_room_scope(payload)
 
 
 def _meeting_not_found_error(meeting_id: str) -> ValueError:
