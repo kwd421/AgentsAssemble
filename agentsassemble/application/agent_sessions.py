@@ -46,6 +46,10 @@ from agentsassemble.application.agent_session_compatibility import (
     GrokAgentSessionAdapter,
     UnsupportedAgentSessionAdapter,
 )
+from agentsassemble.application.agent_session_service import (
+    create_agent_session as _create_agent_session,
+    resume_agent_session as _resume_agent_session,
+)
 from agentsassemble.diagnostics.codex_app_server_smoke import (
     CODEX_APP_SERVER_SMOKE_COMMANDS,
     _codex_app_server_smoke_turn_failure_kind,
@@ -139,80 +143,14 @@ def resume_agent_session_payload(
     process_service: "AgentSessionProcessService | None" = None,
     repository: RoomRepository,
 ) -> dict[str, object]:
-    store = repository
-    room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
-    agent_id = clean_lobby_text(payload.get("agent_id") or payload.get("agent"), limit=128)
-    session_id = clean_lobby_text(payload.get("session_id") or payload.get("session"), limit=128) or agent_id
-    if not room_id:
-        raise ValueError("room_id is required.")
-    if not agent_id:
-        raise ValueError("agent_id is required.")
-    if not session_id:
-        raise ValueError("session_id is required.")
-
-    room = store.create_room(room_id, label=clean_lobby_text(payload.get("label"), limit=128))
-    previous_participant = store.participant(room_id, agent_id)
-    previous_session = store.session(room_id, session_id)
-    provider_kind = clean_agent_session_provider_kind(
-        payload.get("provider_kind") or payload.get("provider") or previous_session.get("provider_kind")
+    return _resume_agent_session(
+        output_root,
+        payload,
+        command_runner=command_runner,
+        process_service=process_service,
+        repository=repository,
+        process_service_factory=lambda runner: AgentSessionProcessService(command_runner=runner),
     )
-    participant, participant_created = store.upsert_participant(
-        room_id,
-        {
-            "participant_id": agent_id,
-            "display_name": clean_lobby_text(payload.get("display_name"), limit=64) or agent_id,
-            "role": "agent",
-            "participant_type": "local",
-            "status": "joined",
-            "session_id": session_id,
-            "provider_kind": provider_kind,
-            "model": clean_lobby_text(payload.get("model") or payload.get("model_id"), limit=128),
-            "effort": clean_lobby_text(payload.get("effort"), limit=64),
-            "sandbox": clean_lobby_text(payload.get("sandbox") or payload.get("codex_sandbox"), limit=64),
-            "permissions": clean_lobby_text(payload.get("permissions") or payload.get("permission_option"), limit=64),
-            "workspace": clean_lobby_text(payload.get("workspace") or payload.get("cwd"), limit=300),
-            "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
-            "runtime_sharing_policy": clean_codex_app_server_runtime_sharing_policy(payload.get("runtime_sharing_policy")),
-        },
-    )
-    session, session_created = store.upsert_session(
-        room_id,
-        {
-            "session_id": session_id,
-            "participant_id": agent_id,
-            "provider_session_id": clean_provider_session_id(
-                payload.get("provider_session_id") or payload.get("codex_session_id") or previous_session.get("provider_session_id")
-            ),
-            "display_name": participant["display_name"],
-            "status": "attached",
-            "provider_kind": provider_kind,
-            "model": clean_lobby_text(payload.get("model") or payload.get("model_id"), limit=128),
-            "effort": clean_lobby_text(payload.get("effort"), limit=64),
-            "sandbox": clean_lobby_text(payload.get("sandbox") or payload.get("codex_sandbox"), limit=64),
-            "permissions": clean_lobby_text(payload.get("permissions") or payload.get("permission_option"), limit=64),
-            "workspace": clean_lobby_text(payload.get("workspace") or payload.get("cwd"), limit=300),
-            "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
-            "runtime_sharing_policy": clean_codex_app_server_runtime_sharing_policy(payload.get("runtime_sharing_policy") or previous_session.get("runtime_sharing_policy")),
-            "diagnostics": payload.get("diagnostics") if isinstance(payload.get("diagnostics"), list) else [],
-        },
-    )
-    if participant_created or previous_participant.get("status") != "joined":
-        store.append_event(room_id, "participant_joined", participant_id=agent_id, session_id=session_id)
-    if session_created or previous_session.get("status") not in {"attached", ""}:
-        store.append_event(room_id, "session_attached", participant_id=agent_id, session_id=session_id)
-    store.append_event(room_id, "session_resumed", participant_id=agent_id, session_id=session_id)
-    service = process_service or AgentSessionProcessService(command_runner=command_runner)
-    launch = service.resume(store, room_id, agent_id, session, payload)
-    return {
-        "status": "resumed",
-        "state_status": "resumed",
-        **launch,
-        "room": room,
-        "participant": participant,
-        "session": session,
-        "participants": store.participants(room_id),
-        "sessions": store.sessions(room_id),
-    }
 
 
 def create_agent_session_payload(
@@ -223,98 +161,14 @@ def create_agent_session_payload(
     process_service: "AgentSessionProcessService | None" = None,
     repository: RoomRepository,
 ) -> dict[str, object]:
-    store = repository
-    room_id = clean_lobby_text(payload.get("room_id") or payload.get("meeting_id"), limit=128)
-    agent_id = clean_lobby_text(payload.get("agent_id") or payload.get("agent"), limit=128)
-    session_id = clean_lobby_text(payload.get("session_id") or payload.get("session"), limit=128) or agent_id
-    if not room_id:
-        raise ValueError("room_id is required.")
-    if not agent_id:
-        raise ValueError("agent_id is required.")
-    if not session_id:
-        raise ValueError("session_id is required.")
-
-    owner_id = clean_lobby_text(payload.get("owner_id") or payload.get("created_by"), limit=128) or "operator-local"
-    created_by = clean_lobby_text(payload.get("created_by") or owner_id, limit=128) or owner_id
-    previous_participant = store.participant(room_id, agent_id)
-    previous_session = store.session(room_id, session_id)
-    provider_kind = clean_agent_session_provider_kind(
-        payload.get("provider_kind") or payload.get("provider") or previous_session.get("provider_kind")
+    return _create_agent_session(
+        output_root,
+        payload,
+        command_runner=command_runner,
+        process_service=process_service,
+        repository=repository,
+        process_service_factory=lambda runner: AgentSessionProcessService(command_runner=runner),
     )
-    runtime_sharing_policy = clean_codex_app_server_runtime_sharing_policy(
-        payload.get("runtime_sharing_policy") or previous_session.get("runtime_sharing_policy")
-    )
-    room = store.create_room(room_id, label=clean_lobby_text(payload.get("label"), limit=128))
-    participant, participant_created = store.upsert_participant(
-        room_id,
-        {
-            "participant_id": agent_id,
-            "display_name": clean_lobby_text(payload.get("display_name"), limit=64) or agent_id,
-            "role": "agent",
-            "participant_type": "local",
-            "status": "joined",
-            "session_id": session_id,
-            "owner_id": owner_id,
-            "created_by": created_by,
-            "provider_kind": provider_kind,
-            "model": clean_lobby_text(payload.get("model") or payload.get("model_id"), limit=128),
-            "effort": clean_lobby_text(payload.get("effort"), limit=64),
-            "sandbox": clean_lobby_text(payload.get("sandbox") or payload.get("codex_sandbox"), limit=64),
-            "permissions": clean_lobby_text(payload.get("permissions") or payload.get("permission_option"), limit=64),
-            "workspace": clean_lobby_text(payload.get("workspace") or payload.get("cwd"), limit=300),
-            "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
-            "runtime_sharing_policy": runtime_sharing_policy,
-        },
-    )
-    session, session_created = store.upsert_session(
-        room_id,
-        {
-            "session_id": session_id,
-            "participant_id": agent_id,
-            "provider_session_id": clean_provider_session_id(
-                payload.get("provider_session_id") or payload.get("codex_session_id") or previous_session.get("provider_session_id")
-            ),
-            "display_name": participant["display_name"],
-            "status": "attached",
-            "owner_id": owner_id,
-            "created_by": created_by,
-            "provider_kind": provider_kind,
-            "model": clean_lobby_text(payload.get("model") or payload.get("model_id"), limit=128),
-            "effort": clean_lobby_text(payload.get("effort"), limit=64),
-            "sandbox": clean_lobby_text(payload.get("sandbox") or payload.get("codex_sandbox"), limit=64),
-            "permissions": clean_lobby_text(payload.get("permissions") or payload.get("permission_option"), limit=64),
-            "workspace": clean_lobby_text(payload.get("workspace") or payload.get("cwd"), limit=300),
-            "codex_home": clean_lobby_text(payload.get("codex_home") or payload.get("config_profile"), limit=200),
-            "runtime_sharing_policy": runtime_sharing_policy,
-            "diagnostics": payload.get("diagnostics") if isinstance(payload.get("diagnostics"), list) else [],
-        },
-    )
-    if participant_created or previous_participant.get("status") != "joined":
-        store.append_event(room_id, "participant_joined", participant_id=agent_id, session_id=session_id)
-    if session_created or previous_session.get("status") not in {"attached", ""}:
-        store.append_event(room_id, "session_attached", participant_id=agent_id, session_id=session_id)
-    store.append_event(
-        room_id,
-        "agent_session_created",
-        participant_id=agent_id,
-        session_id=session_id,
-        owner_id=owner_id,
-        created_by=created_by,
-    )
-    launch = {"process_status": "not_started", "diagnostics": []}
-    if bool(payload.get("start")):
-        service = process_service or AgentSessionProcessService(command_runner=command_runner)
-        launch = service.resume(store, room_id, agent_id, session, payload)
-    return {
-        "status": "created" if participant_created or session_created else "updated",
-        "state_status": "created" if participant_created or session_created else "updated",
-        **launch,
-        "room": room,
-        "participant": participant,
-        "session": session,
-        "participants": store.participants(room_id),
-        "sessions": store.sessions(room_id),
-    }
 
 
 class AgentSessionProcessService:
