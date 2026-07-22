@@ -159,6 +159,16 @@ class CliTimeoutCoreTests(unittest.TestCase):
         self.assertTrue(present_payload["app_index_present"])
         self.assertTrue(present_payload["app_assets_dir_present"])
 
+    def test_release_health_unknown_check_reports_selection_error(self):
+        stderr = StringIO()
+
+        with redirect_stderr(stderr):
+            exit_code = main(["release-health", "run", "--check", "not-a-check"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("Unknown release-health check id: not-a-check", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
     def test_demo_rejects_disabled_free_chat_meeting_mode(self):
         stderr = StringIO()
         with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
