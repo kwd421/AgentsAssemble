@@ -99,6 +99,12 @@ surface rather than silently counted as React parity.
 | `/api/events/side-chat` | GET | sse | `subscribeSideChat()` | yes | React side chat subscribes to separate stream. |
 | `/api/events/roster` | GET | sse | `subscribeRoster()` | yes | React member panel rides a push roster stream on the local console; polling stays as a slow fallback. |
 | `/api/lobby/vote` | GET | exact | `fetchLobbyVote()` | yes | Poll standings for the local console: aggregates kind=vote/vote_cast lobby events; latest ballot per voter wins. |
+| `/api/local/workspace-picker` | POST | exact | `chooseLocalWorkspace()` | yes | Local-operator-only native folder chooser for server-owned Agent Session setup; the browser cannot submit an arbitrary path through this control. |
+| `/api/provider-usage/antigravity` | GET | exact | `fetchProviderUsage()` | yes | Owner-visible sanitized Antigravity account usage for the selected model family. |
+| `/api/provider-usage/claude` | GET | exact | `fetchProviderUsage()` | yes | Owner-visible sanitized Claude usage read from the native CLI usage panel; no credential value is returned. |
+| `/api/provider-usage/codex` | GET | exact | `fetchProviderUsage()` | yes | Owner-visible sanitized Codex account usage. |
+| `/api/provider-usage/deepseek` | GET | exact | `fetchProviderUsage()` | yes | Owner-visible sanitized DeepSeek account balance when a credential is configured. |
+| `/api/provider-usage/grok` | GET | exact | `fetchProviderUsage()` | yes | Owner-visible sanitized Grok account usage. |
 | `/api/room/vote` | GET | exact | `fetchRoomVote()` | yes | Poll standings for invited guests (session token), same aggregation as the console route. |
 | `/api/rooms` | GET | exact | `fetchRooms()` | yes | React room dock merges server-known room metadata with localStorage cache; archived rooms are included only when requested. |
 | `/api/rooms/archive` | POST | exact | `archiveRoom()` | yes | Moderation endpoint that hides archived rooms from default room lists while preserving file-backed room data. |

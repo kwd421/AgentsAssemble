@@ -11,7 +11,7 @@ from decimal import Decimal, InvalidOperation
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from agentsassemble.providers.provider_usage import ProviderUsageUnavailable
+from agentsassemble.providers.usage_contract import ProviderUsageUnavailable
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
 
 

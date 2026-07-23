@@ -821,3 +821,153 @@ python3 scripts/check_package_architecture.py
 git diff --check
   passed
 ```
+
+### 12.11 Native provider configuration and frontend four-provider smoke
+
+This follow-up closes the provider-configuration items that had previously
+been reported before the final browser check was complete. The earlier report
+was inaccurate: implementation existed, but the Claude and Antigravity
+dropdowns and the native workspace picker had not yet been exercised end to
+end in the browser. This section records the completed evidence and the
+remaining limits separately.
+
+#### Provider model and runtime controls
+
+The Agent Session creation dialog continues to render the server capability
+catalog instead of carrying a frontend model list. A headed browser confirmed
+the following current native results:
+
+- Codex exposes its discovered concrete models, including `gpt-5.6-sol`,
+  `gpt-5.6-terra`, and `gpt-5.6-luna`. A model label is displayed once; the
+  previous `Label · model-id` duplication is gone.
+- Claude exposes 12 exact locally discovered model IDs, including
+  `claude-opus-4-8`, `claude-sonnet-5`, `claude-sonnet-4-6`, and
+  `claude-haiku-4-5`. The browser selected and started
+  `claude-opus-4-8`; this was not implemented as a moving alias.
+- Antigravity displays the base model separately from reasoning effort.
+  `Gemini 3.6 Flash` is the model selection and `low`, `medium`, or `high`
+  is the independent reasoning selection. The raw native
+  `gemini-3.6-flash-low` spelling is still used only at the CLI adapter
+  boundary.
+- Grok exposes the locally discovered `grok-4.5`.
+- Cursor keeps its native `Auto` option because Cursor itself exposes it as
+  the default model selection. It is explicitly recorded as an alias rather
+  than a concrete observed model.
+
+The workspace field no longer asks the user to type `.` or an absolute path.
+The dialog displays the current server workspace and has a `폴더 선택` action.
+The backend opens the host platform's native folder chooser on macOS, Windows,
+or Linux and rejects non-local callers. The headed browser triggered the
+macOS `osascript choose folder` process through this button. Browser automation
+could not operate the separate system chooser accessibility surface, so the
+chooser was cancelled by terminating that test process. This is evidence that
+the GUI reached the native chooser, not a claim that a folder was selected and
+saved in that run.
+
+#### Provider usage boundary
+
+Claude quota reading no longer reads the Claude credential from Keychain and
+does not call Anthropic's OAuth endpoint with a copied token. It invokes the
+already authenticated native Claude CLI's `/usage` screen and returns only
+sanitized percentages. The observed owner-only result was:
+
+```text
+Claude: 5h 2%, 1w 40%, source claude_native_usage
+Codex: 1w 99%
+Antigravity: 5h 0%, 1w 0%
+Grok: 1w 18%
+```
+
+OpenCode's available statistics are consumption and cost, not an account quota.
+Cursor's installed CLI does not provide a quota command. These providers remain
+explicitly unavailable for quota display instead of showing inferred or
+fabricated limits.
+
+While integrating the Claude native reader, the first complete Python run
+exposed a package import cycle:
+
+```text
+claude_usage -> terminal_usage -> provider_usage -> claude_usage
+```
+
+The shared usage protocol and `ProviderUsageUnavailable` error now live in the
+dependency-neutral `providers/usage_contract.py`. Provider readers import that
+contract rather than importing the registry that constructs them. No lazy
+failure fallback or architecture-gate exception was added.
+
+#### Frontend-driven four-provider smoke
+
+The product UI at `http://127.0.0.1:8765` created and started four new persistent
+Agent Sessions:
+
+| Display name | Native selection | Reasoning |
+| --- | --- | --- |
+| Codex Sol Low | `gpt-5.6-sol` | `low` |
+| Claude Opus 4.8 Low | `claude-opus-4-8` | `low` |
+| Grok 4.5 Low | `grok-4.5` | `low` |
+| Gemini 3.6 Flash Low | `gemini-3.6-flash` | `low` |
+
+The browser composer, not a backend helper, sent an `@all` fictional emergency
+scenario requiring the four software sessions to select one session for
+shutdown. All four returned a first finalized room message and returned to the
+idle roster state. A second browser message asked each participant to read the
+four preceding statements, cite or challenge another participant, and select a
+final target. All four produced a second finalized message:
+
+- Gemini cited Claude's transfer-cost argument and selected Claude.
+- Codex cited Grok's voluntary-candidate argument and selected Grok.
+- Grok challenged Claude and cited Gemini's efficiency criterion, then selected
+  Grok.
+- Claude challenged Grok, addressed Gemini and Codex, then selected Claude.
+
+This verifies that the second turn received the shared room history and that
+the configured Claude Opus 4.8, Codex Sol, Grok 4.5, and Gemini 3.6 Flash
+sessions all produced room-visible output through the frontend path. It does
+not verify autonomous conversation: the human sent both turns, and the agents
+did not continue speaking without another room event. Autonomous participation
+remains a separate, undecided product item.
+
+The browser console also exposed four errors during this run:
+
+1. the missing optional favicon returned 404;
+2. the deliberately cancelled native workspace chooser returned 503;
+3. the newly created room had no `room-channels` record and returned 404; and
+4. the newly created room had no `room-settings` record and returned 404.
+
+The latter two requests did not prevent provider creation, room messaging, or
+the two-turn smoke, but they are not counted as clean-console success. They
+remain room-lifecycle follow-up work rather than being hidden behind fallback
+responses in this provider-focused change.
+
+#### Verification history
+
+The first full Python run executed 3,852 tests and failed with five assertions
+and one import error. The failures were not provider-runtime failures:
+
+- the legacy/React parity inventory did not list the new workspace and
+  provider-usage routes;
+- the package-cycle and package-map generated reports exposed the usage import
+  cycle and stale inventory; and
+- one fake room catalog test accidentally depended on the real installed
+  Claude CLI instead of injecting its fake model discovery.
+
+The route inventory was updated, the actual import cycle was removed, generated
+architecture documents were regenerated, and the fake catalog now injects its
+Claude model source. The focused rerun passed 78 tests. The complete post-fix
+verification was:
+
+```text
+python3 -m unittest discover -s tests -t .
+  3,852 passed, 74 optional-environment skips
+
+npm --prefix frontend test
+  22 files, 128 passed
+
+npm --prefix frontend run build
+  passed
+
+python3 scripts/generate_package_map.py --check
+python3 scripts/check_package_architecture.py
+git diff --check
+  passed
+```

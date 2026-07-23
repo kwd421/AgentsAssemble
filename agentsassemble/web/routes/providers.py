@@ -12,6 +12,10 @@ from agentsassemble.providers.provider_usage import (
     ProviderUsageUnavailable,
     default_provider_usage_registry,
 )
+from agentsassemble.providers.workspace_picker import (
+    WorkspacePickerUnavailable,
+    choose_workspace_folder,
+)
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
 
@@ -65,6 +69,7 @@ def register_provider_routes(
     login_service: ProviderLogin,
     secret_store: ProviderSecretStore | None = None,
     usage_service: ProviderUsageRegistry | ProviderUsage | None = None,
+    workspace_picker: Callable[[], str] = choose_workspace_folder,
 ) -> None:
     """Register provider discovery, login, and credential-management routes."""
     store = PROVIDER_SECRETS if secret_store is None else secret_store
@@ -99,6 +104,21 @@ def register_provider_routes(
             ctx.send_error(HTTPStatus.BAD_REQUEST, str(error))
             return
         ctx.send_json(result)
+
+    @router.post("/api/local/workspace-picker")
+    def local_workspace_picker(ctx: RequestContext) -> None:
+        if not is_local_operator(ctx):
+            ctx.send_error(
+                HTTPStatus.FORBIDDEN,
+                "workspace picker can only be opened from the local operator UI",
+            )
+            return
+        try:
+            path = workspace_picker()
+        except WorkspacePickerUnavailable as error:
+            ctx.send_error(HTTPStatus.SERVICE_UNAVAILABLE, str(error))
+            return
+        ctx.send_json({"selected": bool(path), "path": path})
 
     @router.get("/api/provider-credentials/deepseek")
     def provider_credentials_status(ctx: RequestContext) -> None:

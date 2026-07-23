@@ -23,7 +23,7 @@ from agentsassemble.providers.live_cli import (
 )
 from agentsassemble.providers.live_cli_output import strip_terminal_ansi
 from agentsassemble.providers.process_environment import sanitized_provider_environment
-from agentsassemble.providers.provider_usage import ProviderUsageUnavailable
+from agentsassemble.providers.usage_contract import ProviderUsageUnavailable
 
 try:
     import pty

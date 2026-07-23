@@ -9,7 +9,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from agentsassemble.providers.codex_app_server import CodexAppServerRuntime
-from agentsassemble.providers.provider_usage import ProviderUsageUnavailable
+from agentsassemble.providers.usage_contract import ProviderUsageUnavailable
 
 
 RateLimitFetcher = Callable[[], dict[str, object]]

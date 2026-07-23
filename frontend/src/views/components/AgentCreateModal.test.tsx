@@ -51,7 +51,7 @@ describe("AgentCreateModal", () => {
     await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
     const model = screen.getByRole("combobox", { name: "모델" });
     expect(model.tagName).toBe("SELECT");
-    expect(screen.getByRole("option", { name: "Luna · gpt-5.6-luna" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Luna" })).toBeTruthy();
 
     await userEvent.selectOptions(model, "gpt-5.3-codex-spark");
     await userEvent.click(screen.getByRole("button", { name: "추가하고 시작" }));

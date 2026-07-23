@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bot, Folder, Play, Plus, X } from "lucide-react";
 import {
+  chooseLocalWorkspace,
   deleteDeepSeekCredential,
   fetchDeepSeekCredentialStatus,
   setDeepSeekCredential,
@@ -40,7 +41,8 @@ export default function AgentCreateModal({
   const [existingSessionId, setExistingSessionId] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [workspacePath, setWorkspacePath] = useState(".");
-  const [customWorkspace, setCustomWorkspace] = useState(false);
+  const [workspaceLabel, setWorkspaceLabel] = useState("서버 실행 폴더");
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [startNow, setStartNow] = useState(false);
   const [status, setStatus] = useState("");
@@ -180,6 +182,27 @@ export default function AgentCreateModal({
     }
   }
 
+  async function pickWorkspace() {
+    if (workspaceBusy || existingSessionId) return;
+    setWorkspaceBusy(true);
+    setStatus("");
+    try {
+      const selected = await chooseLocalWorkspace();
+      if (selected.selected && selected.path) {
+        setWorkspacePath(selected.path);
+        setWorkspaceLabel(selected.path);
+      }
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "작업 폴더를 선택하지 못했습니다"
+      );
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  }
+
   if (!open) return null;
 
   return (
@@ -249,34 +272,35 @@ export default function AgentCreateModal({
           </label>
           <label>
             <span>작업 폴더</span>
-            <select
-              aria-label="작업 폴더"
-              value={customWorkspace ? "custom" : "server"}
-              disabled={Boolean(existingSessionId)}
-              onChange={(event) => {
-                const custom = event.currentTarget.value === "custom";
-                setCustomWorkspace(custom);
-                setWorkspacePath(custom ? "" : ".");
-              }}
-            >
-              <option value="server">서버 실행 폴더</option>
-              <option value="custom">다른 폴더 직접 입력</option>
-            </select>
+            <div className="dc-agent-folder-field">
+              <Folder size={16} />
+              <input
+                aria-label="선택한 작업 폴더"
+                value={workspaceLabel}
+                readOnly
+                disabled={Boolean(existingSessionId)}
+              />
+              <button
+                type="button"
+                disabled={Boolean(existingSessionId) || workspaceBusy}
+                onClick={() => void pickWorkspace()}
+              >
+                {workspaceBusy ? "선택 중..." : "폴더 선택"}
+              </button>
+              {workspacePath !== "." && (
+                <button
+                  type="button"
+                  disabled={Boolean(existingSessionId) || workspaceBusy}
+                  onClick={() => {
+                    setWorkspacePath(".");
+                    setWorkspaceLabel("서버 실행 폴더");
+                  }}
+                >
+                  기본으로
+                </button>
+              )}
+            </div>
           </label>
-          {customWorkspace && (
-            <label>
-              <span>폴더 경로</span>
-              <div className="dc-agent-folder-field">
-                <Folder size={16} />
-                <input
-                  value={workspacePath}
-                  disabled={Boolean(existingSessionId)}
-                  onChange={(event) => setWorkspacePath(event.currentTarget.value)}
-                  placeholder="/Users/name/project"
-                />
-              </div>
-            </label>
-          )}
           {selectedProvider && selectedProvider.controls.map((control) => {
             const options = effectiveControlOptions(selectedProvider, control, settings);
             return (
@@ -415,20 +439,12 @@ function ProviderControlField({
         )}
         {options.map((option) => (
           <option key={`${control.key}:${option.value || "default"}`} value={option.value}>
-            {control.key === "model" && !equivalentModelNames(option.label, option.value)
-              ? `${option.label} · ${option.value}`
-              : option.label}
+            {option.label}
           </option>
         ))}
       </select>
     </label>
   );
-}
-
-function equivalentModelNames(label: string, value: string): boolean {
-  const normalized = (text: string) =>
-    text.normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-  return normalized(label) === normalized(value);
 }
 
 function initializeProviderSettings(

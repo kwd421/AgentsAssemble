@@ -112,6 +112,7 @@ class ProviderRouteTests(unittest.TestCase):
             login_service=self.login,
             secret_store=self.store,
             usage_service=FakeUsageService(),
+            workspace_picker=lambda: "/tmp/selected-workspace",
         )
 
     def dispatch(self, method: str, path: str, *, body: bytes = b"") -> FakeHandler:
@@ -132,6 +133,7 @@ class ProviderRouteTests(unittest.TestCase):
                 ("GET", "/api/provider-usage/deepseek"),
                 ("GET", "/api/provider-usage/grok"),
                 ("POST", "/api/live-agent-create/login"),
+                ("POST", "/api/local/workspace-picker"),
                 ("POST", "/api/provider-credentials/deepseek"),
                 ("DELETE", "/api/provider-credentials/deepseek"),
             },
@@ -141,6 +143,10 @@ class ProviderRouteTests(unittest.TestCase):
         self.assertEqual(
             self.dispatch("GET", "/api/provider-usage/claude?refresh=1").sent_json["quota_1w"],
             "40%",
+        )
+        self.assertEqual(
+            self.dispatch("POST", "/api/local/workspace-picker").sent_json,
+            {"selected": True, "path": "/tmp/selected-workspace"},
         )
         codex = self.dispatch(
             "GET",
@@ -165,6 +171,7 @@ class ProviderRouteTests(unittest.TestCase):
             is_local_operator=lambda ctx: False,
             login_service=self.login,
             secret_store=self.store,
+            workspace_picker=lambda: self.fail("denied workspace picker must not run"),
         )
         denied = FakeHandler(
             "/api/live-agent-create/login",
@@ -176,6 +183,18 @@ class ProviderRouteTests(unittest.TestCase):
             (HTTPStatus.FORBIDDEN, "provider login can only be started from the local operator UI"),
         )
         self.assertEqual(self.login.calls, [{"provider_id": "grok"}])
+
+        workspace = FakeHandler("/api/local/workspace-picker", body=b"{}")
+        self.assertTrue(
+            denied_router.dispatch("POST", _context(workspace, workspace.path))
+        )
+        self.assertEqual(
+            workspace.sent_error,
+            (
+                HTTPStatus.FORBIDDEN,
+                "workspace picker can only be opened from the local operator UI",
+            ),
+        )
 
     def test_invalid_provider_login_json_is_audited_without_launch(self):
         response = self.dispatch("POST", "/api/live-agent-create/login", body=b"{bad")

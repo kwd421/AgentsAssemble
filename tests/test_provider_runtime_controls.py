@@ -100,17 +100,15 @@ class ProviderRuntimeControlTests(unittest.TestCase):
     def test_claude_usage_returns_only_public_windows_and_reuses_short_cache(self):
         fetch_count = 0
 
-        def fetcher(token: str) -> dict[str, object]:
+        def fetcher() -> dict[str, object]:
             nonlocal fetch_count
             fetch_count += 1
-            self.assertEqual(token, "private-oauth-token")
             return {
                 "five_hour": {"utilization": 2, "resets_at": "2026-07-23T15:00:00Z"},
                 "seven_day": {"utilization": 40, "resets_at": "2026-07-23T23:00:00Z"},
             }
 
         service = ClaudeUsageService(
-            credential_reader=lambda: "private-oauth-token",
             fetcher=fetcher,
         )
 
@@ -119,7 +117,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
 
         self.assertEqual((first["quota_5h"], first["quota_1w"]), ("2%", "40%"))
         self.assertEqual(fetch_count, 1)
-        self.assertNotIn("private-oauth-token", json.dumps([first, second]))
+        self.assertEqual(first["source"], "claude_native_usage")
 
     def test_antigravity_plan_prefix_is_not_part_of_the_delivered_turn(self):
         self.assertEqual(

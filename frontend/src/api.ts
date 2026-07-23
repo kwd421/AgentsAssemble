@@ -524,13 +524,20 @@ export async function fetchProviderUsage(
   providerId: ProviderUsageId,
   model = ""
 ): Promise<ProviderUsageSnapshot> {
+  const providerUsagePaths: Record<ProviderUsageId, string> = {
+    claude: "/api/provider-usage/claude",
+    codex: "/api/provider-usage/codex",
+    antigravity: "/api/provider-usage/antigravity",
+    grok: "/api/provider-usage/grok",
+    deepseek: "/api/provider-usage/deepseek",
+  };
   const headers: Record<string, string> = {};
   const hostToken = loadHostToken();
   if (hostToken) headers["X-Host-Token"] = hostToken;
   const query = new URLSearchParams();
   if (model.trim()) query.set("model", model.trim());
   const suffix = query.size > 0 ? `?${query.toString()}` : "";
-  const response = await fetch(`/api/provider-usage/${providerId}${suffix}`, { headers });
+  const response = await fetch(`${providerUsagePaths[providerId]}${suffix}`, { headers });
   if (!response.ok) throw await responseError(response);
   return response.json();
 }
@@ -555,6 +562,13 @@ export async function deleteDeepSeekCredential(): Promise<ProviderCredentialStat
   const response = await fetch("/api/provider-credentials/deepseek", { method: "DELETE", headers });
   if (!response.ok) throw await responseError(response);
   return response.json();
+}
+
+export async function chooseLocalWorkspace(): Promise<{
+  selected: boolean;
+  path: string;
+}> {
+  return postJson("/api/local/workspace-picker", {});
 }
 
 export function fetchLiveAgentProcesses() {

@@ -175,7 +175,11 @@ def _test_provider_catalog() -> ProviderCapabilityCatalog:
             return 0, "opencode-go/glm-5.2\n", ""
         return 1, "", "unsupported"
 
-    catalog = ProviderCapabilityCatalog(runner=runner, resolver=lambda executable: f"/bin/{executable}")
+    catalog = ProviderCapabilityCatalog(
+        runner=runner,
+        resolver=lambda executable: f"/bin/{executable}",
+        claude_model_discovery=lambda _executable: ["claude-haiku-4-5"],
+    )
     catalog.snapshot(refresh=True)
     return catalog
 
