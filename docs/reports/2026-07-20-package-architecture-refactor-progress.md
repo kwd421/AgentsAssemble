@@ -667,3 +667,142 @@ remains the enforcement boundary, but public deployment should move
 authentication credentials to server-issued `HttpOnly`, `Secure`, appropriately
 `SameSite` cookies and keep browser storage limited to non-authoritative UI
 preferences.
+
+### 12.10 Cursor Agent Session and CI recovery
+
+The GitHub Actions run at
+`https://github.com/kwd421/AgentsAssemble/actions/runs/29981631026` failed only
+the Python unittest matrix. PostgreSQL contracts, frontend build, frontend E2E,
+and the Ubuntu/Windows runtime matrix were already green. Both Python versions
+failed for the same two repository expectations:
+
+1. a room test still requested the removed moving Claude alias `haiku`; and
+2. the package-architecture generated inventory no longer matched the current
+   package symbols.
+
+The room test now requests and verifies the exact
+`claude-haiku-4-5` model. The package map was regenerated with the repository
+generator. No Claude alias was restored and no architecture gate was bypassed.
+
+Cursor is now a canonical Agent Session provider:
+
+- provider ID and label: `cursor` / `Cursor`;
+- executable: the authenticated local `cursor-agent` binary;
+- runtime: the existing persistent `live_cli` PTY/ConPTY boundary;
+- room transport and persistence: the same canonical RoomStore and room
+  WebSocket used by every other provider;
+- model catalog: discovered from `cursor-agent models`, not copied into a
+  frontend constant;
+- default model: Cursor's native `auto` selection;
+- permission mapping: sandboxed Ask mode for read-only rooms and sandboxed
+  Agent mode for workspace-write rooms;
+- output source: assistant text blocks from Cursor's workspace JSONL
+  transcript, never terminal-screen fallback;
+- forbidden mode: `-p` and `--print` remain rejected so Agent Sessions cannot
+  become one-shot commands.
+
+Cursor's `Auto` choice is deliberately recorded as an alias. Cursor does not
+publish the concrete model selected behind Auto in its transcript, so
+`model_observation_policy` is `unavailable` rather than falsely claiming that
+the configured alias was an observed provider model. Concrete IDs returned by
+the native catalog are recorded as exact selections.
+
+#### Real Cursor investigation
+
+`cursor-agent status --format json` confirmed that the installed
+`2026.06.04-5fd875e` client was authenticated. The first real attempts exposed
+four provider-specific integration defects:
+
+1. the trust screen contained the old readiness text and consumed the first
+   room input;
+2. Cursor wraps delivered text in a `<user_query>` element in its transcript;
+3. Cursor normalizes workspace paths by collapsing repeated hyphens; and
+4. Cursor may rewrite the current transcript between turns and may append the
+   user and assistant records in separate reads.
+
+The launch handshake now accepts Cursor's explicit trust hotkey and waits for
+the real input-screen marker. The transcript source unwraps the tagged query,
+uses Cursor's actual workspace normalization, preserves turn binding across
+incremental writes, and rereads a bound transcript so a rewritten second turn
+does not replay the first answer. Tool-use blocks and terminal UI text are
+excluded.
+
+A concrete named-model attempt also produced Cursor's native account error:
+
+```text
+Named models unavailable
+Free plans can only use Auto. Switch to Auto or upgrade plans to continue.
+```
+
+This was not replaced with another provider or silently downgraded. `Auto` was
+used only after the user explicitly allowed it. The runtime now classifies that
+native error immediately instead of waiting for the turn timeout.
+
+The final direct two-turn persistent smoke passed:
+
+| Result | Evidence |
+| --- | --- |
+| Command | `cursor-agent --model auto --sandbox enabled --mode ask` |
+| Model selection | `auto`, recorded as alias |
+| Turn 1 | `확인했습니다.` in 11,232.9 ms |
+| Turn 2 | recalled `CURSOR-PERSIST-7C91` in 5,789.7 ms |
+| Output provenance | `cursor_agent_transcript_jsonl` |
+| Process continuity | the same PID served both turns |
+| Cleanup | provider process absent after stop |
+
+#### Frontend control check
+
+A headed browser used the product UI at `127.0.0.1:8765`, not a backend-only
+helper. The Agent Session dialog listed Cursor alongside the existing
+providers. Its model dropdown showed native `cursor-agent models` results,
+including `Auto (current, default)` and the concrete model IDs available in the
+CLI catalog. The browser created and started `Cursor UI Smoke 0723`; the
+canonical room session reported `cursor_live_session`, model `auto`, runtime
+`live_cli`, status `idle`, and the participant appeared in the ordinary room
+roster. The same detail panel stopped the session and the provider process was
+gone afterward.
+
+The subsequent `추방` command preserved the stopped Agent Session configuration
+in the owner's roster, matching the current UI confirmation text that session
+settings are retained. This report does not claim that kick deletes saved Agent
+Session configuration.
+
+No frontend source change was needed for Cursor: the existing provider form
+renders the server capability catalog dynamically. The implementation added no
+provider-specific room socket, event file, HTTP polling path, API fallback, TUI
+message fallback, or one-shot execution path.
+
+The first full Python run found two additional native-provider catalog tests
+whose expected ordered lists predated Cursor. These are behavioral catalog
+contracts, so their expected provider IDs and labels were updated. The tests
+also verify Cursor's default persistent command instead of merely checking that
+the word `Cursor` exists in source.
+
+Final verification:
+
+```text
+python3 -m unittest \
+  tests.test_native_cli_providers \
+  tests.test_provider_runtime_controls \
+  tests.test_live_cli_transcripts \
+  tests.test_room_realtime \
+  tests.test_room_agent_bridge
+  191 passed
+
+python3 -m unittest discover -s tests -t .
+  3,847 passed, 74 optional-environment skips
+
+npm --prefix frontend test
+  22 files, 128 passed
+
+npm --prefix frontend run build
+  passed
+
+npm --prefix frontend run test:e2e
+  4 Playwright scenarios passed
+
+python3 scripts/generate_package_map.py --check
+python3 scripts/check_package_architecture.py
+git diff --check
+  passed
+```

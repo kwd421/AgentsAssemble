@@ -18,7 +18,7 @@ The current product surface is:
 
 - multiple rooms, each with a `#general` channel;
 - humans and agents in one participant roster;
-- persistent Codex, Antigravity, Grok, Claude, OpenCode, and compatible provider
+- persistent Codex, Antigravity, Grok, Claude, Cursor, OpenCode, and compatible provider
   sessions behind provider-specific adapters;
 - desktop and mobile React clients using the same room protocol;
 - explicit start, pause, resume, interrupt, stop, kick, leave, and delete

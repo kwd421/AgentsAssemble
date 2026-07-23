@@ -366,6 +366,9 @@ class ProviderCapabilityCatalog:
         if provider_id == "claude":
             code, _output, _stderr = self._runner([executable, "--help"], 5.0)
             return _claude_manifest_controls() if code == 0 else []
+        if provider_id == "cursor":
+            code, output, _stderr = self._runner([executable, "models"], 8.0)
+            return _cursor_controls(output) if code == 0 else []
         return []
 
     def _opencode_payload(self) -> dict[str, object]:
@@ -589,6 +592,37 @@ def _grok_controls(output: str) -> list[dict[str, object]]:
             default_match.group(1) if default_match else models[0],
         ),
         _control("reasoning_effort", "추론 강도", [_option(value) for value in ("low", "medium", "high")], "medium"),
+        _permission_control(),
+    ]
+
+
+def _cursor_controls(output: str) -> list[dict[str, object]]:
+    models: list[tuple[str, str]] = []
+    for line in output.splitlines():
+        match = re.match(r"^\s*([A-Za-z0-9._:/-]+)\s+-\s+(.+?)\s*$", line)
+        if not match:
+            continue
+        models.append((match.group(1), match.group(2)))
+    if not models:
+        return []
+    models = list(dict.fromkeys(models))
+    values = {value for value, _label in models}
+    default = "auto" if "auto" in values else models[0][0]
+    return [
+        _control(
+            "model",
+            "모델",
+            [
+                _model_option(
+                    value,
+                    label,
+                    selection_kind="alias" if value == "auto" else "exact",
+                )
+                for value, label in models
+            ],
+            default,
+            kind="combobox",
+        ),
         _permission_control(),
     ]
 

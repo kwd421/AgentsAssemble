@@ -10,6 +10,7 @@ from agentsassemble.providers.live_cli_transcripts import (
     AntigravityTranscriptMessageSource,
     ClaudeSessionMessageSource,
     CodexSessionMessageSource,
+    CursorSessionMessageSource,
     GrokSessionMessageSource,
     LiveCliMessageExtractionError,
     LiveCliMessageSnapshot,
@@ -75,6 +76,103 @@ def _noisy_cli_script() -> str:
 
 
 class TranscriptMessageSourceTests(unittest.TestCase):
+    def test_cursor_source_reads_assistant_text_without_tool_calls(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "cursor_workspace"
+            workspace.mkdir()
+            encoded_workspace = re.sub(
+                r"-+",
+                "-",
+                re.sub(r"[^A-Za-z0-9-]", "-", str(workspace)).strip("-"),
+            )
+            transcript_dir = (
+                root
+                / ".cursor"
+                / "projects"
+                / encoded_workspace
+                / "agent-transcripts"
+                / "session"
+            )
+            transcript_dir.mkdir(parents=True)
+            source = CursorSessionMessageSource(home=root, cwd=workspace)
+            source.prepare_start()
+            source.begin_turn("hello")
+            (transcript_dir / "session.jsonl").write_text(
+                json.dumps(
+                    {
+                        "role": "user",
+                        "message": {"content": [{"type": "text", "text": "hello"}]},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self.assertFalse(source.poll(b"Cursor TUI chrome").complete)
+            with (transcript_dir / "session.jsonl").open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {
+                            "role": "assistant",
+                            "message": {
+                                "content": [
+                                    {"type": "tool_use", "name": "Read", "input": {"path": "/tmp/private"}},
+                                    {"type": "text", "text": MARKDOWN_REPLY},
+                                ]
+                            },
+                        }
+                    )
+                    + "\n"
+                )
+
+            snapshot = source.poll(b"Cursor TUI chrome", quiet=True)
+            source.begin_turn("second")
+            (transcript_dir / "session.jsonl").write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "role": "user",
+                                "message": {"content": [{"type": "text", "text": "hello"}]},
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "role": "assistant",
+                                "message": {"content": [{"type": "text", "text": MARKDOWN_REPLY}]},
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "role": "user",
+                                "message": {
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": "<timestamp>now</timestamp>\n<user_query>\nsecond\n</user_query>",
+                                        }
+                                    ]
+                                },
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "role": "assistant",
+                                "message": {"content": [{"type": "text", "text": "second answer"}]},
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            second = source.poll(b"Cursor TUI chrome", quiet=True)
+
+        self.assertTrue(snapshot.complete)
+        self.assertEqual(snapshot.content, MARKDOWN_REPLY)
+        self.assertEqual(snapshot.source_kind, "cursor_agent_transcript_jsonl")
+        self.assertEqual(second.content, "second answer")
+
     def test_claude_source_reads_only_assistant_text_from_current_workspace_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -935,3 +1033,26 @@ class LiveCliRuntimeExtractionTests(unittest.TestCase):
             health["terminal_tail"],
             "Provider authentication failed: run the provider's interactive login command.",
         )
+
+    @unittest.skipUnless(live_cli_supported(), "requires POSIX PTY support")
+    def test_live_cli_runtime_reports_cursor_named_model_rejection_without_waiting_for_timeout(self):
+        script = "\n".join(
+            [
+                "import sys",
+                "for line in sys.stdin:",
+                "    if line.strip():",
+                "        print('Named models unavailable. Free plans can only use Auto.', flush=True)",
+            ]
+        )
+        runtime = LiveCliRuntime(
+            "cursor",
+            [sys.executable, "-u", "-c", script],
+            idle_quiet_seconds=0.05,
+            message_source=_WaitingStaticMessageSource(""),
+        )
+        try:
+            runtime.send("hello")
+            with self.assertRaisesRegex(LiveCliMessageExtractionError, "Select Auto"):
+                runtime.read_output(timeout_seconds=2)
+        finally:
+            runtime.stop()

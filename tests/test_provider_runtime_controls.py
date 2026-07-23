@@ -116,6 +116,8 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         def runner(command: list[str], _timeout: float):
             if command[1:3] == ["debug", "models"]:
                 return 0, json.dumps({"models": [{"slug": "gpt-5.6-luna", "display_name": "Luna", "supported_reasoning_levels": [{"effort": "low"}], "service_tiers": [{"id": "priority"}]}]}), ""
+            if command[0].endswith("cursor-agent"):
+                return 0, "auto - Auto (current, default)\ngpt-5.6-luna-low - GPT-5.6 Luna Low\n", ""
             if command[1:] == ["models", "--verbose"]:
                 return 0, "opencode-go/glm-5.2\n", ""
             return 0, "", ""
@@ -129,6 +131,16 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(codex["controls"][0]["default_value"], "gpt-5.6-luna")
         self.assertNotIn("command", codex)
         self.assertNotIn("resolved_executable", codex)
+        cursor = next(item for item in payload if item["id"] == "cursor")
+        model = next(control for control in cursor["controls"] if control["key"] == "model")
+        self.assertEqual(model["default_value"], "auto")
+        self.assertEqual(
+            [(option["value"], option["label"]) for option in model["options"]],
+            [
+                ("auto", "Auto (current, default)"),
+                ("gpt-5.6-luna-low", "GPT-5.6 Luna Low"),
+            ],
+        )
 
     def test_claude_catalog_exposes_only_exact_models(self):
         catalog = ProviderCapabilityCatalog(
@@ -503,7 +515,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             patch("agentsassemble.application.room_attendee.PROVIDER_SECRETS.get", return_value="deepseek-secret"),
         ):
             workspace = Path(temp_dir)
-            for provider_id in ("claude", "grok", "antigravity", "opencode", "deepseek"):
+            for provider_id in ("claude", "grok", "antigravity", "cursor", "opencode", "deepseek"):
                 attendee = AgentAttendee(
                     invite_url="https://room.example/join?token=aai1.secret",
                     provider_id=provider_id,
@@ -515,13 +527,14 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             "claude-guest",
             "grok-guest",
             "antigravity-guest",
+            "cursor-guest",
             "opencode-guest",
             "deepseek-guest",
         ])
         self.assertEqual(captured[1][0].transport, "acp_stdio")
-        self.assertEqual(captured[3][0].provider_endpoint, "http://127.0.0.1:43210")
-        self.assertEqual(captured[4][1], "deepseek-secret")
-        self.assertNotIn("deepseek-secret", repr(captured[4][0]))
+        self.assertEqual(captured[4][0].provider_endpoint, "http://127.0.0.1:43210")
+        self.assertEqual(captured[5][1], "deepseek-secret")
+        self.assertNotIn("deepseek-secret", repr(captured[5][0]))
 
     def test_attendee_cleanup_continues_after_runtime_stop_failure(self):
         calls: list[str] = []

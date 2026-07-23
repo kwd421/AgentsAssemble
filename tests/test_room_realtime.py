@@ -169,6 +169,8 @@ def _test_provider_catalog() -> ProviderCapabilityCatalog:
             return 0, "Default model: grok-4.5\n- grok-4.5\n", ""
         if command[0].endswith("claude"):
             return 0, "Claude help", ""
+        if command[0].endswith("cursor-agent"):
+            return 0, "gpt-5.6-luna-low - GPT-5.6 Luna Low\n", ""
         if command[1:] == ["models", "--verbose"]:
             return 0, "opencode-go/glm-5.2\n", ""
         return 1, "", "unsupported"
@@ -2002,7 +2004,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertFalse(guest["agent.control"])
         self.assertEqual(
             [provider["id"] for provider in operator_snapshot["available_providers"]],
-            ["codex", "antigravity", "grok", "claude", "opencode", "deepseek"],
+            ["codex", "antigravity", "grok", "claude", "cursor", "opencode", "deepseek"],
         )
 
     def test_snapshot_is_bounded_and_history_pages_are_read_only(self):
@@ -2185,7 +2187,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
                 "provider_id": "claude",
                 "display_name": "Claude Review",
                 "workspace": str(self.root),
-                "model": "haiku",
+                "model": "claude-haiku-4-5",
                 "start": True,
             },
         )
@@ -2196,9 +2198,9 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(session["provider_kind"], "claude_code")
         self.assertEqual(session["runtime_kind"], "live_cli")
         self.assertEqual(session["connection_kind"], "native_cli_bridge")
-        self.assertEqual(session["model"], "haiku")
-        self.assertEqual(session["requested_model_id"], "haiku")
-        self.assertEqual(session["model_selection_kind"], "alias")
+        self.assertEqual(session["model"], "claude-haiku-4-5")
+        self.assertEqual(session["requested_model_id"], "claude-haiku-4-5")
+        self.assertEqual(session["model_selection_kind"], "exact")
         self.assertEqual(session["model_observation_policy"], "required")
         self.assertEqual(session["model_verification_status"], "pending")
         self.assertEqual(session["catalog_revision"], self.catalog_revision)

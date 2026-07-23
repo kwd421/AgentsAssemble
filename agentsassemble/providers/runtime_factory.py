@@ -21,10 +21,12 @@ _TERMINAL_RUNTIME_KINDS = {
     ("codex_live_session", "pty"): "live_cli",
     ("antigravity_live_session", "pty"): "live_cli",
     ("claude_code", "pty"): "live_cli",
+    ("cursor_live_session", "pty"): "live_cli",
     ("local_cli", "pty"): "live_cli",
     ("codex_live_session", "conpty"): "live_cli",
     ("antigravity_live_session", "conpty"): "live_cli",
     ("claude_code", "conpty"): "live_cli",
+    ("cursor_live_session", "conpty"): "live_cli",
     ("local_cli", "conpty"): "live_cli",
 }
 

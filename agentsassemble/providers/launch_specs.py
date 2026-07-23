@@ -101,6 +101,7 @@ class NativeCliProviderDefinition:
     reported_transports: tuple[str, ...] = ("pty", "conpty")
     input_mode: str = "line"
     startup_accept_contains: str = ""
+    startup_accept_keys: str = "\r"
     startup_ready_contains: str = ""
 
     def make_default_spec(
@@ -144,6 +145,8 @@ class NativeCliProviderDefinition:
         selected_variant = clean_room_text(variant, limit=64)
         selected_permission = clean_room_text(permission_mode, limit=64)
         selected_kind = clean_room_text(model_selection_kind, limit=16)
+        if self.provider_id == "cursor" and selected_model == "auto":
+            selected_kind = "alias"
         if not selected_model:
             raise ValueError(f"Provider {self.provider_id} model is required.")
         if self.default_reasoning_effort and not selected_effort:
@@ -182,6 +185,7 @@ class NativeCliProviderDefinition:
             default_responder=default_responder,
             input_mode=self.input_mode,
             startup_accept_contains=self.startup_accept_contains,
+            startup_accept_keys=self.startup_accept_keys,
             startup_ready_contains=self.startup_ready_contains,
             startup_input="/fast\r" if self.provider_id == "claude" and selected_service_tier == "fast" else "",
         )
@@ -401,6 +405,27 @@ def _claude_command(
     return tuple(command)
 
 
+def _cursor_command(
+    model: str,
+    _effort: str,
+    _service_tier: str,
+    _variant: str,
+    permission_mode: str,
+) -> tuple[str, ...]:
+    if not model:
+        raise ValueError("Cursor model is required.")
+    command = [
+        "cursor-agent",
+        "--model",
+        model,
+        "--sandbox",
+        "enabled",
+    ]
+    if permission_mode == "meeting_read_only":
+        command.extend(("--mode", "ask"))
+    return tuple(command)
+
+
 def _codex_permissions(permission_mode: str) -> tuple[str, str]:
     if permission_mode == "workspace_write":
         return "on-request", "workspace-write"
@@ -480,6 +505,20 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         model_observation_policy="required",
         input_mode="bracketed_paste",
         startup_accept_contains="Quick safety check",
+    ),
+    NativeCliProviderDefinition(
+        provider_id="cursor",
+        display_name="Cursor",
+        provider_kind="cursor_live_session",
+        executable="cursor-agent",
+        command_builder=_cursor_command,
+        aliases=("cursor-agent", "cursor_live_session"),
+        default_model="auto",
+        model_observation_policy="unavailable",
+        input_mode="bracketed_paste",
+        startup_accept_contains="Do you trust",
+        startup_accept_keys="a",
+        startup_ready_contains="Plan, search, build anything",
     ),
 )
 
@@ -680,6 +719,11 @@ def validate_native_cli_provider_spec(spec: NativeCliProviderSpec) -> None:
         forbidden = [part for part in spec.command[1:] if part in {"-p", "--print"} or part.startswith("--print=")]
         if forbidden:
             raise ValueError("Claude Code Agent Sessions require interactive mode; print mode is forbidden.")
+    is_cursor = executable == "cursor-agent" or spec.normalized_provider_kind() == "cursor_live_session"
+    if is_cursor:
+        forbidden = [part for part in spec.command[1:] if part in {"-p", "--print"} or part.startswith("--print=")]
+        if forbidden:
+            raise ValueError("Cursor Agent Sessions require interactive mode; print mode is forbidden.")
 
 
 def _slug_agent_id(value: str) -> str:

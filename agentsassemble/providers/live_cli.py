@@ -795,6 +795,8 @@ def _terminal_fatal_error(response: bytes) -> str:
         or "please run /login" in folded
     ):
         return "Provider authentication is required."
+    if "named models unavailable" in folded:
+        return "Cursor named models are unavailable for this account. Select Auto or change the Cursor plan."
     return ""
 
 
@@ -881,17 +883,17 @@ def _terminate_process_group_children(process: subprocess.Popen[bytes], *, timeo
     deadline = time.monotonic() + max(0.0, timeout_seconds)
     try:
         os.killpg(pgid, signal.SIGTERM)
-    except ProcessLookupError:
+    except (PermissionError, ProcessLookupError):
         return
     while time.monotonic() < deadline:
         try:
             os.killpg(pgid, 0)
-        except ProcessLookupError:
+        except (PermissionError, ProcessLookupError):
             return
         time.sleep(0.01)
     try:
         os.killpg(pgid, signal.SIGKILL)
-    except ProcessLookupError:
+    except (PermissionError, ProcessLookupError):
         return
 
 

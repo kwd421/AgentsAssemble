@@ -21,10 +21,15 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             specs = {spec.agent_id: spec for spec in default_native_cli_provider_specs(workspace=temp_dir)}
 
-        self.assertEqual(list(specs), ["codex", "antigravity", "grok", "claude"])
+        self.assertEqual(list(specs), ["codex", "antigravity", "grok", "claude", "cursor"])
         self.assertEqual(specs["codex"].model, "gpt-5.6-luna")
         self.assertEqual(specs["codex"].reasoning_effort, "low")
         self.assertEqual(specs["claude"].model, "claude-haiku-4-5")
+        self.assertEqual(specs["cursor"].model, "auto")
+        self.assertEqual(
+            specs["cursor"].command,
+            ("cursor-agent", "--model", "auto", "--sandbox", "enabled", "--mode", "ask"),
+        )
         self.assertEqual(specs["grok"].command, ("grok", "--model", "grok-4.5", "agent", "stdio"))
         self.assertEqual(specs["grok"].transport, "acp_stdio")
         self.assertNotIn("-p", specs["claude"].command)
@@ -352,11 +357,11 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
 
         self.assertEqual(
             [provider["id"] for provider in payload],
-            ["codex", "antigravity", "grok", "claude", "opencode", "deepseek"],
+            ["codex", "antigravity", "grok", "claude", "cursor", "opencode", "deepseek"],
         )
         self.assertEqual(
             [provider["display_name"] for provider in payload],
-            ["Codex", "Antigravity", "Grok", "Claude", "OpenCode", "DeepSeek"],
+            ["Codex", "Antigravity", "Grok", "Claude", "Cursor", "OpenCode", "DeepSeek"],
         )
         self.assertTrue(all(provider["interactive"] for provider in payload))
         self.assertTrue(all("command" not in provider for provider in payload))
