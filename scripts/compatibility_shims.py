@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import subprocess
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -133,7 +134,7 @@ def analyze_compatibility_shim_usage(
         (root / "docs/product/PACKAGE_MAP.md").resolve(),
         (root / SHIM_RETIREMENT_RELATIVE_PATH).resolve(),
     }
-    for path in _documentation_sources(root / "docs"):
+    for path in _versioned_documentation_sources(root):
         if path.resolve() in ignored_reports:
             continue
         try:
@@ -262,6 +263,28 @@ def _documentation_sources(directory: Path) -> Iterable[Path]:
     return (
         path
         for path in sorted(directory.rglob("*"))
+        if path.is_file() and path.suffix.lower() in {".md", ".txt"}
+    )
+
+
+def _versioned_documentation_sources(repository_root: Path) -> Iterable[Path]:
+    root = Path(repository_root).resolve()
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z", "--", "docs"],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except OSError:
+        completed = None
+    if completed is None or completed.returncode != 0:
+        return _documentation_sources(root / "docs")
+    return tuple(
+        path
+        for relative in completed.stdout.split("\0")
+        if relative
+        for path in (root / relative,)
         if path.is_file() and path.suffix.lower() in {".md", ".txt"}
     )
 

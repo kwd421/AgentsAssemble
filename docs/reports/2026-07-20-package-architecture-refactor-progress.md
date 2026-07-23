@@ -409,6 +409,21 @@ git diff --check
   passed
 ```
 
+The first post-push CI run, `29984969854`, passed both platform runtime jobs,
+PostgreSQL contracts, frontend build, and frontend E2E, but both Python jobs
+failed the committed shim-retirement report gate. This exposed an older
+determinism bug in the report generator: it scanned every local file under
+`docs/`, including a user-owned untracked planning document that does not exist
+in a clean GitHub checkout. The locally committed report therefore contained
+documentation evidence that a clean runner could not reproduce.
+
+The generator now reads documentation evidence from `git ls-files` when it is
+inside a Git worktree. It falls back to filesystem scanning only when Git
+metadata is unavailable, such as a source archive. The user-owned untracked
+document remains untouched and no longer affects a committed architecture
+artifact. `SHIM_RETIREMENT.md` was regenerated from versioned inputs and its
+12-test architecture gate passed locally before the follow-up push.
+
 The PostgreSQL contract run used a temporary virtual environment and UTF-8
 cluster, stopped the server, and removed the temporary workspace afterward.
 
