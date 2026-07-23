@@ -210,6 +210,23 @@ After each meaningful change, run the cheapest reliable check that matches the r
 - Visual inspection for UI changes.
 - Diff/check scripts for formatting or packaging.
 
+Do not create tests that merely restate implementation details. In particular,
+do not add a test just to confirm that copy, a numeric value, a constant, a
+symbol, an export, a filename, or a source-code string has the value introduced
+by the same change. When such an intentional edit breaks an existing assertion,
+update or remove that assertion instead of creating another one.
+
+Every new test must identify a real failure in user-visible behavior, persisted
+state, security, permissions, process lifetime, protocol compatibility, or a
+similarly meaningful contract. If the test would still pass while the actual
+user workflow is broken, it is not sufficient evidence and usually should not
+exist.
+
+Never use unit-test success as a substitute for the required verification path.
+GUI behavior must be exercised through the GUI, provider behavior through the
+real provider path when requested, and integration behavior through the actual
+integration boundary. Report clearly when those checks were not run.
+
 Do not claim done, fixed, verified, release-ready, signed, notarized, or final without direct evidence.
 
 If a check fails, do not hide it. Report the exact command, the failure summary, and whether it appears related to the change. Do not claim success because unrelated checks passed.

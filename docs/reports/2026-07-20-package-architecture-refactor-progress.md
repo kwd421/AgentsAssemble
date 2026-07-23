@@ -446,3 +446,27 @@ transport was silently substituted.
   persisted state root instead of sharing the normal `.agentsassemble` state.
 - Design autonomous participation, semantic silence, and provider-native media
   separately; this refactor intentionally did not alter those unsettled rules.
+
+### 12.7 Post-completion corrections
+
+The generic Agent Session room envelope was corrected after completion review.
+The room is infrastructure supplied to participants, not a moderator that
+rewrites their voice. Automatic delivery now provides canonical room identity,
+bounded room events and memory, supported media context, and security
+boundaries without prescribing tone, language, reply length, conversational
+stance, persona, or a supposedly natural way to continue.
+
+Automatic room delivery also omits `Reply only`, `[Your turn]`, and
+`Return only` instructions. Provider output classification, TUI cleanup, and
+final-message extraction remain provider-adapter responsibilities. A visible
+room message may still request a format or style because that request belongs
+to the participant who sent it, not to hidden AgentsAssemble policy. This
+correction does not decide autonomous participation or semantic silence.
+
+Review also identified an overuse of tests that restate copy, numeric values,
+constants, symbols, exports, filenames, or source strings. Those checks do not
+prove that a user workflow works. Future tests require a meaningful behavioral
+contract such as persisted state, security, permissions, process lifetime,
+protocol compatibility, or a real user-visible workflow. Unit-test success
+cannot substitute for GUI, real-provider, or integration-boundary verification.
+The durable contributor rule is recorded in `AGENTS.md`.

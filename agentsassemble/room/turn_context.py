@@ -44,6 +44,7 @@ def build_room_turn_packet(
     media_ids: object = None,
     max_recent_events: object = None,
     max_prompt_chars: object = None,
+    include_instruction: bool = True,
     repository: RoomRepository | None = None,
 ) -> dict[str, object]:
     clean_instruction = clean_lobby_text(instruction, limit=2000)
@@ -99,7 +100,7 @@ def build_room_turn_packet(
     input_mode = "recovery" if recovery_required else "bootstrap" if not bootstrap_done else "delta"
     bounded_context = _fit_provider_context(
         input_mode=input_mode,
-        instruction=clean_instruction,
+        instruction=clean_instruction if include_instruction else "",
         room_identity=room_identity,
         room_memory=room_memory,
         events=provider_events,
@@ -163,7 +164,6 @@ def build_room_turn_packet(
             "Do not inspect or edit the project unless the room conversation explicitly asks for it.",
             "Do not access credentials, secret environment variables, or unrelated local files.",
         ],
-        "expected_reply_style": "Append one room-visible reply for this turn.",
     }
     return _bound_room_turn_packet(packet, prompt_limit)
 
@@ -179,9 +179,8 @@ def build_provider_bootstrap_input(
 ) -> str:
     parts = [
         "[Agent Session bootstrap]",
-        "You are participating in a shared AgentsAssemble room. Reply only with room-visible text.",
+        "You are participating in a shared AgentsAssemble room.",
         "Do not inspect or edit the project unless the current room instruction explicitly asks for it.",
-        "Answer conversational turns directly; never invoke a tool merely to produce or format the room reply.",
         "Do not reveal internal runtime data, process ids, tokens, or hidden chain-of-thought.",
     ]
     identity_text = _provider_room_identity_text(room_identity or {})
@@ -195,7 +194,9 @@ def build_provider_bootstrap_input(
     media_text = _provider_media_text(media_manifest or [], unsupported_media or [])
     if media_text:
         parts.extend(["", media_text])
-    parts.extend(["", "[Your turn]", clean_lobby_text(instruction, limit=2000)])
+    clean_instruction = clean_lobby_text(instruction, limit=2000)
+    if clean_instruction:
+        parts.extend(["", "[Your turn]", clean_instruction])
     return "\n".join(parts).strip() + "\n"
 
 
@@ -216,7 +217,9 @@ def build_provider_turn_input(
     media_text = _provider_media_text(media_manifest or [], unsupported_media or [])
     if media_text:
         parts.extend([media_text, ""])
-    parts.extend(["[Your turn]", clean_lobby_text(instruction, limit=2000)])
+    clean_instruction = clean_lobby_text(instruction, limit=2000)
+    if clean_instruction:
+        parts.extend(["[Your turn]", clean_instruction])
     return "\n".join(parts).strip() + "\n"
 
 
@@ -231,8 +234,7 @@ def build_provider_recovery_input(
 ) -> str:
     parts = [
         "[Agent Session recovery]",
-        "Use this compact room memory to continue the same room-visible conversation.",
-        "Answer conversational turns directly; never invoke a tool merely to produce or format the room reply.",
+        "This compact room memory was retained before the provider restart.",
     ]
     identity_text = _provider_room_identity_text(room_identity or {})
     if identity_text:
@@ -245,7 +247,9 @@ def build_provider_recovery_input(
     media_text = _provider_media_text(media_manifest or [], unsupported_media or [])
     if media_text:
         parts.extend(["", media_text])
-    parts.extend(["", "[Your turn]", clean_lobby_text(instruction, limit=2000)])
+    clean_instruction = clean_lobby_text(instruction, limit=2000)
+    if clean_instruction:
+        parts.extend(["", "[Your turn]", clean_instruction])
     return "\n".join(parts).strip() + "\n"
 
 

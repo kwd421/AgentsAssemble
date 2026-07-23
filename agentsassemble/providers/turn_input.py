@@ -10,9 +10,7 @@ def agent_turn_prompt(packet: dict[str, object]) -> str:
     if provider_input:
         return provider_input
     return (
-        "You are answering one AgentsAssemble room turn. Read the JSON packet, "
-        "use only the room-visible context and supported media manifest, follow "
-        "the explicit non-goals, and return one room-visible answer.\n\n"
+        "AgentsAssemble room context and supported media packet:\n\n"
         + json.dumps(packet, ensure_ascii=False, sort_keys=True)
         + "\n"
     )

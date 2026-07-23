@@ -260,7 +260,8 @@ class RoomTurnCoordinator:
             room_id=room_id,
             participant_id=agent_id,
             session_id=str(session["session_id"]),
-            instruction="Reply naturally to the new room messages. Return only the text that should appear in the room.",
+            instruction="Room context update.",
+            include_instruction=False,
             max_recent_events=50 if session.get("external_owned") else None,
             max_prompt_chars=64_000 if session.get("external_owned") else None,
         )
