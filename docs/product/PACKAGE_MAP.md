@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `fbb059e46d26e855`
+Source fingerprint: `153de2151f26ad43`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -512,7 +512,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.persistence` | `agentsassemble/persistence/__init__.py` | 1 | persistence | current | - | 0 | - | - | - | `persistence/local/` | in-target-package |
 | `agentsassemble.persistence.local` | `agentsassemble/persistence/local/__init__.py` | 1 | persistence | current | - | 0 | - | - | - | `persistence/local/` | in-target-package |
 | `agentsassemble.persistence.local.admission` | `agentsassemble/persistence/local/admission/__init__.py` | 13 | persistence | current | `agentsassemble.persistence.local.admission.repository` | 0 | - | test-import:1 | `tests/test_local_admission_persistence_package.py` | `persistence/local/` | in-target-package |
-| `agentsassemble.persistence.local.admission.repository` | `agentsassemble/persistence/local/admission/repository.py` | 614 | persistence | current | `agentsassemble.admission.maintenance`, `agentsassemble.admission.repository`, `agentsassemble.admission.workflow_record`, `agentsassemble.room.text` | 7 | - | test-import:15 | `tests/gui_server_test_support.py`, `tests/room_realtime_test_support.py`, `tests/test_admission_workflow_maintenance.py`, `+12` | `persistence/local/` | in-target-package |
+| `agentsassemble.persistence.local.admission.repository` | `agentsassemble/persistence/local/admission/repository.py` | 618 | persistence | current | `agentsassemble.admission.maintenance`, `agentsassemble.admission.repository`, `agentsassemble.admission.workflow_record`, `agentsassemble.room.text` | 7 | - | test-import:15 | `tests/gui_server_test_support.py`, `tests/room_realtime_test_support.py`, `tests/test_admission_workflow_maintenance.py`, `+12` | `persistence/local/` | in-target-package |
 | `agentsassemble.persistence.local.identity` | `agentsassemble/persistence/local/identity/__init__.py` | 1 | persistence | current | - | 0 | - | test-import:2 | `tests/test_identity_store.py`, `tests/test_local_identity_persistence_package.py` | `persistence/local/` | in-target-package |
 | `agentsassemble.persistence.local.identity.migration` | `agentsassemble/persistence/local/identity/migration.py` | 66 | persistence | current | `agentsassemble.identity.repository` | 3 | - | test-import:2 | `tests/test_identity_store.py`, `tests/test_local_identity_persistence_package.py` | `persistence/local/` | in-target-package |
 | `agentsassemble.persistence.local.identity.preferences` | `agentsassemble/persistence/local/identity/preferences.py` | 125 | persistence | current | `agentsassemble.identity.preferences`, `agentsassemble.room.repository_records`, `agentsassemble.room.user_preferences` | 3 | - | test-import:1 | `tests/test_local_identity_persistence_package.py` | `persistence/local/` | in-target-package |

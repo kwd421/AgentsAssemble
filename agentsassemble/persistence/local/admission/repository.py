@@ -24,6 +24,7 @@ from agentsassemble.admission.workflow_record import validate_admission_workflow
 from agentsassemble.room.text import clean_room_text as clean_lobby_text
 
 ROOM_INVITE_STORE_SCHEMA = "agentsassemble.admission.invite_state.v1"
+LEGACY_ROOM_INVITE_STORE_SCHEMA = "agentsassemble.room_invite_state.v1"
 
 
 _RepositoryState = tuple[
@@ -424,7 +425,10 @@ class JsonInviteSessionRepository(MemoryInviteSessionRepository):
             ) from error
         if not isinstance(payload, dict):
             raise InviteRepositoryCorrupt("Invite repository state must be an object.")
-        if payload.get("schema") != ROOM_INVITE_STORE_SCHEMA:
+        if payload.get("schema") not in {
+            ROOM_INVITE_STORE_SCHEMA,
+            LEGACY_ROOM_INVITE_STORE_SCHEMA,
+        }:
             raise InviteRepositoryCorrupt(
                 "Invite repository state uses an unsupported schema."
             )
