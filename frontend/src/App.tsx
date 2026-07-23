@@ -27,13 +27,17 @@ import {
 import {
   createCompanionRoomInvite,
   ensureRoomMeeting,
+  fetchProviderUsage,
   type LiveAgent,
   type MafiaGame,
   type LobbyEvent,
   type ChannelNotificationSetting,
   type ChannelSettings,
   type RoomFriend,
+  type RoomAgentSession,
   type RoomMember,
+  type ProviderUsageId,
+  type ProviderUsageSnapshot,
 } from "./api";
 import { useRoomAdmission } from "./app/useRoomAdmission";
 import { useFriendsDirectory } from "./app/useFriendsDirectory";
@@ -276,7 +280,11 @@ function channelForActiveRoom(
   return channelConfig;
 }
 
-function agentSessionMemberToLiveAgent(member: RoomMember): LiveAgent {
+function agentSessionMemberToLiveAgent(
+  member: RoomMember,
+  session?: RoomAgentSession,
+  usage?: ProviderUsageSnapshot
+): LiveAgent {
   return {
     agent_id: member.participant_id,
     display_name: member.display_name || member.participant_id,
@@ -289,15 +297,43 @@ function agentSessionMemberToLiveAgent(member: RoomMember): LiveAgent {
     engagement_mode: member.engagement_mode || "agent_session",
     meeting_id: member.meeting_id,
     session_id: member.session_id || member.participant_id,
-    model_id: member.model_id,
-    effort: member.effort,
+    model_id: session?.model || member.model_id,
+    effort: session?.reasoning_effort || member.effort,
     permission_option: member.permission_option,
     sandbox_enforcement: member.sandbox_enforcement || "",
     join_semantics: member.join_semantics || "agent_session",
     execution_mode: member.execution_mode || "agent_session_app_server",
     last_seen_at: member.last_seen_at || member.updated_at,
     last_reply_at: member.updated_at,
+    quota_5h: usage?.quota_5h,
+    quota_1w: usage?.quota_1w,
+    quota_state: usage?.quota_state,
+    quota_windows: usage?.quota_windows,
+    account_available: usage?.account_available,
+    account_balances: usage?.account_balances,
     capabilities: [],
+  };
+}
+
+function providerUsageTarget(session?: RoomAgentSession) {
+  if (!session) return null;
+  const providerByKind: Partial<Record<string, ProviderUsageId>> = {
+    claude_code: "claude",
+    codex_live_session: "codex",
+    antigravity_live_session: "antigravity",
+    grok_live_session: "grok",
+    deepseek_api: "deepseek",
+  };
+  const providerId = providerByKind[session.provider_kind];
+  if (!providerId) return null;
+  const model =
+    providerId === "codex" || providerId === "antigravity"
+      ? String(session.model || "").trim()
+      : "";
+  return {
+    providerId,
+    model,
+    key: `${providerId}:${model.toLocaleLowerCase()}`,
   };
 }
 
@@ -309,6 +345,7 @@ function mobileViewportMatches() {
 }
 
 export default function App() {
+  const [providerUsage, setProviderUsage] = useState<Record<string, ProviderUsageSnapshot>>({});
   const [operatorPairingToken, setOperatorPairingToken] = useState(
     consumeOperatorPairingTokenFromUrl
   );
@@ -599,13 +636,65 @@ export default function App() {
   const { mafiaGame: scopedMafiaGame, refreshMafia } = useActiveMafiaGame({
     activeMeetingId: activeRoom.meetingId,
   });
+  const activeProviderUsageTargets = useMemo(() => {
+    const targets = new Map<
+      string,
+      { providerId: ProviderUsageId; model: string; key: string }
+    >();
+    for (const session of activeRoomAgentSessions) {
+      const target = providerUsageTarget(session);
+      if (target) targets.set(target.key, target);
+    }
+    return [...targets.values()];
+  }, [activeRoomAgentSessions]);
+  const activeProviderUsageSignature = activeProviderUsageTargets
+    .map((target) => target.key)
+    .sort()
+    .join("|");
 
+  useEffect(() => {
+    if (guestLocked) return;
+    if (activeProviderUsageTargets.length === 0) return;
+    let cancelled = false;
+    for (const target of activeProviderUsageTargets) {
+      fetchProviderUsage(target.providerId, target.model)
+        .then((usage) => {
+          if (!cancelled) {
+            setProviderUsage((previous) => ({ ...previous, [target.key]: usage }));
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setProviderUsage((previous) => {
+              const next = { ...previous };
+              delete next[target.key];
+              return next;
+            });
+          }
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProviderUsageSignature, guestLocked]);
+
+  const sessionByParticipantId = new Map(
+    activeRoomAgentSessions.map((session) => [session.participant_id, session])
+  );
   const agents: LiveAgent[] = activeRoomMembers
     .filter(
       (member) =>
         member.source === "agent_session" && member.participant_type !== "human"
     )
-    .map(agentSessionMemberToLiveAgent);
+    .map((member) => {
+      const session = sessionByParticipantId.get(member.participant_id);
+      const usageTarget = providerUsageTarget(session);
+      return agentSessionMemberToLiveAgent(
+        member,
+        session,
+        usageTarget ? providerUsage[usageTarget.key] : undefined
+      );
+    });
   const activeProcessGroups = useMemo(
     () =>
       processGroups.filter(
@@ -622,10 +711,13 @@ export default function App() {
     () =>
       guestLocked
         ? []
-        : (activeProcessGroup?.agents || [])
-            .map((agent) => agent.agent_id)
-            .filter(Boolean),
-    [activeProcessGroup?.agents, guestLocked]
+        : [
+            ...(activeProcessGroup?.agents || []).map((agent) => agent.agent_id),
+            ...activeRoomAgentSessions
+              .filter((session) => !session.external_owned)
+              .map((session) => session.participant_id),
+          ].filter(Boolean),
+    [activeProcessGroup?.agents, activeRoomAgentSessions, guestLocked]
   );
   const quotaViewer = useMemo<AgentQuotaVisibilityViewer>(
     () => ({

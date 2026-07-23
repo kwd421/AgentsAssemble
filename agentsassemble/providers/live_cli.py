@@ -727,6 +727,8 @@ def _terminal_query_response(chunk: bytes, answered: set[str] | None = None) -> 
         ("cursor", b"\x1b[6n", b"\x1b[1;1R"),
         ("device", b"\x1b[c", b"\x1b[?1;2c"),
         ("keyboard", b"\x1b[?u", b"\x1b[?0u"),
+        ("synchronized-output", b"\x1b[?2026$p", b"\x1b[?2026;2$y"),
+        ("unicode-core", b"\x1b[?2027$p", b"\x1b[?2027;2$y"),
         ("foreground", b"\x1b]10;?\x1b\\", b"\x1b]10;rgb:ffff/ffff/ffff\x1b\\"),
         ("background", b"\x1b]11;?\x1b\\", b"\x1b]11;rgb:0000/0000/0000\x1b\\"),
     )

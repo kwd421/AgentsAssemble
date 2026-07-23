@@ -82,6 +82,13 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
 
         self.assertEqual(antigravity.provider_kind, "antigravity_live_session")
         self.assertEqual(antigravity.command[0], "agy")
+        self.assertEqual(
+            antigravity.command[antigravity.command.index("--model") + 1],
+            "gemini-3.5-flash-medium",
+        )
+        self.assertEqual(antigravity.model, "gemini-3.5-flash")
+        self.assertEqual(antigravity.reasoning_effort, "medium")
+        self.assertEqual(antigravity.requested_model_id, "gemini-3.5-flash-medium")
         self.assertIn("--sandbox", antigravity.command)
         self.assertNotIn("--mode", antigravity.command)
         self.assertEqual(claude.provider_kind, "claude_code")

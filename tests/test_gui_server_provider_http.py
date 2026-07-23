@@ -72,6 +72,25 @@ class FakeLoginService:
         self.invalid_json_count += 1
 
 
+class FakeUsageService:
+    def read(
+        self,
+        provider_id: str,
+        *,
+        model: str = "",
+        refresh: bool = False,
+    ) -> dict[str, object]:
+        return {
+            "provider_id": provider_id,
+            "status": "ready",
+            "quota_5h": "2%",
+            "quota_1w": "40%",
+            "quota_windows": [],
+            "model": model,
+            "refreshed": refresh,
+        }
+
+
 def _context(handler: FakeHandler, path: str) -> RequestContext:
     parsed = urlparse(path)
     return RequestContext(handler, GuiDeps(output_root=Path(".")), parsed, parse_qs(parsed.query))
@@ -92,6 +111,7 @@ class ProviderRouteTests(unittest.TestCase):
             is_local_operator=lambda ctx: True,
             login_service=self.login,
             secret_store=self.store,
+            usage_service=FakeUsageService(),
         )
 
     def dispatch(self, method: str, path: str, *, body: bytes = b"") -> FakeHandler:
@@ -106,6 +126,11 @@ class ProviderRouteTests(unittest.TestCase):
                 ("GET", "/api/providers"),
                 ("GET", "/api/model-catalog"),
                 ("GET", "/api/provider-credentials/deepseek"),
+                ("GET", "/api/provider-usage/antigravity"),
+                ("GET", "/api/provider-usage/claude"),
+                ("GET", "/api/provider-usage/codex"),
+                ("GET", "/api/provider-usage/deepseek"),
+                ("GET", "/api/provider-usage/grok"),
                 ("POST", "/api/live-agent-create/login"),
                 ("POST", "/api/provider-credentials/deepseek"),
                 ("DELETE", "/api/provider-credentials/deepseek"),
@@ -113,6 +138,15 @@ class ProviderRouteTests(unittest.TestCase):
         )
         self.assertIn("providers", self.dispatch("GET", "/api/providers").sent_json)
         self.assertIn("providers", self.dispatch("GET", "/api/model-catalog").sent_json)
+        self.assertEqual(
+            self.dispatch("GET", "/api/provider-usage/claude?refresh=1").sent_json["quota_1w"],
+            "40%",
+        )
+        codex = self.dispatch(
+            "GET",
+            "/api/provider-usage/codex?model=gpt-5.6-sol",
+        ).sent_json
+        self.assertEqual((codex["provider_id"], codex["model"]), ("codex", "gpt-5.6-sol"))
 
     def test_provider_login_is_local_only_and_delegates_to_login_service(self):
         started = self.dispatch(

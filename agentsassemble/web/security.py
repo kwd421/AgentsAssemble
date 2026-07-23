@@ -76,6 +76,11 @@ def _public_invite_route_allowed(path: str, method: str) -> bool:
                 "/api/room-invite/sessions",
                 "/api/room-invite/invites",
                 "/api/provider-credentials/deepseek",
+                "/api/provider-usage/claude",
+                "/api/provider-usage/codex",
+                "/api/provider-usage/antigravity",
+                "/api/provider-usage/grok",
+                "/api/provider-usage/deepseek",
             }
             or path.startswith("/app/assets/")
         )

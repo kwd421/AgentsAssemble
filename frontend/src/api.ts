@@ -89,6 +89,11 @@ export interface LiveAgent {
     remaining?: number;
     unit?: string;
   }>;
+  account_available?: boolean;
+  account_balances?: Array<{
+    currency: string;
+    amount: string;
+  }>;
   persona_card_id?: string;
   character_mode?: string;
   join_semantics?: string;
@@ -498,6 +503,36 @@ export interface MafiaGameResponse {
 export interface ProviderCredentialStatus {
   configured: boolean;
   source: "keyring" | "environment" | "missing";
+}
+
+export interface ProviderUsageSnapshot {
+  provider_id: string;
+  status: "ready";
+  source: string;
+  observed_at: string;
+  quota_5h?: string;
+  quota_1w?: string;
+  quota_state?: "ok" | "low" | "exhausted" | "unknown";
+  quota_windows: NonNullable<LiveAgent["quota_windows"]>;
+  account_available?: boolean;
+  account_balances?: NonNullable<LiveAgent["account_balances"]>;
+}
+
+export type ProviderUsageId = "claude" | "codex" | "antigravity" | "grok" | "deepseek";
+
+export async function fetchProviderUsage(
+  providerId: ProviderUsageId,
+  model = ""
+): Promise<ProviderUsageSnapshot> {
+  const headers: Record<string, string> = {};
+  const hostToken = loadHostToken();
+  if (hostToken) headers["X-Host-Token"] = hostToken;
+  const query = new URLSearchParams();
+  if (model.trim()) query.set("model", model.trim());
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  const response = await fetch(`/api/provider-usage/${providerId}${suffix}`, { headers });
+  if (!response.ok) throw await responseError(response);
+  return response.json();
 }
 
 export async function fetchDeepSeekCredentialStatus(): Promise<ProviderCredentialStatus> {

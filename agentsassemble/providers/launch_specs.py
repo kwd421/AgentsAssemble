@@ -141,6 +141,11 @@ class NativeCliProviderDefinition:
     ) -> NativeCliProviderSpec:
         selected_model = clean_room_text(model, limit=128)
         selected_effort = clean_room_text(reasoning_effort, limit=32)
+        if self.provider_id == "antigravity":
+            selected_model, inferred_effort = _split_antigravity_model(
+                selected_model,
+            )
+            selected_effort = selected_effort or inferred_effort
         selected_service_tier = clean_room_text(service_tier, limit=32)
         selected_variant = clean_room_text(variant, limit=64)
         selected_permission = clean_room_text(permission_mode, limit=64)
@@ -172,7 +177,11 @@ class NativeCliProviderDefinition:
             cwd=str(Path(cwd).expanduser().resolve()),
             provider_kind=self.provider_kind,
             model=selected_model,
-            requested_model_id=selected_model,
+            requested_model_id=_requested_model_id(
+                self.provider_id,
+                selected_model,
+                selected_effort,
+            ),
             model_selection_kind=selected_kind,
             model_observation_policy=self.model_observation_policy,
             catalog_revision=clean_room_text(catalog_revision, limit=128),
@@ -349,7 +358,7 @@ def _codex_command(
 
 def _antigravity_command(
     model: str,
-    _effort: str,
+    effort: str,
     _service_tier: str,
     _variant: str,
     permission_mode: str,
@@ -358,12 +367,50 @@ def _antigravity_command(
         raise ValueError("Antigravity model is required.")
     command = ["agy"]
     if model:
-        command.extend(("--model", model))
+        command.extend(("--model", _antigravity_effective_model(model, effort)))
     if permission_mode == "workspace_write":
         command.extend(("--mode", "accept-edits"))
     else:
         command.append("--sandbox")
     return tuple(command)
+
+
+def _antigravity_effective_model(model: str, effort: str) -> str:
+    clean_model = clean_room_text(model, limit=128)
+    clean_effort = clean_room_text(effort, limit=32).casefold()
+    if clean_effort and not clean_model.casefold().endswith(f"-{clean_effort}"):
+        return f"{clean_model}-{clean_effort}"
+    return clean_model
+
+
+def _split_antigravity_model(model: str) -> tuple[str, str]:
+    clean_model = clean_room_text(model, limit=128)
+    display_match = re.fullmatch(
+        r"(.+?)\s+\((Low|Medium|High)\)",
+        clean_model,
+        flags=re.IGNORECASE,
+    )
+    if display_match:
+        base = re.sub(
+            r"[^a-z0-9.]+",
+            "-",
+            display_match.group(1).casefold(),
+        ).strip("-")
+        return base, display_match.group(2).casefold()
+    slug_match = re.fullmatch(
+        r"(.+?)-(low|medium|high)",
+        clean_model,
+        flags=re.IGNORECASE,
+    )
+    if slug_match:
+        return slug_match.group(1), slug_match.group(2).casefold()
+    return clean_model, ""
+
+
+def _requested_model_id(provider_id: str, model: str, effort: str) -> str:
+    if provider_id == "antigravity":
+        return _antigravity_effective_model(model, effort)
+    return model
 
 
 def _grok_command(
@@ -475,7 +522,8 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         executable="agy",
         command_builder=_antigravity_command,
         aliases=("agy", "antigravity_live_session"),
-        default_model="Gemini 3.5 Flash (Medium)",
+        default_model="gemini-3.6-flash",
+        default_reasoning_effort="medium",
         model_observation_policy="required",
         input_mode="bracketed_paste",
         startup_accept_contains="Do you trust",

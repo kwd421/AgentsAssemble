@@ -13,6 +13,9 @@ from unittest.mock import MagicMock, patch
 from agentsassemble.providers.deepseek import DeepSeekApiRuntime
 from agentsassemble.diagnostics.cleanup import CleanupReport
 from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
+from agentsassemble.providers.claude_usage import ClaudeUsageService
+from agentsassemble.providers.codex_usage import CodexUsageService
+from agentsassemble.providers.deepseek_usage import DeepSeekUsageService
 from agentsassemble.providers.process_environment import (
     environment_contains_secret_names,
     sanitized_provider_environment,
@@ -70,6 +73,54 @@ class FakeConPtyProcess:
 
 
 class ProviderRuntimeControlTests(unittest.TestCase):
+    def test_deepseek_usage_returns_sanitized_balance_without_exposing_credential(self):
+        service = DeepSeekUsageService(
+            credential_reader=lambda: "private-deepseek-key",
+            fetcher=lambda key: {
+                "is_available": True,
+                "balance_infos": [
+                    {
+                        "currency": "USD",
+                        "total_balance": "12.340000",
+                        "granted_balance": "private-grant-detail",
+                    }
+                ],
+                "credential_echo": key,
+            },
+        )
+
+        usage = service.read()
+
+        self.assertEqual(
+            usage["account_balances"],
+            [{"currency": "USD", "amount": "12.34"}],
+        )
+        self.assertNotIn("private", json.dumps(usage))
+
+    def test_claude_usage_returns_only_public_windows_and_reuses_short_cache(self):
+        fetch_count = 0
+
+        def fetcher(token: str) -> dict[str, object]:
+            nonlocal fetch_count
+            fetch_count += 1
+            self.assertEqual(token, "private-oauth-token")
+            return {
+                "five_hour": {"utilization": 2, "resets_at": "2026-07-23T15:00:00Z"},
+                "seven_day": {"utilization": 40, "resets_at": "2026-07-23T23:00:00Z"},
+            }
+
+        service = ClaudeUsageService(
+            credential_reader=lambda: "private-oauth-token",
+            fetcher=fetcher,
+        )
+
+        first = service.read()
+        second = service.read()
+
+        self.assertEqual((first["quota_5h"], first["quota_1w"]), ("2%", "40%"))
+        self.assertEqual(fetch_count, 1)
+        self.assertNotIn("private-oauth-token", json.dumps([first, second]))
+
     def test_antigravity_plan_prefix_is_not_part_of_the_delivered_turn(self):
         self.assertEqual(
             _antigravity_user_request("<USER_REQUEST>\n/plan room input\n</USER_REQUEST>"),
@@ -77,17 +128,61 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         )
 
     def test_pty_answers_terminal_queries_needed_by_interactive_tuis(self):
-        response = _terminal_query_response(b"\x1b[6n\x1b[c\x1b[?u\x1b]10;?\x1b\\\x1b]11;?\x1b\\")
+        response = _terminal_query_response(
+            b"\x1b[6n\x1b[c\x1b[?u\x1b[?2026$p\x1b[?2027$p"
+            b"\x1b]10;?\x1b\\\x1b]11;?\x1b\\"
+        )
 
         self.assertIn(b"\x1b[1;1R", response)
         self.assertIn(b"\x1b[?1;2c", response)
         self.assertIn(b"\x1b[?0u", response)
+        self.assertIn(b"\x1b[?2026;2$y", response)
+        self.assertIn(b"\x1b[?2027;2$y", response)
         self.assertIn(b"rgb:ffff", response)
         self.assertIn(b"rgb:0000", response)
         self.assertEqual(
             _antigravity_user_request("<USER_REQUEST>room input/plan</USER_REQUEST>"),
             "room input",
         )
+
+    def test_codex_usage_selects_the_native_model_limit_without_exposing_limit_ids(self):
+        service = CodexUsageService(
+            fetcher=lambda: {
+                "rateLimits": {
+                    "primary": {
+                        "usedPercent": 91,
+                        "windowDurationMins": 10080,
+                        "resetsAt": 1785327678,
+                    },
+                    "secondary": None,
+                },
+                "rateLimitsByLimitId": {
+                    "private-default-id": {
+                        "limitName": None,
+                        "primary": {
+                            "usedPercent": 91,
+                            "windowDurationMins": 10080,
+                            "resetsAt": 1785327678,
+                        },
+                    },
+                    "private-spark-id": {
+                        "limitName": "GPT-5.3-Codex-Spark",
+                        "primary": {
+                            "usedPercent": 7,
+                            "windowDurationMins": 10080,
+                            "resetsAt": 1785345000,
+                        },
+                    },
+                },
+            }
+        )
+
+        standard = service.read(model="gpt-5.6-sol")
+        spark = service.read(model="gpt-5.3-codex-spark")
+
+        self.assertEqual(standard["quota_windows"][0]["percent"], 91)
+        self.assertEqual(spark["quota_windows"][0]["percent"], 7)
+        self.assertNotIn("private-", json.dumps([standard, spark]))
 
     def test_provider_child_environment_drops_server_and_api_secrets(self):
         environment = sanitized_provider_environment(
@@ -116,6 +211,13 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         def runner(command: list[str], _timeout: float):
             if command[1:3] == ["debug", "models"]:
                 return 0, json.dumps({"models": [{"slug": "gpt-5.6-luna", "display_name": "Luna", "supported_reasoning_levels": [{"effort": "low"}], "service_tiers": [{"id": "priority"}]}]}), ""
+            if command[0].endswith("agy"):
+                return 0, (
+                    "gemini-3.6-flash-high\n"
+                    "gemini-3.6-flash-medium\n"
+                    "gemini-3.6-flash-low\n"
+                    "claude-sonnet-4-6\n"
+                ), ""
             if command[0].endswith("cursor-agent"):
                 return 0, "auto - Auto (current, default)\ngpt-5.6-luna-low - GPT-5.6 Luna Low\n", ""
             if command[1:] == ["models", "--verbose"]:
@@ -131,6 +233,26 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertEqual(codex["controls"][0]["default_value"], "gpt-5.6-luna")
         self.assertNotIn("command", codex)
         self.assertNotIn("resolved_executable", codex)
+        antigravity = next(item for item in payload if item["id"] == "antigravity")
+        antigravity_model = next(
+            control for control in antigravity["controls"] if control["key"] == "model"
+        )
+        antigravity_effort = next(
+            control
+            for control in antigravity["controls"]
+            if control["key"] == "reasoning_effort"
+        )
+        self.assertEqual(
+            [(option["value"], option["label"]) for option in antigravity_model["options"]],
+            [
+                ("gemini-3.6-flash", "Gemini 3.6 Flash"),
+                ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
+            ],
+        )
+        self.assertEqual(
+            [option["value"] for option in antigravity_effort["options"]],
+            ["", "high", "medium", "low"],
+        )
         cursor = next(item for item in payload if item["id"] == "cursor")
         model = next(control for control in cursor["controls"] if control["key"] == "model")
         self.assertEqual(model["default_value"], "auto")
@@ -146,6 +268,12 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         catalog = ProviderCapabilityCatalog(
             runner=lambda _command, _timeout: (0, "Claude help", ""),
             resolver=lambda executable: f"/bin/{executable}",
+            claude_model_discovery=lambda _executable: [
+                "claude-haiku-4-5",
+                "claude-sonnet-5",
+                "claude-sonnet-4-6",
+                "claude-opus-4-8",
+            ],
         )
 
         claude = next(item for item in catalog.payload(refresh=True) if item["id"] == "claude")
@@ -153,6 +281,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         options = {option["value"]: option["label"] for option in model["options"]}
 
         self.assertEqual(model["default_value"], "claude-haiku-4-5")
+        self.assertEqual(claude["catalog_source"], "discovered")
         self.assertEqual(options["claude-sonnet-4-6"], "Claude Sonnet 4.6")
         self.assertEqual(options["claude-opus-4-8"], "Claude Opus 4.8")
         self.assertNotIn("sonnet", options)

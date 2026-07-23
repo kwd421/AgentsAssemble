@@ -14,11 +14,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from agentsassemble.providers.claude_catalog import discover_claude_model_ids
 from agentsassemble.providers.launch_specs import NATIVE_CLI_PROVIDER_CATALOG
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 
 
 ProbeRunner = Callable[[list[str], float], tuple[int, str, str]]
+ClaudeModelDiscovery = Callable[[str], list[str]]
 CatalogListener = Callable[[dict[str, object]], None]
 
 
@@ -49,10 +51,12 @@ class ProviderCapabilityCatalog:
         *,
         runner: ProbeRunner | None = None,
         resolver: Callable[[str], str | None] = shutil.which,
+        claude_model_discovery: ClaudeModelDiscovery = discover_claude_model_ids,
         ttl_seconds: float = 300.0,
     ) -> None:
         self._runner = runner or _run_probe
         self._resolver = resolver
+        self._claude_model_discovery = claude_model_discovery
         self._ttl_seconds = max(1.0, float(ttl_seconds))
         self._lock = threading.RLock()
         self._cached_at = 0.0
@@ -346,8 +350,6 @@ class ProviderCapabilityCatalog:
             base["controls"] = discovered
             base["discovery_status"] = "ready"
             base["startable"] = True
-            if definition.provider_id == "claude":
-                base["catalog_source"] = "static_manifest"
         else:
             base["discovery_status"] = "failed"
             base["discovery_error"] = "model discovery returned no supported options"
@@ -365,7 +367,9 @@ class ProviderCapabilityCatalog:
             return _grok_controls(output) if code == 0 else []
         if provider_id == "claude":
             code, _output, _stderr = self._runner([executable, "--help"], 5.0)
-            return _claude_manifest_controls() if code == 0 else []
+            if code != 0:
+                return []
+            return _claude_controls(self._claude_model_discovery(executable))
         if provider_id == "cursor":
             code, output, _stderr = self._runner([executable, "models"], 8.0)
             return _cursor_controls(output) if code == 0 else []
@@ -571,11 +575,104 @@ def _codex_controls(output: str) -> list[dict[str, object]]:
 
 
 def _antigravity_controls(output: str) -> list[dict[str, object]]:
-    models = [line.strip() for line in output.splitlines() if line.strip() and not line.startswith(("Available", "Default"))]
-    if not models:
+    discovered = [
+        _antigravity_model_variant(line.strip())
+        for line in output.splitlines()
+        if line.strip() and not line.startswith(("Available", "Default"))
+    ]
+    discovered = [item for item in discovered if item is not None]
+    if not discovered:
         return []
-    default = "Gemini 3.5 Flash (Medium)" if "Gemini 3.5 Flash (Medium)" in models else models[0]
-    return [_control("model", "모델", [_model_option(value) for value in models], default), _permission_control()]
+    grouped: dict[str, dict[str, object]] = {}
+    for model, effort in discovered:
+        entry = grouped.setdefault(
+            model,
+            {
+                "label": _provider_model_label(model),
+                "efforts": [],
+            },
+        )
+        if effort:
+            efforts = entry["efforts"]
+            assert isinstance(efforts, list)
+            efforts.append(effort)
+    models = list(grouped)
+    default_model = (
+        "gemini-3.6-flash"
+        if "gemini-3.6-flash" in grouped
+        else "gemini-3.5-flash"
+        if "gemini-3.5-flash" in grouped
+        else models[0]
+    )
+    all_efforts = _unique(
+        [
+            effort
+            for entry in grouped.values()
+            for effort in list(entry["efforts"])
+        ]
+    )
+    default_effort = (
+        "medium"
+        if "medium" in list(grouped[default_model]["efforts"])
+        else str(list(grouped[default_model]["efforts"])[0])
+        if list(grouped[default_model]["efforts"])
+        else ""
+    )
+    return [
+        _control(
+            "model",
+            "모델",
+            [
+                _model_option(
+                    model,
+                    str(grouped[model]["label"]),
+                    relation_scope="per_model",
+                    reasoning_efforts=_unique(list(grouped[model]["efforts"])),
+                )
+                for model in models
+            ],
+            default_model,
+        ),
+        _control(
+            "reasoning_effort",
+            "추론 강도",
+            [_option("", "기본"), *[_option(value) for value in all_efforts]],
+            default_effort,
+        ),
+        _permission_control(),
+    ]
+
+
+def _antigravity_model_variant(value: str) -> tuple[str, str] | None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    display_match = re.fullmatch(r"(.+?)\s+\((Low|Medium|High)\)", normalized, flags=re.IGNORECASE)
+    if display_match:
+        model = re.sub(r"[^a-z0-9.]+", "-", display_match.group(1).casefold()).strip("-")
+        return model, display_match.group(2).casefold()
+    slug_match = re.fullmatch(r"(.+?)-(low|medium|high)", normalized, flags=re.IGNORECASE)
+    if slug_match:
+        return slug_match.group(1), slug_match.group(2).casefold()
+    return normalized, ""
+
+
+def _provider_model_label(value: str) -> str:
+    tokens = str(value or "").split("-")
+    labels: list[str] = []
+    for token in tokens:
+        folded = token.casefold()
+        if folded == "gpt":
+            labels.append("GPT")
+        elif folded == "oss":
+            labels.append("OSS")
+        elif re.fullmatch(r"\d+b", folded):
+            labels.append(folded.upper())
+        elif re.fullmatch(r"\d+", folded) and labels and re.fullmatch(r"\d+", labels[-1]):
+            labels[-1] = f"{labels[-1]}.{folded}"
+        else:
+            labels.append(token.capitalize())
+    return " ".join(labels)
 
 
 def _grok_controls(output: str) -> list[dict[str, object]]:
@@ -674,7 +771,9 @@ def _deepseek_payload() -> dict[str, object]:
     }
 
 
-def _claude_manifest_controls() -> list[dict[str, object]]:
+def _claude_controls(models: list[str]) -> list[dict[str, object]]:
+    if not models:
+        return []
     efforts = ("low", "medium", "high", "xhigh", "max")
     relation = {
         "relation_scope": "per_model",
@@ -686,13 +785,10 @@ def _claude_manifest_controls() -> list[dict[str, object]]:
             "model",
             "모델",
             [
-                _model_option("claude-haiku-4-5", "Claude Haiku 4.5", **relation),
-                _model_option("claude-sonnet-4-6", "Claude Sonnet 4.6", **relation),
-                _model_option("claude-sonnet-5", "Claude Sonnet 5", **relation),
-                _model_option("claude-opus-4-8", "Claude Opus 4.8", **relation),
-                _model_option("claude-opus-4-6", "Claude Opus 4.6", **relation),
+                _model_option(model, _provider_model_label(model), **relation)
+                for model in models
             ],
-            "claude-haiku-4-5",
+            "claude-haiku-4-5" if "claude-haiku-4-5" in models else models[0],
             kind="combobox",
         ),
         _control("reasoning_effort", "추론 강도", [_option(value) for value in efforts], "high"),

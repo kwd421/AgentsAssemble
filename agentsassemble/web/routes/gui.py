@@ -59,6 +59,7 @@ def register_current_gui_routes(
         credentials_allowed=provider_credentials_allowed,
         is_local_operator=lambda ctx: ctx.is_local_operator(),
         login_service=provider_login_service,
+        usage_service=services.provider_usage_service,
     )
     register_public_invite_admin_routes(
         route_table,

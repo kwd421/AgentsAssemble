@@ -7,6 +7,11 @@ from typing import Protocol
 
 from agentsassemble.providers.adapters import default_provider_registry
 from agentsassemble.providers import catalog as provider_catalog
+from agentsassemble.providers.provider_usage import (
+    ProviderUsageRegistry,
+    ProviderUsageUnavailable,
+    default_provider_usage_registry,
+)
 from agentsassemble.web.router import RequestContext, Router
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
 
@@ -23,6 +28,16 @@ class ProviderLogin(Protocol):
     def start(self, payload: dict[str, object]) -> dict[str, object]: ...
 
     def record_invalid_json(self) -> None: ...
+
+
+class ProviderUsage(Protocol):
+    def read(
+        self,
+        provider_id: str,
+        *,
+        model: str = "",
+        refresh: bool = False,
+    ) -> dict[str, object]: ...
 
 
 def provider_catalog_payload() -> dict[str, object]:
@@ -49,9 +64,11 @@ def register_provider_routes(
     is_local_operator: Callable[[RequestContext], bool],
     login_service: ProviderLogin,
     secret_store: ProviderSecretStore | None = None,
+    usage_service: ProviderUsageRegistry | ProviderUsage | None = None,
 ) -> None:
     """Register provider discovery, login, and credential-management routes."""
     store = PROVIDER_SECRETS if secret_store is None else secret_store
+    usage = default_provider_usage_registry() if usage_service is None else usage_service
 
     def _send_store_status(ctx: RequestContext, operation: Callable[[], Mapping[str, object]]) -> None:
         ctx.send_json(_safe_status_payload(operation()))
@@ -88,6 +105,40 @@ def register_provider_routes(
         if not credentials_allowed(ctx):
             return
         _send_store_status(ctx, lambda: store.status("deepseek"))
+
+    def _send_provider_usage(ctx: RequestContext, provider_id: str) -> None:
+        if not credentials_allowed(ctx):
+            return
+        try:
+            ctx.send_json(
+                usage.read(
+                    provider_id,
+                    model=ctx.query_value("model"),
+                    refresh=ctx.query_value("refresh") == "1",
+                )
+            )
+        except ProviderUsageUnavailable as error:
+            ctx.send_error(HTTPStatus.SERVICE_UNAVAILABLE, str(error))
+
+    @router.get("/api/provider-usage/claude")
+    def claude_provider_usage(ctx: RequestContext) -> None:
+        _send_provider_usage(ctx, "claude")
+
+    @router.get("/api/provider-usage/codex")
+    def codex_provider_usage(ctx: RequestContext) -> None:
+        _send_provider_usage(ctx, "codex")
+
+    @router.get("/api/provider-usage/antigravity")
+    def antigravity_provider_usage(ctx: RequestContext) -> None:
+        _send_provider_usage(ctx, "antigravity")
+
+    @router.get("/api/provider-usage/grok")
+    def grok_provider_usage(ctx: RequestContext) -> None:
+        _send_provider_usage(ctx, "grok")
+
+    @router.get("/api/provider-usage/deepseek")
+    def deepseek_provider_usage(ctx: RequestContext) -> None:
+        _send_provider_usage(ctx, "deepseek")
 
     @router.post("/api/provider-credentials/deepseek")
     def provider_credentials_set(ctx: RequestContext) -> None:

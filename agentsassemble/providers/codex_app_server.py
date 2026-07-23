@@ -327,6 +327,16 @@ class CodexAppServerRuntime:
     def diagnose(self, handle: dict[str, object]) -> dict[str, object]:
         return self._diagnostics_snapshot()
 
+    def read_account_rate_limits(self) -> dict[str, object]:
+        """Read account limits without creating a provider thread or model turn."""
+        self.start({})
+        with self._turn_lock:
+            response = self._send_request("account/rateLimits/read", {})
+        result = response.get("result")
+        if not isinstance(result, dict):
+            raise RuntimeError("Codex app-server returned an invalid rate-limit response.")
+        return result
+
     def release_thread(self, handle: dict[str, object]) -> None:
         for key in (
             clean_provider_session_id(handle.get("provider_session_id")),

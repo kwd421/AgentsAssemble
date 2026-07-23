@@ -83,6 +83,7 @@ class GuiApplicationServices:
     native_cli_bridge_manager: NativeCliBridgeProcessManager | None
     room_realtime_controller: RoomRealtimeController
     legacy_admission_projection: LegacyAdmissionProjection
+    provider_usage_service: object | None = None
     application_database: ApplicationDatabase | None = None
     identity_registry_cleanup: Callable[[], object] | None = None
     owns_room_repository: bool = True

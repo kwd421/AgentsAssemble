@@ -364,8 +364,8 @@ export function agentQuotaWindowSignals(agent: LiveAgent): AgentQuotaWindowSigna
 }
 
 export function agentMemberSignals(agent: LiveAgent): AgentTruthBadge[] {
-  const fiveHour = String(agent.quota_5h || "").trim() || "—";
-  const oneWeek = String(agent.quota_1w || "").trim() || "—";
+  const fiveHour = String(agent.quota_5h || "").trim();
+  const oneWeek = String(agent.quota_1w || "").trim();
   const contextKind = contextDurabilityKind(agent.context_durability);
   const contextLabel = CONTEXT_DURABILITY_KIND_LABELS[contextKind] || CONTEXT_DURABILITY_KIND_LABELS.unknown;
   const contextTone =
@@ -382,17 +382,21 @@ export function agentMemberSignals(agent: LiveAgent): AgentTruthBadge[] {
     quotaWindows.length > 0
       ? []
       : [
-          {
+          fiveHour
+            ? {
             label: `5h ${fiveHour}`,
             tone: quotaSignalTone,
             title: quotaTitle(agent, "5-hour", fiveHour),
-          },
-          {
+              }
+            : null,
+          oneWeek
+            ? {
             label: `1w ${oneWeek}`,
             tone: quotaSignalTone,
             title: quotaTitle(agent, "1-week", oneWeek),
-          },
-        ];
+              }
+            : null,
+        ].filter(Boolean) as AgentTruthBadge[];
 
   return [
     ...quotaFallbackSignals,

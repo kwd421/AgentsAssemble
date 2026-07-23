@@ -38,6 +38,7 @@ from agentsassemble.persistence.local.identity.registry import (
 )
 from agentsassemble.persistence.local.room.repository import RoomStore
 from agentsassemble.providers.bridge_process import NativeCliBridgeProcessManager
+from agentsassemble.providers.provider_usage import default_provider_usage_registry
 from agentsassemble.application.public_invite_runtime import PublicInviteRuntime
 from agentsassemble.application.public_tunnel import PublicTunnelManager
 from agentsassemble.admission.repository_factory import default_room_invite_store_path
@@ -297,6 +298,7 @@ def build_gui_application_services(
             native_cli_bridge_manager=native_cli_bridge_manager,
             room_realtime_controller=room_realtime_controller,
             legacy_admission_projection=legacy_admission_projection,
+            provider_usage_service=default_provider_usage_registry(),
             application_database=application_database_override,
             identity_registry_cleanup=release_identity_registration,
             owns_room_repository=owns_room_repository,

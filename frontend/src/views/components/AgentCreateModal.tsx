@@ -40,6 +40,7 @@ export default function AgentCreateModal({
   const [existingSessionId, setExistingSessionId] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [workspacePath, setWorkspacePath] = useState(".");
+  const [customWorkspace, setCustomWorkspace] = useState(false);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [startNow, setStartNow] = useState(false);
   const [status, setStatus] = useState("");
@@ -247,17 +248,35 @@ export default function AgentCreateModal({
             />
           </label>
           <label>
-            <span>폴더</span>
-            <div className="dc-agent-folder-field">
-              <Folder size={16} />
-              <input
-                value={workspacePath}
-                disabled={Boolean(existingSessionId)}
-                onChange={(event) => setWorkspacePath(event.currentTarget.value)}
-                placeholder="."
-              />
-            </div>
+            <span>작업 폴더</span>
+            <select
+              aria-label="작업 폴더"
+              value={customWorkspace ? "custom" : "server"}
+              disabled={Boolean(existingSessionId)}
+              onChange={(event) => {
+                const custom = event.currentTarget.value === "custom";
+                setCustomWorkspace(custom);
+                setWorkspacePath(custom ? "" : ".");
+              }}
+            >
+              <option value="server">서버 실행 폴더</option>
+              <option value="custom">다른 폴더 직접 입력</option>
+            </select>
           </label>
+          {customWorkspace && (
+            <label>
+              <span>폴더 경로</span>
+              <div className="dc-agent-folder-field">
+                <Folder size={16} />
+                <input
+                  value={workspacePath}
+                  disabled={Boolean(existingSessionId)}
+                  onChange={(event) => setWorkspacePath(event.currentTarget.value)}
+                  placeholder="/Users/name/project"
+                />
+              </div>
+            </label>
+          )}
           {selectedProvider && selectedProvider.controls.map((control) => {
             const options = effectiveControlOptions(selectedProvider, control, settings);
             return (

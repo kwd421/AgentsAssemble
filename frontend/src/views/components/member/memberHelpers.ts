@@ -105,20 +105,33 @@ export function inlineQuotaChips(agent: LiveAgent) {
       title: window.title,
     }));
   }
-  return [
-    {
+  const balances = Array.isArray(agent.account_balances) ? agent.account_balances : [];
+  if (balances.length > 0) {
+    return balances.slice(0, 2).map((balance) => ({
+      label: "잔액",
+      value: `${balance.amount} ${balance.currency}`,
+      tone: signalToneClass(agent.account_available === false ? "danger" : "muted"),
+      title: `DeepSeek account balance: ${balance.amount} ${balance.currency}`,
+    }));
+  }
+  const legacy = [];
+  if (String(agent.quota_5h || "").trim()) {
+    legacy.push({
       label: "5h",
-      value: String(agent.quota_5h || "").trim() || "—",
+      value: String(agent.quota_5h).trim(),
       tone: signalToneClass("muted"),
       title: "5-hour usage",
-    },
-    {
+    });
+  }
+  if (String(agent.quota_1w || "").trim()) {
+    legacy.push({
       label: "1w",
-      value: String(agent.quota_1w || "").trim() || "—",
+      value: String(agent.quota_1w).trim(),
       tone: signalToneClass("muted"),
       title: "1-week usage",
-    },
-  ];
+    });
+  }
+  return legacy;
 }
 
 export function signalTone(tone: "accent" | "online" | "idle" | "danger" | "muted") {
