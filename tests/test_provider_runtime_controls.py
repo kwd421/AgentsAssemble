@@ -130,7 +130,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         self.assertNotIn("command", codex)
         self.assertNotIn("resolved_executable", codex)
 
-    def test_claude_catalog_distinguishes_exact_models_from_latest_aliases(self):
+    def test_claude_catalog_exposes_only_exact_models(self):
         catalog = ProviderCapabilityCatalog(
             runner=lambda _command, _timeout: (0, "Claude help", ""),
             resolver=lambda executable: f"/bin/{executable}",
@@ -142,7 +142,9 @@ class ProviderRuntimeControlTests(unittest.TestCase):
 
         self.assertEqual(model["default_value"], "claude-haiku-4-5")
         self.assertEqual(options["claude-sonnet-4-6"], "Claude Sonnet 4.6")
-        self.assertEqual(options["sonnet"], "Sonnet (latest alias)")
+        self.assertNotIn("sonnet", options)
+        self.assertNotIn("opus", options)
+        self.assertNotIn("haiku", options)
 
         revision = str(catalog.snapshot()["catalog_revision"])
         common = {
@@ -155,15 +157,14 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             provider_id="claude",
             values={**common, "model": "claude-sonnet-4-6"},
         )
-        alias = catalog.validate_selection(
-            catalog_revision=revision,
-            provider_id="claude",
-            values={**common, "model": "sonnet"},
-        )
-
         self.assertEqual(exact.model_selection_kind, "exact")
-        self.assertEqual(alias.model_selection_kind, "alias")
         self.assertEqual(exact.catalog_revision, revision)
+        with self.assertRaises(ProviderCatalogSelectionError):
+            catalog.validate_selection(
+                catalog_revision=revision,
+                provider_id="claude",
+                values={**common, "model": "sonnet"},
+            )
 
     def test_catalog_rejects_model_effort_and_service_tier_mismatches(self):
         def runner(command: list[str], _timeout: float):

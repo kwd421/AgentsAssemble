@@ -4,7 +4,7 @@ Status: generated architecture inventory
 
 Generator: `python3 scripts/generate_package_map.py`
 
-Source fingerprint: `153de2151f26ad43`
+Source fingerprint: `9e6482119643c87b`
 
 This file describes current evidence and proposed ownership. It does not by
 itself authorize a module move or a product behavior change.
@@ -595,7 +595,7 @@ itself authorize a module move or a product behavior change.
 | `agentsassemble.providers.bridge_report_tracker` | `agentsassemble/providers/bridge_report_tracker.py` | 100 | providers | current | `agentsassemble.providers.bridge_protocol` | 2 | - | test-import:2 | `tests/test_bridge_report_tracker.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.bridges` | `agentsassemble/providers/bridges/__init__.py` | 1 | providers | current | - | 0 | - | test-import:1 | `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.bridges.claude_code_bridge` | `agentsassemble/providers/bridges/claude_code_bridge.py` | 128 | providers | current | - | 2 | - | test-import:2, monkeypatch:1 | `tests/test_claude_code_bridge.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
-| `agentsassemble.providers.capabilities` | `agentsassemble/providers/capabilities.py` | 699 | providers | current | `agentsassemble.providers.launch_specs`, `agentsassemble.providers.process_environment` | 4 | `call:ProviderCapabilityCatalog@691` | test-import:5 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py`, `tests/test_room_agent_creation.py`, `+2` | `providers/` | in-target-package |
+| `agentsassemble.providers.capabilities` | `agentsassemble/providers/capabilities.py` | 696 | providers | current | `agentsassemble.providers.launch_specs`, `agentsassemble.providers.process_environment` | 4 | `call:ProviderCapabilityCatalog@688` | test-import:5 | `tests/test_provider_package.py`, `tests/test_provider_runtime_controls.py`, `tests/test_room_agent_creation.py`, `+2` | `providers/` | in-target-package |
 | `agentsassemble.providers.catalog` | `agentsassemble/providers/catalog.py` | 194 | providers | current | - | 5 | - | test-import:2 | `tests/test_provider_catalog.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.claude_resident` | `agentsassemble/providers/claude_resident.py` | 241 | providers | current | - | 5 | `call:compile@20`, `call:compile@30` | test-import:2 | `tests/test_claude_resident.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |
 | `agentsassemble.providers.claude_transcript` | `agentsassemble/providers/claude_transcript.py` | 165 | providers | current | - | 2 | - | test-import:2 | `tests/test_claude_transcript.py`, `tests/test_provider_package.py` | `providers/` | in-target-package |

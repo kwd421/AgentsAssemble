@@ -132,8 +132,7 @@ describe("AgentCreateModal", () => {
 
     await userEvent.click(screen.getByRole("listitem", { name: "Claude Code" }));
     const model = screen.getByRole("combobox", { name: "모델" });
-    expect(screen.getByRole("option", { name: "Claude Sonnet 4.6 · claude-sonnet-4-6" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "Sonnet (latest alias) · sonnet" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Claude Sonnet 4.6" })).toBeTruthy();
 
     await userEvent.selectOptions(model, "claude-sonnet-4-6");
     await userEvent.click(screen.getByRole("button", { name: "추가하고 시작" }));
@@ -407,7 +406,6 @@ function claudeProvider(): NativeCliProviderAvailability {
         options: [
           { value: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
           { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-          { value: "sonnet", label: "Sonnet (latest alias)" },
         ],
       },
     ],

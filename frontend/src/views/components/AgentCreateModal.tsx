@@ -337,9 +337,6 @@ export default function AgentCreateModal({
             {selectedProvider.discovery_error || "모델 목록을 불러오지 못했습니다"}
           </p>
         )}
-        {selectedProvider?.catalog_source === "static_manifest" && (
-          <p className="dc-agent-create-note">전체 모델 ID와 최신 모델 별칭을 구분해 표시합니다.</p>
-        )}
         {selectedProviderMissing && (
           <p className="dc-agent-create-status">선택한 provider가 현재 catalog에 없습니다.</p>
         )}
@@ -399,7 +396,7 @@ function ProviderControlField({
         )}
         {options.map((option) => (
           <option key={`${control.key}:${option.value || "default"}`} value={option.value}>
-            {control.key === "model" && option.label !== option.value
+            {control.key === "model" && !equivalentModelNames(option.label, option.value)
               ? `${option.label} · ${option.value}`
               : option.label}
           </option>
@@ -407,6 +404,12 @@ function ProviderControlField({
       </select>
     </label>
   );
+}
+
+function equivalentModelNames(label: string, value: string): boolean {
+  const normalized = (text: string) =>
+    text.normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  return normalized(label) === normalized(value);
 }
 
 function initializeProviderSettings(
