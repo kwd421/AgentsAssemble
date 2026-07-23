@@ -137,20 +137,44 @@ export function mergeServerRoomsIntoDock(
   currentRooms: RoomDockItem[],
   serverRooms: ServerRoomDockSource[]
 ): RoomDockItem[] {
-  const inactiveMeetingIds = new Set(
+  const serverRoomsByMeetingId = new Map(
     serverRooms
-      .filter((room) => !roomFromServerRoom(room))
-      .map((room) => String(room.room_id || "").trim())
-      .filter(Boolean)
+      .map((room) => [String(room.room_id || "").trim(), room] as const)
+      .filter(([meetingId]) => Boolean(meetingId))
   );
-  const serverMeetingIds = new Set(
-    serverRooms.map((room) => String(room.room_id || "").trim()).filter(Boolean)
-  );
-  const next = currentRooms.filter(
-    (room) => serverMeetingIds.has(room.meetingId) && !inactiveMeetingIds.has(room.meetingId)
-  );
+  const next: RoomDockItem[] = [];
+  let changed = false;
+
+  for (const room of currentRooms) {
+    const serverRoom = serverRoomsByMeetingId.get(room.meetingId);
+    const canonicalRoom = serverRoom ? roomFromServerRoom(serverRoom) : null;
+    if (!canonicalRoom) {
+      changed = true;
+      continue;
+    }
+    const reconciledRoom = {
+      ...room,
+      label: canonicalRoom.label,
+      topic: canonicalRoom.topic,
+      shortLabel: canonicalRoom.shortLabel,
+      icon: canonicalRoom.icon,
+      createdAt: canonicalRoom.createdAt,
+      tone: canonicalRoom.tone,
+    };
+    if (
+      room.label !== reconciledRoom.label ||
+      room.topic !== reconciledRoom.topic ||
+      room.shortLabel !== reconciledRoom.shortLabel ||
+      room.icon !== reconciledRoom.icon ||
+      room.createdAt !== reconciledRoom.createdAt ||
+      room.tone !== reconciledRoom.tone
+    ) {
+      changed = true;
+    }
+    next.push(reconciledRoom);
+  }
+
   const seenMeetingIds = new Set(next.map((room) => room.meetingId));
-  let changed = next.length !== currentRooms.length;
   for (const serverRoom of serverRooms) {
     const dockRoom = roomFromServerRoom(serverRoom);
     if (!dockRoom || seenMeetingIds.has(dockRoom.meetingId)) continue;

@@ -572,3 +572,98 @@ python3 scripts/check_package_architecture.py
 git diff --check
   passed
 ```
+
+### 12.9 Exact model selection and browser-state correction
+
+The Agent Session creation UI previously combined a human-readable model label
+and the provider model ID even when they represented the same exact model. For
+example, Codex rendered `GPT-5.6-Luna · gpt-5.6-luna`. Claude also exposed the
+moving `haiku`, `sonnet`, and `opus` aliases alongside exact model IDs.
+
+The creation catalog now exposes exact Claude model IDs only, while existing
+saved sessions that already contain an alias remain readable for compatibility.
+Equivalent display labels and IDs are rendered once. A headed browser confirmed
+the following current selections:
+
+```text
+Codex:
+  GPT-5.6-Sol
+  GPT-5.6-Terra
+  GPT-5.6-Luna
+  GPT-5.5
+  GPT-5.4
+  GPT-5.4-Mini
+  GPT-5.2
+  Codex Auto Review
+
+Claude:
+  Claude Haiku 4.5
+  Claude Sonnet 4.6
+  Claude Sonnet 5
+  Claude Opus 4.6
+```
+
+No provider session was started for this catalog-only correction, so this
+section does not claim a new real-provider smoke.
+
+The same browser inspection exposed two room-identity inconsistencies. Room
+appearance was initialized from the browser-local
+`agentsassemble.roomAppearances` value, and an existing room dock entry kept its
+browser-local `fresh` classification when the server registry returned the same
+room as a resident server room. This allowed Safari and Chrome to show different
+icon text and different room-rail icons for the same server room.
+
+Room appearance now starts from the canonical room-settings response instead of
+browser-local appearance storage. Server room hydration also reconciles an
+existing dock entry's label, topic, short label, icon, activity timestamp, and
+room tone instead of retaining stale local metadata. The local room dock remains
+a startup convenience during registry failure; once the server registry
+responds, the server projection wins.
+
+A headed browser was given a deliberately stale local appearance containing the
+icon label `응` and the ember preset. After reload, the stale value still existed
+in browser storage but the room rail and room card both rendered the server
+value `R`. This was a direct GUI manipulation check, not a new source-string or
+constant test.
+
+The fresh-browser check also found that Vite generated lazy chunk URLs under
+`/assets/` while the GUI server intentionally serves React assets under
+`/app/assets/`. Previously loaded browser cache hid the failure until the
+Friends view was opened in a new browser process. Vite now builds with
+`base: "/app/"`, and the server's build validator recognizes that canonical
+path. The Friends view lazy-loaded successfully and the built chunk returned
+HTTP 200. No `/assets/` compatibility fallback was added.
+
+Verification for this correction:
+
+```text
+python -m unittest tests.test_provider_runtime_controls
+  24 passed
+
+python -m unittest tests.test_frontend_runtime tests.test_cli_timeout_core
+  31 passed
+
+npm --prefix frontend test
+  22 files, 128 passed
+
+npm --prefix frontend run build
+  passed
+
+python3 scripts/generate_package_map.py --check
+python3 scripts/check_package_architecture.py
+git diff --check
+  passed
+```
+
+No new frontend test case was added for icon text, model-copy formatting, or
+Vite path strings. Existing behavior tests were adjusted only where their old
+whole-object expectation required stale browser metadata to survive server
+hydration.
+
+This correction does not complete browser credential hardening. Guest session
+state and device identity still use JavaScript-readable local storage, and the
+host token still uses JavaScript-readable session storage. Server authorization
+remains the enforcement boundary, but public deployment should move
+authentication credentials to server-issued `HttpOnly`, `Secure`, appropriately
+`SameSite` cookies and keep browser storage limited to non-authoritative UI
+preferences.

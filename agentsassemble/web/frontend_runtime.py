@@ -55,7 +55,7 @@ def _referenced_assets_present(index_path: Path, assets_dir: Path) -> bool:
         html = index_path.read_text(encoding="utf-8")
     except OSError:
         return False
-    refs = re.findall(r"""(?:src|href)=["']/assets/([^"']+)["']""", html)
+    refs = re.findall(r"""(?:src|href)=["']/(?:app/)?assets/([^"']+)["']""", html)
     if not refs:
         return False
     for ref in refs:

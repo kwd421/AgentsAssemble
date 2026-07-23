@@ -15,23 +15,6 @@ export const DEFAULT_ROOM_APPEARANCE: RoomAppearance = {
   inviteScope: "room",
 };
 
-export function loadRoomAppearances() {
-  try {
-    const raw = localStorage.getItem("agentsassemble.roomAppearances");
-    return raw ? (JSON.parse(raw) as Record<string, RoomAppearance>) : {};
-  } catch {
-    return {};
-  }
-}
-
-export function persistRoomAppearances(next: Record<string, RoomAppearance>) {
-  try {
-    localStorage.setItem("agentsassemble.roomAppearances", JSON.stringify(next));
-  } catch {
-    // Appearance preferences are local UI state; ignore storage failures.
-  }
-}
-
 export function roomAppearanceStyle(appearance: RoomAppearance): CSSProperties {
   return {
     "--room-banner-image": appearance.bannerImage

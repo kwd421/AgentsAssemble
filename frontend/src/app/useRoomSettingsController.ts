@@ -10,8 +10,6 @@ import {
 } from "../api";
 import {
   completeRoomAppearance,
-  loadRoomAppearances,
-  persistRoomAppearances,
   type RoomAppearance,
 } from "../lib/roomAppearance";
 import { roomSettingsKey, type RoomDockItem } from "../lib/roomDockModel";
@@ -66,9 +64,7 @@ export function useRoomSettingsController({
   onRoomMetadataLoaded,
   onMembersChanged,
 }: UseRoomSettingsControllerOptions) {
-  const [appearances, setAppearances] = useState<Record<string, RoomAppearance>>(
-    loadRoomAppearances
-  );
+  const [appearances, setAppearances] = useState<Record<string, RoomAppearance>>({});
   const [channelSettings, setChannelSettings] = useState<
     Record<string, Record<string, ChannelSettings>>
   >({});
@@ -307,9 +303,7 @@ export function useRoomSettingsController({
       const key = roomSettingsKey(room);
       const nextAppearance = completeRoomAppearance({ ...appearanceFor(room), ...updates });
       setAppearances((previous) => {
-        const next = { ...previous, [key]: nextAppearance };
-        persistRoomAppearances(next);
-        return next;
+        return { ...previous, [key]: nextAppearance };
       });
       const { notifications, ...globalUpdates } = updates;
       if (Object.keys(globalUpdates).length > 0) {

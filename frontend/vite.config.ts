@@ -5,6 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 const apiTarget = process.env.AGENTSASSEMBLE_API_TARGET ?? "http://127.0.0.1:8765";
 
 export default defineConfig({
+  base: "/app/",
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,

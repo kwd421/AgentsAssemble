@@ -314,7 +314,9 @@ describe("useRoomDirectory", () => {
       retryFetch.resolve({ rooms: [serverRoom(currentRoom.meetingId, "Current")] });
       await retryFetch.promise;
     });
-    expect(result.current.rooms).toEqual([currentRoom]);
+    expect(result.current.rooms.map((room) => room.meetingId)).toEqual([
+      currentRoom.meetingId,
+    ]);
     expect(apiMocks.fetchRooms).toHaveBeenCalledTimes(2);
     expect(
       persistenceMocks.persistRoomDockItems.mock.calls
@@ -360,7 +362,10 @@ describe("useRoomDirectory", () => {
       });
       await retryFetch.promise;
     });
-    expect(result.current.rooms).toEqual([initialRoom, flowRoom]);
+    expect(result.current.rooms.map((room) => room.meetingId)).toEqual([
+      initialRoom.meetingId,
+      flowRoom.meetingId,
+    ]);
     expect(apiMocks.fetchRooms).toHaveBeenCalledTimes(2);
     expect(
       persistenceMocks.persistRoomDockItems.mock.calls
