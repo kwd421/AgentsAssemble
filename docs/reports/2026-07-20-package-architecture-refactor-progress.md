@@ -470,3 +470,105 @@ contract such as persisted state, security, permissions, process lifetime,
 protocol compatibility, or a real user-visible workflow. Unit-test success
 cannot substitute for GUI, real-provider, or integration-boundary verification.
 The durable contributor rule is recorded in `AGENTS.md`.
+
+### 12.8 Latest-envelope real-provider verification
+
+The provider smoke was rerun after commit
+`137c35608d81a0f6712d1918d94d273a3237b6a4`, so this evidence covers the
+automatic room envelope after removal of the hidden speech and output-format
+directives.
+
+The first three-provider attempt failed on the first Codex turn when the
+interactive process exited with return code 0 before a structured assistant
+message was observed. This was recorded as a failed attempt, not success. A
+one-provider reproduction using the same executable, model, PTY settings, and
+neutral room packet then completed two warm turns with the same PID and clean
+`codex_session_jsonl` messages. A second three-provider run reached clean Codex
+and Grok room messages, then stopped because the local Claude CLI reported:
+
+```text
+Login expired · Please run /login
+```
+
+`claude auth status` independently reported `loggedIn: false`. No alternate
+Claude model, provider, API, or one-shot command was substituted. The runtime
+was corrected to classify both `login expired` and `please run /login` as
+provider authentication failures. A fresh real Claude attempt after the fix
+created only a `provider_turn_failed` error event; the login screen text was no
+longer emitted as an agent `message_final`.
+
+Before Claude was reauthenticated, the complete conversation/control evidence
+used Codex and Grok without claiming a three-provider pass:
+
+| Result | Evidence |
+| --- | --- |
+| Providers | Codex `gpt-5.6-luna` low/default; Grok `grok-4.5` low |
+| Public conversation | 10 finalized turns, 5 speaker cycles, 62.127 seconds |
+| Context | both agents saw the full bounded peer diff after warmup |
+| Routing | 0 visible at-mentions, no unexpected extra turns |
+| PID/session continuity | same provider PID for both agents |
+| Controls | pause/backlog/resume and participant kick passed for both |
+| Cleanup | both provider and bridge processes stopped; `alive_after_stop=false` |
+| TTFO | p50 4,074.4 ms; p95 7,402.2 ms |
+| Turn completion | p50 6,730.9 ms; p95 7,407.6 ms |
+| stderr | 0 bytes, 0 lines, 0 warnings for both |
+
+A headed browser connected to the smoke server at `127.0.0.1:8877`, selected
+`#general`, and observed canonical room messages from both agents, Grok's
+paragraph rendering, and the next Codex typing state while the real run was in
+progress. The browser did not drive a parallel debug transport.
+
+After the operator completed Claude's interactive login, `claude auth status`
+reported `loggedIn: true` with the first-party Claude subscription. The final
+three-provider run then passed:
+
+| Result | Final evidence |
+| --- | --- |
+| Providers | Codex `gpt-5.6-luna`, Grok `grok-4.5`, Claude `claude-sonnet-4-6`; all low reasoning |
+| Public conversation | 9 finalized turns, 3 speaker cycles, 68.973 seconds |
+| Context | all three agents saw the full bounded peer diff after warmup |
+| Routing | 0 visible at-mentions, no unexpected extra turns |
+| PID/session continuity | same provider PID for all three agents |
+| Controls | pause/backlog/resume and participant kick passed for all three |
+| Cleanup | every provider and bridge stopped; `alive_after_stop=false` |
+| TTFO | p50 5,367.6 ms; p95 9,506.1 ms |
+| Turn completion | p50 8,085.5 ms; p95 9,626.2 ms |
+| stderr | 0 bytes, 0 lines, 0 warnings for all three |
+
+The headed browser observed the final run through the same canonical room UI,
+including Codex and Grok finalized messages followed by Claude Sonnet 4.6's
+live typing state. Requested and provider-reported model IDs matched for all
+three providers. No fallback provider, model, transport, or one-shot mode was
+used.
+
+The full Python gate initially found two stale assertions left by the envelope
+change. The prompt-budget behavior test still had enough budget for two events
+after the envelope became shorter, so its fixture budget was reduced until it
+again exercised the intended omitted-event cursor boundary. A package test that
+asserted the removed English fallback phrase was deleted while retaining the
+JSON payload assertion. No new copy, source-string, constant, or numeric-value
+test was added.
+
+Final verification after those corrections:
+
+```text
+python3 -m unittest tests.test_live_cli
+  11 passed
+
+python3 -m unittest discover -s tests -t .
+  3,845 passed, 60 optional-environment skips
+
+npm --prefix frontend test
+  22 files, 128 passed
+
+npm --prefix frontend run build
+  passed
+
+npm --prefix frontend run test:e2e
+  4 Playwright scenarios passed
+
+python3 scripts/generate_package_map.py --check
+python3 scripts/check_package_architecture.py
+git diff --check
+  passed
+```

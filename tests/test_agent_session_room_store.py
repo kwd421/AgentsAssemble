@@ -2241,7 +2241,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             participant_id="agent-a",
             session_id="session-a",
             instruction="Reply to what you can see.",
-            max_prompt_chars=650,
+            max_prompt_chars=600,
         )
 
         included_ids = [event["id"] for event in packet["events"]]

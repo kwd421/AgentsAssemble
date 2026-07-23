@@ -209,7 +209,6 @@ class ProviderPackageTests(unittest.TestCase):
         fallback = owned_turn_input.agent_turn_prompt(
             {"room_id": "room-a", "current_turn_instruction": "안녕"}
         )
-        self.assertIn("one AgentsAssemble room turn", fallback)
         self.assertIn('"current_turn_instruction": "안녕"', fallback)
 
     def test_kiro_resident_root_module_exports_owned_adapter(self) -> None:

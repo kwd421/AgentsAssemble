@@ -788,7 +788,12 @@ def _terminal_fatal_error(response: bytes) -> str:
     folded = " ".join(_clean_terminal_text(response).casefold().split())
     if "invalid authentication credentials" in folded or "api error: 401" in folded:
         return "Provider authentication failed: run the provider's interactive login command."
-    if "authentication required" in folded or "not logged in" in folded:
+    if (
+        "authentication required" in folded
+        or "not logged in" in folded
+        or "login expired" in folded
+        or "please run /login" in folded
+    ):
         return "Provider authentication is required."
     return ""
 
