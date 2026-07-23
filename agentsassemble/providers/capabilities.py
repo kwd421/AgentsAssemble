@@ -689,6 +689,7 @@ def _claude_manifest_controls() -> list[dict[str, object]]:
                 _model_option("claude-haiku-4-5", "Claude Haiku 4.5", **relation),
                 _model_option("claude-sonnet-4-6", "Claude Sonnet 4.6", **relation),
                 _model_option("claude-sonnet-5", "Claude Sonnet 5", **relation),
+                _model_option("claude-opus-4-8", "Claude Opus 4.8", **relation),
                 _model_option("claude-opus-4-6", "Claude Opus 4.6", **relation),
             ],
             "claude-haiku-4-5",

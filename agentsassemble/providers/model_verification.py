@@ -8,6 +8,7 @@ import re
 _CLAUDE_RELEASE_MODEL = re.compile(r"^claude-(?:haiku|sonnet|opus)-\d+-\d+$")
 _CLAUDE_SNAPSHOT_SUFFIX = re.compile(r"^\d{8}$")
 _CLAUDE_PROVIDER_KINDS = frozenset({"claude", "claude_code"})
+_ANTIGRAVITY_PROVIDER_KINDS = frozenset({"antigravity", "antigravity_live_session"})
 
 
 def model_verification_status(
@@ -32,6 +33,12 @@ def model_verification_status(
         observed_model_id=observed_model_id,
     ):
         return "verified_provider_revision"
+    if _is_antigravity_display_for_exact_model(
+        provider_kind=provider_kind,
+        requested_model_id=requested_model_id,
+        observed_model_id=observed_model_id,
+    ):
+        return "verified_provider_display"
     return "mismatch"
 
 
@@ -67,3 +74,18 @@ def _is_claude_snapshot_for_release(
     return observed_model_id.startswith(prefix) and bool(
         _CLAUDE_SNAPSHOT_SUFFIX.fullmatch(observed_model_id.removeprefix(prefix))
     )
+
+
+def _is_antigravity_display_for_exact_model(
+    *,
+    provider_kind: str,
+    requested_model_id: str,
+    observed_model_id: str,
+) -> bool:
+    if provider_kind not in _ANTIGRAVITY_PROVIDER_KINDS:
+        return False
+    return _model_identity_tokens(requested_model_id) == _model_identity_tokens(observed_model_id)
+
+
+def _model_identity_tokens(value: str) -> tuple[str, ...]:
+    return tuple(re.findall(r"[a-z0-9]+", value.casefold()))

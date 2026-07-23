@@ -2228,12 +2228,15 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
             participant_id="human",
             content="FIRST-INCLUDED " + ("a" * 300),
         )
-        second = store.append_event(
-            "room-a",
-            "message_final",
-            participant_id="human",
-            content="SECOND-DEFERRED " + ("b" * 300),
-        )
+        later = [
+            store.append_event(
+                "room-a",
+                "message_final",
+                participant_id="human",
+                content=f"LATER-{index} " + (character * 300),
+            )
+            for index, character in enumerate(("b", "c", "d"), start=1)
+        ]
 
         packet = build_room_turn_packet(
             self.output_root,
@@ -2245,13 +2248,18 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         )
 
         included_ids = [event["id"] for event in packet["events"]]
-        self.assertEqual(included_ids, [first["id"]])
+        self.assertTrue(included_ids)
+        self.assertEqual(included_ids[0], first["id"])
+        self.assertLess(len(included_ids), 1 + len(later))
         self.assertIn("FIRST-INCLUDED", packet["provider_input"])
-        self.assertNotIn("SECOND-DEFERRED", packet["provider_input"])
-        self.assertEqual(packet["provider_visible_event_count"], 1)
-        self.assertEqual(packet["last_provider_sync_event_id_after"], first["id"])
-        self.assertEqual(packet["last_provider_sync_seq_after"], first["seq"])
-        self.assertLess(first["seq"], second["seq"])
+        self.assertNotIn("LATER-3", packet["provider_input"])
+        self.assertEqual(packet["provider_visible_event_count"], len(included_ids))
+        self.assertEqual(packet["last_provider_sync_event_id_after"], included_ids[-1])
+        self.assertEqual(
+            packet["last_provider_sync_seq_after"],
+            packet["events"][-1]["seq"],
+        )
+        self.assertLess(packet["last_provider_sync_seq_after"], later[-1]["seq"])
 
     def test_media_is_not_implicitly_sent_without_selection_or_room_reference(self):
         store = RoomStore(self.output_root)

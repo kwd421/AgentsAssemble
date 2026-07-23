@@ -85,6 +85,26 @@ class ProviderModelVerificationTests(unittest.TestCase):
             "mismatch",
         )
 
+    def test_antigravity_exact_model_accepts_its_display_label(self) -> None:
+        self.assertEqual(
+            model_verification_status(
+                requested_model_id="gemini-3.6-flash-low",
+                observed_model_id="Gemini 3.6 Flash (Low)",
+                selection_kind="exact",
+                observation_policy="required",
+                provider_kind="antigravity_live_session",
+            ),
+            "verified_provider_display",
+        )
+        self.assertFalse(
+            model_observation_matches(
+                requested_model_id="gemini-3.6-flash-low",
+                observed_model_id="Gemini 3.6 Flash (Medium)",
+                selection_kind="exact",
+                provider_kind="antigravity_live_session",
+            )
+        )
+
     def test_mismatch_and_missing_ids_do_not_match(self) -> None:
         self.assertFalse(
             model_observation_matches(

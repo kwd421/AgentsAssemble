@@ -154,6 +154,7 @@ class ProviderRuntimeControlTests(unittest.TestCase):
 
         self.assertEqual(model["default_value"], "claude-haiku-4-5")
         self.assertEqual(options["claude-sonnet-4-6"], "Claude Sonnet 4.6")
+        self.assertEqual(options["claude-opus-4-8"], "Claude Opus 4.8")
         self.assertNotIn("sonnet", options)
         self.assertNotIn("opus", options)
         self.assertNotIn("haiku", options)

@@ -268,7 +268,6 @@ def room_memory_from_session(session: dict[str, object]) -> dict[str, object]:
 def _provider_room_identity_text(identity: dict[str, object]) -> str:
     display_name = clean_lobby_text(identity.get("display_name"), limit=80)
     room_name = clean_lobby_text(identity.get("room_name"), limit=128)
-    participant_id = clean_lobby_text(identity.get("participant_id"), limit=128)
     if not display_name and not room_name:
         return ""
     lines = []
@@ -276,8 +275,6 @@ def _provider_room_identity_text(identity: dict[str, object]) -> str:
         lines.append(f"Your display name in this room is: {display_name}")
     if room_name:
         lines.append(f"The room name is: {room_name}")
-    if participant_id:
-        lines.append(f"Your stable room participant id is: {participant_id}")
     lines.append("Use the display name above when someone asks who you are in this room.")
     return "\n".join(lines)
 

@@ -683,6 +683,61 @@ class TranscriptMessageSourceTests(unittest.TestCase):
         self.assertEqual(second.content, "second answer after truncated input")
         self.assertTrue(source.describe()["message_source_bound"])
 
+    def test_antigravity_source_binds_first_turn_when_provider_truncates_long_input(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            transcript = (
+                root
+                / ".gemini"
+                / "antigravity-cli"
+                / "brain"
+                / "conversation-a"
+                / ".system_generated"
+                / "logs"
+                / "transcript.jsonl"
+            )
+            transcript.parent.mkdir(parents=True)
+            prefix = "[Agent Session bootstrap]\n" + ("earlier room context " * 80)
+            suffix = "\nlatest room message " + ("final instruction " * 40)
+            delivered = prefix + ("omitted middle " * 200) + suffix
+            source = AntigravityTranscriptMessageSource(home=root, cwd=workspace)
+            source.prepare_start()
+            source.begin_turn(delivered)
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "USER_INPUT",
+                                "source": "USER_EXPLICIT",
+                                "status": "DONE",
+                                "content": (
+                                    f"<USER_REQUEST>{prefix.rstrip()}\n"
+                                    f"<truncated 3000 bytes>\n{suffix.lstrip()}</USER_REQUEST>"
+                                ),
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "PLANNER_RESPONSE",
+                                "source": "MODEL",
+                                "status": "DONE",
+                                "content": "answer from the first long turn",
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            snapshot = source.poll(b"", quiet=True)
+
+        self.assertEqual(snapshot.content, "answer from the first long turn")
+        self.assertTrue(source.describe()["message_source_bound"])
+
     def test_grok_source_reads_assistant_content_from_chat_history(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

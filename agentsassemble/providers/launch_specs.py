@@ -362,7 +362,7 @@ def _antigravity_command(
     if permission_mode == "workspace_write":
         command.extend(("--mode", "accept-edits"))
     else:
-        command.extend(("--mode", "plan", "--sandbox"))
+        command.append("--sandbox")
     return tuple(command)
 
 

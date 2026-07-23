@@ -408,6 +408,15 @@ class AntigravityTranscriptMessageSource(_JsonlOffsetMessageSource):
             or str(entry.get("type") or "") == "USER_INPUT"
         ]
 
+    def _contains_turn_input(self, text: str, *, expected_input: str) -> bool:
+        inputs = [_normalize_turn_input(value) for value in self._turn_input_texts(text)]
+        if not expected_input:
+            return any(inputs)
+        return any(
+            _antigravity_turn_input_matches(expected_input, observed)
+            for observed in inputs
+        )
+
 
 class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
     """Read only assistant text from Claude Code's structured session log."""
@@ -695,6 +704,23 @@ def _antigravity_user_request(value: object) -> str:
     request = _tagged_body(str(value or ""), "USER_REQUEST")
     request = re.sub(r"^\s*/plan\s+", "", request, count=1, flags=re.IGNORECASE)
     return re.sub(r"\s*/plan\s*$", "", request, count=1, flags=re.IGNORECASE).strip()
+
+
+def _antigravity_turn_input_matches(expected: str, observed: str) -> bool:
+    if observed == expected:
+        return True
+    marker = re.search(r"\n?<truncated \d+ bytes>\n?", observed)
+    if marker is None:
+        return False
+    prefix = observed[: marker.start()].rstrip("\n")
+    suffix = observed[marker.end() :].lstrip("\n")
+    suffix_anchor = suffix[-512:]
+    return (
+        len(prefix) >= 128
+        and len(suffix_anchor) >= 128
+        and expected.startswith(prefix)
+        and expected.endswith(suffix_anchor)
+    )
 
 
 def _antigravity_selected_model(value: object) -> str:

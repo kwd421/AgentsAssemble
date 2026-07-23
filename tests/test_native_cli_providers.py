@@ -82,6 +82,8 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
 
         self.assertEqual(antigravity.provider_kind, "antigravity_live_session")
         self.assertEqual(antigravity.command[0], "agy")
+        self.assertIn("--sandbox", antigravity.command)
+        self.assertNotIn("--mode", antigravity.command)
         self.assertEqual(claude.provider_kind, "claude_code")
         self.assertEqual(claude.command[:3], ("claude", "--model", "haiku"))
 
