@@ -1,5 +1,10 @@
 # Plan: codebase map — visual finish + unified search
 
+**Status: V-1, V-2, V-3, S-1 and S-2 are done (`51b252fa`). Nothing here is
+outstanding.** The rules and quirks below are kept because they apply to any
+future change to the generator; the task descriptions are kept as the record of
+what was asked for. Read "Out of scope" before proposing the next step.
+
 Executor-facing plan. Written so an agent with no prior context can pick this
 up. Every task is independent unless marked otherwise; do them in order.
 
@@ -44,7 +49,7 @@ Design language now in force: OKLCH tokens in `:root` (`--primary`, `--ok`,
 **magnitude**, motion tokens `--dur-*`/`--ease*`, everything respects
 `prefers-reduced-motion`.
 
-## Task V-1 — de-duplicate the Architecture tab (small)
+## Task V-1 (done) — de-duplicate the Architecture tab (small)
 
 The hero now states lines/modules/files, but the old `.statgrid` right under it
 repeats the same four numbers. In the Architecture section markup keep the
@@ -57,7 +62,7 @@ whatever container remains).
 Verify: regenerate, run tests, screenshot Architecture top in dark and light
 (`colorScheme` both) — no duplicated numbers, no layout gap where the grid was.
 
-## Task V-2 — light-mode pass on the hero (small)
+## Task V-2 (done) — light-mode pass on the hero (small)
 
 The aurora opacities (`.aurora`, `.aurora i:nth-child(n)`) were tuned on dark.
 On light the blobs may look washed or invisible. Add a
@@ -67,7 +72,7 @@ On light the blobs may look washed or invisible. Add a
 
 Verify: screenshots of the hero in both schemes; the count must stay legible.
 
-## Task V-3 — stagger reveals (small, optional polish)
+## Task V-3 (done) — stagger reveals (small, optional polish)
 
 Package cards in the graph and finding cards in Health appear all at once.
 Findings already reveal on scroll via `animation-timeline: view()`. Add a
@@ -76,7 +81,7 @@ load-time stagger for `.hero-facts span` and the flowstrip rows: an
 element by the JS that renders them. Guard with
 `@media (prefers-reduced-motion: no-preference)`.
 
-## Task S-1 — unified search (the main remaining feature)
+## Task S-1 (done) — unified search (the main remaining feature)
 
 One search across everything, opened with `/` and a header button, replacing
 nothing (the Module Explorer filter and the Connections jump stay).
@@ -110,7 +115,7 @@ Verify: extend the jsdom smoke test — dispatch a `/` keydown, assert the
 overlay opens; type `providers`, assert result rows > 0; Enter, assert the
 drawer opened (`#drawer.open`). Screenshot open state in dark mode.
 
-## Task S-2 — keyboard hint line (tiny, after S-1)
+## Task S-2 (done) — keyboard hint line (tiny, after S-1)
 
 Add `/ search` to the zoomhint or a one-line footer hint so the shortcut is
 discoverable. Regenerate, tests.
