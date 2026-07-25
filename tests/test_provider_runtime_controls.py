@@ -258,9 +258,21 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             [(option["value"], option["label"]) for option in model["options"]],
             [
                 ("auto", "Auto (current, default)"),
-                ("gpt-5.6-luna-low", "GPT-5.6 Luna Low"),
+                ("gpt-5.6-luna", "GPT 5.6 Luna"),
             ],
         )
+        cursor_effort = next(
+            control for control in cursor["controls"] if control["key"] == "reasoning_effort"
+        )
+        self.assertEqual(
+            [option["value"] for option in cursor_effort["options"]],
+            ["default", "low"],
+        )
+        # auto exposes only the plain effort; gpt-5.6-luna requires an explicit effort.
+        auto_option = next(option for option in model["options"] if option["value"] == "auto")
+        luna_option = next(option for option in model["options"] if option["value"] == "gpt-5.6-luna")
+        self.assertEqual(auto_option["metadata"]["reasoning_efforts"], ["default"])
+        self.assertEqual(luna_option["metadata"]["reasoning_efforts"], ["low"])
 
     def test_claude_catalog_exposes_only_exact_models(self):
         catalog = ProviderCapabilityCatalog(

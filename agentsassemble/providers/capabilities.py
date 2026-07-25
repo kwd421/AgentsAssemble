@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from agentsassemble.providers.claude_catalog import discover_claude_model_ids
-from agentsassemble.providers.launch_specs import NATIVE_CLI_PROVIDER_CATALOG
+from agentsassemble.providers.launch_specs import NATIVE_CLI_PROVIDER_CATALOG, split_cursor_model
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 
 
@@ -693,35 +693,100 @@ def _grok_controls(output: str) -> list[dict[str, object]]:
     ]
 
 
+_CURSOR_EFFORT_LABELS = {
+    "default": "기본",
+    "minimal": "Minimal",
+    "none": "None",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "xhigh": "Extra High",
+    "max": "Max",
+    "thinking": "Thinking",
+    "thinking-low": "Thinking Low",
+    "thinking-medium": "Thinking Medium",
+    "thinking-high": "Thinking High",
+    "thinking-xhigh": "Thinking Extra High",
+}
+
+
+def _cursor_effort_label(token: str) -> str:
+    return _CURSOR_EFFORT_LABELS.get(token, _provider_model_label(token))
+
+
 def _cursor_controls(output: str) -> list[dict[str, object]]:
-    models: list[tuple[str, str]] = []
+    grouped: dict[str, dict[str, object]] = {}
+    order: list[str] = []
     for line in output.splitlines():
         match = re.match(r"^\s*([A-Za-z0-9._:/-]+)\s+-\s+(.+?)\s*$", line)
         if not match:
             continue
-        models.append((match.group(1), match.group(2)))
-    if not models:
+        base, effort, fast = split_cursor_model(match.group(1))
+        if not base:
+            continue
+        if base not in grouped:
+            grouped[base] = {"efforts": [], "has_fast": False, "plain_label": ""}
+            order.append(base)
+        entry = grouped[base]
+        efforts = entry["efforts"]
+        assert isinstance(efforts, list)
+        effort_token = effort or "default"
+        if effort_token not in efforts:
+            efforts.append(effort_token)
+        if fast:
+            entry["has_fast"] = True
+        if not effort and not fast:
+            entry["plain_label"] = match.group(2).strip()
+    if not order:
         return []
-    models = list(dict.fromkeys(models))
-    values = {value for value, _label in models}
-    default = "auto" if "auto" in values else models[0][0]
-    return [
+    default = "auto" if "auto" in grouped else order[0]
+    all_efforts = _unique(
+        [token for base in order for token in list(grouped[base]["efforts"])]
+    )
+    real_efforts = [token for token in all_efforts if token != "default"]
+    has_any_fast = any(bool(grouped[base]["has_fast"]) for base in order)
+    controls: list[dict[str, object]] = [
         _control(
             "model",
             "모델",
             [
                 _model_option(
-                    value,
-                    label,
-                    selection_kind="alias" if value == "auto" else "exact",
+                    base,
+                    str(grouped[base]["plain_label"]) or _provider_model_label(base),
+                    selection_kind="alias" if base == "auto" else "exact",
+                    relation_scope="per_model",
+                    reasoning_efforts=list(grouped[base]["efforts"]),
+                    service_tiers=["fast"] if grouped[base]["has_fast"] else [],
                 )
-                for value, label in models
+                for base in order
             ],
             default,
             kind="combobox",
         ),
-        _permission_control(),
     ]
+    if real_efforts:
+        controls.append(
+            _control(
+                "reasoning_effort",
+                "추론 강도",
+                [
+                    _option("default", "기본"),
+                    *[_option(token, _cursor_effort_label(token)) for token in real_efforts],
+                ],
+                "default",
+            )
+        )
+    if has_any_fast:
+        controls.append(
+            _control(
+                "service_tier",
+                "응답 속도",
+                [_option("default", "기본"), _option("fast", "Fast")],
+                "default",
+            )
+        )
+    controls.append(_permission_control())
+    return controls
 
 
 def _opencode_models(output: str) -> list[str]:

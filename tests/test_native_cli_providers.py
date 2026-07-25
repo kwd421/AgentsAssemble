@@ -12,6 +12,7 @@ from agentsassemble.providers.launch_specs import (
     native_cli_provider_spec_from_config,
     native_cli_provider_spec_from_payload,
     native_cli_provider_spec_from_stored_session_strict,
+    split_cursor_model,
     validate_native_cli_provider_spec,
 )
 
@@ -38,6 +39,88 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         tools_index = specs["claude"].command.index("--tools")
         self.assertEqual(specs["claude"].command[tools_index + 1], "")
         self.assertIn("--safe-mode", specs["claude"].command)
+
+    def test_cursor_splits_effort_and_fast_out_of_the_model_slug(self):
+        cases = {
+            "auto": ("auto", "", False),
+            "gpt-5.6-luna-high-fast": ("gpt-5.6-luna", "high", True),
+            "claude-opus-4-8-thinking-xhigh": ("claude-opus-4-8", "thinking-xhigh", False),
+            "claude-opus-4-8-thinking-high-fast": ("claude-opus-4-8", "thinking-high", True),
+            # Cursor also uses the reversed "-effort-thinking" ordering.
+            "claude-4.6-sonnet-medium-thinking": ("claude-4.6-sonnet", "medium-thinking", False),
+            "claude-4.5-sonnet-thinking": ("claude-4.5-sonnet", "thinking", False),
+            "gpt-5.2": ("gpt-5.2", "", False),
+            "composer-2.5-fast": ("composer-2.5", "", True),
+            "gpt-5.4-nano-none": ("gpt-5.4-nano", "none", False),
+            "kimi-k2.7-code": ("kimi-k2.7-code", "", False),
+        }
+        for slug, expected in cases.items():
+            with self.subTest(slug=slug):
+                self.assertEqual(split_cursor_model(slug), expected)
+
+    def test_cursor_recombines_the_ui_trio_into_the_exact_slug(self):
+        definition = native_cli_provider_definition("cursor")
+        self.assertIsNotNone(definition)
+
+        spec = definition.make_selected_spec(
+            agent_id="cursor-opus",
+            display_name="Cursor Opus",
+            cwd=".",
+            model="claude-opus-4-8",
+            reasoning_effort="high",
+            service_tier="fast",
+            permission_mode="meeting_read_only",
+        )
+
+        self.assertEqual(spec.model, "claude-opus-4-8")
+        self.assertEqual(spec.reasoning_effort, "high")
+        self.assertEqual(spec.service_tier, "fast")
+        self.assertEqual(spec.requested_model_id, "claude-opus-4-8-high-fast")
+        self.assertEqual(
+            spec.command,
+            (
+                "cursor-agent",
+                "--model",
+                "claude-opus-4-8-high-fast",
+                "--sandbox",
+                "enabled",
+                "--mode",
+                "ask",
+            ),
+        )
+
+    def test_cursor_plain_effort_leaves_the_base_slug_untouched(self):
+        definition = native_cli_provider_definition("cursor")
+
+        spec = definition.make_selected_spec(
+            agent_id="cursor-51",
+            display_name="Cursor 5.1",
+            cwd=".",
+            model="gpt-5.1",
+            reasoning_effort="default",
+            service_tier="default",
+            permission_mode="meeting_read_only",
+        )
+
+        self.assertEqual(spec.requested_model_id, "gpt-5.1")
+        self.assertIn("--model", spec.command)
+        self.assertEqual(spec.command[spec.command.index("--model") + 1], "gpt-5.1")
+
+    def test_cursor_accepts_a_legacy_full_slug_as_the_model(self):
+        definition = native_cli_provider_definition("cursor")
+
+        spec = definition.make_selected_spec(
+            agent_id="cursor-legacy",
+            display_name="Cursor Legacy",
+            cwd=".",
+            model="cursor-grok-4.5-medium-fast",
+            permission_mode="meeting_read_only",
+        )
+
+        self.assertEqual(spec.model, "cursor-grok-4.5")
+        self.assertEqual(spec.reasoning_effort, "medium")
+        self.assertEqual(spec.service_tier, "fast")
+        self.assertEqual(spec.requested_model_id, "cursor-grok-4.5-medium-fast")
 
     def test_claude_workspace_write_uses_native_accept_edits_mode(self):
         definition = native_cli_provider_definition("claude")

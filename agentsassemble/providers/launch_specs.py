@@ -147,6 +147,13 @@ class NativeCliProviderDefinition:
             )
             selected_effort = selected_effort or inferred_effort
         selected_service_tier = clean_room_text(service_tier, limit=32)
+        if self.provider_id == "cursor":
+            selected_model, inferred_effort, inferred_fast = split_cursor_model(
+                selected_model,
+            )
+            selected_effort = selected_effort or inferred_effort
+            if inferred_fast and not selected_service_tier:
+                selected_service_tier = "fast"
         selected_variant = clean_room_text(variant, limit=64)
         selected_permission = clean_room_text(permission_mode, limit=64)
         selected_kind = clean_room_text(model_selection_kind, limit=16)
@@ -181,6 +188,7 @@ class NativeCliProviderDefinition:
                 self.provider_id,
                 selected_model,
                 selected_effort,
+                selected_service_tier,
             ),
             model_selection_kind=selected_kind,
             model_observation_policy=self.model_observation_policy,
@@ -407,9 +415,11 @@ def _split_antigravity_model(model: str) -> tuple[str, str]:
     return clean_model, ""
 
 
-def _requested_model_id(provider_id: str, model: str, effort: str) -> str:
+def _requested_model_id(provider_id: str, model: str, effort: str, service_tier: str = "") -> str:
     if provider_id == "antigravity":
         return _antigravity_effective_model(model, effort)
+    if provider_id == "cursor":
+        return _cursor_effective_model(model, effort, service_tier)
     return model
 
 
@@ -454,8 +464,8 @@ def _claude_command(
 
 def _cursor_command(
     model: str,
-    _effort: str,
-    _service_tier: str,
+    effort: str,
+    service_tier: str,
     _variant: str,
     permission_mode: str,
 ) -> tuple[str, ...]:
@@ -464,13 +474,58 @@ def _cursor_command(
     command = [
         "cursor-agent",
         "--model",
-        model,
+        _cursor_effective_model(model, effort, service_tier),
         "--sandbox",
         "enabled",
     ]
     if permission_mode == "meeting_read_only":
         command.extend(("--mode", "ask"))
     return tuple(command)
+
+
+# Cursor bakes reasoning effort and the "fast" flag into its model slugs, e.g.
+# ``gpt-5.6-luna-high-fast`` or ``claude-opus-4-8-thinking-xhigh``. Cursor uses a
+# couple of orderings (``base-thinking-high`` and ``base-medium-thinking``), so we
+# peel recognised trailing tokens off the end and treat everything between the
+# base and the optional ``-fast`` as the reasoning suffix. We surface a base
+# model / reasoning / fast trio in the UI and recombine here so the CLI still
+# receives the exact slug Cursor advertised.
+_CURSOR_PLAIN_EFFORT = "default"
+_CURSOR_EFFORT_TOKENS = frozenset(
+    {"thinking", "minimal", "none", "low", "medium", "high", "xhigh", "max"}
+)
+
+
+def split_cursor_model(model: str) -> tuple[str, str, bool]:
+    """Split a Cursor slug into (base_model, reasoning_effort, fast)."""
+
+    clean = clean_room_text(model, limit=128)
+    fast = False
+    if clean.casefold().endswith("-fast"):
+        clean = clean[: -len("-fast")]
+        fast = True
+    parts = clean.split("-")
+    cut = len(parts)
+    while cut > 1 and parts[cut - 1].casefold() in _CURSOR_EFFORT_TOKENS:
+        cut -= 1
+    base = "-".join(parts[:cut])
+    effort = "-".join(parts[cut:])
+    if not base:
+        return clean, "", fast
+    return base, effort, fast
+
+
+def _cursor_effective_model(model: str, effort: str, service_tier: str) -> str:
+    clean_model = clean_room_text(model, limit=128)
+    result = clean_model
+    clean_effort = clean_room_text(effort, limit=32).casefold()
+    if clean_effort and clean_effort != _CURSOR_PLAIN_EFFORT:
+        marker = f"-{clean_effort}"
+        if not result.casefold().endswith(marker):
+            result = f"{result}{marker}"
+    if clean_room_text(service_tier, limit=32).casefold() == "fast" and not result.casefold().endswith("-fast"):
+        result = f"{result}-fast"
+    return result
 
 
 def _codex_permissions(permission_mode: str) -> tuple[str, str]:
