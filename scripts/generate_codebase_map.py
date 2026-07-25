@@ -1577,9 +1577,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     pointer-events: none;
     background:
       radial-gradient(60rem 32rem at 8% -8%,
-        color-mix(in oklch, var(--primary) 12%, transparent), transparent 68%),
+        color-mix(in oklch, var(--primary) 14%, transparent), transparent 68%),
       radial-gradient(48rem 30rem at 100% -4%,
-        color-mix(in oklch, var(--violet) 9%, transparent), transparent 66%);
+        color-mix(in oklch, var(--violet) 11%, transparent), transparent 66%);
+  }
+
+  /* Film grain over everything: it stops large gradients from banding and gives
+     the flat panels a surface. Inline SVG noise, so nothing is fetched. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    pointer-events: none;
+    opacity: .035;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
   header, main, .drawer, footer { position: relative; z-index: 1; }
@@ -1729,6 +1742,99 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 }
 
 @layer components {
+  /* Opening statement: the size of the codebase, said once, large. */
+  .hero {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    margin: 0 0 var(--sp-6);
+    padding: clamp(var(--sp-6), 6vw, 5rem) clamp(var(--sp-4), 4vw, 3.5rem);
+    border: 1px solid var(--border);
+    border-radius: var(--r-4);
+    background: linear-gradient(180deg, var(--surface-2), var(--surface));
+    box-shadow: var(--shadow-3);
+  }
+
+  /* Slow drifting light behind the figure. */
+  .aurora { position: absolute; inset: -30%; z-index: -1; filter: blur(70px);
+    opacity: .62; }
+  .aurora i {
+    position: absolute;
+    width: 46%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    opacity: .42;
+    animation: drift 24s var(--ease) infinite alternate;
+  }
+  .aurora i:nth-child(1) { left: 2%; top: 6%; background: var(--primary); }
+  .aurora i:nth-child(2) { left: 38%; top: 34%; background: var(--violet);
+    animation-duration: 31s; animation-delay: -6s; opacity: .3; }
+  .aurora i:nth-child(3) { left: 66%; top: -6%; background: var(--ok);
+    animation-duration: 27s; animation-delay: -14s; opacity: .2; }
+  @keyframes drift {
+    to { transform: translate3d(9%, 7%, 0) scale(1.18); }
+  }
+  @media (prefers-reduced-motion: reduce) { .aurora i { animation: none; } }
+
+  .kicker {
+    margin: 0 0 var(--sp-3);
+    color: var(--text-dim);
+    font-size: var(--step--1);
+    font-weight: 640;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+  }
+
+  .hero-figure {
+    margin: 0;
+    font-size: clamp(3.2rem, 11vw, 8.5rem);
+    font-weight: 720;
+    line-height: .92;
+    letter-spacing: -0.045em;
+    background: linear-gradient(160deg, var(--text) 26%,
+      color-mix(in oklch, var(--primary) 78%, var(--text)) 74%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hero-lede {
+    margin: var(--sp-3) 0 0;
+    max-width: 34ch;
+    color: var(--text-dim);
+    font-size: var(--step-2);
+    font-weight: 460;
+    letter-spacing: -0.015em;
+  }
+  .hero-lede b { color: var(--text); font-weight: 620; }
+
+  .hero-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    margin-top: var(--sp-5);
+  }
+  .hero-facts span {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 7px;
+    padding: 7px 14px;
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    background: color-mix(in oklch, var(--surface) 70%, transparent);
+    backdrop-filter: blur(10px);
+    font-size: var(--step--1);
+    color: var(--text-dim);
+  }
+  .hero-facts b {
+    color: var(--text);
+    font-size: var(--step-1);
+    font-weight: 660;
+    letter-spacing: -0.02em;
+  }
+  .hero-facts span[data-tone] b { color: var(--tone); }
+
   .statgrid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
@@ -2325,6 +2431,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
   @keyframes flow { to { stroke-dashoffset: -28; } }
 
+  /* One bright point racing down the edge when it first lights up. */
+  .edge.pulse {
+    stroke: white;
+    stroke-width: 3;
+    opacity: .9;
+    filter: drop-shadow(0 0 6px var(--primary));
+    stroke-dashoffset: 10;
+    animation: travel .7s cubic-bezier(.3, 0, .4, 1) forwards;
+    pointer-events: none;
+  }
+  @keyframes travel {
+    to { stroke-dashoffset: calc(-1px * var(--pathlen, 600)); }
+  }
+  @media (prefers-reduced-motion: reduce) { .edge.pulse { display: none; } }
+
   .graphwrap:not([data-intra="on"]) .edge.intra { display: none; }
 
   .cluster {
@@ -2446,6 +2567,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </header>
 <main>
   <section id="overview" class="view active">
+    <div class="hero">
+      <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+      <p class="kicker">AgentsAssemble &middot; codebase</p>
+      <p class="hero-figure"><span class="count" data-to="0" id="heroLines">0</span></p>
+      <p class="hero-lede" id="heroLede"></p>
+      <div class="hero-facts" id="heroFacts"></div>
+    </div>
     <div class="legend" id="orient"></div>
     <h2 class="section">How dependencies flow</h2>
     <p class="note">Layers come from the package dependency graph: a package only
@@ -2602,6 +2730,42 @@ document.getElementById("orient").innerHTML = [
 ].join("");
 
 const S = D.stats;
+
+// Hero: the total size of the system, counted up once on load, with the story
+// underneath it. All figures come from the scan, none are typed in.
+(function hero() {
+  const totalLines = S.backend_lines + S.frontend_lines;
+  const cyclePkgs = (D.graph.clusters || [])
+    .reduce((n, c) => n + c.members.length, 0);
+  document.getElementById("heroLede").innerHTML =
+    `lines of code across <b>${S.backend_modules.toLocaleString()} backend`
+    + ` modules</b> and <b>${S.frontend_files} frontend files</b>, drawn as one`
+    + ` living map.`;
+  document.getElementById("heroFacts").innerHTML = [
+    [D.packages.length, "packages", ""],
+    [D.package_edges.length, "import edges", ""],
+    [D.class_graph.nodes.length, "classes in UML", ""],
+    [cyclePkgs, "packages caught in cycles", "danger"],
+    [D.health.unreferenced_shim_count, "shims nobody calls", "warn"],
+  ].map(([v, label, tone]) =>
+    `<span${tone ? ` data-tone="${tone}"` : ""}><b>${v.toLocaleString()}</b>`
+    + `${label}</span>`).join("");
+
+  const el = document.getElementById("heroLines");
+  const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (reduced || !("requestAnimationFrame" in window)) {
+    el.textContent = totalLines.toLocaleString();
+    return;
+  }
+  const t0 = performance.now(), DUR = 1300;
+  (function tick(now) {
+    const t = Math.min(1, (now - t0) / DUR);
+    const eased = 1 - Math.pow(1 - t, 4);
+    el.textContent = Math.round(totalLines * eased).toLocaleString();
+    if (t < 1) requestAnimationFrame(tick);
+  })(t0);
+})();
+
 document.getElementById("stats").innerHTML = [
   [S.backend_modules, "backend modules"], [S.backend_lines.toLocaleString(), "backend lines"],
   [S.frontend_files, "frontend files"], [S.frontend_lines.toLocaleString(), "frontend lines"],
@@ -3063,9 +3227,24 @@ function polyPath(points) {
 function highlightEdges(pkgId) {
   document.querySelectorAll(".edge").forEach(el => {
     const hot = el.dataset.from === pkgId || el.dataset.to === pkgId;
+    const wasHot = el.classList.contains("hot");
     el.classList.toggle("hot", hot);
     el.classList.toggle("cold", !hot && !!pkgId);
     el.setAttribute("marker-end", hot ? "url(#arrhot)" : "url(#arr)");
+    // A pulse of light runs the length of each newly lit edge: the dash pattern
+    // is one dot plus the full path length, so animating the offset moves a
+    // single bright point from importer to dependency.
+    if (hot && !wasHot && el.getTotalLength) {
+      const len = el.getTotalLength();
+      const pulse = el.cloneNode(false);
+      pulse.removeAttribute("marker-end");
+      pulse.classList.remove("hot", "cold", "intra");
+      pulse.classList.add("pulse");
+      pulse.style.strokeDasharray = `10 ${len}`;
+      pulse.style.setProperty("--pathlen", len);
+      el.parentNode.appendChild(pulse);
+      pulse.addEventListener("animationend", () => pulse.remove());
+    }
   });
   document.querySelectorAll(".node").forEach(n =>
     n.classList.toggle("sel", n.dataset.pkg === pkgId));
