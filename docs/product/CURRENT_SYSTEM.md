@@ -66,7 +66,10 @@ Historical root imports remain explicit compatibility exports recorded by
 `scripts/check_package_architecture.py`; new flat product modules are rejected.
 
 `docs/product/PACKAGE_MAP.md` is the generated inventory and
-`docs/product/PACKAGE_CYCLES.md` is the generated cycle report. The remaining
+`docs/product/PACKAGE_CYCLES.md` is the generated cycle report.
+`docs/product/CODEBASE_MAP.html` (plus its `CODEBASE_MAP.json` twin) is the
+generated interactive codebase map for orientation; regenerate it with
+`python3 scripts/generate_codebase_map.py`. The remaining
 root conversation-policy modules are intentionally frozen while autonomous
 participation semantics are unsettled. `models.py`, `config.py`,
 `persona_cards.py`, and `character_mode.py` remain explicit cross-domain
@@ -394,6 +397,7 @@ the browser-visible flow rather than proving only that a backend function works.
 | --- | --- | --- |
 | `docs/product/PACKAGE_MAP.md` | generated current inventory | Moving modules, checking ownership/import direction, or removing compatibility paths |
 | `docs/product/PACKAGE_CYCLES.md` | generated current cycle report | Changing imports around GUI observability, release health, resident providers, or live-agent runner |
+| `docs/product/CODEBASE_MAP.html` / `.json` | generated interactive codebase map | Orienting in the codebase, finding module ownership, or exploring package dependencies |
 | `docs/live-cli-room-current-architecture.md` | current implementation | Changing canonical room protocol, state, lifecycle, or provider bridge |
 | `docs/product/OPERATING_MODEL.md` | current detailed policy | Changing security, memory, official-record, or mode boundaries |
 | `docs/product/RUNTIME_OWNERSHIP.md` | current ownership map | Changing provider process, Agent Session, recovery, or legacy resident ownership |
