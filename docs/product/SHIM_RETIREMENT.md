@@ -4,7 +4,7 @@ Status: generated architecture report
 
 Generator: `python3 scripts/check_package_architecture.py --write-shim-report`
 
-Source fingerprint: `2d367e24f98f0f30`
+Source fingerprint: `8549a8134adedecd`
 
 - Tracked shims: 281
 - Zero code callers: 88
@@ -60,7 +60,7 @@ permission to delete it; its compatibility window and export policy still apply.
 - `live_agent_processes.py` -> `agentsassemble.legacy.live_agent.runtime.processes`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`, `docs/superpowers/plans/2026-05-19-process-recover.md`; gate: No direct imports or patches use the root process module for one compatibility window.
 - `live_agent_quota.py` -> `agentsassemble.legacy.live_agent.runtime.quota`; docs: none; gate: No direct imports use the root quota module for one compatibility window.
 - `live_agent_review_checkpoints.py` -> `agentsassemble.legacy.live_agent.runtime.review_checkpoints`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_agent_review_checkpoints for one compatibility window.
-- `live_agent_room_admin.py` -> `agentsassemble.legacy.live_agent.runtime.room_admin`; docs: none; gate: No direct imports or patches use agentsassemble.live_agent_room_admin for one compatibility window.
+- `live_agent_room_admin.py` -> `agentsassemble.legacy.live_agent.runtime.room_admin`; docs: `docs/plan-room-hygiene-bugfixes.md`; gate: No direct imports or patches use agentsassemble.live_agent_room_admin for one compatibility window.
 - `live_agent_roster.py` -> `agentsassemble.legacy.live_agent.runtime.roster`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_agent_roster for one compatibility window.
 - `live_agent_self_managed.py` -> `agentsassemble.legacy.live_agent.runtime.self_managed`; docs: none; gate: No direct imports use the root self-managed module for one compatibility window.
 - `live_agent_session_runs.py` -> `agentsassemble.legacy.live_agent.runtime.session_runs`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use the root session-run module for one compatibility window.
@@ -68,7 +68,7 @@ permission to delete it; its compatibility window and export policy still apply.
 - `live_agent_settings.py` -> `agentsassemble.legacy.live_agent.runtime.settings`; docs: none; gate: No direct imports use the root settings module for one compatibility window.
 - `live_agent_smoke.py` -> `agentsassemble.legacy.live_agent.runtime.smoke`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`, `docs/superpowers/plans/2026-05-19-live-agent-session-smoke.md`; gate: No direct imports or patches use agentsassemble.live_agent_smoke for one compatibility window.
 - `live_agent_timing.py` -> `agentsassemble.legacy.live_agent.runtime.timing`; docs: none; gate: No direct imports use the root timing module for one compatibility window.
-- `live_agents.py` -> `agentsassemble.legacy.live_agent.state`; docs: `docs/product/V1_COMPLETION_AUDIT.md`, `docs/server-governed-speech-matrix.md`, `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_agents for one compatibility window.
+- `live_agents.py` -> `agentsassemble.legacy.live_agent.state`; docs: `docs/plan-room-hygiene-bugfixes.md`, `docs/product/V1_COMPLETION_AUDIT.md`, `docs/server-governed-speech-matrix.md`, `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_agents for one compatibility window.
 - `live_meeting_memory.py` -> `agentsassemble.legacy.meeting.support.live_meeting_memory`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_meeting_memory for one compatibility window.
 - `live_session_adapter.py` -> `agentsassemble.providers.live_session_adapter`; docs: none; gate: No direct imports or patches use agentsassemble.live_session_adapter for one compatibility window.
 - `live_session_transport.py` -> `agentsassemble.providers.live_session_transport`; docs: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`; gate: No direct imports or patches use agentsassemble.live_session_transport for one compatibility window.
