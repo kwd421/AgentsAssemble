@@ -1,9 +1,12 @@
 import io
+import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
 from agentsassemble.providers.bridge_protocol import BridgeReportTimeout
 from agentsassemble.providers.runtime_contracts import (
@@ -14,12 +17,14 @@ from agentsassemble.providers.runtime_config import (
     BridgeConfigError,
     CanonicalBridgeLaunchConfig,
     ProviderRuntimeConfig,
+    ProviderRuntimeProfile,
 )
 from agentsassemble.providers.runtime_factory import (
     ProviderRuntimeFactoryError,
     runtime_from_config,
 )
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
+from agentsassemble.providers.room_portal import RoomPortal
 
 
 class FakeClient:
@@ -162,6 +167,36 @@ class InvalidActivityRuntime(FakeRuntime):
         }
 
 
+class RoomPortalRuntime(FakeRuntime):
+    def __init__(self, portal, publications):
+        super().__init__()
+        self.portal = portal
+        self.publications = list(publications)
+        self.observed_views = []
+
+    def send(self, text):
+        super().send(text)
+        self.observed_views.append(
+            self.portal.acp_read_text("/agentsassemble-room/current.md")
+        )
+        publication = self.publications.pop(0)
+        if publication:
+            self.portal.acp_write_text(
+                "/agentsassemble-room/outbox.txt",
+                publication,
+            )
+
+    def read_output(self, *, timeout_seconds, on_delta=None, on_activity=None):
+        del timeout_seconds, on_activity
+        if on_delta:
+            on_delta("private provider output")
+        return {
+            "outcome": "message",
+            "content": "private provider final",
+            "metadata": {"observed_model_id": "gpt-test-observed"},
+        }
+
+
 def _launch_config(**overrides):
     values = {
         "room_id": "general",
@@ -228,6 +263,134 @@ def _wait_for(predicate, timeout=2.0):
 
 
 class RoomAgentBridgeTests(unittest.TestCase):
+    def test_idle_room_check_is_event_driven_and_not_a_fast_poll_loop(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            client = FakeClient()
+            runtime = FakeRuntime()
+            bridge = RoomAgentBridge(
+                client,
+                runtime,
+                room_id="general",
+                participant_id="codex",
+                session_id="codex",
+                receive_sleep_seconds=0.005,
+                room_portal=portal,
+            )
+            bridge._next_idle_room_check_at = 0
+            thread = threading.Thread(target=bridge.run, daemon=True)
+            thread.start()
+
+            _wait_for(
+                lambda: any(
+                    action == "room.check"
+                    for action, _, _ in client.commands
+                )
+            )
+            time.sleep(0.1)
+            with client._lock:
+                room_checks = [
+                    item for item in client.commands if item[0] == "room.check"
+                ]
+                client.messages.append({"op": "agent.control", "action": "stop"})
+            thread.join(timeout=2)
+
+        self.assertEqual(len(room_checks), 1)
+
+    def test_autonomous_room_wake_publishes_only_outbox_and_can_stay_silent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            client = FakeClient()
+            runtime = RoomPortalRuntime(portal, ["public room reply", ""])
+            bridge = RoomAgentBridge(
+                client,
+                runtime,
+                room_id="general",
+                participant_id="codex",
+                session_id="codex",
+                receive_sleep_seconds=0.005,
+                initial_orientation="private invite orientation",
+                room_portal=portal,
+                runtime_profile=ProviderRuntimeProfile(
+                    provider_kind="codex_live_session",
+                    runtime_kind="live_cli",
+                    model="gpt-test",
+                    reasoning_effort="low",
+                    service_tier="default",
+                    variant="",
+                    permission_mode="meeting_read_only",
+                    transport="pty",
+                ),
+            )
+            thread = threading.Thread(target=bridge.run, daemon=True)
+            thread.start()
+            _wait_for(lambda: any(action == "bridge.ready" for action, _, _ in client.commands))
+
+            for turn_id, event_id, seq, content in (
+                ("wake-1", "event-1", 1, "first room message"),
+                ("wake-2", "event-2", 2, "second room message"),
+            ):
+                with client._lock:
+                    client.messages.extend(
+                        [
+                            {
+                                "op": "event",
+                                "stream": "room_events",
+                                "events": [
+                                    {
+                                        "id": event_id,
+                                        "seq": seq,
+                                        "type": "message_final",
+                                        "participant_id": "host",
+                                        "display_name": "Host",
+                                        "content": content,
+                                    }
+                                ],
+                            },
+                            {
+                                "op": "room.wake",
+                                "room_id": "general",
+                                "participant_id": "codex",
+                                "session_id": "codex",
+                                "turn_id": turn_id,
+                                "source_event_id": event_id,
+                                "attachment_ids": [],
+                                "timeout_seconds": 2,
+                            },
+                        ]
+                    )
+                expected_action = "message.final" if turn_id == "wake-1" else "turn.decline"
+                _wait_for(
+                    lambda: len(
+                        [
+                            item
+                            for item in client.commands
+                            if item[0] == expected_action
+                        ]
+                    )
+                    >= 1
+                )
+
+            with client._lock:
+                client.messages.append({"op": "agent.control", "action": "stop"})
+            thread.join(timeout=2)
+
+        final = next(payload for action, payload, _ in client.commands if action == "message.final")
+        self.assertEqual(final["content"], "public room reply")
+        self.assertFalse(any(action == "message.delta" for action, _, _ in client.commands))
+        self.assertEqual(
+            len([item for item in client.commands if item[0] == "turn.decline"]),
+            1,
+        )
+        self.assertIn("first room message", runtime.observed_views[0])
+        self.assertIn("second room message", runtime.observed_views[1])
+        self.assertNotIn("first room message", "\n".join(runtime.sent))
+        self.assertNotIn("second room message", "\n".join(runtime.sent))
+        self.assertIn("private invite orientation", runtime.sent[0])
+        self.assertNotIn("private invite orientation", runtime.sent[1])
+
     def test_grok_acp_config_selects_structured_runtime(self):
         runtime = runtime_from_config(
             _runtime_config(
@@ -242,6 +405,26 @@ class RoomAgentBridgeTests(unittest.TestCase):
         )
 
         self.assertIsInstance(runtime, GrokAcpRuntime)
+
+    def test_codex_config_uses_app_server_room_tools_without_workspace_write(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            portal = RoomPortal(Path(temp_dir) / "portal", participant_id="codex")
+            portal.prepare()
+            runtime = runtime_from_config(
+                _runtime_config(
+                    participant_id="codex",
+                    session_id="codex",
+                    provider_kind="codex_live_session",
+                    command=["codex", "--no-alt-screen"],
+                    model="gpt-5.6-luna",
+                    permission_mode="meeting_read_only",
+                ),
+                room_portal=portal,
+            )
+
+        self.assertIsInstance(runtime, CodexAppServerLiveRuntime)
+        self.assertEqual(runtime.profile["sandbox"], "read-only")
+        self.assertIsNotNone(runtime.room_tools)
 
     def test_pty_runtime_preserves_an_intentional_empty_cli_argument(self):
         runtime = runtime_from_config(

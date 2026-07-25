@@ -100,6 +100,7 @@ class RoomAgentReactivationService:
                 agent_id,
                 runtime_profile_key=spec.runtime_profile_key(),
                 transport=spec.transport,
+                command_configured=list(spec.command),
             )
         with self._lock:
             self._provider_registry.register(room_id, spec)

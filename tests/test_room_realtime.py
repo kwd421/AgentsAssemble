@@ -19,6 +19,7 @@ from agentsassemble.room.realtime import (
     validate_native_cli_provider_spec,
 )
 from agentsassemble.room.command_uow import RoomCommandUnitOfWork
+from agentsassemble.room.attachments import store_uploaded_attachment
 from agentsassemble.room.moderation import is_room_member_muted, set_room_member_muted
 from agentsassemble.room_store import RoomStore
 from agentsassemble.room.settings import update_room_settings as update_legacy_room_settings
@@ -1230,7 +1231,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             any(message.get("op") == "turn.assign" for message in peer_channel.drain())
         )
 
-    def test_ambient_mode_leases_one_fair_speaker_and_releases_each_turn(self):
+    def test_ambient_mode_wakes_each_eligible_bridge_without_transcript(self):
         self.controller.create_provider_session("general", _spec("peer"))
         codex_identity, codex_channel = self._connect_bridge("codex")
         peer_identity, peer_channel = self._connect_bridge("peer")
@@ -1246,49 +1247,128 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             "message.send",
             {"content": "백룸에서 살아남는 방법을 같이 이야기해봐"},
         )["result"]["event"]
-        first = next(message for message in codex_channel.drain() if message.get("op") == "turn.assign")
-        self.assertFalse(any(message.get("op") == "turn.assign" for message in peer_channel.drain()))
-        first_job = self.controller.store.attention_jobs("general", mode="active")[-1]
-        first_session = self.controller.store.session("general", "codex")
-        first_lease_id = str(first_session["active_attention_lease_id"])
-        self.assertEqual(first_job["source_event_id"], source["id"])
-        self.assertEqual(first_job["status"], "leased")
-        self.assertEqual(first_job["selected_participant_id"], "codex")
-
-        codex_final = self._command(
-            "ambient-first-final",
-            "message.final",
-            {"turn_id": first["turn_id"], "content": "먼저 출구 표식을 남겨야 해."},
-            codex_identity,
-        )["result"]["event"]
-        second = next(message for message in peer_channel.drain() if message.get("op") == "turn.assign")
-        self.assertEqual(self.controller.store.attention_lease("general", first_lease_id)["status"], "released")
-        self.assertEqual(
-            self.controller.store.attention_jobs("general", mode="active")[0]["status"],
-            "completed",
-        )
-
-        self._command(
-            "ambient-second-final",
-            "message.final",
-            {"turn_id": second["turn_id"], "content": "그리고 소음을 최소화해야 해."},
-            peer_identity,
-        )
-        third = next(
+        codex_wake = next(
             message
             for message in codex_channel.drain()
-            if message.get("op") == "turn.assign"
+            if message.get("op") == "room.wake"
         )
-        jobs = self.controller.store.attention_jobs("general", mode="active")
-        self.assertEqual([job["status"] for job in jobs], ["completed", "completed", "leased"])
-        self.assertEqual(third["source_event_id"], jobs[-1]["source_event_id"])
+        peer_wake = next(
+            message
+            for message in peer_channel.drain()
+            if message.get("op") == "room.wake"
+        )
+        self.assertNotIn("provider_input", codex_wake)
+        self.assertNotIn("provider_input", peer_wake)
+        self.assertEqual(codex_wake["source_event_id"], source["id"])
+        self.assertEqual(peer_wake["source_event_id"], source["id"])
+        self.assertEqual(self.controller.store.attention_jobs("general", mode="active"), [])
+
+        self._command(
+            "ambient-codex-silent",
+            "turn.decline",
+            {
+                "turn_id": codex_wake["turn_id"],
+                "reason_code": "nothing_useful_to_add",
+            },
+            codex_identity,
+        )
+        peer_final = self._command(
+            "ambient-peer-final",
+            "message.final",
+            {"turn_id": peer_wake["turn_id"], "content": "먼저 출구 표식을 남겨야 해."},
+            peer_identity,
+        )["result"]["event"]
+        codex_followup = next(
+            message
+            for message in codex_channel.drain()
+            if message.get("op") == "room.wake"
+        )
+        self.assertEqual(codex_followup["source_event_id"], peer_final["id"])
+        self.assertFalse(
+            any(message.get("op") == "room.wake" for message in peer_channel.drain())
+        )
         self.assertEqual(
-            self.controller.store.attention_state("general", "codex").last_spoke_seq,
-            codex_final["seq"],
+            self.controller.store.attention_state("general", "peer").last_spoke_seq,
+            peer_final["seq"],
         )
         self.assertEqual(self.controller.attention_active_diagnostics()["error_count"], 0)
 
-    def test_provider_final_rolls_back_turn_session_cursors_and_lease_with_ack(self):
+    def test_ambient_busy_session_reads_messages_queued_during_its_current_observation(self):
+        self.controller.create_provider_session("general", _spec("peer"))
+        codex_identity, codex_channel = self._connect_bridge("codex")
+        peer_identity, peer_channel = self._connect_bridge("peer")
+        codex_channel.drain()
+        peer_channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient"},
+        )
+
+        self._command(
+            "ambient-busy-source",
+            "message.send",
+            {"content": "둘 다 방을 확인해"},
+        )
+        codex_wake = next(
+            message for message in codex_channel.drain() if message.get("op") == "room.wake"
+        )
+        peer_wake = next(
+            message for message in peer_channel.drain() if message.get("op") == "room.wake"
+        )
+        codex_final = self._command(
+            "ambient-busy-codex-final",
+            "message.final",
+            {"turn_id": codex_wake["turn_id"], "content": "먼저 확인한 내용이야."},
+            codex_identity,
+        )["result"]["event"]
+
+        queued_peer = self.controller.store.session("general", "peer")
+        self.assertEqual(queued_peer["runtime_status"], "busy")
+        self.assertIn(codex_final["id"], queued_peer["pending_event_ids"])
+
+        self._command(
+            "ambient-busy-peer-decline",
+            "turn.decline",
+            {
+                "turn_id": peer_wake["turn_id"],
+                "reason_code": "nothing_useful_to_add",
+            },
+            peer_identity,
+        )
+        followup = next(
+            message for message in peer_channel.drain() if message.get("op") == "room.wake"
+        )
+        self.assertEqual(followup["source_event_id"], codex_final["id"])
+
+    def test_bridge_room_check_cannot_start_autonomous_turn_outside_ambient_mode(self):
+        identity, channel = self._connect_bridge("codex")
+        channel.drain()
+
+        ordered = self._command("ordered-room-check", "room.check", {}, identity)
+
+        self.assertEqual(
+            ordered["result"],
+            {"assigned": False, "reason": "ambient_disabled"},
+        )
+        self.assertFalse(
+            any(message.get("op") == "room.wake" for message in channel.drain())
+        )
+
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient"},
+        )
+        ambient = self._command("ambient-room-check", "room.check", {}, identity)
+        wake = next(
+            message
+            for message in channel.drain()
+            if message.get("op") == "room.wake"
+        )
+
+        self.assertTrue(ambient["result"]["assigned"])
+        self.assertNotIn("provider_input", wake)
+
+    def test_ambient_provider_final_rolls_back_message_and_cursors_with_ack(self):
         identity, channel = self._connect_bridge("codex")
         channel.drain()
         self.controller.store.update_room_settings(
@@ -1300,11 +1380,10 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             "message.send",
             {"content": "원자적으로 답해줘"},
         )["result"]["event"]
-        assignment = next(message for message in channel.drain() if message.get("op") == "turn.assign")
+        assignment = next(message for message in channel.drain() if message.get("op") == "room.wake")
         store = RoomStore(self.root)
         before_session = store.session("general", "codex")
         before_attention = store.attention_state("general", "codex")
-        lease_id = str(before_session["active_attention_lease_id"])
         before_latest_seq = store.latest_event_sequence("general")
         payload = {"turn_id": assignment["turn_id"], "content": "원자적 최종 답변"}
 
@@ -1318,7 +1397,6 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(rolled_back["inflight_event_ids"], before_session["inflight_event_ids"])
         self.assertEqual(rolled_back["last_provider_sync_seq"], before_session["last_provider_sync_seq"])
         self.assertEqual(store.attention_state("general", "codex"), before_attention)
-        self.assertEqual(store.attention_lease("general", lease_id)["status"], "active")
         self.assertEqual(store.latest_event_sequence("general"), before_latest_seq)
         self.assertFalse(
             any(
@@ -1341,7 +1419,6 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             store.attention_state("general", "codex").last_provider_sync_seq,
             source["seq"],
         )
-        self.assertEqual(store.attention_lease("general", lease_id)["status"], "released")
         finals = [
             event
             for event in store.read_events("general")
@@ -1358,7 +1435,7 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(len(finished), 1)
         self.assertEqual(store.attention_state("general", "codex").last_spoke_seq, finals[0]["seq"])
 
-    def test_ambient_mode_does_not_replace_unavailable_explicit_target(self):
+    def test_ambient_mention_remains_visible_to_other_room_agents(self):
         self.controller.create_provider_session("general", _spec("peer"))
         _peer_identity, peer_channel = self._connect_bridge("peer")
         peer_channel.drain()
@@ -1367,15 +1444,22 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             {"conversation_mode": "ambient", "max_relay_turns": 2},
         )
 
-        self._command("ambient-unavailable", "message.send", {"content": "@codex 답해줘"})
+        source = self._command(
+            "ambient-unavailable",
+            "message.send",
+            {"content": "@codex 답해줘"},
+        )["result"]["event"]
 
-        self.assertFalse(any(message.get("op") == "turn.assign" for message in peer_channel.drain()))
-        job = self.controller.store.attention_jobs("general", mode="active")[-1]
-        self.assertEqual(job["outcome"], "silent")
-        self.assertIn("explicit_target_unavailable", job["reasons"])
-        self.assertEqual(self.controller.store.session("general", "peer")["pending_event_ids"], [])
+        wake = next(
+            message
+            for message in peer_channel.drain()
+            if message.get("op") == "room.wake"
+        )
+        self.assertEqual(wake["source_event_id"], source["id"])
+        self.assertNotIn("provider_input", wake)
+        self.assertEqual(self.controller.store.attention_jobs("general", mode="active"), [])
 
-    def test_ambient_mode_records_vote_as_silent_without_waking_provider(self):
+    def test_ambient_vote_wakes_provider_to_observe_structured_room_activity(self):
         _identity, channel = self._connect_bridge("codex")
         channel.drain()
         self.controller.store.update_room_settings(
@@ -1394,13 +1478,71 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             },
         )["result"]["event"]
 
-        self.assertFalse(any(message.get("op") == "turn.assign" for message in channel.drain()))
-        job = self.controller.store.attention_jobs("general", mode="active")[-1]
-        self.assertEqual(job["source_event_id"], event["id"])
-        self.assertEqual(job["outcome"], "silent")
-        self.assertEqual(job["reasons"], ["ambient_vote_event"])
+        wake = next(
+            message
+            for message in channel.drain()
+            if message.get("op") == "room.wake"
+        )
+        self.assertEqual(wake["source_event_id"], event["id"])
+        self.assertNotIn("provider_input", wake)
 
-    def test_stopping_ambient_speaker_cancels_lease_and_drops_selected_work(self):
+    def test_ambient_media_wake_reads_only_attachment_referenced_by_this_room(self):
+        identity, channel = self._connect_bridge("codex")
+        channel.drain()
+        self.controller.store.update_room_settings(
+            "general",
+            {"conversation_mode": "ambient"},
+        )
+        referenced = store_uploaded_attachment(
+            self.root,
+            {
+                "filename": "room.png",
+                "content_type": "image/png",
+                "data_base64": "cm9vbS1pbWFnZQ==",
+            },
+        )
+        unreferenced = store_uploaded_attachment(
+            self.root,
+            {
+                "filename": "private.png",
+                "content_type": "image/png",
+                "data_base64": "cHJpdmF0ZS1pbWFnZQ==",
+            },
+        )
+
+        source = self._command(
+            "ambient-media",
+            "message.send",
+            {
+                "content": "이 이미지를 봐",
+                "attachments": [{"id": referenced["id"]}],
+            },
+        )["result"]["event"]
+        wake = next(
+            message
+            for message in channel.drain()
+            if message.get("op") == "room.wake"
+        )
+
+        self.assertEqual(wake["source_event_id"], source["id"])
+        self.assertEqual(wake["attachment_ids"], [referenced["id"]])
+        read = self._command(
+            "read-room-media",
+            "room.attachment.read",
+            {"attachment_id": referenced["id"]},
+            identity,
+        )
+        self.assertEqual(read["result"]["data_base64"], "cm9vbS1pbWFnZQ==")
+        with self.assertRaises(RoomCommandRejected) as rejected:
+            self._command(
+                "read-unreferenced-media",
+                "room.attachment.read",
+                {"attachment_id": unreferenced["id"]},
+                identity,
+            )
+        self.assertEqual(rejected.exception.code, "not_found")
+
+    def test_stopping_ambient_agent_cancels_active_observation_and_preserves_backlog(self):
         _identity, channel = self._connect_bridge("codex")
         channel.drain()
         self.controller.store.update_room_settings(
@@ -1412,39 +1554,49 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             "message.send",
             {"content": "이 대화는 중단할 거야"},
         )["result"]["event"]
-        next(message for message in channel.drain() if message.get("op") == "turn.assign")
-        active = self.controller.store.session("general", "codex")
-        lease_id = str(active["active_attention_lease_id"])
+        wake = next(
+            message
+            for message in channel.drain()
+            if message.get("op") == "room.wake"
+        )
+        self.assertTrue(wake["turn_id"])
 
         self._command("ambient-stop", "agent.stop", {"agent_id": "codex"})
 
         stopped = self.controller.store.session("general", "codex")
-        self.assertEqual(self.controller.store.attention_lease("general", lease_id)["status"], "cancelled")
-        self.assertEqual(
-            self.controller.store.attention_jobs("general", mode="active")[-1]["status"],
-            "cancelled",
+        self.assertEqual(stopped["runtime_status"], "stopped")
+        self.assertFalse(stopped["enabled"])
+        self.assertEqual(stopped["active_turn_id"], "")
+        self.assertEqual(stopped["inflight_event_ids"], [])
+        self.assertIn(source["id"], stopped["pending_event_ids"])
+        self.assertFalse(
+            any(
+                event.get("type") == "message_final"
+                and event.get("participant_id") == "codex"
+                for event in self.controller.store.read_events("general")
+            )
         )
-        self.assertNotIn(source["id"], stopped["pending_event_ids"])
-        self.assertEqual(stopped["active_attention_lease_id"], "")
 
-    def test_ambient_attention_failure_is_visible_and_never_uses_legacy_routing(self):
+    def test_ambient_wake_failure_is_visible(self):
+        _identity, channel = self._connect_bridge("codex")
+        channel.drain()
         self.controller.store.update_room_settings(
             "general",
             {"conversation_mode": "ambient", "max_relay_turns": 2},
         )
         with patch.object(
-            self.controller._attention_coordinator,
-            "evaluate_and_queue_active",
-            side_effect=RuntimeError("attention repository unavailable"),
+            self.controller._turn_coordinator,
+            "queue_event",
+            side_effect=RuntimeError("room wake unavailable"),
         ), self.assertLogs("agentsassemble.room_realtime", level="ERROR"):
             self._command("ambient-error", "message.send", {"content": "이 메시지를 처리해"})
 
         events = self.controller.store.read_events("general")
         diagnostics = self.controller.attention_active_diagnostics()
         self.assertEqual(diagnostics["error_count"], 1)
-        self.assertIn("attention repository unavailable", diagnostics["last_error"])
+        self.assertIn("room wake unavailable", diagnostics["last_error"])
         self.assertEqual(events[-1]["type"], "error")
-        self.assertEqual(events[-1]["error_code"], "ambient_attention_failed")
+        self.assertEqual(events[-1]["error_code"], "ambient_wake_failed")
         self.assertEqual(self.controller.store.session("general", "codex")["pending_event_ids"], [])
 
     def test_continuous_room_mode_skips_removed_and_stopped_speakers(self):
@@ -2053,13 +2205,22 @@ class RoomRealtimeControllerTests(unittest.TestCase):
         self.assertEqual(len(gap["events"]), 200)
         self.assertTrue(gap["resume_gap"])
 
-    def test_agent_bridge_snapshot_does_not_replay_room_history(self):
-        self.controller.store.append_event("general", "message_final", content="private room history")
+    def test_agent_bridge_snapshot_contains_bounded_recent_room_view(self):
+        for index in range(55):
+            self.controller.store.append_event(
+                "general",
+                "message_final",
+                participant_id="operator-local",
+                content=f"room-message-{index}",
+            )
 
         snapshot = self.controller.snapshot(_bridge_identity())
 
         self.assertEqual(snapshot["snapshot_mode"], "bridge")
-        self.assertEqual(snapshot["events"], [])
+        self.assertEqual(len(snapshot["events"]), 50)
+        self.assertEqual(snapshot["events"][0]["content"], "room-message-5")
+        self.assertEqual(snapshot["events"][-1]["content"], "room-message-54")
+        self.assertTrue(all(event["type"] == "message_final" for event in snapshot["events"]))
         self.assertFalse(snapshot["has_more_before"])
 
     def test_bridge_crash_restarts_once_with_room_memory_and_pending_diff(self):

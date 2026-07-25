@@ -35,9 +35,16 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         self.assertEqual(specs["grok"].transport, "acp_stdio")
         self.assertNotIn("-p", specs["claude"].command)
         self.assertNotIn("--print", specs["claude"].command)
-        self.assertNotIn("--permission-mode", specs["claude"].command)
+        permission_index = specs["claude"].command.index("--permission-mode")
+        self.assertEqual(specs["claude"].command[permission_index + 1], "dontAsk")
         tools_index = specs["claude"].command.index("--tools")
-        self.assertEqual(specs["claude"].command[tools_index + 1], "")
+        self.assertEqual(specs["claude"].command[tools_index + 1], "Bash")
+        allowed_index = specs["claude"].command.index("--allowedTools")
+        self.assertEqual(
+            specs["claude"].command[allowed_index + 1],
+            "Bash(agentsassemble-room *)",
+        )
+        self.assertNotIn("--dangerously-skip-permissions", specs["claude"].command)
         self.assertIn("--safe-mode", specs["claude"].command)
 
     def test_cursor_splits_effort_and_fast_out_of_the_model_slug(self):

@@ -12,11 +12,14 @@ from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TextIO
+from typing import TYPE_CHECKING, TextIO
 
 from agentsassemble.providers.process_environment import sanitized_provider_environment
 from agentsassemble.providers.runtime_contracts import AdapterContractError
 from agentsassemble.room.text import clean_room_text
+
+if TYPE_CHECKING:
+    from agentsassemble.providers.room_portal import RoomPortal
 
 
 class GrokAcpRuntime:
@@ -31,6 +34,7 @@ class GrokAcpRuntime:
         state_dir: str | Path,
         env: dict[str, str] | None = None,
         auth_path: str | Path | None = None,
+        room_portal: RoomPortal | None = None,
         popen_factory: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
         startup_timeout_seconds: float = 20.0,
         notification_queue_size: int = 20_000,
@@ -42,6 +46,7 @@ class GrokAcpRuntime:
         self.cwd = Path(cwd).expanduser().resolve()
         self.state_dir = Path(state_dir).expanduser().resolve()
         self.env = dict(env or {})
+        self.room_portal = room_portal
         selected_auth_path = auth_path or self.env.get("GROK_AUTH_PATH") or os.environ.get("GROK_AUTH_PATH")
         self.auth_path = (
             Path(selected_auth_path).expanduser().resolve()
@@ -165,7 +170,10 @@ class GrokAcpRuntime:
                 {
                     "protocolVersion": 1,
                     "clientCapabilities": {
-                        "fs": {"readTextFile": False, "writeTextFile": False},
+                        "fs": {
+                            "readTextFile": self.room_portal is not None,
+                            "writeTextFile": self.room_portal is not None,
+                        },
                         "terminal": False,
                     },
                     "clientInfo": {"name": "AgentsAssemble", "version": "0"},
@@ -202,6 +210,19 @@ class GrokAcpRuntime:
             raise
 
     def send(self, text: str) -> None:
+        self._begin_prompt([{"type": "text", "text": str(text or "")}])
+
+    def send_room_observation(
+        self,
+        text: str,
+        *,
+        media_blocks: list[dict[str, str]] | None = None,
+    ) -> None:
+        prompt = [{"type": "text", "text": str(text or "")}]
+        prompt.extend(dict(block) for block in list(media_blocks or []))
+        self._begin_prompt(prompt)
+
+    def _begin_prompt(self, prompt: list[dict[str, str]]) -> None:
         self.start()
         with self._lock:
             if self._active_request is not None:
@@ -214,7 +235,7 @@ class GrokAcpRuntime:
             "session/prompt",
             {
                 "sessionId": session_id,
-                "prompt": [{"type": "text", "text": str(text or "")}],
+                "prompt": prompt,
             },
         )
         with self._lock:
@@ -358,6 +379,7 @@ class GrokAcpRuntime:
                 "provider_session_reused": self._provider_session_reused,
                 "provider_session_resume_failed": self._provider_session_resume_failed,
                 "provider_session_resume_error": self._provider_session_resume_error,
+                "room_portal_supported": self.room_portal is not None,
                 "model": self._model,
                 "approval_policy": "deny_without_room_approval",
                 "yolo_mode": self._yolo_mode,
@@ -506,6 +528,9 @@ class GrokAcpRuntime:
                         continue
                     with self._lock:
                         self._stdout_json_line_count += 1
+                    if message.get("method") in {"fs/read_text_file", "fs/write_text_file"} and "id" in message:
+                        self._handle_room_portal_request(message)
+                        continue
                     if message.get("method") == "session/request_permission" and "id" in message:
                         self._reject_permission_request(message)
                         continue
@@ -568,6 +593,52 @@ class GrokAcpRuntime:
             self._permission_denied_count += 1
         try:
             self._send_json({"jsonrpc": "2.0", "id": request_id, "result": {"outcome": "reject_once"}})
+        except RuntimeError as error:
+            self._last_error = str(error)
+
+    def _handle_room_portal_request(self, message: dict[str, object]) -> None:
+        request_id = message.get("id")
+        if not isinstance(request_id, (int, str)) or isinstance(request_id, bool):
+            return
+        portal = self.room_portal
+        if portal is None:
+            self._send_acp_error(request_id, -32601, "Room portal filesystem is unavailable.")
+            return
+        method = str(message.get("method") or "")
+        params = message.get("params") if isinstance(message.get("params"), dict) else {}
+        with self._lock:
+            session_id = self._session_id
+        if str(params.get("sessionId") or "") != session_id:
+            self._send_acp_error(request_id, -32602, "Session id does not match.")
+            return
+        try:
+            if method == "fs/read_text_file":
+                result = {
+                    "content": portal.acp_read_text(
+                        params.get("path"),
+                        line=params.get("line"),
+                        limit=params.get("limit"),
+                    )
+                }
+            else:
+                portal.acp_write_text(params.get("path"), params.get("content"))
+                result = {}
+            self._send_json({"jsonrpc": "2.0", "id": request_id, "result": result})
+        except Exception as error:
+            self._send_acp_error(request_id, -32602, str(error))
+
+    def _send_acp_error(self, request_id: int | str, code: int, message: str) -> None:
+        try:
+            self._send_json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {
+                        "code": int(code),
+                        "message": clean_room_text(message, limit=1000),
+                    },
+                }
+            )
         except RuntimeError as error:
             self._last_error = str(error)
 

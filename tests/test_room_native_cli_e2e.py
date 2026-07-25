@@ -361,6 +361,7 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                 startup_timeout_seconds=1.0,
             )
             joined: dict[str, object] = {}
+            runtime_context: dict[str, object] = {}
             connect_count = 0
             try:
                 invite = self._post_json(
@@ -385,7 +386,22 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                     service_tier="default",
                 )
 
-                def build_runtime(_participant_id: str, _workspace: Path):
+                def build_runtime(
+                    _participant_id: str,
+                    _workspace: Path,
+                    *,
+                    environment: dict[str, str] | None = None,
+                    room_portal=None,
+                ):
+                    runtime_context.update(
+                        {
+                            "path": str((environment or {}).get("PATH") or ""),
+                            "portal_ready": bool(
+                                room_portal is not None
+                                and room_portal.view_path.is_file()
+                            ),
+                        }
+                    )
                     attendee._runtime_profile = ProviderRuntimeProfile(
                         provider_kind="claude_code",
                         runtime_kind="live_cli",
@@ -425,6 +441,8 @@ class NativeCliRoomEndToEndTests(unittest.TestCase):
                         )
                         == "idle"
                     )
+                    self.assertTrue(runtime_context["portal_ready"])
+                    self.assertIn("room-portal", runtime_context["path"])
                     provider_pid = int(runtime.health()["pid"])
 
                     ticket = self._host_ticket(base)

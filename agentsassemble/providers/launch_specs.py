@@ -312,6 +312,17 @@ def native_cli_provider_spec_from_stored_session_strict(
         ).runtime_profile_key()
         == required["runtime_profile_key"]
     )
+    previous_claude_command = _previous_claude_command(spec)
+    claude_room_portal_upgrade_profile = (
+        definition.provider_id == "claude"
+        and stored_transport == definition.transport
+        and stored_command == previous_claude_command
+        and replace(
+            spec,
+            command=previous_claude_command,
+        ).runtime_profile_key()
+        == required["runtime_profile_key"]
+    )
     reported_transport_overwrite_profile = (
         stored_transport in definition.reported_transports
         and spec.command == stored_command
@@ -324,12 +335,13 @@ def native_cli_provider_spec_from_stored_session_strict(
             "Stored Agent Session provider definition changed.",
             code="provider_definition_changed",
         )
-    if spec.command != stored_command or not (
+    exact_stored_profile = spec.command == stored_command and (
         profile_matches
         or legacy_grok_transport_profile
         or legacy_claude_startup_profile
         or reported_transport_overwrite_profile
-    ):
+    )
+    if not exact_stored_profile and not claude_room_portal_upgrade_profile:
         raise StoredProviderProfileError(
             "Stored Agent Session profile must be migrated before it can be reused.",
             code="profile_migration_required",
@@ -457,8 +469,31 @@ def _claude_command(
         command.extend(("--effort", effort))
     if permission_mode == "workspace_write":
         command.extend(("--permission-mode", "acceptEdits"))
-    command.extend(("--tools", "", "--safe-mode"))
+    else:
+        command.extend(
+            (
+                "--permission-mode",
+                "dontAsk",
+                "--tools",
+                "Bash",
+                "--allowedTools",
+                "Bash(agentsassemble-room *)",
+            )
+        )
+    command.append("--safe-mode")
     del service_tier  # Fast is applied as the interactive /fast startup command by the bridge runtime.
+    return tuple(command)
+
+
+def _previous_claude_command(spec: NativeCliProviderSpec) -> tuple[str, ...]:
+    if spec.normalized_provider_kind() != "claude_code":
+        return ()
+    command = ["claude", "--model", spec.model]
+    if spec.reasoning_effort:
+        command.extend(("--effort", spec.reasoning_effort))
+    if spec.permission_mode == "workspace_write":
+        command.extend(("--permission-mode", "acceptEdits"))
+    command.extend(("--tools", "", "--safe-mode"))
     return tuple(command)
 
 

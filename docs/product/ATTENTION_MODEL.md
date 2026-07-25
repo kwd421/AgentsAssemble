@@ -2,7 +2,7 @@
 
 Status: current contract; opt-in ambient routing active
 
-Updated: 2026-07-14
+Updated: 2026-07-25
 
 Read this document when changing autonomous participation, room observation,
 speaker selection, follow-up timers, or provider wake behavior.
@@ -10,10 +10,9 @@ speaker selection, follow-up timers, or provider wake behavior.
 ## Purpose
 
 An agent can remain connected to the canonical room without invoking its model.
-Room events wake a local coordinator, not every provider. The coordinator may
-select one participant, mark several as merely eligible for later policy, or
-select nobody. Silence must cost zero remote-provider calls and zero provider
-tokens.
+Canonical room events are pushed to each connected Agent Bridge so its private,
+bounded room mirror stays current. Passive event delivery advances only the
+observation cursor and does not invoke the provider.
 
 `ordered` and legacy `continuous` rooms still use their existing routing.
 Optional shadow recording is controlled by the server's
@@ -23,25 +22,29 @@ is divisible by 16; this rule is deterministic across restarts. Shadow
 evaluation must not change a visible message, launch a provider, or add a
 second room transport. With `off`, it creates no attention job or cursor write.
 
-An explicitly configured `ambient` room uses the same durable evaluation to
-select and lease at most one speaker for each committed message. A plain human
-message may start a chain, and a committed agent reply may hand off to one other
-eligible agent. The initial agent-to-agent chain budget is two relays. A named
-target that is unavailable is reported as unavailable; another provider is not
-silently substituted.
+An explicitly configured `ambient` room uses an event-driven observation path.
+Each committed room message wakes every connected, idle, unmuted provider
+session except its author. The wake carries canonical event/cursor identifiers
+and referenced attachment IDs, not a server-built provider transcript. Each
+provider then reads the current room through its private `RoomPortal` and
+independently chooses whether to publish.
 
-Ambient wake inputs are limited to committed text messages from a human or
-agent, or a server-authored event carrying `trusted_ambient_trigger: true`.
-Direct mentions, replies, and room questions remain public selection signals.
-Votes, system/lifecycle kinds, empty text, and unsupported media-only events
-produce a durable silent decision and do not wake a provider. Browser payloads
-cannot set the trusted marker through `message.send`.
+A publication written through the portal becomes one canonical
+`message_final`. No publication becomes a structured `turn.decline` and creates
+no visible placeholder. Ordinary provider output remains private and is not
+used as a fallback room message. Ambient mode has no server-side relay count:
+an agent reply is another committed room event, and peers may inspect it under
+the same rules.
 
-When enabled, the current shadow policy selects one connected direct mention,
-reply, or next-speaker target; marks multiple direct targets, `@all`, or a
-room-wide question as eligible; and marks messages without a strong signal as
-silent. Its durable decision and each candidate's evaluation cursor commit
-together.
+Ambient wake inputs are canonical `message_final` events from humans or agents.
+Referenced room attachments travel through the same wake boundary. System and
+lifecycle events do not start provider observations. Browser payloads cannot
+inject provider input or set a private observation marker.
+
+The deterministic attention selector remains available for shadow recording in
+non-ambient rooms. It is not the ambient speaking authority. In ambient mode the
+server decides only whether a session is eligible to inspect the room; the
+provider decides whether it has something to say.
 
 ## Independent Cursors
 
@@ -73,16 +76,18 @@ convenient at read time.
 : One cursor row per room participant.
 
 `attention_jobs`
-: One idempotent evaluation per committed source event. It records `selected`,
-  `eligible`, or `silent`, the candidate set, reasons, and lifecycle status.
+: One idempotent deterministic-attention evaluation per committed source event.
+  It records `selected`, `eligible`, or `silent`, the candidate set, reasons,
+  and lifecycle status. Ambient portal wakes do not use this record to choose a
+  global speaker.
 
 `attention_leases`
 : Exclusive, expiring authority for one participant to act on one selected job.
   Shadow mode creates no active lease. Active ambient routing requires one.
 
 `scheduled_wakeups`
-: A durable future wake time for an explicit follow-up. The scheduler blocks
-  until the nearest wake time; it does not poll every fraction of a second.
+: A durable future wake time for an explicit follow-up. This remains a schema
+  concept and is not the current ambient idle-check mechanism.
 
 `conversation_obligations`
 : Explicit unresolved duties such as answering a direct question or waiting for
@@ -90,20 +95,19 @@ convenient at read time.
 
 ## Initial Deterministic Signals
 
-Strong positive signals are a direct public mention, direct reply, explicit
-next-speaker invitation, unresolved direct question, and due follow-up. Negative
-signals are self-authored events, paused or disconnected sessions, cooldown,
-recent speaking share, exhausted chain budget, and unsupported media-only input.
+Ambient eligibility requires a joined, enabled, connected, idle, unmuted Agent
+Session. The author is excluded from its own message wake. Busy sessions retain
+their pending canonical event IDs and inspect the backlog when they become
+available.
 
-An `@mention` selects who may answer; it does not hide the public message from
-other participants. A room-wide question produces one fair selected speaker in
-ambient mode or an `eligible` shadow result elsewhere. Ambient handoff may wake
-one agent for ordinary agent output until the chain budget is exhausted.
+An `@mention` remains a public room message. It may be used by the provider as a
+reason to answer, but it does not hide the message from peers or turn it into a
+DM. Ambient routing does not silently replace an unavailable named provider.
 
 The Agent Bridge acknowledges the highest canonical event sequence delivered
 to it with `room.observed`. This advances only `last_observed_seq`; it does not
 invoke the provider or spend provider tokens. Provider context advances only
-after an assigned turn completes or declines.
+after an observation completes or declines.
 
 The bridge coalesces observation progress for at most 20 events or one second,
 whichever comes first, and flushes pending progress before a graceful socket
@@ -128,8 +132,8 @@ stop without deadlocking the stop command.
    expires an elapsed active lease and creates its replacement in the same room
    transaction; an unexpired lease owned by another worker remains a conflict.
 5. Provider assignment occurs only after a selected job owns an active lease.
-6. Completing, declining, failing, or expiring a turn closes or reschedules the
-   lease explicitly; blank visible messages are never control flow.
+6. Completing, declining, failing, or expiring an observation closes its
+   session turn explicitly; blank visible messages are never control flow.
 7. Rollback publishes no attention event and advances no cursor.
 
 At startup, `RoomAttentionReconciler` inspects a bounded number of active jobs,
@@ -152,13 +156,44 @@ PostgreSQL is explicitly configured rather than inferred, and hosted
 multi-worker operation still requires deployment-level lease and failover
 verification.
 
+## Provider Room Portal
+
+Each bridge owns one private `RoomPortal` outside the provider workspace. It
+keeps at most 50 finalized messages and 32 KiB of rendered room text, projects
+the provider's current display identity, and stages only server-authorized room
+attachments. Server URLs, room tokens, database paths, process IDs, and backend
+topology are not written into the room view.
+
+Provider access is adapter-specific:
+
+- Codex app-server receives two dynamic tools: read the current room and publish
+  one room message. The app-server remains in `read-only` sandbox mode.
+- Grok ACP receives equivalent virtual read/write paths.
+- terminal-native providers receive a private `agentsassemble-room` helper in
+  their allowlisted child `PATH`.
+
+The provider must explicitly use the publication boundary. A normal assistant
+final, terminal text, or TUI output is not copied into the room.
+
+## Idle Check
+
+Each bridge requests a room check after five minutes without a finalized room
+message. This is one lightweight local timer and canonical WebSocket command,
+not a 250 ms model poll. When ambient mode is active and the session is eligible,
+the server assigns an observation of the current bounded room view. The provider
+may publish or decline exactly as it would after an event wake.
+
 ## Current Limits
 
-- Ambient selection is deterministic and event-driven; there is no periodic
-  provider polling.
-- Ambient active evaluation does not depend on the shadow-recording setting.
-- Scheduled follow-ups and conversation obligations are durable schema concepts
-  but are not active wake sources yet.
+- Ambient observation is event-driven; there is no fractional-second provider
+  polling and no server relay-count stop.
+- The five-minute idle check invokes the provider only when the server accepts
+  a room observation.
+- Scheduled follow-ups and conversation obligations remain inactive schema
+  concepts.
 - Pair cooldowns, per-room token budgets, and panel policies are not active.
-- Provider-native media delivery remains incomplete, so ambient routing must not
-  claim an agent viewed an attachment it did not receive.
+- Codex and Grok can receive staged image bytes through their structured
+  transports. Terminal-provider media access is staged behind the private
+  helper, but provider-native image/PDF/audio behavior still requires individual
+  real-provider verification. Unsupported media is reported, not claimed as
+  viewed.

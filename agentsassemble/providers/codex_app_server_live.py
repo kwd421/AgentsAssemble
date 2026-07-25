@@ -6,6 +6,8 @@ from agentsassemble.providers.codex_app_server import (
     CodexAppServerRuntime,
     codex_app_server_runtime_command,
 )
+from agentsassemble.providers.codex_room_tools import CodexRoomTools
+from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.room.text import clean_room_text
 
 
@@ -20,6 +22,8 @@ class CodexAppServerLiveRuntime:
         model: str,
         reasoning_effort: str,
         permission_mode: str,
+        environment: dict[str, str] | None = None,
+        room_portal: RoomPortal | None = None,
     ) -> None:
         sandbox = "workspace-write" if permission_mode == "workspace_write" else "read-only"
         permissions = "on-request" if permission_mode == "workspace_write" else "never"
@@ -31,12 +35,18 @@ class CodexAppServerLiveRuntime:
             "sandbox": sandbox,
             "permissions": permissions,
         }
+        self.room_tools = CodexRoomTools(room_portal) if room_portal is not None else None
         self.runtime = CodexAppServerRuntime(
             command=codex_app_server_runtime_command(self.profile),
             profile_settings=self.profile,
+            environment=environment,
+            dynamic_tools=self.room_tools.specs() if self.room_tools is not None else None,
+            dynamic_tool_handler=self.room_tools.handle if self.room_tools is not None else None,
         )
         self.handle: dict[str, object] = {"session_id": self.agent_id}
         self.pending = ""
+        self.pending_input: list[dict[str, object]] = []
+        self.pending_room_observation = False
         self.running = False
 
     def start(self) -> dict[str, object]:
@@ -52,17 +62,52 @@ class CodexAppServerLiveRuntime:
         if self.pending:
             raise RuntimeError("Codex runtime is already processing a turn.")
         self.pending = content
+        self.pending_input = [{"type": "text", "text": content}]
+        self.pending_room_observation = False
+
+    def send_room_observation(
+        self,
+        text: str,
+        *,
+        media_blocks: list[dict[str, str]] | None = None,
+    ) -> None:
+        self.send(text)
+        self.pending_room_observation = True
+        self.pending_input.extend(
+            {
+                "type": "image",
+                "url": (
+                    f"data:{str(block.get('mimeType') or 'image/png')};base64,"
+                    f"{str(block.get('data') or '')}"
+                ),
+            }
+            for block in list(media_blocks or [])
+            if block.get("type") == "image" and block.get("data")
+        )
 
     def read_output(self, *, timeout_seconds: float, on_delta=None, on_activity=None) -> dict[str, object]:
         prompt = self.pending
         self.pending = ""
+        turn_input = self.pending_input
+        self.pending_input = []
+        room_observation = self.pending_room_observation
+        self.pending_room_observation = False
         if not prompt:
             raise RuntimeError("Codex runtime has no pending turn.")
+        before_diagnostics = self.runtime.diagnose(self.handle)
+        tool_errors_before = int(
+            before_diagnostics.get("dynamic_tool_error_count") or 0
+        )
         final = ""
         errors: list[str] = []
         for chunk in self.runtime.send_turn(
             self.handle,
-            {"provider_input": prompt, "timeout_seconds": timeout_seconds, "workspace": self.profile["workspace"]},
+            {
+                "provider_input": prompt,
+                "input": turn_input,
+                "timeout_seconds": timeout_seconds,
+                "workspace": self.profile["workspace"],
+            },
         ):
             chunk_type = str(chunk.get("type") or "")
             if chunk_type == "provider_session":
@@ -79,9 +124,28 @@ class CodexAppServerLiveRuntime:
                 final = str(chunk.get("content") or final)
             elif chunk_type == "error":
                 errors.append(str(chunk.get("diagnostics") or "Codex app-server turn failed."))
-        if not final.strip():
-            raise RuntimeError(errors[-1] if errors else "Codex completed without a final message.")
         diagnostics = self.runtime.diagnose(self.handle)
+        if not final.strip():
+            if errors:
+                raise RuntimeError(errors[-1])
+            if room_observation:
+                if (
+                    int(diagnostics.get("dynamic_tool_error_count") or 0)
+                    > tool_errors_before
+                ):
+                    raise RuntimeError("Codex shared-room tool failed.")
+                return {
+                    "outcome": "decline",
+                    "reason_code": "nothing_useful_to_add",
+                    "metadata": {
+                        "message_source": "codex_app_server",
+                        "observed_model_id": clean_room_text(
+                            diagnostics.get("observed_model_id"),
+                            limit=128,
+                        ),
+                    },
+                }
+            raise RuntimeError("Codex completed without a final message.")
         return {
             "outcome": "message",
             "actor_id": self.agent_id,
@@ -105,6 +169,8 @@ class CodexAppServerLiveRuntime:
         self.runtime.detach(self.handle)
         self.running = False
         self.pending = ""
+        self.pending_input = []
+        self.pending_room_observation = False
 
     def health(self) -> dict[str, object]:
         diagnostics = self.runtime.diagnose(self.handle)

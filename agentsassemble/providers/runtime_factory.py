@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from agentsassemble.providers.deepseek import DeepSeekApiRuntime
+from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRuntime
 from agentsassemble.providers.grok_acp import GrokAcpRuntime
 from agentsassemble.providers.live_cli import LiveCliRuntime
 from agentsassemble.providers.opencode import OpenCodeRuntime
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
 from agentsassemble.providers.windows_conpty import WindowsConPtyRuntime
+
+if TYPE_CHECKING:
+    from agentsassemble.providers.room_portal import RoomPortal
 
 
 class ProviderRuntimeFactoryError(ValueError):
@@ -41,6 +46,8 @@ def runtime_from_config(
     config: ProviderRuntimeConfig,
     *,
     credential: str = "",
+    environment: dict[str, str] | None = None,
+    room_portal: RoomPortal | None = None,
 ):
     key = (config.provider_kind, config.transport)
     expected_runtime_kind = _TERMINAL_RUNTIME_KINDS.get(key) or _STRUCTURED_RUNTIME_KINDS.get(key)
@@ -52,6 +59,15 @@ def runtime_from_config(
         raise ProviderRuntimeFactoryError(
             "Provider runtime kind does not match its provider and transport.",
             code="provider_runtime_kind_mismatch",
+        )
+    if key == ("codex_live_session", "pty"):
+        return CodexAppServerLiveRuntime(
+            config.participant_id,
+            workspace=config.cwd,
+            model=config.model,
+            reasoning_effort=config.reasoning_effort,
+            permission_mode=config.permission_mode,
+            room_portal=room_portal,
         )
     if key == ("deepseek_api", "https"):
         return DeepSeekApiRuntime(
@@ -84,6 +100,8 @@ def runtime_from_config(
             command,
             cwd=config.cwd,
             state_dir=config.runtime_state_dir,
+            env=environment,
+            room_portal=room_portal,
             startup_timeout_seconds=config.startup_timeout_seconds,
         )
     runtime_class = WindowsConPtyRuntime if os.name == "nt" else LiveCliRuntime
@@ -91,6 +109,7 @@ def runtime_from_config(
         config.participant_id,
         list(config.command),
         cwd=config.cwd,
+        env=environment,
         idle_quiet_seconds=config.quiet_seconds,
         input_mode=config.input_mode,
         submit_newline=config.submit_newline,

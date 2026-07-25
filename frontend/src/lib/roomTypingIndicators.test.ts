@@ -93,6 +93,19 @@ describe("roomTypingNames", () => {
     ).toEqual([]);
   });
 
+  it("does not revive a stopped session from stale turn progress", () => {
+    expect(
+      roomTypingNames({
+        agents: [{ ...agent, status: "working" }],
+        members: [{ ...member, thinking: true }],
+        sessions: [{ ...session, runtime_status: "stopped", active_turn_id: "" }],
+        events: [],
+        progress,
+        activityVisibility: {},
+      })
+    ).toEqual([]);
+  });
+
   it("uses the current participant name before a stale session or progress label", () => {
     expect(
       roomTypingNames({

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import logging
 import threading
@@ -48,6 +49,7 @@ from agentsassemble.room.agent_reactivation import RoomAgentReactivationService
 from agentsassemble.room.agent_runtime_profiles import (
     RoomAgentRuntimeProfileService,
 )
+from agentsassemble.room.attachments import AttachmentError, read_attachment_file
 from agentsassemble.room_attention_coordinator import RoomAttentionCoordinator
 from agentsassemble.room_attention_reconciliation import RoomAttentionReconciler
 from agentsassemble.room_attention_policy import (
@@ -527,6 +529,28 @@ class RoomRealtimeController:
             # It must also bypass ensure_room's lifecycle lock so a bridge can
             # flush while a remote stop waits for that bridge's confirmation.
             result = self._turn_coordinator.observe_room(identity, room_id, payload)
+            return {
+                "op": "ack",
+                "request_id": request_id,
+                "accepted": True,
+                "action": action,
+                "result": result,
+                "deduplicated": False,
+            }
+        if action == "room.check":
+            self._require_bridge(identity)
+            result = self._turn_coordinator.request_room_check(identity, room_id)
+            return {
+                "op": "ack",
+                "request_id": request_id,
+                "accepted": True,
+                "action": action,
+                "result": result,
+                "deduplicated": False,
+            }
+        if action == "room.attachment.read":
+            self._require_bridge(identity)
+            result = self._read_room_attachment(identity, room_id, payload)
             return {
                 "op": "ack",
                 "request_id": request_id,
@@ -1225,6 +1249,42 @@ class RoomRealtimeController:
     def _bridge_health(self, identity: dict[str, object], room_id: str, payload: dict[str, object]) -> dict[str, object]:
         return self._bridge_reports.health(identity, room_id, payload)
 
+    def _read_room_attachment(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        self._turn_coordinator.bridge_session(identity, room_id)
+        attachment_id = clean_lobby_text(payload.get("attachment_id"), limit=64)
+        referenced = any(
+            isinstance(attachment, dict)
+            and clean_lobby_text(attachment.get("id"), limit=64) == attachment_id
+            for event in self.store.read_events(
+                room_id,
+                event_types=("message_final",),
+            )
+            for attachment in (
+                event.get("attachments")
+                if isinstance(event.get("attachments"), list)
+                else []
+            )
+        )
+        if not attachment_id or not referenced:
+            raise RoomCommandRejected(
+                "Attachment is not part of this room.",
+                code="not_found",
+            )
+        try:
+            metadata, path = read_attachment_file(self.output_root, attachment_id)
+            content = path.read_bytes()
+        except (AttachmentError, OSError) as error:
+            raise RoomCommandRejected(str(error), code="not_found") from error
+        return {
+            "attachment": metadata,
+            "data_base64": base64.b64encode(content).decode("ascii"),
+        }
+
     def _on_event_appended(self, event: RoomEvent | dict[str, object]) -> None:
         self.broker.broadcast_event(_public_event(event))
         if event.get("type") != "message_final":
@@ -1281,66 +1341,44 @@ class RoomRealtimeController:
         providers: dict[str, NativeCliProviderSpec],
     ) -> None:
         room_id = clean_lobby_text(event.get("room_id"), limit=128)
-        eligible_ids = tuple(
-            agent_id
-            for agent_id in providers
-            if self.agent_floor_eligibility(room_id, agent_id).eligible
+        actor_id = clean_lobby_text(
+            event.get("participant_id") or event.get("actor_id"),
+            limit=128,
         )
-        try:
-            result = self._attention_coordinator.evaluate_and_queue_active(
-                event,
-                candidate_ids=providers,
-                eligible_ids=eligible_ids,
-                last_spoke_sequences={
-                    agent_id: self.store.attention_state(room_id, agent_id).last_spoke_seq
-                    for agent_id in providers
-                },
-                owner_id=self._attention_owner_id,
-                lease_seconds=self._ambient_lease_seconds(providers, eligible_ids),
-                relay_depth=max(0, int(event.get("relay_depth") or 0)) + 1,
-            )
-            job = result.get("job") if isinstance(result.get("job"), dict) else {}
-            lease = result.get("lease") if isinstance(result.get("lease"), dict) else {}
-            selected = clean_lobby_text(job.get("selected_participant_id"), limit=128)
-            if not selected:
-                return
-            assigned = self._turn_coordinator.assign_pending(room_id, selected)
-            if assigned:
-                return
-            self._turn_coordinator.cancel_queued_attention(
-                room_id,
-                selected,
-                source_event_id=clean_lobby_text(event.get("id"), limit=128),
-                lease_id=clean_lobby_text(lease.get("lease_id"), limit=128),
-            )
-            raise RuntimeError("Selected ambient speaker became unavailable before assignment.")
-        except Exception as error:
-            self._attention_active_error_count += 1
-            self._attention_active_last_error = str(error)
-            _LOGGER.exception(
-                "Active room attention evaluation failed",
-                extra={
-                    "room_id": room_id,
-                    "event_id": str(event.get("id") or ""),
-                },
-            )
-            self.store.append_event(
-                room_id,
-                "error",
-                content="Autonomous speaker selection failed.",
-                error_code="ambient_attention_failed",
-            )
-
-    @staticmethod
-    def _ambient_lease_seconds(
-        providers: dict[str, NativeCliProviderSpec],
-        eligible_ids: tuple[str, ...],
-    ) -> float:
-        timeout = max(
-            (float(providers[agent_id].turn_timeout_seconds) for agent_id in eligible_ids),
-            default=30.0,
-        )
-        return min(3600.0, max(60.0, timeout + 30.0))
+        target_ids: list[str] = []
+        for agent_id in providers:
+            if agent_id == actor_id:
+                continue
+            eligibility = self.agent_floor_eligibility(room_id, agent_id)
+            if eligibility.eligible or eligibility.reason_code == "runtime_busy":
+                target_ids.append(agent_id)
+        for agent_id in target_ids:
+            try:
+                self._turn_coordinator.queue_event(
+                    room_id,
+                    agent_id,
+                    event,
+                    relay_depth=0,
+                    input_mode="room_observation",
+                )
+            except Exception as error:
+                self._attention_active_error_count += 1
+                self._attention_active_last_error = str(error)
+                _LOGGER.exception(
+                    "Autonomous room wake failed",
+                    extra={
+                        "room_id": room_id,
+                        "event_id": str(event.get("id") or ""),
+                        "participant_id": agent_id,
+                    },
+                )
+                self.store.append_event(
+                    room_id,
+                    "error",
+                    participant_id=agent_id,
+                    content="Autonomous room wake failed.",
+                    error_code="ambient_wake_failed",
+                )
 
     def _record_shadow_attention(
         self,

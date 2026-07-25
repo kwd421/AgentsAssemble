@@ -96,6 +96,7 @@ class RoomProviderSessionService:
                         updates.update(
                             runtime_profile_key=spec.runtime_profile_key(),
                             transport=spec.transport,
+                            command_configured=list(spec.command),
                         )
                     if migration_blocked:
                         updates.update(

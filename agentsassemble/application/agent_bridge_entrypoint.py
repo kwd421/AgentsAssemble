@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
+from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.providers.runtime_config import CanonicalBridgeLaunchConfig
 from agentsassemble.providers.runtime_factory import runtime_from_config
 from agentsassemble.web.room_client import connect_room_ws_with_ticket
@@ -29,14 +30,26 @@ def main() -> int:
         credential = sys.stdin.buffer.readline(16_384).decode("utf-8", errors="replace").strip()
         if not credential:
             raise SystemExit("Agent Bridge credential handoff was empty.")
+    portal = RoomPortal(
+        Path(config.runtime.runtime_state_dir) / "room-portal",
+        participant_id=config.runtime.participant_id,
+    )
+    portal.prepare()
+    provider_environment = portal.provider_environment(os.environ.get("PATH", ""))
     client = connect_room_ws_with_ticket(server_url, ticket, ["room_events"], timeout=10.0)
     bridge = RoomAgentBridge(
         client,
-        runtime_from_config(config.runtime, credential=credential),
+        runtime_from_config(
+            config.runtime,
+            credential=credential,
+            environment=provider_environment,
+            room_portal=portal,
+        ),
         room_id=config.room_id,
         participant_id=config.runtime.participant_id,
         session_id=config.session_id,
         runtime_profile=config.runtime.profile,
+        room_portal=portal,
     )
 
     def stop_bridge(_signum, _frame) -> None:

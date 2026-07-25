@@ -26,20 +26,31 @@ export function roomTypingNames({
 }: RoomTypingNamesOptions): string[] {
   const names: string[] = [];
   const seen = new Set<string>();
+  const sessionByParticipant = new Map(
+    sessions.map((session) => [session.participant_id, session])
+  );
+  const progressSession = progress
+    ? sessionByParticipant.get(progress.participantId)
+    : undefined;
+  const activeProgress =
+    progress &&
+    sessionCanShowTyping(progressSession, progress.turnId)
+      ? progress
+      : null;
   const activeTurnHasVisibleOutput = Boolean(
-    progress?.turnId &&
+    activeProgress?.turnId &&
       events.some(
         (event) =>
           event.type === "message_delta" &&
-          event.turn_id === progress.turnId &&
+          event.turn_id === activeProgress.turnId &&
           eventHasContent(event)
       )
   );
-  const activeParticipantId = progress?.participantId || "";
+  const activeParticipantId = activeProgress?.participantId || "";
   const activeDisplayNames = new Set(
     activeTurnHasVisibleOutput
       ? [
-          progress?.displayName || "",
+          activeProgress?.displayName || "",
           sessions.find((session) => session.participant_id === activeParticipantId)?.display_name ||
             "",
           members.find((member) => member.participant_id === activeParticipantId)?.display_name || "",
@@ -55,30 +66,42 @@ export function roomTypingNames({
   };
 
   agents.forEach((agent) => {
-    if (agent.status === "working") add(agent.display_name || agent.agent_id);
+    const session = sessionByParticipant.get(agent.agent_id);
+    if (agent.status === "working" && sessionCanShowTyping(session)) {
+      add(agent.display_name || agent.agent_id);
+    }
   });
   members.forEach((member) => {
-    if (member.thinking) add(member.display_name || member.participant_id);
+    const session = sessionByParticipant.get(member.participant_id);
+    if (member.thinking && sessionCanShowTyping(session)) {
+      add(member.display_name || member.participant_id);
+    }
   });
 
-  if (progress && !activeTurnHasVisibleOutput) {
+  if (activeProgress && !activeTurnHasVisibleOutput) {
     const hasVisibleThinking = events.some(
       (event) =>
         ["thinking_delta", "activity_delta"].includes(event.type) &&
-        event.turn_id === progress.turnId &&
+        event.turn_id === activeProgress.turnId &&
         eventHasContent(event) &&
-        agentActivityIsVisible(activityVisibility, progress.participantId)
+        agentActivityIsVisible(activityVisibility, activeProgress.participantId)
     );
     if (!hasVisibleThinking) {
       const session = sessions.find(
-        (candidate) => candidate.participant_id === progress.participantId
+        (candidate) => candidate.participant_id === activeProgress.participantId
       );
       const participant = members.find(
-        (candidate) => candidate.participant_id === progress.participantId
+        (candidate) => candidate.participant_id === activeProgress.participantId
       );
-      add(participant?.display_name || session?.display_name || progress.displayName);
+      add(participant?.display_name || session?.display_name || activeProgress.displayName);
     }
   }
 
   return names;
+}
+
+function sessionCanShowTyping(session: RoomAgentSession | undefined, turnId = "") {
+  if (!session?.runtime_status) return true;
+  if (session.runtime_status !== "busy") return false;
+  return !turnId || !session.active_turn_id || session.active_turn_id === turnId;
 }

@@ -24,6 +24,8 @@ ROOM_COMMAND_ACTIONS = frozenset(
         "bridge.health",
         "bridge.stopped",
         "room.observed",
+        "room.check",
+        "room.attachment.read",
         "turn.state",
         "turn.decline",
         "activity.update",

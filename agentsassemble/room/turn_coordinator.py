@@ -201,6 +201,7 @@ class RoomTurnCoordinator:
         relay_depth: int,
         attention_job_id: str = "",
         attention_lease_id: str = "",
+        input_mode: str = "transcript",
     ) -> bool:
         session = self.store.session(room_id, agent_id)
         if not session:
@@ -210,6 +211,11 @@ class RoomTurnCoordinator:
         updates: dict[str, object] = {
             "pending_event_ids": pending,
             "pending_relay_depth": max(int(session.get("pending_relay_depth") or 0), relay_depth),
+            "pending_input_mode": (
+                "room_observation"
+                if clean_lobby_text(input_mode, limit=32) == "room_observation"
+                else clean_lobby_text(session.get("pending_input_mode"), limit=32)
+            ),
         }
         updates.update(
             self._turn_attention.queue_fields(
@@ -239,11 +245,19 @@ class RoomTurnCoordinator:
             not session
             or participant.get("status") == "kicked"
             or bool(participant.get("muted"))
-            or not pending
             or not session.get("enabled")
             or session.get("runtime_status") != "idle"
             or not self.broker.has_bridge(room_id, agent_id)
         ):
+            return False
+        if clean_lobby_text(session.get("pending_input_mode"), limit=32) == "room_observation":
+            return self._assign_room_observation(
+                room_id,
+                agent_id,
+                session=session,
+                pending=pending,
+            )
+        if not pending:
             return False
         try:
             canonical_sync_seq = canonical_provider_sync_seq(
@@ -410,6 +424,195 @@ class RoomTurnCoordinator:
             pending_event_ids=[*partition.inflight, *partition.deferred],
             **self._turn_attention.delivery_failed_fields(updated),
             last_error="Agent bridge disconnected before turn assignment.",
+        )
+        return False
+
+    def request_room_check(
+        self,
+        identity: dict[str, object],
+        room_id: str,
+    ) -> dict[str, object]:
+        agent_id, session = self.bridge_session(identity, room_id)
+        if self.store.room_settings(room_id).get("conversation_mode") != "ambient":
+            return {"assigned": False, "reason": "ambient_disabled"}
+        assigned = self._assign_room_observation(
+            room_id,
+            agent_id,
+            session=session,
+            pending=[],
+            allow_empty=True,
+        )
+        return {"assigned": assigned}
+
+    def _assign_room_observation(
+        self,
+        room_id: str,
+        agent_id: str,
+        *,
+        session: dict[str, object],
+        pending: list[str],
+        allow_empty: bool = False,
+    ) -> bool:
+        participant = self.store.participant(room_id, agent_id)
+        if (
+            participant.get("status") == "kicked"
+            or bool(participant.get("muted"))
+            or not session.get("enabled")
+            or session.get("runtime_status") != "idle"
+            or not self.broker.has_bridge(room_id, agent_id)
+        ):
+            return False
+        try:
+            canonical_sync_seq = canonical_provider_sync_seq(
+                self.store,
+                room_id,
+                agent_id,
+                session,
+            )
+        except ProviderSyncCursorParityError as error:
+            raise RoomCommandRejected(str(error), code="provider_sync_cursor_mismatch") from error
+        partition = self.partition_pending_events(
+            room_id,
+            pending,
+            included_event_ids=set(pending),
+            last_provider_sync_seq=canonical_sync_seq,
+        )
+        if not partition.inflight and not allow_empty:
+            self.store.update_session_fields(
+                room_id,
+                str(session["session_id"]),
+                pending_event_ids=partition.deferred,
+                pending_relay_depth=0,
+                pending_input_mode="room_observation" if partition.deferred else "",
+                **self._turn_attention.deferred_fields(
+                    room_id,
+                    session,
+                    partition.deferred,
+                ),
+            )
+            return False
+        latest_message = {}
+        if partition.inflight:
+            latest_message = self.store.event_by_id(room_id, partition.inflight[-1])
+        elif allow_empty:
+            messages = self.store.read_events(
+                room_id,
+                event_types=("message_final",),
+                limit=1,
+                newest=True,
+            )
+            latest_message = messages[-1] if messages else {}
+        active_source_event_id = clean_lobby_text(latest_message.get("id"), limit=128)
+        input_up_to_event_id = active_source_event_id or clean_lobby_text(
+            session.get("last_provider_sync_event_id"),
+            limit=128,
+        )
+        input_up_to_seq = max(
+            canonical_sync_seq,
+            safe_bounded_int(latest_message.get("seq"), default=0, minimum=0),
+        )
+        relay_depth = int(session.get("pending_relay_depth") or 0)
+        try:
+            attention_fields = self._turn_attention.assignment_fields(
+                room_id,
+                agent_id,
+                session,
+                inflight_event_ids=partition.inflight,
+                deferred_event_ids=partition.deferred,
+            )
+        except AttentionLeaseConflict as error:
+            failed = self.store.update_session_fields(
+                room_id,
+                str(session["session_id"]),
+                last_error=str(error),
+            )
+            self._publish_session_state(room_id, failed)
+            raise RoomCommandRejected(str(error), code="attention_lease_conflict") from error
+        turn_id = f"turn-{uuid4().hex[:12]}"
+        dispatched_at = now()
+        updated = self.store.update_session_fields(
+            room_id,
+            str(session["session_id"]),
+            runtime_status="busy",
+            turn_phase="thinking",
+            active_turn_id=turn_id,
+            active_source_event_id=active_source_event_id,
+            active_relay_depth=relay_depth,
+            input_up_to_event_id=input_up_to_event_id,
+            input_up_to_seq=input_up_to_seq,
+            inflight_event_ids=partition.inflight,
+            pending_event_ids=partition.deferred,
+            pending_relay_depth=relay_depth if partition.deferred else 0,
+            pending_input_mode="room_observation" if partition.deferred else "",
+            **attention_fields,
+            latency={
+                "queued_at": latest_message.get("created_at") or dispatched_at,
+                "dispatch_started_at": dispatched_at,
+            },
+            provider_visible_chars=0,
+            provider_visible_event_count=0,
+            provider_input_mode="room_observation",
+            context_error_detected=False,
+        )
+        self._publish_session_state(room_id, updated)
+        self.store.append_event(
+            room_id,
+            "turn_started",
+            participant_id=agent_id,
+            session_id=session["session_id"],
+            turn_id=turn_id,
+            source_event_id=active_source_event_id,
+            provider_visible_chars=0,
+            provider_visible_event_count=0,
+            provider_context_event_ids=[],
+            provider_context_actor_ids=[],
+            provider_context_after_seq=canonical_sync_seq,
+            provider_context_up_to_seq=input_up_to_seq,
+            provider_input_mode="room_observation",
+        )
+        self.store.append_event(
+            room_id,
+            "turn_state",
+            participant_id=agent_id,
+            session_id=session["session_id"],
+            turn_id=turn_id,
+            phase="thinking",
+        )
+        wake = {
+            "op": "room.wake",
+            "room_id": room_id,
+            "participant_id": agent_id,
+            "session_id": session["session_id"],
+            "turn_id": turn_id,
+            "source_event_id": active_source_event_id,
+            "input_up_to_event_id": input_up_to_event_id,
+            "input_up_to_seq": input_up_to_seq,
+            "attachment_ids": _attachment_ids(
+                self.store,
+                room_id,
+                partition.inflight or ([active_source_event_id] if active_source_event_id else []),
+            ),
+            "timeout_seconds": self._provider_lookup(
+                room_id,
+                agent_id,
+            ).turn_timeout_seconds,
+        }
+        if self.broker.direct_to_bridge(room_id, agent_id, wake):
+            return True
+        self.store.update_session_fields(
+            room_id,
+            str(session["session_id"]),
+            status="unavailable",
+            runtime_status="disconnected",
+            active_turn_id="",
+            active_relay_depth=0,
+            turn_phase="",
+            input_up_to_seq=0,
+            inflight_event_ids=[],
+            pending_event_ids=[*partition.inflight, *partition.deferred],
+            pending_input_mode="room_observation",
+            **self._turn_attention.delivery_failed_fields(updated),
+            last_error="Agent bridge disconnected before room wake.",
         )
         return False
 
@@ -1142,6 +1345,24 @@ def dedupe_event_ids(values: list[object]) -> list[str]:
         if text and text not in result:
             result.append(text)
     return result
+
+
+def _attachment_ids(
+    store: RoomRepository,
+    room_id: str,
+    event_ids: list[str],
+) -> list[str]:
+    attachment_ids: list[str] = []
+    for event_id in event_ids:
+        event = store.event_by_id(room_id, event_id)
+        attachments = event.get("attachments") if isinstance(event.get("attachments"), list) else []
+        for attachment in attachments:
+            if not isinstance(attachment, dict):
+                continue
+            attachment_id = clean_lobby_text(attachment.get("id"), limit=64)
+            if attachment_id and attachment_id not in attachment_ids:
+                attachment_ids.append(attachment_id)
+    return attachment_ids
 
 
 _ACTIVE_TURN_PHASES = frozenset({"thinking", "streaming"})

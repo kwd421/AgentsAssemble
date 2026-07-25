@@ -105,6 +105,96 @@ class TurnAssignmentEnvelope:
 
 
 @dataclass(frozen=True)
+class RoomWakeEnvelope:
+    room_id: str
+    participant_id: str
+    session_id: str
+    turn_id: str
+    timeout_seconds: float
+    attachment_ids: tuple[str, ...]
+
+    @classmethod
+    def parse_strict(
+        cls,
+        value: object,
+        *,
+        room_id: str,
+        participant_id: str,
+        session_id: str,
+    ) -> RoomWakeEnvelope:
+        if not isinstance(value, dict):
+            raise BridgeProtocolError("Room wake must be an object.", fatal=True)
+        turn_id = clean_room_text(value.get("turn_id"), limit=128)
+        if not turn_id:
+            raise BridgeProtocolError(
+                "Room wake requires turn_id.",
+                code="room_wake_turn_id_missing",
+                fatal=True,
+            )
+        actual_room = clean_room_text(value.get("room_id"), limit=128)
+        actual_participant = clean_room_text(value.get("participant_id"), limit=128)
+        actual_session = clean_room_text(value.get("session_id"), limit=128)
+        if (actual_room, actual_participant, actual_session) != (
+            room_id,
+            participant_id,
+            session_id,
+        ):
+            raise BridgeProtocolError(
+                "Room wake identity does not match this Agent Bridge.",
+                code="room_wake_identity_mismatch",
+                turn_id=turn_id,
+                fatal=True,
+            )
+        timeout_value = value.get("timeout_seconds")
+        if isinstance(timeout_value, bool):
+            timeout_seconds = 0.0
+        else:
+            try:
+                timeout_seconds = float(timeout_value)
+            except (TypeError, ValueError):
+                timeout_seconds = 0.0
+        if timeout_seconds <= 0:
+            raise BridgeProtocolError(
+                "Room wake requires a positive timeout_seconds.",
+                code="room_wake_invalid",
+                turn_id=turn_id,
+            )
+        if "provider_input" in value:
+            raise BridgeProtocolError(
+                "Room wake must not contain provider transcript input.",
+                code="room_wake_contains_provider_input",
+                turn_id=turn_id,
+                fatal=True,
+            )
+        attachment_values = value.get("attachment_ids")
+        if attachment_values in (None, ""):
+            attachment_values = []
+        if not isinstance(attachment_values, list):
+            raise BridgeProtocolError(
+                "Room wake attachment_ids must be a list.",
+                code="room_wake_invalid",
+                turn_id=turn_id,
+            )
+        attachment_ids = tuple(
+            dict.fromkeys(
+                attachment_id
+                for item in attachment_values
+                if (
+                    attachment_id := clean_room_text(item, limit=64)
+                )
+            )
+        )
+        return cls(
+            room_id=actual_room,
+            participant_id=actual_participant,
+            session_id=actual_session,
+            turn_id=turn_id,
+            timeout_seconds=timeout_seconds,
+            attachment_ids=attachment_ids,
+        )
+
+
+@dataclass(frozen=True)
 class BridgeReportResponse:
     request_id: str
     accepted: bool

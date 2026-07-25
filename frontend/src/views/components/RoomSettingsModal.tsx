@@ -230,7 +230,7 @@ export default function RoomSettingsModal({
                     onChange={() => onConversationModeChange("ambient")}
                   />
                   <span className="preserve-words">
-                    자유 토론 (실험적) — 새 메시지가 생길 때 서버가 다음 에이전트 세션을 깨웁니다.
+                    자유 토론 (실험적) — 새 메시지가 생기면 연결된 에이전트들이 방을 확인하고, 각자 말할지 정합니다.
                   </span>
                 </label>
                 {conversationMode === "continuous" && (

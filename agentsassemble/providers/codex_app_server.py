@@ -16,6 +16,7 @@ from agentsassemble.room.text import clean_room_text
 
 AgentTurnChunk = dict[str, object]
 ProcessFactory = Callable[[], object]
+DynamicToolHandler = Callable[[str, object], dict[str, object]]
 DEFAULT_AGENT_TURN_TIMEOUT_SECONDS = 600.0
 CODEX_APP_SERVER_STDERR_TAIL_LINES = 50
 CODEX_APP_SERVER_STDERR_TAIL_CHARS = 16000
@@ -49,11 +50,17 @@ class CodexAppServerRuntime:
         command: list[str] | None = None,
         runtime_profile_key: str = "",
         profile_settings: dict[str, object] | None = None,
+        environment: dict[str, str] | None = None,
+        dynamic_tools: list[dict[str, object]] | None = None,
+        dynamic_tool_handler: DynamicToolHandler | None = None,
     ) -> None:
         self.process_factory = process_factory
         self.command = command or ["codex", "app-server", "--stdio"]
         self.runtime_profile_key = runtime_profile_key
         self.profile_settings = profile_settings or {}
+        self.environment = dict(environment or {})
+        self.dynamic_tools = [dict(item) for item in list(dynamic_tools or [])]
+        self.dynamic_tool_handler = dynamic_tool_handler
         self.process: object | None = None
         self._next_id = 1
         self._initialized = False
@@ -71,6 +78,8 @@ class CodexAppServerRuntime:
         self._stderr_tail_truncated = False
         self._stderr_last_line_at = ""
         self._unmatched_notification_count = 0
+        self._dynamic_tool_call_count = 0
+        self._dynamic_tool_error_count = 0
         self.diagnostics: dict[str, object] = {
             "runtime_mode": "app_server",
             "transport": "stdio_jsonl",
@@ -89,7 +98,12 @@ class CodexAppServerRuntime:
         else:
             self._update_diagnostics({"runtime_reused": True, "app_server_reused": True})
         if not self._initialized:
-            self._send_request("initialize", {"clientInfo": {"name": "AgentsAssemble", "version": "0"}})
+            initialize_params: dict[str, object] = {
+                "clientInfo": {"name": "AgentsAssemble", "version": "0"}
+            }
+            if self.dynamic_tools:
+                initialize_params["capabilities"] = {"experimentalApi": True}
+            self._send_request("initialize", initialize_params)
             self._send_notification("initialized", {})
             self._initialized = True
         self._update_diagnostics({"app_server_initialize_ms": _elapsed_ms(started)})
@@ -111,7 +125,12 @@ class CodexAppServerRuntime:
             thread_id = clean_provider_session_id(_nested_get(response, "result.thread.id") or provider_thread_id or provider_session_id)
             self._update_diagnostics({"thread_reused": False, "thread_resume_skipped": False})
         else:
-            response = self._send_request("thread/start", _codex_app_server_thread_start_settings(self.profile_settings))
+            thread_start_settings = _codex_app_server_thread_start_settings(
+                self.profile_settings
+            )
+            if self.dynamic_tools:
+                thread_start_settings["dynamicTools"] = self.dynamic_tools
+            response = self._send_request("thread/start", thread_start_settings)
             self._update_diagnostics({"thread_start_ms": _elapsed_ms(started)})
             thread_id = clean_provider_session_id(
                 _nested_get(response, "result.thread.id")
@@ -160,9 +179,24 @@ class CodexAppServerRuntime:
 
     def _send_turn_attached_locked(self, thread_id: str, packet: dict[str, object]) -> Iterable[AgentTurnChunk]:
         started = time.monotonic()
+        packet_input = packet.get("input")
+        turn_input = (
+            [dict(item) for item in packet_input if isinstance(item, dict)]
+            if isinstance(packet_input, list)
+            else []
+        )
+        if not turn_input:
+            turn_input = [
+                {
+                    "type": "text",
+                    "text": str(
+                        packet.get("provider_input") or agent_turn_prompt(packet)
+                    ),
+                }
+            ]
         turn_params = {
             "threadId": thread_id,
-            "input": [{"type": "text", "text": str(packet.get("provider_input") or agent_turn_prompt(packet))}],
+            "input": turn_input,
             "metadata": {"source": "agentsassemble_agent_session"},
             **_codex_app_server_turn_start_settings(self.profile_settings),
         }
@@ -357,7 +391,7 @@ class CodexAppServerRuntime:
             text=True,
             errors="replace",
             bufsize=1,
-            env=sanitized_provider_environment(),
+            env=sanitized_provider_environment(self.environment),
         )
 
     def _reset_stderr_drain_state(self) -> None:
@@ -566,7 +600,7 @@ class CodexAppServerRuntime:
 
     def _read_response(self, request_id: int, *, timeout_deadline: float | None = None) -> dict[str, object]:
         while True:
-            message = self._read_json_line(timeout_deadline=timeout_deadline)
+            message = self._read_protocol_message(timeout_deadline=timeout_deadline)
             if message.get("id") == request_id:
                 return message
             self._pending_messages.append(message)
@@ -587,7 +621,7 @@ class CodexAppServerRuntime:
                 message = self._pop_matching_pending_message(thread_id=thread_id, turn_id=turn_id)
                 if message is None:
                     read_deadline = _earlier_deadline(timeout_deadline, inferred_completion_deadline)
-                    message = self._read_json_line(timeout_deadline=read_deadline)
+                    message = self._read_protocol_message(timeout_deadline=read_deadline)
                     if not self._message_matches_active_turn(message, thread_id=thread_id, turn_id=turn_id):
                         self._buffer_unmatched_notification(message)
                         continue
@@ -677,6 +711,51 @@ class CodexAppServerRuntime:
         if observed_model_id:
             updates["observed_model_id"] = observed_model_id
         self._update_diagnostics(updates)
+
+    def _read_protocol_message(
+        self,
+        *,
+        timeout_deadline: float | None = None,
+    ) -> dict[str, object]:
+        while True:
+            message = self._read_json_line(timeout_deadline=timeout_deadline)
+            if (
+                clean_room_text(message.get("method"), limit=128)
+                != "item/tool/call"
+                or "id" not in message
+            ):
+                return message
+            self._handle_dynamic_tool_request(message)
+
+    def _handle_dynamic_tool_request(self, message: dict[str, object]) -> None:
+        request_id = message.get("id")
+        params = message.get("params") if isinstance(message.get("params"), dict) else {}
+        tool = clean_room_text(params.get("tool"), limit=128)
+        self._dynamic_tool_call_count += 1
+        try:
+            if self.dynamic_tool_handler is None:
+                raise RuntimeError("No dynamic tool handler is configured.")
+            result = self.dynamic_tool_handler(tool, params.get("arguments"))
+            if not isinstance(result, dict):
+                raise RuntimeError("Dynamic tool handler returned an invalid response.")
+        except Exception:
+            self._dynamic_tool_error_count += 1
+            result = {
+                "success": False,
+                "contentItems": [
+                    {
+                        "type": "inputText",
+                        "text": "The shared-room tool could not complete this request.",
+                    }
+                ],
+            }
+        self._update_diagnostics(
+            {
+                "dynamic_tool_call_count": self._dynamic_tool_call_count,
+                "dynamic_tool_error_count": self._dynamic_tool_error_count,
+            }
+        )
+        self._write_json({"jsonrpc": "2.0", "id": request_id, "result": result})
 
     def _read_json_line(self, *, timeout_deadline: float | None = None) -> dict[str, object]:
         assert self.process is not None

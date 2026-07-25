@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import sys
 import threading
 import time
-from dataclasses import replace
+from collections import deque
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -13,6 +14,7 @@ from agentsassemble.providers.bridge_protocol import (
     BridgeProtocolError,
     BridgeReportRejected,
     BridgeReportTimeout,
+    RoomWakeEnvelope,
     TurnAssignmentEnvelope,
 )
 from agentsassemble.providers.bridge_report_tracker import BridgeReportTracker
@@ -27,6 +29,7 @@ from agentsassemble.providers.runtime_contracts import (
     ProviderTurnResult,
 )
 from agentsassemble.providers.runtime_config import ProviderRuntimeProfile
+from agentsassemble.providers.room_portal import RoomPortal, RoomPortalError
 
 
 class BridgeRoomClient(Protocol):
@@ -68,8 +71,10 @@ class RoomAgentBridge:
         stop_runtime_on_exit: bool = True,
         report_timeout_seconds: float = 5.0,
         runtime_profile: ProviderRuntimeProfile | None = None,
+        room_portal: RoomPortal | None = None,
         observed_checkpoint_max_events: int = 20,
         observed_checkpoint_interval_seconds: float = 1.0,
+        idle_room_check_seconds: float = 300.0,
     ) -> None:
         self.client = client
         self.runtime = runtime
@@ -84,6 +89,7 @@ class RoomAgentBridge:
         self._worker: threading.Thread | None = None
         self._report_tracker = BridgeReportTracker(timeout_seconds=report_timeout_seconds)
         self._runtime_profile = runtime_profile
+        self._room_portal = room_portal
         self._diagnostics_lock = threading.RLock()
         self._activity_invalid_count = 0
         self._run_thread: threading.Thread | None = None
@@ -97,6 +103,9 @@ class RoomAgentBridge:
             float(observed_checkpoint_interval_seconds),
         )
         self._observed_checkpoint_error: Exception | None = None
+        self._deferred_messages: deque[dict[str, object]] = deque()
+        self._idle_room_check_seconds = max(5.0, float(idle_room_check_seconds))
+        self._next_idle_room_check_at = time.monotonic() + self._idle_room_check_seconds
         set_receive_timeout = getattr(self.client, "set_receive_timeout", None)
         if callable(set_receive_timeout):
             set_receive_timeout(self._observed_checkpoint_interval_seconds)
@@ -111,9 +120,12 @@ class RoomAgentBridge:
             health = self.runtime.start()
             self._command("bridge.ready", self._health_payload(health))
             while not self._stop.is_set() and not self.client.closed:
-                messages = self.client.receive()
+                messages = self._drain_deferred_messages()
+                if not messages:
+                    messages = self.client.receive()
                 if not messages:
                     self._flush_observed_checkpoint_if_due()
+                    self._request_idle_room_check_if_due()
                     self._stop.wait(self.receive_sleep_seconds)
                     continue
                 processed_messages: list[dict[str, object]] = []
@@ -193,7 +205,11 @@ class RoomAgentBridge:
     def _handle_message(self, message: dict[str, object]) -> None:
         if self._report_tracker.resolve_message(message):
             return
+        self._ingest_room_frame(message)
         op = clean_lobby_text(message.get("op"), limit=64)
+        if op == "room.wake":
+            self._start_room_wake(message)
+            return
         if op == "turn.assign":
             self._start_turn(message)
             return
@@ -250,12 +266,6 @@ class RoomAgentBridge:
                 },
             )
             return
-        if self._initial_orientation:
-            envelope = replace(
-                envelope,
-                provider_input=f"{self._initial_orientation}\n\n{envelope.provider_input}".strip(),
-            )
-            self._initial_orientation = ""
         with self._worker_lock:
             current_worker = self._worker
         if current_worker is not None and current_worker.is_alive():
@@ -280,9 +290,234 @@ class RoomAgentBridge:
             )
             self._worker.start()
 
+    def _start_room_wake(self, wake: dict[str, object]) -> None:
+        portal = self._room_portal
+        if portal is None:
+            self._command(
+                "turn.failed",
+                {
+                    "turn_id": clean_lobby_text(wake.get("turn_id"), limit=128),
+                    "status": "error",
+                    "error_code": "room_portal_unavailable",
+                    "message": "Autonomous room observation requires a private room portal.",
+                },
+            )
+            return
+        try:
+            envelope = RoomWakeEnvelope.parse_strict(
+                wake,
+                room_id=self.room_id,
+                participant_id=self.participant_id,
+                session_id=self.session_id,
+            )
+        except BridgeProtocolError as error:
+            if error.fatal:
+                self._fail_protocol(error)
+                return
+            self._command(
+                "turn.failed",
+                {
+                    "turn_id": error.turn_id,
+                    "status": "error",
+                    "error_code": error.code,
+                    "message": str(error),
+                },
+            )
+            return
+        with self._worker_lock:
+            current_worker = self._worker
+        if current_worker is not None and current_worker.is_alive():
+            current_worker.join(timeout=0.25)
+        with self._worker_lock:
+            if self._worker is not None and self._worker.is_alive():
+                self._command(
+                    "turn.failed",
+                    {
+                        "turn_id": envelope.turn_id,
+                        "status": "error",
+                        "error_code": "bridge_busy",
+                        "message": "Agent Bridge received a room wake while busy.",
+                    },
+                )
+                return
+            try:
+                portal.begin_observation(
+                    envelope.turn_id,
+                    attachment_ids=envelope.attachment_ids,
+                )
+            except RoomPortalError as error:
+                self._command(
+                    "turn.failed",
+                    {
+                        "turn_id": envelope.turn_id,
+                        "status": "error",
+                        "error_code": "room_portal_failed",
+                        "message": str(error),
+                    },
+                )
+                return
+            self._worker = threading.Thread(
+                target=self._run_room_observation,
+                args=(envelope,),
+                name=f"AgentsAssembleBridgeObservation-{self.participant_id}",
+                daemon=True,
+            )
+            self._worker.start()
+
+    def _run_room_observation(self, wake: RoomWakeEnvelope) -> None:
+        portal = self._room_portal
+        if portal is None:
+            return
+        turn_id = wake.turn_id
+        provider_input = self._with_initial_orientation(
+            portal.wake_prompt(
+                provider_kind=(
+                    self._runtime_profile.provider_kind
+                    if self._runtime_profile is not None
+                    else ""
+                )
+            )
+        )
+        started = time.monotonic()
+        input_started_at = _now()
+        first_output_at = ""
+        first_output_elapsed: float | None = None
+        last_output_at = ""
+        delta_count = 0
+        try:
+            send_observation = getattr(self.runtime, "send_room_observation", None)
+            if callable(send_observation):
+                send_observation(
+                    provider_input,
+                    media_blocks=portal.native_media_blocks(),
+                )
+            else:
+                self.runtime.send(provider_input)
+            input_completed_at = _now()
+            input_completed = time.monotonic()
+            self._command(
+                "turn.state",
+                {
+                    "turn_id": turn_id,
+                    "phase": "thinking",
+                    "latency": {
+                        "input_write_started_at": input_started_at,
+                        "input_write_completed_at": input_completed_at,
+                        "input_write_ms": round((input_completed - started) * 1000, 1),
+                    },
+                },
+                wait_for_ack=False,
+            )
+
+            def on_private_delta(delta: str) -> None:
+                nonlocal first_output_at, first_output_elapsed, last_output_at, delta_count
+                if not str(delta or ""):
+                    return
+                now_mono = time.monotonic()
+                now_iso = _now()
+                if first_output_elapsed is None:
+                    first_output_elapsed = now_mono
+                    first_output_at = now_iso
+                last_output_at = now_iso
+                delta_count += 1
+
+            def on_activity(activity: dict[str, object]) -> None:
+                safe = _safe_activity(activity)
+                if not safe:
+                    with self._diagnostics_lock:
+                        self._activity_invalid_count += 1
+                    return
+                self._command(
+                    "activity.update",
+                    {"turn_id": turn_id, **safe},
+                    wait_for_ack=False,
+                )
+
+            raw_result = self.runtime.read_output(
+                timeout_seconds=wake.timeout_seconds,
+                on_delta=on_private_delta,
+                on_activity=on_activity,
+            )
+            result = ProviderTurnResult.parse(raw_result)
+            public_content = portal.consume_publication(turn_id)
+            completed = time.monotonic()
+            completed_at = _now()
+            latency = {
+                "first_output_at": first_output_at,
+                "last_output_at": last_output_at or completed_at,
+                "quiet_detected_at": completed_at,
+                "turn_completed_at": completed_at,
+                "ttfo_ms": round((first_output_elapsed - input_completed) * 1000, 1)
+                if first_output_elapsed is not None
+                else None,
+                "total_turn_ms": round((completed - started) * 1000, 1),
+                "delta_count": delta_count,
+            }
+            if not public_content:
+                self._command(
+                    "turn.decline",
+                    {
+                        "turn_id": turn_id,
+                        "reason_code": (
+                            result.decline_reason
+                            if result.outcome == "decline"
+                            else "nothing_useful_to_add"
+                        ),
+                        "diagnostics": self._health_payload(self.runtime.health()),
+                        "latency": latency,
+                    },
+                )
+                return
+            self._command(
+                "message.final",
+                {
+                    "turn_id": turn_id,
+                    "content": public_content,
+                    "observed_model_id": clean_lobby_text(
+                        result.metadata.get("observed_model_id"),
+                        limit=128,
+                    ),
+                    "message_source": "room_portal",
+                    "diagnostics": self._health_payload(self.runtime.health()),
+                    "latency": latency,
+                },
+            )
+        except (BridgeReportRejected, BridgeReportTimeout) as report_error:
+            print(
+                f"Agent Bridge room observation report failed: {report_error.code}",
+                file=sys.stderr,
+                flush=True,
+            )
+            self._stop.set()
+        except Exception as error:
+            if not self._stop.is_set():
+                try:
+                    self._command(
+                        "turn.failed",
+                        {
+                            "turn_id": turn_id,
+                            "status": "error",
+                            "error_code": getattr(error, "code", "provider_turn_failed"),
+                            "message": str(error),
+                            "diagnostics": self._failure_diagnostics(),
+                        },
+                    )
+                except (BridgeReportRejected, BridgeReportTimeout) as report_error:
+                    print(
+                        f"Agent Bridge room observation report failed: {report_error.code}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    self._stop.set()
+        finally:
+            portal.end_observation(turn_id)
+            with self._worker_lock:
+                if self._worker is threading.current_thread():
+                    self._worker = None
+
     def _run_turn(self, assignment: TurnAssignmentEnvelope) -> None:
         turn_id = assignment.turn_id
-        provider_input = assignment.provider_input
+        provider_input = self._with_initial_orientation(assignment.provider_input)
         timeout_seconds = assignment.timeout_seconds
         started = time.monotonic()
         input_started_at = _now()
@@ -419,6 +654,14 @@ class RoomAgentBridge:
                 if self._worker is threading.current_thread():
                     self._worker = None
 
+    def _with_initial_orientation(self, provider_input: str) -> str:
+        with self._worker_lock:
+            orientation = self._initial_orientation
+            self._initial_orientation = ""
+        if not orientation:
+            return provider_input
+        return f"{orientation}\n\n{provider_input}".strip()
+
     def _command(
         self,
         action: str,
@@ -442,9 +685,60 @@ class RoomAgentBridge:
     def _pump_report_messages(self) -> bool:
         messages = self.client.receive()
         for message in messages:
-            self._handle_message(message)
-        self._queue_observed_events(messages)
+            if not self._report_tracker.resolve_message(message):
+                self._deferred_messages.append(message)
         return bool(messages)
+
+    def _drain_deferred_messages(self) -> list[dict[str, object]]:
+        messages = list(self._deferred_messages)
+        self._deferred_messages.clear()
+        return messages
+
+    def _ingest_room_frame(self, message: dict[str, object]) -> None:
+        portal = self._room_portal
+        if portal is None:
+            return
+        attachments = portal.ingest_frame(message)
+        if _contains_final_room_message(message):
+            self._next_idle_room_check_at = time.monotonic() + self._idle_room_check_seconds
+        for attachment in attachments:
+            self._stage_attachment(attachment)
+
+    def _stage_attachment(self, attachment: dict[str, object]) -> None:
+        portal = self._room_portal
+        if portal is None:
+            return
+        try:
+            ack = self._command(
+                "room.attachment.read",
+                {"attachment_id": attachment.get("id")},
+            )
+            result = ack.get("result") if isinstance(ack, dict) and isinstance(ack.get("result"), dict) else {}
+            metadata = result.get("attachment") if isinstance(result.get("attachment"), dict) else attachment
+            encoded = result.get("data_base64")
+            if not isinstance(encoded, str) or not encoded:
+                raise RoomPortalError("Attachment response did not include content.")
+            content = base64.b64decode(encoded, validate=True)
+            portal.stage_attachment(metadata, content)
+        except Exception as error:
+            portal.mark_attachment_unavailable(attachment, error)
+
+    def _request_idle_room_check_if_due(self) -> None:
+        if self._room_portal is None or time.monotonic() < self._next_idle_room_check_at:
+            return
+        with self._worker_lock:
+            worker = self._worker
+        if worker is not None and worker.is_alive():
+            return
+        self._next_idle_room_check_at = time.monotonic() + self._idle_room_check_seconds
+        try:
+            self._command("room.check", {})
+        except (BridgeReportRejected, BridgeReportTimeout) as error:
+            print(
+                f"Agent Bridge idle room check failed: {error.code}",
+                file=sys.stderr,
+                flush=True,
+            )
 
     def _queue_observed_events(self, messages: list[dict[str, object]]) -> None:
         after_seq = max(self._last_observed_seq_reported, self._pending_observed_seq)
@@ -624,6 +918,17 @@ def _room_event_progress(
                     latest = max(latest, sequence)
                     observed_sequences.add(sequence)
     return latest, len(observed_sequences)
+
+
+def _contains_final_room_message(message: dict[str, object]) -> bool:
+    if clean_lobby_text(message.get("stream"), limit=32) != "room_events":
+        return False
+    events = message.get("events") if isinstance(message.get("events"), list) else []
+    return any(
+        isinstance(event, dict)
+        and clean_lobby_text(event.get("type"), limit=64) == "message_final"
+        for event in events
+    )
 
 
 def _now() -> str:

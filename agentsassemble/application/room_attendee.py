@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import getpass
+import os
 import signal
 import sys
 import tempfile
@@ -16,6 +17,7 @@ from agentsassemble.providers.codex_app_server_live import CodexAppServerLiveRun
 from agentsassemble.providers.opencode import OpenCodeServerProcess
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig, ProviderRuntimeProfile
 from agentsassemble.providers.runtime_factory import runtime_from_config
+from agentsassemble.providers.room_portal import RoomPortal
 from agentsassemble.providers.secrets import PROVIDER_SECRETS
 from agentsassemble.providers.agent_bridge import RoomAgentBridge
 from agentsassemble.web.room_client import connect_room_ws, join_agent_room_session
@@ -58,6 +60,7 @@ class AgentAttendee:
 
     def run(self) -> int:
         temporary = tempfile.TemporaryDirectory(prefix="agentsassemble-attendee-") if not self._workspace_argument else None
+        portal_temporary = tempfile.TemporaryDirectory(prefix="agentsassemble-room-portal-")
         workspace = Path(self._workspace_argument or temporary.name).expanduser().resolve()
         workspace.mkdir(parents=True, exist_ok=True)
         session_token = ""
@@ -79,7 +82,18 @@ class AgentAttendee:
             session_token = str(joined["session_token"])
             participant_id = str(joined.get("agent_id") or "")
             room_id = str(joined.get("meeting_id") or "")
-            self._runtime = self._build_runtime(participant_id, workspace)
+            portal = RoomPortal(
+                Path(portal_temporary.name),
+                participant_id=participant_id,
+            )
+            portal.prepare()
+            environment = portal.provider_environment(os.environ.get("PATH", ""))
+            self._runtime = self._build_runtime(
+                participant_id,
+                workspace,
+                environment=environment,
+                room_portal=portal,
+            )
             orientation = _orientation_text(joined.get("guide"))
             while not self._stop.is_set():
                 client = connect_room_ws(self.server_url, session_token, ["room_events"], timeout=10.0)
@@ -92,6 +106,7 @@ class AgentAttendee:
                     initial_orientation=orientation,
                     stop_runtime_on_exit=False,
                     runtime_profile=self._runtime_profile,
+                    room_portal=portal,
                 )
                 self._bridge = bridge
                 if bridge.run() != 0:
@@ -106,7 +121,11 @@ class AgentAttendee:
                 if not self._stop.wait(1.0):
                     continue
         finally:
-            self.last_cleanup_report = self._cleanup(session_token=session_token, temporary=temporary)
+            self.last_cleanup_report = self._cleanup(
+                session_token=session_token,
+                temporary=temporary,
+                portal_temporary=portal_temporary,
+            )
             emit_cleanup_failure(self.last_cleanup_report)
         return 0 if self.last_cleanup_report.ok else 1
 
@@ -116,7 +135,13 @@ class AgentAttendee:
         if bridge is not None:
             bridge.stop()
 
-    def _cleanup(self, *, session_token: str, temporary: object | None) -> CleanupReport:
+    def _cleanup(
+        self,
+        *,
+        session_token: str,
+        temporary: object | None,
+        portal_temporary: object | None = None,
+    ) -> CleanupReport:
         cleanup = CleanupReport("agent_attendee")
         if self._runtime is not None:
             try:
@@ -153,9 +178,22 @@ class AgentAttendee:
                 cleanup.record_success()
             except Exception as error:
                 cleanup.record_failure("workspace.cleanup", error, handle_id="temporary-workspace")
+        if portal_temporary is not None:
+            try:
+                portal_temporary.cleanup()
+                cleanup.record_success()
+            except Exception as error:
+                cleanup.record_failure("room_portal.cleanup", error, handle_id="room-portal")
         return cleanup
 
-    def _build_runtime(self, participant_id: str, workspace: Path):
+    def _build_runtime(
+        self,
+        participant_id: str,
+        workspace: Path,
+        *,
+        environment: dict[str, str] | None = None,
+        room_portal: RoomPortal | None = None,
+    ):
         spec = self.definition.make_selected_spec(
             agent_id=participant_id,
             display_name=self.display_name,
@@ -183,6 +221,7 @@ class AgentAttendee:
                 model=spec.model,
                 reasoning_effort=spec.reasoning_effort,
                 permission_mode=spec.permission_mode,
+                room_portal=room_portal,
             )
         command = list(spec.command)
         state_dir = workspace / ".agentsassemble-attendee" / participant_id
@@ -224,7 +263,15 @@ class AgentAttendee:
             credential = PROVIDER_SECRETS.get("deepseek")
             if not credential:
                 raise RuntimeError("credential_missing")
-        return runtime_from_config(ProviderRuntimeConfig.parse_strict(config), credential=credential)
+        runtime_kwargs: dict[str, object] = {"credential": credential}
+        if environment is not None:
+            runtime_kwargs["environment"] = environment
+        if room_portal is not None:
+            runtime_kwargs["room_portal"] = room_portal
+        return runtime_from_config(
+            ProviderRuntimeConfig.parse_strict(config),
+            **runtime_kwargs,
+        )
 
 
 def read_hidden_invite_url() -> str:

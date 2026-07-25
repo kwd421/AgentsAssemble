@@ -40,6 +40,7 @@ export default function AgentCreateModal({
   const [providerId, setProviderId] = useState("");
   const [existingSessionId, setExistingSessionId] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [displayNameEdited, setDisplayNameEdited] = useState(false);
   const [workspacePath, setWorkspacePath] = useState("");
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [settings, setSettings] = useState<Record<string, string>>({});
@@ -106,7 +107,12 @@ export default function AgentCreateModal({
       setSettings((previous) => reconcileProviderSettings(current, previous));
     }
     wasOpen.current = true;
-  }, [open, providers]);
+  }, [open, providers, existingSessionId, providerId]);
+
+  useEffect(() => {
+    if (!open || !selectedProvider || existingSessionId || displayNameEdited) return;
+    setDisplayName(defaultAgentDisplayName(selectedProvider, settings));
+  }, [displayNameEdited, existingSessionId, open, selectedProvider, settings]);
 
   useEffect(() => {
     if (!open || selectedProvider?.id !== "deepseek") return;
@@ -116,10 +122,12 @@ export default function AgentCreateModal({
   }, [open, selectedProvider?.id]);
 
   function applyProvider(provider: NativeCliProviderAvailability) {
+    const initialSettings = initializeProviderSettings(provider);
     setProviderId(provider.id);
     setExistingSessionId("");
-    setDisplayName(provider.display_name);
-    setSettings(initializeProviderSettings(provider));
+    setDisplayName(defaultAgentDisplayName(provider, initialSettings));
+    setDisplayNameEdited(false);
+    setSettings(initialSettings);
     setStartNow(provider.startable);
   }
 
@@ -128,12 +136,15 @@ export default function AgentCreateModal({
     const session = existingSessions.find((item) => item.session_id === sessionId);
     if (!session) {
       if (selectedProvider) {
-        setDisplayName(selectedProvider.display_name);
-        setSettings(initializeProviderSettings(selectedProvider));
+        const initialSettings = initializeProviderSettings(selectedProvider);
+        setDisplayName(defaultAgentDisplayName(selectedProvider, initialSettings));
+        setDisplayNameEdited(false);
+        setSettings(initialSettings);
       }
       return;
     }
     setDisplayName(session.display_name);
+    setDisplayNameEdited(true);
     setSettings((previous) => ({
       ...previous,
       model: session.model || "",
@@ -142,6 +153,18 @@ export default function AgentCreateModal({
       variant: session.variant || "",
       permission_mode: session.permission_mode || "",
     }));
+  }
+
+  function updateProviderControl(key: string, value: string) {
+    if (!selectedProvider) return;
+    const next = reconcileProviderSettings(selectedProvider, {
+      ...settings,
+      [key]: value,
+    });
+    setSettings(next);
+    if (key === "model" && !displayNameEdited) {
+      setDisplayName(defaultAgentDisplayName(selectedProvider, next));
+    }
   }
 
   async function handleCreate() {
@@ -284,7 +307,10 @@ export default function AgentCreateModal({
                   value={displayName}
                   placeholder="방에 표시될 이름"
                   disabled={Boolean(existingSessionId)}
-                  onChange={(event) => setDisplayName(event.currentTarget.value)}
+                  onChange={(event) => {
+                    setDisplayName(event.currentTarget.value);
+                    setDisplayNameEdited(true);
+                  }}
                 />
               </label>
               {!existingSessionId && (
@@ -324,14 +350,7 @@ export default function AgentCreateModal({
                       options={options}
                       value={settings[control.key] ?? ""}
                       disabled={Boolean(existingSessionId)}
-                      onChange={(value) =>
-                        setSettings((previous) =>
-                          reconcileProviderSettings(selectedProvider, {
-                            ...previous,
-                            [control.key]: value,
-                          })
-                        )
-                      }
+                      onChange={(value) => updateProviderControl(control.key, value)}
                     />
                   );
                 })}
@@ -506,6 +525,28 @@ function initializeProviderSettings(
   provider: NativeCliProviderAvailability
 ): Record<string, string> {
   return normalizeProviderSettings(provider, {}, true);
+}
+
+function defaultAgentDisplayName(
+  provider: NativeCliProviderAvailability,
+  settings: Record<string, string>
+): string {
+  const providerName = provider.display_name.trim();
+  const modelControl = provider.controls.find((control) => control.key === "model");
+  const modelOption = modelControl?.options.find((option) => option.value === settings.model);
+  const modelName = String(modelOption?.label || "").trim();
+  if (!modelName) return providerName;
+
+  const providerToken = providerName.toLocaleLowerCase();
+  const modelToken = modelName.toLocaleLowerCase();
+  if (
+    modelToken === providerToken ||
+    modelToken.startsWith(`${providerToken} `) ||
+    modelToken.startsWith(`${providerToken}-`)
+  ) {
+    return modelName;
+  }
+  return `${providerName} ${modelName}`;
 }
 
 function reconcileProviderSettings(

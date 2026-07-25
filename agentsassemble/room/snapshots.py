@@ -14,6 +14,8 @@ from agentsassemble.room.text import clean_room_text
 
 ROOM_SNAPSHOT_EVENT_LIMIT = 200
 ROOM_HISTORY_MAX_LIMIT = 200
+BRIDGE_ROOM_VIEW_MESSAGE_LIMIT = 50
+BRIDGE_ROOM_VIEW_CHAR_LIMIT = 32_768
 
 EnsureRoom = Callable[[str], dict[str, object]]
 CapabilityProjection = Callable[[dict[str, object]], dict[str, bool]]
@@ -52,7 +54,7 @@ class RoomSnapshotService:
         bridge = identity.get("client_type") == "agent_bridge"
         resume_gap = False
         if bridge:
-            events: list[dict[str, object]] = []
+            events = self._bridge_room_view_events(room_id)
             snapshot_mode = "bridge"
         elif requested_after_seq:
             resume_gap = latest_seq - requested_after_seq > ROOM_SNAPSHOT_EVENT_LIMIT
@@ -136,6 +138,34 @@ class RoomSnapshotService:
             "capabilities": self._capabilities(identity),
         }
 
+    def _bridge_room_view_events(self, room_id: str) -> list[dict[str, object]]:
+        candidates = self.store.read_events(
+            room_id,
+            event_types=("message_final",),
+            limit=BRIDGE_ROOM_VIEW_MESSAGE_LIMIT,
+            newest=True,
+        )
+        selected: list[dict[str, object]] = []
+        used_chars = 0
+        for event in reversed(candidates):
+            content_chars = len(str(event.get("content") or ""))
+            attachment_chars = sum(
+                len(str(item.get("filename") or "")) + len(str(item.get("content_type") or ""))
+                for item in (
+                    event.get("attachments")
+                    if isinstance(event.get("attachments"), list)
+                    else []
+                )
+                if isinstance(item, dict)
+            )
+            event_chars = content_chars + attachment_chars
+            if selected and used_chars + event_chars > BRIDGE_ROOM_VIEW_CHAR_LIMIT:
+                break
+            selected.append(event)
+            used_chars += event_chars
+        selected.reverse()
+        return selected
+
     def history_page(
         self,
         room_id: str,
@@ -174,5 +204,7 @@ __all__ = [
     "ProviderCatalogReader",
     "ROOM_HISTORY_MAX_LIMIT",
     "ROOM_SNAPSHOT_EVENT_LIMIT",
+    "BRIDGE_ROOM_VIEW_CHAR_LIMIT",
+    "BRIDGE_ROOM_VIEW_MESSAGE_LIMIT",
     "RoomSnapshotService",
 ]

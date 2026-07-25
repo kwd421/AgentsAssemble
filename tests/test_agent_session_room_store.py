@@ -820,6 +820,7 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
                         '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"},"model":"gpt-5.6-luna"}}\n',
                         '{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-a"}}}\n',
                         '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"turn-a"}}}\n',
+                        '{"jsonrpc":"2.0","id":"tool-1","method":"item/tool/call","params":{"threadId":"thread-1","turnId":"turn-a","callId":"call-1","tool":"room_read","arguments":{}}}\n',
                         '{"jsonrpc":"2.0","method":"model/rerouted","params":{"threadId":"thread-1","turnId":"turn-a","fromModel":"gpt-5.6-luna","toModel":"gpt-5.6-luna-safe","reason":"highRiskCyberActivity"}}\n',
                         '{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-a","itemId":"item-a","delta":"hello"}}\n',
                         '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-1","turnId":"turn-a","completedAtMs":1,"item":{"id":"item-a","type":"agentMessage","text":"hello"}}}\n',
@@ -827,7 +828,25 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
                     ]
                 )
 
-        runtime = CodexAppServerRuntime(process_factory=FakeProcess)
+        tool_calls = []
+        runtime = CodexAppServerRuntime(
+            process_factory=FakeProcess,
+            dynamic_tools=[
+                {
+                    "type": "function",
+                    "name": "room_read",
+                    "description": "Read the room.",
+                    "inputSchema": {"type": "object"},
+                }
+            ],
+            dynamic_tool_handler=lambda tool, arguments: (
+                tool_calls.append((tool, arguments))
+                or {
+                    "success": True,
+                    "contentItems": [{"type": "inputText", "text": "room view"}],
+                }
+            ),
+        )
         chunks = list(runtime.send_turn({"provider_session_id": ""}, {"room_id": "room-a", "current_turn_instruction": "x"}))
 
         self.assertEqual(chunks[0]["type"], "provider_session")
@@ -839,11 +858,15 @@ class AgentSessionRoomStoreTests(unittest.TestCase):
         self.assertIsNotNone(process)
         writes = "".join(process.stdin.writes)
         self.assertIn('"method": "initialize"', writes)
+        self.assertIn('"experimentalApi": true', writes)
         self.assertIn('"method": "initialized"', writes)
         self.assertIn('"method": "thread/start"', writes)
         self.assertIn('"method": "turn/start"', writes)
         self.assertIn('"input": [{"type": "text"', writes)
+        self.assertIn('"dynamicTools"', writes)
+        self.assertIn('"id": "tool-1", "result": {"success": true', writes)
         self.assertNotIn('"provider_session_id"', writes)
+        self.assertEqual(tool_calls, [("room_read", {})])
 
     def test_app_server_provider_session_is_persisted_as_resumable(self):
         resume_agent_session_payload(

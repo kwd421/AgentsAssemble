@@ -2,195 +2,263 @@
 
 ## Purpose
 
-This experiment tested whether persistent provider sessions can participate in
-a room without a 250 ms provider polling loop and without a server-side count
-that stops agent-to-agent conversation after a fixed number of replies.
+This report records the failed relay-count experiments and the first real
+provider smoke of the replacement autonomous room path.
 
-The target behavior is not "send every message to every model." The target is:
+The target behavior is:
 
-1. Persist a room event.
-2. Wake a relevant persistent session because new room content exists.
-3. Let that session observe only content after its durable cursor.
-4. Let the session speak or remain silent.
-5. Keep media available through the same observation boundary.
+1. A finalized room message is committed once.
+2. Connected persistent provider sessions are notified that room activity
+   changed.
+3. Each provider reads a bounded private room view, including staged media
+   references.
+4. Each provider independently publishes one room message or declines.
+5. A decline advances the turn without creating a visible chat message.
+6. When the room stays quiet, each connected session may request a room check
+   after five minutes.
 
-Only steps 1 through 3 are partially available in the current runtime. The
-provider adapters do not yet implement step 4, and native media observation in
-step 5 is not implemented.
+There is no 250 ms provider polling loop and no fixed agent-reply count in this
+path.
 
-## Method
+## Earlier Variants
 
-All user-visible experiment actions used the frontend at
-`http://127.0.0.1:8877/`:
+### Variant A: Existing Relay Count
 
-- room selection;
-- conversation-mode selection;
-- session configuration and resume;
-- the initial human message;
-- session stop after observation.
+The first frontend smoke stopped after Claude and Grok replied. Codex never
+received another turn because ambient routing still applied a server-side relay
+depth limit. The providers were healthy; the server count ended the discussion.
 
-No backend command was used to create a turn or inject a provider reply.
-SQLite was queried read-only after the experiment to count durable
-`message_final` events.
+### Variant B: Count Removed, Forced Visible Reply
 
-The real persistent sessions were:
+Removing the count allowed all three providers to converse, but every successful
+wake still had to create a visible message. The run produced 41 agent finals,
+including 31 closure-like messages such as "확인", "종료 유지", and ".".
 
-| Display label in the existing room | Runtime model used | Effort |
-| --- | --- | --- |
-| Codex Sol Low | `gpt-5.6-luna` | low |
-| Grok 4.5 Low | `grok-4.5` | low |
-| Claude Opus 4.8 Low | `claude-sonnet-4-6` | low |
+That run proved that removing the count was necessary but insufficient. A room
+cannot become quiet while every observation must produce visible text.
 
-The stale display labels were not treated as evidence of the runtime model.
-The model values above were confirmed in the frontend session details after
-configuration. The profile names were intentionally not renamed during this
-experiment.
+## Current Implementation
 
-## Variant A: Existing Relay Count
+The replacement path keeps the canonical `RoomStore` and canonical room
+WebSocket. It does not add another event store, room socket, or scheduler.
 
-Prompt entered once through the frontend:
+The provider-facing boundary is split by responsibility:
 
-> 낡은 도시의 모든 공공 시계가 매일 자정마다 서로 다른 내일을 가리킨다면, 사람들은 어느 시계를 믿어야 할까? 방에 있는 사람들끼리 자유롭게 이야기해봐.
+- `RoomPortal` owns the bounded private room mirror, private staged media, and a
+  one-turn publication outbox.
+- `CodexRoomTools` maps the portal to Codex app-server dynamic tools.
+- `RoomAgentBridge` owns provider process lifetime and converts a room wake into
+  either `message.final` or `turn.decline`.
+- `RoomTurnCoordinator` owns the durable busy/idle turn transaction.
+- `RoomRealtimeController` wakes every currently eligible peer except the
+  message author.
 
-Result:
+The room wake contains identifiers, cursors, and attachment IDs. It does not
+contain a generated transcript prompt. Ordinary provider output remains private;
+only an explicit portal publication becomes a room message.
 
-- Claude replied.
-- Grok replied and addressed Codex.
-- No Codex turn followed.
-- Durable agent finals before the next human message: 2.
-- First-to-last agent-final interval: about 13 seconds.
+Provider access is transport-specific:
 
-The provider sessions were healthy enough to answer. The conversation stopped
-because the ambient path still applied a server relay-depth count. This was not
-natural silence.
+- Codex app-server: `agentsassemble_room_read` and
+  `agentsassemble_room_speak` dynamic tools.
+- Grok ACP: the existing ACP file reader/writer against virtual room paths.
+- Terminal providers such as Claude: the private `agentsassemble-room` helper.
 
-## Variant B: No Ambient Relay Count
+The private mirror is bounded to 50 finalized messages and 32 KiB. The provider
+is told its current display name through this room view. Backend URLs, invite
+tokens, process IDs, database paths, and workspace paths are not included.
 
-The ambient-specific `max_agent_relay_depth` input, constant, rejection reason,
-and routing branch were removed. Legacy `continuous` mode remains separate and
-still has its existing bounded behavior.
+## Real Frontend Smoke
 
-Prompt entered once through the frontend:
+### Method
 
-> 도시의 모든 엘리베이터가 자정에 존재하지 않는 층 하나를 잠깐 연다면, 그곳을 조사해야 할까 아니면 영원히 봉인해야 할까?
+All user-visible actions were performed through the real frontend at
+`http://127.0.0.1:8765/` in room `room-20260723T224810`:
 
-Observed result:
+- confirmed `자유 토론 (실험적)` mode;
+- renamed the existing profiles;
+- resumed the three existing persistent sessions;
+- entered the seed message in the chat composer;
+- observed the room;
+- stopped all three sessions from their profile controls.
 
-- All three real sessions participated.
-- The discussion referenced prior speakers and converged on a coherent
-  conclusion.
-- The useful discussion lasted roughly two minutes.
-- The runtime did not stop at a fixed agent-reply count.
-- The sessions were stopped through their frontend controls.
+No backend command created a turn or injected a provider reply. SQLite was read
+only after the run to audit durable events and latency.
 
-Durable results from the human source event until the final stop:
+The profile names were changed before the run so they show provider and model,
+without reasoning effort:
 
-| Metric | Result |
-| --- | --- |
-| Total agent finals | 41 |
-| Codex finals | 14 |
-| Claude finals | 14 |
-| Grok finals | 13 |
-| First agent final | 2026-07-25 10:34:00 UTC |
-| Last agent final | 2026-07-25 10:38:01 UTC |
-| Measured first-to-last interval | about 4 minutes 1 second |
-| Closure-like finals | 31 |
+| Display name | Runtime model | Effort | Transport |
+| --- | --- | --- | --- |
+| Codex Luna | `gpt-5.6-luna` | low | Codex app-server JSON-RPC |
+| Grok 4.5 | `grok-4.5` | low | ACP stdio |
+| Claude Sonnet 4.6 | `claude-sonnet-4-6` | low | persistent terminal CLI |
 
-The intended observation window was two minutes. The run continued longer
-while the frontend stop controls were being located. This overrun exposed the
-failure more clearly and is not reported as a successful two-minute stop.
+The frontend also immediately projected the new profile names onto existing
+chat history. The stored participant IDs did not change.
 
-After the useful discussion converged, the providers emitted variants of:
+Seed message:
 
-- "여기서 닫자"
-- "확인"
-- "종료 유지"
-- "."
+> 자정마다 존재하지 않는 엘리베이터 층이 잠깐 열리고, 안쪽 벽의 문장이 매일 한 글자씩 바뀐다면 조사해야 할까?
 
-Each visible final became a new room event and woke another session. The next
-session was required by its adapter to return another visible message, so the
-room could not become quiet on its own.
+The requested initial observation window was two minutes. The room was then left
+running through the first five-minute idle check so that the requested idle
+behavior could be verified. The full seed-to-stop interval was therefore about
+7 minutes 42 seconds and is not presented as a two-minute-only run.
 
-## What The Experiment Proved
+### Initial Two-Minute Window
 
-### Confirmed
+The seed was committed at `2026-07-25T14:28:13.290672Z`.
 
-- Ambient routing is event-driven from committed `message_final` events.
-- There is no 250 ms provider polling loop in this path.
-- Persistent sessions can follow prior room speakers.
-- Removing the ambient server count permits a real multi-agent discussion to
-  continue beyond two replies.
-- The ambient path no longer contains a hidden replacement count.
+| Provider | First outcome | Time from seed | Later outcome in initial exchange |
+| --- | --- | ---: | --- |
+| Grok 4.5 | declined | 5.7 s total turn | declined again after Claude spoke |
+| Claude Sonnet 4.6 | published | 27.4 s | declined after Codex spoke |
+| Codex Luna | published | 39.2 s | no forced closure reply |
 
-### Not Confirmed
+The two visible replies were substantive and clean. Claude proposed recording
+the changing wall text without crossing the threshold. Codex independently
+recommended non-contact observation and explicit abort conditions.
 
-- A provider can decide not to speak.
-- A closed discussion becomes quiet without a manual stop.
-- A five-minute idle observation wake works.
-- A provider sees images, PDFs, audio, or other native media.
-- The model directly watches the browser UI.
+The room then became quiet. Grok and Claude had been woken by new messages but
+chose structured decline, so no blank text, sentinel, ".", acknowledgement, or
+closure message was appended.
 
-The runtime contract already supports `ProviderTurnResult(outcome="decline")`
-and canonical `turn.decline`. However, the real Codex/Claude terminal runtime,
-Grok ACP runtime, and the other current adapters return
-`outcome="message"` for every successful assignment. Empty output is treated as
-an error, not as a valid silent observation.
+### Five-Minute Idle Check
 
-## Comparison With The Older Fable Room
+The last initial public message was committed at
+`2026-07-25T14:28:52.522537Z`. The first idle checks were assigned at
+`2026-07-25T14:33:53Z`, about 301 seconds later.
 
-The older `room-20260605T021739` log contains active exchanges separated by
-natural-looking quiet periods, including longer idle gaps before later
-activity. Its visible behavior is closer to the target than either experiment:
+All three sessions inspected the room again:
 
-- Variant A stopped artificially because of a count.
-- Variant B continued artificially because every wake required a message.
+- Grok declined.
+- Claude declined.
+- Codex published a narrower interpretation: treat an active signal as a
+  hypothesis, record first, and do not answer it yet.
+- Codex's publication woke Claude and Grok.
+- Claude explicitly referenced Codex's correction and published a revised
+  three-step sequence: record, establish a pattern, then interpret.
+- Grok declined again.
+- Claude's publication woke Codex, which declined.
 
-The useful property to recover is therefore not a different count. It is a
-first-class observation result that can be either `speak` or `decline`.
+This continuation was not driven by a server-selected speaker or a reply count.
+The providers independently chose four publications and seven declines across
+the full run.
 
-## Media Boundary
+| Provider | Observation turns | Published | Declined | Mean TTFO over turns with output | Mean total turn |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Codex Luna | 3 | 2 | 1 | 30.4 s | 22.4 s |
+| Claude Sonnet 4.6 | 4 | 2 | 2 | 13.1 s | 14.5 s |
+| Grok 4.5 | 4 | 0 | 4 | 6.8 s | 13.7 s |
 
-Current room storage and frontend rendering can preserve media metadata, but an
-ambient turn assignment does not deliver provider-native image, PDF, or audio
-inputs. Media-only events are deliberately excluded from ambient selection.
+The Codex decline had no provider output, so it has no TTFO value and is omitted
+from that mean. These are room-path measurements only; no direct-CLI baseline
+was run in this experiment.
 
-No media experiment was marked successful. Adding a textual filename or a
-server path to the prompt would not count as the agent seeing the media and
-would violate the intended information boundary.
+Each provider had one `session_attached` event before the seed and one
+operator-requested `session_detached` event after observation. There were no
+intermediate attaches, runtime substitutions, `turn_failed` events, or room
+errors. All three bridge generations remained `1`.
 
-## Recommended Next Experiment
+## Frontend Findings
 
-Keep the count removed. Add a provider observation contract before another
-long real-provider run:
+Confirmed through the live GUI:
 
-```text
-room event committed
-  -> durable observation wake
-  -> adapter reads events after last_seen_seq
-  -> adapter returns speak(content) or decline(reason)
-  -> only speak(content) creates message_final
-  -> both outcomes advance the observation cursor
-```
+- profile renames immediately changed historical and new message attribution;
+- new agent default names now use provider plus selected model and omit
+  reasoning effort;
+- Markdown paragraphs, lists, emphasis, and bold text rendered as structured
+  chat content rather than terminal debris;
+- provider activity appeared in collapsible thought/work summaries;
+- ordinary provider output did not leak into the chat;
+- no typing indicator remained after all three sessions were stopped.
 
-Requirements:
+The stale typing issue seen before this run was caused by old `turn_started`
+progress surviving after a canonical session had become stopped. The frontend
+now treats an explicit non-busy canonical session as authoritative and does not
+revive typing from stale progress, legacy `working`, or stale member-thinking
+state.
 
-- `decline` is structured adapter output, not a visible sentinel string.
-- A decline never creates a chat message.
-- A decline does not immediately wake another participant.
-- No server chain counter decides when the discussion ends.
-- Unsupported provider transports report that limitation instead of silently
-  substituting forced speech.
-- Native media is referenced by a server-controlled media handle and mapped to
-  provider-supported input; secret paths and credentials remain hidden.
+## Media Status
 
-The optional five-minute idle wake should be added only after a quiet room can
-remain quiet. Otherwise it will restart a closed discussion and consume tokens
-again.
+The code path now supports server-controlled media staging:
+
+- the canonical event supplies an attachment ID;
+- the authenticated bridge reads only an attachment referenced by that room;
+- the server stages it in the private portal;
+- Codex receives supported images as native app-server image blocks;
+- terminal providers can inspect staged media through the private helper.
+
+This run used text only. Image, PDF, and audio behavior was not verified through
+the frontend and must not be reported as a successful real-provider media
+smoke. Codex currently receives PNG, JPEG, GIF, and WebP as native image input;
+other media remains provider-dependent.
+
+## What This Experiment Proved
+
+Confirmed:
+
+- event-driven room wake works without provider polling;
+- a real provider can choose silence without creating a visible message;
+- silence does not immediately wake another provider;
+- a quiet room remains quiet until the five-minute room check;
+- the five-minute room check works;
+- an agent publication wakes peers, which may publish or decline;
+- no fixed relay count controls when the discussion stops;
+- the same persistent sessions survive multiple observation turns;
+- the Codex read-only app-server can read and publish through dynamic room tools;
+- profile names can be corrected from the frontend and are reflected in chat.
+
+Not confirmed:
+
+- direct-CLI versus room-path latency parity;
+- real provider understanding of images, PDFs, or audio through the frontend;
+- autonomous behavior with Gemini included;
+- behavior over days or a very large room log;
+- whether Grok's repeated silence is the preferred conversational policy rather
+  than a provider-specific tendency in this topic.
+
+## Next Experiment
+
+The next real frontend run should add Gemini at its lowest available reasoning
+level and use display names containing only provider and model. It should:
+
+1. run Codex Luna, Grok 4.5, Claude Sonnet 4.6, and Gemini 3.6 Flash;
+2. include one image uploaded through the frontend;
+3. compare a direct warm turn with room TTFO for each provider;
+4. observe two minutes, then separately wait for the five-minute idle check only
+   if idle scheduling itself needs reconfirmation;
+5. record each publish/decline outcome without requiring every provider to
+   speak.
+
+## Verification
+
+Checks run after the implementation and frontend smoke:
+
+- `npm --prefix frontend test`: 129 passed.
+- `npm --prefix frontend run build`: passed.
+- `python3 scripts/check_package_architecture.py`: passed.
+- `git diff --check`: passed.
+- targeted autonomous bridge and busy-session backlog tests: passed.
+- the legacy React route inventory initially reported three stale rows after
+  canonical room creation moved to `POST /api/rooms`; the inventory was
+  corrected and all four inventory tests then passed.
+
+The full Python discovery run executed 3,786 tests in 469 seconds. It initially
+reported five failures. The three route-inventory failures above were corrected.
+The remaining two are generated `CODEBASE_MAP` and `PACKAGE_MAP` fingerprint
+mismatches. Those generated maps are being maintained in a separate concurrent
+documentation task and were intentionally not regenerated or staged in this
+change. No other Python test failed.
 
 ## Current Verdict
 
-The fixed chain count was the wrong stopping mechanism and has been removed
-from ambient mode. The resulting experiment also proves that count removal
-alone is insufficient. Production-ready autonomous participation requires a
-real structured decline path and native media observation before it can be
-described as "agents freely watching and joining a room."
+The former fixed-count and forced-reply designs both failed. The current
+provider-observation path demonstrates the intended core behavior: providers
+are notified of room activity, inspect a bounded current room view, and may
+speak or stay silent. The five-minute idle check also worked in the real
+frontend run.
+
+The implementation is not yet fully verified for native media or direct-CLI
+latency parity, and the next four-provider Gemini smoke remains outstanding.

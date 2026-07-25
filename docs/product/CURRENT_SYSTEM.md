@@ -127,9 +127,17 @@ Detailed implementation and verification:
 
 ## Current Provider Contract
 
-Current providers receive a server-assigned turn containing a bounded room diff
-after their durable cursor. A turn reuses the existing provider process and must
-not launch a one-shot CLI.
+Ordered and continuous providers receive a server-assigned turn containing a
+bounded room diff after their durable cursor. A turn reuses the existing
+provider process and must not launch a one-shot CLI.
+
+Ambient providers use a different input mode. The canonical event broker keeps
+each Agent Bridge's private `RoomPortal` current, then sends a `room.wake`
+containing event/cursor and referenced-attachment identifiers but no provider
+transcript. The provider reads its bounded room mirror and either publishes
+through the portal or publishes nothing. Only portal output becomes
+`message_final`; no output becomes a structured decline. Ordinary assistant or
+terminal output is private and is never used as an implicit fallback.
 
 Agent Bridges passively acknowledge canonical room events without invoking the
 provider, while provider context is still delivered only through a server-assigned
@@ -201,19 +209,22 @@ different request receives `room_deleted`.
 An event-driven deterministic attention gate can record durable `selected`,
 `eligible`, or `silent` decisions. Shadow recording for existing `ordered` and
 `continuous` rooms is server-configured as `off | sample | full` and defaults to
-`off`; `sample` records only canonical source sequences divisible by 16. A room
-explicitly set to `ambient` uses active evaluation independently of that shadow
-setting and acquires one durable lease to wake one fair eligible speaker at a
-time, with an initial two-relay agent chain limit and no silent provider
-substitution. Votes, system/lifecycle events, empty text, and unsupported
-media-only events do not wake providers. Current contract:
+`off`; `sample` records only canonical source sequences divisible by 16.
+
+A room explicitly set to `ambient` does not use that selector to choose one
+speaker. Each committed room message wakes all connected, idle, unmuted Agent
+Sessions except its author. Each provider independently decides whether to
+publish, so ambient mode has no relay-count stop and no silent provider
+substitution. A five-minute bridge idle timer may request one current-room
+observation; it is not a fast provider polling loop. Current contract:
 `docs/product/ATTENTION_MODEL.md`; supporting research:
 `docs/reports/autonomous-room-participation-research.md`.
 
-For a selected ambient speaker, the evaluation cursor, attention job and
-lease, and the Agent Session's pending source/job/lease fields commit together.
-A failed pending-session write cannot leave a leased job without the input that
-lease authorizes.
+For ordinary selected turns, the evaluation cursor, attention job and lease,
+and the Agent Session's pending source/job/lease fields commit together. Ambient
+room observations instead retain canonical pending event IDs per session and
+assign one active observation per eligible bridge. A busy session keeps later
+events pending rather than launching a concurrent provider turn.
 
 Attention lease claim checks the persisted expiry. An elapsed active lease is
 expired and replaced in the same transaction; a rollback restores the prior
@@ -249,9 +260,12 @@ of being silently substituted.
 ## Current Media Boundary
 
 The browser can upload and render room attachments. Media events and safe media
-IDs are durable. Provider-native multimodal delivery is incomplete: do not claim
-an agent viewed an image merely because the browser displayed it or a manifest
-listed its filename.
+IDs are durable. The Agent Bridge fetches only attachments referenced by a
+canonical room event and stages them inside its private `RoomPortal`. Codex
+app-server and Grok ACP can receive staged image bytes through their structured
+input paths. Terminal-provider image, PDF, and audio handling still depends on
+the native provider and must be verified separately; do not claim an agent
+viewed media merely because the browser displayed it or the portal listed it.
 
 A completed media path must:
 
