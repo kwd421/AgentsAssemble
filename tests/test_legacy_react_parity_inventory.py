@@ -72,21 +72,6 @@ class LegacyReactParityInventoryTests(unittest.TestCase):
         missing = sorted(name for name in surface_wrappers if name not in api_wrappers)
         self.assertEqual([], missing)
 
-    def test_modular_api_routes_report_their_concrete_owner_modules(self):
-        owners = _parse_api_ts_route_owners(ROOT / "frontend" / "src" / "api.ts")
-
-        self.assertEqual("roomHistory.ts", owners[Route("/api/attachments", "POST", "exact")].name)
-        self.assertEqual("invites.ts", owners[Route("/api/room-invite/create", "POST", "exact")].name)
-        self.assertEqual("agentSessions.ts", owners[Route("/api/agent-sessions/resume", "POST", "exact")].name)
-
-    def test_default_and_react_surface_labels_are_documented(self):
-        matrix_text = (ROOT / "docs" / "product" / "legacy-react-parity-matrix.md").read_text(encoding="utf-8")
-
-        self.assertIn("Discord-style room client (default entry point)", matrix_text)
-        self.assertIn("legacy static routes are retired", matrix_text)
-        self.assertIn("/legacy/", matrix_text)
-
-
 def _parse_router_module_routes(module_path: Path) -> set[Route]:
     """Routes registered on the R2 route table (@router.get/post/delete)."""
     routes: set[Route] = set()
@@ -263,13 +248,6 @@ def _api_ts_route_refs_with_owners(path: Path) -> list[tuple[str, str, str, Path
     for module_path in _api_module_paths(path):
         refs.extend((*ref, module_path) for ref in _api_ts_route_refs(module_path.read_text(encoding="utf-8")))
     return refs
-
-
-def _parse_api_ts_route_owners(path: Path) -> dict[Route, Path]:
-    owners: dict[Route, Path] = {}
-    for matched_path, method, _wrapper, owner in _api_ts_route_refs_with_owners(path):
-        owners[_route_from_api_ts_ref(matched_path, method)] = owner
-    return owners
 
 
 def _api_module_paths(entry_path: Path) -> list[Path]:

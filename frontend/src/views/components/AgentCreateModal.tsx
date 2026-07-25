@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, Play, Plus, X } from "lucide-react";
+import { Bot, Folder, Play, Plus, X } from "lucide-react";
 import {
+  chooseLocalWorkspace,
   deleteDeepSeekCredential,
   fetchDeepSeekCredentialStatus,
   setDeepSeekCredential,
@@ -39,7 +40,8 @@ export default function AgentCreateModal({
   const [providerId, setProviderId] = useState("");
   const [existingSessionId, setExistingSessionId] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const workspacePath = ".";
+  const [workspacePath, setWorkspacePath] = useState("");
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [startNow, setStartNow] = useState(false);
   const [status, setStatus] = useState("");
@@ -72,7 +74,7 @@ export default function AgentCreateModal({
       (existingSessionId || (catalogRevision && selectedProvider?.startable)) &&
       !invalidControl &&
       displayName.trim() &&
-      workspacePath.trim()
+      (existingSessionId || workspacePath.trim())
   );
   const statusMessage = deriveStatusMessage({
     status,
@@ -87,6 +89,10 @@ export default function AgentCreateModal({
     if (!open) {
       wasOpen.current = false;
       return;
+    }
+    if (!wasOpen.current) {
+      setWorkspacePath("");
+      setWorkspaceBusy(false);
     }
     if (!providers.length) return;
     const current = providers.find((provider) => provider.id === providerId);
@@ -187,6 +193,26 @@ export default function AgentCreateModal({
     }
   }
 
+  async function pickWorkspace() {
+    if (workspaceBusy || existingSessionId) return;
+    setWorkspaceBusy(true);
+    setStatus("");
+    try {
+      const selected = await chooseLocalWorkspace();
+      if (selected.selected && selected.path) {
+        setWorkspacePath(selected.path);
+      }
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "작업 폴더를 선택하지 못했습니다"
+      );
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  }
+
   if (!open) return null;
 
   return (
@@ -261,6 +287,27 @@ export default function AgentCreateModal({
                   onChange={(event) => setDisplayName(event.currentTarget.value)}
                 />
               </label>
+              {!existingSessionId && (
+                <label className="dc-agent-field">
+                  <span>작업 폴더</span>
+                  <div className="dc-agent-folder-field">
+                    <Folder size={16} aria-hidden="true" />
+                    <input
+                      aria-label="선택한 작업 폴더"
+                      value={workspacePath}
+                      placeholder="선택되지 않음"
+                      readOnly
+                    />
+                    <button
+                      type="button"
+                      disabled={workspaceBusy}
+                      onClick={() => void pickWorkspace()}
+                    >
+                      {workspaceBusy ? "선택 중..." : "폴더 선택"}
+                    </button>
+                  </div>
+                </label>
+              )}
             </div>
           </section>
 
@@ -495,7 +542,9 @@ function validControlValue(
   if (candidate !== undefined && options.some((option) => option.value === candidate)) {
     return candidate;
   }
-  return useDefault && options.some((option) => option.value === control.default_value)
+  const mayUseDefault =
+    useDefault || (control.key === "service_tier" && !candidate);
+  return mayUseDefault && options.some((option) => option.value === control.default_value)
     ? control.default_value
     : "";
 }
@@ -510,6 +559,23 @@ function effectiveControlOptions(
   }
   const modelControl = provider.controls.find((item) => item.key === "model");
   const model = modelControl?.options.find((option) => option.value === settings.model);
+  if (control.key === "service_tier") {
+    const variants = model?.metadata?.runtime_variants;
+    if (Array.isArray(variants)) {
+      const selectedEffort = settings.reasoning_effort || "default";
+      const allowed = new Set(
+        variants
+          .filter(
+            (variant): variant is Record<string, unknown> =>
+              Boolean(variant) &&
+              typeof variant === "object" &&
+              String((variant as Record<string, unknown>).reasoning_effort || "default") === selectedEffort
+          )
+          .map((variant) => String(variant.service_tier || "default"))
+      );
+      return control.options.filter((option) => allowed.has(option.value));
+    }
+  }
   const metadataKey = control.key === "reasoning_effort" ? "reasoning_efforts" : "service_tiers";
   const relation = model?.metadata?.[metadataKey];
   if (!Array.isArray(relation)) return control.options;

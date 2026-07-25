@@ -216,6 +216,12 @@ class ProviderCapabilityCatalog:
                 selected_value=selected_tier,
                 error_code="unsupported_model_service_tier_combination",
             )
+        self._validate_model_runtime_variant(
+            provider_id=provider_id,
+            metadata=metadata,
+            reasoning_effort=resolved_values["reasoning_effort"],
+            service_tier=selected_tier,
+        )
         selection_kind = str(metadata.get("selection_kind") or "")
         if selection_kind not in {"exact", "alias"}:
             raise ProviderCatalogSelectionError(
@@ -262,6 +268,39 @@ class ProviderCapabilityCatalog:
             raise ProviderCatalogSelectionError(
                 f"The selected model and {metadata_key} value are not a supported combination for {provider_id}.",
                 code=error_code,
+            )
+
+    @staticmethod
+    def _validate_model_runtime_variant(
+        *,
+        provider_id: str,
+        metadata: dict[str, object],
+        reasoning_effort: str,
+        service_tier: str,
+    ) -> None:
+        if "runtime_variants" not in metadata:
+            return
+        variants = list(metadata.get("runtime_variants") or [])
+        if not variants or any(not isinstance(variant, dict) for variant in variants):
+            raise ProviderCatalogSelectionError(
+                f"Provider {provider_id} runtime variant metadata is incomplete.",
+                code="catalog_invalid",
+            )
+        requested = (
+            reasoning_effort or "default",
+            service_tier or "default",
+        )
+        allowed = {
+            (
+                str(variant.get("reasoning_effort") or "default"),
+                str(variant.get("service_tier") or "default"),
+            )
+            for variant in variants
+        }
+        if requested not in allowed:
+            raise ProviderCatalogSelectionError(
+                f"The selected model, reasoning effort, and service tier are not a supported combination for {provider_id}.",
+                code="unsupported_model_runtime_combination",
             )
 
     def _refresh_snapshot(self) -> dict[str, object]:
@@ -700,6 +739,7 @@ _CURSOR_EFFORT_LABELS = {
     "low": "Low",
     "medium": "Medium",
     "high": "High",
+    "extra-high": "Extra High",
     "xhigh": "Extra High",
     "max": "Max",
     "thinking": "Thinking",
@@ -725,7 +765,7 @@ def _cursor_controls(output: str) -> list[dict[str, object]]:
         if not base:
             continue
         if base not in grouped:
-            grouped[base] = {"efforts": [], "has_fast": False, "plain_label": ""}
+            grouped[base] = {"efforts": [], "runtime_variants": [], "plain_label": ""}
             order.append(base)
         entry = grouped[base]
         efforts = entry["efforts"]
@@ -733,8 +773,14 @@ def _cursor_controls(output: str) -> list[dict[str, object]]:
         effort_token = effort or "default"
         if effort_token not in efforts:
             efforts.append(effort_token)
-        if fast:
-            entry["has_fast"] = True
+        runtime_variants = entry["runtime_variants"]
+        assert isinstance(runtime_variants, list)
+        variant = {
+            "reasoning_effort": effort_token,
+            "service_tier": "fast" if fast else "default",
+        }
+        if variant not in runtime_variants:
+            runtime_variants.append(variant)
         if not effort and not fast:
             entry["plain_label"] = match.group(2).strip()
     if not order:
@@ -744,7 +790,14 @@ def _cursor_controls(output: str) -> list[dict[str, object]]:
         [token for base in order for token in list(grouped[base]["efforts"])]
     )
     real_efforts = [token for token in all_efforts if token != "default"]
-    has_any_fast = any(bool(grouped[base]["has_fast"]) for base in order)
+    has_any_fast = any(
+        any(
+            variant.get("service_tier") == "fast"
+            for variant in list(grouped[base]["runtime_variants"])
+            if isinstance(variant, dict)
+        )
+        for base in order
+    )
     controls: list[dict[str, object]] = [
         _control(
             "model",
@@ -756,7 +809,15 @@ def _cursor_controls(output: str) -> list[dict[str, object]]:
                     selection_kind="alias" if base == "auto" else "exact",
                     relation_scope="per_model",
                     reasoning_efforts=list(grouped[base]["efforts"]),
-                    service_tiers=["fast"] if grouped[base]["has_fast"] else [],
+                    service_tiers=_unique(
+                        [
+                            str(variant.get("service_tier") or "")
+                            for variant in list(grouped[base]["runtime_variants"])
+                            if isinstance(variant, dict)
+                            and variant.get("service_tier") == "fast"
+                        ]
+                    ),
+                    runtime_variants=list(grouped[base]["runtime_variants"]),
                 )
                 for base in order
             ],

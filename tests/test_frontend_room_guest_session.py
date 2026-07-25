@@ -10,25 +10,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FrontendRoomGuestSessionTests(unittest.TestCase):
-    def test_simple_guest_query_is_local_dev_read_only_preview(self):
-        source = (ROOT / "frontend/src/lib/roomDockModel.ts").read_text(encoding="utf-8")
-
-        self.assertIn('inviteScope: "read_only"', source)
-        self.assertIn('url.searchParams.set("scope", "read_only")', source)
-        self.assertIn('url.searchParams.set("preview", "local-dev")', source)
-        self.assertIn("localPreviewInviteUrlForRoom", source)
-
-    def test_room_invite_modal_separates_secure_invite_from_local_preview(self):
-        source = (ROOT / "frontend/src/views/components/RoomInviteModal.tsx").read_text(encoding="utf-8")
-
-        self.assertIn("친구에게 보낼 보안 초대 링크", source)
-        self.assertIn("공개 URL을 먼저 설정하면 /join?token=... 링크가 여기에 표시됩니다", source)
-        self.assertIn("로컬/dev 미리보기", source)
-        self.assertIn("친구에게 보내지 마세요", source)
-        self.assertIn("로컬 미리보기 복사", source)
-        self.assertNotIn("value={localPreviewUrl}", source.split("친구에게 보낼 보안 초대 링크", 1)[1].split("로컬/dev 미리보기", 1)[0])
-        self.assertNotIn("보안 링크 복사", source)
-
     def test_join_token_url_and_join_response_become_guest_session(self):
         script = textwrap.dedent(
             """

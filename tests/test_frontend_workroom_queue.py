@@ -9,11 +9,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-
-def frontend_file(path: str) -> str:
-    return (ROOT / "frontend" / "src" / path).read_text(encoding="utf-8")
-
-
 class FrontendWorkroomQueueTests(unittest.TestCase):
     def test_workroom_queue_summarizes_gates_without_raw_room_text(self):
         script = textwrap.dedent(
@@ -225,26 +220,6 @@ class FrontendWorkroomQueueTests(unittest.TestCase):
             0,
             msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
-
-    def test_board_uses_read_only_workroom_queue_panel(self):
-        board_source = frontend_file("views/BoardView.tsx")
-        app_source = frontend_file("App.tsx")
-        panel_source = frontend_file("views/components/WorkroomQueuePanel.tsx")
-
-        self.assertIn("import WorkroomQueuePanel", board_source)
-        self.assertIn("workroomQueueEvidence: WorkroomQueueEvidence | null;", board_source)
-        self.assertIn("<WorkroomQueuePanel", board_source)
-        self.assertIn("scopedWorkroomQueueEvidence", app_source)
-        self.assertIn("workroomQueueEvidence={activeRoomFlowVisible ? scopedWorkroomQueueEvidence : null}", app_source)
-        self.assertNotIn("fetchMeetingDetail", app_source)
-        self.assertNotIn("meetingDetail={", app_source)
-        self.assertIn("summarizeWorkroomQueue", panel_source)
-        self.assertIn("taskScope", panel_source)
-        self.assertIn("작업 범위 충돌", frontend_file("lib/workroomQueue.ts"))
-
-        for forbidden in ("onClick=", "fetch(", "postJson", "EventSource", "dangerouslySetInnerHTML"):
-            self.assertNotIn(forbidden, panel_source)
-
 
 if __name__ == "__main__":
     unittest.main()

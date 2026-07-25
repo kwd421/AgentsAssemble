@@ -78,6 +78,7 @@ class ReleaseHealthCheck:
 
 RELEASE_HEALTH_SAFETY_CLASSES = {
     "frontend_react_build",
+    "frontend_react_test",
     "python_unit",
     "python_integration",
     "python_compile",
@@ -96,20 +97,12 @@ RELEASE_HEALTH_CHECKS: tuple[ReleaseHealthCheck, ...] = (
         safety_class="frontend_react_build",
     ),
     ReleaseHealthCheck(
-        id="unittest_static_ui_assets",
-        label="Static UI asset contract tests",
+        id="frontend_react_tests",
+        label="React frontend behavior tests",
         kind="unit",
-        category="frontend_static",
-        requires=("python3",),
-        safety_class="python_unit",
-    ),
-    ReleaseHealthCheck(
-        id="unittest_docs_architecture",
-        label="Documentation architecture contract tests",
-        kind="unit",
-        category="docs",
-        requires=("python3",),
-        safety_class="python_unit",
+        category="frontend_react",
+        requires=("npm",),
+        safety_class="frontend_react_test",
     ),
     ReleaseHealthCheck(
         id="unittest_mcp_server",
@@ -532,10 +525,8 @@ def _run_release_health_check(
 def _commands_for_check(check: ReleaseHealthCheck, *, repo_root: Path) -> list[list[str]]:
     if check.id == "frontend_react_build":
         return [["npm", "--prefix", "frontend", "run", "build"]]
-    if check.id == "unittest_static_ui_assets":
-        return [["python3", "-m", "unittest", "tests.test_static_ui_assets", "-v"]]
-    if check.id == "unittest_docs_architecture":
-        return [["python3", "-m", "unittest", "tests.test_docs_architecture", "-v"]]
+    if check.id == "frontend_react_tests":
+        return [["npm", "--prefix", "frontend", "test", "--", "--run"]]
     if check.id == "unittest_mcp_server":
         return [["python3", "-m", "unittest", "tests.test_mcp_server", "-v"]]
     if check.id == "unittest_gui_and_live_agent_smoke":

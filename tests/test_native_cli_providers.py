@@ -44,6 +44,7 @@ class NativeCliProviderCatalogTests(unittest.TestCase):
         cases = {
             "auto": ("auto", "", False),
             "gpt-5.6-luna-high-fast": ("gpt-5.6-luna", "high", True),
+            "gpt-5.5-extra-high-fast": ("gpt-5.5", "extra-high", True),
             "claude-opus-4-8-thinking-xhigh": ("claude-opus-4-8", "thinking-xhigh", False),
             "claude-opus-4-8-thinking-high-fast": ("claude-opus-4-8", "thinking-high", True),
             # Cursor also uses the reversed "-effort-thinking" ordering.

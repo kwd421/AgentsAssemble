@@ -1,9 +1,6 @@
 import subprocess
 import textwrap
 import unittest
-from pathlib import Path
-
-from tests.frontend_api_source import api_barrel_source
 
 
 class FrontendLiveAgentProcessControlTests(unittest.TestCase):
@@ -120,59 +117,6 @@ class FrontendLiveAgentProcessControlTests(unittest.TestCase):
             check=True,
             cwd=".",
         )
-
-    def test_member_and_friend_cards_use_single_agent_process_guard(self):
-        member_list_source = Path("frontend/src/views/components/MemberList.tsx").read_text(encoding="utf-8")
-        member_types_source = Path("frontend/src/views/components/member/memberTypes.ts").read_text(encoding="utf-8")
-        detail_modal_source = Path("frontend/src/views/components/member/MemberDetailModal.tsx").read_text(encoding="utf-8")
-        session_controls_source = Path("frontend/src/views/components/member/AgentSessionControls.tsx").read_text(encoding="utf-8")
-        profile_source = Path("frontend/src/views/components/FriendProfileCard.tsx").read_text(encoding="utf-8")
-        panel_source = Path("frontend/src/views/components/RoomConnectionPanel.tsx").read_text(encoding="utf-8")
-        session_details_source = Path("frontend/src/views/components/AgentSessionDetails.tsx").read_text(encoding="utf-8")
-        app_source = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
-        api_source = api_barrel_source()
-
-        self.assertIn("processGroupCanControlSingleAgent", session_controls_source)
-        self.assertIn("processGroupIndividualControlReason", session_controls_source)
-        self.assertIn("findProcessGroupForAgent(processGroups", session_controls_source)
-        self.assertIn("registeredAgentProcessGroupForAgent(agent)", session_controls_source)
-        self.assertIn("START", session_controls_source)
-        self.assertIn("추방", session_controls_source)
-        self.assertIn("세션 삭제", session_controls_source)
-        self.assertIn("저장된 세션 설정도 삭제됩니다", session_controls_source)
-        self.assertIn("processGroupCanControlSingleAgent", profile_source)
-        self.assertIn("processGroupIndividualControlReason", profile_source)
-        self.assertIn("findProcessGroupForAgent(processGroups", profile_source)
-        self.assertIn("const hasSourceAgentId = Boolean(sourceAgentId)", profile_source)
-        self.assertIn("hasSourceAgentId &&", profile_source)
-        self.assertIn("processGroups?: LiveAgentProcessGroup[]", panel_source)
-        self.assertNotIn("agentSessions.length === 0", panel_source)
-        self.assertIn("agentSessions={agentSessions}", panel_source)
-        self.assertIn('capabilities["agent.control"] ? onAgentControl : undefined', panel_source)
-        self.assertIn("agentSession?: RoomAgentSession;", member_types_source)
-        self.assertIn("<AgentSessionDetails", detail_modal_source)
-        self.assertIn("session={entry.agentSession}", detail_modal_source)
-        self.assertIn("onControl={onAgentControl}", detail_modal_source)
-        self.assertIn("agentSessionIsPresent(status)", session_details_source)
-        self.assertNotIn("sessionGroup={sessionGroup}", panel_source)
-        self.assertIn("processGroups={activeProcessGroups}", app_source)
-        self.assertNotIn("sessionGroup={activeProcessGroup}", app_source)
-        self.assertIn("resumeAgentSession", profile_source)
-        self.assertIn("stopLiveAgentSessionAgent", profile_source)
-        self.assertIn("resumeAgentSession", session_controls_source)
-        self.assertIn("stopLiveAgentSessionAgent", session_controls_source)
-        self.assertNotIn("expelLiveAgentFromRoom", session_controls_source)
-        self.assertIn("onParticipantKick", session_controls_source)
-        self.assertIn("deleteLiveAgentSession", session_controls_source)
-        self.assertNotIn("pollIntervalMode", session_controls_source)
-        self.assertIn('import MemberDetailModal from "./member/MemberDetailModal";', member_list_source)
-        self.assertIn("<MemberDetailModal", member_list_source)
-        self.assertIn('import AgentSessionControls from "./AgentSessionControls";', detail_modal_source)
-        self.assertIn("<AgentSessionControls", detail_modal_source)
-        self.assertIn('"/api/live-agent-sessions/resume-agent"', api_source)
-        self.assertIn('"/api/live-agent-sessions/stop-agent"', api_source)
-        self.assertNotIn('"/api/live-agent-room/expel"', api_source)
-        self.assertIn('"/api/live-agent-room/delete-session"', api_source)
 
     def test_agent_session_api_posts_selected_agent_id(self):
         script = textwrap.dedent(

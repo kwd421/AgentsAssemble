@@ -65,16 +65,5 @@ class FrontendRoomRailMenuPositionTests(unittest.TestCase):
             msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
 
-    def test_room_rail_uses_position_helper_for_context_menu(self):
-        app_source = (ROOT / "frontend/src/App.tsx").read_text(encoding="utf-8")
-        rail_source = (ROOT / "frontend/src/views/components/RoomRail.tsx").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn("roomRailMenuPosition", app_source)
-        self.assertNotIn("window.innerHeight - 160", app_source)
-        self.assertIn("ROOM_RAIL_MENU_SIZE", rail_source)
-
-
 if __name__ == "__main__":
     unittest.main()

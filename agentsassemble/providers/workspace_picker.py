@@ -96,7 +96,9 @@ def _was_cancelled(system: str, returncode: int, stderr: str) -> bool:
         return True
     if system == "Linux" and returncode == 1:
         return True
-    return system == "Darwin" and "user canceled" in stderr.casefold()
+    return system == "Darwin" and (
+        "user canceled" in stderr.casefold() or "(-128)" in stderr
+    )
 
 
 __all__ = [

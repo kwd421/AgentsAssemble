@@ -1,12 +1,40 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { NativeCliProviderAvailability } from "../../roomSocketClient";
 import AgentCreateModal from "./AgentCreateModal";
 
+const apiMocks = vi.hoisted(() => ({
+  chooseLocalWorkspace: vi.fn(),
+}));
+
+vi.mock("../../api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../api")>()),
+  chooseLocalWorkspace: apiMocks.chooseLocalWorkspace,
+}));
+
 afterEach(cleanup);
 
+beforeEach(() => {
+  apiMocks.chooseLocalWorkspace.mockReset();
+  apiMocks.chooseLocalWorkspace.mockResolvedValue({
+    selected: true,
+    path: "/tmp/agentsassemble-workspace",
+  });
+});
+
+function primaryActionButton(): HTMLButtonElement {
+  const button = screen
+    .getByRole("dialog", { name: "에이전트 추가" })
+    .querySelector<HTMLButtonElement>(".dc-agent-create-primary");
+  if (!button) throw new Error("Agent create primary action was not rendered");
+  return button;
+}
+
+async function chooseWorkspace(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "폴더 선택" }));
+}
 
 describe("AgentCreateModal", () => {
   it("submits only a server-catalog model value selected from a dropdown", async () => {
@@ -54,12 +82,15 @@ describe("AgentCreateModal", () => {
     expect(screen.getByRole("option", { name: "Luna" })).toBeTruthy();
 
     await userEvent.selectOptions(model, "gpt-5.3-codex-spark");
-    await userEvent.click(screen.getByRole("button", { name: "추가하고 시작" }));
+    expect(primaryActionButton().hasAttribute("disabled")).toBe(true);
+    await chooseWorkspace();
+    await userEvent.click(primaryActionButton());
 
     expect(onCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         catalogRevision: "cat-test",
         modelId: "gpt-5.3-codex-spark",
+        workspacePath: "/tmp/agentsassemble-workspace",
       })
     );
   });
@@ -111,7 +142,7 @@ describe("AgentCreateModal", () => {
 
     await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "기존 세션" }), "codex-existing");
-    await userEvent.click(screen.getByRole("button", { name: "추가하고 시작" }));
+    await userEvent.click(primaryActionButton());
 
     expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "codex-existing" }));
   });
@@ -135,7 +166,8 @@ describe("AgentCreateModal", () => {
     expect(screen.getByRole("option", { name: "Claude Sonnet 4.6" })).toBeTruthy();
 
     await userEvent.selectOptions(model, "claude-sonnet-4-6");
-    await userEvent.click(screen.getByRole("button", { name: "추가하고 시작" }));
+    await chooseWorkspace();
+    await userEvent.click(primaryActionButton());
 
     expect(onCreate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -211,7 +243,7 @@ describe("AgentCreateModal", () => {
 
     expect(screen.getByText("선택한 provider가 현재 catalog에 없습니다.")).toBeTruthy();
     expect(screen.getByRole("listitem", { name: "Codex" }).getAttribute("data-active")).toBe("false");
-    expect(screen.getByRole("button", { name: "추가하고 시작" }).hasAttribute("disabled")).toBe(true);
+    expect(primaryActionButton().hasAttribute("disabled")).toBe(true);
   });
 
   it("invalidates a selected model removed by a catalog refresh", async () => {
@@ -247,7 +279,7 @@ describe("AgentCreateModal", () => {
     );
 
     expect((screen.getByRole("combobox", { name: "모델" }) as HTMLSelectElement).value).toBe("");
-    expect(screen.getByRole("button", { name: "추가하고 시작" }).hasAttribute("disabled")).toBe(true);
+    expect(primaryActionButton().hasAttribute("disabled")).toBe(true);
   });
 
   it("does not silently choose the first option when a catalog default is invalid", async () => {
@@ -278,7 +310,7 @@ describe("AgentCreateModal", () => {
 
     await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
     expect((screen.getByRole("combobox", { name: "모델" }) as HTMLSelectElement).value).toBe("");
-    expect(screen.getByRole("button", { name: "추가하고 시작" }).hasAttribute("disabled")).toBe(true);
+    expect(primaryActionButton().hasAttribute("disabled")).toBe(true);
     expect(screen.getByText("모델의 유효한 기본값이 없어 직접 선택해야 합니다.")).toBeTruthy();
   });
 
@@ -296,12 +328,18 @@ describe("AgentCreateModal", () => {
     );
 
     await userEvent.click(screen.getByRole("listitem", { name: "Codex" }));
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "model-high");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "모델" }), "model-variable");
 
-    expect(screen.queryByRole("option", { name: "low" })).toBeNull();
+    expect(screen.getByRole("option", { name: "low" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "high" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Fast" })).toBeNull();
     expect(screen.getByRole("option", { name: "기본" })).toBeTruthy();
+    expect((screen.getByRole("combobox", { name: "응답 속도" }) as HTMLSelectElement).value).toBe(
+      "default"
+    );
+
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "추론 강도" }), "high");
+    expect(screen.getByRole("option", { name: "Fast" })).toBeTruthy();
   });
 
   it("invalidates an effort removed by a model relation change", async () => {
@@ -336,7 +374,7 @@ describe("AgentCreateModal", () => {
     );
 
     expect((screen.getByRole("combobox", { name: "추론 강도" }) as HTMLSelectElement).value).toBe("");
-    expect(screen.getByRole("button", { name: "추가하고 시작" }).hasAttribute("disabled")).toBe(true);
+    expect(primaryActionButton().hasAttribute("disabled")).toBe(true);
   });
 
   it("requires an explicit provider selection when the modal opens", () => {
@@ -433,6 +471,19 @@ function codexProviderWithRelations(): NativeCliProviderAvailability {
             label: "High model",
             metadata: { reasoning_efforts: ["high"], service_tiers: [] },
           },
+          {
+            value: "model-variable",
+            label: "Variable model",
+            metadata: {
+              reasoning_efforts: ["low", "high"],
+              service_tiers: ["fast"],
+              runtime_variants: [
+                { reasoning_effort: "low", service_tier: "default" },
+                { reasoning_effort: "high", service_tier: "default" },
+                { reasoning_effort: "high", service_tier: "fast" },
+              ],
+            },
+          },
         ],
       },
       {
@@ -453,6 +504,7 @@ function codexProviderWithRelations(): NativeCliProviderAvailability {
         options: [
           { value: "default", label: "기본" },
           { value: "priority", label: "Fast" },
+          { value: "fast", label: "Fast" },
         ],
       },
     ],

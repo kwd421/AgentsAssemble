@@ -492,7 +492,17 @@ def _cursor_command(
 # receives the exact slug Cursor advertised.
 _CURSOR_PLAIN_EFFORT = "default"
 _CURSOR_EFFORT_TOKENS = frozenset(
-    {"thinking", "minimal", "none", "low", "medium", "high", "xhigh", "max"}
+    {
+        "thinking",
+        "minimal",
+        "none",
+        "low",
+        "medium",
+        "high",
+        "extra",
+        "xhigh",
+        "max",
+    }
 )
 
 

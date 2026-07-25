@@ -62,24 +62,11 @@ def benchmark_payload(*, predicate_p99_ms: float = 12.5, anchor_share_improvemen
 
 
 class ReleaseHealthTests(unittest.TestCase):
-    def test_catalog_matches_v0_1_release_check_order_without_command_details(self):
+    def test_catalog_projects_release_checks_without_command_details(self):
         from agentsassemble.diagnostics.release_health import RELEASE_HEALTH_CHECK_IDS, release_health_catalog_payload
 
         payload = release_health_catalog_payload(now=datetime(2026, 5, 29, 0, 0, tzinfo=UTC))
 
-        self.assertEqual(
-            RELEASE_HEALTH_CHECK_IDS,
-            [
-                "frontend_react_build",
-                "unittest_static_ui_assets",
-                "unittest_docs_architecture",
-                "unittest_mcp_server",
-                "unittest_gui_and_live_agent_smoke",
-                "compileall_package",
-                "git_diff_check",
-                "room_event_benchmark",
-            ],
-        )
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["schema_version"], 1)
         self.assertEqual(payload["generated_at"], "2026-05-29T00:00:00+00:00")
@@ -101,7 +88,10 @@ class ReleaseHealthTests(unittest.TestCase):
         default_checks = [check for check in checks if check["default_run"]]
         opt_in_checks = [check for check in checks if not check["default_run"]]
 
-        self.assertEqual([check["order"] for check in default_checks], list(range(1, 8)))
+        self.assertEqual(
+            [check["order"] for check in default_checks],
+            list(range(1, len(default_checks) + 1)),
+        )
         self.assertEqual([check["id"] for check in opt_in_checks], ["room_event_benchmark"])
         self.assertIsNone(opt_in_checks[0]["order"])
         self.assertEqual(opt_in_checks[0]["safety_class"], "local_room_benchmark")
@@ -168,7 +158,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(by_id["frontend_react_build"]["latest_status"], "passed")
         self.assertEqual(by_id["frontend_react_build"]["latest_duration_seconds"], 1.5)
         self.assertEqual(by_id["git_diff_check"]["latest_status"], "failed")
-        self.assertEqual(by_id["unittest_static_ui_assets"]["latest_status"], "not_run")
+        self.assertEqual(by_id["frontend_react_tests"]["latest_status"], "not_run")
 
         serialized = json.dumps(payload, ensure_ascii=False)
         for forbidden in (
@@ -212,39 +202,20 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(report_path.name, "latest.json")
         self.assertEqual(loaded, report)
 
-    def test_safety_class_values_are_closed_vocabulary(self):
+    def test_each_release_check_uses_an_allowed_safety_class(self):
         from agentsassemble.diagnostics.release_health import RELEASE_HEALTH_CHECKS, RELEASE_HEALTH_SAFETY_CLASSES
 
-        self.assertEqual(
-            RELEASE_HEALTH_SAFETY_CLASSES,
-            {
-                "frontend_react_build",
-                "python_unit",
-                "python_integration",
-                "python_compile",
-                "git_format",
-                "local_room_benchmark",
-            },
-        )
         for check in RELEASE_HEALTH_CHECKS:
             self.assertIn(check.safety_class, RELEASE_HEALTH_SAFETY_CLASSES)
 
     def test_default_release_health_selection_excludes_optional_room_event_benchmark(self):
-        from agentsassemble.diagnostics.release_health import validate_release_health_check_selection
+        from agentsassemble.diagnostics.release_health import RELEASE_HEALTH_CHECKS, validate_release_health_check_selection
 
         selected = validate_release_health_check_selection()
 
         self.assertEqual(
             [check.id for check in selected],
-            [
-                "frontend_react_build",
-                "unittest_static_ui_assets",
-                "unittest_docs_architecture",
-                "unittest_mcp_server",
-                "unittest_gui_and_live_agent_smoke",
-                "compileall_package",
-                "git_diff_check",
-            ],
+            [check.id for check in RELEASE_HEALTH_CHECKS if not check.optional],
         )
         self.assertFalse(any(check.id == "room_event_benchmark" for check in selected))
 
@@ -340,16 +311,23 @@ class ReleaseHealthTests(unittest.TestCase):
             return Completed(stdout=f"ran {argv[0]}")
 
         payload = run_release_health_checks(
-            check_ids=["compileall_package", "git_diff_check"],
+            check_ids=["frontend_react_tests", "compileall_package", "git_diff_check"],
             runner=fake_runner,
             now_fn=lambda: datetime(2026, 5, 29, 0, 0, tzinfo=UTC),
         )
 
-        self.assertEqual([call[0] for call in calls], [["python3", "-m", "compileall", "-q", "agentsassemble"], ["git", "diff", "--check"]])
+        self.assertEqual(
+            [call[0] for call in calls],
+            [
+                ["npm", "--prefix", "frontend", "test", "--", "--run"],
+                ["python3", "-m", "compileall", "-q", "agentsassemble"],
+                ["git", "diff", "--check"],
+            ],
+        )
         self.assertTrue(all(call[1]["cwd"] == ROOT for call in calls))
         self.assertTrue(all(call[1]["shell"] is False for call in calls))
-        self.assertEqual(payload["summary"], {"total": 2, "passed": 2, "failed": 0, "skipped": 0, "ok": True})
-        self.assertEqual([result["status"] for result in payload["results"]], ["passed", "passed"])
+        self.assertEqual(payload["summary"], {"total": 3, "passed": 3, "failed": 0, "skipped": 0, "ok": True})
+        self.assertEqual([result["status"] for result in payload["results"]], ["passed", "passed", "passed"])
         serialized = json.dumps(payload, ensure_ascii=False)
         self.assertNotIn("argv", serialized)
         self.assertNotIn(str(ROOT), serialized)

@@ -51,8 +51,8 @@ reading chat history:
 The release candidate should have current evidence for these surfaces:
 
 - GUI loads `/` and static assets from a temporary output root.
+- `npm --prefix frontend test -- --run` passes for React behavior.
 - `npm --prefix frontend run build` passes for the React room client.
-- `python3 -m unittest tests.test_static_ui_assets -v` passes.
 - `python3 -m unittest tests.test_mcp_server -v` passes for the checked-in MCP
   participant/archive tool boundary.
 - `python3 -m unittest tests.test_gui_server tests.test_live_agent_smoke -v`
@@ -72,9 +72,8 @@ raw local paths/config metadata kept out of archive outputs. Host-control MCP re
 Use these as the ordinary v0.1 hardening proof set:
 
 ```bash
+npm --prefix frontend test -- --run
 npm --prefix frontend run build
-python3 -m unittest tests.test_static_ui_assets -v
-python3 -m unittest tests.test_docs_architecture -v
 python3 -m unittest tests.test_mcp_server -v
 python3 -m unittest tests.test_gui_server tests.test_live_agent_smoke -v
 python3 -m compileall -q agentsassemble

@@ -217,7 +217,13 @@ class ProviderRuntimeControlTests(unittest.TestCase):
                     "claude-sonnet-4-6\n"
                 ), ""
             if command[0].endswith("cursor-agent"):
-                return 0, "auto - Auto (current, default)\ngpt-5.6-luna-low - GPT-5.6 Luna Low\n", ""
+                return 0, (
+                    "auto - Auto (current, default)\n"
+                    "gpt-5.4-low - GPT-5.4 Low\n"
+                    "gpt-5.4-high - GPT-5.4 High\n"
+                    "gpt-5.4-high-fast - GPT-5.4 High Fast\n"
+                    "gpt-5.5-extra-high - GPT-5.5 Extra High\n"
+                ), ""
             if command[1:] == ["models", "--verbose"]:
                 return 0, "opencode-go/glm-5.2\n", ""
             return 0, "", ""
@@ -258,7 +264,8 @@ class ProviderRuntimeControlTests(unittest.TestCase):
             [(option["value"], option["label"]) for option in model["options"]],
             [
                 ("auto", "Auto (current, default)"),
-                ("gpt-5.6-luna", "GPT 5.6 Luna"),
+                ("gpt-5.4", "GPT 5.4"),
+                ("gpt-5.5", "GPT 5.5"),
             ],
         )
         cursor_effort = next(
@@ -266,13 +273,48 @@ class ProviderRuntimeControlTests(unittest.TestCase):
         )
         self.assertEqual(
             [option["value"] for option in cursor_effort["options"]],
-            ["default", "low"],
+            ["default", "low", "high", "extra-high"],
         )
-        # auto exposes only the plain effort; gpt-5.6-luna requires an explicit effort.
+        # Cursor's catalog is preserved as exact model/effort/speed tuples.
         auto_option = next(option for option in model["options"] if option["value"] == "auto")
-        luna_option = next(option for option in model["options"] if option["value"] == "gpt-5.6-luna")
+        gpt_54_option = next(option for option in model["options"] if option["value"] == "gpt-5.4")
+        gpt_55_option = next(option for option in model["options"] if option["value"] == "gpt-5.5")
         self.assertEqual(auto_option["metadata"]["reasoning_efforts"], ["default"])
-        self.assertEqual(luna_option["metadata"]["reasoning_efforts"], ["low"])
+        self.assertEqual(gpt_55_option["metadata"]["reasoning_efforts"], ["extra-high"])
+        self.assertEqual(
+            gpt_54_option["metadata"]["runtime_variants"],
+            [
+                {"reasoning_effort": "low", "service_tier": "default"},
+                {"reasoning_effort": "high", "service_tier": "default"},
+                {"reasoning_effort": "high", "service_tier": "fast"},
+            ],
+        )
+        revision = str(catalog.snapshot()["catalog_revision"])
+        catalog.validate_selection(
+            catalog_revision=revision,
+            provider_id="cursor",
+            values={
+                "model": "gpt-5.4",
+                "reasoning_effort": "high",
+                "service_tier": "fast",
+                "permission_mode": "meeting_read_only",
+            },
+        )
+        with self.assertRaises(ProviderCatalogSelectionError) as invalid_variant:
+            catalog.validate_selection(
+                catalog_revision=revision,
+                provider_id="cursor",
+                values={
+                    "model": "gpt-5.4",
+                    "reasoning_effort": "low",
+                    "service_tier": "fast",
+                    "permission_mode": "meeting_read_only",
+                },
+            )
+        self.assertEqual(
+            invalid_variant.exception.code,
+            "unsupported_model_runtime_combination",
+        )
 
     def test_claude_catalog_exposes_only_exact_models(self):
         catalog = ProviderCapabilityCatalog(
