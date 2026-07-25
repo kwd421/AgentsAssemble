@@ -49,7 +49,6 @@ class RoomAttentionPolicyTests(unittest.TestCase):
             candidate_ids=("codex", "grok"),
             eligible_ids=("codex", "grok"),
             last_spoke_sequences={"codex": 8, "grok": 2},
-            max_agent_relay_depth=2,
         )
 
         self.assertEqual(decision.outcome, "selected")
@@ -90,7 +89,6 @@ class RoomAttentionPolicyTests(unittest.TestCase):
                 candidate_ids=("codex",),
                 eligible_ids=("codex",),
                 last_spoke_sequences={"codex": 0},
-                max_agent_relay_depth=2,
             )
             self.assertEqual(decision.outcome, "silent")
 
@@ -113,37 +111,34 @@ class RoomAttentionPolicyTests(unittest.TestCase):
                 candidate_ids=("codex",),
                 eligible_ids=("codex",),
                 last_spoke_sequences={"codex": 0},
-                max_agent_relay_depth=2,
             )
             self.assertEqual(decision.outcome, "selected")
 
-    def test_ambient_agent_handoff_stops_at_chain_budget(self):
+    def test_ambient_agent_handoff_does_not_use_a_server_chain_count(self):
         first = evaluate_ambient_attention(
             _event("내 의견은 이래.", actor_id="codex", actor_type="agent", relay_depth=1),
             candidate_ids=("codex", "grok"),
             eligible_ids=("codex", "grok"),
             last_spoke_sequences={"codex": 0, "grok": 1},
-            max_agent_relay_depth=2,
         )
-        exhausted = evaluate_ambient_attention(
+        later = evaluate_ambient_attention(
             _event(
                 "이제 네 생각은?",
                 actor_id="codex",
                 actor_type="agent",
                 id="event-2",
-                seq=2,
-                relay_depth=2,
+                seq=20,
+                relay_depth=20,
             ),
             candidate_ids=("codex", "grok"),
             eligible_ids=("grok",),
             last_spoke_sequences={"grok": 0},
-            max_agent_relay_depth=2,
         )
 
         self.assertEqual(first.selected_participant_id, "grok")
         self.assertIn("ambient_agent_handoff", first.reasons)
-        self.assertEqual(exhausted.outcome, "silent")
-        self.assertEqual(exhausted.reasons, ("agent_chain_budget_exhausted",))
+        self.assertEqual(later.outcome, "selected")
+        self.assertEqual(later.selected_participant_id, "grok")
 
     def test_ambient_does_not_replace_unavailable_explicit_target(self):
         decision = evaluate_ambient_attention(
@@ -151,7 +146,6 @@ class RoomAttentionPolicyTests(unittest.TestCase):
             candidate_ids=("codex", "grok"),
             eligible_ids=("grok",),
             last_spoke_sequences={"grok": 0},
-            max_agent_relay_depth=2,
         )
 
         self.assertEqual(decision.outcome, "silent")
@@ -269,7 +263,6 @@ class RoomAttentionPolicyTests(unittest.TestCase):
                 candidate_ids=("codex",),
                 eligible_ids=("codex",),
                 last_spoke_sequences={"codex": 0},
-                max_agent_relay_depth=2,
                 owner_id="controller-a",
                 lease_seconds=30,
                 relay_depth=1,
@@ -331,7 +324,6 @@ class RoomAttentionPolicyTests(unittest.TestCase):
                         candidate_ids=("codex",),
                         eligible_ids=("codex",),
                         last_spoke_sequences={"codex": 0},
-                        max_agent_relay_depth=2,
                         owner_id="controller-a",
                         lease_seconds=30,
                         relay_depth=1,

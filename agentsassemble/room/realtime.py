@@ -99,7 +99,6 @@ from agentsassemble.room.text import clean_room_text as clean_lobby_text
 from agentsassemble.room.types import RoomCommand, RoomEvent
 from agentsassemble.room.voice_presence import leave_all_voice
 
-AMBIENT_AGENT_RELAY_DEPTH = 2
 AGENT_RUNTIME_PROFILE_KEYS = frozenset(
     {
         "provider_id",
@@ -1241,7 +1240,6 @@ class RoomRealtimeController:
             self._route_ambient_event(
                 dict(event),
                 providers,
-                max_relay_turns=AMBIENT_AGENT_RELAY_DEPTH,
             )
             return
         self._record_shadow_attention(dict(event), providers)
@@ -1281,8 +1279,6 @@ class RoomRealtimeController:
         self,
         event: dict[str, object],
         providers: dict[str, NativeCliProviderSpec],
-        *,
-        max_relay_turns: int,
     ) -> None:
         room_id = clean_lobby_text(event.get("room_id"), limit=128)
         eligible_ids = tuple(
@@ -1299,7 +1295,6 @@ class RoomRealtimeController:
                     agent_id: self.store.attention_state(room_id, agent_id).last_spoke_seq
                     for agent_id in providers
                 },
-                max_agent_relay_depth=max_relay_turns,
                 owner_id=self._attention_owner_id,
                 lease_seconds=self._ambient_lease_seconds(providers, eligible_ids),
                 relay_depth=max(0, int(event.get("relay_depth") or 0)) + 1,

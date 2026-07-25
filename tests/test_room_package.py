@@ -190,7 +190,6 @@ class RoomPackageTests(unittest.TestCase):
     def test_room_realtime_root_module_exports_owned_controller(self) -> None:
         for name in (
             "AGENT_RUNTIME_PROFILE_KEYS",
-            "AMBIENT_AGENT_RELAY_DEPTH",
             "NativeCliProviderSpec",
             "ProviderCatalog",
             "RoomCommandRejected",

@@ -2,7 +2,6 @@
 
 from agentsassemble.room.realtime import (
     AGENT_RUNTIME_PROFILE_KEYS,
-    AMBIENT_AGENT_RELAY_DEPTH,
     NativeCliProviderSpec,
     ProviderCatalog,
     RoomCommandRejected,
@@ -16,7 +15,6 @@ from agentsassemble.room.realtime import (
 
 __all__ = [
     "AGENT_RUNTIME_PROFILE_KEYS",
-    "AMBIENT_AGENT_RELAY_DEPTH",
     "NativeCliProviderSpec",
     "ProviderCatalog",
     "RoomCommandRejected",

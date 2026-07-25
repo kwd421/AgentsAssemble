@@ -132,7 +132,6 @@ def evaluate_ambient_attention(
     candidate_ids: Iterable[str],
     eligible_ids: Iterable[str],
     last_spoke_sequences: Mapping[str, int],
-    max_agent_relay_depth: int,
 ) -> AttentionEvaluation:
     """Select at most one provider for an opt-in ambient room event."""
 
@@ -160,15 +159,6 @@ def evaluate_ambient_attention(
             source_seq=base.source_seq,
             outcome="silent",
             reasons=(rejection_reason,),
-        )
-    relay_depth = max(0, int(event.get("relay_depth") or 0))
-    if actor_type == "agent" and relay_depth >= max(0, int(max_agent_relay_depth)):
-        return AttentionEvaluation(
-            room_id=base.room_id,
-            source_event_id=base.source_event_id,
-            source_seq=base.source_seq,
-            outcome="silent",
-            reasons=("agent_chain_budget_exhausted",),
         )
     if base.outcome == "selected":
         return base

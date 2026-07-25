@@ -51,7 +51,6 @@ class RoomAttentionCoordinator:
         candidate_ids: Iterable[str],
         eligible_ids: Iterable[str],
         last_spoke_sequences: dict[str, int],
-        max_agent_relay_depth: int,
         owner_id: str,
         lease_seconds: float,
         relay_depth: int,
@@ -62,7 +61,6 @@ class RoomAttentionCoordinator:
             candidate_ids=candidates,
             eligible_ids=eligible_ids,
             last_spoke_sequences=last_spoke_sequences,
-            max_agent_relay_depth=max_agent_relay_depth,
         )
         with self.repository.transaction(evaluation.room_id) as transaction:
             persisted_candidates = tuple(

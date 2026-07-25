@@ -230,7 +230,7 @@ export default function RoomSettingsModal({
                     onChange={() => onConversationModeChange("ambient")}
                   />
                   <span className="preserve-words">
-                    자유 토론 (실험적) — 사람처럼 방을 계속 지켜보는 기능이 아닙니다. 서버가 새 메시지에 반응할 에이전트 한 명을 고르고, AI끼리 이어지는 발언은 최대 2회로 제한합니다.
+                    자유 토론 (실험적) — 새 메시지가 생길 때 서버가 다음 에이전트 세션을 깨웁니다.
                   </span>
                 </label>
                 {conversationMode === "continuous" && (

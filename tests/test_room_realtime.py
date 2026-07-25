@@ -1274,10 +1274,14 @@ class RoomRealtimeControllerTests(unittest.TestCase):
             {"turn_id": second["turn_id"], "content": "그리고 소음을 최소화해야 해."},
             peer_identity,
         )
-        self.assertFalse(any(message.get("op") == "turn.assign" for message in codex_channel.drain()))
+        third = next(
+            message
+            for message in codex_channel.drain()
+            if message.get("op") == "turn.assign"
+        )
         jobs = self.controller.store.attention_jobs("general", mode="active")
-        self.assertEqual([job["status"] for job in jobs], ["completed", "completed", "completed"])
-        self.assertEqual(jobs[-1]["reasons"], ["agent_chain_budget_exhausted"])
+        self.assertEqual([job["status"] for job in jobs], ["completed", "completed", "leased"])
+        self.assertEqual(third["source_event_id"], jobs[-1]["source_event_id"])
         self.assertEqual(
             self.controller.store.attention_state("general", "codex").last_spoke_seq,
             codex_final["seq"],
