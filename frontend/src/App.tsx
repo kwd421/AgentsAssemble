@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import {
   createCompanionRoomInvite,
-  ensureRoomMeeting,
+  createRoom,
   fetchProviderUsage,
   type LiveAgent,
   type MafiaGame,
@@ -1050,7 +1050,7 @@ export default function App() {
     if (guestLocked) return;
     const room = createFreshRoom();
     try {
-      await ensureRoomMeeting(room.meetingId, room.label);
+      await createRoom(room.meetingId, room.label);
       prependRoom(room);
       setActiveRoomId(room.id);
       setAdminOpen(false);

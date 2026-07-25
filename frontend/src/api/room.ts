@@ -349,9 +349,9 @@ export function fetchRoomFriends() {
   return fetchJson<RoomFriendsResponse>("/api/room-friends");
 }
 
-export function ensureRoomMeeting(meetingId: string, label = "") {
-  return postJson<{ status: string; meeting_id: string }>("/api/room/ensure", {
-    meeting_id: meetingId,
+export function createRoom(roomId: string, label = "") {
+  return postJson<{ status: string; room: ServerRoom }>("/api/rooms", {
+    room_id: roomId,
     label,
   });
 }
