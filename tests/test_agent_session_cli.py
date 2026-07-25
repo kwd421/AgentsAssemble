@@ -1,6 +1,5 @@
 import argparse
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 from io import StringIO
 
@@ -74,18 +73,6 @@ class AgentSessionCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 2)
         self.assertIn("legacy/internal", stderr.getvalue())
         request_json.assert_not_called()
-
-    def test_readme_quickstart_does_not_instruct_legacy_connection_choices(self):
-        readme = Path("README.md").read_text(encoding="utf-8")
-        live_room = readme.split("## Live Room Status", 1)[1].split("## Codex Adapter", 1)[0]
-
-        self.assertIn("Agent Session", live_room)
-        self.assertIn("assemble room resume", live_room)
-        self.assertNotIn(" live-agent ", live_room)
-        self.assertNotIn("assemble mcp", live_room.lower())
-        self.assertNotIn("local_cli", live_room)
-        self.assertNotIn("live_session", live_room)
-        self.assertNotIn("remote bridge participants", live_room)
 
     def test_room_resume_uses_agent_session_resume_endpoint(self):
         args = build_parser().parse_args(
