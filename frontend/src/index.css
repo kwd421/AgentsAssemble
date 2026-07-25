@@ -373,27 +373,31 @@ button:disabled,
 }
 
 .dc-agent-create-modal {
+  display: flex;
+  flex-direction: column;
   width: min(560px, calc(100vw - 28px));
-  max-height: min(720px, calc(100vh - 28px));
-  overflow-y: auto;
+  max-height: min(760px, calc(100vh - 28px));
+  overflow: hidden;
   border: 1px solid var(--color-panel-separator);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--color-panel);
-  padding: 20px;
   color: var(--color-text-primary);
   box-shadow: 0 24px 90px rgba(0, 0, 0, 0.5);
 }
 
 .dc-agent-create-head {
   display: flex;
+  flex: 0 0 auto;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--color-panel-separator);
 }
 
 .dc-agent-create-head h2 {
   margin-top: 2px;
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 1000;
 }
 
@@ -421,56 +425,117 @@ button:disabled,
   font-weight: 800;
 }
 
+.dc-agent-create-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+  padding: 18px 20px 20px;
+}
+
+.dc-agent-section {
+  display: grid;
+  gap: 10px;
+}
+
+.dc-agent-section-title {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .dc-agent-provider-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
-  margin-top: 18px;
+  margin: 0;
 }
 
 .dc-agent-provider-grid button {
   display: flex;
   min-width: 0;
-  height: 38px;
+  height: 40px;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border-radius: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   background: #1e1f22;
   color: var(--color-sidebar-text);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 800;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.dc-agent-provider-grid button:hover:not(:disabled) {
+  background: #26272b;
+  color: var(--color-text-primary);
 }
 
 .dc-agent-provider-grid button[data-active="true"] {
   background: var(--color-accent);
+  border-color: var(--color-accent);
   color: #fff;
 }
 
-.dc-agent-create-fields {
+.dc-agent-provider-grid button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.dc-agent-field-grid {
   display: grid;
   gap: 12px;
-  margin-top: 18px;
 }
 
-.dc-agent-create-fields label {
+.dc-agent-field-grid--dual {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dc-agent-field {
   display: grid;
   gap: 6px;
-  color: var(--color-text-muted);
-  font-size: 12px;
-  font-weight: 900;
+  margin: 0;
 }
 
-.dc-agent-create-fields input,
-.dc-agent-create-fields select {
+.dc-agent-field > span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dc-agent-field input,
+.dc-agent-field select {
   min-width: 0;
   height: 38px;
-  border: 0;
-  border-radius: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   background: #1e1f22;
   padding: 0 11px;
   color: var(--color-text-primary);
+  font-size: 13px;
   outline: none;
+  transition: border-color 120ms ease;
+}
+
+.dc-agent-field input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.dc-agent-field input:focus,
+.dc-agent-field select:focus {
+  border-color: var(--color-accent);
+}
+
+.dc-agent-field input:disabled,
+.dc-agent-field select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .dc-provider-secret-field {
@@ -486,7 +551,7 @@ button:disabled,
 
 .dc-provider-secret-field button {
   min-height: 34px;
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--color-surface-raised);
   padding: 0 10px;
   color: var(--color-text-primary);
@@ -495,61 +560,31 @@ button:disabled,
 }
 
 .dc-provider-secret-field p {
+  margin: 0;
   color: var(--color-text-muted);
   font-size: 11px;
 }
 
-.dc-agent-folder-field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-radius: 4px;
-  background: #1e1f22;
-  padding-left: 10px;
-  color: var(--color-text-muted);
-}
-
-.dc-agent-folder-field input {
-  flex: 1;
-  padding-left: 0;
-}
-
-.dc-agent-folder-field button {
-  min-height: 30px;
-  flex: 0 0 auto;
-  border-radius: 4px;
-  background: var(--color-surface-raised);
-  padding: 0 10px;
-  color: var(--color-text-primary);
-  font-size: 11px;
-  font-weight: 850;
-}
-
-.dc-agent-folder-field button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+.dc-agent-create-status {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .dc-agent-start-toggle {
-  display: inline-flex !important;
+  display: inline-flex;
   width: fit-content;
-  grid-template-columns: none !important;
   align-items: center;
-  gap: 8px !important;
+  gap: 8px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .dc-agent-start-toggle input {
   width: 16px;
   height: 16px;
-}
-
-.dc-agent-create-note,
-.dc-agent-create-status {
-  margin-top: 12px;
-}
-
-.dc-agent-create-status {
-  color: var(--color-text-secondary);
 }
 
 .dc-agent-login-action {
@@ -572,14 +607,127 @@ button:disabled,
   opacity: 0.52;
 }
 
-.dc-agent-create-actions {
+.dc-agent-create-footer {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 18px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px 12px 12px;
+  border-top: 1px solid var(--color-panel-separator);
+  background: var(--color-panel);
 }
 
-.dc-agent-create-actions button,
+.dc-agent-launch-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dc-agent-launch-toggle:hover:not(:disabled) {
+  background: var(--color-sidebar-hover);
+}
+
+.dc-agent-launch-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.dc-agent-launch-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: #4b4d54;
+  transition: background 140ms ease;
+}
+
+.dc-agent-launch-switch i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 140ms ease;
+}
+
+.dc-agent-launch-toggle[data-on="true"] .dc-agent-launch-switch {
+  background: var(--color-accent);
+}
+
+.dc-agent-launch-toggle[data-on="true"] .dc-agent-launch-switch i {
+  transform: translateX(16px);
+}
+
+.dc-agent-launch-text {
+  display: grid;
+  gap: 1px;
+}
+
+.dc-agent-launch-text strong {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--color-text-primary);
+}
+
+.dc-agent-launch-text em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.dc-agent-footer-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.dc-agent-create-secondary,
+.dc-agent-create-primary {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.dc-agent-create-secondary {
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.dc-agent-create-secondary:hover {
+  color: var(--color-text-primary);
+  text-decoration: underline;
+}
+
+.dc-agent-create-primary {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.dc-agent-create-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.dc-agent-create-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .dc-agent-add-entry,
 .dc-home-agent-add {
   display: inline-flex;
@@ -593,17 +741,6 @@ button:disabled,
   font-weight: 900;
 }
 
-.dc-agent-create-actions button {
-  min-height: 36px;
-  padding: 0 12px;
-}
-
-.dc-agent-create-actions button.primary {
-  background: var(--color-accent);
-  color: #fff;
-}
-
-.dc-agent-create-actions button:disabled,
 .dc-agent-add-entry:disabled {
   cursor: not-allowed;
   opacity: 0.52;

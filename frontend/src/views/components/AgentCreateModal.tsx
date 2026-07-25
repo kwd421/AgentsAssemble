@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, Folder, Play, Plus, X } from "lucide-react";
+import { Bot, Play, Plus, X } from "lucide-react";
 import {
-  chooseLocalWorkspace,
   deleteDeepSeekCredential,
   fetchDeepSeekCredentialStatus,
   setDeepSeekCredential,
@@ -40,9 +39,7 @@ export default function AgentCreateModal({
   const [providerId, setProviderId] = useState("");
   const [existingSessionId, setExistingSessionId] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [workspacePath, setWorkspacePath] = useState(".");
-  const [workspaceLabel, setWorkspaceLabel] = useState("서버 실행 폴더");
-  const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const workspacePath = ".";
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [startNow, setStartNow] = useState(false);
   const [status, setStatus] = useState("");
@@ -77,6 +74,14 @@ export default function AgentCreateModal({
       displayName.trim() &&
       workspacePath.trim()
   );
+  const statusMessage = deriveStatusMessage({
+    status,
+    selectedProvider,
+    selectedProviderMissing,
+    hasProviders: providers.length > 0,
+    invalidControl,
+    existingSessionId,
+  });
 
   useEffect(() => {
     if (!open) {
@@ -182,27 +187,6 @@ export default function AgentCreateModal({
     }
   }
 
-  async function pickWorkspace() {
-    if (workspaceBusy || existingSessionId) return;
-    setWorkspaceBusy(true);
-    setStatus("");
-    try {
-      const selected = await chooseLocalWorkspace();
-      if (selected.selected && selected.path) {
-        setWorkspacePath(selected.path);
-        setWorkspaceLabel(selected.path);
-      }
-    } catch (error) {
-      setStatus(
-        error instanceof Error
-          ? error.message
-          : "작업 폴더를 선택하지 못했습니다"
-      );
-    } finally {
-      setWorkspaceBusy(false);
-    }
-  }
-
   if (!open) return null;
 
   return (
@@ -224,186 +208,173 @@ export default function AgentCreateModal({
           </button>
         </header>
 
-        <div className="dc-agent-provider-grid" role="list" aria-label="에이전트 종류">
-          {providers.map((provider) => (
-            <button
-              key={provider.id}
-              type="button"
-              role="listitem"
-              aria-label={provider.display_name}
-              data-active={provider.id === selectedProvider?.id}
-              disabled={!provider.available}
-              onClick={() => {
-                applyProvider(provider);
-                setStatus(provider.discovery_error || "");
-              }}
-            >
-              <Bot size={16} />
-              <span>{provider.display_name}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="dc-agent-create-fields">
-          {reusableSessions.length > 0 && (
-            <label>
-              <span>기존 세션</span>
-              <select
-                aria-label="기존 세션"
-                value={existingSessionId}
-                onChange={(event) => applyExistingSession(event.currentTarget.value)}
-              >
-                <option value="">새 세션 만들기</option>
-                {reusableSessions.map((session) => (
-                  <option key={session.session_id} value={session.session_id}>
-                    {session.display_name} · {session.model || session.provider_kind}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <label>
-            <span>이름</span>
-            <input
-              value={displayName}
-              disabled={Boolean(existingSessionId)}
-              onChange={(event) => setDisplayName(event.currentTarget.value)}
-            />
-          </label>
-          <label>
-            <span>작업 폴더</span>
-            <div className="dc-agent-folder-field">
-              <Folder size={16} />
-              <input
-                aria-label="선택한 작업 폴더"
-                value={workspaceLabel}
-                readOnly
-                disabled={Boolean(existingSessionId)}
-              />
-              <button
-                type="button"
-                disabled={Boolean(existingSessionId) || workspaceBusy}
-                onClick={() => void pickWorkspace()}
-              >
-                {workspaceBusy ? "선택 중..." : "폴더 선택"}
-              </button>
-              {workspacePath !== "." && (
+        <div className="dc-agent-create-body">
+          <section className="dc-agent-section">
+            <p className="dc-agent-section-title">종류</p>
+            <div className="dc-agent-provider-grid" role="list" aria-label="에이전트 종류">
+              {providers.map((provider) => (
                 <button
+                  key={provider.id}
                   type="button"
-                  disabled={Boolean(existingSessionId) || workspaceBusy}
+                  role="listitem"
+                  aria-label={provider.display_name}
+                  data-active={provider.id === selectedProvider?.id}
+                  disabled={!provider.available}
                   onClick={() => {
-                    setWorkspacePath(".");
-                    setWorkspaceLabel("서버 실행 폴더");
+                    applyProvider(provider);
+                    setStatus(provider.discovery_error || "");
                   }}
                 >
-                  기본으로
+                  <Bot size={16} />
+                  <span>{provider.display_name}</span>
                 </button>
-              )}
+              ))}
             </div>
-          </label>
-          {selectedProvider && selectedProvider.controls.map((control) => {
-            const options = effectiveControlOptions(selectedProvider, control, settings);
-            return (
-              <ProviderControlField
-                key={`${selectedProvider.id}:${control.key}`}
-                control={control}
-                options={options}
-                value={settings[control.key] ?? ""}
-                disabled={Boolean(existingSessionId)}
-                onChange={(value) =>
-                  setSettings((previous) =>
-                    reconcileProviderSettings(selectedProvider, {
-                      ...previous,
-                      [control.key]: value,
-                    })
-                  )
-                }
-              />
-            );
-          })}
-          {selectedProvider?.id === "deepseek" && (
-            <div className="dc-provider-secret-field">
-              <label>
-                <span>API 키</span>
+          </section>
+
+          <section className="dc-agent-section">
+            <p className="dc-agent-section-title">기본 정보</p>
+            <div className="dc-agent-field-grid">
+              {reusableSessions.length > 0 && (
+                <label className="dc-agent-field">
+                  <span>기존 세션</span>
+                  <select
+                    aria-label="기존 세션"
+                    value={existingSessionId}
+                    onChange={(event) => applyExistingSession(event.currentTarget.value)}
+                  >
+                    <option value="">새 세션 만들기</option>
+                    {reusableSessions.map((session) => (
+                      <option key={session.session_id} value={session.session_id}>
+                        {session.display_name} · {session.model || session.provider_kind}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="dc-agent-field">
+                <span>표시 이름</span>
                 <input
-                  type="password"
-                  autoComplete="off"
-                  value={deepSeekKey}
-                  placeholder={credentialStatus?.configured ? "설정됨" : "DeepSeek API key"}
-                  onChange={(event) => setDeepSeekKey(event.currentTarget.value)}
+                  value={displayName}
+                  placeholder="방에 표시될 이름"
+                  disabled={Boolean(existingSessionId)}
+                  onChange={(event) => setDisplayName(event.currentTarget.value)}
                 />
               </label>
-              <div>
-                <button type="button" disabled={!deepSeekKey.trim() || credentialBusy} onClick={() => void saveDeepSeekKey()}>
-                  보안 저장
-                </button>
-                {credentialStatus?.source === "keyring" && (
-                  <button
-                    type="button"
-                    disabled={credentialBusy}
-                    onClick={() => {
-                      setCredentialBusy(true);
-                      void deleteDeepSeekCredential()
-                        .then((next) => {
-                          setCredentialStatus(next);
-                          setDeepSeekKey("");
-                        })
-                        .finally(() => setCredentialBusy(false));
-                    }}
-                  >
-                    저장 키 삭제
-                  </button>
-                )}
-              </div>
-              <p>{credentialStatus?.configured ? `키 설정됨 · ${credentialStatus.source}` : "키 없음"}</p>
             </div>
+          </section>
+
+          {selectedProvider && selectedProvider.controls.length > 0 && (
+            <section className="dc-agent-section">
+              <p className="dc-agent-section-title">모델 · 실행 설정</p>
+              <div className="dc-agent-field-grid dc-agent-field-grid--dual">
+                {selectedProvider.controls.map((control) => {
+                  const options = effectiveControlOptions(selectedProvider, control, settings);
+                  return (
+                    <ProviderControlField
+                      key={`${selectedProvider.id}:${control.key}`}
+                      control={control}
+                      options={options}
+                      value={settings[control.key] ?? ""}
+                      disabled={Boolean(existingSessionId)}
+                      onChange={(value) =>
+                        setSettings((previous) =>
+                          reconcileProviderSettings(selectedProvider, {
+                            ...previous,
+                            [control.key]: value,
+                          })
+                        )
+                      }
+                    />
+                  );
+                })}
+              </div>
+            </section>
           )}
-          <label className="dc-agent-create-toggle">
-            <input
-              type="checkbox"
-              checked={startNow}
-              disabled={!selectedProvider?.startable}
-              onChange={(event) => setStartNow(event.currentTarget.checked)}
-            />
-            <span>추가 후 바로 시작</span>
-          </label>
+
+          {selectedProvider?.id === "deepseek" && (
+            <section className="dc-agent-section">
+              <p className="dc-agent-section-title">인증</p>
+              <div className="dc-provider-secret-field">
+                <label className="dc-agent-field">
+                  <span>API 키</span>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={deepSeekKey}
+                    placeholder={credentialStatus?.configured ? "설정됨" : "DeepSeek API key"}
+                    onChange={(event) => setDeepSeekKey(event.currentTarget.value)}
+                  />
+                </label>
+                <div>
+                  <button type="button" disabled={!deepSeekKey.trim() || credentialBusy} onClick={() => void saveDeepSeekKey()}>
+                    보안 저장
+                  </button>
+                  {credentialStatus?.source === "keyring" && (
+                    <button
+                      type="button"
+                      disabled={credentialBusy}
+                      onClick={() => {
+                        setCredentialBusy(true);
+                        void deleteDeepSeekCredential()
+                          .then((next) => {
+                            setCredentialStatus(next);
+                            setDeepSeekKey("");
+                          })
+                          .finally(() => setCredentialBusy(false));
+                      }}
+                    >
+                      저장 키 삭제
+                    </button>
+                  )}
+                </div>
+                <p>{credentialStatus?.configured ? `키 설정됨 · ${credentialStatus.source}` : "키 없음"}</p>
+              </div>
+            </section>
+          )}
+
+          {statusMessage && (
+            <p className="dc-agent-create-status preserve-words">{statusMessage}</p>
+          )}
         </div>
 
-        {selectedProvider && !selectedProvider.available && (
-          <p className="dc-agent-create-status">{selectedProvider.discovery_error || "CLI를 찾지 못했습니다"}</p>
-        )}
-        {selectedProvider?.discovery_status === "loading" && (
-          <p className="dc-agent-create-status">모델 목록을 불러오는 중입니다</p>
-        )}
-        {selectedProvider?.discovery_status === "failed" && selectedProvider.available && (
-          <p className="dc-agent-create-status">
-            {selectedProvider.discovery_error || "모델 목록을 불러오지 못했습니다"}
-          </p>
-        )}
-        {selectedProviderMissing && (
-          <p className="dc-agent-create-status">선택한 provider가 현재 catalog에 없습니다.</p>
-        )}
-        {!selectedProvider && !selectedProviderMissing && providers.length > 0 && (
-          <p className="dc-agent-create-status">사용할 provider를 선택하세요.</p>
-        )}
-        {!existingSessionId && invalidControl && (
-          <p className="dc-agent-create-status">{invalidControl.label}의 유효한 기본값이 없어 직접 선택해야 합니다.</p>
-        )}
-        {status && <p className="dc-agent-create-status preserve-words">{status}</p>}
-
         <footer className="dc-agent-create-footer">
-          <button type="button" className="dc-agent-create-secondary" onClick={onClose}>
-            취소
-          </button>
           <button
             type="button"
-            className="dc-agent-create-primary"
-            disabled={!canCreate || busy}
-            onClick={() => void handleCreate()}
+            className="dc-agent-launch-toggle"
+            role="switch"
+            aria-checked={startNow}
+            aria-label="추가하자마자 실행"
+            data-on={startNow}
+            disabled={!selectedProvider?.startable}
+            onClick={() => setStartNow((value) => !value)}
           >
-            {startNow ? <Play size={16} /> : <Plus size={16} />}
-            {startNow ? "추가하고 시작" : "추가"}
+            <span className="dc-agent-launch-switch" aria-hidden="true">
+              <i />
+            </span>
+            <span className="dc-agent-launch-text">
+              <strong>{startNow ? "추가하고 바로 실행" : "목록에만 추가"}</strong>
+              <em>
+                {startNow
+                  ? "추가와 동시에 세션이 켜집니다."
+                  : "카드에서 언제든 켤 수 있어요."}
+              </em>
+            </span>
           </button>
+          <div className="dc-agent-footer-actions">
+            <button type="button" className="dc-agent-create-secondary" onClick={onClose}>
+              취소
+            </button>
+            <button
+              type="button"
+              className="dc-agent-create-primary"
+              disabled={!canCreate || busy}
+              onClick={() => void handleCreate()}
+            >
+              {startNow ? <Play size={16} /> : <Plus size={16} />}
+              {busy ? "처리 중..." : startNow ? "추가하고 실행" : "추가"}
+            </button>
+          </div>
         </footer>
       </section>
     </div>
@@ -424,7 +395,7 @@ function ProviderControlField({
   disabled?: boolean;
 }) {
   return (
-    <label>
+    <label className="dc-agent-field">
       <span>{control.label}</span>
       <select
         aria-label={control.label}
@@ -445,6 +416,43 @@ function ProviderControlField({
       </select>
     </label>
   );
+}
+
+function deriveStatusMessage({
+  status,
+  selectedProvider,
+  selectedProviderMissing,
+  hasProviders,
+  invalidControl,
+  existingSessionId,
+}: {
+  status: string;
+  selectedProvider: NativeCliProviderAvailability | undefined;
+  selectedProviderMissing: boolean;
+  hasProviders: boolean;
+  invalidControl: ProviderControl | undefined;
+  existingSessionId: string;
+}): string {
+  if (status) return status;
+  if (selectedProvider && !selectedProvider.available) {
+    return selectedProvider.discovery_error || "CLI를 찾지 못했습니다";
+  }
+  if (selectedProvider?.discovery_status === "loading") {
+    return "모델 목록을 불러오는 중입니다";
+  }
+  if (selectedProvider?.discovery_status === "failed" && selectedProvider.available) {
+    return selectedProvider.discovery_error || "모델 목록을 불러오지 못했습니다";
+  }
+  if (selectedProviderMissing) {
+    return "선택한 provider가 현재 catalog에 없습니다.";
+  }
+  if (!selectedProvider && !selectedProviderMissing && hasProviders) {
+    return "사용할 provider를 선택하세요.";
+  }
+  if (!existingSessionId && invalidControl) {
+    return `${invalidControl.label}의 유효한 기본값이 없어 직접 선택해야 합니다.`;
+  }
+  return "";
 }
 
 function initializeProviderSettings(
