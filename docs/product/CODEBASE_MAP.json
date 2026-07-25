@@ -1,12 +1,12 @@
 {
  "readme": "AgentsAssemble codebase map. Regenerate with `python3 scripts/generate_codebase_map.py`. modules[] columns: name, path, package, domain, classification, migration_status, lines, docstring, imports[], imported_by[] (indexes into modules), classes[[name, [[base, defining_module], ...]]] (best-effort, top-level classes only). frontend[] columns: path, group, lines, doc, imports[], imported_by[] (indexes into frontend). package_edges go importer -> dependency with module-import counts; `points` is the precomputed polyline for that edge and `intra_cycle` marks imports whose endpoints share one cycle group. graph{} holds the layered package drawing: layers[] top-to-bottom (each with members[] package ids, member_count, and the dominant domain), (a package sits below everything importing it), clusters[] are mutually dependent packages (import cycles at package level) drawn as one labelled block, plus width/height of the drawing. health{} ranks findings for a reader who has to act: cycles[] (mutually dependent packages, with the lines they hold), leaning_on_retiring[] (current modules importing legacy/compatibility modules - the reason legacy cannot be deleted), highest_leverage_migrations[] (retiring modules with the most current importers), unreferenced_shims[] (compatibility modules with no importer in agentsassemble/ and no reference in tests/; callers outside this repository are not visible, so verify before deleting), and hotspots[] (largest modules). health.scope states exactly what was measured. class_graph{} is the UML generalization DAG over base classes that resolve inside the repo: edges go base -> subclass, so a subclass always sits below the class it extends. Coordinates in graph and class_graph are laid out with a Sugiyama pipeline (cycle condensation, Coffman-Graham layering, dummy-node edge routing, median/transpose crossing reduction) and are deterministic.",
- "generated_at": "2026-07-25T03:08:56Z",
- "fingerprint": "1f3349b6326da96d",
+ "generated_at": "2026-07-25T08:16:36Z",
+ "fingerprint": "28ec9e076c437037",
  "stats": {
   "backend_modules": 761,
-  "backend_lines": 122249,
+  "backend_lines": 122322,
   "frontend_files": 126,
-  "frontend_lines": 34477,
+  "frontend_lines": 34628,
   "packages": 29,
   "import_cycles": 0,
   "classifications": {
@@ -124,7 +124,7 @@
    "kind": "backend",
    "doc": "Provider runtime contracts and implementations.",
    "files": 64,
-   "lines": 16864,
+   "lines": 16937,
    "domains": {
     "providers": 64
    },
@@ -508,7 +508,7 @@
    "kind": "frontend",
    "doc": "Frontend entry files (App, main, API client, styles) living directly under src/.",
    "files": 11,
-   "lines": 11250,
+   "lines": 11283,
    "domains": {},
    "classes": {},
    "x": 102.0,
@@ -572,7 +572,7 @@
    "kind": "frontend",
    "doc": "Top-level room views rendered by the shell.",
    "files": 47,
-   "lines": 12375,
+   "lines": 12493,
    "domains": {},
    "classes": {},
    "x": 444.0,
@@ -1056,7 +1056,7 @@
   {
    "from": "fe:views",
    "to": "fe:(src root)",
-   "count": 50,
+   "count": 51,
    "points": [
     [
      444.0,
@@ -3573,7 +3573,7 @@
      "web"
     ],
     "internal_edges": 80,
-    "lines": 117220,
+    "lines": 117293,
     "heaviest": "legacy"
    },
    {
@@ -3585,7 +3585,7 @@
      "fe:views"
     ],
     "internal_edges": 12,
-    "lines": 34477,
+    "lines": 34628,
     "heaviest": "fe:views"
    }
   ],
@@ -16319,7 +16319,7 @@
    "providers",
    "current",
    "in-target-package",
-   892,
+   953,
    "Provider option discovery, catalog caching, and selection validation.",
    [
     567,
@@ -16848,7 +16848,7 @@
    "providers",
    "current",
    "in-target-package",
-   848,
+   858,
    "Provider launch specifications, command construction, and profile validation.",
    [
     651
@@ -17671,7 +17671,7 @@
    "providers",
    "current",
    "in-target-package",
-   105,
+   107,
    "Local desktop folder selection for server-owned Agent Sessions.",
    [],
    [
@@ -21424,6 +21424,7 @@
     82,
     83,
     84,
+    85,
     86,
     87,
     88,
@@ -21857,7 +21858,7 @@
   [
    "frontend/src/index.css",
    "(src root)",
-   6644,
+   6677,
    "",
    [],
    [
@@ -22586,9 +22587,10 @@
   [
    "frontend/src/views/components/AgentCreateModal.test.tsx",
    "views",
-   460,
+   512,
    "",
    [
+    2,
     75,
     86
    ],
@@ -22597,7 +22599,7 @@
   [
    "frontend/src/views/components/AgentCreateModal.tsx",
    "views",
-   522,
+   588,
    "",
    [
     2,
@@ -23248,31 +23250,31 @@
    "name": "agentsassemble",
    "note": "Backend package (Python)",
    "files": 761,
-   "lines": 122249
+   "lines": 122322
   },
   {
    "name": "frontend/src",
    "note": "React room client (TS/TSX)",
    "files": 126,
-   "lines": 34477
+   "lines": 34628
   },
   {
    "name": "tests",
    "note": "Backend test suite",
-   "files": 349,
-   "lines": 137534
+   "files": 345,
+   "lines": 135235
   },
   {
    "name": "scripts",
    "note": "Repo automation scripts",
    "files": 5,
-   "lines": 5548
+   "lines": 5823
   },
   {
    "name": "docs",
    "note": "Product and architecture docs",
-   "files": 74,
-   "lines": 28214
+   "files": 75,
+   "lines": 28351
   },
   {
    "name": "configs",

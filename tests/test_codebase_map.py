@@ -295,11 +295,32 @@ class CodebaseMapRenderSmokeTests(unittest.TestCase):
               },
             });
 
-            const { document } = dom.window;
+            const { window } = dom;
+            const { document } = window;
+
+            // Search: "/" opens it, typing filters, Enter runs the first hit.
+            const press = (key, target) => target.dispatchEvent(
+              new window.KeyboardEvent("keydown",
+                { key, bubbles: true, cancelable: true }));
+            const overlay = document.getElementById("cmdk");
+            const input = document.getElementById("cmdkInput");
+            press("/", document.body);
+            const searchOpened = !overlay.hidden;
+            input.value = "providers";
+            input.dispatchEvent(new window.Event("input", { bubbles: true }));
+            const searchRows = document.querySelectorAll("#cmdkList li[data-i]").length;
+            press("Enter", input);
+            const searchOpenedDrawer =
+              document.getElementById("drawer").classList.contains("open");
+            const searchClosed = overlay.hidden;
+
             const filled = id => (document.getElementById(id)?.innerHTML ?? "").length;
             const result = {
               errors,
-              stats: filled("stats"),
+              searchOpened, searchRows, searchOpenedDrawer, searchClosed,
+              heroFacts: document.querySelectorAll("#heroFacts span").length,
+              heroLines: document.getElementById("heroLines").textContent,
+              statgridRemoved: document.getElementById("stats") === null,
               flow: filled("flow"),
               pkgcards: filled("pkgcards"),
               hubs: filled("hubs"),
@@ -335,7 +356,6 @@ class CodebaseMapRenderSmokeTests(unittest.TestCase):
 
         self.assertEqual(result["errors"], [])
         for key in (
-            "stats",
             "flow",
             "pkgcards",
             "hubs",
@@ -346,6 +366,16 @@ class CodebaseMapRenderSmokeTests(unittest.TestCase):
         ):
             with self.subTest(container=key):
                 self.assertGreater(result[key], 0, f"#{key} rendered empty")
+        # The hero states the size of the system; the old stat grid repeated it.
+        self.assertTrue(result["statgridRemoved"])
+        self.assertGreaterEqual(result["heroFacts"], 5)
+        self.assertRegex(result["heroLines"], r"^[\d,]+$")
+        self.assertNotEqual(result["heroLines"], "0")
+        # Search: opens on "/", filters, and Enter opens the matched module.
+        self.assertTrue(result["searchOpened"])
+        self.assertGreater(result["searchRows"], 0)
+        self.assertTrue(result["searchOpenedDrawer"])
+        self.assertTrue(result["searchClosed"])
         self.assertGreater(result["graphNodes"], 20)
         self.assertGreater(result["graphEdges"], 50)
         self.assertEqual(result["clusters"], 2)

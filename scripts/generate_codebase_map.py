@@ -1650,11 +1650,34 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   /* Hairline only once the page has moved, so the resting state is cleaner. */
   header:has(~ main .view.active):not(:only-child) { border-bottom-color: var(--hairline); }
 
+  .headrow {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    flex-wrap: wrap;
+  }
+
   h1 {
     margin: 0 0 2px;
     font-size: var(--step-2);
     font-weight: 680;
   }
+
+  .searchbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    background: var(--surface-2);
+    color: var(--text-dim);
+    font-size: var(--step--1);
+    cursor: pointer;
+    transition: color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+  }
+  .searchbtn:hover { color: var(--text); border-color: var(--primary-line); }
 
   .sub { color: var(--text-dim); font-size: var(--step--1); }
   .sub code { color: color-mix(in oklch, var(--ok) 92%, var(--text)); }
@@ -1776,6 +1799,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
   @media (prefers-reduced-motion: reduce) { .aurora i { animation: none; } }
 
+  /* On white the same blobs turn to haze and the gradient text loses contrast,
+     so light gets its own weights rather than inheriting the dark tuning. */
+  @media (prefers-color-scheme: light) {
+    .aurora { opacity: .3; filter: blur(80px); }
+    .hero-figure {
+      background: linear-gradient(160deg, var(--text) 18%,
+        color-mix(in oklch, var(--primary) 92%, black 8%) 78%);
+      -webkit-background-clip: text;
+      background-clip: text;
+    }
+  }
+
   .kicker {
     margin: 0 0 var(--sp-3);
     color: var(--text-dim);
@@ -1834,6 +1869,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     letter-spacing: -0.02em;
   }
   .hero-facts span[data-tone] b { color: var(--tone); }
+
+  /* Staggered entrance for the pills and the layer rows: --i is set inline by
+     the code that renders them, so the delay follows document order. */
+  @media (prefers-reduced-motion: no-preference) {
+    .hero-facts span, .flowlayer, .flowarrow {
+      animation: rise-in var(--dur-3) var(--ease) both;
+      animation-delay: calc(var(--i, 0) * 55ms);
+    }
+    @keyframes rise-in {
+      from { opacity: 0; transform: translateY(8px); }
+    }
+  }
 
   .statgrid {
     display: grid;
@@ -2153,6 +2200,103 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
     [popover]:popover-open { opacity: 1; translate: 0; }
     @starting-style { [popover]:popover-open { opacity: 0; translate: 0 6px; } }
+  }
+
+  /* Search overlay: one index over modules, frontend files, packages, classes. */
+  .cmdk {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: grid;
+    place-items: start center;
+    padding: clamp(var(--sp-5), 12vh, 9rem) var(--sp-4) var(--sp-4);
+    background: oklch(0% 0 0 / .42);
+    backdrop-filter: blur(3px);
+  }
+  .cmdk[hidden] { display: none; }
+
+  .cmdk-panel {
+    width: min(44rem, 100%);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--r-3);
+    background: color-mix(in oklch, var(--surface) 94%, transparent);
+    backdrop-filter: blur(22px) saturate(150%);
+    box-shadow: var(--shadow-3);
+    animation: rise-in var(--dur-2) var(--ease) both;
+  }
+
+  #cmdkInput {
+    width: 100%;
+    padding: var(--sp-4) var(--sp-5);
+    border: 0;
+    border-bottom: 1px solid var(--hairline);
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: var(--step-1);
+  }
+  #cmdkInput:focus { outline: none; }
+  #cmdkInput::-webkit-search-cancel-button { display: none; }
+
+  .cmdk-list {
+    max-height: min(24rem, 52vh);
+    overflow-y: auto;
+    margin: 0;
+    padding: var(--sp-2);
+    list-style: none;
+  }
+  .cmdk-list li {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+    padding: 9px 12px;
+    border-radius: var(--r-1);
+    cursor: pointer;
+  }
+  .cmdk-list li[aria-selected="true"] { background: var(--primary-wash); }
+  .cmdk-list .kind {
+    flex: none;
+    width: 4.6rem;
+    color: var(--tone, var(--text-dim));
+    font-size: var(--step--2);
+    font-family: var(--mono);
+    letter-spacing: .04em;
+  }
+  .cmdk-list .name {
+    font-size: var(--step--1);
+    font-family: var(--mono);
+    overflow-wrap: anywhere;
+  }
+  .cmdk-list .hint {
+    margin-left: auto;
+    flex: none;
+    max-width: 46%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--text-dim);
+    font-size: var(--step--2);
+  }
+  .cmdk-empty { padding: var(--sp-4) var(--sp-5); color: var(--text-dim); }
+
+  .cmdk-foot {
+    display: flex;
+    gap: var(--sp-4);
+    margin: 0;
+    padding: var(--sp-2) var(--sp-5);
+    border-top: 1px solid var(--hairline);
+    color: var(--text-dim);
+    font-size: var(--step--2);
+  }
+  kbd {
+    padding: 1px 5px;
+    margin-right: 3px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface-2);
+    font-family: var(--mono);
+    font-size: .95em;
   }
 
   /* Tables */
@@ -2554,8 +2698,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <h1>AgentsAssemble Codebase Map</h1>
-  <div class="sub" id="gensub"></div>
+  <div class="headrow">
+    <div>
+      <h1>AgentsAssemble Codebase Map</h1>
+      <div class="sub" id="gensub"></div>
+    </div>
+    <button class="searchbtn" id="searchbtn">Search
+      <span><kbd>/</kbd></span></button>
+  </div>
   <nav>
     <button data-view="overview" class="active">Architecture</button>
     <button data-view="health">Health</button>
@@ -2583,7 +2733,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       independent and simply occupy their own rows; the right-hand label is the
       row's dominant domain. Click a package to open it in the graph.</p>
     <div class="flowstrip" id="flow"></div>
-    <div class="statgrid" id="stats"></div>
     <h2 class="section">Packages</h2>
     <div class="cards" id="pkgcards"></div>
     <h2 class="section">Import Hubs (most depended-upon modules)</h2>
@@ -2671,6 +2820,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </tr></thead><tbody id="rows"></tbody></table>
   </section>
 </main>
+<div class="cmdk" id="cmdk" hidden>
+  <div class="cmdk-panel" role="dialog" aria-modal="true" aria-label="Search the codebase">
+    <input id="cmdkInput" type="search" autocomplete="off" spellcheck="false"
+      placeholder="Search modules, files, packages, classes&hellip;"
+      aria-controls="cmdkList">
+    <ul class="cmdk-list" id="cmdkList" role="listbox"></ul>
+    <p class="cmdk-foot"><span><kbd>&uarr;</kbd><kbd>&darr;</kbd> move</span>
+      <span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span></p>
+  </div>
+</div>
 <aside class="drawer" id="drawer"><button class="closex" id="closex">&times;</button>
   <div id="drawerbody"></div></aside>
 <footer id="foot"></footer>
@@ -2741,15 +2900,19 @@ const S = D.stats;
     `lines of code across <b>${S.backend_modules.toLocaleString()} backend`
     + ` modules</b> and <b>${S.frontend_files} frontend files</b>, drawn as one`
     + ` living map.`;
+  // These pills are the whole summary now; the old stat grid repeated every one
+  // of them directly underneath. Module-level cycles are kept because they are a
+  // different measurement from the package-level cycle groups above.
   document.getElementById("heroFacts").innerHTML = [
     [D.packages.length, "packages", ""],
     [D.package_edges.length, "import edges", ""],
     [D.class_graph.nodes.length, "classes in UML", ""],
+    [S.import_cycles, "module import cycles", S.import_cycles ? "danger" : "ok"],
     [cyclePkgs, "packages caught in cycles", "danger"],
     [D.health.unreferenced_shim_count, "shims nobody calls", "warn"],
-  ].map(([v, label, tone]) =>
-    `<span${tone ? ` data-tone="${tone}"` : ""}><b>${v.toLocaleString()}</b>`
-    + `${label}</span>`).join("");
+  ].map(([v, label, tone], i) =>
+    `<span style="--i:${i}"${tone ? ` data-tone="${tone}"` : ""}>`
+    + `<b>${v.toLocaleString()}</b>${label}</span>`).join("");
 
   const el = document.getElementById("heroLines");
   const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -2766,12 +2929,6 @@ const S = D.stats;
   })(t0);
 })();
 
-document.getElementById("stats").innerHTML = [
-  [S.backend_modules, "backend modules"], [S.backend_lines.toLocaleString(), "backend lines"],
-  [S.frontend_files, "frontend files"], [S.frontend_lines.toLocaleString(), "frontend lines"],
-  [S.packages, "map packages"], [S.import_cycles, "import cycles"],
-  [D.package_edges.length, "package edges"],
-].map(([v,l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
 
 // Dependency flow: one row per graph layer. Roles are read off the edges rather
 // than off the row position, because a disconnected group (the frontend) lands
@@ -2786,8 +2943,9 @@ document.getElementById("flow").innerHTML = D.graph.layers.map((layer, i) => {
     return `<span class="pkgchip" data-jumppkg="${esc(id)}" title="${title}">`
       + `${esc(id)}${mark}</span>`;
   }).join("");
-  return (i ? `<div class="flowarrow">&darr;</div>` : "")
-    + `<div class="flowlayer"><span class="lvl">Layer ${layer.index}</span>`
+  return (i ? `<div class="flowarrow" style="--i:${i * 2 - 1}">&darr;</div>` : "")
+    + `<div class="flowlayer" style="--i:${i * 2}">`
+    + `<span class="lvl">Layer ${layer.index}</span>`
     + `<span class="pkgs">${chips}</span>`
     + `<span class="role">${esc(layer.dominant)}</span></div>`;
 }).join("");
@@ -3251,6 +3409,19 @@ function highlightEdges(pkgId) {
 }
 
 // ---- class hierarchy (UML generalization) ----
+// Named so the search overlay can focus a class the same way a click does.
+function focusClass(cid) {
+  const node = D.class_graph.nodes.find(n => n.id === cid);
+  document.querySelectorAll(".uml").forEach(el =>
+    el.classList.toggle("sel", el.dataset.cid === cid));
+  document.querySelectorAll(".gen").forEach(el => {
+    const hot = el.dataset.from === cid || el.dataset.to === cid;
+    el.classList.toggle("hot", hot);
+    el.classList.toggle("cold", !hot);
+    el.setAttribute("marker-start", hot ? "url(#genhot)" : "url(#gen)");
+  });
+  if (node && modByName[node.module]) showModule(node.module);
+}
 (function drawClasses() {
   const wrap = document.getElementById("classwrap");
   const CG = D.class_graph;
@@ -3304,17 +3475,7 @@ function highlightEdges(pkgId) {
     const t = document.createElementNS(NS, "title");
     t.textContent = `${n.name} — ${n.module}`;
     g.appendChild(t);
-    g.onclick = () => {
-      document.querySelectorAll(".uml").forEach(el =>
-        el.classList.toggle("sel", el.dataset.cid === n.id));
-      document.querySelectorAll(".gen").forEach(el => {
-        const hot = el.dataset.from === n.id || el.dataset.to === n.id;
-        el.classList.toggle("hot", hot);
-        el.classList.toggle("cold", !hot);
-        el.setAttribute("marker-start", hot ? "url(#genhot)" : "url(#gen)");
-      });
-      if (modByName[n.module]) showModule(n.module);
-    };
+    g.onclick = () => focusClass(n.id);
     svg.appendChild(g);
   }
   // Controls live inside the canvas now, so replace only the drawing.
@@ -3661,6 +3822,120 @@ function renderRows() {
       <td class="num">${m.imp.length}</td><td class="num">${m.rev.length}</td>
       <td style="color:var(--dim)">${esc(m.doc || "")}</td></tr>`).join("");
 }
+
+// ---- search overlay ----
+// Everything the map knows about, in one list, opened with "/".
+(function search() {
+  const overlay = document.getElementById("cmdk");
+  const input = document.getElementById("cmdkInput");
+  const list = document.getElementById("cmdkList");
+  const index = [
+    ...modules.map(m => ({
+      kind: "module", tone: "ok", name: m.name, hint: m.doc || m.pkg,
+      run: () => showModule(m.name),
+    })),
+    ...feFiles.map(f => ({
+      kind: "file", tone: "violet", name: f.path, hint: f.doc || f.group,
+      run: () => showFrontend(f.path),
+    })),
+    ...D.packages.map(p => ({
+      kind: "package", tone: "warn", name: p.id, hint: p.doc,
+      run: () => { switchView("graph"); selectPackage(p.id, false); },
+    })),
+    ...D.class_graph.nodes.map(n => ({
+      kind: "class", tone: "danger", name: n.name, hint: n.module,
+      run: () => { switchView("classes"); focusClass(n.id); },
+    })),
+  ];
+  // Precomputed once: matching runs on every keystroke over ~960 entries.
+  for (const item of index) {
+    item._name = item.name.toLowerCase();
+    item._hint = String(item.hint || "").toLowerCase();
+  }
+
+  let shown = [], cursor = 0;
+
+  function rank(query) {
+    const q = query.toLowerCase();
+    const byName = [], byHint = [];
+    for (const item of index) {
+      const at = item._name.indexOf(q);
+      if (at >= 0) byName.push([at, item.name.length, item]);
+      else if (item._hint.includes(q)) byHint.push([0, item.name.length, item]);
+    }
+    // Earliest match first, then shortest name: exact-ish hits float up.
+    const order = (a, b) => a[0] - b[0] || a[1] - b[1];
+    return [...byName.sort(order), ...byHint.sort(order)]
+      .slice(0, 40).map(row => row[2]);
+  }
+
+  function render() {
+    if (!shown.length) {
+      list.innerHTML = `<li class="cmdk-empty">No match.</li>`;
+      return;
+    }
+    list.innerHTML = shown.map((item, i) =>
+      `<li role="option" data-i="${i}" aria-selected="${i === cursor}"
+        style="--tone:var(--${item.tone})">
+        <span class="kind">${item.kind}</span>
+        <span class="name">${esc(item.name)}</span>
+        <span class="hint">${esc(item.hint || "")}</span></li>`).join("");
+    list.querySelector('[aria-selected="true"]')
+      ?.scrollIntoView?.({ block: "nearest" });
+  }
+
+  function open() {
+    overlay.hidden = false;
+    input.value = "";
+    shown = [];
+    cursor = 0;
+    list.innerHTML = `<li class="cmdk-empty">Type to search`
+      + ` ${index.length.toLocaleString()} modules, files, packages and classes.</li>`;
+    input.focus();
+  }
+  function close() { overlay.hidden = true; }
+  function choose(i) {
+    const item = shown[i];
+    if (!item) return;
+    close();
+    item.run();
+  }
+
+  input.oninput = () => {
+    const query = input.value.trim();
+    shown = query ? rank(query) : [];
+    cursor = 0;
+    if (!query) { open(); return; }
+    render();
+  };
+  input.onkeydown = event => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!shown.length) return;
+      cursor = (cursor + (event.key === "ArrowDown" ? 1 : -1) + shown.length)
+        % shown.length;
+      render();
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      choose(cursor);
+    } else if (event.key === "Escape") {
+      close();
+    }
+  };
+  list.onclick = event => {
+    const row = event.target.closest("li[data-i]");
+    if (row) choose(+row.dataset.i);
+  };
+  overlay.onmousedown = event => { if (event.target === overlay) close(); };
+  document.getElementById("searchbtn").onclick = open;
+  document.addEventListener("keydown", event => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName);
+    if (event.key === "/" && !typing && overlay.hidden) {
+      event.preventDefault();
+      open();
+    }
+  });
+})();
 
 // ---- detail drawer ----
 const drawer = document.getElementById("drawer");
