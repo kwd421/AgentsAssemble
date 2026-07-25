@@ -70,6 +70,7 @@ class GrokAcpRuntime:
         self.process: subprocess.Popen[str] | None = None
         self._session_id = ""
         self._active_request: tuple[int, queue.Queue[dict[str, object]]] | None = None
+        self._active_room_observation = False
         self._resolved_executable = ""
         self._started_at = ""
         self._stopped_at = ""
@@ -137,6 +138,7 @@ class GrokAcpRuntime:
             self._stopping.clear()
             self._session_id = ""
             self._active_request = None
+            self._active_room_observation = False
             self._pending.clear()
             process_notifications: queue.Queue[dict[str, object]] = queue.Queue(
                 maxsize=self._notification_queue_size
@@ -210,7 +212,10 @@ class GrokAcpRuntime:
             raise
 
     def send(self, text: str) -> None:
-        self._begin_prompt([{"type": "text", "text": str(text or "")}])
+        self._begin_prompt(
+            [{"type": "text", "text": str(text or "")}],
+            room_observation=False,
+        )
 
     def send_room_observation(
         self,
@@ -220,9 +225,14 @@ class GrokAcpRuntime:
     ) -> None:
         prompt = [{"type": "text", "text": str(text or "")}]
         prompt.extend(dict(block) for block in list(media_blocks or []))
-        self._begin_prompt(prompt)
+        self._begin_prompt(prompt, room_observation=True)
 
-    def _begin_prompt(self, prompt: list[dict[str, str]]) -> None:
+    def _begin_prompt(
+        self,
+        prompt: list[dict[str, str]],
+        *,
+        room_observation: bool,
+    ) -> None:
         self.start()
         with self._lock:
             if self._active_request is not None:
@@ -240,6 +250,7 @@ class GrokAcpRuntime:
         )
         with self._lock:
             self._active_request = request
+            self._active_room_observation = room_observation
 
     def read_output(
         self,
@@ -250,6 +261,7 @@ class GrokAcpRuntime:
     ) -> dict[str, object]:
         with self._lock:
             active = self._active_request
+            room_observation = self._active_room_observation
             session_id = self._session_id
             notification_drop_start = self._turn_notification_drop_start
         if active is None:
@@ -295,6 +307,17 @@ class GrokAcpRuntime:
                     self._model = model
                 content = "".join(content_parts).strip()
                 if not content:
+                    if room_observation:
+                        return {
+                            "outcome": "decline",
+                            "reason_code": "nothing_useful_to_add",
+                            "metadata": {
+                                "message_source": "grok_acp",
+                                "source_kind": "grok_acp",
+                                "stop_reason": result.get("stopReason") or "",
+                                "observed_model_id": self._model,
+                            },
+                        }
                     raise AdapterContractError(
                         "Grok ACP completed without a room-visible assistant message.",
                         code="empty_provider_final",
@@ -317,6 +340,7 @@ class GrokAcpRuntime:
             with self._lock:
                 if self._active_request and self._active_request[0] == request_id:
                     self._active_request = None
+                self._active_room_observation = False
                 self._pending.pop(request_id, None)
 
     def interrupt(self) -> None:
@@ -341,6 +365,7 @@ class GrokAcpRuntime:
                 thread.join(timeout=0.5)
         with self._lock:
             self._active_request = None
+            self._active_room_observation = False
             self._pending.clear()
             self._session_id = ""
             self._stopped_at = _now()

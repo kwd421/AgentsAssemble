@@ -263,9 +263,12 @@ The browser can upload and render room attachments. Media events and safe media
 IDs are durable. The Agent Bridge fetches only attachments referenced by a
 canonical room event and stages them inside its private `RoomPortal`. Codex
 app-server and Grok ACP can receive staged image bytes through their structured
-input paths. Terminal-provider image, PDF, and audio handling still depends on
-the native provider and must be verified separately; do not claim an agent
-viewed media merely because the browser displayed it or the portal listed it.
+input paths. Antigravity/Gemini has also passed a real JPEG smoke through the
+private terminal helper and its native image viewer. Claude fetched the staged
+JPEG but did not have a permitted native rendering path in the tested session.
+Other terminal-provider image, PDF, and audio handling still depends on the
+native provider and must be verified separately; do not claim an agent viewed
+media merely because the browser displayed it or the portal listed it.
 
 A completed media path must:
 

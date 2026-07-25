@@ -100,6 +100,7 @@ class NativeCliProviderDefinition:
     transport: str = "pty"
     reported_transports: tuple[str, ...] = ("pty", "conpty")
     input_mode: str = "line"
+    startup_quiet_seconds: float = 1.0
     startup_accept_contains: str = ""
     startup_accept_keys: str = "\r"
     startup_ready_contains: str = ""
@@ -201,6 +202,7 @@ class NativeCliProviderDefinition:
             transport=self.transport,
             default_responder=default_responder,
             input_mode=self.input_mode,
+            startup_quiet_seconds=self.startup_quiet_seconds,
             startup_accept_contains=self.startup_accept_contains,
             startup_accept_keys=self.startup_accept_keys,
             startup_ready_contains=self.startup_ready_contains,
@@ -626,6 +628,7 @@ NATIVE_CLI_PROVIDER_CATALOG: tuple[NativeCliProviderDefinition, ...] = (
         default_reasoning_effort="medium",
         model_observation_policy="required",
         input_mode="bracketed_paste",
+        startup_quiet_seconds=5.0,
         startup_accept_contains="Do you trust",
     ),
     NativeCliProviderDefinition(

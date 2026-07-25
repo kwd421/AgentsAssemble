@@ -111,6 +111,20 @@ class GrokAcpRuntimeTests(unittest.TestCase):
         self.assertEqual(len(prompt_calls), 1)
         self.assertEqual(getattr(raised.exception, "code", ""), "empty_provider_final")
 
+    def test_empty_room_observation_is_a_decline_not_a_session_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = self.make_runtime(Path(temp_dir))
+            try:
+                runtime.send_room_observation("empty-turn")
+                output = runtime.read_output(timeout_seconds=5)
+                health = runtime.health()
+            finally:
+                runtime.stop()
+
+        self.assertEqual(output["outcome"], "decline")
+        self.assertEqual(output["reason_code"], "nothing_useful_to_add")
+        self.assertTrue(health["running"])
+
     def test_provider_quota_error_is_classified_from_drained_stderr(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime = self.make_runtime(Path(temp_dir))

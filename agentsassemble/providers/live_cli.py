@@ -29,6 +29,7 @@ from agentsassemble.providers.live_cli_transcripts import (
     make_live_cli_message_source,
 )
 from agentsassemble.providers.process_environment import sanitized_provider_environment
+from agentsassemble.providers.terminal_interactions import TerminalInteractionPolicy
 from agentsassemble.room.text import clean_room_text
 
 try:
@@ -113,6 +114,7 @@ class LiveCliRuntime:
         startup_input: str = "",
         max_output_bytes: int = 256_000,
         message_source: LiveCliMessageSource | None = None,
+        terminal_interaction_policy: TerminalInteractionPolicy | None = None,
         profile_settings: dict[str, object] | None = None,
     ) -> None:
         if not command:
@@ -149,6 +151,8 @@ class LiveCliRuntime:
             self.command,
             cwd=self.cwd,
         )
+        self._terminal_interaction_policy = terminal_interaction_policy
+        self._room_observation_active = False
         self._message_turn_started = False
         self._needs_terminal_settle = False
         self.last_seen_event_id = ""
@@ -235,9 +239,24 @@ class LiveCliRuntime:
                 self.last_seen_event_id = event_id
 
     def send(self, text: str) -> None:
+        self._send(text, room_observation=False)
+
+    def send_room_observation(
+        self,
+        text: str,
+        *,
+        media_blocks: list[dict[str, str]] | None = None,
+    ) -> None:
+        del media_blocks
+        self._send(text, room_observation=True)
+
+    def _send(self, text: str, *, room_observation: bool) -> None:
         self.start()
         self._drain_startup_output()
         self._message_source.begin_turn(text)
+        if self._terminal_interaction_policy is not None:
+            self._terminal_interaction_policy.begin_turn()
+        self._room_observation_active = room_observation
         self._message_turn_started = True
         self._send_line(text)
 
@@ -287,6 +306,7 @@ class LiveCliRuntime:
                 if final_snapshot.complete:
                     self._message_turn_started = False
                     self._needs_terminal_settle = True
+                    self._room_observation_active = False
                     return self._output_message_from_snapshot(final_snapshot)
                 if final_snapshot.content:
                     last_visible_content = final_snapshot.content
@@ -304,6 +324,7 @@ class LiveCliRuntime:
                         continue
                     self._message_turn_started = False
                     self._needs_terminal_settle = True
+                    self._room_observation_active = False
                     return self._output_message(b"".join(chunks))
                 continue
             chunk = _read_chunk(fd, process)
@@ -316,6 +337,7 @@ class LiveCliRuntime:
             chunks.append(chunk)
             total_bytes += len(chunk)
             self._record_terminal_bytes(chunk)
+            self._respond_to_terminal_interaction(fd, b"".join(chunks))
             last_read_at = time.monotonic()
             terminal_error = _terminal_fatal_error(bytes(self._terminal_tail))
             if terminal_error and getattr(self._message_source, "strict", False):
@@ -332,6 +354,7 @@ class LiveCliRuntime:
             if final_snapshot.complete:
                 self._message_turn_started = False
                 self._needs_terminal_settle = True
+                self._room_observation_active = False
                 return self._output_message_from_snapshot(final_snapshot)
             if total_bytes > self.max_output_bytes:
                 raise ValueError(f"Live CLI output exceeded {self.max_output_bytes} bytes.")
@@ -367,6 +390,7 @@ class LiveCliRuntime:
             master_fd = self._master_fd
             self.process = None
             self._master_fd = None
+            self._room_observation_active = False
         if master_fd is not None:
             _close_fd(master_fd)
         if process is not None:
@@ -416,6 +440,11 @@ class LiveCliRuntime:
             "terminal_byte_count": terminal_byte_count,
             "terminal_tail": terminal_tail,
             **self._message_source.describe(),
+            **(
+                self._terminal_interaction_policy.describe()
+                if self._terminal_interaction_policy is not None
+                else {}
+            ),
             "running": running,
             "stopped": not running,
             "pid": process.pid if process is not None else None,
@@ -525,6 +554,14 @@ class LiveCliRuntime:
         if snapshot.error:
             raise LiveCliMessageExtractionError(snapshot.error)
         if not snapshot.content:
+            if snapshot.complete:
+                return LiveCliMessageSnapshot(
+                    content=previous.content,
+                    complete=True,
+                    source=snapshot.source or previous.source,
+                    source_kind=snapshot.source_kind or previous.source_kind,
+                    observed_model_id=snapshot.observed_model_id or previous.observed_model_id,
+                )
             return previous
         last_visible_content = last_visible_content_ref[0] if last_visible_content_ref else ""
         if on_delta is not None:
@@ -634,6 +671,14 @@ class LiveCliRuntime:
             self._terminal_tail.extend(chunk)
             if len(self._terminal_tail) > 32_000:
                 del self._terminal_tail[:-32_000]
+
+    def _respond_to_terminal_interaction(self, fd: int, output: bytes) -> None:
+        policy = self._terminal_interaction_policy
+        if policy is None or not self._room_observation_active:
+            return
+        response = policy.response_for(output)
+        if response:
+            os.write(fd, response)
 
     def _fd_is_current(self, fd: int) -> bool:
         with self._lock:

@@ -193,7 +193,9 @@ may publish or decline exactly as it would after an event wake.
   concepts.
 - Pair cooldowns, per-room token budgets, and panel policies are not active.
 - Codex and Grok can receive staged image bytes through their structured
-  transports. Terminal-provider media access is staged behind the private
-  helper, but provider-native image/PDF/audio behavior still requires individual
-  real-provider verification. Unsupported media is reported, not claimed as
+  transports. A real Antigravity/Gemini JPEG smoke also passed through the
+  private terminal helper and native image viewer. Claude fetched the staged
+  JPEG but could not render it under the tested `dontAsk` permission boundary,
+  so remaining provider-native image/PDF/audio behavior still requires
+  individual verification. Unsupported media is reported, not claimed as
   viewed.

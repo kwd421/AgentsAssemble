@@ -194,7 +194,7 @@ class TranscriptMessageSourceTests(unittest.TestCase):
             )
             source = ClaudeSessionMessageSource(home=root, cwd=workspace)
             source.prepare_start()
-            source.begin_turn()
+            source.begin_turn("hello")
             current = project / "current.jsonl"
             current.write_text(
                 "\n".join(
@@ -206,10 +206,11 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                                 "message": {
                                     "role": "assistant",
                                     "model": "claude-sonnet-4-6",
+                                    "stop_reason": "tool_use",
                                     "content": [
                                         {"type": "thinking", "thinking": "private reasoning"},
                                         {"type": "tool_use", "name": "Read", "input": {"path": "/tmp/noise"}},
-                                        {"type": "text", "text": MARKDOWN_REPLY},
+                                        {"type": "text", "text": "I will inspect that first."},
                                     ],
                                 },
                             }
@@ -220,12 +221,45 @@ class TranscriptMessageSourceTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
+            intermediate = source.poll(b"Claude TUI chrome", quiet=True)
+            with current.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {
+                            "type": "assistant",
+                            "message": {
+                                "role": "assistant",
+                                "model": "claude-sonnet-4-6",
+                                "stop_reason": "end_turn",
+                                "content": [{"type": "text", "text": MARKDOWN_REPLY}],
+                            },
+                        }
+                    )
+                    + "\n"
+                )
+            before_completion = source.poll(b"Claude TUI chrome", quiet=True)
+            with current.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"type": "system", "subtype": "turn_duration"}) + "\n")
             snapshot = source.poll(b"Claude TUI chrome", quiet=True)
+            source.begin_turn("silent")
+            with current.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps({"type": "user", "message": {"role": "user", "content": "silent"}})
+                    + "\n"
+                )
+                handle.write(json.dumps({"type": "system", "subtype": "turn_duration"}) + "\n")
+            silent = source.poll(b"Claude TUI chrome", quiet=True)
 
+        self.assertFalse(intermediate.complete)
+        self.assertEqual(intermediate.content, "")
+        self.assertFalse(before_completion.complete)
+        self.assertEqual(before_completion.content, MARKDOWN_REPLY)
         self.assertTrue(snapshot.complete)
         self.assertEqual(snapshot.content, MARKDOWN_REPLY)
         self.assertEqual(snapshot.source_kind, "claude_session_jsonl")
         self.assertEqual(snapshot.observed_model_id, "claude-sonnet-4-6")
+        self.assertTrue(silent.complete)
+        self.assertEqual(silent.content, "")
 
     def test_claude_source_reports_api_error_instead_of_exposing_it_as_room_message(self):
         with tempfile.TemporaryDirectory() as temp_dir:

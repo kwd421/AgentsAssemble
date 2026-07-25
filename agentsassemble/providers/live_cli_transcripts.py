@@ -125,7 +125,7 @@ class _JsonlOffsetMessageSource:
             if self._bound_path and path_key != self._bound_path:
                 continue
             snapshot = self._extract_from_text(text, source=str(path))
-            if snapshot.content or snapshot.error:
+            if snapshot.content or snapshot.error or snapshot.complete:
                 self._active_paths.add(path_key)
                 latest = snapshot
         return latest
@@ -423,6 +423,21 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
 
     source_kind = "claude_session_jsonl"
 
+    def __init__(self, *, home: Path | None = None, cwd: str | Path | None = None) -> None:
+        super().__init__(home=home, cwd=cwd)
+        self._pending_messages: list[str] = []
+        self._observed_model_id = ""
+
+    def prepare_start(self) -> None:
+        super().prepare_start()
+        self._pending_messages = []
+        self._observed_model_id = ""
+
+    def begin_turn(self, expected_input: str = "") -> None:
+        super().begin_turn(expected_input)
+        self._pending_messages = []
+        self._observed_model_id = ""
+
     def _candidate_paths(self) -> list[Path]:
         root = self.home / ".claude" / "projects"
         if not root.exists():
@@ -435,9 +450,11 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
         return _recent_paths(root.glob("*/*.jsonl"))
 
     def _extract_from_text(self, text: str, *, source: str) -> LiveCliMessageSnapshot:
-        messages: list[str] = []
-        observed_model_id = ""
+        complete = False
         for entry in _jsonl_objects(text):
+            if str(entry.get("type") or "") == "system":
+                complete = complete or str(entry.get("subtype") or "") == "turn_duration"
+                continue
             if str(entry.get("type") or "") != "assistant":
                 continue
             message = entry.get("message") if isinstance(entry.get("message"), dict) else {}
@@ -446,15 +463,17 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
                 raise LiveCliMessageExtractionError(detail or "Claude Code provider authentication failed.")
             if str(message.get("role") or "assistant") != "assistant":
                 continue
-            observed_model_id = clean_room_text(
+            self._observed_model_id = clean_room_text(
                 message.get("model") or entry.get("model") or entry.get("model_id"),
                 limit=128,
-            ) or observed_model_id
+            ) or self._observed_model_id
+            if str(message.get("stop_reason") or "") == "tool_use":
+                continue
             content = message.get("content")
             if isinstance(content, str):
                 piece = _clean_provider_message_text(content, limit=12000)
                 if piece:
-                    messages.append(piece)
+                    self._pending_messages.append(piece)
                 continue
             if not isinstance(content, list):
                 continue
@@ -463,14 +482,14 @@ class ClaudeSessionMessageSource(_JsonlOffsetMessageSource):
                     continue
                 piece = _clean_provider_message_text(block.get("text"), limit=12000)
                 if piece:
-                    messages.append(piece)
-        result = "\n".join(messages).strip()
+                    self._pending_messages.append(piece)
+        result = "\n".join(self._pending_messages).strip()
         return LiveCliMessageSnapshot(
             content=result,
-            complete=bool(result),
-            source=source if result else "",
+            complete=complete,
+            source=source if result or complete else "",
             source_kind=self.source_kind,
-            observed_model_id=observed_model_id,
+            observed_model_id=self._observed_model_id,
         )
 
     def _turn_input_texts(self, text: str) -> list[str]:

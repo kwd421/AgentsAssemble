@@ -10,6 +10,7 @@ from agentsassemble.providers.grok_acp import GrokAcpRuntime
 from agentsassemble.providers.live_cli import LiveCliRuntime
 from agentsassemble.providers.opencode import OpenCodeRuntime
 from agentsassemble.providers.runtime_config import ProviderRuntimeConfig
+from agentsassemble.providers.terminal_interactions import AntigravityRoomPortalInteraction
 from agentsassemble.providers.windows_conpty import WindowsConPtyRuntime
 
 if TYPE_CHECKING:
@@ -105,6 +106,15 @@ def runtime_from_config(
             startup_timeout_seconds=config.startup_timeout_seconds,
         )
     runtime_class = WindowsConPtyRuntime if os.name == "nt" else LiveCliRuntime
+    antigravity_runtime = key in {
+        ("antigravity_live_session", "pty"),
+        ("antigravity_live_session", "conpty"),
+    }
+    terminal_interaction_policy = (
+        AntigravityRoomPortalInteraction()
+        if antigravity_runtime
+        else None
+    )
     return runtime_class(
         config.participant_id,
         list(config.command),
@@ -122,6 +132,7 @@ def runtime_from_config(
         startup_accept_keys=config.startup_accept_keys,
         startup_ready_contains=config.startup_ready_contains,
         startup_input=config.startup_input,
+        terminal_interaction_policy=terminal_interaction_policy,
         profile_settings={
             "model": config.model,
             "reasoning_effort": config.reasoning_effort,

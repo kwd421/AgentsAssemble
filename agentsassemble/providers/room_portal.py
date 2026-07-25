@@ -285,6 +285,14 @@ class RoomPortal:
                 f"{VIRTUAL_ROOM_OUTBOX_PATH} with the available file writer. If staying silent, do not "
                 "write the outbox. Ordinary assistant output is private."
             )
+        if provider == "antigravity_live_session":
+            return (
+                "Room activity changed. Run `agentsassemble-room read` to inspect the current shared room "
+                "and its media. Decide independently whether to speak. If speaking, run "
+                "`agentsassemble-room speak` with the exact public message as one single-quoted shell "
+                "argument; escape an apostrophe as `'\"'\"'` and do not use shell operators outside that "
+                "argument. If staying silent, do not publish. Ordinary CLI output is private."
+            )
         return (
             "Room activity changed. Run `agentsassemble-room read` to inspect the current shared room "
             "and its media. Decide independently whether to speak. If speaking, publish the exact public "

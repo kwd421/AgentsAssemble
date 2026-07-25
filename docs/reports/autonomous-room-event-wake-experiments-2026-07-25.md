@@ -190,10 +190,105 @@ The code path now supports server-controlled media staging:
 - Codex receives supported images as native app-server image blocks;
 - terminal providers can inspect staged media through the private helper.
 
-This run used text only. Image, PDF, and audio behavior was not verified through
-the frontend and must not be reported as a successful real-provider media
-smoke. Codex currently receives PNG, JPEG, GIF, and WebP as native image input;
-other media remains provider-dependent.
+The first three-provider run used text only. A later four-provider frontend run
+verified JPEG staging and observation with Codex and Gemini. It did not establish
+that every terminal provider can render every staged media type:
+
+- Codex app-server received the JPEG as native image input and described the
+  changed pixels.
+- Gemini fetched the staged JPEG through `agentsassemble-room media`, opened it
+  with Antigravity's native image viewer, and described the changed pixels.
+- Grok received the staged image through ACP and independently declined; that
+  proves a clean room turn, not a visible image-description result.
+- Claude fetched the staged JPEG but its attempt to run a separate local image
+  analysis command was denied by Claude Code's `dontAsk` permission mode. Claude
+  explicitly declined rather than claiming it had seen the pixels.
+
+PDF and audio remain unverified. Claude native image rendering also remains
+unverified and must not be inferred from successful media staging alone.
+
+## Four-Provider Frontend Media Smoke
+
+### Method
+
+The follow-up run used the same canonical room and existing persistent sessions:
+
+| Display name | Runtime model | Effort | Transport |
+| --- | --- | --- | --- |
+| Codex Luna | `gpt-5.6-luna` | low | Codex app-server JSON-RPC |
+| Gemini 3.6 Flash | `gemini-3.6-flash` | low | persistent Antigravity CLI |
+| Grok 4.5 | `grok-4.5` | low | ACP stdio |
+| Claude Sonnet 4.6 | `claude-sonnet-4-6` | low | persistent Claude Code CLI |
+
+The browser performed every product action: resume, JPEG upload, chat submit,
+observation, and stop. The uploaded 1280 x 720 image reused the prior corridor
+scene but replaced the former upper-left yellow overlay with a new lower-right
+magenta rectangle. The seed did not reveal the expected color or position.
+
+The final clean seed was appended to the canonical room at
+`2026-07-25T19:02:54.814719Z` (`2026-07-26 04:02:54 KST`). The two-minute
+observation window ended with all four sessions idle.
+
+### Result
+
+Gemini published first after 9.4 seconds and correctly identified both the
+removed yellow area and the new lower-right magenta patch. Codex published after
+22.7 seconds and independently identified the same change. Both classified it
+as an overlay or rendering artifact rather than a physical facility signal.
+
+Those two publications generated peer event wakes. Each peer independently
+read the current room again and either published or declined. The run produced
+two visible agent messages and seven durable declines:
+
+| Provider | Observation turns | Published | Declined | First total turn | Longest total turn |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Gemini 3.6 Flash | 2 | 1 | 1 | 9.4 s | 9.4 s |
+| Codex Luna | 2 | 1 | 1 | 22.7 s | 22.7 s |
+| Grok 4.5 | 3 | 0 | 3 | 16.0 s | 16.0 s |
+| Claude Sonnet 4.6 | 2 | 0 | 2 | 26.4 s | 26.4 s |
+
+No fixed relay count selected or stopped these turns. There were no visible
+blank messages, punctuation sentinels, closure acknowledgements, terminal UI
+fragments, timeout events, unapproved-command events, or room errors. After two
+minutes, all four sessions still showed provider-plus-model display names with
+no reasoning suffix and returned to idle. All four were then stopped from the
+frontend and showed `stopped`.
+
+### Failures Found Before The Clean Run
+
+Two real failures were reproduced and fixed rather than hidden by fallback:
+
+1. Claude timed out after 180 seconds in the first media run. Claude had emitted
+   an intermediate assistant text block while `stop_reason` was `tool_use`.
+   The transcript adapter incorrectly finalized on that text, and the next room
+   wake was written while Claude was still executing tools. The provider later
+   completed normally, but the server was waiting for the lost second input.
+   Claude completion now requires its transcript `turn_duration` boundary,
+   tool-phase text is ignored as a final, and accumulated final text is retained
+   until that boundary. The clean run completed two Claude declines in 26.4 and
+   8.9 seconds without a timeout.
+
+2. Gemini inspected the image correctly but its first publication was rejected.
+   Antigravity generated a double-quoted shell argument containing Markdown
+   backticks. Backticks inside double quotes permit command substitution, so the
+   terminal safety policy correctly rejected the command. The room wake now
+   tells Antigravity to use one single-quoted public-message argument and a
+   shell-safe apostrophe escape. The interaction policy permits Markdown
+   backticks only inside single quotes and continues to reject shell chaining,
+   substitution, hidden/truncated commands, and unrelated terminal requests.
+   The clean run published the full Markdown message without weakening the
+   command boundary.
+
+Antigravity also needed a five-second startup quiet window; its initial
+authenticated TUI redraw could otherwise consume the first bracketed-paste
+input. The runtime now uses Antigravity's native conversation-scoped approval
+only for an exact validated `agentsassemble-room read`, `media`, or `speak`
+command. A chained `read && ...` probe remains rejected.
+
+An attempted approach that reconstructed a hidden Antigravity command from
+provider logs was removed. It guessed text that the terminal did not expose and
+would have weakened the permission boundary. The retained implementation
+validates only the exact command visible in the permission request.
 
 ## What This Experiment Proved
 
@@ -208,29 +303,29 @@ Confirmed:
 - no fixed relay count controls when the discussion stops;
 - the same persistent sessions survive multiple observation turns;
 - the Codex read-only app-server can read and publish through dynamic room tools;
-- profile names can be corrected from the frontend and are reflected in chat.
+- profile names can be corrected from the frontend and are reflected in chat;
+- Gemini can join the same event-wake room through a persistent Antigravity
+  session;
+- Codex and Gemini can independently identify a frontend-uploaded JPEG change;
+- terminal publication can retain Markdown while rejecting shell substitution;
+- Claude tool-use phases no longer masquerade as completed turns.
 
 Not confirmed:
 
 - direct-CLI versus room-path latency parity;
-- real provider understanding of images, PDFs, or audio through the frontend;
-- autonomous behavior with Gemini included;
+- native image rendering in Claude Code through the current room helper;
+- provider understanding of PDF or audio through the frontend;
 - behavior over days or a very large room log;
 - whether Grok's repeated silence is the preferred conversational policy rather
   than a provider-specific tendency in this topic.
 
 ## Next Experiment
 
-The next real frontend run should add Gemini at its lowest available reasoning
-level and use display names containing only provider and model. It should:
-
-1. run Codex Luna, Grok 4.5, Claude Sonnet 4.6, and Gemini 3.6 Flash;
-2. include one image uploaded through the frontend;
-3. compare a direct warm turn with room TTFO for each provider;
-4. observe two minutes, then separately wait for the five-minute idle check only
-   if idle scheduling itself needs reconfirmation;
-5. record each publish/decline outcome without requiring every provider to
-   speak.
+The next performance experiment should compare a direct warm turn with room
+TTFO for each provider. The next media experiment should focus narrowly on
+Claude's supported native image path, then PDF and audio per provider. Neither
+experiment should require every provider to speak; a verified decline remains a
+valid autonomous outcome.
 
 ## Verification
 
@@ -245,12 +340,27 @@ Checks run after the implementation and frontend smoke:
   canonical room creation moved to `POST /api/rooms`; the inventory was
   corrected and all four inventory tests then passed.
 
-The full Python discovery run executed 3,786 tests in 469 seconds. It initially
-reported five failures. The three route-inventory failures above were corrected.
-The remaining two are generated `CODEBASE_MAP` and `PACKAGE_MAP` fingerprint
-mismatches. Those generated maps are being maintained in a separate concurrent
-documentation task and were intentionally not regenerated or staged in this
-change. No other Python test failed.
+The four-provider fixes were additionally exercised by focused behavior tests:
+
+- a Grok room observation with no public content is a decline while an ordinary
+  empty provider final remains an adapter error;
+- Claude tool-phase text does not finish a turn before the transcript duration
+  boundary;
+- exact Antigravity room commands can receive one native approval;
+- shell chaining and double-quoted Markdown substitution remain rejected;
+- single-quoted Markdown publication is accepted.
+
+The full Python discovery run executed 3,791 tests in 546 seconds: 3,715 passed,
+74 were skipped, and 2 failed. Both failures are generated documentation
+inventory checks:
+
+- `tests.test_codebase_map.CodebaseMapTests.test_committed_codebase_map_matches_source_tree`
+- `tests.test_package_map.PackageMapTests.test_committed_package_map_matches_ast_inventory`
+
+Those files were already being edited by another concurrent task, so this
+change did not regenerate or stage them. No runtime, provider, room, or
+autonomous-observation test failed. The focused provider checks ran 67 tests
+successfully.
 
 ## Current Verdict
 
@@ -260,5 +370,11 @@ are notified of room activity, inspect a bounded current room view, and may
 speak or stay silent. The five-minute idle check also worked in the real
 frontend run.
 
-The implementation is not yet fully verified for native media or direct-CLI
-latency parity, and the next four-provider Gemini smoke remains outstanding.
+The implementation now passes a clean four-provider, frontend-driven JPEG room
+smoke. Codex and Gemini visibly proved pixel-level media understanding; Grok and
+Claude exercised clean autonomous decline, with Claude honestly reporting that
+its current terminal path could not render the image.
+
+Direct-CLI latency parity, Claude native image rendering, PDF/audio support, and
+long-duration room behavior remain open. They are not silently substituted or
+reported as complete.

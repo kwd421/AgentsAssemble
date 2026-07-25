@@ -16,6 +16,7 @@ from agentsassemble.providers.live_cli_transcripts import (
     make_live_cli_message_source,
 )
 from agentsassemble.providers.process_environment import sanitized_provider_environment
+from agentsassemble.providers.terminal_interactions import TerminalInteractionPolicy
 from agentsassemble.room.text import clean_room_text
 
 
@@ -37,6 +38,7 @@ class WindowsConPtyRuntime:
         terminal_columns: int = 120,
         max_output_bytes: int = 256_000,
         message_source: LiveCliMessageSource | None = None,
+        terminal_interaction_policy: TerminalInteractionPolicy | None = None,
         process_factory=None,
         profile_settings: dict[str, object] | None = None,
         startup_quiet_seconds: float = 0.0,
@@ -69,6 +71,8 @@ class WindowsConPtyRuntime:
         self._message_source = message_source or make_live_cli_message_source(
             self.agent_id, self.command, cwd=self.cwd
         )
+        self._terminal_interaction_policy = terminal_interaction_policy
+        self._room_observation_active = False
         self.profile_settings = {
             key: clean_room_text(value, limit=256)
             for key, value in dict(profile_settings or {}).items()
@@ -113,6 +117,18 @@ class WindowsConPtyRuntime:
         return self.health()
 
     def send(self, text: str) -> None:
+        self._send(text, room_observation=False)
+
+    def send_room_observation(
+        self,
+        text: str,
+        *,
+        media_blocks: list[dict[str, str]] | None = None,
+    ) -> None:
+        del media_blocks
+        self._send(text, room_observation=True)
+
+    def _send(self, text: str, *, room_observation: bool) -> None:
         self.start()
         self._drain_startup_output()
         if self.startup_input and not self._startup_input_sent:
@@ -123,6 +139,9 @@ class WindowsConPtyRuntime:
             self._turn_start = len(self._output)
             process = self.process
         self._message_source.begin_turn(str(text or ""))
+        if self._terminal_interaction_policy is not None:
+            self._terminal_interaction_policy.begin_turn()
+        self._room_observation_active = room_observation
         payload = str(text or "")
         if self.input_mode == "bracketed_paste":
             process.write(f"\x1b[200~{payload}\x1b[201~{self.submit_newline}")
@@ -143,7 +162,14 @@ class WindowsConPtyRuntime:
             with self._lock:
                 response = bytes(self._output[self._turn_start :])
                 last_read_at = self._last_read_at
+                process = self.process
                 alive = self._alive()
+            if self._room_observation_active and self._terminal_interaction_policy is not None:
+                interaction = self._terminal_interaction_policy.response_for(response)
+                if interaction and process is not None and alive:
+                    with self._lock:
+                        if self.process is process and self._alive():
+                            process.write(interaction.decode("utf-8", errors="strict"))
             if len(response) > self.max_output_bytes:
                 raise ValueError(f"ConPTY output exceeded {self.max_output_bytes} bytes.")
             quiet = bool(response and time.monotonic() - last_read_at >= self.idle_quiet_seconds)
@@ -156,6 +182,7 @@ class WindowsConPtyRuntime:
                     on_delta(delta)
                 previous = snapshot.content
             if snapshot.complete:
+                self._room_observation_active = False
                 return {
                     "outcome": "message",
                     "actor_id": self.agent_id,
@@ -171,6 +198,7 @@ class WindowsConPtyRuntime:
                         remainder = content[len(previous) :]
                         if remainder:
                             on_delta(remainder)
+                    self._room_observation_active = False
                     return {
                         "outcome": "message",
                         "actor_id": self.agent_id,
@@ -196,6 +224,7 @@ class WindowsConPtyRuntime:
         with self._lock:
             process = self.process
             self.process = None
+            self._room_observation_active = False
         if process is not None:
             for name in ("terminate", "close"):
                 method = getattr(process, name, None)
@@ -230,6 +259,11 @@ class WindowsConPtyRuntime:
                 "terminal_tail": bytes(self._output[-16_000:]).decode("utf-8", errors="replace"),
                 **self.profile_settings,
                 **self._message_source.describe(),
+                **(
+                    self._terminal_interaction_policy.describe()
+                    if self._terminal_interaction_policy is not None
+                    else {}
+                ),
             }
 
     def _drain_startup_output(self) -> None:
